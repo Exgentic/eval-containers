@@ -5,6 +5,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="agent"
 LABEL dock.agent.name="openhand"
+ENV DOCK_AGENT=openhand
 LABEL dock.agent.description="OpenHands AI coding agent"
 LABEL dock.agent.runtime="python"
 

@@ -6,6 +6,7 @@ FROM ubuntu:24.04
 
 LABEL dock.type="agent"
 LABEL dock.agent.name="claude-code"
+ENV DOCK_AGENT=claude-code
 LABEL dock.agent.description="Anthropic Claude Code CLI"
 LABEL dock.agent.runtime="bun"
 
