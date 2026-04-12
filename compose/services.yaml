@@ -1,0 +1,31 @@
+# Shared service definitions for Dock benchmarks.
+# Benchmark compose files use `extends` to inherit these.
+
+services:
+  model:
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/models/${DOCK_MODEL:-claude-sonnet-4}:latest
+    env_file: .env
+    volumes:
+      - ./output/${BENCHMARK:-unknown}/${TASK_ID:-default}/model:/output:rw
+    networks:
+      - internal
+
+  eval:
+    environment:
+      - ANTHROPIC_BASE_URL=http://model:4000
+      - OPENAI_BASE_URL=http://model:4000
+      - TASK=${TASK:-}
+      - TASK_ID=${TASK_ID:-}
+      - EXPECTED_ANSWER=${EXPECTED_ANSWER:-}
+      - DOCK_AGENT=${DOCK_AGENT:-claude-code}
+    volumes:
+      - ./output/${BENCHMARK:-unknown}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ./output/${BENCHMARK:-unknown}/${TASK_ID:-default}/task:/output/task:rw
+    depends_on:
+      - model
+    networks:
+      - internal
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true

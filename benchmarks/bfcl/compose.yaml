@@ -1,0 +1,28 @@
+# BFCL (Berkeley Function Calling Leaderboard)
+# Function calling benchmark. Shared environment.
+#
+# dock run bfcl --agent claude-code --task-id 1
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/bfcl--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=bfcl
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+networks:
+  internal:
+    internal: true

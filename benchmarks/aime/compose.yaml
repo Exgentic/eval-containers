@@ -1,0 +1,26 @@
+# AIME (American Invitational Mathematics Examination)
+# 60 tasks, shared environment, no internet.
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/aime--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=aime
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-3000}
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true

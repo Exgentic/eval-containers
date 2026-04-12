@@ -1,0 +1,28 @@
+# USACO (USA Computing Olympiad)
+# Competitive programming benchmark. Shared environment.
+#
+# dock run usaco --agent claude-code --task-id 1
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/usaco--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=usaco
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true

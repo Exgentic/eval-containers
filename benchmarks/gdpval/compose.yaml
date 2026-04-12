@@ -1,0 +1,33 @@
+# GDPval
+# 220 tasks. Internet ENABLED — needs reference file download + LLM judge.
+#
+# dock run gdpval --agent claude-code --task-id gdpval_001
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/gdpval--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=gdpval
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+    networks:
+      - internal
+      - external
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true
+  external:
+    driver: bridge

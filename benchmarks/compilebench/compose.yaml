@@ -1,0 +1,28 @@
+# CompileBench
+# Compilation benchmark. Per-task images (task ID in image name).
+#
+# dock run compilebench --agent claude-code --task-id example_task
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/compilebench-${TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=compilebench
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-900}
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+networks:
+  internal:
+    internal: true

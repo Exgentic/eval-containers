@@ -1,0 +1,70 @@
+# WebArena Verified
+# 812 tasks. Multi-service: eval container + 5 website sidecars.
+# No internet — agent interacts with local sidecars only.
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/webarena--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=webarena-verified
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+      - SHOPPING_URL=http://shopping:80
+      - SHOPPING_ADMIN_URL=http://shopping-admin:80
+      - REDDIT_URL=http://reddit:80
+      - GITLAB_URL=http://gitlab:8080
+      - WIKIPEDIA_URL=http://wikipedia:80
+    depends_on:
+      shopping:
+        condition: service_started
+      shopping-admin:
+        condition: service_started
+      reddit:
+        condition: service_started
+      gitlab:
+        condition: service_started
+      wikipedia:
+        condition: service_started
+      model:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 16G
+
+  shopping:
+    image: am1n3e/webarena-verified-shopping
+    networks:
+      - internal
+
+  shopping-admin:
+    image: am1n3e/webarena-verified-shopping_admin
+    networks:
+      - internal
+
+  reddit:
+    image: am1n3e/webarena-verified-reddit
+    networks:
+      - internal
+
+  gitlab:
+    image: am1n3e/webarena-verified-gitlab
+    networks:
+      - internal
+
+  wikipedia:
+    image: ghcr.io/kiwix/kiwix-serve:3.3.0
+    networks:
+      - internal
+
+networks:
+  internal:
+    internal: true

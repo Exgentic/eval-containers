@@ -1,0 +1,28 @@
+# GPQA Diamond
+# Graduate-level science Q&A benchmark. Shared environment.
+#
+# dock run gpqa-diamond --agent claude-code --task-id 1
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/gpqa-diamond--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=gpqa-diamond
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+networks:
+  internal:
+    internal: true

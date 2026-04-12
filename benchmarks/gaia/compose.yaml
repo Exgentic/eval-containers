@@ -1,0 +1,33 @@
+# GAIA (General AI Assistants)
+# 165 tasks. Internet ENABLED — agent needs web access.
+#
+# dock run gaia --agent claude-code --task-id gaia_001
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/gaia--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=gaia
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+    networks:
+      - internal
+      - external
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true
+  external:
+    driver: bridge

@@ -1,0 +1,28 @@
+# Kumo
+# Complex reasoning benchmark. Shared environment.
+#
+# dock run kumo --agent claude-code --task-id 1
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/kumo--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    environment:
+      - BENCHMARK=kumo
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-3600}
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 16G
+
+networks:
+  internal:
+    internal: true
