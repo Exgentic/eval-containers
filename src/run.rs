@@ -15,15 +15,15 @@ pub struct RunArgs {
     #[arg(long, default_value = "claude-sonnet-4")]
     model: String,
 
-    /// Task ID (for per-task benchmarks)
+    /// Task ID
     #[arg(long)]
     task_id: Option<String>,
 
-    /// Task instruction (for shared-env benchmarks)
+    /// Task instruction
     #[arg(long)]
     task: Option<String>,
 
-    /// Expected answer (for shared-env benchmarks)
+    /// Expected answer
     #[arg(long)]
     expected_answer: Option<String>,
 
@@ -37,49 +37,19 @@ pub struct RunArgs {
 }
 
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
+    // Ensure images exist
+    if !args.benchmark.ends_with(".yaml") && !args.benchmark.ends_with(".yml") {
+        ensure_images(registry, &args)?;
+    }
+
     let compose_ref = if args.benchmark.ends_with(".yaml") || args.benchmark.ends_with(".yml") {
-        // Direct file path
         args.benchmark.clone()
     } else if args.local {
-        // Local compose file from benchmarks/ directory
         format!("./benchmarks/{}/compose.yaml", args.benchmark)
     } else {
-        // Pull compose from OCI registry
         // Docker: docker compose -f oci://{registry}/compose/{benchmark}:latest up
         format!("oci://{registry}/compose/{}:latest", args.benchmark)
     };
-
-    // Ensure eval image exists, build if needed
-    if !args.benchmark.ends_with(".yaml") && !args.benchmark.ends_with(".yml") {
-        let eval_name = if let Some(ref tid) = args.task_id {
-            format!("{}-{tid}--{}", args.benchmark, args.agent)
-        } else {
-            format!("{}--{}", args.benchmark, args.agent)
-        };
-        let eval_tag = format!("{registry}/evals/{eval_name}:latest");
-
-        if !image_exists(&eval_tag) {
-            eprintln!("eval image not found locally, building...");
-            build::execute(registry, BuildArgs {
-                target: BuildTarget::Eval {
-                    benchmark: args.benchmark.clone(),
-                    agent: args.agent.clone(),
-                    task_id: args.task_id.clone(),
-                    version: "latest".to_string(),
-                },
-            })?;
-        }
-
-        let model_tag = format!("{registry}/models/{}:latest", args.model);
-        if !image_exists(&model_tag) {
-            eprintln!("model image not found locally, building...");
-            build::execute(registry, BuildArgs {
-                target: BuildTarget::Model {
-                    name: args.model.clone(),
-                },
-            })?;
-        }
-    }
 
     let mut cmd = Command::new("docker");
     cmd.arg("compose");
@@ -113,8 +83,35 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// Check if a Docker image exists locally
-/// Docker: docker image inspect <tag>
+fn ensure_images(registry: &str, args: &RunArgs) -> Result<(), String> {
+    let eval_name = format!("{}--{}", args.benchmark, args.agent);
+    let eval_tag = format!("{registry}/evals/{eval_name}:latest");
+
+    if !image_exists(&eval_tag) {
+        eprintln!("eval image not found locally, building...");
+        build::execute(registry, BuildArgs {
+            target: BuildTarget::Eval {
+                benchmark: args.benchmark.clone(),
+                agent: args.agent.clone(),
+                task_id: None,
+                version: "latest".to_string(),
+            },
+        })?;
+    }
+
+    let model_tag = format!("{registry}/models/{}:latest", args.model);
+    if !image_exists(&model_tag) {
+        eprintln!("model image not found locally, building...");
+        build::execute(registry, BuildArgs {
+            target: BuildTarget::Model {
+                name: args.model.clone(),
+            },
+        })?;
+    }
+
+    Ok(())
+}
+
 fn image_exists(tag: &str) -> bool {
     Command::new("docker")
         .args(["image", "inspect", tag])
