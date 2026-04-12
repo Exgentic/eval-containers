@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 # WebArena Verified
 # 812 tasks. Multi-service with website sidecars.
 # Agent interacts with websites via Playwright.
@@ -26,23 +25,8 @@ ENV BENCHMARK=webarena-verified
 RUN wget -q -O /app/tasks.json \
     https://raw.githubusercontent.com/ServiceNow/webarena-verified/main/assets/dataset/webarena-verified.json
 
-# Test: WebArena verification checks DOM state / task completion.
-# For now, generic answer comparison. TODO: integrate upstream evaluator.
-RUN mkdir -p /tests
-RUN <<'EOF'
-cat > /tests/test.sh <<'TEST'
-#!/bin/bash
-set -euo pipefail
-mkdir -p /logs/verifier
-ACTUAL=$(cat /app/answer.txt 2>/dev/null | tr -d "[:space:]")
-if [ "$ACTUAL" = "$EXPECTED_ANSWER" ]; then
-  echo 1 > /logs/verifier/reward.txt
-else
-  echo 0 > /logs/verifier/reward.txt
-fi
-TEST
-chmod +x /tests/test.sh
-EOF
+COPY --from=ghcr.io/dock-eval/core/tests:latest /tests/answer-compare.sh /tests/test.sh
+RUN chmod +x /tests/test.sh
 
 COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
