@@ -5,6 +5,7 @@ FROM ubuntu:24.04
 
 LABEL dock.type="agent"
 LABEL dock.agent.name="codex"
+ENV DOCK_AGENT=codex
 LABEL dock.agent.description="OpenAI Codex CLI"
 LABEL dock.agent.runtime="node"
 

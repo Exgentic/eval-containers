@@ -4,11 +4,17 @@
 services:
   model:
     image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/models/${DOCK_MODEL:-claude-sonnet-4}:latest
-    env_file: .env
     volumes:
-      - ./output/${BENCHMARK:-unknown}/${TASK_ID:-default}/model:/output:rw
+      - ./output/model:/output:rw
     networks:
       - internal
+      - default
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
 
   eval:
     environment:
@@ -19,13 +25,13 @@ services:
       - EXPECTED_ANSWER=${EXPECTED_ANSWER:-}
       - DOCK_AGENT=${DOCK_AGENT:-claude-code}
     volumes:
-      - ./output/${BENCHMARK:-unknown}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ./output/${BENCHMARK:-unknown}/${TASK_ID:-default}/task:/output/task:rw
+      - ./output/agent:/output/agent:rw
+      - ./output/task:/output/task:rw
     depends_on:
-      - model
+      model:
+        condition: service_healthy
     networks:
       - internal
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
+    tmpfs:
+      - /logs:size=100M
+      - /tmp:size=1G
