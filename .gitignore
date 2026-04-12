@@ -1,2 +1,18 @@
+# Rust
 /target
+
+# macOS
 .DS_Store
+
+# Environment (contains API keys)
+.env
+
+# Evaluation output
+/output
+
+# Editor
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
