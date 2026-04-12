@@ -1,46 +1,34 @@
 #!/bin/bash
 set -euo pipefail
 
-# Create agent user if it doesn't exist
+# Create agent user if needed
 id agent &>/dev/null || useradd -m -s /bin/bash agent
 
-# Load task from tasks.json if TASK is not set
-if [ -z "${TASK:-}" ] && [ -f /tasks/tasks.json ] && [ -n "${TASK_ID:-}" ]; then
-  TASK=$(python3 -c "import json; d=json.load(open('/tasks/tasks.json')); print(d['${TASK_ID}']['instruction'])")
-  EXPECTED_ANSWER=$(python3 -c "import json; d=json.load(open('/tasks/tasks.json')); print(d['${TASK_ID}']['expected_answer'])")
-  export TASK EXPECTED_ANSWER
-fi
+# Prepare directories
+mkdir -p /output/agent /output/task /logs/verifier /app
+chown -R agent:agent /output/agent /logs /app /tmp 2>/dev/null || true
 
-# Save answer for verification, clear from environment
+# Hide expected answer from agent
 SAVED_EXPECTED_ANSWER="${EXPECTED_ANSWER:-}"
 unset EXPECTED_ANSWER
 
-# Write task instruction to a file the agent can read
-mkdir -p /output/agent /output/task /logs/verifier /app
-echo "$TASK" > /app/task.txt
-chown -R agent:agent /output/agent /logs /app /tmp 2>/dev/null || true
-
-# Write agent env file (only what the agent needs)
-cat > /tmp/agent.env <<ENVEOF
-export TASK="$(cat /app/task.txt)"
-export TASK_ID="${TASK_ID:-}"
-export DOCK_TIMEOUT="${DOCK_TIMEOUT:-300}"
-export OPENAI_BASE_URL="${OPENAI_BASE_URL:-}"
-export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}"
-ENVEOF
-chown agent:agent /tmp/agent.env
-
-# Phase 1: Run the agent as non-root user
+# Phase 1: Run agent as non-root, capture stdout/stderr
 STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-su agent -s /bin/bash -c "source /tmp/agent.env && timeout \${DOCK_TIMEOUT:-300} /opt/agent/entrypoint.sh" || true
+su agent -s /bin/bash -c "
+  export TASK='$(echo "$TASK" | sed "s/'/'\\\\''/g")'
+  export TASK_ID='${TASK_ID:-}'
+  export OPENAI_BASE_URL='${OPENAI_BASE_URL:-}'
+  export ANTHROPIC_BASE_URL='${ANTHROPIC_BASE_URL:-}'
+  timeout ${DOCK_TIMEOUT:-300} /opt/agent/entrypoint.sh
+" > /output/agent/stdout.log 2> /output/agent/stderr.log || true
 AGENT_EXIT=$?
 ENDED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-# Write agent result (as root)
+# Write agent result
 printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%d}' \
   "${DOCK_AGENT:-unknown}" "$STARTED_AT" "$ENDED_AT" "$AGENT_EXIT" > /output/agent/result.json
 
-# Phase 2: Run benchmark verification (as root, with answer restored)
+# Phase 2: Verify (as root, with answer restored)
 export EXPECTED_ANSWER="$SAVED_EXPECTED_ANSWER"
 bash /tests/test.sh
 

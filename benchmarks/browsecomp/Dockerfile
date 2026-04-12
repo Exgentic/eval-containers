@@ -20,8 +20,7 @@ RUN pip install --no-cache-dir playwright requests && playwright install
 WORKDIR /app
 ENV BENCHMARK=browsecomp
 
-COPY --from=ghcr.io/dock-eval/core/tests:latest /tests/answer-compare.sh /tests/test.sh
-RUN chmod +x /tests/test.sh
+RUN mkdir -p /tests && printf '#!/bin/bash\nmkdir -p /logs/verifier\n[ "$(cat /output/agent/stdout.log 2>/dev/null | tr -d "[:space:]")" = "$EXPECTED_ANSWER" ] && echo 1 > /logs/verifier/reward.txt || echo 0 > /logs/verifier/reward.txt\n' > /tests/test.sh && chmod +x /tests/test.sh
 
 COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
