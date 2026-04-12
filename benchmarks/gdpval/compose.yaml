@@ -8,15 +8,22 @@ services:
     extends:
       file: ../../compose/services.yaml
       service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-gdpval}/${TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
     image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/gdpval--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
     environment:
       - BENCHMARK=gdpval
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+    volumes:
+      - ../../output/${BENCHMARK:-gdpval}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-gdpval}/${TASK_ID:-default}/task:/output/task:rw
     networks:
       - internal
       - external

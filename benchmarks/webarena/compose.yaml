@@ -7,12 +7,16 @@ services:
     extends:
       file: ../../compose/services.yaml
       service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-webarena}/${TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
     image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/webarena--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
     environment:
       - BENCHMARK=webarena-verified
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
@@ -21,6 +25,9 @@ services:
       - REDDIT_URL=http://reddit:80
       - GITLAB_URL=http://gitlab:8080
       - WIKIPEDIA_URL=http://wikipedia:80
+    volumes:
+      - ../../output/${BENCHMARK:-webarena}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-webarena}/${TASK_ID:-default}/task:/output/task:rw
     depends_on:
       shopping:
         condition: service_started

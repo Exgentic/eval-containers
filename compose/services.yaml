@@ -1,11 +1,13 @@
 # Shared service definitions for Dock benchmarks.
 # Benchmark compose files use `extends` to inherit these.
+#
+# Note: volume mounts are NOT defined here because `extends` resolves
+# relative paths from this file's location, not the benchmark's.
+# Each benchmark compose file defines its own output volume.
 
 services:
   model:
     image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/models/${DOCK_MODEL:-claude-sonnet-4}:latest
-    volumes:
-      - ./output/model:/output:rw
     networks:
       - internal
       - default
@@ -23,10 +25,6 @@ services:
       - TASK=${TASK:-}
       - TASK_ID=${TASK_ID:-}
       - EXPECTED_ANSWER=${EXPECTED_ANSWER:-}
-      - DOCK_AGENT=${DOCK_AGENT:-claude-code}
-    volumes:
-      - ./output/agent:/output/agent:rw
-      - ./output/task:/output/task:rw
     depends_on:
       model:
         condition: service_healthy
