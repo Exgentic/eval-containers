@@ -5,6 +5,4 @@ model_list:
       api_key: "os.environ/ANTHROPIC_API_KEY"
 
 litellm_settings:
-  json_logs: true
-  log_responses: true
-  store_audit_logs: true
+  callbacks: ["dock_logger.dock_logger_instance"]

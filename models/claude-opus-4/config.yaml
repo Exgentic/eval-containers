@@ -1,10 +1,8 @@
 model_list:
-  - model_name: "default"
+  - model_name: "*"
     litellm_params:
       model: "anthropic/claude-opus-4-20250514"
       api_key: "os.environ/ANTHROPIC_API_KEY"
 
 litellm_settings:
-  json_logs: true
-  log_responses: true
-  store_audit_logs: true
+  callbacks: ["dock_logger.dock_logger_instance"]
