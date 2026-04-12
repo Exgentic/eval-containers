@@ -1,44 +1,37 @@
 # syntax=docker/dockerfile:1
 # AIME (American Invitational Mathematics Examination)
-# 60 tasks (AIME 2024 + 2025). Data from HuggingFace: math-ai/aime24, math-ai/aime25
+# 90 tasks. Data: HuggingFace AI-MO/aimo-validation-aime
 
-FROM ghcr.io/laude-institute/t-bench/ubuntu-24-04:20250624
+FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="aime"
 LABEL dock.benchmark.description="American Invitational Mathematics Examination"
-LABEL dock.benchmark.tasks="60"
+LABEL dock.benchmark.tasks="90"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 
-RUN apt-get update && apt-get install -y python3 python3-pip && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir --break-system-packages datasets
+RUN pip install --no-cache-dir pyarrow
 
-# Download tasks from HuggingFace (root-only, agent cannot read answers)
-RUN python3 <<'EOF'
-import json, re, os
-from datasets import load_dataset
-
+# Download and convert tasks from HuggingFace parquet
+RUN <<'EOF'
+python3 -c "import urllib.request; urllib.request.urlretrieve('https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/main/data/train-00000-of-00001.parquet', '/tmp/aime.parquet')"
+python3 -c "
+import json, pyarrow.parquet as pq, os
+t = pq.read_table('/tmp/aime.parquet')
 tasks = {}
-
-for row in load_dataset("math-ai/aime24", split="test"):
-    ans = re.search(r'\\boxed\{(\d+)\}', row["solution"])
-    tasks[f"aime24_{row['id']}"] = {
-        "instruction": "Solve the following problem. Write your final answer as a single integer to /app/answer.txt.\n\n" + row["problem"],
-        "expected_answer": ans.group(1) if ans else row["solution"],
+for i in range(len(t)):
+    tasks[str(t['id'][i])] = {
+        'instruction': 'Solve the following problem. Write your final answer as a single integer to /app/answer.txt.\n\n' + str(t['problem'][i]),
+        'expected_answer': str(t['answer'][i]),
     }
-
-for row in load_dataset("math-ai/aime25", split="test"):
-    tasks[f"aime25_{row['id']}"] = {
-        "instruction": "Solve the following problem. Write your final answer as a single integer to /app/answer.txt.\n\n" + row["problem"],
-        "expected_answer": row["answer"],
-    }
-
-os.makedirs("/tasks", exist_ok=True)
-json.dump(tasks, open("/tasks/tasks.json", "w"))
-print(f"Downloaded {len(tasks)} AIME tasks")
+os.makedirs('/tasks', exist_ok=True)
+json.dump(tasks, open('/tasks/tasks.json', 'w'))
+print(f'{len(tasks)} tasks')
+"
+chmod 600 /tasks/tasks.json
+rm /tmp/aime.parquet
 EOF
-RUN chmod 600 /tasks/tasks.json && rm -rf /root/.cache/huggingface
 
 RUN useradd -m -s /bin/bash agent
 
