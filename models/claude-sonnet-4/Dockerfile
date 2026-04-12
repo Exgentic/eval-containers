@@ -1,4 +1,4 @@
-FROM ghcr.io/berriai/litellm:latest
+FROM ghcr.io/berriai/litellm:main-latest
 
 LABEL dock.type="model"
 LABEL dock.model.name="claude-sonnet-4"
