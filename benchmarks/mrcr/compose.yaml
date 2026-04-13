@@ -1,0 +1,33 @@
+# MRCR v2 (Multi-Round Coreference Resolution)
+# 2400 tasks, shared environment, no internet.
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-mrcr}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/mrcr--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=mrcr
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+    volumes:
+      - ../../output/${BENCHMARK:-mrcr}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-mrcr}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true
