@@ -39,11 +39,17 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 9. **Any provider.** Model images MUST work with any LiteLLM-supported provider (Anthropic, OpenAI, Azure, Google, Ollama, custom endpoints) without modifying Dock.
 
+### Multiple Roles
+
+10. **Separate services per role.** Benchmarks with multiple LLM consumers (e.g., agent + user simulator) MUST use a separate model service for each role. Each role is independently configurable — different models, different providers, different costs.
+
+11. **Agent model only logged.** Only the agent's model service MUST log requests and responses. Non-agent model services (user simulators, judges) MUST NOT write to `/output/model/`. Their traffic is benchmark infrastructure, not evaluation data.
+
 ### Image
 
-10. **Health endpoint.** The model service MUST expose a health check on port 4000. The eval container MUST wait for it before starting.
+12. **Health endpoint.** The model service MUST expose a health check on port 4000. The eval container MUST wait for it before starting.
 
-11. **Labels.** Every model image MUST include labels: `dock.type`, `dock.model.name`, `dock.model.provider`.
+13. **Labels.** Every model image MUST include labels: `dock.type`, `dock.model.name`, `dock.model.provider`.
 
 ## References
 
