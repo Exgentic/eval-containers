@@ -75,6 +75,14 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 24. **Extend shared services.** Compose files MUST extend model and eval base definitions from `compose/services.yaml`.
 
+### Testing
+
+25. **Build test.** Every benchmark image MUST have a build test that verifies the Dockerfile builds and produces correct `dock.*` labels.
+
+26. **Compose test.** Every benchmark MUST have a compose validation test that verifies `docker compose config` succeeds.
+
+27. **Replay test.** Every benchmark MUST have at least one end-to-end test using the replay model with a recorded fixture. This test MUST verify that `result.json` is produced with the correct schema.
+
 ## References
 
 - [Process](../RULES.md)
