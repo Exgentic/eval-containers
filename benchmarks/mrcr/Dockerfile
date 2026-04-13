@@ -106,7 +106,9 @@ RUN chmod +x /dock-entrypoint.sh
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)"
+  cp /tasks/$TASK_ID/problem.txt /app/task.txt
+  chmod 644 /app/task.txt
+  export TASK="Your task is described in the file /app/task.txt — read it and follow the instructions inside."
   export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
