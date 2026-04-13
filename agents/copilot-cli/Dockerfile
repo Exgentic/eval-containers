@@ -17,7 +17,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs
 
 # Install GitHub Copilot CLI (pinned version)
-RUN npm install -g @github/copilot@1.0.25
+RUN npm install -g @github/copilot@1.0.24
 
 # Package agent files for combination template
 RUN mkdir -p /opt/agent
@@ -28,7 +28,7 @@ cat > /opt/agent/install.sh <<'INSTALL'
 set -euo pipefail
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
-npm install -g @github/copilot@1.0.25
+npm install -g @github/copilot@1.0.24
 INSTALL
 chmod +x /opt/agent/install.sh
 EOF
@@ -41,15 +41,14 @@ set -euo pipefail
 # Route all LLM calls through the Dock proxy (BYOK / offline mode)
 export COPILOT_PROVIDER_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}/v1"
 export COPILOT_PROVIDER_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-export COPILOT_PROVIDER_TYPE="openai"
 export COPILOT_OFFLINE=true
 
 # Use whichever model the proxy advertises
 export COPILOT_MODEL="${COPILOT_MODEL:-default}"
 
-# Run non-interactively: -p passes the prompt, --allow-all-tools skips approval
+# Run non-interactively: -p passes the prompt, --yolo auto-approves all tools
 # Docker is the sandbox so full tool access is safe
-exec copilot -p --allow-all-tools "$TASK"
+exec copilot -p "$TASK" --yolo
 ENTRY
 chmod +x /opt/agent/entrypoint.sh
 EOF

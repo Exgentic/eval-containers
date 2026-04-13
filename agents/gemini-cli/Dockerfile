@@ -17,7 +17,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs
 
 # Install Gemini CLI (pinned version)
-RUN npm install -g @google/gemini-cli@0.32.1
+RUN npm install -g @google/gemini-cli@0.37.2
 
 # Package agent files for combination template
 RUN mkdir -p /opt/agent
@@ -28,7 +28,7 @@ cat > /opt/agent/install.sh <<'INSTALL'
 set -euo pipefail
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
 apt-get install -y nodejs
-npm install -g @google/gemini-cli@0.32.1
+npm install -g @google/gemini-cli@0.37.2
 INSTALL
 chmod +x /opt/agent/install.sh
 EOF
@@ -45,8 +45,8 @@ export GEMINI_API_KEY="${GEMINI_API_KEY:-sk-proxy}"
 # Disable sandbox — Docker is the sandbox
 export GEMINI_SANDBOX=false
 
-# Run non-interactively: -p (prompt/headless mode), --yolo (auto-approve tool use)
-exec gemini -p --yolo "$TASK"
+# Run non-interactively: --yolo (auto-approve tool use), -p (headless mode with prompt)
+exec gemini --yolo -p "$TASK"
 ENTRY
 chmod +x /opt/agent/entrypoint.sh
 EOF
