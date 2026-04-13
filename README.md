@@ -24,6 +24,15 @@ cat output/aime/0/task/result.json
 - **Model** — the LLM the agent calls, routed through a logging proxy. Works with any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) (OpenAI, Anthropic, Google, Azure, Ollama, and 100+ more)
 - **Evaluation** — one task + one agent + one model, defined by one Compose file
 
+## Podman
+
+If using Podman on Apple Silicon, enable Rosetta for x86 images:
+
+```bash
+podman machine ssh "sudo touch /etc/containers/enable-rosetta"
+podman machine stop && podman machine start
+```
+
 ## Rules
 
 All work is governed by RULES documents. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full index.
