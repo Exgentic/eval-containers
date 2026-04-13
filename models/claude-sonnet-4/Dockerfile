@@ -5,4 +5,4 @@ LABEL dock.model.name="claude-sonnet-4"
 LABEL dock.model.provider="anthropic"
 
 COPY config.yaml /app/config.yaml
-CMD ["--config", "/app/config.yaml"]
+CMD ["--port", "4000", "--config", "/app/config.yaml"]

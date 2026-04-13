@@ -1,5 +1,3 @@
-# v1.82.6 — tested with dock_logger callback.
-# TODO: pin to versioned tag once LiteLLM publishes one for 1.82.x
 FROM ghcr.io/berriai/litellm:main-latest
 
 LABEL dock.type="core"
