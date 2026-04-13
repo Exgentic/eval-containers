@@ -1,7 +1,13 @@
 # TAU-bench (Tool-Agent-User Benchmark)
 # 165 tasks (115 retail + 50 airline), shared environment, no internet.
 #
-# dock run tau-bench --agent claude-code --task-id 0
+# Architecture (bridge mode):
+#   model: real LLM proxy (for agent reasoning + user simulation)
+#   bridge: fake OpenAI API queuing requests between tau-bench and agent
+#   runner: runs tau-bench harness, calls bridge as its "agent LLM"
+#   eval: pass-through agent that polls bridge and forwards to model
+#
+# dock run tau-bench --task-id 0
 
 services:
   model:
@@ -12,23 +18,63 @@ services:
     volumes:
       - ../../output/${BENCHMARK:-tau-bench}/${TASK_ID:-default}/model:/output:rw
 
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/tau-bench--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
-    env_file: ../../.env
+  bridge:
+    build:
+      context: ../../core/llm-bridge
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 2s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+  runner:
+    build:
+      context: .
     environment:
-      - BENCHMARK=tau-bench
-      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
-    volumes:
-      - ../../output/${BENCHMARK:-tau-bench}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-tau-bench}/${TASK_ID:-default}/task:/output/task:rw
+      - TASK_ID=${TASK_ID:-0}
+      - BRIDGE_URL=http://bridge:8000/v1
+      - MODEL_URL=http://model:4000/v1
+      - OPENAI_API_KEY=sk-proxy
+      - MODEL_NAME=${MODEL_NAME:-gpt-4o}
+    entrypoint: ["python3", "/app/run_tau_bench.py"]
+    depends_on:
+      bridge:
+        condition: service_healthy
+      model:
+        condition: service_healthy
+    networks:
+      - internal
     deploy:
       resources:
         limits:
-          cpus: "4"
-          memory: 8G
+          cpus: "2"
+          memory: 4G
+
+  eval:
+    build:
+      context: .
+    environment:
+      - BRIDGE_URL=http://bridge:8000
+      - OPENAI_BASE_URL=http://model:4000
+      - OPENAI_API_KEY=sk-proxy
+    entrypoint: ["python3", "/app/agent.py"]
+    depends_on:
+      bridge:
+        condition: service_healthy
+      model:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - ../../output/${BENCHMARK:-tau-bench}/${TASK_ID:-default}/agent:/output/agent:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
 
 networks:
   internal:

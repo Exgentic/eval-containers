@@ -88,6 +88,10 @@ PYEOF
 
 RUN chmod -R 600 /tasks
 
+# Add bridge-mode scripts (pass-through agent + tau-bench runner)
+COPY agent.py /app/agent.py
+COPY run_tau_bench.py /app/run_tau_bench.py
+
 WORKDIR /app
 ENV BENCHMARK=tau-bench
 

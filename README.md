@@ -21,7 +21,7 @@ cat output/aime/0/task/result.json
 - **Benchmark** — a collection of tasks (AIME has 90, SWE-bench has 500)
 - **Task** — a single problem within a benchmark
 - **Agent** — the AI system attempting the task (Claude Code, Codex, OpenHands)
-- **Model** — the LLM the agent calls, routed through a logging proxy
+- **Model** — the LLM the agent calls, routed through a logging proxy. Works with any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) (OpenAI, Anthropic, Google, Azure, Ollama, and 100+ more)
 - **Evaluation** — one task + one agent + one model, defined by one Compose file
 
 ## Rules

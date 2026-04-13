@@ -1,0 +1,33 @@
+# IFEval
+# 541 tasks, shared environment, no internet.
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-ifeval}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/ifeval--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=ifeval
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
+    volumes:
+      - ../../output/${BENCHMARK:-ifeval}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-ifeval}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+networks:
+  internal:
+    internal: true

@@ -74,7 +74,26 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
         cmd.env("EXPECTED_ANSWER", answer);
     }
 
-    eprintln!("$ docker compose -f {compose_ref} up --abort-on-container-exit");
+    // Print the full reproducible command with env vars
+    let mut env_parts = vec![
+        format!("DOCK_REGISTRY={registry}"),
+        format!("DOCK_AGENT={}", args.agent),
+        format!("DOCK_MODEL={}", args.model),
+    ];
+    if let Some(ref task_id) = args.task_id {
+        env_parts.push(format!("TASK_ID={task_id}"));
+    }
+    if let Some(ref task) = args.task {
+        env_parts.push(format!("TASK={task}"));
+    }
+    if let Some(ref answer) = args.expected_answer {
+        env_parts.push(format!("EXPECTED_ANSWER={answer}"));
+    }
+    if let Some(timeout) = args.timeout {
+        env_parts.push(format!("DOCK_TIMEOUT={timeout}"));
+    }
+    eprintln!("$ {} docker compose -f {} up --abort-on-container-exit",
+        env_parts.join(" "), compose_ref);
 
     let status = cmd.status().map_err(|e| format!("failed to run docker compose: {e}"))?;
     if !status.success() {

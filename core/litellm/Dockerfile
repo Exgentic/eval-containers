@@ -1,4 +1,4 @@
-FROM ghcr.io/berriai/litellm:main-latest
+FROM ghcr.io/berriai/litellm:litellm_stable_release_branch-v1.80.11-stable.1
 
 LABEL dock.type="core"
 LABEL dock.core.component="litellm"

@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y \
     libreoffice curl wget \
     && rm -rf /var/lib/apt/lists/*
 
+# HuggingFace CLI for uploading results to the auto-grader
+RUN pip install --no-cache-dir huggingface_hub[cli]
+
 # Fetch tasks
 RUN pip install --no-cache-dir pyarrow
 RUN python3 <<'PYEOF'
@@ -38,19 +41,40 @@ RUN chmod -R 600 /tasks
 WORKDIR /app
 ENV BENCHMARK=gdpval
 
-# Test: GDPval requires external grading via OpenAI's auto-grader.
-# This test just checks if the agent produced output; actual scoring happens externally.
+# Test: GDPval is externally graded by OpenAI's auto-grader.
+# test.sh packages deliverables and uploads to HuggingFace for submission.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-# Copy agent deliverables to /output/agent/ for external grading
+
+# Copy agent deliverables to output
 cp /app/deliverable* /output/agent/ 2>/dev/null || true
-# Reward is placeholder — submit to OpenAI auto-grader for real scores
-if [ -s /output/agent/stdout.log ] || ls /app/deliverable* >/dev/null 2>&1; then
-  echo -1 > /logs/verifier/reward.txt
+
+# Package results for HuggingFace upload (same format as inspect_evals)
+TASK_ID_STR=$(cat /tasks/${TASK_ID}/id.txt 2>/dev/null || echo "unknown")
+TIMESTAMP=$(date +%Y-%m-%dT%H-%M-%S%z | sed 's/+/plus/;s/-\([0-9]\)/minus\1/')
+UPLOAD_DIR="/tmp/gdpval_hf_upload/${TIMESTAMP}_gdpval"
+mkdir -p "$UPLOAD_DIR/$TASK_ID_STR"
+
+# Copy agent output and deliverables
+cp /output/agent/stdout.log "$UPLOAD_DIR/$TASK_ID_STR/response.txt" 2>/dev/null || true
+cp /output/agent/deliverable* "$UPLOAD_DIR/$TASK_ID_STR/" 2>/dev/null || true
+cp /app/deliverable* "$UPLOAD_DIR/$TASK_ID_STR/" 2>/dev/null || true
+
+# Upload to HuggingFace if token is available
+if [ -n "$HF_TOKEN" ]; then
+  REPO_NAME="gdpval-$(echo $TIMESTAMP | cut -c1-10)"
+  huggingface-cli upload "$HF_USERNAME/$REPO_NAME" "$UPLOAD_DIR" --repo-type dataset --token "$HF_TOKEN" 2>/dev/null && \
+    echo "Uploaded to HuggingFace: $HF_USERNAME/$REPO_NAME" >> /output/agent/stderr.log && \
+    echo "Submit for grading at: https://evals.openai.com/gdpval/grading" >> /output/agent/stderr.log || \
+    echo "HuggingFace upload failed" >> /output/agent/stderr.log
 else
-  echo 0 > /logs/verifier/reward.txt
+  echo "No HF_TOKEN set — skipping HuggingFace upload" >> /output/agent/stderr.log
+  echo "To enable: set HF_TOKEN and HF_USERNAME in .env" >> /output/agent/stderr.log
 fi
+
+# Externally graded — write -1
+echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
 
