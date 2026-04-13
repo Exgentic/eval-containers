@@ -1,6 +1,7 @@
 # WebArena Verified
-# 812 tasks. Multi-service: eval container + 5 website sidecars.
-# No internet — agent interacts with local sidecars only.
+# 812 tasks. Multi-service: eval + model + proxy + 6 website sidecars.
+# No internet — agent interacts with sidecars via mitmproxy.
+# Proxy captures HAR independently (agent cannot tamper).
 
 services:
   model:
@@ -20,57 +21,67 @@ services:
     environment:
       - BENCHMARK=webarena-verified
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+      - HTTP_PROXY=http://proxy:8080
+      - HTTPS_PROXY=http://proxy:8080
+      - NO_PROXY=model,localhost,127.0.0.1
+      - no_proxy=model,localhost,127.0.0.1
       - SHOPPING_URL=http://shopping:80
       - SHOPPING_ADMIN_URL=http://shopping-admin:80
       - REDDIT_URL=http://reddit:80
       - GITLAB_URL=http://gitlab:8080
       - WIKIPEDIA_URL=http://wikipedia:80
+      - MAP_URL=http://map:80
     volumes:
       - ../../output/${BENCHMARK:-webarena}/${TASK_ID:-default}/agent:/output/agent:rw
       - ../../output/${BENCHMARK:-webarena}/${TASK_ID:-default}/task:/output/task:rw
     depends_on:
-      shopping:
-        condition: service_started
-      shopping-admin:
-        condition: service_started
-      reddit:
-        condition: service_started
-      gitlab:
-        condition: service_started
-      wikipedia:
+      proxy:
         condition: service_started
       model:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         limits:
           cpus: "4"
           memory: 16G
 
-  shopping:
-    image: am1n3e/webarena-verified-shopping
+  # HTTP proxy: captures all agent traffic to HAR (tamper-proof)
+  proxy:
+    image: mitmproxy/mitmproxy:latest
+    command: >
+      mitmdump
+      --mode regular
+      --listen-port 8080
+      --set hardump=/output/network.har
+    volumes:
+      - ../../output/${BENCHMARK:-webarena}/${TASK_ID:-default}/agent:/output:rw
     networks:
       - internal
+      - default
+
+  shopping:
+    image: am1n3e/webarena-verified-shopping
+    networks: [internal]
 
   shopping-admin:
     image: am1n3e/webarena-verified-shopping_admin
-    networks:
-      - internal
+    networks: [internal]
 
   reddit:
     image: am1n3e/webarena-verified-reddit
-    networks:
-      - internal
+    networks: [internal]
 
   gitlab:
     image: am1n3e/webarena-verified-gitlab
-    networks:
-      - internal
+    networks: [internal]
 
   wikipedia:
-    image: ghcr.io/kiwix/kiwix-serve:3.3.0
-    networks:
-      - internal
+    image: am1n3e/webarena-verified-wikipedia
+    networks: [internal]
+
+  map:
+    image: am1n3e/webarena-verified-map
+    networks: [internal]
 
 networks:
   internal:

@@ -1,5 +1,5 @@
 # AIME (American Invitational Mathematics Examination)
-# 60 tasks, shared environment, no internet.
+# 90 tasks, shared environment, no internet.
 
 services:
   model:

@@ -1,0 +1,9 @@
+model_list:
+  - model_name: "*"
+    litellm_params:
+      model: "openai/azure/gpt-5.4"
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "os.environ/OPENAI_API_BASE"
+
+litellm_settings:
+  callbacks: ["dock_logger.dock_logger_instance"]
