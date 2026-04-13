@@ -13,7 +13,7 @@ LABEL dock.benchmark.tasks="89"
 LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
 
-ENV BENCHMARK=terminal-bench
+ENV BENCHMARK=tbench
 ENV TASK_ID=${TASK_ID}
 
 COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh

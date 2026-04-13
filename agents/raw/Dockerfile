@@ -36,7 +36,7 @@ RESPONSE=$(curl -s "${OPENAI_BASE_URL:-http://model:4000}/v1/chat/completions" \
     \"max_tokens\": 4096
   }")
 
-echo "$RESPONSE" | jq -r '.choices[0].message.content' > /app/answer.txt
+echo "$RESPONSE" | jq -r '.choices[0].message.content'
 SCRIPT
 chmod +x /opt/agent/entrypoint.sh
 EOF

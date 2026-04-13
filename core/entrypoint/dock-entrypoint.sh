@@ -30,7 +30,7 @@ printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%d}' \
 
 # Phase 2: Verify (as root, with answer restored)
 export EXPECTED_ANSWER="$SAVED_EXPECTED_ANSWER"
-bash /tests/test.sh
+bash /tests/test.sh || true
 
 # Phase 3: Write task result
 REWARD=$(cat /logs/verifier/reward.txt 2>/dev/null || echo 0)
