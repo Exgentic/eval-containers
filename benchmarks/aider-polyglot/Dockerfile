@@ -17,13 +17,17 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 # --- Language toolchains ---
 RUN apt-get update && apt-get install -y \
-    curl git python3 python3-pip \
+    curl git python3 python3-pip ca-certificates gnupg \
     gcc g++ cmake make \
     golang-go \
     default-jdk \
     rustc cargo \
-    nodejs npm \
     jq \
+  && rm -rf /var/lib/apt/lists/*
+
+# Node.js 20 (Ubuntu 22.04 ships v12 which is too old for Jest)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+  && apt-get install -y nodejs \
   && rm -rf /var/lib/apt/lists/*
 
 # Python test deps
@@ -126,39 +130,33 @@ find . -name '*.spec.js' -o -name '*.test.js' | xargs sed -i 's/\bxtest(/test(/g
 # Java: @Disabled("...") and @Ignore
 find . -name '*.java' -exec sed -i '/@Disabled/d; /@Ignore/d' {} +
 
-run_test() {
-  case "$LANGUAGE" in
-    python)
-      python3 -m pytest $TEST_FILES -x -q 2>&1
-      ;;
-    javascript)
-      if [ -f package.json ]; then
-        npm install --silent 2>/dev/null
-      fi
-      npx jest --no-cache 2>&1
-      ;;
-    go)
-      go test -v -count=1 ./... 2>&1
-      ;;
-    rust)
-      cargo test -- --include-ignored 2>&1
-      ;;
-    cpp)
-      mkdir -p build && cd build
-      cmake .. -DEXERCISM_RUN_ALL_TESTS=1 2>&1
-      make 2>&1
-      ctest --output-on-failure 2>&1
-      ;;
-    java)
-      if [ -f gradlew ]; then
-        chmod +x gradlew
-        ./gradlew test 2>&1
-      fi
-      ;;
-  esac
-}
+# Build the test command
+case "$LANGUAGE" in
+  python)
+    TEST_CMD="python3 -m pytest $TEST_FILES -x -q"
+    ;;
+  javascript)
+    TEST_CMD="bash -c 'if [ -f package.json ]; then npm install --silent 2>/dev/null; fi && npx jest --no-cache'"
+    ;;
+  go)
+    TEST_CMD="go test -v -count=1 ./..."
+    ;;
+  rust)
+    TEST_CMD="cargo test -- --include-ignored"
+    ;;
+  cpp)
+    TEST_CMD="bash -c 'mkdir -p build && cd build && cmake .. -DEXERCISM_RUN_ALL_TESTS=1 && make && ctest --output-on-failure'"
+    ;;
+  java)
+    TEST_CMD="bash -c 'chmod +x gradlew && ./gradlew test'"
+    ;;
+  *)
+    echo 0.0 > /logs/verifier/reward.txt
+    exit 0
+    ;;
+esac
 
-if timeout 120 bash -c "$(declare -f run_test); run_test"; then
+if timeout 120 sh -c "$TEST_CMD" >/dev/null 2>&1; then
   echo 1.0 > /logs/verifier/reward.txt
 else
   echo 0.0 > /logs/verifier/reward.txt
