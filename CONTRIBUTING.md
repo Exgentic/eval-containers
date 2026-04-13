@@ -23,6 +23,18 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 5. **Never work around a rule.** If a rule blocks your work, the rule is the problem. Fix the rule first. Do not write code that violates an active rule.
 
+## Contribution Workflow
+
+Every contribution MUST follow this flow:
+
+1. **Create.** Write the code. Use the TEMPLATE.md in the relevant directory as a starting point.
+2. **Verify against rules.** Read the RULES.md for the component you're changing. Check every rule. Fix violations.
+3. **Build.** `docker build` the image. If it fails, fix and retry.
+4. **Test.** Run it end-to-end with `docker compose up`. Verify the output is correct.
+5. **Submit.** Open a PR. The PR description MUST state which rules were checked.
+
+Skipping any step is not acceptable.
+
 ## Rules Index
 
 | Document | Location | Scope |

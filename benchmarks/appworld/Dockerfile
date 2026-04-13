@@ -1,8 +1,8 @@
-# syntax=docker/dockerfile:1
 # AppWorld
 # 732 tasks across 9 simulated apps. Data: HuggingFace LukaszTP/AppWorld-Tasks
 # Upstream image: ghcr.io/stonybrooknlp/appworld — includes all APIs in-process.
-# Evaluation requires the AppWorld runtime (in upstream image).
+# Evaluation is state-based (database checks), requires the AppWorld runtime.
+# Externally graded: test writes -1.
 
 FROM ghcr.io/stonybrooknlp/appworld:latest
 
@@ -12,41 +12,37 @@ LABEL dock.benchmark.description="AppWorld - 9 simulated apps with 457 APIs"
 LABEL dock.benchmark.tasks="732"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
+LABEL dock.benchmark.data_revision="refs/convert/parquet"
 
 ENV BENCHMARK=appworld
 
 # Fetch task metadata from HuggingFace
-RUN pip install --no-cache-dir pyarrow 2>/dev/null || true
+RUN pip install --no-cache-dir pyarrow
 RUN python3 <<'PYEOF'
-import os, json
-try:
-    import urllib.request, pyarrow.parquet as pq
-    urllib.request.urlretrieve(
-        'https://huggingface.co/datasets/LukaszTP/AppWorld-Tasks/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet',
-        '/tmp/data.parquet')
-    t = pq.read_table('/tmp/data.parquet')
-    for i in range(len(t)):
-        os.makedirs(f'/tasks/{i}', exist_ok=True)
-        open(f'/tasks/{i}/id.txt','w').write(str(t['task_id'][i]))
-        open(f'/tasks/{i}/problem.txt','w').write(str(t['instruction'][i]))
-    print(f'Extracted {len(t)} tasks')
-except Exception as e:
-    print(f'Warning: could not fetch tasks: {e}')
+import urllib.request, pyarrow.parquet as pq, os
+urllib.request.urlretrieve(
+    'https://huggingface.co/datasets/LukaszTP/AppWorld-Tasks/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet',
+    '/tmp/data.parquet')
+t = pq.read_table('/tmp/data.parquet')
+for i in range(len(t)):
+    os.makedirs(f'/tasks/{i}', exist_ok=True)
+    with open(f'/tasks/{i}/id.txt', 'w') as f:
+        f.write(str(t['task_id'][i]))
+    with open(f'/tasks/{i}/problem.txt', 'w') as f:
+        f.write(str(t['instruction'][i]))
+print(f'Extracted {len(t)} tasks')
 PYEOF
-RUN rm -f /tmp/data.parquet
-RUN pip uninstall -y pyarrow 2>/dev/null || true
-RUN chmod -R 600 /tasks 2>/dev/null || true
+RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
+RUN chmod -R 600 /tasks
 
-# Test: AppWorld evaluation requires the upstream runtime.
-# Placeholder — checks if agent produced output.
+WORKDIR /app
+
+# Test: AppWorld evaluation is state-based (database checks) and requires
+# the full AppWorld runtime. This is externally graded — always write -1.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-if [ -s /output/agent/stdout.log ]; then
-  echo -1 > /logs/verifier/reward.txt
-else
-  echo 0 > /logs/verifier/reward.txt
-fi
+echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
 
