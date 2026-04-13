@@ -1,0 +1,61 @@
+# OSWorld
+# 369 tasks. Desktop VM sidecar + agent.
+# The desktop sidecar runs a QEMU Ubuntu VM with apps.
+# Agent interacts via HTTP screenshot/action API.
+#
+# PREREQUISITE: Download VM disk image (11GB) before running:
+#   huggingface-cli download xlangai/ubuntu_osworld Ubuntu.qcow2.zip --local-dir .
+#   unzip Ubuntu.qcow2.zip
+#
+# Then run:
+#   TASK_ID=0 docker compose -f benchmarks/osworld/compose.yaml up
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-osworld}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/osworld--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=osworld
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+      - DESKTOP_URL=http://desktop:5000
+    volumes:
+      - ../../output/${BENCHMARK:-osworld}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-osworld}/${TASK_ID:-default}/task:/output/task:rw
+    depends_on:
+      desktop:
+        condition: service_started
+      model:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+  # Desktop VM sidecar — QEMU Ubuntu with apps, screenshot API on port 5000
+  desktop:
+    image: happysixd/osworld-docker
+    volumes:
+      - ../../data/osworld/Ubuntu.qcow2:/System.qcow2:ro
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true
