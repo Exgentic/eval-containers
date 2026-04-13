@@ -151,10 +151,10 @@ replay_test!(replay_math500_aider,
     "tests/fixtures/math-500-0-aider.trajectory.jsonl",
     "math-500", "aider");
 
-replay_test!(replay_mgsm_terminus2,
+replay_test!(replay_mgsm_codex,
     "benchmarks/mgsm/compose.yaml",
-    "tests/fixtures/mgsm-0-terminus-2.trajectory.jsonl",
-    "mgsm", "terminus-2");
+    "tests/fixtures/mgsm-0-codex.trajectory.jsonl",
+    "mgsm", "codex");
 
 replay_test!(replay_mmlu_openhands,
     "benchmarks/mmlu-pro/compose.yaml",
@@ -166,10 +166,10 @@ replay_test!(replay_hle_claude_code,
     "tests/fixtures/hle-0-claude-code.trajectory.jsonl",
     "hle", "claude-code");
 
-replay_test!(replay_mrcr_codex,
+replay_test!(replay_mrcr_claude_code,
     "benchmarks/mrcr/compose.yaml",
-    "tests/fixtures/mrcr-0-codex.trajectory.jsonl",
-    "mrcr", "codex");
+    "tests/fixtures/mrcr-0-claude-code.trajectory.jsonl",
+    "mrcr", "claude-code");
 
 replay_test!(replay_humaneval_gemini,
     "benchmarks/humaneval/compose.yaml",
@@ -196,45 +196,45 @@ replay_test!(replay_ifeval_openclaw,
     "tests/fixtures/ifeval-0-openclaw.trajectory.jsonl",
     "ifeval", "openclaw");
 
-replay_test!(replay_browsecomp_mini_swe_agent,
+replay_test!(replay_browsecomp_codex,
     "benchmarks/browsecomp/compose.yaml",
-    "tests/fixtures/browsecomp-0-mini-swe-agent.trajectory.jsonl",
-    "browsecomp", "mini-swe-agent");
+    "tests/fixtures/browsecomp-0-codex.trajectory.jsonl",
+    "browsecomp", "codex");
 
-replay_test!(replay_healthbench_goose,
+replay_test!(replay_healthbench_claude_code,
     "benchmarks/healthbench/compose.yaml",
-    "tests/fixtures/healthbench-0-goose.trajectory.jsonl",
-    "healthbench", "goose");
+    "tests/fixtures/healthbench-0-claude-code.trajectory.jsonl",
+    "healthbench", "claude-code");
 
 replay_test!(replay_kumo_codex,
     "benchmarks/kumo/compose.yaml",
     "tests/fixtures/kumo-0-codex.trajectory.jsonl",
     "kumo", "codex");
 
-replay_test!(replay_gdpval_bob,
+replay_test!(replay_gdpval_claude_code,
     "benchmarks/gdpval/compose.yaml",
-    "tests/fixtures/gdpval-0-bob.trajectory.jsonl",
-    "gdpval", "bob");
+    "tests/fixtures/gdpval-0-claude-code.trajectory.jsonl",
+    "gdpval", "claude-code");
 
 replay_test!(replay_bfcl_codex,
     "benchmarks/bfcl/compose.yaml",
     "tests/fixtures/bfcl-0-codex.trajectory.jsonl",
     "bfcl", "codex");
 
-replay_test!(replay_appworld_terminus2,
+replay_test!(replay_appworld_codex,
     "benchmarks/appworld/compose.yaml",
-    "tests/fixtures/appworld-0-terminus-2.trajectory.jsonl",
-    "appworld", "terminus-2");
+    "tests/fixtures/appworld-0-codex.trajectory.jsonl",
+    "appworld", "codex");
 
-replay_test!(replay_arcagi_openclaw,
+replay_test!(replay_arcagi_claude_code,
     "benchmarks/arc-agi/compose.yaml",
-    "tests/fixtures/arc-agi-0-openclaw.trajectory.jsonl",
-    "arc-agi", "openclaw");
+    "tests/fixtures/arc-agi-0-claude-code.trajectory.jsonl",
+    "arc-agi", "claude-code");
 
-replay_test!(replay_mmmu_copilot,
+replay_test!(replay_mmmu_claude_code,
     "benchmarks/mmmu/compose.yaml",
-    "tests/fixtures/mmmu-0-copilot-cli.trajectory.jsonl",
-    "mmmu", "copilot-cli");
+    "tests/fixtures/mmmu-0-claude-code.trajectory.jsonl",
+    "mmmu", "claude-code");
 
 replay_test!(replay_aider_polyglot_aider,
     "benchmarks/aider-polyglot/compose.yaml",
