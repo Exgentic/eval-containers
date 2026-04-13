@@ -40,16 +40,17 @@ set -euo pipefail
 
 # Configure Goose to use the proxy as an OpenAI-compatible provider
 export GOOSE_PROVIDER="openai"
-export GOOSE_MODEL="${DOCK_MODEL:-default}"
+export GOOSE_MODEL="${DOCK_MODEL:?DOCK_MODEL must be set}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_HOST="${OPENAI_BASE_URL:-http://model:4000}"
-export OPENAI_BASE_PATH="v1/chat/completions"
 
 # Disable telemetry
 export GOOSE_TELEMETRY_OFF=true
 
-# Run the agent non-interactively, print answer to stdout
-exec goose run -t "$TASK"
+# Run the agent non-interactively:
+#   --no-session  : don't persist session files (eval runs are one-shot)
+#   -q            : quiet mode — suppress banner, print only model response
+exec goose run -t "$TASK" --no-session -q
 ENTRY
 chmod +x /opt/agent/entrypoint.sh
 EOF
