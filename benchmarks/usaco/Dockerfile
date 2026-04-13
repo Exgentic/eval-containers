@@ -10,6 +10,7 @@ LABEL dock.benchmark.description="USACO - competitive programming"
 LABEL dock.benchmark.tasks="307"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
+LABEL dock.benchmark.url="https://huggingface.co/datasets/dapumptu/usaco_benchmark"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 

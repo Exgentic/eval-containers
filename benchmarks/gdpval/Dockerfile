@@ -11,6 +11,7 @@ LABEL dock.benchmark.description="GDPval - professional knowledge work"
 LABEL dock.benchmark.tasks="220"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="true"
+LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/gdpval"
 
 RUN apt-get update && apt-get install -y \
     libreoffice curl wget \

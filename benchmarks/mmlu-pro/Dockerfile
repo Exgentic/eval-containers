@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="12032"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="54611cde22c74cca43dd78732198de6abe971398"
+LABEL dock.benchmark.url="https://github.com/TIGER-AI-Lab/MMLU-Pro"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.01574"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 

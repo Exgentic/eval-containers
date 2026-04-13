@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="2750"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="8b764d53dba2de1f684b836bb45c7ce389900fde"
+LABEL dock.benchmark.url="https://huggingface.co/datasets/juletxara/mgsm"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2210.03057"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow

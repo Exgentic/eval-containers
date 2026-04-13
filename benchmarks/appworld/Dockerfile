@@ -13,6 +13,8 @@ LABEL dock.benchmark.tasks="732"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="refs/convert/parquet"
+LABEL dock.benchmark.url="https://github.com/stonybrooknlp/appworld"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.18901"
 
 ENV BENCHMARK=appworld
 

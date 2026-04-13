@@ -10,7 +10,7 @@ Each row is one E2E test with a recorded replay fixture.
 | simpleqa | goose | exact-match | shared-env |
 | math-500 | aider | exact-match | shared-env |
 | mgsm | terminus-2 | exact-match | shared-env |
-| mmlu-pro | openhand | exact-match | shared-env |
+| mmlu-pro | openhands | exact-match | shared-env |
 | hle | claude-code | exact-match | shared-env |
 | mrcr | codex | exact-match | shared-env |
 | humaneval | gemini-cli | code-execution | shared-env |
@@ -18,19 +18,19 @@ Each row is one E2E test with a recorded replay fixture.
 | livecodebench | gemini-cli | code-execution | shared-env |
 | usaco | gemini-cli | code-execution | shared-env |
 | ifeval | openclaw | fractional | shared-env |
-| browsecomp | swe-agent | llm-as-judge | shared-env |
+| browsecomp | mini-swe-agent | llm-as-judge | shared-env |
 | healthbench | goose | llm-as-judge | shared-env |
 | kumo | codex | external | shared-env |
 | gdpval | bob | external (HF upload) | shared-env |
-| bfcl | openhand | custom | shared-env |
+| bfcl | openhands | custom | shared-env |
 | appworld | terminus-2 | custom | shared-env |
 | arc-agi | openclaw | custom | shared-env |
 | mmmu | copilot-cli | custom | shared-env |
 | aider-polyglot | aider | custom | shared-env |
 | swe-bench | bob | swebench-grading | per-task |
-| compilebench | swe-agent | custom | per-task |
-| terminal-bench | openhand | upstream | per-task |
-| webarena | swe-agent | webarena-verified | sidecar |
+| compilebench | mini-swe-agent | custom | per-task |
+| terminal-bench | openhands | upstream | per-task |
+| webarena | mini-swe-agent | webarena-verified | sidecar |
 | osworld | claude-code | custom | sidecar |
 | gaia | goose | exact-match | shared-env |
 | tau-bench | (pass-through) | tau-bench-eval | bridge |
@@ -48,6 +48,6 @@ Each row is one E2E test with a recorded replay fixture.
 | copilot-cli | 2 | mbpp, mmmu |
 | aider | 2 | math-500, aider-polyglot |
 | terminus-2 | 2 | mgsm, appworld |
-| openhand | 3 | mmlu-pro, bfcl, terminal-bench |
-| swe-agent | 3 | browsecomp, compilebench, webarena |
+| openhands | 3 | mmlu-pro, bfcl, terminal-bench |
+| mini-swe-agent | 3 | browsecomp, compilebench, webarena |
 | (pass-through) | 1 | tau-bench |

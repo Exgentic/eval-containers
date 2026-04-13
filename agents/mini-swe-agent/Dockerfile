@@ -4,10 +4,11 @@
 FROM ubuntu:24.04
 
 LABEL dock.type="agent"
-LABEL dock.agent.name="swe-agent"
+LABEL dock.agent.name="mini-swe-agent"
 LABEL dock.agent.description="Mini-SWE-agent: lightweight AI coding agent for software engineering"
 LABEL dock.agent.runtime="python"
-ENV DOCK_AGENT=swe-agent
+LABEL dock.agent.url="https://github.com/princeton-nlp/SWE-agent"
+ENV DOCK_AGENT=mini-swe-agent
 
 RUN apt-get update && apt-get install -y curl python3 python3-pip python3-venv git && rm -rf /var/lib/apt/lists/*
 

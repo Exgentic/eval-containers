@@ -7,6 +7,7 @@ LABEL dock.type="agent"
 LABEL dock.agent.name="bob"
 LABEL dock.agent.description="IBM Bob Shell — AI SDLC partner"
 LABEL dock.agent.runtime="node"
+LABEL dock.agent.url="https://github.com/ibm/bob-shell"
 ENV DOCK_AGENT=bob
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

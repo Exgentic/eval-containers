@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="2500"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
+LABEL dock.benchmark.url="https://github.com/centerforaisafety/hle"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2501.14249"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 

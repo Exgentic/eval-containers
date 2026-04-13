@@ -13,6 +13,8 @@ LABEL dock.benchmark.tasks="2400"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
+LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/mrcr"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.14993"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 

@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="4326"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="e319282ab125c3dbd0c7fd00be2e4dd54e7e8f94"
+LABEL dock.benchmark.url="https://github.com/openai/simple-evals"
+LABEL dock.benchmark.paper="https://openai.com/index/introducing-simpleqa/"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow

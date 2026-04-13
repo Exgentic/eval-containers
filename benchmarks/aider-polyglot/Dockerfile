@@ -12,6 +12,7 @@ LABEL dock.benchmark.tasks="225"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
+LABEL dock.benchmark.url="https://github.com/Aider-AI/polyglot-benchmark"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
