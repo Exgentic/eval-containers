@@ -20,6 +20,7 @@ LABEL dock.benchmark.tasks="15"
 LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="66e27468505706643088b79f8efad6260c274dc5"
+LABEL dock.benchmark.url="https://github.com/QuesmaOrg/CompileBench"
 
 ARG TASK_ID
 ENV BENCHMARK=compilebench

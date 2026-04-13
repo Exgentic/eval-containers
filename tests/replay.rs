@@ -135,10 +135,10 @@ replay_test!(replay_mgsm_terminus2,
     "tests/fixtures/mgsm-0-terminus-2.trajectory.jsonl",
     "mgsm", "terminus-2");
 
-replay_test!(replay_mmlu_openhand,
+replay_test!(replay_mmlu_openhands,
     "benchmarks/mmlu-pro/compose.yaml",
-    "tests/fixtures/mmlu-pro-0-openhand.trajectory.jsonl",
-    "mmlu-pro", "openhand");
+    "tests/fixtures/mmlu-pro-0-openhands.trajectory.jsonl",
+    "mmlu-pro", "openhands");
 
 replay_test!(replay_hle_claude_code,
     "benchmarks/hle/compose.yaml",
@@ -175,10 +175,10 @@ replay_test!(replay_ifeval_openclaw,
     "tests/fixtures/ifeval-0-openclaw.trajectory.jsonl",
     "ifeval", "openclaw");
 
-replay_test!(replay_browsecomp_sweagent,
+replay_test!(replay_browsecomp_mini_swe_agent,
     "benchmarks/browsecomp/compose.yaml",
-    "tests/fixtures/browsecomp-0-swe-agent.trajectory.jsonl",
-    "browsecomp", "swe-agent");
+    "tests/fixtures/browsecomp-0-mini-swe-agent.trajectory.jsonl",
+    "browsecomp", "mini-swe-agent");
 
 replay_test!(replay_healthbench_goose,
     "benchmarks/healthbench/compose.yaml",
@@ -195,10 +195,10 @@ replay_test!(replay_gdpval_bob,
     "tests/fixtures/gdpval-0-bob.trajectory.jsonl",
     "gdpval", "bob");
 
-replay_test!(replay_bfcl_openhand,
+replay_test!(replay_bfcl_openhands,
     "benchmarks/bfcl/compose.yaml",
-    "tests/fixtures/bfcl-0-openhand.trajectory.jsonl",
-    "bfcl", "openhand");
+    "tests/fixtures/bfcl-0-openhands.trajectory.jsonl",
+    "bfcl", "openhands");
 
 replay_test!(replay_appworld_terminus2,
     "benchmarks/appworld/compose.yaml",

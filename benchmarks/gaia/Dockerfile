@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="165"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="true"
 LABEL dock.benchmark.data_revision="682dd723ee1e1697e00360edccf2366dc8418dd9"
+LABEL dock.benchmark.url="https://github.com/gaia-benchmark/GAIA"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.12983"
 
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir huggingface_hub

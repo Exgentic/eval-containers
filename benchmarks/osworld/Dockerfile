@@ -12,6 +12,8 @@ LABEL dock.benchmark.description="OSWorld - real computer environment for multim
 LABEL dock.benchmark.tasks="369"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
+LABEL dock.benchmark.url="https://github.com/xlang-ai/OSWorld"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.07972"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 

@@ -11,6 +11,8 @@ LABEL dock.benchmark.description="Berkeley Function Calling Leaderboard"
 LABEL dock.benchmark.tasks="2000"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
+LABEL dock.benchmark.url="https://github.com/ShishirPatil/gorilla"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.06840"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 

@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="198"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="68be7564497676e07a77a042fdb587deb88c51c3"
+LABEL dock.benchmark.url="https://github.com/idavidrein/gpqa"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.12022"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow

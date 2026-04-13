@@ -11,6 +11,8 @@ LABEL dock.benchmark.description="WebArena Verified - web browsing with sidecars
 LABEL dock.benchmark.tasks="812"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
+LABEL dock.benchmark.url="https://github.com/web-arena-x/webarena"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2307.13854"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 

@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="541"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="966cd89545d6b6acfd7638bc708b98261ca58e84"
+LABEL dock.benchmark.url="https://github.com/google-research/google-research/tree/master/instruction_following_eval"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.07911"
 
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 

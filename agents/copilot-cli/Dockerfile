@@ -7,6 +7,7 @@ LABEL dock.type="agent"
 LABEL dock.agent.name="copilot-cli"
 LABEL dock.agent.description="GitHub Copilot CLI"
 LABEL dock.agent.runtime="node"
+LABEL dock.agent.url="https://github.com/github/copilot-cli"
 ENV DOCK_AGENT=copilot-cli
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

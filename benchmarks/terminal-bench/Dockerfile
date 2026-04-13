@@ -11,6 +11,7 @@ LABEL dock.benchmark.description="Terminal-Bench 2.0 - terminal tasks"
 LABEL dock.benchmark.tasks="89"
 LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
+LABEL dock.benchmark.url="https://github.com/laude-institute/terminal-bench"
 
 ARG TASK_ID
 ENV BENCHMARK=tbench

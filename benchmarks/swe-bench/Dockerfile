@@ -13,6 +13,8 @@ LABEL dock.benchmark.tasks="500"
 LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="c104f840cc67f8c6eec6f759ebc8b2693d585d4a"
+LABEL dock.benchmark.url="https://github.com/princeton-nlp/SWE-bench"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2310.06770"
 
 ENV BENCHMARK=swebench
 

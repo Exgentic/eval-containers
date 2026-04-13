@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="5000"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="40ee1968852fc57f625934251ac22be47077a8fb"
+LABEL dock.benchmark.url="https://github.com/openai/healthbench"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.11709"
 
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 
