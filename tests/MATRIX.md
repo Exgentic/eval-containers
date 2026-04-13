@@ -1,53 +1,59 @@
 # E2E Test Matrix
 
-Every benchmark appears once. Every agent appears 2–3 times, evenly spread.
-Each row is one E2E test with a recorded replay fixture.
+Every benchmark with a fixture appears once. Agents are spread across benchmarks.
+Each row is one replay test with a recorded fixture.
 
-| Benchmark | Agent | Scoring | Pattern |
+## Shared-env benchmarks (22 fixtures)
+
+| Benchmark | Agent | Scoring | Fixture |
 |-----------|-------|---------|---------|
-| aime | claude-code | exact-match | shared-env |
-| gpqa-diamond | codex | exact-match | shared-env |
-| simpleqa | goose | exact-match | shared-env |
-| math-500 | aider | exact-match | shared-env |
-| mgsm | terminus-2 | exact-match | shared-env |
-| mmlu-pro | openhands | exact-match | shared-env |
-| hle | claude-code | exact-match | shared-env |
-| mrcr | codex | exact-match | shared-env |
-| humaneval | gemini-cli | code-execution | shared-env |
-| mbpp | copilot-cli | code-execution | shared-env |
-| livecodebench | gemini-cli | code-execution | shared-env |
-| usaco | gemini-cli | code-execution | shared-env |
-| ifeval | openclaw | fractional | shared-env |
-| browsecomp | mini-swe-agent | llm-as-judge | shared-env |
-| healthbench | goose | llm-as-judge | shared-env |
-| kumo | codex | external | shared-env |
-| gdpval | bob | external (HF upload) | shared-env |
-| bfcl | openhands | custom | shared-env |
-| appworld | terminus-2 | custom | shared-env |
-| arc-agi | openclaw | custom | shared-env |
-| mmmu | copilot-cli | custom | shared-env |
-| aider-polyglot | aider | custom | shared-env |
-| swe-bench | bob | swebench-grading | per-task |
-| compilebench | mini-swe-agent | custom | per-task |
-| terminal-bench | openhands | upstream | per-task |
-| webarena | mini-swe-agent | webarena-verified | sidecar |
-| osworld | claude-code | custom | sidecar |
-| gaia | goose | exact-match | shared-env |
-| tau-bench | (pass-through) | tau-bench-eval | bridge |
+| aime | claude-code | exact-match | aime-0-claude-code |
+| gpqa-diamond | codex | exact-match | gpqa-diamond-0-codex |
+| simpleqa | goose | exact-match | simpleqa-0-goose |
+| math-500 | aider | exact-match | math-500-0-aider |
+| mgsm | codex | exact-match | mgsm-0-codex |
+| mmlu-pro | openhands | exact-match | mmlu-pro-0-openhands |
+| hle | claude-code | exact-match | hle-0-claude-code |
+| mrcr | claude-code | exact-match | mrcr-0-claude-code |
+| humaneval | claude-code | code-execution | humaneval-0-claude-code |
+| mbpp | claude-code | code-execution | mbpp-0-claude-code |
+| livecodebench | codex | code-execution | livecodebench-0-codex |
+| usaco | codex | code-execution | usaco-0-codex |
+| ifeval | claude-code | fractional | ifeval-0-claude-code |
+| browsecomp | codex | llm-as-judge | browsecomp-0-codex |
+| healthbench | claude-code | llm-as-judge | healthbench-0-claude-code |
+| kumo | codex | external | kumo-0-codex |
+| gdpval | claude-code | external (HF) | gdpval-0-claude-code |
+| bfcl | codex | custom | bfcl-0-codex |
+| appworld | claude-code | custom | appworld-0-claude-code |
+| arc-agi | claude-code | custom | arc-agi-0-claude-code |
+| mmmu | claude-code | custom | mmmu-0-claude-code |
+| aider-polyglot | aider | custom | aider-polyglot-0-aider |
+| gaia | goose | exact-match | gaia-0-goose |
+
+## Per-task and sidecar benchmarks (TODO)
+
+| Benchmark | Agent | Pattern | Status |
+|-----------|-------|---------|--------|
+| swe-bench | — | per-task | needs build-arg handling |
+| compilebench | — | per-task | needs build-arg handling |
+| terminal-bench | — | per-task (upstream) | needs Harbor image auth |
+| webarena | — | sidecar | needs multi-sidecar support |
+| osworld | — | sidecar | needs VM image (11GB) |
+| tau-bench | — | bridge | needs two-model replay |
 
 ## Agent coverage
 
 | Agent | Count | Benchmarks |
 |-------|-------|------------|
-| claude-code | 3 | aime, hle, osworld |
-| codex | 3 | gpqa-diamond, mrcr, kumo |
-| gemini-cli | 3 | humaneval, livecodebench, usaco |
-| goose | 3 | simpleqa, healthbench, gaia |
-| bob | 2 | gdpval, swe-bench |
-| openclaw | 2 | ifeval, arc-agi |
-| copilot-cli | 2 | mbpp, mmmu |
+| claude-code | 10 | aime, hle, mrcr, humaneval, mbpp, ifeval, healthbench, gdpval, arc-agi, mmmu |
+| codex | 7 | gpqa-diamond, mgsm, livecodebench, usaco, browsecomp, kumo, bfcl |
+| goose | 2 | simpleqa, gaia |
 | aider | 2 | math-500, aider-polyglot |
-| terminus-2 | 2 | mgsm, appworld |
-| openhands | 3 | mmlu-pro, bfcl, terminal-bench |
-| mini-swe-agent | 3 | browsecomp, compilebench, webarena |
-| (pass-through) | 1 | tau-bench |
+| openhands | 1 | mmlu-pro |
+| gemini-cli | 0 | (needs re-recording after fix) |
+| copilot-cli | 0 | (needs re-recording after fix) |
+| openclaw | 0 | (needs re-recording after fix) |
+| bob | 0 | (untested) |
+| terminus-2 | 0 | (untested) |
+| mini-swe-agent | 0 | (untested) |

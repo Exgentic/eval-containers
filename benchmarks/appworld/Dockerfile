@@ -16,6 +16,8 @@ LABEL dock.benchmark.data_revision="refs/convert/parquet"
 LABEL dock.benchmark.url="https://github.com/stonybrooknlp/appworld"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.18901"
 
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
 ENV BENCHMARK=appworld
 
 # Fetch task metadata from HuggingFace
