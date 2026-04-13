@@ -45,7 +45,8 @@ RUN chmod -R 600 /tasks
 WORKDIR /app
 ENV BENCHMARK=browsecomp
 
-COPY --from=ghcr.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY judge.py /tests/judge.py
+COPY test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh

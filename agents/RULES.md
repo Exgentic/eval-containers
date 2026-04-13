@@ -51,6 +51,12 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 14. **Build-time integration.** Agents are combined with benchmarks at build time via the combination Dockerfile. The agent layer sits on top of the benchmark base. The agent MUST NOT modify benchmark-provided files.
 
+### Testing
+
+15. **Build test.** Every agent image MUST have a build test that verifies the Dockerfile builds and produces correct `dock.*` labels.
+
+16. **Replay test.** Every agent MUST participate in at least one end-to-end replay test with a recorded fixture. This verifies the agent runs correctly against real model responses without API keys.
+
 ## References
 
 - [Process](../RULES.md)
