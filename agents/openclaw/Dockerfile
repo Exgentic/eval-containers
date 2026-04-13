@@ -45,7 +45,6 @@ mkdir -p ~/.openclaw
 cat > ~/.openclaw/openclaw.json <<CONF
 {
   "models": {
-    "default": "dock-model",
     "providers": {
       "dock": {
         "baseUrl": "${OPENAI_BASE_URL:-http://model:4000}",
@@ -55,8 +54,38 @@ cat > ~/.openclaw/openclaw.json <<CONF
       }
     }
   },
-  "exec": {
-    "security": "full"
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "dock/dock-model"
+      }
+    }
+  },
+  "tools": {
+    "exec": {
+      "security": "full",
+      "ask": "off"
+    }
+  }
+}
+CONF
+
+# Exec-approvals policy — required alongside tools.exec for full auto-approve
+cat > ~/.openclaw/exec-approvals.json <<CONF
+{
+  "version": 1,
+  "defaults": {
+    "security": "full",
+    "ask": "off",
+    "askFallback": "full"
+  },
+  "agents": {
+    "*": {
+      "security": "full",
+      "ask": "off",
+      "askFallback": "full",
+      "allowlist": [{"pattern": "**"}]
+    }
   }
 }
 CONF

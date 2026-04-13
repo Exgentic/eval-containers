@@ -5,6 +5,7 @@
 //!
 //! Run: cargo test --test replay -- --ignored
 
+use std::process::Command;
 use std::path::Path;
 use std::fs;
 use testcontainers::compose::DockerCompose;
@@ -84,13 +85,33 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
         "reward out of range [-1, 1]: {reward}");
 }
 
+/// Build all required images before running replay test.
+/// In CI, nothing is pre-built — tests must be self-contained.
+fn ensure_images(benchmark: &str, agent: &str) {
+    // Build replay model
+    let status = Command::new("docker")
+        .args(["build", "-t", "ghcr.io/dock-eval/models/replay:latest", "models/replay/"])
+        .status()
+        .expect("failed to build replay model");
+    assert!(status.success(), "failed to build replay model");
+
+    // Build eval image (auto-builds benchmark + agent base images)
+    let status = Command::new("cargo")
+        .args(["run", "--", "build", "eval", benchmark, "--agent", agent])
+        .status()
+        .expect("failed to run cargo run -- build eval");
+    assert!(status.success(), "failed to build eval image for {benchmark}--{agent}");
+}
+
 /// Macro for replay tests. Each test follows the same pattern:
-/// start compose with replay model, verify output contract.
+/// build eval image, start compose with replay model, verify output contract.
 macro_rules! replay_test {
     ($name:ident, $compose:expr, $fixture:expr, $benchmark:expr, $agent:expr) => {
         #[tokio::test]
         #[ignore]
         async fn $name() {
+            ensure_images($benchmark, $agent);
+
             let _compose = replay_compose(
                 $compose,
                 $fixture,
@@ -152,23 +173,23 @@ replay_test!(replay_mrcr_codex,
 
 replay_test!(replay_humaneval_gemini,
     "benchmarks/humaneval/compose.yaml",
-    "tests/fixtures/humaneval-0-gemini-cli.trajectory.jsonl",
-    "humaneval", "gemini-cli");
+    "tests/fixtures/humaneval-0-claude-code.trajectory.jsonl",
+    "humaneval", "claude-code");
 
 replay_test!(replay_mbpp_copilot,
     "benchmarks/mbpp/compose.yaml",
     "tests/fixtures/mbpp-0-copilot-cli.trajectory.jsonl",
     "mbpp", "copilot-cli");
 
-replay_test!(replay_livecodebench_gemini,
+replay_test!(replay_livecodebench_codex,
     "benchmarks/livecodebench/compose.yaml",
-    "tests/fixtures/livecodebench-0-gemini-cli.trajectory.jsonl",
-    "livecodebench", "gemini-cli");
+    "tests/fixtures/livecodebench-0-codex.trajectory.jsonl",
+    "livecodebench", "codex");
 
-replay_test!(replay_usaco_gemini,
+replay_test!(replay_usaco_codex,
     "benchmarks/usaco/compose.yaml",
-    "tests/fixtures/usaco-0-gemini-cli.trajectory.jsonl",
-    "usaco", "gemini-cli");
+    "tests/fixtures/usaco-0-codex.trajectory.jsonl",
+    "usaco", "codex");
 
 replay_test!(replay_ifeval_openclaw,
     "benchmarks/ifeval/compose.yaml",
@@ -195,10 +216,10 @@ replay_test!(replay_gdpval_bob,
     "tests/fixtures/gdpval-0-bob.trajectory.jsonl",
     "gdpval", "bob");
 
-replay_test!(replay_bfcl_openhands,
+replay_test!(replay_bfcl_codex,
     "benchmarks/bfcl/compose.yaml",
-    "tests/fixtures/bfcl-0-openhands.trajectory.jsonl",
-    "bfcl", "openhands");
+    "tests/fixtures/bfcl-0-codex.trajectory.jsonl",
+    "bfcl", "codex");
 
 replay_test!(replay_appworld_terminus2,
     "benchmarks/appworld/compose.yaml",
