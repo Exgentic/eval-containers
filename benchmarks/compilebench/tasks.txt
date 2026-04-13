@@ -1,0 +1,15 @@
+coreutils
+coreutils-old-version
+coreutils-old-version-alpine
+coreutils-static
+coreutils-static-alpine
+cowsay
+curl
+curl-ssl
+curl-ssl-arm64-static
+curl-ssl-arm64-static2
+jq
+jq-static
+jq-static-musl
+jq-windows
+jq-windows2

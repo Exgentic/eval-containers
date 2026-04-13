@@ -1,12 +1,17 @@
-# syntax=docker/dockerfile:1
-# CompileBench (Quesma)
-# 15 tasks — compile open source projects from source.
-# Per-task images: each task has different source tarballs and build deps.
-# Upstream task Dockerfiles in QuesmaOrg/CompileBench repo.
-# This is a base — per-task Dockerfiles extend it or are built separately.
+# CompileBench (QuesmaOrg)
+# 15 per-task images — agent compiles open source projects.
+# Upstream: https://github.com/QuesmaOrg/CompileBench (compilebench branch)
+# Tasks are in Harbor format — each has environment/Dockerfile, instruction.md, tests/test.sh.
+#
+# This Dockerfile fetches a single task's assets from the upstream repo
+# and sets up the Dock entrypoint. The base image comes from the task's own Dockerfile.
+#
+# Build: docker build --build-arg TASK_ID=curl -t ghcr.io/dock-eval/benchmarks/compilebench-curl:latest .
 
 ARG TASK_ID
-FROM ubuntu:22.04
+ARG BASE_IMAGE=ubuntu:22.04
+
+FROM ${BASE_IMAGE}
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="compilebench"
@@ -14,17 +19,36 @@ LABEL dock.benchmark.description="CompileBench - compile open source projects"
 LABEL dock.benchmark.tasks="15"
 LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
+LABEL dock.benchmark.data_revision="66e27468505706643088b79f8efad6260c274dc5"
 
-ENV DEBIAN_FRONTEND=noninteractive
+ARG TASK_ID
 ENV BENCHMARK=compilebench
 ENV TASK_ID=${TASK_ID}
 
-RUN apt-get update && apt-get install -y \
-    build-essential autoconf automake libtool wget curl python3 \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl 2>/dev/null || apk add --no-cache curl
+
+# Fetch task instruction and tests from upstream
+ARG COMPILEBENCH_REV=66e27468505706643088b79f8efad6260c274dc5
+RUN mkdir -p /tasks/0 /tests && \
+    curl -sfL "https://raw.githubusercontent.com/QuesmaOrg/CompileBench/${COMPILEBENCH_REV}/datasets/compilebench/${TASK_ID}/instruction.md" \
+      -o /tasks/0/problem.txt && \
+    echo "${TASK_ID}" > /tasks/0/id.txt && \
+    curl -sfL "https://raw.githubusercontent.com/QuesmaOrg/CompileBench/${COMPILEBENCH_REV}/datasets/compilebench/${TASK_ID}/tests/test.sh" \
+      -o /tests/test.sh && \
+    chmod +x /tests/test.sh
+RUN chmod -R 600 /tasks
 
 WORKDIR /workdir
 
 COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
-ENTRYPOINT ["/dock-entrypoint.sh"]
+
+RUN cat > /entrypoint.sh <<'ENTRY'
+#!/bin/bash
+if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/0/problem.txt)"
+fi
+exec /dock-entrypoint.sh
+ENTRY
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
