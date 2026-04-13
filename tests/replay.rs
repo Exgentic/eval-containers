@@ -176,10 +176,10 @@ replay_test!(replay_humaneval_gemini,
     "tests/fixtures/humaneval-0-claude-code.trajectory.jsonl",
     "humaneval", "claude-code");
 
-replay_test!(replay_mbpp_copilot,
+replay_test!(replay_mbpp_claude_code,
     "benchmarks/mbpp/compose.yaml",
-    "tests/fixtures/mbpp-0-copilot-cli.trajectory.jsonl",
-    "mbpp", "copilot-cli");
+    "tests/fixtures/mbpp-0-claude-code.trajectory.jsonl",
+    "mbpp", "claude-code");
 
 replay_test!(replay_livecodebench_codex,
     "benchmarks/livecodebench/compose.yaml",
@@ -191,10 +191,10 @@ replay_test!(replay_usaco_codex,
     "tests/fixtures/usaco-0-codex.trajectory.jsonl",
     "usaco", "codex");
 
-replay_test!(replay_ifeval_openclaw,
+replay_test!(replay_ifeval_claude_code,
     "benchmarks/ifeval/compose.yaml",
-    "tests/fixtures/ifeval-0-openclaw.trajectory.jsonl",
-    "ifeval", "openclaw");
+    "tests/fixtures/ifeval-0-claude-code.trajectory.jsonl",
+    "ifeval", "claude-code");
 
 replay_test!(replay_browsecomp_codex,
     "benchmarks/browsecomp/compose.yaml",
@@ -221,10 +221,10 @@ replay_test!(replay_bfcl_codex,
     "tests/fixtures/bfcl-0-codex.trajectory.jsonl",
     "bfcl", "codex");
 
-replay_test!(replay_appworld_codex,
+replay_test!(replay_appworld_claude_code,
     "benchmarks/appworld/compose.yaml",
-    "tests/fixtures/appworld-0-codex.trajectory.jsonl",
-    "appworld", "codex");
+    "tests/fixtures/appworld-0-claude-code.trajectory.jsonl",
+    "appworld", "claude-code");
 
 replay_test!(replay_arcagi_claude_code,
     "benchmarks/arc-agi/compose.yaml",

@@ -46,9 +46,9 @@ export COPILOT_OFFLINE=true
 # Use whichever model the proxy advertises
 export COPILOT_MODEL="${COPILOT_MODEL:-default}"
 
-# Run non-interactively: -p passes the prompt, --yolo auto-approves all tools
+# Run non-interactively: pipe task via stdin, --yolo auto-approves all tools
 # Docker is the sandbox so full tool access is safe
-exec copilot -p "$TASK" --yolo
+echo "$TASK" | exec copilot --yolo
 ENTRY
 chmod +x /opt/agent/entrypoint.sh
 EOF

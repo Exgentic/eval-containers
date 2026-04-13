@@ -93,7 +93,7 @@ CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 
 # Run one agent turn locally (no gateway needed), plain output to stdout
-exec openclaw agent --local --message "$TASK" --plain
+exec openclaw agent --local --message "$TASK" --output text
 ENTRY
 chmod +x /opt/agent/entrypoint.sh
 EOF
