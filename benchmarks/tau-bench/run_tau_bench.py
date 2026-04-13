@@ -1,14 +1,14 @@
 """Run TAU-bench with the LLM bridge as the agent endpoint.
 
 TAU-bench uses two LLMs:
-1. Agent LLM: makes tool-calling decisions (routed through bridge -> real agent)
-2. User simulator LLM: plays the customer role (direct to model proxy)
+1. Agent LLM: makes tool-calling decisions (routed through bridge -> real agent -> model)
+2. User simulator LLM: plays the customer role (direct to user-model, not logged)
 
 This script runs a single task identified by TASK_ID.
 
 The trick: both use litellm.completion() with the openai provider, which reads
 OPENAI_BASE_URL. We set that to the bridge for the agent, then monkey-patch the
-user simulator to call the model proxy directly.
+user simulator to call user-model directly.
 """
 
 import os
@@ -16,7 +16,7 @@ import sys
 import json
 
 BRIDGE_URL = os.environ.get("BRIDGE_URL", "http://bridge:8000/v1")
-MODEL_URL = os.environ.get("MODEL_URL", "http://model:4000/v1")
+MODEL_URL = os.environ.get("MODEL_URL", "http://user-model:4000/v1")
 TASK_ID = int(os.environ.get("TASK_ID", "0"))
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o")
 
@@ -39,11 +39,11 @@ _original_completion = litellm.completion
 
 
 def _patched_completion(*args, **kwargs):
-    """Route user simulator calls to model, agent calls to bridge."""
+    """Route user simulator calls to user-model, agent calls to bridge."""
     # User simulator calls don't have tools; agent calls do
     has_tools = kwargs.get("tools") is not None and len(kwargs.get("tools", [])) > 0
     if not has_tools:
-        # User simulator call — route to model directly
+        # User simulator call — route to user-model (not logged)
         kwargs["base_url"] = MODEL_URL
     # Otherwise, agent call goes through OPENAI_BASE_URL (bridge)
     return _original_completion(*args, **kwargs)
