@@ -1,6 +1,6 @@
 name: Release images
 
-# Build the full fleet of benchmark and agent images and push to ghcr.io.
+# Build the full fleet of benchmark and agent images and push to quay.io.
 # See RELEASE.md for the design. This is a release tool, not a test tool.
 # Test workflows live in test.yml and run cargo tests.
 
@@ -12,10 +12,9 @@ on:
 
 permissions:
   contents: read
-  packages: write
 
 env:
-  REGISTRY: ghcr.io/dock-eval
+  REGISTRY: quay.io/dock-eval
 
 jobs:
   bake:
@@ -27,9 +26,9 @@ jobs:
 
       - uses: docker/login-action@v3
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_ROBOT_TOKEN }}
 
       - name: Compute tag
         id: tag

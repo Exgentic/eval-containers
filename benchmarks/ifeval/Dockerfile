@@ -166,7 +166,7 @@ score = test_instruction_following(instruction_ids, kwargs_list, response)
 print(f"{score:.4f}")
 PYEOF
 
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

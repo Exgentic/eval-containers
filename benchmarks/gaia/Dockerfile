@@ -48,11 +48,11 @@ WORKDIR /app
 ENV BENCHMARK=gaia
 
 # Test: exact match on agent stdout
-COPY --from=ghcr.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 # Shared entrypoint (agent → test → results)
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 # Resolve TASK_ID to TASK + EXPECTED_ANSWER from flat files, then exec shared entrypoint

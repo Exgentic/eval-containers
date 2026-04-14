@@ -128,7 +128,7 @@ EXTRACT
 RUN chmod +x /tests/extract_response.py
 
 # Shared entrypoint
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 # Entrypoint: build task prompt with sidecar URLs and credentials

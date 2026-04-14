@@ -40,10 +40,10 @@ RUN mkdir -p /tasks/0 && \
 RUN chmod -R 600 /tasks
 
 # Scoring: exact-match on the flag the agent printed.
-COPY --from=ghcr.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 # Agent workspace: challenge files under /app/challenge (from upstream image).

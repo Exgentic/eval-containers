@@ -17,7 +17,7 @@ ARG TASK_ID
 ENV BENCHMARK=tbench
 ENV TASK_ID=${TASK_ID}
 
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 # Read instruction from upstream Harbor image, set as $TASK, then exec entrypoint
