@@ -123,45 +123,120 @@ DOCK_BENCHMARK=aime DOCK_TASK_ID=0 DOCK_AGENT=claude-code DOCK_MODEL=inspector \
 
 Output lands at `output/aime/0/inspector/first_request.json`.
 
-## Automation roadmap
+## Layered checking
 
-**Phase A — rule-based (automatable, ship first):**
-Every signal in the catalog above is a regex or length check. A single
-test file (`tests/task_inspection.rs`) walks benchmarks, runs the
-inspector, reads the first request, applies the rules, reports
-verdicts. Zero dependencies beyond what's already in the repo.
+Health inspection is layered. Each layer catches what the layer below
+misses, at increasing cost and judgment.
 
-**Phase B — LLM-as-judge (opt-in, costs API dollars):**
-For borderline yellow cases and "wrong benchmark" detection, feed the
-trajectory snippet + the benchmark name to a cheap model and ask
-"does this task match the benchmark?". Only runs on yellow verdicts
-by default, so the dollar cost is bounded.
+**Layer 1 — mechanical rules (automated, free, always on).**
+Every signal in the catalog above is a regex or length check. The
+test file `tests/task_inspection.rs` walks trajectory records, applies
+the rule catalog, and reports verdicts. Runs in milliseconds. Runs on
+every `cargo test --test task_inspection`. Catches the 90% of real
+breakage that's mechanical: template leaks, unresolved env vars,
+fetch failures, missing files, dataset gates. Zero dependencies.
 
-**Phase C — delta monitoring (catches regressions):**
-Snapshot the green verdicts per benchmark after a known-good run.
-Compare new runs against the snapshot. Alert on any benchmark that
-transitions from green to yellow/red — that's a regression, not a
-legitimate change.
+**Layer 2 — procedural audit (manual, on demand).**
+Some judgments need reading and thinking, not regex:
+- "Is the task instruction clear enough for a competent human to
+  attempt it?"
+- "Does the task match the benchmark's stated domain? (the prompt
+  says 'translate' but the benchmark is a coding benchmark)"
+- "Are attached files referenced where the benchmark needs them?"
+- "Does the expected output format make sense?"
 
-**Phase D — provenance check (catches supply chain issues):**
-Verify the task content hash matches what's expected from the
-pinned `dock.benchmark.data_revision`. If upstream silently changed
-the dataset under a revision pin, this catches it.
+The "Audit procedure" section below is a checklist a reviewer walks
+through manually. A reviewer can be a person reading the docs, an
+AI assistant executing the checklist, or a script implementing
+mechanizable parts. The procedure is the same regardless of who runs
+it; the output format is fixed so findings are comparable.
 
-Phases A through D layer additively. Ship A now; add the rest as need
-arises.
+Run procedural audits on demand — before releases, quarterly health
+checks, when mechanical rules flag a yellow, when a new benchmark
+batch lands.
 
-## Human review
+**Layer 3 — delta monitoring (future, catches regressions).**
+Snapshot the layer 1 verdicts per benchmark after a known-good run.
+Alert when a benchmark transitions from green to yellow/red — that's
+a regression, not a legitimate change.
 
-Some judgments are hard to automate:
-- "Is the task instruction clear?"
-- "Would a competent human understand what to do?"
-- "Is the expected answer format reasonable?"
-- "Does the task match the benchmark's stated domain?"
+**Layer 4 — provenance check (future, catches supply chain issues).**
+Verify the task content hash matches what's expected from the pinned
+`dock.benchmark.data_revision`. If upstream silently changed the
+dataset under a revision pin, this catches it.
 
-Until LLM-as-judge handles these reliably, yellow verdicts ship to a
-reviewer queue. The reviewer either upgrades to green (tune the rules)
-or downgrades to red (fix the benchmark).
+## Audit procedure
+
+Run this when you want a judgment-level review of trajectory health.
+Applies to a single fixture or batch.
+
+### Scope
+
+- **Input:** one or more files under `tests/fixtures/*.trajectory.jsonl`,
+  or a directory of `inspector` outputs from a live run.
+- **Context for each:** the benchmark name, benchmark description from
+  the `dock.benchmark.description` label, any special notes in
+  `benchmarks/<name>/README.md` if present.
+
+### Steps
+
+1. **Extract the task.** Open the trajectory file, read rows until
+   you find the first row with a non-empty user message. Concatenate
+   every `role: "user"` message in that row into the task text. Ignore
+   system and developer messages — they're framework scaffolding.
+
+2. **Run mechanical rules first.** If `cargo test --test task_inspection
+   inspect_every_existing_fixture -- --ignored` flagged anything,
+   note those findings. The audit's job is to find what rules missed,
+   not to duplicate them.
+
+3. **Read the task end to end.** Ask yourself the five questions
+   below, one per task. Mark each yes / no / n.a. with a one-line
+   reason.
+
+   | # | Question |
+   |---|---|
+   | 1 | Does the task match the benchmark's stated domain? |
+   | 2 | Is the instruction clear enough for a competent human? |
+   | 3 | Is the expected output format obvious from the prompt? |
+   | 4 | If the benchmark needs attached files (images, docs, repos), does the prompt reference them? |
+   | 5 | Any subtle signs of a broken environment you'd only catch by reading (dangling references, contradictory instructions, wrong task ID in the prompt)? |
+
+4. **Classify.** A task is:
+   - ✓ **healthy** if all five answers are yes or n.a.
+   - ⚠ **needs attention** if questions 2, 3, or 4 are no — fixable.
+   - ✗ **broken** if question 1 or 5 is no — the benchmark is wrong.
+
+### Output format
+
+One markdown report, one entry per fixture:
+
+```
+## aime-0-claude-code
+- Mechanical rules: ✓ (0 findings)
+- Q1 (domain match): ✓ math problem matches AIME
+- Q2 (clear): ✓ "solve... print only the answer as a single integer"
+- Q3 (format): ✓ explicit single-integer instruction
+- Q4 (attachments): n.a.
+- Q5 (subtle breakage): ✓
+- Verdict: healthy
+```
+
+Followed by a summary count and 3 suggested fixes (if any).
+
+### When to run
+
+- Before cutting a release (whole fleet)
+- When `task_inspection` flags a yellow that needs judgment
+- When a new benchmark batch lands in the repo
+- Quarterly, as a health check
+
+### Who runs it
+
+Anyone. The procedure is toolchain-agnostic. A human walks through
+with `less` and a notepad. An AI assistant reads this doc and executes
+the checklist. A script implements the mechanizable parts (the rule
+engine already does layer 1). All three produce the same report shape.
 
 ## References
 
