@@ -1,0 +1,76 @@
+# compose/evaluate.yaml — the unified, hub-native Dock evaluation.
+#
+# One compose file for every (benchmark, agent, model, task) combination.
+# Published to the registry as an OCI artifact at:
+#
+#     oci://quay.io/dock-eval/evaluate
+#
+# Users run:
+#
+#     DOCK_BENCHMARK=aime DOCK_TASK_ID=0 DOCK_AGENT=codex DOCK_MODEL=gpt-5.4 \
+#       docker compose -f oci://quay.io/dock-eval/evaluate up --abort-on-container-exit
+#
+# The per-benchmark files in `benchmarks/<name>/compose.yaml` are the
+# developer workflow (`dock run --local`). This file is the production
+# entrypoint for humans and CI.
+
+services:
+  eval:
+    # Eval image is the build-time combination of a benchmark and an agent.
+    # Container tag is controlled by $DOCK_BENCHMARK_TAG / $DOCK_AGENT_TAG
+    # (though in practice the eval image has one tag per combination cut
+    # by CI; see compose/RULES.md for how eval tags are produced).
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/${DOCK_BENCHMARK}--${DOCK_AGENT:-claude-code}:${DOCK_BENCHMARK_TAG:-latest}
+    environment:
+      # Axis selection
+      - DOCK_BENCHMARK
+      - DOCK_AGENT
+      - DOCK_TASK_ID
+      # Internal version overrides (entrypoint installs at container start)
+      - DOCK_BENCHMARK_VERSION
+      - DOCK_AGENT_VERSION
+      # Proxy wiring (agent's LLM calls go here)
+      - ANTHROPIC_BASE_URL=http://model:4000
+      - OPENAI_BASE_URL=http://model:4000
+      # Runtime
+      - DOCK_TIMEOUT
+      # Legacy interface (populated by per-benchmark entrypoints)
+      - TASK
+      - EXPECTED_ANSWER
+    depends_on:
+      model:
+        condition: service_healthy
+    networks:
+      - internal
+    volumes:
+      - ./output/${DOCK_BENCHMARK}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ./output/${DOCK_BENCHMARK}/${DOCK_TASK_ID:-default}/task:/output/task:rw
+    tmpfs:
+      - /logs:size=100M
+      - /tmp:size=1G
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+  model:
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/models/${DOCK_MODEL:-claude-sonnet-4}:${DOCK_MODEL_TAG:-latest}
+    env_file: .env
+    environment:
+      - DOCK_LITELLM_VERSION
+    networks:
+      - internal
+      - default
+    volumes:
+      - ./output/${DOCK_BENCHMARK}/${DOCK_TASK_ID:-default}/model:/output:rw
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+networks:
+  internal:
+    internal: true

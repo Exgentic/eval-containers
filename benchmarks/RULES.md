@@ -21,7 +21,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 3. **Reproducible by default.** The exact dataset version MUST be pinned at build time as a default in the Dockerfile (`ARG DATA_REVISION=<sha>` or equivalent) and recorded in `dock.benchmark.data_revision`. The image MUST produce identical task content on every build when no env vars are set.
 
-4. **Runtime version override.** The entrypoint MUST read `DOCK_BENCHMARK_VERSION` and, when set, fetch and materialize that dataset revision into `/tasks/` in place of the default. It MUST write the resolved revision to `/output/task/version.json` before the agent runs. When `DOCK_BENCHMARK_VERSION` is unset, the build-time default applies unchanged.
+4. **Runtime version override.** The entrypoint MUST read `DOCK_BENCHMARK_VERSION` and, when set, fetch and materialize that dataset revision into `/tasks/` in place of the default. It MUST write the resolved revision to `/output/task/version.json` before the agent runs. When `DOCK_BENCHMARK_VERSION` is unset, the build-time default applies unchanged. `DOCK_BENCHMARK_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
 
 ### Isolation
 

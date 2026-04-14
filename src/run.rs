@@ -1,142 +1,150 @@
-use crate::build::{self, BuildArgs, BuildTarget};
+//! `dock run` — shells out to `docker compose` against the unified evaluate
+//! artifact, passing every axis as a `DOCK_*` environment variable.
+//!
+//! Maps: `dock run aime --task-id 0 --agent codex --model gpt-5.4`
+//!   ->  `docker compose -f oci://<registry>/evaluate up`
+//!       with DOCK_BENCHMARK=aime DOCK_TASK_ID=0 DOCK_AGENT=codex DOCK_MODEL=gpt-5.4
+//!
+//! Two orthogonal versioning axes (see RULES.md principle 9):
+//!
+//! - Container tag  → which image to pull (DOCK_*_TAG, flags --*-tag)
+//! - Internal ver.  → which upstream software runs inside (DOCK_*_VERSION,
+//!                    flags --*-version)
+//!
+//! With `--local`, uses the in-repo `benchmarks/<name>/compose.yaml`
+//! instead of the registry artifact.
+
 use clap::Args;
 use std::process::Command;
 
 #[derive(Args)]
 pub struct RunArgs {
-    /// Benchmark name or compose file path
+    /// Benchmark name (maps to $DOCK_BENCHMARK)
     benchmark: String,
 
-    /// Agent to use
-    #[arg(long, default_value = "claude-code")]
-    agent: String,
+    /// Agent to use (maps to $DOCK_AGENT)
+    #[arg(long)]
+    agent: Option<String>,
 
-    /// Model to use
-    #[arg(long, default_value = "claude-sonnet-4")]
-    model: String,
+    /// Model to use (maps to $DOCK_MODEL)
+    #[arg(long)]
+    model: Option<String>,
 
-    /// Task ID
+    /// Task ID within the benchmark (maps to $DOCK_TASK_ID)
     #[arg(long)]
     task_id: Option<String>,
 
-    /// Task instruction
-    #[arg(long)]
-    task: Option<String>,
+    // ---- Container tags (which image to pull) ----
 
-    /// Expected answer
+    /// Benchmark image tag (maps to $DOCK_BENCHMARK_TAG)
     #[arg(long)]
-    expected_answer: Option<String>,
+    benchmark_tag: Option<String>,
 
-    /// Timeout in seconds (overrides benchmark default)
+    /// Agent image tag (maps to $DOCK_AGENT_TAG)
+    #[arg(long)]
+    agent_tag: Option<String>,
+
+    /// Model image tag (maps to $DOCK_MODEL_TAG)
+    #[arg(long)]
+    model_tag: Option<String>,
+
+    // ---- Internal upstream versions (what runs inside the container) ----
+
+    /// Override the dataset revision inside the benchmark image
+    /// (maps to $DOCK_BENCHMARK_VERSION)
+    #[arg(long)]
+    benchmark_version: Option<String>,
+
+    /// Override the upstream CLI version inside the agent image
+    /// (maps to $DOCK_AGENT_VERSION)
+    #[arg(long)]
+    agent_version: Option<String>,
+
+    /// Override the LiteLLM version inside the model image
+    /// (maps to $DOCK_LITELLM_VERSION)
+    #[arg(long)]
+    litellm_version: Option<String>,
+
+    /// Agent timeout in seconds (maps to $DOCK_TIMEOUT)
     #[arg(long)]
     timeout: Option<u32>,
 
-    /// Use local compose file instead of pulling from registry
+    /// Use the in-repo `benchmarks/<name>/compose.yaml` instead of the
+    /// published `oci://<registry>/evaluate` artifact. For development.
     #[arg(long)]
     local: bool,
 }
 
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
-    // Ensure images exist
-    if !args.benchmark.ends_with(".yaml") && !args.benchmark.ends_with(".yml") {
-        ensure_images(registry, &args)?;
-    }
-
-    let compose_ref = if args.benchmark.ends_with(".yaml") || args.benchmark.ends_with(".yml") {
-        args.benchmark.clone()
-    } else if args.local {
+    // Pick the compose source: local file tree or the unified registry artifact.
+    let compose_ref = if args.local {
         format!("./benchmarks/{}/compose.yaml", args.benchmark)
     } else {
-        // Docker: docker compose -f oci://{registry}/compose/{benchmark}:latest up
-        format!("oci://{registry}/compose/{}:latest", args.benchmark)
+        format!("oci://{registry}/evaluate")
     };
 
-    let mut cmd = Command::new("docker");
-    cmd.arg("compose");
-    cmd.arg("-f").arg(&compose_ref);
-    cmd.arg("up");
-    cmd.arg("--abort-on-container-exit");
-
-    cmd.env("DOCK_REGISTRY", registry);
-    cmd.env("DOCK_AGENT", &args.agent);
-    cmd.env("DOCK_MODEL", &args.model);
-
-    if let Some(timeout) = args.timeout {
-        cmd.env("DOCK_TIMEOUT", timeout.to_string());
-    }
-    if let Some(ref task_id) = args.task_id {
-        cmd.env("TASK_ID", task_id);
-    }
-    if let Some(ref task) = args.task {
-        cmd.env("TASK", task);
-    }
-    if let Some(ref answer) = args.expected_answer {
-        cmd.env("EXPECTED_ANSWER", answer);
-    }
-
-    // Print the full reproducible command with env vars
-    let mut env_parts = vec![
-        format!("DOCK_REGISTRY={registry}"),
-        format!("DOCK_AGENT={}", args.agent),
-        format!("DOCK_MODEL={}", args.model),
+    // Build the env var set. Every flag maps to DOCK_* per src/RULES.md rule 10.
+    let mut envs: Vec<(&str, String)> = vec![
+        ("DOCK_REGISTRY", registry.to_string()),
+        ("DOCK_BENCHMARK", args.benchmark.clone()),
     ];
-    if let Some(ref task_id) = args.task_id {
-        env_parts.push(format!("TASK_ID={task_id}"));
+    if let Some(ref v) = args.agent {
+        envs.push(("DOCK_AGENT", v.clone()));
     }
-    if let Some(ref task) = args.task {
-        env_parts.push(format!("TASK={task}"));
+    if let Some(ref v) = args.model {
+        envs.push(("DOCK_MODEL", v.clone()));
     }
-    if let Some(ref answer) = args.expected_answer {
-        env_parts.push(format!("EXPECTED_ANSWER={answer}"));
+    if let Some(ref v) = args.task_id {
+        envs.push(("DOCK_TASK_ID", v.clone()));
     }
-    if let Some(timeout) = args.timeout {
-        env_parts.push(format!("DOCK_TIMEOUT={timeout}"));
-    }
-    eprintln!("$ {} docker compose -f {} up --abort-on-container-exit",
-        env_parts.join(" "), compose_ref);
 
-    let status = cmd.status().map_err(|e| format!("failed to run docker compose: {e}"))?;
+    // Container tags
+    if let Some(ref v) = args.benchmark_tag {
+        envs.push(("DOCK_BENCHMARK_TAG", v.clone()));
+    }
+    if let Some(ref v) = args.agent_tag {
+        envs.push(("DOCK_AGENT_TAG", v.clone()));
+    }
+    if let Some(ref v) = args.model_tag {
+        envs.push(("DOCK_MODEL_TAG", v.clone()));
+    }
+
+    // Internal upstream versions
+    if let Some(ref v) = args.benchmark_version {
+        envs.push(("DOCK_BENCHMARK_VERSION", v.clone()));
+    }
+    if let Some(ref v) = args.agent_version {
+        envs.push(("DOCK_AGENT_VERSION", v.clone()));
+    }
+    if let Some(ref v) = args.litellm_version {
+        envs.push(("DOCK_LITELLM_VERSION", v.clone()));
+    }
+
+    if let Some(timeout) = args.timeout {
+        envs.push(("DOCK_TIMEOUT", timeout.to_string()));
+    }
+
+    // Print the equivalent shell invocation (RULES src/RULES.md rule 2: transparent).
+    let env_str = envs
+        .iter()
+        .map(|(k, v)| format!("{k}={v}"))
+        .collect::<Vec<_>>()
+        .join(" ");
+    eprintln!("$ {env_str} docker compose -f {compose_ref} up --abort-on-container-exit");
+
+    // Shell out.
+    let mut cmd = Command::new("docker");
+    cmd.arg("compose").arg("-f").arg(&compose_ref);
+    cmd.arg("up").arg("--abort-on-container-exit");
+    for (k, v) in &envs {
+        cmd.env(k, v);
+    }
+
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to run docker compose: {e}"))?;
     if !status.success() {
         return Err(format!("docker compose failed with {status}"));
     }
     Ok(())
-}
-
-fn ensure_images(registry: &str, args: &RunArgs) -> Result<(), String> {
-    let eval_name = format!("{}--{}", args.benchmark, args.agent);
-    let eval_tag = format!("{registry}/evals/{eval_name}:latest");
-
-    if !image_exists(&eval_tag) {
-        eprintln!("eval image not found locally, building...");
-        build::execute(registry, BuildArgs {
-            target: BuildTarget::Eval {
-                benchmark: args.benchmark.clone(),
-                agent: args.agent.clone(),
-                task_id: None,
-                version: "latest".to_string(),
-            },
-        })?;
-    }
-
-    let model_tag = format!("{registry}/models/{}:latest", args.model);
-    if !image_exists(&model_tag) {
-        eprintln!("model image not found locally, building...");
-        build::execute(registry, BuildArgs {
-            target: BuildTarget::Model {
-                name: args.model.clone(),
-            },
-        })?;
-    }
-
-    Ok(())
-}
-
-fn image_exists(tag: &str) -> bool {
-    Command::new("docker")
-        .args(["image", "inspect", tag])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
 }

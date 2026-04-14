@@ -29,7 +29,13 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 8. **Clean code.** All code MUST be the most simple, minimal, clean, and easy to maintain implementation that serves its goals. No dead code, no premature abstractions, no unnecessary dependencies. This is not a suggestion.
 
-9. **Pin by default, control via env var.** Every benchmark and agent image MUST ship with a reproducible default that runs with no environment variables set. Every image MUST also expose runtime control over its upstream version via a standard `DOCK_*_VERSION` env var, and MUST write the resolved version to its run output directory so every run record is self-describing. Image tags encode the Dock component version (the image's own wiring), not the upstream dependency version — upstream bumps do not require a new tag. Concrete implementation rules live in `benchmarks/RULES.md` and `agents/RULES.md`.
+9. **Pin by default, control via two orthogonal knobs.** Every benchmark, agent, and model image MUST ship with a reproducible default that runs with no environment variables set. Every image MUST expose two independent version controls:
+
+   - **Container version** (the Dock-authored wiring) is selected by the **image tag**, set via `DOCK_BENCHMARK_TAG`, `DOCK_AGENT_TAG`, `DOCK_MODEL_TAG`. This is Docker's native versioning mechanism — different tag, different pull, different bits.
+
+   - **Internal version** (the upstream software baked or installed inside) is selected at runtime via `DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_LITELLM_VERSION`. The entrypoint MUST read these env vars, install or activate the requested version, and write the resolved version to the run output directory so every run record is self-describing.
+
+   Both axes are orthogonal: tag controls which container to pull, env var controls what runs inside it. Concrete implementation rules live in `benchmarks/RULES.md`, `agents/RULES.md`, and `models/RULES.md`.
 
 10. **Image hygiene.** Dock ships ~100+ images. Image thinness is not optional — it's what makes `docker pull` fast and the fleet build affordable. Every Dockerfile MUST follow these rules, and reviewers MUST enforce them:
 
@@ -73,3 +79,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Added principle 10 (Image hygiene) — slim bases, in-layer cleanup, no caches in layers, simple and maintainable over byte-golfing. Added principle 14 (No repetition) — each rule has exactly one home; renumbered subsequent rules. |
 | 2026-04-14 | Rewrote principle 9: pin by default, expose version control via `DOCK_*_VERSION` env vars. Tags encode Dock component version; upstream versions live in labels, env vars, and run records. Added principle 11 (Env var namespace) — all Dock env vars MUST be prefixed with `DOCK_` to prevent collision with CI/orchestrator env vars. Renumbered Rules Process principles (12–18). |
+| 2026-04-14 | Principle 9 refined to two orthogonal knobs: container version via image tag (`DOCK_BENCHMARK_TAG`, `DOCK_AGENT_TAG`, `DOCK_MODEL_TAG`) and internal upstream version via runtime env var (`DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_LITELLM_VERSION`). Models now covered by principle 9 (LiteLLM version is the internal axis). |
