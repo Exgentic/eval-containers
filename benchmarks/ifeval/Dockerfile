@@ -57,13 +57,13 @@ RUN git clone --depth 1 https://github.com/google-research/google-research.git /
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=ifeval
+ENV DOCK_BENCHMARK=ifeval
 
 # Custom test: verify instruction following using official IFEval logic
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 RESPONSE=$(cat /output/agent/stdout.log 2>/dev/null)
 
 if [ -z "$RESPONSE" ]; then
@@ -171,8 +171,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/prompt.txt)"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/prompt.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

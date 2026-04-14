@@ -10,20 +10,20 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-swebench}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-swebench}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/swebench-${TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/swebench-${DOCK_TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
-      - BENCHMARK=swebench
+      - DOCK_BENCHMARK=swebench
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
     volumes:
-      - ../../output/${BENCHMARK:-swebench}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-swebench}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-swebench}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-swebench}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

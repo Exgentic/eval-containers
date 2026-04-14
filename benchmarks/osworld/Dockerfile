@@ -44,7 +44,7 @@ RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=osworld
+ENV DOCK_BENCHMARK=osworld
 
 # Test: OSWorld evaluation checks desktop state after agent finishes.
 # Placeholder — full evaluation requires the desktop-env package + VM access.
@@ -60,14 +60,14 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a computer use agent. Complete this task using the desktop.
 
 Desktop API: http://desktop:5000
 - GET /screenshot — returns a PNG screenshot
 - POST /execute_action — send mouse/keyboard actions
 
-Task: $(cat /tasks/$TASK_ID/problem.txt)"
+Task: $(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

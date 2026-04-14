@@ -18,7 +18,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.18901"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-ENV BENCHMARK=appworld
+ENV DOCK_BENCHMARK=appworld
 
 # Fetch task metadata from HuggingFace
 RUN pip install --no-cache-dir pyarrow
@@ -55,8 +55,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

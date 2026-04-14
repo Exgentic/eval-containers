@@ -2,8 +2,8 @@
 # 89 per-task images from ghcr.io/laude-institute/terminal-bench/{task}:2.0
 # Upstream Harbor images include instruction and tests.
 
-ARG TASK_ID
-FROM ghcr.io/laude-institute/terminal-bench/${TASK_ID}:2.0
+ARG DOCK_TASK_ID
+FROM ghcr.io/laude-institute/terminal-bench/${DOCK_TASK_ID}:2.0
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="terminal-bench"
@@ -13,9 +13,9 @@ LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/laude-institute/terminal-bench"
 
-ARG TASK_ID
-ENV BENCHMARK=tbench
-ENV TASK_ID=${TASK_ID}
+ARG DOCK_TASK_ID
+ENV DOCK_BENCHMARK=tbench
+ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh

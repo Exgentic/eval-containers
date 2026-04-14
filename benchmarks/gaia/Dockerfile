@@ -45,7 +45,7 @@ RUN rm -rf /tmp/gaia && pip uninstall -y pyarrow huggingface_hub
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=gaia
+ENV DOCK_BENCHMARK=gaia
 
 # Test: exact match on agent stdout
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
@@ -55,16 +55,16 @@ RUN chmod +x /tests/test.sh
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
-# Resolve TASK_ID to TASK + EXPECTED_ANSWER from flat files, then exec shared entrypoint
+# Resolve DOCK_TASK_ID to TASK + EXPECTED_ANSWER from flat files, then exec shared entrypoint
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this question. Print only the answer, nothing else.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
   # Copy attached files to /app where agent can read them
-  for f in /tasks/$TASK_ID/*; do
+  for f in /tasks/$DOCK_TASK_ID/*; do
     name=$(basename "$f")
     case "$name" in problem.txt|answer.txt|id.txt) continue;; esac
     cp "$f" /app/

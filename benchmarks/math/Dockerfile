@@ -63,7 +63,7 @@ RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=math
+ENV DOCK_BENCHMARK=math
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
@@ -73,11 +73,11 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this math problem. Print only the final answer in its simplest form (a number, fraction, or LaTeX expression as it would appear inside \\boxed{}). Do not include any explanation.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

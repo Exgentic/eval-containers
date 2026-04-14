@@ -156,7 +156,7 @@ RUN rm -rf /tmp/niah
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=ruler
+ENV DOCK_BENCHMARK=ruler
 
 # Custom test: token-level recall of expected answer tokens in response
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -164,7 +164,7 @@ RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 mkdir -p /logs/verifier
 python3 <<'GRADE'
 import os
-task_id = os.environ.get('TASK_ID', '')
+task_id = os.environ.get('DOCK_TASK_ID', '')
 try:
     response = open('/output/agent/stdout.log').read()
 except FileNotFoundError:
@@ -188,12 +188,12 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  cp /tasks/$TASK_ID/context.txt /app/context.txt
-  cp /tasks/$TASK_ID/question.txt /app/question.txt
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  cp /tasks/$DOCK_TASK_ID/context.txt /app/context.txt
+  cp /tasks/$DOCK_TASK_ID/question.txt /app/question.txt
   chmod 644 /app/context.txt /app/question.txt
   export TASK="Read the long context in /app/context.txt carefully. Then answer the question in /app/question.txt based solely on information found in the context. Print only the answer tokens/values, with no explanation."
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

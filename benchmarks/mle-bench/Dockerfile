@@ -10,8 +10,8 @@
 # the account. This Dockerfile uses the upstream per-task image convention
 # and a placeholder when the dataset cannot be fetched.
 
-ARG TASK_ID
-FROM ghcr.io/openai/mle-bench.${TASK_ID}:latest
+ARG DOCK_TASK_ID
+FROM ghcr.io/openai/mle-bench.${DOCK_TASK_ID}:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mle-bench"
@@ -22,22 +22,22 @@ LABEL dock.benchmark.internet="true"
 LABEL dock.benchmark.url="https://github.com/openai/mle-bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2410.07095"
 
-ENV BENCHMARK=mle-bench
+ENV DOCK_BENCHMARK=mle-bench
 
 RUN apt-get update && apt-get install -y curl jq git 2>/dev/null || true
 
-ARG TASK_ID
-ENV TASK_ID=${TASK_ID}
+ARG DOCK_TASK_ID
+ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
 # Task description + grader come from the upstream mle-bench package. The
 # per-task base image provides /private/ (grader + answers, root-only) and
 # /home/data/ (read-only data the agent can see).
 # TODO: once upstream pins a version, copy the grader deps to /tests/deps.
 RUN mkdir -p /tasks/0 /tests && \
-    echo "${TASK_ID}" > /tasks/0/id.txt && \
+    echo "${DOCK_TASK_ID}" > /tasks/0/id.txt && \
     (cp /private/description.md /tasks/0/problem.txt 2>/dev/null || \
      cp /home/data/description.md /tasks/0/problem.txt 2>/dev/null || \
-     echo "TODO: MLE-bench task description for ${TASK_ID}" > /tasks/0/problem.txt)
+     echo "TODO: MLE-bench task description for ${DOCK_TASK_ID}" > /tasks/0/problem.txt)
 
 # Grader: uses mlebench.grade to score submission.csv against the held-out answers.
 RUN pip install --no-cache-dir --target /tests/deps mlebench 2>/dev/null || true
@@ -69,7 +69,7 @@ if not os.path.exists(submission):
 try:
     from mlebench.grade import grade_csv
     from mlebench.registry import registry
-    task_id = os.environ.get('TASK_ID')
+    task_id = os.environ.get('DOCK_TASK_ID')
     competition = registry.get_competition(task_id)
     report = grade_csv(submission, competition)
     # Reward = 1 if report indicates a medal (gold/silver/bronze), else 0.
@@ -91,7 +91,7 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 mkdir -p /home/submission
 chown -R agent:agent /home/submission /home/data 2>/dev/null || true
 
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are an ML engineer. The competition data is mounted at /home/data (read-only). Train a model and write your predictions to /home/submission/submission.csv. You may install packages and use the network.
 
 $(cat /tasks/0/problem.txt)"

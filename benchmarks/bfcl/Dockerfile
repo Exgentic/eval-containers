@@ -57,7 +57,7 @@ RUN rm -rf /tmp/bfcl
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=bfcl
+ENV DOCK_BENCHMARK=bfcl
 
 # Test: exact match on agent stdout (simplified — full BFCL uses AST comparison)
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
@@ -68,11 +68,11 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Call the correct function(s) based on the conversation. Print ONLY the function call(s) as JSON, nothing else.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

@@ -67,7 +67,7 @@ RUN rm -rf /tmp/ah
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=arena-hard
+ENV DOCK_BENCHMARK=arena-hard
 
 # Custom test: LLM-as-judge pairwise comparison (agent vs baseline).
 # We run two judgments with swapped positions (A=agent,B=baseline; then B=agent,A=baseline)
@@ -84,7 +84,7 @@ RUN chmod +x /tests/test.sh
 RUN cat > /tests/grade.py <<'GRADE'
 import os, json, re, sys, urllib.request
 
-task_id = os.environ.get('TASK_ID', '')
+task_id = os.environ.get('DOCK_TASK_ID', '')
 d = f'/tasks/{task_id}'
 prompt = open(f'{d}/problem.txt').read()
 baseline = open(f'{d}/baseline.txt').read()
@@ -181,8 +181,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

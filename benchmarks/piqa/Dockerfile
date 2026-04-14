@@ -38,7 +38,7 @@ RUN rm -f /tmp/valid.jsonl /tmp/valid-labels.lst
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=piqa
+ENV DOCK_BENCHMARK=piqa
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
@@ -48,11 +48,11 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Pick the solution that best accomplishes the goal. Print only the letter of the correct answer (A or B), nothing else.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

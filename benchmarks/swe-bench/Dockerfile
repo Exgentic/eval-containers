@@ -3,8 +3,8 @@
 # 500 per-task images from ghcr.io/epoch-research/swe-bench.eval.x86_64.{task_id}
 # Agent fixes a bug in a real Python repo. Tests verify the fix.
 
-ARG TASK_ID
-FROM ghcr.io/epoch-research/swe-bench.eval.x86_64.${TASK_ID}:latest
+ARG DOCK_TASK_ID
+FROM ghcr.io/epoch-research/swe-bench.eval.x86_64.${DOCK_TASK_ID}:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="swebench"
@@ -18,7 +18,7 @@ LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-data
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/swe_bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2310.06770"
 
-ENV BENCHMARK=swebench
+ENV DOCK_BENCHMARK=swebench
 
 # Install grading deps to root-only path (agent cannot access or tamper)
 RUN pip install --no-cache-dir --target /tests/deps swebench 2>/dev/null || \
@@ -26,15 +26,15 @@ RUN pip install --no-cache-dir --target /tests/deps swebench 2>/dev/null || \
 
 # Fetch this task's metadata from HuggingFace API
 RUN apt-get update && apt-get install -y curl jq 2>/dev/null || true
-ARG TASK_ID
-ENV TASK_ID=${TASK_ID}
+ARG DOCK_TASK_ID
+ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 RUN mkdir -p /tasks/0 && \
     for offset in 0 100 200 300 400 500; do \
       curl -sf "https://datasets-server.huggingface.co/rows?dataset=princeton-nlp/SWE-bench_Verified&config=default&split=test&offset=$offset&length=100" > /tmp/page.json && \
-      if jq -e --arg id "${TASK_ID}" '.rows[] | select(.row.instance_id == $id)' /tmp/page.json > /dev/null 2>&1; then \
-        jq -r --arg id "${TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.instance_id' /tmp/page.json > /tasks/0/id.txt && \
-        jq -r --arg id "${TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.problem_statement' /tmp/page.json > /tasks/0/problem.txt && \
-        jq --arg id "${TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row' /tmp/page.json > /tasks/0/config.json && \
+      if jq -e --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id)' /tmp/page.json > /dev/null 2>&1; then \
+        jq -r --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.instance_id' /tmp/page.json > /tasks/0/id.txt && \
+        jq -r --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.problem_statement' /tmp/page.json > /tasks/0/problem.txt && \
+        jq --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row' /tmp/page.json > /tasks/0/config.json && \
         break; \
       fi; \
     done && rm -f /tmp/page.json
@@ -106,7 +106,7 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 # Make repo writable by agent
 chown -R agent:agent /testbed 2>/dev/null || true
 
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Fix this GitHub issue in the repository at /testbed. Edit the source code to resolve the bug. Do NOT modify any test files.
 
 $(cat /tasks/0/problem.txt)"

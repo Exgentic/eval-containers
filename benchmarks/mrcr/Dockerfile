@@ -68,7 +68,7 @@ RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=mrcr
+ENV DOCK_BENCHMARK=mrcr
 
 # Custom test: SequenceMatcher ratio with prefix check (per MRCR spec)
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -78,7 +78,7 @@ python3 <<'GRADE'
 from difflib import SequenceMatcher
 import os
 
-task_id = os.environ.get('TASK_ID', '')
+task_id = os.environ.get('DOCK_TASK_ID', '')
 
 try:
     response = open('/output/agent/stdout.log').read()
@@ -105,11 +105,11 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  cp /tasks/$TASK_ID/problem.txt /app/task.txt
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  cp /tasks/$DOCK_TASK_ID/problem.txt /app/task.txt
   chmod 644 /app/task.txt
   export TASK="Your task is described in the file /app/task.txt — read it and follow the instructions inside."
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

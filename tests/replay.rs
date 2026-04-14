@@ -116,7 +116,7 @@ macro_rules! replay_test {
                 $compose,
                 $fixture,
                 &[
-                    ("TASK_ID", "0"),
+                    ("DOCK_TASK_ID", "0"),
                     ("DOCK_AGENT", $agent),
                     ("DOCK_MODEL", "replay"),
                 ],

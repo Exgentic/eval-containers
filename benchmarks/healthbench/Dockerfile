@@ -62,7 +62,7 @@ RUN rm -f /tmp/eval.jsonl
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=healthbench
+ENV DOCK_BENCHMARK=healthbench
 
 # Custom test: LLM-as-judge scoring using physician rubrics
 # The test script calls the model service to grade each rubric criterion
@@ -70,7 +70,7 @@ RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 AGENT_RESPONSE=$(cat /output/agent/stdout.log 2>/dev/null)
 RUBRICS=$(cat "$TASK_DIR/rubrics.json" 2>/dev/null)
 PROMPT=$(cat "$TASK_DIR/problem.txt" 2>/dev/null)
@@ -196,10 +196,10 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a helpful health assistant. Respond to the following health-related question or conversation thoughtfully and accurately. Provide complete, evidence-based information. If the situation may be urgent or dangerous, include appropriate safety guidance.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

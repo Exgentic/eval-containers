@@ -23,7 +23,7 @@ services:
       - ANTHROPIC_BASE_URL=http://model:4000
       - OPENAI_BASE_URL=http://model:4000
       - TASK=${TASK:-}
-      - TASK_ID=${TASK_ID:-}
+      - DOCK_TASK_ID=${DOCK_TASK_ID:-}
       - EXPECTED_ANSWER=${EXPECTED_ANSWER:-}
     depends_on:
       model:

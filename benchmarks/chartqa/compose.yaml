@@ -10,7 +10,7 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-chartqa}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-chartqa}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
@@ -19,11 +19,11 @@ services:
     image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/chartqa--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
-      - BENCHMARK=chartqa
+      - DOCK_BENCHMARK=chartqa
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
     volumes:
-      - ../../output/${BENCHMARK:-chartqa}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-chartqa}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-chartqa}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-chartqa}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

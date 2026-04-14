@@ -8,7 +8,7 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-arc}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-arc}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
@@ -17,11 +17,11 @@ services:
     image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/arc--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
-      - BENCHMARK=arc
+      - DOCK_BENCHMARK=arc
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
     volumes:
-      - ../../output/${BENCHMARK:-arc}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-arc}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-arc}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-arc}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

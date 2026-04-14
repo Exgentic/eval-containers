@@ -39,7 +39,7 @@ PYEOF
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=visualwebarena
+ENV DOCK_BENCHMARK=visualwebarena
 
 # Test: externally graded. Capture agent output + HAR for offline scoring.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -56,8 +56,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  INTENT=$(cat /tasks/$TASK_ID/problem.txt)
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  INTENT=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
   export TASK="You are a multimodal web browsing agent. Complete this task by interacting
 with the provided sidecar websites. Use HTTP_PROXY=http://proxy:8080 for all requests.
 

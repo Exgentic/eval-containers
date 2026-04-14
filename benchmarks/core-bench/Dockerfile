@@ -53,7 +53,7 @@ PYEOF
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=core-bench
+ENV DOCK_BENCHMARK=core-bench
 
 # Test: collect agent's report.json for external grading; write reward=-1.
 # If the agent-produced report.json is a strict superset of expected results
@@ -63,7 +63,7 @@ ENV BENCHMARK=core-bench
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 
 # Collect the agent's report.json (best effort) for downstream grading.
 REPORT=""
@@ -90,11 +90,11 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  TITLE=$(cat /tasks/$TASK_ID/title.txt)
-  FIELD=$(cat /tasks/$TASK_ID/field.txt)
-  PROMPT=$(cat /tasks/$TASK_ID/task_prompt.txt)
-  QUESTIONS=$(cat /tasks/$TASK_ID/questions.json)
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  TITLE=$(cat /tasks/$DOCK_TASK_ID/title.txt)
+  FIELD=$(cat /tasks/$DOCK_TASK_ID/field.txt)
+  PROMPT=$(cat /tasks/$DOCK_TASK_ID/task_prompt.txt)
+  QUESTIONS=$(cat /tasks/$DOCK_TASK_ID/questions.json)
   export TASK="You are reproducing results from a published scientific code capsule.
 
 Title: $TITLE

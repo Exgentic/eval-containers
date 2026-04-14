@@ -96,7 +96,7 @@ COPY agent.py /app/agent.py
 COPY run_tau_bench.py /app/run_tau_bench.py
 
 WORKDIR /app
-ENV BENCHMARK=tau-bench
+ENV DOCK_BENCHMARK=tau-bench
 
 # Test: TAU-bench evaluation is state-based (database checks + output verification)
 # and requires the full TAU-bench runtime with a user simulator. Externally graded.
@@ -112,8 +112,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

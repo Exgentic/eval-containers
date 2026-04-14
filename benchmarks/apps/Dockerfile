@@ -51,14 +51,14 @@ RUN rm -f /tmp/data_*.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=apps
+ENV DOCK_BENCHMARK=apps
 
 # Test: run agent's Python solution against decoded I/O test cases.
 # Handles both stdio mode and functional mode (when fn_name is set).
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 
 if [ -z "$SOLUTION" ] || [ ! -s "$TASK_DIR/input_output.json" ]; then
@@ -150,17 +150,17 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   STARTER=""
-  if [ -s "/tasks/$TASK_ID/starter_code.txt" ]; then
+  if [ -s "/tasks/$DOCK_TASK_ID/starter_code.txt" ]; then
     STARTER="
 
 Starter code:
-$(cat /tasks/$TASK_ID/starter_code.txt)"
+$(cat /tasks/$DOCK_TASK_ID/starter_code.txt)"
   fi
   export TASK="Solve this Python coding problem. Print ONLY the complete Python source code, nothing else. If starter code is given, use it.$STARTER
 
-$(cat /tasks/$TASK_ID/problem.txt)"
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

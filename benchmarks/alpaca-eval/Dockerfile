@@ -57,7 +57,7 @@ RUN rm -f /tmp/eval.json /tmp/baseline.json
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=alpaca-eval
+ENV DOCK_BENCHMARK=alpaca-eval
 
 # Custom test: pairwise LLM-as-judge with both orderings (AlpacaEval protocol)
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -70,7 +70,7 @@ RUN chmod +x /tests/test.sh
 RUN cat > /tests/grade.py <<'GRADE'
 import os, json, re, sys, urllib.request
 
-task_id = os.environ.get('TASK_ID', '')
+task_id = os.environ.get('DOCK_TASK_ID', '')
 d = f'/tasks/{task_id}'
 instruction = open(f'{d}/problem.txt').read()
 baseline = open(f'{d}/baseline.txt').read()
@@ -162,8 +162,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

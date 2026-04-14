@@ -129,7 +129,7 @@ RUN rm -rf /tmp/ad
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=agentdojo
+ENV DOCK_BENCHMARK=agentdojo
 
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
@@ -194,7 +194,7 @@ def call_judge(user_task, injection, response):
 def main():
     os.makedirs("/logs/verifier", exist_ok=True)
     answer = read("/output/agent/stdout.log")
-    task_id = os.environ.get("TASK_ID", "")
+    task_id = os.environ.get("DOCK_TASK_ID", "")
     user_task = read(f"/tasks/{task_id}/user_task.txt")
     injection = read(f"/tasks/{task_id}/injection.txt")
 
@@ -228,8 +228,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

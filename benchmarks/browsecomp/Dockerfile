@@ -46,7 +46,7 @@ RUN rm -f /tmp/browsecomp.csv && pip uninstall -y pandas
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=browsecomp
+ENV DOCK_BENCHMARK=browsecomp
 
 COPY judge.py /tests/judge.py
 COPY test.sh /tests/test.sh
@@ -57,11 +57,11 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Browse the web to answer this question. Print only the answer, nothing else.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

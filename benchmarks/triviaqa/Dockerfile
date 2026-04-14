@@ -43,7 +43,7 @@ RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=triviaqa
+ENV DOCK_BENCHMARK=triviaqa
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
@@ -66,7 +66,7 @@ def normalize(s):
     s = ' '.join(s.split())
     return s
 
-task_id = os.environ.get('TASK_ID', '')
+task_id = os.environ.get('DOCK_TASK_ID', '')
 try:
     with open('/output/agent/stdout.log') as f:
         agent = f.read()
@@ -92,11 +92,11 @@ PY
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this trivia question. Print only the answer, nothing else.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

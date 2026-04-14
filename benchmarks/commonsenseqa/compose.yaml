@@ -10,7 +10,7 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-commonsenseqa}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-commonsenseqa}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
@@ -19,11 +19,11 @@ services:
     image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/commonsenseqa--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
-      - BENCHMARK=commonsenseqa
+      - DOCK_BENCHMARK=commonsenseqa
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
     volumes:
-      - ../../output/${BENCHMARK:-commonsenseqa}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-commonsenseqa}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-commonsenseqa}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-commonsenseqa}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

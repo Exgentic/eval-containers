@@ -7,8 +7,8 @@
 # TODO: SWE-Lancer ships upstream per-task Docker images under OpenAI's
 # registry; confirm the exact image namespace once published publicly.
 
-ARG TASK_ID
-FROM ghcr.io/openai/swelancer.${TASK_ID}:latest
+ARG DOCK_TASK_ID
+FROM ghcr.io/openai/swelancer.${DOCK_TASK_ID}:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="swe-lancer"
@@ -19,22 +19,22 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/openai/SWELancer-Benchmark"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2502.12115"
 
-ENV BENCHMARK=swe-lancer
+ENV DOCK_BENCHMARK=swe-lancer
 
 RUN apt-get update && apt-get install -y curl jq git 2>/dev/null || true
 
-ARG TASK_ID
-ENV TASK_ID=${TASK_ID}
+ARG DOCK_TASK_ID
+ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
 # Task metadata (issue description + E2E test command) lives in the upstream
 # per-task image. Task description is at /private/task.md or similar.
 # TODO: confirm the exact layout once images are published.
 RUN mkdir -p /tasks/0 /tests && \
-    echo "${TASK_ID}" > /tasks/0/id.txt && \
+    echo "${DOCK_TASK_ID}" > /tasks/0/id.txt && \
     (cp /private/task.md /tasks/0/problem.txt 2>/dev/null || \
      cp /private/issue.md /tasks/0/problem.txt 2>/dev/null || \
      cp /app/task.md /tasks/0/problem.txt 2>/dev/null || \
-     echo "TODO: SWE-Lancer task description for ${TASK_ID}" > /tasks/0/problem.txt) && \
+     echo "TODO: SWE-Lancer task description for ${DOCK_TASK_ID}" > /tasks/0/problem.txt) && \
     (cp /private/run_tests.sh /tests/run_tests.sh 2>/dev/null || \
      printf '#!/bin/bash\necho "TODO: upstream run_tests.sh not found"\nexit 1\n' > /tests/run_tests.sh) && \
     chmod +x /tests/run_tests.sh
@@ -63,7 +63,7 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 # Make the Expensify checkout writable by the agent
 chown -R agent:agent /app/expensify /workspace 2>/dev/null || true
 
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are fixing a freelance software engineering task in the Expensify codebase. Work in the checkout under /app/expensify (or /workspace). Do NOT modify test files. When finished, your change must pass the upstream end-to-end tests.
 
 $(cat /tasks/0/problem.txt)"

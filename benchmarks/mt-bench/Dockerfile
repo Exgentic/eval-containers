@@ -94,7 +94,7 @@ RUN rm -f /tmp/mtb.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=mt-bench
+ENV DOCK_BENCHMARK=mt-bench
 
 # Custom test: LLM-as-judge single-answer grading (1-10 scale, normalized to [0,1])
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -107,7 +107,7 @@ RUN chmod +x /tests/test.sh
 RUN cat > /tests/grade.py <<'GRADE'
 import os, json, re, urllib.request
 
-task_id = os.environ.get('TASK_ID', '')
+task_id = os.environ.get('DOCK_TASK_ID', '')
 d = f'/tasks/{task_id}'
 category = open(f'{d}/category.txt').read().strip()
 prompt = open(f'{d}/problem.txt').read()
@@ -176,8 +176,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

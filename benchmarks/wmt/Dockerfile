@@ -58,7 +58,7 @@ PYEOF
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=wmt
+ENV DOCK_BENCHMARK=wmt
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
@@ -68,12 +68,12 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  LANG_NAME=$(cat /tasks/$TASK_ID/language_name.txt)
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  LANG_NAME=$(cat /tasks/$DOCK_TASK_ID/language_name.txt)
   export TASK="Translate the following English text into ${LANG_NAME}. Print only the translated text with no explanation, quotes, or additional commentary.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

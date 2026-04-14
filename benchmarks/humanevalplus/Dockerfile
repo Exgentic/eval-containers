@@ -35,13 +35,13 @@ RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=humanevalplus
+ENV DOCK_BENCHMARK=humanevalplus
 
 # Test: combine agent code with EvalPlus test harness and run
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 PROMPT=$(cat $TASK_DIR/prompt.txt)
 TEST_CODE=$(cat $TASK_DIR/test.txt)
@@ -73,10 +73,10 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Complete the following Python function. Print ONLY the function body (the code that goes after the function signature), nothing else. Do not repeat the function signature or docstring.
 
-$(cat /tasks/$TASK_ID/prompt.txt)"
+$(cat /tasks/$DOCK_TASK_ID/prompt.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

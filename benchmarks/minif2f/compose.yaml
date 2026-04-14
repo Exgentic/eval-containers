@@ -8,7 +8,7 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-minif2f}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-minif2f}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
@@ -17,11 +17,11 @@ services:
     image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/minif2f--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
-      - BENCHMARK=minif2f
+      - DOCK_BENCHMARK=minif2f
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
     volumes:
-      - ../../output/${BENCHMARK:-minif2f}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-minif2f}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-minif2f}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-minif2f}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

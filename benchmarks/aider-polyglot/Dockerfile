@@ -99,14 +99,14 @@ PYEOF
 RUN chmod -R 600 /tasks /polyglot
 
 WORKDIR /app
-ENV BENCHMARK=aider-polyglot
+ENV DOCK_BENCHMARK=aider-polyglot
 
 # --- Test script: run language-specific test suite ---
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 LANGUAGE=$(cat "$TASK_DIR/language.txt")
 EXERCISE=$(cat "$TASK_DIR/exercise.txt")
 EXERCISE_DIR=$(cat "$TASK_DIR/exercise_dir.txt")
@@ -172,8 +172,8 @@ RUN chmod +x /dock-entrypoint.sh
 # --- Entrypoint: set TASK from task metadata, copy starter files to /app ---
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  TASK_DIR="/tasks/$TASK_ID"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  TASK_DIR="/tasks/$DOCK_TASK_ID"
   LANGUAGE=$(cat "$TASK_DIR/language.txt")
   EXERCISE=$(cat "$TASK_DIR/exercise.txt")
   EXERCISE_DIR=$(cat "$TASK_DIR/exercise_dir.txt")

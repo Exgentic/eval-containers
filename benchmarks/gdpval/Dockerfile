@@ -41,7 +41,7 @@ RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=gdpval
+ENV DOCK_BENCHMARK=gdpval
 
 # Test: GDPval is externally graded by OpenAI's auto-grader.
 # test.sh packages deliverables and uploads to HuggingFace for submission.
@@ -53,7 +53,7 @@ mkdir -p /logs/verifier
 cp /app/deliverable* /output/agent/ 2>/dev/null || true
 
 # Package results for HuggingFace upload (same format as inspect_evals)
-TASK_ID_STR=$(cat /tasks/${TASK_ID}/id.txt 2>/dev/null || echo "unknown")
+TASK_ID_STR=$(cat /tasks/${DOCK_TASK_ID}/id.txt 2>/dev/null || echo "unknown")
 TIMESTAMP=$(date +%Y-%m-%dT%H-%M-%S%z | sed 's/+/plus/;s/-\([0-9]\)/minus\1/')
 UPLOAD_DIR="/tmp/gdpval_hf_upload/${TIMESTAMP}_gdpval"
 mkdir -p "$UPLOAD_DIR/$TASK_ID_STR"
@@ -86,13 +86,13 @@ RUN chmod +x /dock-entrypoint.sh
 # Load task, download reference files to /app, then exec shared entrypoint
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)"
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
   # Download reference files to /app for the agent
-  if [ -f /tasks/$TASK_ID/reference_urls.json ]; then
+  if [ -f /tasks/$DOCK_TASK_ID/reference_urls.json ]; then
     python3 -c "
 import json, urllib.request
-urls = json.load(open('/tasks/$TASK_ID/reference_urls.json'))
+urls = json.load(open('/tasks/$DOCK_TASK_ID/reference_urls.json'))
 if isinstance(urls, list):
     for url in urls:
         name = url.split('/')[-1].split('?')[0]
