@@ -45,7 +45,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 12. **Reproducible by default.** The upstream CLI version MUST be pinned at build time as a default in the Dockerfile (`ARG <NAME>_VERSION=<semver>`) and recorded in `dock.agent.version`. The image MUST produce a reproducible run with no environment variables set.
 
-13. **Runtime version override.** The entrypoint MUST read `DOCK_AGENT_VERSION` and, when set, install and activate that upstream version in place of the default before handing control to the agent. The entrypoint MUST write the resolved version to `/output/agent/version.json` before the agent starts. When `DOCK_AGENT_VERSION` is unset, the build-time default applies unchanged. Cache volumes (`/opt/agent-cache`) MAY be used to avoid reinstall cost on subsequent runs.
+13. **Runtime version override.** The entrypoint MUST read `DOCK_AGENT_VERSION` and, when set, install and activate that upstream version in place of the default before handing control to the agent. The entrypoint MUST write the resolved version to `/output/agent/version.json` before the agent starts. When `DOCK_AGENT_VERSION` is unset, the build-time default applies unchanged. Cache volumes (`/opt/agent-cache`) MAY be used to avoid reinstall cost on subsequent runs. `DOCK_AGENT_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
 
 14. **Labels.** Every agent image MUST include labels: `dock.type`, `dock.agent.name`, `dock.agent.description`, `dock.agent.version`.
 

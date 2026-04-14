@@ -43,7 +43,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 11. **Build.** `dock build agent|bench|model|eval` — each MUST map to a single `docker build` call.
 
-12. **Run.** `dock run {benchmark} --agent {name} --task-id {id}` — MUST map to `docker compose up`. MUST accept `--model`, `--benchmark-version`, `--agent-version`, `--model-version`, `--timeout`, `--local` overrides.
+12. **Run.** `dock run {benchmark} --agent {name} --task-id {id}` — MUST map to `docker compose up`. MUST accept both the container-tag axis (`--benchmark-tag`, `--agent-tag`, `--model-tag`) and the internal-version axis (`--benchmark-version`, `--agent-version`, `--litellm-version`), plus `--model`, `--timeout`, `--local`.
 
 13. **Report.** `dock report ./output/` — MUST walk the output directory, read `result.json` files, and aggregate. MUST support `--format csv|json`.
 
@@ -61,3 +61,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 |------|--------|
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Added principle 10: env var / CLI flag parity — every `DOCK_*` env var MUST be exposable as a `--kebab-case` flag; CLI flag overrides env var. Updated `dock run` (principle 12) to list the standard version/timeout flags. Renumbered commands (11–15). |
+| 2026-04-14 | Updated `dock run` (principle 12) to enumerate both axes of versioning: container tags (`--benchmark-tag`, `--agent-tag`, `--model-tag`) and internal upstream versions (`--benchmark-version`, `--agent-version`, `--litellm-version`). |

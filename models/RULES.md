@@ -45,11 +45,17 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 11. **Agent model only logged.** Only the agent's model service MUST log requests and responses. Non-agent model services (user simulators, judges) MUST NOT write to `/output/model/`. Their traffic is benchmark infrastructure, not evaluation data.
 
+### Versioning
+
+12. **Reproducible by default.** The LiteLLM version MUST be pinned at build time as a default (`ARG LITELLM_VERSION=<semver>` or via the `core/litellm` base image tag) and recorded in `dock.model.litellm_version`. The image MUST produce a reproducible routing layer with no environment variables set.
+
+13. **Runtime version override.** The entrypoint MUST read `DOCK_LITELLM_VERSION` and, when set, install or activate that LiteLLM version in place of the default before the proxy starts. The entrypoint MUST write the resolved version to `/output/model/version.json`. When unset, the build-time default applies. `DOCK_MODEL_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
+
 ### Image
 
-12. **Health endpoint.** The model service MUST expose a health check on port 4000. The eval container MUST wait for it before starting.
+14. **Health endpoint.** The model service MUST expose a health check on port 4000. The eval container MUST wait for it before starting.
 
-13. **Labels.** Every model image MUST include labels: `dock.type`, `dock.model.name`, `dock.model.provider`.
+15. **Labels.** Every model image MUST include labels: `dock.type`, `dock.model.name`, `dock.model.provider`, `dock.model.litellm_version`.
 
 ## References
 
@@ -61,3 +67,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | Date | Change |
 |------|--------|
 | 2026-04-13 | Initial version |
+| 2026-04-14 | Added versioning section (rules 12-13): reproducible LiteLLM version pinned at build time, runtime override via `DOCK_LITELLM_VERSION`, container tag selection via `DOCK_MODEL_TAG`. Added `dock.model.litellm_version` to required labels (rule 15). Renumbered Image rules 14-15. |
