@@ -22,7 +22,7 @@ services:
 
   # User simulator's model — not logged, benchmark infrastructure
   user-model:
-    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/models/${DOCK_USER_MODEL:-${DOCK_MODEL:-claude-sonnet-4}}:latest
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/models/${DOCK_USER_MODEL:-${DOCK_MODEL:-claude-sonnet-4}}:latest
     env_file: ../../.env
     networks:
       - internal

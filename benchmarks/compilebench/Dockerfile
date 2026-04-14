@@ -6,7 +6,7 @@
 # This Dockerfile fetches a single task's assets from the upstream repo
 # and sets up the Dock entrypoint. The base image comes from the task's own Dockerfile.
 #
-# Build: docker build --build-arg TASK_ID=curl -t ghcr.io/dock-eval/benchmarks/compilebench-curl:latest .
+# Build: docker build --build-arg TASK_ID=curl -t quay.io/dock-eval/benchmarks/compilebench-curl:latest .
 
 ARG TASK_ID
 ARG BASE_IMAGE=ubuntu:22.04
@@ -41,7 +41,7 @@ RUN chmod -R 600 /tasks
 
 WORKDIR /workdir
 
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

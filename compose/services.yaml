@@ -7,7 +7,7 @@
 
 services:
   model:
-    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/models/${DOCK_MODEL:-claude-sonnet-4}:latest
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/models/${DOCK_MODEL:-claude-sonnet-4}:latest
     networks:
       - internal
       - default

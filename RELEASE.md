@@ -9,7 +9,7 @@ This document covers how Dock images get built, tagged, and pushed to the regist
 
 **CI builds the fleet. Humans build one thing at a time.**
 
-Releasing means producing 77 benchmark images + 11 agent images, all tagged, labeled, and pushed to `ghcr.io/dock-eval`. That's a fleet build. The right tool is [Docker Bake](https://docs.docker.com/build/bake/) — Docker's native declarative multi-image build tool.
+Releasing means producing 77 benchmark images + 11 agent images, all tagged, labeled, and pushed to `quay.io/dock-eval`. That's a fleet build. The right tool is [Docker Bake](https://docs.docker.com/build/bake/) — Docker's native declarative multi-image build tool.
 
 ## The plan
 
@@ -37,7 +37,7 @@ docker buildx bake -f <(scripts/bake-plan.sh) --check
 # Build everything locally (no push)
 docker buildx bake -f <(scripts/bake-plan.sh)
 
-# Build + push to ghcr.io/dock-eval (the actual release step)
+# Build + push to quay.io/dock-eval (the actual release step)
 docker buildx bake -f <(scripts/bake-plan.sh) --push
 
 # One target by name

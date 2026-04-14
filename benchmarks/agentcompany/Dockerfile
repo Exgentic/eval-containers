@@ -59,7 +59,7 @@ echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
 
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

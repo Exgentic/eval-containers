@@ -45,10 +45,10 @@ RUN chmod -R 600 /tasks
 WORKDIR /app
 ENV BENCHMARK={name}
 
-COPY --from=ghcr.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -84,7 +84,7 @@ services:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/{name}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/{name}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
       - BENCHMARK={name}

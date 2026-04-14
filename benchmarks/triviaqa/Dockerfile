@@ -45,7 +45,7 @@ RUN chmod -R 600 /tasks
 WORKDIR /app
 ENV BENCHMARK=triviaqa
 
-COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
 RUN chmod +x /dock-entrypoint.sh
 
 # Custom test: normalize agent output + any alias; accept if any match.

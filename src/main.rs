@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 #[command(name = "dock", version, about = "A build system for AI agent evaluations")]
 struct Cli {
     /// Docker registry to use
-    #[arg(long, env = "DOCK_REGISTRY", default_value = "ghcr.io/dock-eval")]
+    #[arg(long, env = "DOCK_REGISTRY", default_value = "quay.io/dock-eval")]
     registry: String,
 
     #[command(subcommand)]

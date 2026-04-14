@@ -90,7 +90,7 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 fn ensure_images(benchmark: &str, agent: &str) {
     // Build replay model
     let status = Command::new("docker")
-        .args(["build", "-t", "ghcr.io/dock-eval/models/replay:latest", "models/replay/"])
+        .args(["build", "-t", "quay.io/dock-eval/models/replay:latest", "models/replay/"])
         .status()
         .expect("failed to build replay model");
     assert!(status.success(), "failed to build replay model");

@@ -67,8 +67,8 @@ fn report_aggregates_two_tasks() {
 ```rust
 #[test]
 fn eval_image_uses_double_dash_separator() {
-    let name = eval_image_name("ghcr.io/dock-eval", "aime", "claude-code", "2.5.0");
-    assert_eq!(name, "ghcr.io/dock-eval/evals/aime--claude-code:2.5.0");
+    let name = eval_image_name("quay.io/dock-eval", "aime", "claude-code", "2.5.0");
+    assert_eq!(name, "quay.io/dock-eval/evals/aime--claude-code:2.5.0");
 }
 ```
 

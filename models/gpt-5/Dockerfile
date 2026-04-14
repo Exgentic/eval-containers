@@ -1,4 +1,4 @@
-FROM ghcr.io/dock-eval/core/litellm:latest
+FROM quay.io/dock-eval/core/litellm:latest
 
 LABEL dock.type="model"
 LABEL dock.model.name="gpt-5"

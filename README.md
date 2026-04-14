@@ -10,7 +10,7 @@ echo "OPENAI_API_KEY=sk-..." > .env
 
 # Run one task — pure docker, no clone, no CLI
 DOCK_BENCHMARK=aime DOCK_TASK_ID=0 DOCK_AGENT=codex DOCK_MODEL=gpt-5.4 \
-  docker compose -f oci://ghcr.io/dock-eval/benchmarks/aime:compose up --abort-on-container-exit
+  docker compose -f oci://quay.io/dock-eval/benchmarks/aime:compose up --abort-on-container-exit
 
 # Results
 cat output/aime/0/task/result.json
@@ -42,7 +42,7 @@ All Dock env vars are prefixed `DOCK_` to avoid collision with CI systems, orche
 | `DOCK_AGENT_VERSION` | Override the built-in agent upstream version | built-in pin |
 | `DOCK_MODEL_VERSION` | Override the built-in model image tag | `latest` |
 | `DOCK_TIMEOUT` | Agent timeout in seconds | `300` |
-| `DOCK_REGISTRY` | Registry to pull from | `ghcr.io/dock-eval` |
+| `DOCK_REGISTRY` | Registry to pull from | `quay.io/dock-eval` |
 
 Every image ships with a **reproducible default**, so casual users never touch the version vars. Power users pin.
 
@@ -60,7 +60,7 @@ If you're on Docker < 2.34, airgapped, or just prefer a local file:
 
 ```bash
 # Fetch + flatten the compose file once (needs a machine with network)
-docker compose -f oci://ghcr.io/dock-eval/benchmarks/aime:compose config > aime.compose.yaml
+docker compose -f oci://quay.io/dock-eval/benchmarks/aime:compose config > aime.compose.yaml
 
 # Transport aime.compose.yaml anywhere. Run offline:
 DOCK_TASK_ID=0 DOCK_AGENT=codex DOCK_MODEL=gpt-5.4 \
@@ -70,8 +70,8 @@ DOCK_TASK_ID=0 DOCK_AGENT=codex DOCK_MODEL=gpt-5.4 \
 Or for fully airgapped deployments, bundle the images too:
 
 ```bash
-docker save ghcr.io/dock-eval/evals/aime--codex:latest \
-            ghcr.io/dock-eval/models/gpt-5.4:latest \
+docker save quay.io/dock-eval/evals/aime--codex:latest \
+            quay.io/dock-eval/models/gpt-5.4:latest \
   | gzip > aime-bundle.tar.gz
 ```
 
