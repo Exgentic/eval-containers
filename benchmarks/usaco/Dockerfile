@@ -11,6 +11,8 @@ LABEL dock.benchmark.tasks="307"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/dapumptu/usaco_benchmark"
+LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/usaco"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/usaco"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 

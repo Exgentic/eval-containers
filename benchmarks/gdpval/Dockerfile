@@ -12,6 +12,7 @@ LABEL dock.benchmark.tasks="220"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="true"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/gdpval"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gdpval"
 
 RUN apt-get update && apt-get install -y \
     libreoffice curl wget \

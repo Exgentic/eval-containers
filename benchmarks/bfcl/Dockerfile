@@ -12,6 +12,8 @@ LABEL dock.benchmark.tasks="2000"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/ShishirPatil/gorilla"
+LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/bfcl"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bfcl"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.06840"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

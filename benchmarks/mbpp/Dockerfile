@@ -12,6 +12,7 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="4bb6404fdc6cacfda99d4ac4205087b89d32030c"
 LABEL dock.benchmark.url="https://github.com/google-research/google-research/tree/master/mbpp"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mbpp"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2108.07732"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

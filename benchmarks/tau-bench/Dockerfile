@@ -14,6 +14,7 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="59a200c6d575d595120f1cb70fea53cef0632f6b"
 LABEL dock.benchmark.url="https://github.com/sierra-research/tau-bench"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/tau2"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.12045"
 
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*

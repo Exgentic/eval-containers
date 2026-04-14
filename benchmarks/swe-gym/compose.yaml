@@ -1,0 +1,33 @@
+# SWE-Gym
+# 2438 Python SWE tasks, shared-env. Externally graded via upstream harness.
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-swe-gym}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/swe-gym--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=swe-gym
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+    volumes:
+      - ../../output/${BENCHMARK:-swe-gym}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-swe-gym}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 16G
+
+networks:
+  internal:
+    internal: true

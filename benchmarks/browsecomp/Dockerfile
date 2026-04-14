@@ -11,6 +11,7 @@ LABEL dock.benchmark.tasks="1266"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="true"
 LABEL dock.benchmark.url="https://github.com/openai/simple-evals"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2504.16186"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

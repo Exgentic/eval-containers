@@ -1,0 +1,38 @@
+# AssistantBench
+# 33 validation tasks. Internet ENABLED — agent performs open-web research.
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-assistantbench}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/assistantbench--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=assistantbench
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+    volumes:
+      - ../../output/${BENCHMARK:-assistantbench}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-assistantbench}/${TASK_ID:-default}/task:/output/task:rw
+    networks:
+      - internal
+      - external
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true
+  external:
+    driver: bridge

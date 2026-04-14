@@ -12,6 +12,7 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be"
 LABEL dock.benchmark.url="https://github.com/hendrycks/math"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/math"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2103.03874"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

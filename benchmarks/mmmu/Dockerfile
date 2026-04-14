@@ -12,6 +12,7 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
 LABEL dock.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.16502"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

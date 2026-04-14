@@ -1,0 +1,33 @@
+# Arena-Hard Auto - pairwise chat eval with LLM-as-judge
+# 500 tasks, shared environment, no internet.
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-arena-hard}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/arena-hard--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=arena-hard
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
+    volumes:
+      - ../../output/${BENCHMARK:-arena-hard}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-arena-hard}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true
