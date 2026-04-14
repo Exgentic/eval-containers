@@ -47,7 +47,7 @@ PYEOF
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=writingbench
+ENV DOCK_BENCHMARK=writingbench
 
 # Test: externally graded (upstream critic model). Preserve agent output, write -1.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -63,10 +63,10 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a professional writer. Complete the following writing request as fully and faithfully as possible. Output ONLY the finished piece of writing, with no preamble or commentary.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

@@ -53,7 +53,7 @@ RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=mind2web
+ENV DOCK_BENCHMARK=mind2web
 
 # Test: externally graded. Preserve agent trace, write -1.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -70,15 +70,15 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  META=$(cat /tasks/$TASK_ID/meta.json)
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  META=$(cat /tasks/$DOCK_TASK_ID/meta.json)
   export TASK="You are a generalist web agent. Produce a step-by-step action trace that
 would complete the following task on the target website. Each line of your output
 MUST describe one UI action in the form: [element_type] element_label -> ACTION[: value]
 
 Target site metadata: $META
 
-Task: $(cat /tasks/$TASK_ID/problem.txt)"
+Task: $(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

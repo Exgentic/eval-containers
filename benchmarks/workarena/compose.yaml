@@ -9,7 +9,7 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-workarena}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-workarena}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
@@ -18,14 +18,14 @@ services:
     image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/workarena--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
-      - BENCHMARK=workarena
+      - DOCK_BENCHMARK=workarena
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
       - SNOW_INSTANCE_URL=${SNOW_INSTANCE_URL:-}
       - SNOW_INSTANCE_UNAME=${SNOW_INSTANCE_UNAME:-}
       - SNOW_INSTANCE_PWD=${SNOW_INSTANCE_PWD:-}
     volumes:
-      - ../../output/${BENCHMARK:-workarena}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-workarena}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-workarena}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-workarena}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     networks:
       - internal
       - external

@@ -103,7 +103,7 @@ RUN rm -rf /tmp/data
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=longbench
+ENV DOCK_BENCHMARK=longbench
 
 # Custom test: metric selected per task type (F1 / ROUGE-L / classification / edit-sim)
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -118,7 +118,7 @@ import os, json, re, string
 from collections import Counter
 from difflib import SequenceMatcher
 
-task_id = os.environ.get('TASK_ID', '')
+task_id = os.environ.get('DOCK_TASK_ID', '')
 d = f'/tasks/{task_id}'
 metric = open(f'{d}/metric.txt').read().strip()
 answers = json.load(open(f'{d}/answers.json'))
@@ -225,8 +225,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  cp /tasks/$TASK_ID/problem.txt /app/task.txt
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  cp /tasks/$DOCK_TASK_ID/problem.txt /app/task.txt
   chmod 644 /app/task.txt
   export TASK="Your task is in /app/task.txt. Read the instructions and context there carefully, then print only the requested answer to stdout."
 fi

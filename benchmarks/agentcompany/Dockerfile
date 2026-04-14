@@ -47,7 +47,7 @@ PYEOF
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=agentcompany
+ENV DOCK_BENCHMARK=agentcompany
 
 # Test: externally graded by upstream per-task evaluator.py against the hosted
 # services. Capture the agent's final response and write -1.
@@ -64,10 +64,10 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are an AI assistant working at a simulated tech company. Read the task brief below and respond with the steps you would take and any final deliverables (messages to send, files to create, answers to compute).
 
-$(cat /tasks/$TASK_ID/problem.txt)"
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

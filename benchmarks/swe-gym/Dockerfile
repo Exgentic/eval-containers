@@ -50,7 +50,7 @@ RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=swe-gym
+ENV DOCK_BENCHMARK=swe-gym
 
 # Test: externally graded. Preserve agent patch/transcript for offline SWE-bench grading.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -69,15 +69,15 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  CONFIG=$(cat /tasks/$TASK_ID/config.json)
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  CONFIG=$(cat /tasks/$DOCK_TASK_ID/config.json)
   REPO=$(python3 -c "import json; print(json.loads('''$CONFIG''')['repo'])")
   COMMIT=$(python3 -c "import json; print(json.loads('''$CONFIG''')['base_commit'])")
   export TASK="Fix this GitHub issue in the Python repository $REPO at commit $COMMIT.
 Produce a unified diff patch that resolves the bug. Print the patch to stdout.
 Do NOT modify any test files.
 
-$(cat /tasks/$TASK_ID/problem.txt)"
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

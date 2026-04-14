@@ -18,7 +18,7 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-tau-bench}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-tau-bench}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   # User simulator's model — not logged, benchmark infrastructure
   user-model:
@@ -50,7 +50,7 @@ services:
     build:
       context: .
     environment:
-      - TASK_ID=${TASK_ID:-0}
+      - DOCK_TASK_ID=${DOCK_TASK_ID:-0}
       - BRIDGE_URL=http://bridge:8000/v1
       - MODEL_URL=http://user-model:4000/v1
       - OPENAI_API_KEY=sk-proxy
@@ -87,7 +87,7 @@ services:
     networks:
       - internal
     volumes:
-      - ../../output/${BENCHMARK:-tau-bench}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-tau-bench}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
     deploy:
       resources:
         limits:

@@ -50,7 +50,7 @@ RUN rm -rf /tmp/hle /root/.cache/huggingface && pip uninstall -y huggingface_hub
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=hle
+ENV DOCK_BENCHMARK=hle
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
@@ -60,16 +60,16 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  ANSWER_TYPE=$(cat /tasks/$TASK_ID/answer_type.txt 2>/dev/null)
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  ANSWER_TYPE=$(cat /tasks/$DOCK_TASK_ID/answer_type.txt 2>/dev/null)
   if [ "$ANSWER_TYPE" = "multiple_choice" ]; then
     PROMPT="Answer this multiple choice question. Print only the letter of the correct answer, nothing else."
   else
     PROMPT="Answer this question. Print only the final answer, nothing else. Be as concise as possible."
   fi
   # If the task has an image, copy it to /app/ for agent access
-  if [ -f /tasks/$TASK_ID/image.txt ]; then
-    cp /tasks/$TASK_ID/image.txt /app/image.txt
+  if [ -f /tasks/$DOCK_TASK_ID/image.txt ]; then
+    cp /tasks/$DOCK_TASK_ID/image.txt /app/image.txt
     chmod 644 /app/image.txt
     PROMPT="$PROMPT
 
@@ -77,8 +77,8 @@ Note: This question includes an image. See /app/image.txt for the image data."
   fi
   export TASK="$PROMPT
 
-$(cat /tasks/$TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

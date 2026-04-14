@@ -37,13 +37,13 @@ RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=bigcodebench
+ENV DOCK_BENCHMARK=bigcodebench
 
 # Test: combine agent solution with upstream test and run unittest
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 TEST_CODE=$(cat $TASK_DIR/test.txt)
 
@@ -76,10 +76,10 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Write a complete, self-contained Python solution for the following task. Print ONLY the Python code (including all needed imports and the full function definition), nothing else.
 
-$(cat /tasks/$TASK_ID/instruct_prompt.txt)"
+$(cat /tasks/$DOCK_TASK_ID/instruct_prompt.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

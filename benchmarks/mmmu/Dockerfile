@@ -67,7 +67,7 @@ RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=mmmu
+ENV DOCK_BENCHMARK=mmmu
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
@@ -77,10 +77,10 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   # Copy images to /app/ so the agent can see them
   IMAGE_LIST=""
-  for f in /tasks/$TASK_ID/image_*.png; do
+  for f in /tasks/$DOCK_TASK_ID/image_*.png; do
     [ -f "$f" ] || continue
     name=$(basename "$f")
     cp "$f" /app/"$name"
@@ -88,8 +88,8 @@ if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
 /app/${name}"
   done
 
-  OPTIONS=$(cat /tasks/$TASK_ID/options.txt)
-  PROBLEM=$(cat /tasks/$TASK_ID/problem.txt)
+  OPTIONS=$(cat /tasks/$DOCK_TASK_ID/options.txt)
+  PROBLEM=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
 
   if [ -n "$IMAGE_LIST" ]; then
     export TASK="Look at the provided image(s) and answer this multiple choice question. Print only the answer letter (A, B, C, D, etc.), nothing else.
@@ -106,7 +106,7 @@ Question: ${PROBLEM}
 
 Options: ${OPTIONS}"
   fi
-  export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
 fi
 exec /dock-entrypoint.sh
 ENTRY

@@ -76,7 +76,7 @@ PYEOF
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=workarena
+ENV DOCK_BENCHMARK=workarena
 
 # Test: externally graded. Capture transcript, write -1.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -92,8 +92,8 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$TASK_ID/problem.txt)
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)
 
 ServiceNow instance: $SNOW_INSTANCE_URL
 ServiceNow user:     $SNOW_INSTANCE_UNAME

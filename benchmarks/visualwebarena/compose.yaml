@@ -9,7 +9,7 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-visualwebarena}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-visualwebarena}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
@@ -18,7 +18,7 @@ services:
     image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/visualwebarena--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
-      - BENCHMARK=visualwebarena
+      - DOCK_BENCHMARK=visualwebarena
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
       - HTTP_PROXY=http://proxy:8080
       - HTTPS_PROXY=http://proxy:8080
@@ -28,8 +28,8 @@ services:
       - REDDIT_URL=http://reddit:80
       - SHOPPING_URL=http://shopping:80
     volumes:
-      - ../../output/${BENCHMARK:-visualwebarena}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-visualwebarena}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-visualwebarena}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-visualwebarena}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     depends_on:
       proxy:
         condition: service_started
@@ -49,7 +49,7 @@ services:
       --listen-port 8080
       --set hardump=/output/network.har
     volumes:
-      - ../../output/${BENCHMARK:-visualwebarena}/${TASK_ID:-default}/agent:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-visualwebarena}/${DOCK_TASK_ID:-default}/agent:/output:rw
     networks:
       - internal
       - default

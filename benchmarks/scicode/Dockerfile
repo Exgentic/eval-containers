@@ -74,14 +74,14 @@ PYEOF
 RUN chmod -R 600 /tasks && chmod 600 /tests/data/test_data.h5
 
 WORKDIR /app
-ENV BENCHMARK=scicode
+ENV DOCK_BENCHMARK=scicode
 
 # Test: combine agent code with all sub-step test cases and run against test_data.h5
 # Scoring: fraction of subproblems passed for this main problem.
 RUN cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 
 if [ -z "$SOLUTION" ]; then
@@ -220,15 +220,15 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   BG=""
-  [ -s "/tasks/$TASK_ID/background.txt" ] && BG="
+  [ -s "/tasks/$DOCK_TASK_ID/background.txt" ] && BG="
 
 Background:
-$(cat /tasks/$TASK_ID/background.txt)"
+$(cat /tasks/$DOCK_TASK_ID/background.txt)"
   SUBS=$(python3 -c "
 import json
-sub = json.loads(open('/tasks/$TASK_ID/sub_steps.json').read())
+sub = json.loads(open('/tasks/$DOCK_TASK_ID/sub_steps.json').read())
 for s in sub:
     print(f\"Step {s.get('step_number','')}:\")
     print(s.get('step_description_prompt',''))
@@ -239,13 +239,13 @@ for s in sub:
   export TASK="Solve this scientific research coding problem. Implement ALL sub-step functions in a single Python file. Use the given function headers and return lines exactly. Print ONLY the complete Python code (including the required imports), nothing else.$BG
 
 Problem:
-$(cat /tasks/$TASK_ID/problem.txt)
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)
 
 I/O spec:
-$(cat /tasks/$TASK_ID/io.txt)
+$(cat /tasks/$DOCK_TASK_ID/io.txt)
 
 Required imports:
-$(cat /tasks/$TASK_ID/dependencies.txt)
+$(cat /tasks/$DOCK_TASK_ID/dependencies.txt)
 
 Sub-steps:
 $SUBS"

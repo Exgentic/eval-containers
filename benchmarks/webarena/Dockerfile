@@ -38,14 +38,14 @@ PYEOF
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=webarena-verified
+ENV DOCK_BENCHMARK=webarena-verified
 
 # Test: run official webarena-verified evaluator
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
-TASK_ORIG_ID=$(cat /tasks/$TASK_ID/id.txt)
+TASK_ORIG_ID=$(cat /tasks/$DOCK_TASK_ID/id.txt)
 
 # Prepare eval directory structure: {task_id}/agent_response.json + network.har
 EVAL_DIR=$(mktemp -d)
@@ -136,8 +136,8 @@ RUN chmod +x /dock-entrypoint.sh
 #       This should be solved by the benchmark, not forced on the agent.
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
-  INTENT=$(cat /tasks/$TASK_ID/problem.txt)
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+  INTENT=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
   export TASK="You are a web browsing agent. Complete this task by interacting with websites.
 
 Task: $INTENT

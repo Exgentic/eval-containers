@@ -11,21 +11,21 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-mle-bench}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-mle-bench}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/mle-bench-${TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/mle-bench-${DOCK_TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
     env_file: ../../.env
     environment:
-      - BENCHMARK=mle-bench
-      - TASK_ID=${TASK_ID}
+      - DOCK_BENCHMARK=mle-bench
+      - DOCK_TASK_ID=${DOCK_TASK_ID}
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-86400}
     volumes:
-      - ../../output/${BENCHMARK:-mle-bench}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-mle-bench}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-mle-bench}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-mle-bench}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

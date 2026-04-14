@@ -61,13 +61,13 @@ RUN rm -f /tmp/*.jsonl
 RUN chmod -R 600 /tasks
 
 WORKDIR /app
-ENV BENCHMARK=livecodebench
+ENV DOCK_BENCHMARK=livecodebench
 
 # Test: compile agent's solution and run against test cases
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$TASK_ID"
+TASK_DIR="/tasks/$DOCK_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 PASSED=0
 TOTAL=0
@@ -138,15 +138,15 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   STARTER=""
-  [ -f "/tasks/$TASK_ID/starter_code.txt" ] && STARTER="
+  [ -f "/tasks/$DOCK_TASK_ID/starter_code.txt" ] && STARTER="
 
 Starter code:
-$(cat /tasks/$TASK_ID/starter_code.txt)"
+$(cat /tasks/$DOCK_TASK_ID/starter_code.txt)"
   export TASK="Solve this competitive programming problem. Print ONLY the complete source code (Python or C++), nothing else.$STARTER
 
-$(cat /tasks/$TASK_ID/problem.txt)"
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

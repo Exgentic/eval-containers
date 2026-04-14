@@ -78,7 +78,7 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${BENCHMARK:-{name}}/${TASK_ID:-default}/model:/output:rw
+      - ../../output/${DOCK_BENCHMARK:-{name}}/${DOCK_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
@@ -90,8 +90,8 @@ services:
       - BENCHMARK={name}
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
     volumes:
-      - ../../output/${BENCHMARK:-{name}}/${TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${BENCHMARK:-{name}}/${TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${DOCK_BENCHMARK:-{name}}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-{name}}/${DOCK_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

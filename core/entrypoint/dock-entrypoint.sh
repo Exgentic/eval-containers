@@ -16,7 +16,7 @@ unset EXPECTED_ANSWER
 STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 su agent -s /bin/bash -c "
   export TASK='$(echo "$TASK" | sed "s/'/'\\\\''/g")'
-  export TASK_ID='${TASK_ID:-}'
+  export DOCK_TASK_ID='${DOCK_TASK_ID:-}'
   export OPENAI_BASE_URL='${OPENAI_BASE_URL:-}'
   export ANTHROPIC_BASE_URL='${ANTHROPIC_BASE_URL:-}'
   timeout ${DOCK_TIMEOUT:-300} /opt/agent/entrypoint.sh
@@ -36,4 +36,4 @@ bash /tests/test.sh || true
 REWARD=$(cat /logs/verifier/reward.txt 2>/dev/null || echo 0)
 PASSED=$([ "$REWARD" = "1" ] && echo true || echo false)
 printf '{"task_id":"%s","benchmark":"%s","reward":%s,"passed":%s}' \
-  "${TASK_ID:-unknown}" "${BENCHMARK:-unknown}" "$REWARD" "$PASSED" > /output/task/result.json
+  "${DOCK_TASK_ID:-unknown}" "${DOCK_BENCHMARK:-unknown}" "$REWARD" "$PASSED" > /output/task/result.json
