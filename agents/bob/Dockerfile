@@ -8,19 +8,27 @@ LABEL dock.agent.name="bob"
 LABEL dock.agent.description="IBM Bob Shell — AI SDLC partner"
 LABEL dock.agent.runtime="node"
 LABEL dock.agent.url="https://github.com/ibm/bob-shell"
-LABEL dock.agent.version="unpinned"
+LABEL dock.agent.version="1.0.1"
 ENV DOCK_AGENT=bob
+
+ARG BOB_VERSION=1.0.1
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js 22.x (Bob Shell requires >= 22.15)
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y nodejs
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install IBM Bob Shell (pinned version)
-# The official install script fetches a versioned tgz and runs npm install -g.
-# We invoke it non-interactively; it auto-detects npm.
-RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash
+# Install IBM Bob Shell — pinned version, direct tarball download.
+# The upstream install script (bob.ibm.com/download/bobshell.sh) fetches a
+# MUTABLE version file from S3 on every run, so every build would drift.
+# We bypass it and install $BOB_VERSION directly via npm, which pins the
+# exact version into the image. Bump $BOB_VERSION in the ARG above to upgrade.
+RUN curl -fsSL "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOB_VERSION}.tgz" \
+      -o /tmp/bobshell.tgz \
+    && npm install -g /tmp/bobshell.tgz \
+    && rm /tmp/bobshell.tgz
 
 # Package agent files for combination template
 RUN mkdir -p /opt/agent
@@ -29,9 +37,12 @@ RUN <<'EOF'
 cat > /opt/agent/install.sh <<'INSTALL'
 #!/bin/bash
 set -euo pipefail
+: "${BOB_VERSION:=1.0.1}"
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
-apt-get install -y nodejs
-curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash
+apt-get install -y nodejs && rm -rf /var/lib/apt/lists/*
+curl -fsSL "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOB_VERSION}.tgz" -o /tmp/bobshell.tgz
+npm install -g /tmp/bobshell.tgz
+rm /tmp/bobshell.tgz
 INSTALL
 chmod +x /opt/agent/install.sh
 EOF
