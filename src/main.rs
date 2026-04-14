@@ -1,5 +1,8 @@
 mod build;
+mod images;
+mod inspect;
 mod list;
+mod prune;
 mod push;
 mod run;
 mod report;
@@ -23,8 +26,14 @@ enum Commands {
     Build(build::BuildArgs),
     /// Push images to the registry
     Push(push::PushArgs),
-    /// List available benchmarks, agents, or eval images
+    /// List dock images with metadata (benchmarks, agents, models, evals)
     List(list::ListArgs),
+    /// Show dock images with sizes (wraps `docker images`)
+    Images(images::ImagesArgs),
+    /// Inspect a dock image (wraps `docker inspect`)
+    Inspect(inspect::InspectArgs),
+    /// Reclaim disk (wraps `docker builder prune` + `docker image prune`)
+    Prune(prune::PruneArgs),
     /// Run evaluations
     Run(run::RunArgs),
     /// Aggregate and report results
@@ -38,6 +47,9 @@ fn main() {
         Commands::Build(args) => build::execute(&cli.registry, args),
         Commands::Push(args) => push::execute(&cli.registry, args),
         Commands::List(args) => list::execute(&cli.registry, args),
+        Commands::Images(args) => images::execute(&cli.registry, args),
+        Commands::Inspect(args) => inspect::execute(&cli.registry, args),
+        Commands::Prune(args) => prune::execute(args),
         Commands::Run(args) => run::execute(&cli.registry, args),
         Commands::Report(args) => report::execute(args),
     };
