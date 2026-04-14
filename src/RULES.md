@@ -37,17 +37,19 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 9. **Local-first.** The CLI SHOULD prefer locally cached images. It MUST support `--local` for development against local compose files.
 
+10. **Env var ↔ CLI flag parity.** Every `DOCK_*` env var MUST be exposable as a CLI flag with the same name, converted from `SCREAMING_SNAKE_CASE` to `--kebab-case` and stripped of the `DOCK_` prefix. `DOCK_BENCHMARK` → `--benchmark`, `DOCK_AGENT_VERSION` → `--agent-version`, `DOCK_TASK_ID` → `--task-id`, `DOCK_TIMEOUT` → `--timeout`. When both are set, the CLI flag MUST override the env var. The CLI's job is to translate flags into the corresponding env vars before shelling out to `docker compose`.
+
 ### Commands
 
-10. **Build.** `dock build agent|bench|model|eval` — each MUST map to a single `docker build` call.
+11. **Build.** `dock build agent|bench|model|eval` — each MUST map to a single `docker build` call.
 
-11. **Run.** `dock run {benchmark} --agent {name} --task-id {id}` — MUST map to `docker compose up`. MUST accept `--model`, `--timeout`, `--local` overrides.
+12. **Run.** `dock run {benchmark} --agent {name} --task-id {id}` — MUST map to `docker compose up`. MUST accept `--model`, `--benchmark-version`, `--agent-version`, `--model-version`, `--timeout`, `--local` overrides.
 
-12. **Report.** `dock report ./output/` — MUST walk the output directory, read `result.json` files, and aggregate. MUST support `--format csv|json`.
+13. **Report.** `dock report ./output/` — MUST walk the output directory, read `result.json` files, and aggregate. MUST support `--format csv|json`.
 
-13. **List.** `dock list benchmarks|agents|models` — MUST read Docker image labels. No separate database or index.
+14. **List.** `dock list benchmarks|agents|models` — MUST read Docker image labels. No separate database or index.
 
-14. **Push.** `dock push agent|bench|model|eval` — MUST map to `docker push`.
+15. **Push.** `dock push agent|bench|model|eval` — MUST map to `docker push`.
 
 ## References
 
@@ -58,3 +60,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | Date | Change |
 |------|--------|
 | 2026-04-13 | Initial version |
+| 2026-04-14 | Added principle 10: env var / CLI flag parity — every `DOCK_*` env var MUST be exposable as a `--kebab-case` flag; CLI flag overrides env var. Updated `dock run` (principle 12) to list the standard version/timeout flags. Renumbered commands (11–15). |
