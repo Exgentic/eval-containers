@@ -29,11 +29,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 8. **Clean code.** All code MUST be the most simple, minimal, clean, and easy to maintain implementation that serves its goals. No dead code, no premature abstractions, no unnecessary dependencies. This is not a suggestion.
 
-9. **Pin by default, control via env var.** Every benchmark, agent, and model image MUST ship with a default version of its upstream dependency pinned at build time and recorded in the corresponding label (`dock.benchmark.data_revision`, `dock.agent.version`, `dock.model.version`). The default MUST produce a reproducible run with no environment variables set.
-
-    Every image MUST also accept a runtime override via standard environment variables (`DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_MODEL_VERSION`). When set, the entrypoint MUST install or activate the requested version before the evaluation starts, and MUST write the resolved version to the run output directory (`/output/task/version.json` and `/output/agent/version.json`) so every run record is fully self-describing.
-
-    Image tags encode the Dock component version (the image's own wiring), not the upstream dependency version. Upstream version bumps do not require a new tag.
+9. **Pin by default, control via env var.** Every benchmark and agent image MUST ship with a reproducible default that runs with no environment variables set. Every image MUST also expose runtime control over its upstream version via a standard `DOCK_*_VERSION` env var, and MUST write the resolved version to its run output directory so every run record is self-describing. Image tags encode the Dock component version (the image's own wiring), not the upstream dependency version — upstream bumps do not require a new tag. Concrete implementation rules live in `benchmarks/RULES.md` and `agents/RULES.md`.
 
 10. **Image hygiene.** Dock ships ~100+ images. Image thinness is not optional — it's what makes `docker pull` fast and the fleet build affordable. Every Dockerfile MUST follow these rules, and reviewers MUST enforce them:
 
