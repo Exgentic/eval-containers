@@ -7,7 +7,7 @@ ARG DOCK_TASK_ID
 FROM ghcr.io/epoch-research/swe-bench.eval.x86_64.${DOCK_TASK_ID}:latest
 
 LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="swebench"
+LABEL dock.benchmark.name="swe-bench"
 LABEL dock.benchmark.description="SWE-bench Verified - software engineering"
 LABEL dock.benchmark.tasks="500"
 LABEL dock.benchmark.env="per-task"

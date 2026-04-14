@@ -132,7 +132,7 @@ COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-e
 RUN chmod +x /dock-entrypoint.sh
 
 # Entrypoint: build task prompt with sidecar URLs and credentials
-# TODO: Requiring structured JSON output from the agent is agent-specific.
+# FUTURE: Consider a structured JSON output contract; currently agent-specific.
 #       This should be solved by the benchmark, not forced on the agent.
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
