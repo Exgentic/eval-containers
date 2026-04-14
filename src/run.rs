@@ -19,8 +19,13 @@ use std::process::Command;
 
 #[derive(Args)]
 pub struct RunArgs {
+    /// Benchmark name (positional shortcut for --benchmark, maps to $DOCK_BENCHMARK)
+    #[arg(value_name = "BENCHMARK")]
+    benchmark_positional: Option<String>,
+
     /// Benchmark name (maps to $DOCK_BENCHMARK)
-    benchmark: String,
+    #[arg(long = "benchmark")]
+    benchmark_flag: Option<String>,
 
     /// Agent to use (maps to $DOCK_AGENT)
     #[arg(long)]
@@ -76,9 +81,16 @@ pub struct RunArgs {
 }
 
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
+    // Resolve benchmark: --benchmark flag wins over positional, either must be set.
+    let benchmark = args
+        .benchmark_flag
+        .clone()
+        .or_else(|| args.benchmark_positional.clone())
+        .ok_or_else(|| "benchmark required (positional or --benchmark)".to_string())?;
+
     // Pick the compose source: local file tree or the unified registry artifact.
     let compose_ref = if args.local {
-        format!("./benchmarks/{}/compose.yaml", args.benchmark)
+        format!("./benchmarks/{}/compose.yaml", benchmark)
     } else {
         format!("oci://{registry}/evaluate")
     };
@@ -86,7 +98,7 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     // Build the env var set. Every flag maps to DOCK_* per src/RULES.md rule 10.
     let mut envs: Vec<(&str, String)> = vec![
         ("DOCK_REGISTRY", registry.to_string()),
-        ("DOCK_BENCHMARK", args.benchmark.clone()),
+        ("DOCK_BENCHMARK", benchmark.clone()),
     ];
     if let Some(ref v) = args.agent {
         envs.push(("DOCK_AGENT", v.clone()));
