@@ -43,19 +43,21 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 11. **Install on any base.** `install.sh` MUST work on any benchmark base image. It MUST handle missing packages and MUST NOT assume a specific OS or language runtime.
 
-12. **Pin versions.** All dependencies MUST be pinned to exact versions. Agent images MUST be reproducible.
+12. **Reproducible by default.** The upstream CLI version MUST be pinned at build time as a default in the Dockerfile (`ARG <NAME>_VERSION=<semver>`) and recorded in `dock.agent.version`. The image MUST produce a reproducible run with no environment variables set.
 
-13. **Labels.** Every agent image MUST include labels: `dock.type`, `dock.agent.name`, `dock.agent.description`.
+13. **Runtime version override.** The entrypoint MUST read `DOCK_AGENT_VERSION` and, when set, install and activate that upstream version in place of the default before handing control to the agent. The entrypoint MUST write the resolved version to `/output/agent/version.json` before the agent starts. When `DOCK_AGENT_VERSION` is unset, the build-time default applies unchanged. Cache volumes (`/opt/agent-cache`) MAY be used to avoid reinstall cost on subsequent runs.
+
+14. **Labels.** Every agent image MUST include labels: `dock.type`, `dock.agent.name`, `dock.agent.description`, `dock.agent.version`.
 
 ### Combination
 
-14. **Build-time integration.** Agents are combined with benchmarks at build time via the combination Dockerfile. The agent layer sits on top of the benchmark base. The agent MUST NOT modify benchmark-provided files.
+15. **Build-time integration.** Agents are combined with benchmarks at build time via the combination Dockerfile. The agent layer sits on top of the benchmark base. The agent MUST NOT modify benchmark-provided files.
 
 ### Testing
 
-15. **Build test.** Every agent image MUST have a build test that verifies the Dockerfile builds and produces correct `dock.*` labels.
+16. **Build test.** Every agent image MUST have a build test that verifies the Dockerfile builds and produces correct `dock.*` labels.
 
-16. **Replay test.** Every agent MUST participate in at least one end-to-end replay test with a recorded fixture. This verifies the agent runs correctly against real model responses without API keys.
+17. **Replay test.** Every agent MUST participate in at least one end-to-end replay test with a recorded fixture. This verifies the agent runs correctly against real model responses without API keys.
 
 ## References
 
@@ -67,3 +69,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | Date | Change |
 |------|--------|
 | 2026-04-13 | Initial version |
+| 2026-04-14 | Split rule 12 into rule 12 (reproducible by default via pinned `ARG <NAME>_VERSION`) and new rule 13 (runtime override via `DOCK_AGENT_VERSION`, writes resolved version to `/output/agent/version.json`). Added `dock.agent.version` to required labels (rule 14). Renumbered rules 14–17. |
