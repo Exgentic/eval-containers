@@ -13,6 +13,7 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
 LABEL dock.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
+LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2403.07974"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*

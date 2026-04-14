@@ -12,6 +12,8 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="true"
 LABEL dock.benchmark.data_revision="682dd723ee1e1697e00360edccf2366dc8418dd9"
 LABEL dock.benchmark.url="https://github.com/gaia-benchmark/GAIA"
+LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/gaia"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gaia"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.12983"
 
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*

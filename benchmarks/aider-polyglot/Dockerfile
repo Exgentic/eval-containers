@@ -13,6 +13,7 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
 LABEL dock.benchmark.url="https://github.com/Aider-AI/polyglot-benchmark"
+LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aider_polyglot"
 
 ENV DEBIAN_FRONTEND=noninteractive
 

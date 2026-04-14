@@ -11,6 +11,7 @@ LABEL dock.benchmark.tasks="250"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/Haowei-PKU/Kumo"
+LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/kumo"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.08857"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

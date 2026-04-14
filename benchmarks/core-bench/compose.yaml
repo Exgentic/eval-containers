@@ -1,0 +1,33 @@
+# CORE-Bench (Computational Reproducibility Benchmark)
+# 45 tasks, shared environment, no internet. Externally graded (reward = -1).
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-core-bench}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/core-bench--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=core-bench
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+    volumes:
+      - ../../output/${BENCHMARK:-core-bench}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-core-bench}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true

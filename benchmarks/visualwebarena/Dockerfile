@@ -1,0 +1,81 @@
+# VisualWebArena (CMU + others)
+# 910 tasks across classifieds (234), reddit (210), shopping (466).
+# Multimodal web agent benchmark with real website sidecars + mitmproxy HAR capture.
+# Evaluation is externally handled by the upstream visualwebarena harness; this image
+# captures the agent's final answer + network HAR and writes -1.
+
+FROM python:3.12-slim
+
+LABEL dock.type="benchmark"
+LABEL dock.benchmark.name="visualwebarena"
+LABEL dock.benchmark.description="VisualWebArena - multimodal web agent tasks with sidecars"
+LABEL dock.benchmark.tasks="910"
+LABEL dock.benchmark.env="shared-env"
+LABEL dock.benchmark.internet="false"
+LABEL dock.benchmark.url="https://github.com/web-arena-x/visualwebarena"
+LABEL dock.benchmark.paper="https://arxiv.org/abs/2401.13649"
+
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+
+# Fetch task configs from upstream and flatten to /tasks/<i>/
+RUN python3 <<'PYEOF'
+import json, os, urllib.request
+BASE = 'https://raw.githubusercontent.com/web-arena-x/visualwebarena/main/config_files/vwa'
+idx = 0
+for site in ('classifieds', 'reddit', 'shopping'):
+    url = f'{BASE}/test_{site}.raw.json'
+    local = f'/tmp/{site}.json'
+    urllib.request.urlretrieve(url, local)
+    tasks = json.load(open(local))
+    for t in tasks:
+        os.makedirs(f'/tasks/{idx}', exist_ok=True)
+        open(f'/tasks/{idx}/id.txt','w').write(f"{site}/{t['task_id']}")
+        open(f'/tasks/{idx}/problem.txt','w').write(t['intent'])
+        json.dump(t, open(f'/tasks/{idx}/task.json','w'))
+        idx += 1
+    os.remove(local)
+print(f'Extracted {idx} tasks')
+PYEOF
+RUN chmod -R 600 /tasks
+
+WORKDIR /app
+ENV BENCHMARK=visualwebarena
+
+# Test: externally graded. Capture agent output + HAR for offline scoring.
+RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+#!/bin/bash
+mkdir -p /logs/verifier
+cp /output/agent/stdout.log /output/task/agent_response.txt 2>/dev/null || true
+cp /output/agent/network.har /output/task/network.har 2>/dev/null || true
+echo -1 > /logs/verifier/reward.txt
+TEST
+RUN chmod +x /tests/test.sh
+
+COPY --from=ghcr.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
+RUN chmod +x /dock-entrypoint.sh
+
+RUN cat > /entrypoint.sh <<'ENTRY'
+#!/bin/bash
+if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
+  INTENT=$(cat /tasks/$TASK_ID/problem.txt)
+  export TASK="You are a multimodal web browsing agent. Complete this task by interacting
+with the provided sidecar websites. Use HTTP_PROXY=http://proxy:8080 for all requests.
+
+Task: $INTENT
+
+Available sites:
+- Classifieds:      http://classifieds:80
+- Reddit:           http://reddit:80
+- Shopping (OneStop): http://shopping:80
+
+Credentials:
+- Classifieds: blake.sullivan@gmail.com / Password.123
+- Reddit:      MarvelsGrantMan136 / test1234
+- Shopping:    emma.lopez@gmail.com / Password.123
+
+When done, print your final answer (or the resulting URL for navigation tasks)."
+fi
+exec /dock-entrypoint.sh
+ENTRY
+RUN chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]

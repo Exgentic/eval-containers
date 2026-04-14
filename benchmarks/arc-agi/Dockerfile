@@ -12,6 +12,8 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="f3283f727488ad98fe575ea6a5ac981e4a188e49"
 LABEL dock.benchmark.url="https://github.com/arcprize/ARC-AGI-2"
+LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/arc_agi_2"
+LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/arc"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1911.01547"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
