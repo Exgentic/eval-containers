@@ -9,6 +9,7 @@ ENV DOCK_AGENT=codex
 LABEL dock.agent.description="OpenAI Codex CLI"
 LABEL dock.agent.runtime="node"
 LABEL dock.agent.url="https://github.com/openai/codex"
+LABEL dock.agent.version="0.120.0"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 

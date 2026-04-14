@@ -9,6 +9,7 @@ LABEL dock.agent.name="claude-code"
 LABEL dock.agent.description="Anthropic Claude Code CLI"
 LABEL dock.agent.runtime="node"
 LABEL dock.agent.url="https://github.com/anthropics/claude-code"
+LABEL dock.agent.version="2.1.104"
 ENV DOCK_AGENT=claude-code
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

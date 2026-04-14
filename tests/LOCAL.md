@@ -9,41 +9,89 @@ This document is the practical counterpart to [RULES.md](RULES.md). RULES define
 
 **Test what you touched locally. Let CI test everything.**
 
-Dock has 77+ benchmarks and 11+ agents. That's 800+ possible eval combinations, most of which you'll never need locally. Build only what you're working on; pull everything else from the registry.
+Dock has 96+ benchmarks and 17+ agents. That's 1600+ possible eval combinations, most of which you'll never need locally. Build only what you're working on; pull everything else from the registry.
+
+## What runtime you need
+
+Dock is a **Docker-first** project. Everything — Dockerfiles, compose files, CI — is written against the standard Docker API. You can run it on any OCI-compatible runtime that exposes a Docker-compatible socket:
+
+- **Docker Desktop** — the canonical path, what CI uses. Easiest if you're on Mac or Windows and don't have a strong preference.
+- **Docker Engine** (Linux) — what the release pipeline runs against. Identical to Docker Desktop for our purposes.
+- **Podman** with the `docker` compatibility CLI — works if you already have Podman installed. A few setup gotchas below.
+- **Colima / OrbStack / Rancher Desktop** — also work; same Docker-compatible API.
+
+**You interact with Docker through the `docker` command and nothing else.** `docker build`, `docker compose`, `docker buildx bake`. The underlying engine doesn't matter. If you find yourself typing `podman` directly, you're off the happy path — fix your setup and use `docker` instead.
 
 ## Disk Budget
 
 | Artifact | Typical size | How many |
 |----------|-------------|----------|
-| Benchmark image | 500 MB – 2 GB | 77 |
-| Agent image | 500 MB – 1 GB | 11 |
+| Benchmark image | 500 MB – 2 GB | 96 |
+| Agent image | 500 MB – 1 GB | 17 |
 | Eval combination | 1 – 3 GB | on demand |
 | Per-task benchmark (swe-bench, compilebench) | 2 GB × N tasks | 500+ |
 
 Building everything locally is **not** an option. Don't try.
 
-## Mac Setup (Podman)
+## Setup: Docker Desktop (recommended)
 
-### 1. Size the VM
+### 1. Install
 
-Give Podman half your RAM, half your cores:
+Download and install Docker Desktop: https://www.docker.com/products/docker-desktop/
+
+### 2. Size the VM
+
+Docker Desktop → Settings → Resources. Give it half your RAM and half your cores (e.g. 32 GB / 10 CPUs on a 64 GB machine). Same budget as Podman.
+
+### 3. Enable Rosetta (Apple Silicon only) — REQUIRED
+
+Most benchmarks are `linux/amd64`. Without Rosetta, Docker Desktop falls back to QEMU, which is **~10× slower** and often crashes on Python extensions (pyarrow segfaults, numpy SIGILL, etc.).
+
+Docker Desktop → Settings → General → **"Use Rosetta for x86_64/amd64 emulation on Apple Silicon"** (checkbox). Apply & restart.
+
+Verify it's actually active by running an amd64 image:
 
 ```bash
-podman machine stop
-podman machine set --memory 32768 --cpus 10  # 32 GB, 10 CPUs
-podman machine start
+docker run --rm --platform=linux/amd64 python:3.12-slim python -c "import platform; print(platform.machine())"
+# Should print: x86_64
 ```
 
-### 2. Enable auto garbage collection
+If builds of python-heavy benchmarks segfault or SIGILL on first use, Rosetta isn't on — re-check the setting.
 
-Set once — Podman reclaims disk automatically when it crosses the threshold:
+### 4. Enable BuildKit garbage collection
+
+Docker Desktop → Settings → Builders → edit the default builder → set **"Garbage collection"** to a fixed budget (e.g. 20 GB). BuildKit reclaims automatically when it crosses the threshold. Without this, `docker build` cache grows unbounded.
+
+## Setup: Podman (alternative)
+
+If you already use Podman, it works — Dock's Dockerfiles and compose files use vanilla syntax with no Docker-only or Podman-only features. You just need to install the Docker-compat CLI shim and point it at Podman, then use `docker` commands from there.
+
+```bash
+brew install docker                    # the docker CLI, client only
+podman machine init                    # if you don't already have one
+podman machine set --memory 32768 --cpus 10
+```
+
+Enable Rosetta on the machine (REQUIRED on Apple Silicon):
+
+```bash
+podman machine ssh "sudo touch /etc/containers/enable-rosetta"
+podman machine stop && podman machine start
+```
+
+Point the `docker` CLI at Podman's socket and verify:
+
+```bash
+export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
+docker version     # should report a running server
+docker info        # should say Context: default, Server OS: linux
+```
+
+From here, use **`docker` commands for everything** — `docker build`, `docker compose`, etc. Never invoke `podman` directly for Dock workflows. If you need BuildKit garbage collection, set it via the podman machine:
 
 ```bash
 podman machine ssh <<'EOF'
 sudo tee /etc/containers/containers.conf.d/gc.conf <<CONF
-[engine]
-image_parallel_copies = 4
-
 [build]
 gc_enabled = true
 gc_keep_storage = "20GB"
@@ -52,43 +100,31 @@ EOF
 podman machine stop && podman machine start
 ```
 
-### 3. Enable Rosetta (Apple Silicon only) — REQUIRED
-
-Most benchmarks are `linux/amd64`. Without Rosetta, Podman falls back to QEMU, which is **~10× slower** and often crashes on Python extensions (pyarrow segfaults, numpy SIGILL, etc.).
-
-```bash
-podman machine ssh "sudo touch /etc/containers/enable-rosetta"
-podman machine stop && podman machine start
-```
-
-**Verify it's actually active:**
-
-```bash
-# Should print "Rosetta" — not "qemu"
-podman machine ssh "cat /proc/sys/fs/binfmt_misc/rosetta 2>/dev/null | head -1 || echo 'NOT ACTIVE'"
-```
-
-If it says `NOT ACTIVE`, the trigger file didn't take effect — re-run the `touch` and restart the machine. This is the single biggest footgun on Apple Silicon: things appear to work, then silently crash on specific benchmarks.
+Note: Podman's docker-compat socket does not support `buildx`. For fleet builds (`docker buildx bake`), use real Docker. Single-image dev-loop builds (`docker build benchmarks/aime/`) work on Podman-backed `docker`.
 
 ## Test Levels
 
-### Level 1: Compose validation (seconds)
+### Level 1: Structural validation (seconds)
 
-Fast. No containers built. Catches YAML errors, bad extends, missing env vars.
+No containers built. Catches missing Dockerfiles, missing labels, broken compose files.
 
 ```bash
-cargo test --test compose -- --ignored
+scripts/validate-all.sh                      # every benchmark + agent on disk
+cargo test --test compose -- --ignored       # cargo equivalent for the 29 committed benchmarks
 ```
 
-Run this on every commit.
+Run on every commit.
 
 ### Level 2: Build the thing you touched
 
-Local dev loop: build exactly the benchmark or eval you're working on. Nothing more.
+Local dev loop: build exactly the benchmark or agent you're working on. Nothing more.
 
 ```bash
 # One benchmark
 docker build -t local/aime benchmarks/aime/
+
+# One agent
+docker build -t local/claude-code agents/claude-code/
 
 # One eval combination (benchmark + agent + model)
 dock build eval aime --agent codex
@@ -101,9 +137,6 @@ That's it. Don't try to build the fleet locally — CI does that via [RELEASE.md
 Full pipeline with recorded LLM trajectories. Deterministic, zero API cost.
 
 ```bash
-# Requires DOCKER_HOST to point to podman socket
-export DOCKER_HOST="unix:///var/folders/.../T/podman/podman-machine-default-api.sock"
-
 cargo test --test replay -- --ignored --test-threads=6
 ```
 
@@ -149,14 +182,14 @@ dock prune
 dock prune --all
 ```
 
-With auto-GC enabled (see setup above), you rarely need `dock prune` manually.
+With BuildKit GC configured in setup, you rarely need `dock prune` manually.
 
 ## Common Workflows
 
 **Starting fresh on a benchmark:**
 ```bash
-# 1. Smoke test compose
-cargo test --test compose -- --ignored compose_test::aime
+# 1. Structural smoke test
+scripts/validate-all.sh
 
 # 2. Build + verify labels
 docker build -t local/aime benchmarks/aime/
@@ -171,7 +204,8 @@ cat output/aime/0/task/result.json
 
 **Before pushing a PR:**
 ```bash
-cargo test --test compose -- --ignored       # all 77, <1s
+scripts/validate-all.sh                      # every benchmark + agent structurally
+cargo test --test compose -- --ignored       # cargo compose tests
 docker build benchmarks/aime/                # only the ones you changed
 cargo test --test replay -- --ignored        # only the ones you changed
 ```
@@ -206,3 +240,4 @@ No local builds needed. CI builds once; everyone pulls.
 - [Testing Policy](RULES.md) — normative spec
 - [CLI](../src/RULES.md) — CLI design rules
 - [Containers](containers/RULES.md) — container test rules
+- [Release pipeline](../RELEASE.md) — how CI builds and pushes the fleet
