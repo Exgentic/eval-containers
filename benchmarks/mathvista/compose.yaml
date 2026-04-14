@@ -1,0 +1,35 @@
+# MathVista
+# 1000 tasks, shared environment, no internet.
+#
+# dock run mathvista --agent claude-code --task-id 0
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-mathvista}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/mathvista--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=mathvista
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
+    volumes:
+      - ../../output/${BENCHMARK:-mathvista}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-mathvista}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true

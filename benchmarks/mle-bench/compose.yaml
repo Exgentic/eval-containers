@@ -1,0 +1,37 @@
+# MLE-bench (OpenAI)
+# 75 Kaggle-style ML engineering tasks. Per-task images. Requires internet
+# (agent installs ML packages and may download pretrained weights at runtime).
+#
+# dock run mle-bench --agent claude-code --task-id <competition-slug>
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-mle-bench}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/mle-bench-${TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=mle-bench
+      - TASK_ID=${TASK_ID}
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-86400}
+    volumes:
+      - ../../output/${BENCHMARK:-mle-bench}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-mle-bench}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 32G
+
+networks:
+  internal:
+    internal: true
