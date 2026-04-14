@@ -1,0 +1,35 @@
+# SWE-Lancer (OpenAI)
+# Real-world freelance software engineering tasks. Per-task images.
+#
+# dock run swe-lancer --agent claude-code --task-id <task-id>
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-swe-lancer}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/swe-lancer-${TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=swe-lancer
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-7200}
+    volumes:
+      - ../../output/${BENCHMARK:-swe-lancer}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-swe-lancer}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "8"
+          memory: 16G
+
+networks:
+  internal:
+    internal: true

@@ -1,0 +1,33 @@
+# WritingBench
+# 1000 tasks, shared environment, no internet. Externally graded.
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${BENCHMARK:-writingbench}/${TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-ghcr.io/dock-eval}/evals/writingbench--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    env_file: ../../.env
+    environment:
+      - BENCHMARK=writingbench
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-900}
+    volumes:
+      - ../../output/${BENCHMARK:-writingbench}/${TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${BENCHMARK:-writingbench}/${TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true
