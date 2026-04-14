@@ -37,7 +37,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 9. **Local-first.** The CLI SHOULD prefer locally cached images. It MUST support `--local` for development against local compose files.
 
-10. **Env var ↔ CLI flag parity.** Every `DOCK_*` env var MUST be exposable as a CLI flag with the same name, converted from `SCREAMING_SNAKE_CASE` to `--kebab-case` and stripped of the `DOCK_` prefix. `DOCK_BENCHMARK` → `--benchmark`, `DOCK_AGENT_VERSION` → `--agent-version`, `DOCK_TASK_ID` → `--task-id`, `DOCK_TIMEOUT` → `--timeout`. When both are set, the CLI flag MUST override the env var. The CLI's job is to translate flags into the corresponding env vars before shelling out to `docker compose`.
+10. **Env var ↔ CLI flag parity.** Every `DOCK_*` environment variable documented in the README or used by any `oci://` compose artifact MUST have a matching `--kebab-case` CLI flag derived by stripping `DOCK_` and lowercasing: `DOCK_BENCHMARK` → `--benchmark`, `DOCK_AGENT_VERSION` → `--agent-version`, `DOCK_TASK_ID` → `--task-id`, `DOCK_TIMEOUT` → `--timeout`, `DOCK_LITELLM_VERSION` → `--litellm-version`, and so on. No exceptions: if it's an env var the user can set, it MUST have a flag form. Positional shortcuts (e.g. `dock run aime` accepting `aime` as the benchmark) are allowed but MUST NOT replace the corresponding `--flag`; both forms MUST work. When both a CLI flag and an env var are set, the CLI flag MUST override the env var. The CLI's sole job in `dock run` is to translate every flag into its corresponding `DOCK_*` env var and shell out to the exact `docker compose -f oci://<registry>/evaluate up` command shown in the README.
 
 ### Commands
 
@@ -62,3 +62,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Added principle 10: env var / CLI flag parity — every `DOCK_*` env var MUST be exposable as a `--kebab-case` flag; CLI flag overrides env var. Updated `dock run` (principle 12) to list the standard version/timeout flags. Renumbered commands (11–15). |
 | 2026-04-14 | Updated `dock run` (principle 12) to enumerate both axes of versioning: container tags (`--benchmark-tag`, `--agent-tag`, `--model-tag`) and internal upstream versions (`--benchmark-version`, `--agent-version`, `--litellm-version`). |
+| 2026-04-14 | Tightened principle 10 (parity): every `DOCK_*` env var used anywhere in the README or in a published compose artifact MUST have a matching `--kebab-case` flag with no exceptions. Positional shortcuts are allowed but MUST NOT replace the flag form. `dock run`'s job is to translate every flag to its env var and shell out to the exact docker compose command in the README. |
