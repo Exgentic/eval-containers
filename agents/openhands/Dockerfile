@@ -8,6 +8,7 @@ LABEL dock.agent.name="openhands"
 LABEL dock.agent.description="OpenHands open-source AI software engineer"
 LABEL dock.agent.runtime="python"
 LABEL dock.agent.url="https://github.com/All-Hands-AI/OpenHands"
+LABEL dock.agent.version="unpinned"
 ENV DOCK_AGENT=openhands
 
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*

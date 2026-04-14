@@ -9,6 +9,7 @@ LABEL dock.agent.name="openclaw"
 LABEL dock.agent.description="OpenClaw general-purpose AI agent"
 LABEL dock.agent.runtime="node"
 LABEL dock.agent.url="https://github.com/openclaw/openclaw"
+LABEL dock.agent.version="2026.4.11"
 ENV DOCK_AGENT=openclaw
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

@@ -8,6 +8,7 @@ LABEL dock.agent.name="goose"
 LABEL dock.agent.description="Block Goose AI agent"
 LABEL dock.agent.runtime="rust"
 LABEL dock.agent.url="https://github.com/block/goose"
+LABEL dock.agent.version="1.30.0"
 ENV DOCK_AGENT=goose
 
 RUN apt-get update && apt-get install -y curl bzip2 libgomp1 && rm -rf /var/lib/apt/lists/*

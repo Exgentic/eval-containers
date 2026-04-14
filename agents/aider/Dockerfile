@@ -8,6 +8,7 @@ LABEL dock.agent.name="aider"
 LABEL dock.agent.description="Aider AI pair programming tool"
 LABEL dock.agent.runtime="python"
 LABEL dock.agent.url="https://github.com/Aider-AI/aider"
+LABEL dock.agent.version="0.86.2"
 ENV DOCK_AGENT=aider
 
 RUN apt-get update && apt-get install -y curl python3 python3-pip python3-venv && rm -rf /var/lib/apt/lists/*
