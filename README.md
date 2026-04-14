@@ -25,7 +25,7 @@ Requires Docker Compose ≥ 2.34 for `oci://` support. See [offline / older Dock
 Same thing, fewer keystrokes:
 
 ```bash
-dock run aime --task-id 0 --agent codex --model gpt-5.4
+dock run --benchmark aime --task-id 0 --agent codex --model gpt-5.4
 ```
 
 Every `DOCK_*` env var has a matching `--kebab-case` flag. Pick whichever you prefer.
@@ -105,7 +105,7 @@ docker save quay.io/dock-eval/evals/aime--codex:latest \
 If you have the repo cloned and want to iterate on a benchmark or agent without pushing to the registry:
 
 ```bash
-dock run aime --task-id 0 --agent codex --model gpt-5.4 --local
+dock run --benchmark aime --task-id 0 --agent codex --model gpt-5.4 --local
 ```
 
 `--local` points at `benchmarks/<name>/compose.yaml` on disk instead of `oci://...`.
