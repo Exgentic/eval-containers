@@ -12,8 +12,10 @@
 
 use std::collections::HashMap;
 use std::fs;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Instant;
 
 // ─── Per-task benchmark build arguments ────────────────────────────
 //
@@ -116,22 +118,51 @@ fn run_build_sweep(
     let mut failures = Vec::new();
     let contexts = subdirs_with_dockerfile(dir);
     assert!(!contexts.is_empty(), "no subdirectories found under {dir}");
+    let total = contexts.len();
+    let kind = label_root;
 
-    for context in &contexts {
+    // Per-item streaming progress so a silent multi-hour sweep becomes
+    // readable. One line per item at start, one line per item at end.
+    // stderr is flushed manually — cargo test captures it but the
+    // `--nocapture` path (and background task output files) sees it
+    // live.
+    let mut stderr = std::io::stderr();
+    let _ = writeln!(stderr, "\n── build sweep over {total} {kind}s ──");
+    let _ = stderr.flush();
+
+    let sweep_start = Instant::now();
+    let mut pass_count = 0usize;
+
+    for (i, context) in contexts.iter().enumerate() {
+        let idx = i + 1;
         let name = context
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("?")
             .to_string();
+        let start = Instant::now();
 
-        // Skip per-task benchmarks we can't build without upstream base images.
-        // (They'll fail loudly in the report so you know they were skipped.)
+        let _ = write!(stderr, "[{idx}/{total}] {name} building...");
+        let _ = stderr.flush();
+
         let extras_owned = args_for(&name);
         let extras: Vec<&str> = extras_owned.to_vec();
 
-        let tag = match docker_build(context, &extras) {
-            Ok(tag) => tag,
+        let build_result = docker_build(context, &extras);
+        let elapsed = start.elapsed().as_secs();
+
+        let tag = match build_result {
+            Ok(tag) => {
+                let _ = writeln!(stderr, "\r[{idx}/{total}] {name} ✓ {elapsed}s          ");
+                tag
+            }
             Err(err) => {
+                let _ = writeln!(
+                    stderr,
+                    "\r[{idx}/{total}] {name} ✗ {elapsed}s  →  re-run: \
+                     cargo test --test build -- --ignored build_every_{kind} {name}"
+                );
+                let _ = stderr.flush();
                 failures.push(BuildFailure {
                     path: context.clone(),
                     reason: format!("docker build failed:\n{}", truncate(&err, 2000)),
@@ -141,22 +172,39 @@ fn run_build_sweep(
         };
 
         // Verify required labels
+        let mut label_failed = false;
         for label in required_labels {
             match docker_label(&tag, label) {
-                None => failures.push(BuildFailure {
-                    path: context.clone(),
-                    reason: format!("missing required label `{label}`"),
-                }),
+                None => {
+                    failures.push(BuildFailure {
+                        path: context.clone(),
+                        reason: format!("missing required label `{label}`"),
+                    });
+                    label_failed = true;
+                }
                 Some(val) if *label == "dock.type" && val != label_root => {
                     failures.push(BuildFailure {
                         path: context.clone(),
                         reason: format!("label dock.type should be `{label_root}` but is `{val}`"),
                     });
+                    label_failed = true;
                 }
                 _ => {}
             }
         }
+        if !label_failed {
+            pass_count += 1;
+        }
+        let _ = stderr.flush();
     }
+
+    let total_elapsed = sweep_start.elapsed().as_secs();
+    let _ = writeln!(
+        stderr,
+        "── sweep done: {pass_count}/{total} {kind}s passed in {total_elapsed}s ──\n"
+    );
+    let _ = stderr.flush();
+
     failures
 }
 
