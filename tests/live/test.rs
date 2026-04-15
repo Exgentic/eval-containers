@@ -76,7 +76,17 @@ fn list_benchmarks() -> Vec<Benchmark> {
         if task_count == 0 {
             continue;
         }
-        let per_task_build = dockerfile.contains("${DOCK_TASK_ID}") || dockerfile.contains("$DOCK_TASK_ID");
+        // Per-task-build benchmarks are those whose *FROM* line
+        // interpolates ${DOCK_TASK_ID} — they build a different base
+        // image per task. Runtime entrypoint references to
+        // $DOCK_TASK_ID don't count; those are for materialization
+        // via /dock-materialize-task and exist in every JSONL
+        // benchmark. Must keep this logic in sync with
+        // tests/build/test.rs::is_per_task_benchmark.
+        let per_task_build = dockerfile
+            .lines()
+            .filter(|l| l.trim_start().starts_with("FROM "))
+            .any(|l| l.contains("${DOCK_TASK_ID}") || l.contains("$DOCK_TASK_ID"));
         let per_task_ids = if per_task_build {
             // For the build sweep we keep a canonical known-good task id
             // per per-task benchmark (see tests/build/test.rs
@@ -538,6 +548,59 @@ fn live_fleet_sweep() {
 }
 
 // ─── Unit tests (always run, no --ignored) ────────────────────────
+
+/// Generates `tests/live/matrix.md` — the explicit plan of every
+/// (benchmark, task_id, agent, model) tuple the live sweep will run.
+/// Writing it out lets a human review coverage before spending money
+/// on 258 real LLM calls. Always runs on plain `cargo test`.
+#[test]
+fn write_matrix() {
+    let benchmarks = list_benchmarks();
+    let mut out = String::new();
+    out.push_str(&format!(
+        "# Live fleet sweep matrix\n\nModel: `{MODEL}`  ·  Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run  ·  Timeout: {DEFAULT_TIMEOUT_SECS}s\n\nAgent rotation: task[i] → AGENTS[i % {}] where AGENTS = {:?}.\n\nThis file is regenerated on every `cargo test --test live`. It is the authoritative plan the `live_fleet_sweep` test will execute.\n\n",
+        AGENTS.len(),
+        AGENTS
+    ));
+
+    let mut total_runs = 0usize;
+    let mut per_task_benchmarks = 0usize;
+    let mut normal_benchmarks = 0usize;
+
+    out.push_str("## Matrix\n\n| # | Benchmark | Tasks on disk | Tasks chosen | Agent rotation |\n|---|---|---|---|---|\n");
+    for (i, b) in benchmarks.iter().enumerate() {
+        let task_ids = pick_task_ids(b);
+        let rotation: Vec<String> = task_ids
+            .iter()
+            .enumerate()
+            .map(|(j, t)| format!("{}→{}", t, AGENTS[j % AGENTS.len()]))
+            .collect();
+        out.push_str(&format!(
+            "| {} | `{}` | {} | {} | {} |\n",
+            i + 1,
+            b.name,
+            if b.per_task_build { format!("per-task-build ({})", b.task_count) } else { b.task_count.to_string() },
+            task_ids.len(),
+            rotation.join(", ")
+        ));
+        total_runs += task_ids.len();
+        if b.per_task_build { per_task_benchmarks += 1; } else { normal_benchmarks += 1; }
+    }
+
+    out.push_str(&format!(
+        "\n## Summary\n\n- Benchmarks in scope: **{}** ({} normal + {} per-task-build)\n- Total runs: **{}**\n- Excluded (known-broken): see [tests/build/known-broken.md](../build/known-broken.md)\n- Per-run wall time: ~1–10 min depending on agent verbosity\n- Per-run cost ceiling: ${:.2}\n- Gross budget ceiling: ${:.2}\n",
+        benchmarks.len(),
+        normal_benchmarks,
+        per_task_benchmarks,
+        total_runs,
+        DEFAULT_MAX_BUDGET_USD,
+        DEFAULT_MAX_BUDGET_USD * total_runs as f64,
+    ));
+
+    fs::create_dir_all("tests/live").expect("create tests/live");
+    fs::write("tests/live/matrix.md", &out).expect("write matrix");
+    eprintln!("→ wrote tests/live/matrix.md ({} benchmarks, {} runs)", benchmarks.len(), total_runs);
+}
 
 #[test]
 fn known_broken_loader_picks_up_upstream_gated() {
