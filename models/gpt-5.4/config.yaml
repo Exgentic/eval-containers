@@ -1,9 +1,69 @@
+# Every model name an agent might request aliases to azure/gpt-5.4 on
+# the IBM gateway. The wildcard `model_name: "*"` pattern works for the
+# Anthropic /v1/messages path but NOT for OpenAI /v1/chat/completions
+# (the `openai/` provider prefix passes the request body through
+# unchanged, so the upstream receives the inbound model name). The
+# explicit enumeration below is the reliable fix. Add a new alias
+# when an agent shows up with a model name that isn't on the list.
+
 model_list:
+  # ── Wildcard catch-all (Anthropic path) ─────────────────────────
   - model_name: "*"
     litellm_params:
       model: "openai/azure/gpt-5.4"
       api_key: "os.environ/OPENAI_API_KEY"
       api_base: "os.environ/OPENAI_API_BASE"
+
+  # ── OpenAI-family explicit aliases (chat completions path) ──────
+  - model_name: "gpt-4o"
+    litellm_params: &gpt54
+      model: "openai/azure/gpt-5.4"
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "os.environ/OPENAI_API_BASE"
+  - model_name: "gpt-4o-mini"
+    litellm_params: *gpt54
+  - model_name: "gpt-4-turbo"
+    litellm_params: *gpt54
+  - model_name: "gpt-4"
+    litellm_params: *gpt54
+  - model_name: "gpt-4.1"
+    litellm_params: *gpt54
+  - model_name: "gpt-4.1-mini"
+    litellm_params: *gpt54
+  - model_name: "gpt-5"
+    litellm_params: *gpt54
+  - model_name: "gpt-5-mini"
+    litellm_params: *gpt54
+  - model_name: "gpt-5.4"
+    litellm_params: *gpt54
+  - model_name: "o1"
+    litellm_params: *gpt54
+  - model_name: "o1-mini"
+    litellm_params: *gpt54
+
+  # ── Anthropic-family explicit aliases ──────────────────────────
+  - model_name: "claude-3-5-sonnet-20241022"
+    litellm_params: *gpt54
+  - model_name: "claude-3-5-haiku-20241022"
+    litellm_params: *gpt54
+  - model_name: "claude-3-opus-20240229"
+    litellm_params: *gpt54
+  - model_name: "claude-sonnet-4-5"
+    litellm_params: *gpt54
+  - model_name: "claude-sonnet-4-5-20250929"
+    litellm_params: *gpt54
+  - model_name: "claude-opus-4-5"
+    litellm_params: *gpt54
+  - model_name: "claude-opus-4-5-20250929"
+    litellm_params: *gpt54
+
+  # ── Gemini-family explicit aliases ─────────────────────────────
+  - model_name: "gemini-2.5-pro"
+    litellm_params: *gpt54
+  - model_name: "gemini-1.5-pro"
+    litellm_params: *gpt54
+  - model_name: "gemini-pro"
+    litellm_params: *gpt54
 
 litellm_settings:
   callbacks: ["dock_logger.dock_logger_instance"]
