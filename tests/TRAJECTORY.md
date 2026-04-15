@@ -7,29 +7,45 @@
 
 Structural tests (compose parses, Dockerfile builds) tell you the
 benchmark is **well-formed**. They do not tell you the benchmark is
-**legitimate**. A benchmark can build perfectly, start the agent
-cleanly, hand it an empty task, and produce a valid-looking
-`result.json` that scores zero — all while being completely broken.
+**legitimate**, and they do not tell you the agent's actual run was
+**sane**. A benchmark can build perfectly, start the agent cleanly,
+hand it an empty task, and produce a valid-looking `result.json`
+that scores zero. An agent can be handed a perfect task, burn 200k
+tokens in a retry storm, hit an API error, and produce garbage — and
+still report a plausible score.
 
-Trajectory health inspection closes that gap. For every benchmark,
-we capture the **first request** the agent sends to the LLM proxy
-and inspect it against a checklist of green, yellow, and red signals.
+Trajectory health inspection closes both gaps. It has **two halves**:
+
+1. **Task half** — was the prompt the agent saw well-formed? Captured
+   from the first user message in the trajectory.
+2. **Run half** — was the actual conversation sane? Read from every
+   row in the trajectory: API status, tokens, cost, retries, tool
+   errors, empty responses.
+
+Both halves use the same layered model (mechanical rules + procedural
+audit) and produce findings in the same format.
 
 This document defines what we look for, how we classify signals, and
 how the inspection becomes progressively more automated.
 
 ## The inspection unit
 
-For each benchmark, one record is inspected:
+For each benchmark-agent combination, one trajectory is inspected:
 
-- **Input:** the first OpenAI / Anthropic-style request body the agent
-  sends to the model proxy, captured via the `inspector` model.
+- **Input:** one `tests/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`
+  file, or a live inspector run under `/output/<bench>/<task>/inspector/`.
+  A trajectory is an ordered sequence of LiteLLM `StandardLoggingPayload`
+  rows, one per LLM call the agent made.
 - **Context:** the benchmark name, task ID, expected task shape from
-  the benchmark's `dock.benchmark.*` labels.
-- **Output:** a health verdict (`green` | `yellow` | `red`) with the
-  matching signals listed.
+  the benchmark's `dock.benchmark.*` labels, the agent name.
+- **Output:** two verdicts (task-half and run-half), each
+  `green` | `yellow` | `red`, with the matching signals listed.
+  The overall fixture verdict is the worse of the two halves.
 
-## Signal catalog
+## Task-half signal catalog
+
+The task half asks: *was the prompt the agent saw well-formed?*
+Inputs: the first non-empty user message in the trajectory.
 
 ### Green signals (all must be present for a `green` verdict)
 
@@ -89,15 +105,73 @@ For each benchmark, one record is inspected:
   contains image or document files but the prompt doesn't mention
   any file path like `/app/image.png`.
 
+## Run-half signal catalog
+
+The run half asks: *was the actual conversation sane?* Inputs: every
+row in the trajectory, not just the first. A LiteLLM row has
+`status`, `total_tokens`, `response_cost`, `error_str`,
+`error_information`, and the full `response` (assistant message +
+tool calls). The rules walk the sequence and accumulate findings.
+
+### Red signals (any one triggers a `red` run verdict)
+
+- **API error.** Any row has `status != "success"`, OR non-empty
+  `error_str`, OR non-empty `error_information.error_message`. The
+  conversation hit a transport-level failure the agent couldn't see.
+- **All-empty assistant responses.** Every assistant turn has empty
+  `content` and no `tool_calls`. The agent produced zero output for
+  the whole run — something upstream refused or stalled.
+- **Context overflow.** Any row has an error class or message
+  containing `context_length_exceeded`, `context window`, or
+  `maximum context length`. The agent blew past the model's limit.
+- **Auth failure.** Any row's error mentions `401`, `403`,
+  `authentication`, `invalid api key`, or `permission denied` at
+  the API layer. Proxy config is broken.
+
+### Yellow signals (warn but don't fail)
+
+- **Cost runaway.** Sum of `response_cost` across all rows > $5 for
+  a single task. Real benchmarks almost never cost that much; usually
+  means the agent looped.
+- **Token runaway.** Sum of `total_tokens` across all rows > 200k for
+  a single task. Same story as cost runaway.
+- **Retry storm.** The same prompt is sent 5+ times in a row without
+  material change. Indicates the agent is stuck on a failing tool or
+  API.
+- **High turn count.** More than 100 rows for a single task. Might
+  be legitimate for a long-running coding task, but usually a sign
+  the agent is thrashing.
+- **Empty final response.** The last assistant turn has empty content
+  AND no tool calls. The run ended with nothing being said.
+- **Tool error loop.** The same tool error string appears in 3+
+  consecutive assistant turns. The agent isn't learning from the
+  error.
+
+### Green signals (all must be present for a `green` run verdict)
+
+- **No API errors.** Every row has `status == "success"`, empty
+  `error_str`, empty `error_information.error_message`.
+- **Cost under cap.** Sum of `response_cost` ≤ $5.
+- **Tokens under cap.** Sum of `total_tokens` ≤ 200k.
+- **Turn count reasonable.** Fewer than 100 LLM calls.
+- **Final response non-empty.** The last assistant turn contains
+  either content or at least one tool call.
+
 ## Classification rules
 
 ```
-if any red signal:        verdict = red
-elif any yellow signal:   verdict = yellow
-else:                     verdict = green
+task_verdict = red   if any red task signal
+             = yellow if any yellow task signal
+             = green  otherwise
+
+run_verdict  = red   if any red run signal
+             = yellow if any yellow run signal
+             = green  otherwise
+
+fixture_verdict = worst(task_verdict, run_verdict)
 ```
 
-A run with all greens and zero yellows is fully healthy. Yellow is
+A fixture with all greens on both halves is fully healthy. Yellow is
 worth human review but not a CI failure. Red is a CI failure.
 
 ## Collection mechanism
@@ -129,12 +203,14 @@ Health inspection is layered. Each layer catches what the layer below
 misses, at increasing cost and judgment.
 
 **Layer 1 — mechanical rules (automated, free, always on).**
-Every signal in the catalog above is a regex or length check. The
-test file `tests/task_inspection.rs` walks trajectory records, applies
-the rule catalog, and reports verdicts. Runs in milliseconds. Runs on
-every `cargo test --test task_inspection`. Catches the 90% of real
+Every signal in both catalogs above is a regex, length, or sum
+check. The test file `tests/task_inspection.rs` walks trajectory
+records and applies two rule catalogs — one for the task half (first
+user message), one for the run half (every row). Runs in
+milliseconds. Runs on every `cargo test`. Catches the 90% of real
 breakage that's mechanical: template leaks, unresolved env vars,
-fetch failures, missing files, dataset gates. Zero dependencies.
+fetch failures, API errors, cost runaways, empty responses. Zero
+dependencies.
 
 **Layer 2 — procedural audit (manual, on demand).**
 Some judgments need reading and thinking, not regex:
@@ -190,9 +266,9 @@ Applies to a single fixture or batch.
    note those findings. The audit's job is to find what rules missed,
    not to duplicate them.
 
-3. **Read the task end to end.** Ask yourself the five questions
-   below, one per task. Mark each yes / no / n.a. with a one-line
-   reason.
+3. **Read the task end to end (task half).** Ask the five questions
+   below about the first user message. Mark each yes / no / n.a. with
+   a one-line reason.
 
    | # | Question |
    |---|---|
@@ -202,10 +278,24 @@ Applies to a single fixture or batch.
    | 4 | If the benchmark needs attached files (images, docs, repos), does the prompt reference them? |
    | 5 | Any subtle signs of a broken environment you'd only catch by reading (dangling references, contradictory instructions, wrong task ID in the prompt)? |
 
-4. **Classify.** A task is:
-   - ✓ **healthy** if all five answers are yes or n.a.
-   - ⚠ **needs attention** if questions 2, 3, or 4 are no — fixable.
-   - ✗ **broken** if question 1 or 5 is no — the benchmark is wrong.
+4. **Read the run end to end (run half).** Scroll through the
+   assistant turns and tool calls. Ask the five questions below
+   about the conversation as a whole.
+
+   | # | Question |
+   |---|---|
+   | 6 | Did the agent's first substantive response actually attempt the task, or refuse / stall / ask for clarification? |
+   | 7 | Are there repeated tool errors, retry storms, or identical messages sent multiple times in a row? |
+   | 8 | Does the assistant's final answer match the recorded score? (score=1 → is the answer actually correct? score=0 → do you see why it failed?) |
+   | 9 | Any API errors, context overflows, or auth/network failures mid-run? |
+   | 10 | Is the cost / token count reasonable for this task, or did the agent burn resources in a loop? |
+
+5. **Classify each half.**
+   - ✓ **healthy** — all yes or n.a. in that half.
+   - ⚠ **needs attention** — task-half Q2/Q3/Q4 no, or run-half Q7/Q10 no (fixable).
+   - ✗ **broken** — task-half Q1/Q5 no, or run-half Q6/Q8/Q9 no (the benchmark or run is wrong).
+
+   **Overall fixture verdict is the worse of the two halves.**
 
 ### Output format
 
@@ -213,12 +303,19 @@ One markdown report, one entry per fixture:
 
 ```
 ## aime-0-claude-code
-- Mechanical rules: ✓ (0 findings)
-- Q1 (domain match): ✓ math problem matches AIME
-- Q2 (clear): ✓ "solve... print only the answer as a single integer"
-- Q3 (format): ✓ explicit single-integer instruction
-- Q4 (attachments): n.a.
-- Q5 (subtle breakage): ✓
+- Mechanical rules: ✓ task (0 findings), ✓ run (0 findings)
+- Task half:
+  - Q1 (domain match): ✓ math problem matches AIME
+  - Q2 (clear): ✓ "solve... print only the answer as a single integer"
+  - Q3 (format): ✓ explicit single-integer instruction
+  - Q4 (attachments): n.a.
+  - Q5 (subtle breakage): ✓
+- Run half:
+  - Q6 (attempted task): ✓ first turn jumps into the problem
+  - Q7 (retry/loops): ✓ no repetition
+  - Q8 (score credible): ✓ final answer "204" matches recorded score=1
+  - Q9 (API errors): ✓ all rows status=success
+  - Q10 (cost sane): ✓ $0.03, 13k tokens
 - Verdict: healthy
 ```
 
