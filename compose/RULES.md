@@ -55,7 +55,11 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 15. **No cross-reads.** No component SHOULD read another component's output directory. The model service writes `model/`, the eval container writes `agent/` and `task/`.
 
-16. **Result schema.** `/output/task/result.json` MUST contain at minimum: `task_id`, `benchmark`, `reward`, `passed`. `/output/agent/result.json` MUST contain: `agent`, `started_at`, `ended_at`, `exit_code`. `/output/model/result.json` MUST contain: `model`, `provider`, `total_tokens`, `cost_usd`.
+16. **Result schema.**
+    - `/output/task/result.json` MUST contain at minimum: `task_id`, `benchmark`, `reward`, `passed`.
+    - **Every metric the benchmark reports MUST be a named field in `task/result.json`.** The primary metric — the one that determines `passed` and that downstream aggregators compare across runs — MUST be called `reward`. Additional benchmark-specific metrics (e.g. `exact_match`, `f1`, `bleu`, `rouge`, `tool_calls`, `partial_credit`) are named fields alongside `reward`. `test.sh` is the only writer of this file and MUST emit every metric it computes; downstream inspection never reads values from stdout.
+    - `/output/agent/result.json` MUST contain: `agent`, `started_at`, `ended_at`, `exit_code`.
+    - `/output/model/result.json` MUST contain: `model`, `provider`, `total_tokens`, `cost_usd`.
 
 17. **Trajectory.** The model service MUST write `/output/model/trajectory.jsonl` containing every LLM request and response (one JSON object per line, LiteLLM StandardLoggingPayload format).
 
@@ -83,3 +87,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | Date | Change |
 |------|--------|
 | 2026-04-13 | Initial version |
+| 2026-04-16 | Tightened rule 16: every benchmark metric MUST be a named field in `task/result.json`, with `reward` as the primary metric (not just the minimum subset). `test.sh` is the only writer; downstream inspection reads from this file, never from stdout. |
