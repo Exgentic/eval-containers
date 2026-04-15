@@ -118,11 +118,21 @@ RULES.md  ← top-level principles (this file)
 │                                  run in contribution verification vs.
 │                                  release verification, in what order
 │
-└── Contribution entry points (PR templates — every new
-    artifact walks one of these before merge)
-    ├── .github/PULL_REQUEST_TEMPLATE.md               ← general PRs
-    ├── .github/PULL_REQUEST_TEMPLATE/benchmark.md     ← new benchmark
-    └── .github/PULL_REQUEST_TEMPLATE/agent.md         ← new agent
+├── Contribution PR templates (walked before merge)
+│   ├── .github/PULL_REQUEST_TEMPLATE.md               ← general PRs
+│   ├── .github/PULL_REQUEST_TEMPLATE/benchmark.md     ← new benchmark
+│   ├── .github/PULL_REQUEST_TEMPLATE/agent.md         ← new agent
+│   └── .github/PULL_REQUEST_TEMPLATE/model.md         ← new canonical model
+│
+└── Issue templates (every incoming report picks one)
+    ├── .github/ISSUE_TEMPLATE/config.yml              ← no blank issues
+    ├── .github/ISSUE_TEMPLATE/01-rule-code-drift.md   ← rule right, code wrong
+    ├── .github/ISSUE_TEMPLATE/02-rule-change-proposal.md ← rule wrong, propose change
+    ├── .github/ISSUE_TEMPLATE/03-bug.md               ← behavior wrong, no rule violated
+    ├── .github/ISSUE_TEMPLATE/04-new-benchmark-request.md
+    ├── .github/ISSUE_TEMPLATE/05-new-agent-request.md
+    ├── .github/ISSUE_TEMPLATE/06-new-model-request.md
+    └── .github/ISSUE_TEMPLATE/07-known-broken-entry.md ← housekeeping record
 ```
 
 Every rule in the graph has exactly one home (principle 17). A reader
@@ -131,14 +141,42 @@ to reach every other normative document in the tree by following the
 links — no essential information lives outside this graph.
 
 **Contribution vs. release entry points**. A contributor opening a
-PR for a new benchmark or agent walks the relevant PR template, which
-cites rules from `benchmarks/RULES.md` / `agents/RULES.md` and embeds
-the trace inspection checklist from `tests/live/RULES.md`. A release
-manager cutting a tag walks `tests/VERIFY.md`, which invokes every
-mechanical gate and procedural audit listed in the testing strategy
-above. The PR templates and VERIFY.md are two faces of the same
-underlying rules — they differ only in *when* the checks run and
-*who* walks them.
+PR for a new benchmark, agent, or canonical model walks the relevant
+PR template, which cites rules from the appropriate `RULES.md` and
+embeds the trace inspection checklist from `tests/live/RULES.md`. A
+release manager cutting a tag walks `tests/VERIFY.md`, which invokes
+every mechanical gate and procedural audit listed in the testing
+strategy above. The PR templates and VERIFY.md are two faces of the
+same underlying rules — they differ only in *when* the checks run
+and *who* walks them.
+
+**Issue vocabulary**. Every incoming issue is one of seven types,
+not free-form. The taxonomy reflects the dual axes of this repo:
+
+1. **Rule-code drift** — a rule says X, the code does Y. The rule
+   is correct; the code needs to catch up. Highest-signal report,
+   keeps the rules graph honest. Template 01.
+2. **Rule change proposal (RFC)** — a rule is wrong, stale, or
+   counterproductive. Propose a specific change to the normative
+   document with rationale, impact analysis, and migration path.
+   Template 02.
+3. **Bug** — behavior is wrong but no rule is being violated.
+   Something just doesn't work as intended. Stand-alone, no rule
+   citation required. Template 03.
+4. **New benchmark request** — propose a new benchmark to add to
+   the fleet. Template 04.
+5. **New agent request** — propose a new agent to add to the
+   fleet. Template 05.
+6. **New canonical model request** — propose a new canonical model.
+   Template 06.
+7. **Known-broken entry** — housekeeping: document something that
+   IS currently broken under a specific condition, when the fix is
+   not immediate and we want the break visible and tracked. Feeds
+   one of the `known-broken.md` / `broken.json` manifests in the
+   testing strategy subtree. Template 07.
+
+Questions and open-ended discussions belong in GitHub Discussions,
+not as issues. The issue tracker is for tracked work only.
 
 ## References
 
@@ -155,3 +193,4 @@ underlying rules — they differ only in *when* the checks run and
 | 2026-04-14 | Principle 9 refined to two orthogonal knobs: container version via image tag (`DOCK_BENCHMARK_TAG`, `DOCK_AGENT_TAG`, `DOCK_MODEL_TAG`) and internal upstream version via runtime env var (`DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_LITELLM_VERSION`). Models now covered by principle 9 (LiteLLM version is the internal axis). |
 | 2026-04-15 | Added principle 12 (Self-contained repository) and principle 13 (Verification is normative). Added the "rules graph" section rooting every normative document in this file. Renumbered Rules Process principles (14–20). |
 | 2026-04-16 | Rewrote the rules graph to reflect the tests/ subfolder restructure (sanity/build/replay/upstream/live/fleet/cli each with its own RULES.md), added PR templates as contribution entry points, and clarified the contribution-vs-release duality: same rules, different walkers. |
+| 2026-04-16 | Added model PR template (`.github/PULL_REQUEST_TEMPLATE/model.md`) and seven issue templates covering the repo's seven tracked issue types: rule-code drift, rule change RFC, bug, new-benchmark/agent/model requests, known-broken entry. New "Issue vocabulary" section in RULES.md documents the taxonomy. |
