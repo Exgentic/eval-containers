@@ -72,6 +72,13 @@ pub struct RunArgs {
     #[arg(long)]
     timeout: Option<u32>,
 
+    /// Hard cap on model spend in USD for this run (maps to
+    /// $DOCK_MODEL_MAX_BUDGET). The litellm proxy enforces it and
+    /// returns an error once spend crosses the cap, which crashes
+    /// the agent's next request. Default: $1.
+    #[arg(long)]
+    max_budget: Option<f64>,
+
     /// Use the in-repo `benchmarks/<name>/compose.yaml` instead of the
     /// published `oci://<registry>/evaluate` artifact. For development.
     #[arg(long)]
@@ -132,6 +139,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
 
     if let Some(timeout) = args.timeout {
         envs.push(("DOCK_TIMEOUT", timeout.to_string()));
+    }
+    if let Some(budget) = args.max_budget {
+        envs.push(("DOCK_MODEL_MAX_BUDGET", budget.to_string()));
     }
 
     // Print the equivalent shell invocation (RULES src/RULES.md rule 2: transparent).

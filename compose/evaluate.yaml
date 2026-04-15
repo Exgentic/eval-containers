@@ -59,6 +59,8 @@ services:
     env_file: .env
     environment:
       - DOCK_LITELLM_VERSION
+      # Hard cap on model spend per run (see compose/services.yaml).
+      - DOCK_MODEL_MAX_BUDGET=${DOCK_MODEL_MAX_BUDGET:-1}
     networks:
       - internal
       - default
