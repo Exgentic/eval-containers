@@ -82,27 +82,63 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 Every normative document in the repository is a node in the **rules
 graph** rooted here. A reader navigates from the top-level `RULES.md`
 (this file) to the per-area RULES documents, which govern their own
-subdirectories, and to the verification checklists under `tests/`,
+subdirectories, and to the verification procedures under `tests/`,
 which govern how compliance is proven.
 
 ```
 RULES.md  ← top-level principles (this file)
-├── benchmarks/RULES.md   ← per-benchmark build contract
-├── agents/RULES.md       ← per-agent build contract
-├── models/RULES.md       ← per-model build contract
-├── src/RULES.md          ← CLI surface rules
-├── tests/RULES.md        ← test-layer conventions
-└── tests/VERIFY.md       ← the 46-step release checklist (principle 13)
-    ├── tests/DOCKERFILE.md   ← per-Dockerfile procedural audit
-    ├── tests/TRAJECTORY.md   ← per-fixture procedural audit
-    ├── tests/FLEET.md        ← whole-fleet procedural audit
-    └── tests/fleet-report.md ← the generated release artifact
+│
+├── Artifact contracts (what builds and ships)
+│   ├── benchmarks/RULES.md      ← per-benchmark build contract
+│   │   └── benchmarks/TEMPLATE.md
+│   ├── agents/RULES.md          ← per-agent build contract
+│   │   └── agents/TEMPLATE.md
+│   ├── models/RULES.md          ← per-model build contract
+│   ├── compose/RULES.md         ← compose file contract
+│   └── src/RULES.md             ← CLI surface rules
+│
+├── Testing strategy (how we prove compliance)
+│   └── tests/RULES.md           ← two-process model + subfolder map
+│       ├── tests/sanity/RULES.md    ← fast mechanical gates
+│       ├── tests/build/RULES.md     ← container build sweep
+│       │   └── tests/build/known-broken.md
+│       ├── tests/replay/RULES.md    ← recorded-trajectory sweep
+│       │   └── tests/replay/fixtures/broken.json
+│       ├── tests/upstream/RULES.md  ← network reachability probe
+│       ├── tests/live/RULES.md      ← live-inference sweep + trace
+│       │   │                          inspection checklist
+│       │   ├── tests/live/matrix.md  ← authoritative plan (generated)
+│       │   └── tests/live/known-broken.md
+│       ├── tests/fleet/RULES.md     ← aggregator + release report
+│       │   └── tests/fleet/report.md
+│       └── tests/cli/RULES.md       ← CLI unit-test rules
+│
+├── Procedure doc (how to execute the strategy)
+│   └── tests/VERIFY.md          ← two-process procedure: which gates
+│                                  run in contribution verification vs.
+│                                  release verification, in what order
+│
+└── Contribution entry points (PR templates — every new
+    artifact walks one of these before merge)
+    ├── .github/PULL_REQUEST_TEMPLATE.md               ← general PRs
+    ├── .github/PULL_REQUEST_TEMPLATE/benchmark.md     ← new benchmark
+    └── .github/PULL_REQUEST_TEMPLATE/agent.md         ← new agent
 ```
 
 Every rule in the graph has exactly one home (principle 17). A reader
 with no prior context, reading top-down from `RULES.md`, MUST be able
 to reach every other normative document in the tree by following the
 links — no essential information lives outside this graph.
+
+**Contribution vs. release entry points**. A contributor opening a
+PR for a new benchmark or agent walks the relevant PR template, which
+cites rules from `benchmarks/RULES.md` / `agents/RULES.md` and embeds
+the trace inspection checklist from `tests/live/RULES.md`. A release
+manager cutting a tag walks `tests/VERIFY.md`, which invokes every
+mechanical gate and procedural audit listed in the testing strategy
+above. The PR templates and VERIFY.md are two faces of the same
+underlying rules — they differ only in *when* the checks run and
+*who* walks them.
 
 ## References
 
@@ -118,3 +154,4 @@ links — no essential information lives outside this graph.
 | 2026-04-14 | Rewrote principle 9: pin by default, expose version control via `DOCK_*_VERSION` env vars. Tags encode Dock component version; upstream versions live in labels, env vars, and run records. Added principle 11 (Env var namespace) — all Dock env vars MUST be prefixed with `DOCK_` to prevent collision with CI/orchestrator env vars. Renumbered Rules Process principles (12–18). |
 | 2026-04-14 | Principle 9 refined to two orthogonal knobs: container version via image tag (`DOCK_BENCHMARK_TAG`, `DOCK_AGENT_TAG`, `DOCK_MODEL_TAG`) and internal upstream version via runtime env var (`DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_LITELLM_VERSION`). Models now covered by principle 9 (LiteLLM version is the internal axis). |
 | 2026-04-15 | Added principle 12 (Self-contained repository) and principle 13 (Verification is normative). Added the "rules graph" section rooting every normative document in this file. Renumbered Rules Process principles (14–20). |
+| 2026-04-16 | Rewrote the rules graph to reflect the tests/ subfolder restructure (sanity/build/replay/upstream/live/fleet/cli each with its own RULES.md), added PR templates as contribution entry points, and clarified the contribution-vs-release duality: same rules, different walkers. |

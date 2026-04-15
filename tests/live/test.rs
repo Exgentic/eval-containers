@@ -670,25 +670,62 @@ fn known_broken_loader_picks_up_upstream_gated() {
 }
 
 #[test]
-fn pick_task_ids_picks_three_spaced() {
+fn pick_task_ids_spreads_across_agents() {
+    // K=6 agents; task range [0, 99] should yield evenly spaced points
+    // including both endpoints: 0, 19, 39, 59, 79, 99 (integer division).
     let b = Benchmark {
         name: "x".into(),
         task_count: 100,
         per_task_build: false,
         per_task_ids: vec![],
     };
-    assert_eq!(pick_task_ids(&b), vec!["0", "50", "99"]);
+    let ids = pick_task_ids(&b);
+    assert_eq!(ids.len(), AGENTS.len());
+    assert_eq!(ids[0], "0");
+    assert_eq!(ids[ids.len() - 1], "99");
 }
 
 #[test]
 fn pick_task_ids_handles_small_count() {
+    // A benchmark with only 2 tasks still produces K ids. The first
+    // agent gets task 0, the last gets task 1, intermediates cycle.
     let b = Benchmark {
         name: "x".into(),
         task_count: 2,
         per_task_build: false,
         per_task_ids: vec![],
     };
-    assert_eq!(pick_task_ids(&b), vec!["0", "1"]);
+    let ids = pick_task_ids(&b);
+    assert_eq!(ids.len(), AGENTS.len());
+    assert_eq!(ids[0], "0");
+    assert_eq!(ids[ids.len() - 1], "1");
+}
+
+#[test]
+fn pick_task_ids_handles_single_task() {
+    // N=1: every agent runs the same task.
+    let b = Benchmark {
+        name: "x".into(),
+        task_count: 1,
+        per_task_build: false,
+        per_task_ids: vec![],
+    };
+    let ids = pick_task_ids(&b);
+    assert_eq!(ids.len(), AGENTS.len());
+    assert!(ids.iter().all(|t| t == "0"));
+}
+
+#[test]
+fn pick_task_ids_per_task_build_reuses_representative() {
+    let b = Benchmark {
+        name: "swe-bench".into(),
+        task_count: 500,
+        per_task_build: true,
+        per_task_ids: vec!["sympy__sympy-24066".into()],
+    };
+    let ids = pick_task_ids(&b);
+    assert_eq!(ids.len(), AGENTS.len());
+    assert!(ids.iter().all(|t| t == "sympy__sympy-24066"));
 }
 
 #[test]
