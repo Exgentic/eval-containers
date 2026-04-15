@@ -154,6 +154,57 @@ fn walk(root: &Path, current: &Path, out: &mut Vec<(PathBuf, String)>) {
     }
 }
 
+// ─── Bootstrap: core images referenced by benchmark FROMs ──────────
+//
+// Every benchmark Dockerfile does `COPY --from=quay.io/dock-eval/core/*`
+// for shared pieces (entrypoint.sh, test-exact-match). Those aren't
+// yet published to the real quay.io — they live in this repo under
+// `core/*` and are built locally. On a fresh podman machine they do
+// not exist, so every benchmark in the sweep fails with:
+//
+//   COPY --from=quay.io/dock-eval/core/entrypoint:latest: no stage
+//   or image found with that name
+//
+// Bootstrap them once before the benchmark sweep starts. Tagged with
+// the exact same ref the benchmark Dockerfiles reference so the
+// `COPY --from` lookup hits them. Intentionally NOT wrapped in
+// ImageGuard — they must persist for the duration of the sweep so
+// every benchmark build can see them. Cleanup happens at sweep end
+// via cleanup_bootstrap_images().
+
+async fn build_bootstrap_core_images() -> Result<Vec<String>, String> {
+    let targets = [
+        ("quay.io/dock-eval/core/entrypoint", "core/entrypoint"),
+        (
+            "quay.io/dock-eval/core/test-exact-match",
+            "core/test-exact-match",
+        ),
+    ];
+    let mut tags = Vec::new();
+    for (image_name, context_path) in targets {
+        let mut image = GenericBuildableImage::new(image_name, "latest")
+            .with_dockerfile(Path::new(context_path).join("Dockerfile"));
+        for (src, target) in collect_context_files(Path::new(context_path)) {
+            if src.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
+                continue;
+            }
+            image = image.with_file(src, target);
+        }
+        let _ = image
+            .build_image()
+            .await
+            .map_err(|e| format!("bootstrap {image_name}: {e}"))?;
+        tags.push(format!("{image_name}:latest"));
+    }
+    Ok(tags)
+}
+
+fn cleanup_bootstrap_images(tags: &[String]) {
+    for tag in tags {
+        let _ = Command::new("docker").args(["rmi", "-f", tag]).output();
+    }
+}
+
 // ─── Async build through testcontainers ───────────────────────────
 
 async fn tc_build(
@@ -338,6 +389,15 @@ fn assert_no_failures(kind: &str, failures: &[BuildFailure], total: usize) {
 #[tokio::test]
 #[ignore]
 async fn build_every_benchmark() {
+    // Bootstrap the core images every benchmark COPYs from. These
+    // aren't published to the real quay.io yet; they live under core/*
+    // in this repo. Building them via GenericBuildableImage and tagging
+    // with the exact refs the benchmark Dockerfiles use lets every
+    // subsequent `COPY --from=quay.io/dock-eval/core/*` succeed.
+    let bootstrap_tags = build_bootstrap_core_images()
+        .await
+        .expect("failed to bootstrap core images");
+
     let contexts = subdirs_with_dockerfile("benchmarks");
     let total = contexts.len();
     let failures = run_build_sweep(
@@ -347,6 +407,8 @@ async fn build_every_benchmark() {
         per_task_build_args,
     )
     .await;
+
+    cleanup_bootstrap_images(&bootstrap_tags);
     assert_no_failures("benchmarks", &failures, total);
 }
 
