@@ -26,7 +26,7 @@ ARG DOCK_TASK_ID
 ENV DOCK_BENCHMARK=compilebench
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
-RUN apt-get update && apt-get install -y curl 2>/dev/null || apk add --no-cache curl
+RUN (apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*) 2>/dev/null || apk add --no-cache curl
 
 # Fetch task instruction and tests from upstream
 ARG COMPILEBENCH_REV=66e27468505706643088b79f8efad6260c274dc5

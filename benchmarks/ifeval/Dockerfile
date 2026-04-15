@@ -47,7 +47,7 @@ PYEOF
 RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 
 # Install official IFEval verification code from google-research
-RUN pip install --no-cache-dir absl-py langdetect nltk immutabledict
+RUN pip install --no-cache-dir absl-py==2.1.0 langdetect==1.0.9 nltk==3.9.1 immutabledict==4.2.0
 RUN python3 -c "import nltk; nltk.download('punkt_tab', quiet=True)"
 RUN git clone --depth 1 https://github.com/google-research/google-research.git /tmp/google-research \
     && cp -r /tmp/google-research/instruction_following_eval /opt/instruction_following_eval \

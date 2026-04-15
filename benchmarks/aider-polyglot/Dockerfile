@@ -33,7 +33,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
   && rm -rf /var/lib/apt/lists/*
 
 # Python test deps
-RUN pip3 install --no-cache-dir pytest
+RUN pip3 install --no-cache-dir pytest==8.3.3
 
 # --- Fetch benchmark exercises (pinned revision) ---
 ARG POLYGLOT_REV=7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f

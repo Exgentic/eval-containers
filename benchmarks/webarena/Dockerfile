@@ -17,7 +17,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2307.13854"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Install evaluator
-RUN pip install --no-cache-dir webarena-verified
+RUN pip install --no-cache-dir webarena-verified==1.2.3
 
 # Fetch task dataset and extract to flat files
 RUN python3 <<'PYEOF'

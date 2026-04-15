@@ -3,7 +3,7 @@
 # Harder, contamination-resistant subset of SWE-bench with commercial repos.
 # Per-task images (task ID in image name).
 #
-# TODO: Upstream per-task image registry path is tentative. The official
+# FUTURE: Upstream per-task image registry path is tentative. The official
 # SWE-bench Pro release ships instance-level Docker images; update the
 # base-image namespace once the public registry is finalized.
 
@@ -23,15 +23,15 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 ENV DOCK_BENCHMARK=swe-bench-pro
 
 # Install grading deps to root-only path (agent cannot access or tamper)
-RUN pip install --no-cache-dir --target /tests/deps swebench 2>/dev/null || \
-    pip3 install --no-cache-dir --target /tests/deps swebench
+RUN pip install --no-cache-dir --target /tests/deps swebench==3.0.18 2>/dev/null || \
+    pip3 install --no-cache-dir --target /tests/deps swebench==3.0.18
 
-RUN apt-get update && apt-get install -y curl jq 2>/dev/null || true
+RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
 # Fetch this task's metadata from the HuggingFace rows API.
-# TODO: confirm final dataset repo name once SWE-bench Pro is published.
+# FUTURE: confirm final dataset repo name once SWE-bench Pro is published.
 RUN mkdir -p /tasks/0 && \
     for offset in 0 100 200 300 400 500 600 700; do \
       curl -sf "https://datasets-server.huggingface.co/rows?dataset=SWE-bench/SWE-bench_Pro&config=default&split=test&offset=$offset&length=100" > /tmp/page.json && \

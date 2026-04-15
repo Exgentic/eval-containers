@@ -4,7 +4,7 @@
 # has a real-world bug fix / feature request in the Expensify codebase, and
 # is graded by running Playwright end-to-end tests.
 #
-# TODO: SWE-Lancer ships upstream per-task Docker images under OpenAI's
+# FUTURE: SWE-Lancer ships upstream per-task Docker images under OpenAI's
 # registry; confirm the exact image namespace once published publicly.
 
 ARG DOCK_TASK_ID
@@ -21,14 +21,14 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2502.12115"
 
 ENV DOCK_BENCHMARK=swe-lancer
 
-RUN apt-get update && apt-get install -y curl jq git 2>/dev/null || true
+RUN apt-get update && apt-get install -y curl jq git && rm -rf /var/lib/apt/lists/*
 
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
 # Task metadata (issue description + E2E test command) lives in the upstream
 # per-task image. Task description is at /private/task.md or similar.
-# TODO: confirm the exact layout once images are published.
+# FUTURE: confirm the exact layout once images are published.
 RUN mkdir -p /tasks/0 /tests && \
     echo "${DOCK_TASK_ID}" > /tasks/0/id.txt && \
     (cp /private/task.md /tasks/0/problem.txt 2>/dev/null || \
