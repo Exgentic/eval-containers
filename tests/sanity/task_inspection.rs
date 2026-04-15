@@ -13,7 +13,7 @@
 //!
 //! Run sources:
 //!
-//!   - Existing fixtures at tests/fixtures/*.trajectory.jsonl are
+//!   - Existing fixtures at tests/replay/fixtures/*.trajectory.jsonl are
 //!     LiteLLM StandardLoggingPayload JSONL. Each row is one LLM call;
 //!     the user message inside the first row contains the task as the
 //!     agent saw it. Running the rules against these fixtures is how
@@ -836,7 +836,7 @@ fn summarize_run(path: &Path) -> Result<RunSummary, String> {
 }
 
 fn fixture_paths() -> Vec<PathBuf> {
-    let dir = PathBuf::from("tests/fixtures");
+    let dir = PathBuf::from("tests/replay/fixtures");
     let mut out = Vec::new();
     let Ok(entries) = fs::read_dir(&dir) else {
         return out;
@@ -860,7 +860,7 @@ fn fixture_paths() -> Vec<PathBuf> {
 // ─── Tests ─────────────────────────────────────────────────────────
 //
 // Unit tests for the rule engine use synthetic inputs. The fixture
-// sweep reads tests/fixtures/ — pure file I/O, completes in ~10ms —
+// sweep reads tests/replay/fixtures/ — pure file I/O, completes in ~10ms —
 // so it always runs on `cargo test` (no --ignored needed).
 
 #[test]
@@ -1027,14 +1027,14 @@ fn clean_task_produces_no_findings() {
     assert!(fs.is_empty(), "expected clean task, got: {fs:?}");
 }
 
-/// Fixtures marked broken in tests/fixtures/broken.json are
+/// Fixtures marked broken in tests/replay/fixtures/broken.json are
 /// known-failing runs (refusals, wrong answers, content filters, etc.)
 /// pending re-recording. Their findings are reported as info but do
 /// not fail the sweep — the rules still fire on them, so future
 /// regressions are visible, but they don't block CI.
 fn broken_fixture_set() -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
-    let Ok(raw) = fs::read_to_string("tests/fixtures/broken.json") else {
+    let Ok(raw) = fs::read_to_string("tests/replay/fixtures/broken.json") else {
         return out;
     };
     let Ok(v) = serde_json::from_str::<Value>(&raw) else {
@@ -1055,7 +1055,7 @@ fn inspect_every_existing_fixture() {
     let fixtures = fixture_paths();
     assert!(
         !fixtures.is_empty(),
-        "no fixtures found under tests/fixtures/"
+        "no fixtures found under tests/replay/fixtures/"
     );
     let broken = broken_fixture_set();
 

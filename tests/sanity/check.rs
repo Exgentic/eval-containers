@@ -245,7 +245,7 @@ fn count_reconciliation() {
 // ─── step 3 / FLEET.md Q3: released benchmarks have a fixture ────
 //
 // Every benchmark whose Dockerfile declares `LABEL dock.benchmark.released="true"`
-// MUST have at least one replay fixture under tests/fixtures/. Unreleased
+// MUST have at least one replay fixture under tests/replay/fixtures/. Unreleased
 // benchmarks are allowed to be fixture-less — they're in the source tree as
 // the full catalog of what Dock could support, but they haven't graduated
 // to the release gate. See benchmarks/RULES.md principle 21a.
@@ -265,7 +265,7 @@ fn released_benchmarks() -> Vec<String> {
 
 fn fixture_benchmarks() -> Vec<String> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir("tests/fixtures") else {
+    let Ok(entries) = fs::read_dir("tests/replay/fixtures") else {
         return out;
     };
     for entry in entries.flatten() {
@@ -314,7 +314,7 @@ fn released_benchmarks_have_fixtures() {
     let missing: Vec<&String> = released.iter().filter(|b| !covered.contains(b)).collect();
     if !missing.is_empty() {
         panic!(
-            "{} released benchmarks have no fixture under tests/fixtures/:\n  {}",
+            "{} released benchmarks have no fixture under tests/replay/fixtures/:\n  {}",
             missing.len(),
             missing
                 .iter()
