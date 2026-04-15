@@ -245,6 +245,35 @@ fn classify(gates: &[Gate]) -> Verdict {
     }
 }
 
+/// Scan the three audit files for a red-verdict line. Any audit red
+/// forces the overall fleet verdict red regardless of mechanical state.
+/// Missing audit files don't count as red — they count as yellow via
+/// the existing `NotRun` handling in classify().
+fn audit_red_count() -> usize {
+    let paths = [
+        "tests/audit-dockerfile.md",
+        "tests/audit-trajectory.md",
+        "tests/audit-fleet.md",
+    ];
+    let mut count = 0;
+    for p in &paths {
+        if let Ok(content) = fs::read_to_string(p) {
+            // Look for a "## Verdict\n\n**red**" pattern or any line
+            // that names red as the top-level verdict.
+            for line in content.lines().rev().take(20) {
+                if line.contains("**red**") {
+                    count += 1;
+                    break;
+                }
+                if line.contains("**green**") || line.contains("**yellow**") {
+                    break;
+                }
+            }
+        }
+    }
+    count
+}
+
 fn today() -> String {
     // Avoid a chrono dep; just shell out to `date`.
     let out = Command::new("date")
@@ -264,6 +293,58 @@ fn git_commit() -> String {
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .unwrap_or_default();
     out.trim().to_string()
+}
+
+/// Read a sibling audit file and summarize its state for the fleet
+/// report. Returns a markdown section that includes the audit's
+/// verdict line (grep for `**<color>**`) and the file's top-level
+/// counts. Does NOT inline the full audit — just links to it.
+fn render_audit_section(title: &str, path: &str, checklist: &str) -> String {
+    let mut out = format!("### {title}\n\n");
+    match fs::read_to_string(path) {
+        Ok(content) => {
+            // Extract the verdict line (last **<color>**... in the file)
+            let verdict = content
+                .lines()
+                .rev()
+                .find(|l| {
+                    l.contains("**red**") || l.contains("**yellow**") || l.contains("**green**")
+                })
+                .unwrap_or("verdict line not found")
+                .trim();
+            // Extract the summary header (usually a "Summary" or "Counts" block)
+            let summary: String = content
+                .lines()
+                .skip_while(|l| !l.starts_with("## Summary") && !l.starts_with("## Counts"))
+                .take(8)
+                .collect::<Vec<_>>()
+                .join("\n");
+            out.push_str(&format!(
+                "See [{path}]({relative}).\n\n\
+                 Walked by: procedural audit per [{checklist}]({checklist})\n\n\
+                 {verdict}\n\n",
+                path = path,
+                relative = path.trim_start_matches("tests/"),
+                checklist = checklist,
+                verdict = verdict,
+            ));
+            if !summary.trim().is_empty() {
+                out.push_str("<details><summary>Counts / summary</summary>\n\n");
+                out.push_str(&summary);
+                out.push_str("\n\n</details>\n\n");
+            }
+        }
+        Err(_) => {
+            out.push_str(&format!(
+                "_Not yet walked._ Produce it by walking [{checklist}]({checklist}) \
+                 and writing the result to `{path}` in the format defined by the \
+                 checklist's \"Output format\" section. See tests/VERIFY.md step 23–25.\n\n",
+                checklist = checklist,
+                path = path,
+            ));
+        }
+    }
+    out
 }
 
 fn render_report(gates: &[Gate], verdict: Verdict) -> String {
@@ -322,16 +403,27 @@ fn render_report(gates: &[Gate], verdict: Verdict) -> String {
     s.push_str(&format!("- agents on disk: **{agents}**\n"));
     s.push_str(&format!("- replay fixtures: **{fixtures}**\n\n"));
 
-    // Manual audit placeholder
-    s.push_str("## Procedural audit (manual section)\n\n");
-    s.push_str(
-        "Walk the three checklists (VERIFY.md steps 23–27) and paste\n\
-         the answers below. Until this section is filled in, the fleet\n\
-         verdict stays **yellow** even if the mechanical section is green.\n\n",
-    );
-    s.push_str("### [DOCKERFILE.md] — per-Dockerfile audit\n\n_Not yet walked._\n\n");
-    s.push_str("### [TRAJECTORY.md] — per-fixture audit\n\n_Not yet walked._\n\n");
-    s.push_str("### [FLEET.md] — 10 release questions\n\n_Not yet walked._\n\n");
+    // Procedural audits — read the three sibling audit files if they
+    // exist. Each file is the output of a human or sub-agent walk of
+    // one of the VERIFY.md checklists (steps 23–25). If a file is
+    // missing, we emit a clear "not yet walked" marker with the exact
+    // command to produce it.
+    s.push_str("## Procedural audits (manual section)\n\n");
+    s.push_str(&render_audit_section(
+        "DOCKERFILE audit (VERIFY.md step 23)",
+        "tests/audit-dockerfile.md",
+        "DOCKERFILE.md",
+    ));
+    s.push_str(&render_audit_section(
+        "TRAJECTORY audit (VERIFY.md step 24)",
+        "tests/audit-trajectory.md",
+        "TRAJECTORY.md",
+    ));
+    s.push_str(&render_audit_section(
+        "FLEET audit (VERIFY.md step 25)",
+        "tests/audit-fleet.md",
+        "FLEET.md",
+    ));
 
     s.push_str("## Verdict\n\n");
     s.push_str(&format!(
@@ -410,7 +502,13 @@ fn generate_fleet_report() {
         "no driver yet (see VERIFY.md step 22)",
     ));
 
-    let verdict = classify(&gates);
+    let mut verdict = classify(&gates);
+    // Audit reds escalate the overall verdict. Missing audit files
+    // don't change the verdict — they leave it at whatever the
+    // mechanical gates produced.
+    if audit_red_count() > 0 {
+        verdict = Verdict::Red;
+    }
     let report = render_report(&gates, verdict);
 
     fs::write("tests/fleet-report.md", &report).expect("failed to write fleet-report.md");
