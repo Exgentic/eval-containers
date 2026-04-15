@@ -51,3 +51,7 @@ path = "tests/upstream/test.rs"
 [[test]]
 name = "fleet"
 path = "tests/fleet/test.rs"
+
+[[test]]
+name = "live"
+path = "tests/live/test.rs"
