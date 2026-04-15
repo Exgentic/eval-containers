@@ -14,7 +14,15 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="true"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/gdpval"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gdpval"
+# FUTURE: pin to a specific parquet conversion commit once upstream
+# publishes a stable release. Currently uses the auto-generated parquet
+# ref which is stable-enough but not formally pinned.
+LABEL dock.benchmark.data_revision="auto-parquet-ref"
 
+# libreoffice is installed for AGENT runtime use — gdpval tasks include
+# reference docx/xlsx/pptx files downloaded via reference_urls.json in
+# /entrypoint.sh, and the agent needs libreoffice (via `soffice`) to
+# open and convert them. Nothing in this Dockerfile invokes it directly.
 RUN apt-get update && apt-get install -y \
     libreoffice curl wget \
     && rm -rf /var/lib/apt/lists/*
