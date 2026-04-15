@@ -28,9 +28,7 @@ pub enum BuildTarget {
     },
     /// Build a model image
     /// Docker: docker build -t {registry}/models/{name} ./models/{name}
-    Model {
-        name: String,
-    },
+    Model { name: String },
     /// Build a combined eval image (benchmark + agent)
     /// Docker: docker build --build-arg BENCHMARK_IMAGE=... --build-arg AGENT_IMAGE=... -t {registry}/evals/{benchmark}--{agent}:{version}
     Eval {
@@ -73,7 +71,12 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             let context = format!("./models/{name}");
             docker_build(&tag, &context, None, &[])
         }
-        BuildTarget::Eval { benchmark, agent, task_id, version } => {
+        BuildTarget::Eval {
+            benchmark,
+            agent,
+            task_id,
+            version,
+        } => {
             let bench_tag = if let Some(ref tid) = task_id {
                 format!("{registry}/benchmarks/{benchmark}-{tid}:latest")
             } else {
@@ -117,7 +120,8 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 format!("AGENT_IMAGE={agent_tag}"),
             ];
             let result = docker_build(
-                &eval_tag, ".",
+                &eval_tag,
+                ".",
                 Some(tmp_dockerfile.to_str().unwrap()),
                 &build_args,
             );
@@ -169,7 +173,12 @@ fn image_exists(tag: &str) -> bool {
         .unwrap_or(false)
 }
 
-fn docker_build(tag: &str, context: &str, dockerfile: Option<&str>, build_args: &[String]) -> Result<(), String> {
+fn docker_build(
+    tag: &str,
+    context: &str,
+    dockerfile: Option<&str>,
+    build_args: &[String],
+) -> Result<(), String> {
     let mut cmd = Command::new("docker");
     cmd.arg("build");
     cmd.arg("-t").arg(tag);
@@ -183,7 +192,9 @@ fn docker_build(tag: &str, context: &str, dockerfile: Option<&str>, build_args: 
 
     eprintln!("$ docker build -t {tag} {context}");
 
-    let status = cmd.status().map_err(|e| format!("failed to run docker: {e}"))?;
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to run docker: {e}"))?;
     if !status.success() {
         return Err(format!("docker build failed with {status}"));
     }

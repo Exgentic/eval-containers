@@ -9,7 +9,7 @@
 //!
 //! - Container tag  → which image to pull (DOCK_*_TAG, flags --*-tag)
 //! - Internal ver.  → which upstream software runs inside (DOCK_*_VERSION,
-//!                    flags --*-version)
+//!   flags --*-version)
 //!
 //! With `--local`, uses the in-repo `benchmarks/<name>/compose.yaml`
 //! instead of the registry artifact.
@@ -40,7 +40,6 @@ pub struct RunArgs {
     task_id: Option<String>,
 
     // ---- Container tags (which image to pull) ----
-
     /// Benchmark image tag (maps to $DOCK_BENCHMARK_TAG)
     #[arg(long)]
     benchmark_tag: Option<String>,
@@ -54,7 +53,6 @@ pub struct RunArgs {
     model_tag: Option<String>,
 
     // ---- Internal upstream versions (what runs inside the container) ----
-
     /// Override the dataset revision inside the benchmark image
     /// (maps to $DOCK_BENCHMARK_VERSION)
     #[arg(long)]

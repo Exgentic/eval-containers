@@ -5,9 +5,9 @@
 //!
 //! Run: cargo test --test replay -- --ignored
 
-use std::process::Command;
-use std::path::Path;
 use std::fs;
+use std::path::Path;
+use std::process::Command;
 use testcontainers::compose::DockerCompose;
 
 fn read_json(path: &Path) -> Option<serde_json::Value> {
@@ -23,11 +23,7 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 // Fixtures are in tests/fixtures/{benchmark}-0-{agent}.trajectory.jsonl
 
 /// Helper: start a compose stack with the replay model serving a recorded fixture.
-async fn replay_compose(
-    compose_file: &str,
-    fixture: &str,
-    env: &[(&str, &str)],
-) -> DockerCompose {
+async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> DockerCompose {
     let cwd = std::env::current_dir().unwrap();
 
     // Write override that mounts the trajectory fixture into the model service
@@ -36,21 +32,16 @@ async fn replay_compose(
         "services:\n  model:\n    volumes:\n      - {}:/data/trajectory.jsonl:ro\n",
         fixture_abs.display()
     );
-    let override_path = std::env::temp_dir().join(format!(
-        "dock-replay-{}.yaml",
-        fixture.replace('/', "-")
-    ));
-    fs::write(&override_path, &override_content)
-        .expect("failed to write compose override");
+    let override_path =
+        std::env::temp_dir().join(format!("dock-replay-{}.yaml", fixture.replace('/', "-")));
+    fs::write(&override_path, &override_content).expect("failed to write compose override");
 
     let compose_abs = cwd.join(compose_file);
     let compose_str = compose_abs.to_str().unwrap().to_string();
     let override_str = override_path.to_str().unwrap().to_string();
 
-    let mut compose = DockerCompose::with_local_client(&[
-        compose_str.as_str(),
-        override_str.as_str(),
-    ]);
+    let mut compose =
+        DockerCompose::with_local_client(&[compose_str.as_str(), override_str.as_str()]);
 
     for (key, val) in env {
         compose = compose.with_env(*key, *val);
@@ -67,22 +58,32 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
         .join(benchmark)
         .join(task_id)
         .join("task/result.json");
-    assert!(result_path.exists(), "result.json not written for {benchmark}/{task_id}");
+    assert!(
+        result_path.exists(),
+        "result.json not written for {benchmark}/{task_id}"
+    );
 
     let result = read_json(&result_path).expect("result.json is not valid JSON");
-    assert_eq!(result["benchmark"], benchmark,
-        "wrong benchmark in result.json");
-    assert_eq!(result["task_id"], task_id,
-        "wrong task_id in result.json");
-    assert!(result.get("reward").is_some(),
-        "missing reward in result.json");
-    assert!(result.get("passed").is_some(),
-        "missing passed in result.json");
+    assert_eq!(
+        result["benchmark"], benchmark,
+        "wrong benchmark in result.json"
+    );
+    assert_eq!(result["task_id"], task_id, "wrong task_id in result.json");
+    assert!(
+        result.get("reward").is_some(),
+        "missing reward in result.json"
+    );
+    assert!(
+        result.get("passed").is_some(),
+        "missing passed in result.json"
+    );
 
     // Reward must be a number: 0, 1, fractional, or -1 (externally graded)
     let reward = result["reward"].as_f64().expect("reward is not a number");
-    assert!(reward >= -1.0 && reward <= 1.0,
-        "reward out of range [-1, 1]: {reward}");
+    assert!(
+        (-1.0..=1.0).contains(&reward),
+        "reward out of range [-1, 1]: {reward}"
+    );
 }
 
 /// Build all required images before running replay test.
@@ -90,7 +91,12 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 fn ensure_images(benchmark: &str, agent: &str) {
     // Build replay model
     let status = Command::new("docker")
-        .args(["build", "-t", "quay.io/dock-eval/models/replay:latest", "models/replay/"])
+        .args([
+            "build",
+            "-t",
+            "quay.io/dock-eval/models/replay:latest",
+            "models/replay/",
+        ])
         .status()
         .expect("failed to build replay model");
     assert!(status.success(), "failed to build replay model");
@@ -100,7 +106,10 @@ fn ensure_images(benchmark: &str, agent: &str) {
         .args(["run", "--", "build", "eval", benchmark, "--agent", agent])
         .status()
         .expect("failed to run cargo run -- build eval");
-    assert!(status.success(), "failed to build eval image for {benchmark}--{agent}");
+    assert!(
+        status.success(),
+        "failed to build eval image for {benchmark}--{agent}"
+    );
 }
 
 /// Macro for replay tests. Each test follows the same pattern:
@@ -120,7 +129,8 @@ macro_rules! replay_test {
                     ("DOCK_AGENT", $agent),
                     ("DOCK_MODEL", "replay"),
                 ],
-            ).await;
+            )
+            .await;
 
             assert_result_valid($benchmark, "0");
         }
@@ -131,120 +141,189 @@ macro_rules! replay_test {
 // Fixtures must be recorded before these tests can run.
 // See MATRIX.md for the full test matrix.
 
-replay_test!(replay_aime_claude_code,
+replay_test!(
+    replay_aime_claude_code,
     "benchmarks/aime/compose.yaml",
     "tests/fixtures/aime-0-claude-code.trajectory.jsonl",
-    "aime", "claude-code");
+    "aime",
+    "claude-code"
+);
 
-replay_test!(replay_gpqa_codex,
+replay_test!(
+    replay_gpqa_codex,
     "benchmarks/gpqa-diamond/compose.yaml",
     "tests/fixtures/gpqa-diamond-0-codex.trajectory.jsonl",
-    "gpqa-diamond", "codex");
+    "gpqa-diamond",
+    "codex"
+);
 
-replay_test!(replay_simpleqa_goose,
+replay_test!(
+    replay_simpleqa_goose,
     "benchmarks/simpleqa/compose.yaml",
     "tests/fixtures/simpleqa-0-goose.trajectory.jsonl",
-    "simpleqa", "goose");
+    "simpleqa",
+    "goose"
+);
 
-replay_test!(replay_math500_aider,
+replay_test!(
+    replay_math500_aider,
     "benchmarks/math-500/compose.yaml",
     "tests/fixtures/math-500-0-aider.trajectory.jsonl",
-    "math-500", "aider");
+    "math-500",
+    "aider"
+);
 
-replay_test!(replay_mgsm_codex,
+replay_test!(
+    replay_mgsm_codex,
     "benchmarks/mgsm/compose.yaml",
     "tests/fixtures/mgsm-0-codex.trajectory.jsonl",
-    "mgsm", "codex");
+    "mgsm",
+    "codex"
+);
 
-replay_test!(replay_mmlu_openhands,
+replay_test!(
+    replay_mmlu_openhands,
     "benchmarks/mmlu-pro/compose.yaml",
     "tests/fixtures/mmlu-pro-0-openhands.trajectory.jsonl",
-    "mmlu-pro", "openhands");
+    "mmlu-pro",
+    "openhands"
+);
 
-replay_test!(replay_hle_claude_code,
+replay_test!(
+    replay_hle_claude_code,
     "benchmarks/hle/compose.yaml",
     "tests/fixtures/hle-0-claude-code.trajectory.jsonl",
-    "hle", "claude-code");
+    "hle",
+    "claude-code"
+);
 
-replay_test!(replay_mrcr_claude_code,
+replay_test!(
+    replay_mrcr_claude_code,
     "benchmarks/mrcr/compose.yaml",
     "tests/fixtures/mrcr-0-claude-code.trajectory.jsonl",
-    "mrcr", "claude-code");
+    "mrcr",
+    "claude-code"
+);
 
-replay_test!(replay_humaneval_gemini,
+replay_test!(
+    replay_humaneval_gemini,
     "benchmarks/humaneval/compose.yaml",
     "tests/fixtures/humaneval-0-claude-code.trajectory.jsonl",
-    "humaneval", "claude-code");
+    "humaneval",
+    "claude-code"
+);
 
-replay_test!(replay_mbpp_claude_code,
+replay_test!(
+    replay_mbpp_claude_code,
     "benchmarks/mbpp/compose.yaml",
     "tests/fixtures/mbpp-0-claude-code.trajectory.jsonl",
-    "mbpp", "claude-code");
+    "mbpp",
+    "claude-code"
+);
 
-replay_test!(replay_livecodebench_codex,
+replay_test!(
+    replay_livecodebench_codex,
     "benchmarks/livecodebench/compose.yaml",
     "tests/fixtures/livecodebench-0-codex.trajectory.jsonl",
-    "livecodebench", "codex");
+    "livecodebench",
+    "codex"
+);
 
-replay_test!(replay_usaco_codex,
+replay_test!(
+    replay_usaco_codex,
     "benchmarks/usaco/compose.yaml",
     "tests/fixtures/usaco-0-codex.trajectory.jsonl",
-    "usaco", "codex");
+    "usaco",
+    "codex"
+);
 
-replay_test!(replay_ifeval_claude_code,
+replay_test!(
+    replay_ifeval_claude_code,
     "benchmarks/ifeval/compose.yaml",
     "tests/fixtures/ifeval-0-claude-code.trajectory.jsonl",
-    "ifeval", "claude-code");
+    "ifeval",
+    "claude-code"
+);
 
-replay_test!(replay_browsecomp_codex,
+replay_test!(
+    replay_browsecomp_codex,
     "benchmarks/browsecomp/compose.yaml",
     "tests/fixtures/browsecomp-0-codex.trajectory.jsonl",
-    "browsecomp", "codex");
+    "browsecomp",
+    "codex"
+);
 
-replay_test!(replay_healthbench_claude_code,
+replay_test!(
+    replay_healthbench_claude_code,
     "benchmarks/healthbench/compose.yaml",
     "tests/fixtures/healthbench-0-claude-code.trajectory.jsonl",
-    "healthbench", "claude-code");
+    "healthbench",
+    "claude-code"
+);
 
-replay_test!(replay_kumo_codex,
+replay_test!(
+    replay_kumo_codex,
     "benchmarks/kumo/compose.yaml",
     "tests/fixtures/kumo-0-codex.trajectory.jsonl",
-    "kumo", "codex");
+    "kumo",
+    "codex"
+);
 
-replay_test!(replay_gdpval_claude_code,
+replay_test!(
+    replay_gdpval_claude_code,
     "benchmarks/gdpval/compose.yaml",
     "tests/fixtures/gdpval-0-claude-code.trajectory.jsonl",
-    "gdpval", "claude-code");
+    "gdpval",
+    "claude-code"
+);
 
-replay_test!(replay_bfcl_codex,
+replay_test!(
+    replay_bfcl_codex,
     "benchmarks/bfcl/compose.yaml",
     "tests/fixtures/bfcl-0-codex.trajectory.jsonl",
-    "bfcl", "codex");
+    "bfcl",
+    "codex"
+);
 
-replay_test!(replay_appworld_claude_code,
+replay_test!(
+    replay_appworld_claude_code,
     "benchmarks/appworld/compose.yaml",
     "tests/fixtures/appworld-0-claude-code.trajectory.jsonl",
-    "appworld", "claude-code");
+    "appworld",
+    "claude-code"
+);
 
-replay_test!(replay_arcagi_claude_code,
+replay_test!(
+    replay_arcagi_claude_code,
     "benchmarks/arc-agi/compose.yaml",
     "tests/fixtures/arc-agi-0-claude-code.trajectory.jsonl",
-    "arc-agi", "claude-code");
+    "arc-agi",
+    "claude-code"
+);
 
-replay_test!(replay_mmmu_claude_code,
+replay_test!(
+    replay_mmmu_claude_code,
     "benchmarks/mmmu/compose.yaml",
     "tests/fixtures/mmmu-0-claude-code.trajectory.jsonl",
-    "mmmu", "claude-code");
+    "mmmu",
+    "claude-code"
+);
 
-replay_test!(replay_aider_polyglot_aider,
+replay_test!(
+    replay_aider_polyglot_aider,
     "benchmarks/aider-polyglot/compose.yaml",
     "tests/fixtures/aider-polyglot-0-aider.trajectory.jsonl",
-    "aider-polyglot", "aider");
+    "aider-polyglot",
+    "aider"
+);
 
-replay_test!(replay_gaia_goose,
+replay_test!(
+    replay_gaia_goose,
     "benchmarks/gaia/compose.yaml",
     "tests/fixtures/gaia-0-goose.trajectory.jsonl",
-    "gaia", "goose");
+    "gaia",
+    "goose"
+);
 
 // Per-task and sidecar benchmarks need special handling (build args, sidecars).
 // TODO: replay_swebench_bob, replay_compilebench_sweagent, replay_terminal_openhand

@@ -4,13 +4,17 @@ mod inspect;
 mod list;
 mod prune;
 mod push;
-mod run;
 mod report;
+mod run;
 
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "dock", version, about = "A build system for AI agent evaluations")]
+#[command(
+    name = "dock",
+    version,
+    about = "A build system for AI agent evaluations"
+)]
 struct Cli {
     /// Docker registry to use
     #[arg(long, env = "DOCK_REGISTRY", default_value = "quay.io/dock-eval")]

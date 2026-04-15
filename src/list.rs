@@ -33,7 +33,10 @@ pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
                 eprintln!("no benchmark images found");
                 return Ok(());
             }
-            println!("{:<30} {:<50} {:<6} {:<10} {}", "IMAGE", "DESCRIPTION", "TASKS", "TYPE", "INTERNET");
+            println!(
+                "{:<30} {:<50} {:<6} {:<10} INTERNET",
+                "IMAGE", "DESCRIPTION", "TASKS", "TYPE"
+            );
             println!("{}", "-".repeat(110));
             for image in &images {
                 let desc = get_label(image, "dock.benchmark.description");
@@ -50,7 +53,7 @@ pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
                 eprintln!("no agent images found");
                 return Ok(());
             }
-            println!("{:<30} {:<40} {}", "IMAGE", "DESCRIPTION", "RUNTIME");
+            println!("{:<30} {:<40} RUNTIME", "IMAGE", "DESCRIPTION");
             println!("{}", "-".repeat(80));
             for image in &images {
                 let desc = get_label(image, "dock.agent.description");
@@ -65,7 +68,7 @@ pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
                 eprintln!("no model images found");
                 return Ok(());
             }
-            println!("{:<30} {}", "IMAGE", "PROVIDER");
+            println!("{:<30} PROVIDER", "IMAGE");
             println!("{}", "-".repeat(45));
             for image in &images {
                 let provider = get_label(image, "dock.model.provider");
@@ -99,7 +102,11 @@ fn get_images(registry: &str, category: &str) -> Result<Vec<String>, String> {
         .map_err(|e| format!("failed to run docker: {e}"))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(stdout.lines().map(|s| s.to_string()).filter(|s| !s.is_empty()).collect())
+    Ok(stdout
+        .lines()
+        .map(|s| s.to_string())
+        .filter(|s| !s.is_empty())
+        .collect())
 }
 
 /// Read a label from a Docker image
@@ -112,7 +119,11 @@ fn get_label(image: &str, label: &str) -> String {
         .ok()
         .and_then(|o| {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
-            if s.is_empty() || s == "<no value>" { None } else { Some(s) }
+            if s.is_empty() || s == "<no value>" {
+                None
+            } else {
+                Some(s)
+            }
         })
         .unwrap_or_else(|| "-".to_string())
 }

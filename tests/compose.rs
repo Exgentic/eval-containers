@@ -13,8 +13,8 @@ use std::process::Command;
 fn benchmark_compose_files() -> Vec<PathBuf> {
     let mut out = Vec::new();
     let root = PathBuf::from("benchmarks");
-    let entries = fs::read_dir(&root)
-        .unwrap_or_else(|e| panic!("failed to read {}: {e}", root.display()));
+    let entries =
+        fs::read_dir(&root).unwrap_or_else(|e| panic!("failed to read {}: {e}", root.display()));
     for entry in entries {
         let entry = entry.expect("dir entry");
         if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {

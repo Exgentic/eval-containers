@@ -36,10 +36,20 @@ struct Rule {
 
 impl Rule {
     const fn red(id: &'static str, why: &'static str, test: fn(&str, &str) -> bool) -> Self {
-        Self { id, severity: Severity::Red, why, test }
+        Self {
+            id,
+            severity: Severity::Red,
+            why,
+            test,
+        }
     }
     const fn yellow(id: &'static str, why: &'static str, test: fn(&str, &str) -> bool) -> Self {
-        Self { id, severity: Severity::Yellow, why, test }
+        Self {
+            id,
+            severity: Severity::Yellow,
+            why,
+            test,
+        }
     }
 }
 
@@ -56,33 +66,38 @@ fn contains_hardcoded_api_key(t: &str) -> bool {
         // OpenAI: sk-[A-Za-z0-9]{40+}
         if let Some(i) = line.find("sk-") {
             let tail = &line[i + 3..];
-            let alnum: String = tail.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
+            let alnum: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .collect();
             if alnum.len() >= 40 {
                 return true;
             }
         }
         // GitHub PAT: ghp_[A-Za-z0-9]{36}
-        if line.contains("ghp_") {
-            if let Some(i) = line.find("ghp_") {
-                let tail = &line[i + 4..];
-                let alnum: String =
-                    tail.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
-                if alnum.len() >= 36 {
-                    return true;
-                }
+        if line.contains("ghp_")
+            && let Some(i) = line.find("ghp_")
+        {
+            let tail = &line[i + 4..];
+            let alnum: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric())
+                .collect();
+            if alnum.len() >= 36 {
+                return true;
             }
         }
         // AWS: AKIA[0-9A-Z]{16}
-        if line.contains("AKIA") {
-            if let Some(i) = line.find("AKIA") {
-                let tail = &line[i + 4..];
-                let caps: String = tail
-                    .chars()
-                    .take_while(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
-                    .collect();
-                if caps.len() == 16 {
-                    return true;
-                }
+        if line.contains("AKIA")
+            && let Some(i) = line.find("AKIA")
+        {
+            let tail = &line[i + 4..];
+            let caps: String = tail
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
+                .collect();
+            if caps.len() == 16 {
+                return true;
             }
         }
     }
@@ -262,7 +277,10 @@ fn has_todo_or_fixme(t: &str) -> bool {
         }
         for tok in ["TODO", "FIXME", "XXX"] {
             // standalone token check
-            if trimmed.split(|c: char| !c.is_alphanumeric()).any(|w| w == tok) {
+            if trimmed
+                .split(|c: char| !c.is_alphanumeric())
+                .any(|w| w == tok)
+            {
                 return true;
             }
         }
@@ -638,7 +656,10 @@ fn inspect_every_dockerfile() {
     }
 
     let red: Vec<&Finding> = all.iter().filter(|f| f.severity == Severity::Red).collect();
-    let yellow: Vec<&Finding> = all.iter().filter(|f| f.severity == Severity::Yellow).collect();
+    let yellow: Vec<&Finding> = all
+        .iter()
+        .filter(|f| f.severity == Severity::Yellow)
+        .collect();
 
     eprintln!(
         "\n─── dockerfile inspection over {} files ───",

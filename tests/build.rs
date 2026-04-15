@@ -23,15 +23,20 @@ use std::process::Command;
 
 fn per_task_build_args(benchmark: &str) -> Option<Vec<&'static str>> {
     let mut map: HashMap<&str, Vec<&str>> = HashMap::new();
-    map.insert("swe-bench", vec!["--build-arg", "DOCK_TASK_ID=sympy__sympy-24066"]);
+    map.insert(
+        "swe-bench",
+        vec!["--build-arg", "DOCK_TASK_ID=sympy__sympy-24066"],
+    );
     map.insert(
         "compilebench",
         vec![
-            "--build-arg", "DOCK_TASK_ID=curl",
-            "--build-arg", "BASE_IMAGE=ubuntu:22.04",
+            "--build-arg",
+            "DOCK_TASK_ID=curl",
+            "--build-arg",
+            "BASE_IMAGE=ubuntu:22.04",
         ],
     );
-    map.get(benchmark).map(|v| v.clone())
+    map.get(benchmark).cloned()
 }
 
 // ─── Docker shell-outs ─────────────────────────────────────────────
@@ -122,7 +127,7 @@ fn run_build_sweep(
         // Skip per-task benchmarks we can't build without upstream base images.
         // (They'll fail loudly in the report so you know they were skipped.)
         let extras_owned = args_for(&name);
-        let extras: Vec<&str> = extras_owned.iter().copied().collect();
+        let extras: Vec<&str> = extras_owned.to_vec();
 
         let tag = match docker_build(context, &extras) {
             Ok(tag) => tag,
@@ -137,20 +142,18 @@ fn run_build_sweep(
 
         // Verify required labels
         for label in required_labels {
-            let val = docker_label(&tag, label);
-            if val.is_none() {
-                failures.push(BuildFailure {
+            match docker_label(&tag, label) {
+                None => failures.push(BuildFailure {
                     path: context.clone(),
                     reason: format!("missing required label `{label}`"),
-                });
-            } else if *label == "dock.type" && val.as_deref() != Some(label_root) {
-                failures.push(BuildFailure {
-                    path: context.clone(),
-                    reason: format!(
-                        "label dock.type should be `{label_root}` but is `{}`",
-                        val.unwrap()
-                    ),
-                });
+                }),
+                Some(val) if *label == "dock.type" && val != label_root => {
+                    failures.push(BuildFailure {
+                        path: context.clone(),
+                        reason: format!("label dock.type should be `{label_root}` but is `{val}`"),
+                    });
+                }
+                _ => {}
             }
         }
     }
