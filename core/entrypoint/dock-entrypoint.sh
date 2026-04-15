@@ -1,4 +1,23 @@
 #!/bin/bash
+# Shared evaluation entrypoint.
+#
+# Implements RULES.md principle 9 (two orthogonal knobs: container tag vs
+# internal upstream version) on the benchmark + agent axes. Container tag is
+# selected at `docker pull` time by `DOCK_BENCHMARK_TAG` / `DOCK_AGENT_TAG` /
+# `DOCK_MODEL_TAG` (Docker's job — not this script's). Internal upstream
+# version is read from:
+#
+#   DOCK_BENCHMARK_VERSION  (dataset revision; overrides DOCK_BENCHMARK_VERSION_DEFAULT)
+#   DOCK_AGENT_VERSION      (upstream CLI version; overrides DOCK_AGENT_VERSION_DEFAULT)
+#
+# If a version override is set AND differs from the baked default, this script
+# invokes an opt-in reloader hook (`/dock-refetch-data` for benchmarks,
+# `/dock-reinstall-agent` for agents) that the image may ship. If no hook is
+# present but an override is set, the run fails loud rather than silently
+# running the wrong version.
+#
+# In all cases, the resolved version is recorded to /output/task/version.json
+# (benchmark) and /output/agent/version.json (agent) before the agent runs.
 set -euo pipefail
 
 # Create agent user if needed
@@ -7,6 +26,40 @@ id agent &>/dev/null || useradd -m -s /bin/bash agent
 # Prepare directories
 mkdir -p /output/agent /output/task /logs/verifier /app
 chown -R agent:agent /output/agent /logs /app /tmp 2>/dev/null || true
+
+# ─── Benchmark version resolution (rule 9) ────────────────────────
+BENCH_DEFAULT="${DOCK_BENCHMARK_VERSION_DEFAULT:-}"
+BENCH_OVERRIDE="${DOCK_BENCHMARK_VERSION:-}"
+BENCH_RESOLVED="${BENCH_OVERRIDE:-$BENCH_DEFAULT}"
+if [ -n "$BENCH_OVERRIDE" ] && [ "$BENCH_OVERRIDE" != "$BENCH_DEFAULT" ]; then
+  if [ -x /dock-refetch-data ]; then
+    echo "dock: benchmark version override $BENCH_DEFAULT -> $BENCH_OVERRIDE" >&2
+    /dock-refetch-data "$BENCH_OVERRIDE"
+  else
+    echo "dock: DOCK_BENCHMARK_VERSION=$BENCH_OVERRIDE set but this image has no /dock-refetch-data hook (baked default: $BENCH_DEFAULT). Refusing to run." >&2
+    exit 64
+  fi
+fi
+printf '{"benchmark":"%s","default":"%s","override":"%s","resolved":"%s"}' \
+  "${DOCK_BENCHMARK:-unknown}" "$BENCH_DEFAULT" "$BENCH_OVERRIDE" "$BENCH_RESOLVED" \
+  > /output/task/version.json
+
+# ─── Agent version resolution (rule 9) ────────────────────────────
+AGENT_DEFAULT="${DOCK_AGENT_VERSION_DEFAULT:-}"
+AGENT_OVERRIDE="${DOCK_AGENT_VERSION:-}"
+AGENT_RESOLVED="${AGENT_OVERRIDE:-$AGENT_DEFAULT}"
+if [ -n "$AGENT_OVERRIDE" ] && [ "$AGENT_OVERRIDE" != "$AGENT_DEFAULT" ]; then
+  if [ -x /dock-reinstall-agent ]; then
+    echo "dock: agent version override $AGENT_DEFAULT -> $AGENT_OVERRIDE" >&2
+    /dock-reinstall-agent "$AGENT_OVERRIDE"
+  else
+    echo "dock: DOCK_AGENT_VERSION=$AGENT_OVERRIDE set but this image has no /dock-reinstall-agent hook (baked default: $AGENT_DEFAULT). Refusing to run." >&2
+    exit 64
+  fi
+fi
+printf '{"agent":"%s","default":"%s","override":"%s","resolved":"%s"}' \
+  "${DOCK_AGENT:-unknown}" "$AGENT_DEFAULT" "$AGENT_OVERRIDE" "$AGENT_RESOLVED" \
+  > /output/agent/version.json
 
 # Hide expected answer from agent
 SAVED_EXPECTED_ANSWER="${EXPECTED_ANSWER:-}"

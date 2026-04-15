@@ -15,9 +15,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Self-Contained
 
-1. **Standalone.** The image MUST contain all task data, test logic, and entrypoints. `docker compose up` MUST work without Dock installed and without internet. For shared-env benchmarks, `TASK_ID` is the only required runtime input. For per-task benchmarks, `TASK_ID` is a build-time argument — each image contains exactly one task.
+1. **Standalone.** The image MUST contain all task data, test logic, and entrypoints. `docker compose up` MUST work without Dock installed and without internet. For shared-env benchmarks, `DOCK_TASK_ID` is the only required runtime input. For per-task benchmarks, `DOCK_TASK_ID` is a build-time argument — each image contains exactly one task.
 
-2. **Single input.** The image MUST resolve to the task content, expected answer, and any attached files from `TASK_ID` alone — whether provided at build time (per-task) or runtime (shared-env).
+2. **Single input.** The image MUST resolve to the task content, expected answer, and any attached files from `DOCK_TASK_ID` alone — whether provided at build time (per-task) or runtime (shared-env).
 
 3. **Reproducible by default.** The exact dataset version MUST be pinned at build time as a default in the Dockerfile (`ARG DATA_REVISION=<sha>` or equivalent) and recorded in `dock.benchmark.data_revision`. The image MUST produce identical task content on every build when no env vars are set.
 

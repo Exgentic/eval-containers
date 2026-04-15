@@ -353,6 +353,38 @@ fn every_benchmark_has_readme() {
     eprintln!("✓ all benchmarks have README.md");
 }
 
+// ─── RULES.md principle 9: shared entrypoint honors version override ─
+//
+// The version-override contract (benchmarks/RULES.md 4, agents/RULES.md 13)
+// is implemented in core/entrypoint/dock-entrypoint.sh. It MUST read
+// DOCK_BENCHMARK_VERSION + DOCK_AGENT_VERSION and write version.json files.
+// If this script ever stops referencing those vars, the whole axis is dead.
+
+#[test]
+fn shared_entrypoint_reads_version_vars() {
+    let path = "core/entrypoint/dock-entrypoint.sh";
+    let text = fs::read_to_string(path).expect("shared entrypoint missing");
+    let needles = [
+        "DOCK_BENCHMARK_VERSION",
+        "DOCK_AGENT_VERSION",
+        "/output/task/version.json",
+        "/output/agent/version.json",
+    ];
+    let mut missing: Vec<&str> = Vec::new();
+    for n in &needles {
+        if !text.contains(n) {
+            missing.push(n);
+        }
+    }
+    if !missing.is_empty() {
+        panic!(
+            "{path} does not reference required symbols (RULES.md 9): {}",
+            missing.join(", ")
+        );
+    }
+    eprintln!("✓ shared entrypoint honors version-override contract");
+}
+
 #[test]
 fn every_agent_has_readme() {
     let mut missing = Vec::new();

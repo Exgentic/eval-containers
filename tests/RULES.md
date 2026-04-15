@@ -35,9 +35,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 7. **The LLM is the only source of noise.** Given the same image, task, and agent code, the entire evaluation pipeline is deterministic — except for LLM responses. By recording and replaying LLM responses, every test becomes fully reproducible with zero API cost.
 
-8. **Replay model for tests.** A replay model image MUST exist under `models/replay/`. It MUST implement the same HTTP interface as the real LiteLLM proxy (health endpoint on port 4000, OpenAI-compatible chat completions endpoint). Instead of calling an LLM provider, it MUST serve responses from a recorded trajectory file. It MUST write `trajectory.json` and `result.json` to `/output/model/` in the same format as the real proxy.
+8. **Replay model for tests.** A replay model image MUST exist under `models/replay/`. It MUST implement the same HTTP interface as the real LiteLLM proxy (health endpoint on port 4000, OpenAI-compatible chat completions endpoint). Instead of calling an LLM provider, it MUST serve responses from a recorded trajectory file. It MUST write `trajectory.jsonl` and `result.json` to `/output/model/` in the same format as the real proxy.
 
-9. **Recording workflow.** To create a test fixture, run a real evaluation once with real API keys. The model service produces `trajectory.json`. Copy that file to `tests/fixtures/{benchmark}-{task-id}-{agent}.trajectory.json`. This recording is the fixture for all future test runs of that combination.
+9. **Recording workflow.** To create a test fixture, run a real evaluation once with real API keys. The model service produces `trajectory.jsonl`. Copy that file to `tests/fixtures/{benchmark}-{task-id}-{agent}.trajectory.jsonl`. This recording is the fixture for all future test runs of that combination.
 
 10. **No API keys in CI.** Tests MUST run without `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider credentials. The replay model is the only LLM backend in tests.
 

@@ -37,7 +37,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 8. **Shared service definitions.** Compose files MUST extend model and eval base config from `compose/services.yaml`. Benchmark-specific config goes in the benchmark's own compose file.
 
-9. **Parameterized.** Compose files MUST be parameterized by `TASK_ID`, `DOCK_AGENT`, `DOCK_MODEL`, and `DOCK_REGISTRY`. Defaults MUST be provided for all except `TASK_ID`.
+9. **Parameterized.** Compose files MUST be parameterized by `DOCK_TASK_ID`, `DOCK_AGENT`, `DOCK_MODEL`, and `DOCK_REGISTRY`. Defaults MUST be provided for all except `DOCK_TASK_ID`.
 
 10. **`.env` is the single config.** API keys, registry, agent, model, and timeout MUST all be configurable from a single `.env` file. No provider-specific variables hardcoded in compose.
 
@@ -57,7 +57,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 16. **Result schema.** `/output/task/result.json` MUST contain at minimum: `task_id`, `benchmark`, `reward`, `passed`. `/output/agent/result.json` MUST contain: `agent`, `started_at`, `ended_at`, `exit_code`. `/output/model/result.json` MUST contain: `model`, `provider`, `total_tokens`, `cost_usd`.
 
-17. **Trajectory.** The model service MUST write `/output/model/trajectory.json` containing every LLM request and response.
+17. **Trajectory.** The model service MUST write `/output/model/trajectory.jsonl` containing every LLM request and response (one JSON object per line, LiteLLM StandardLoggingPayload format).
 
 18. **Accumulating results.** Results MUST be organized as `output/{benchmark}/{task-id}/`. Running multiple tasks MUST accumulate results without overwriting.
 

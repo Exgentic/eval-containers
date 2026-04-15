@@ -5,3 +5,4 @@ LABEL dock.core.component="entrypoint"
 LABEL dock.core.description="Shared evaluation entrypoint script"
 
 COPY dock-entrypoint.sh /dock-entrypoint.sh
+COPY dock-materialize-task /dock-materialize-task

@@ -599,6 +599,38 @@ fn uses_full_python_when_slim_exists(t: &str) -> bool {
     false
 }
 
+// ─── Type predicates (RULES.md principle 9: version-override axis) ─
+
+fn is_benchmark(t: &str) -> bool {
+    t.contains(r#"LABEL dock.type="benchmark""#)
+}
+fn is_agent(t: &str) -> bool {
+    t.contains(r#"LABEL dock.type="agent""#)
+}
+fn is_model(t: &str) -> bool {
+    t.contains(r#"LABEL dock.type="model""#)
+}
+
+// Exemption: models/replay is the in-repo replay stub that does NOT
+// wrap the real LiteLLM proxy — it implements its own minimal HTTP
+// server. It has no litellm_version to record.
+fn is_replay_model(_t: &str, dir: &str) -> bool {
+    dir == "replay"
+}
+
+fn benchmark_missing_version_default(t: &str, _dir: &str) -> bool {
+    is_benchmark(t) && !t.contains("ENV DOCK_BENCHMARK_VERSION_DEFAULT=")
+}
+fn agent_missing_version_default(t: &str, _dir: &str) -> bool {
+    is_agent(t) && !t.contains("ENV DOCK_AGENT_VERSION_DEFAULT=")
+}
+fn model_missing_litellm_version_label(t: &str, dir: &str) -> bool {
+    is_model(t) && !is_replay_model(t, dir) && !t.contains("LABEL dock.model.litellm_version=")
+}
+fn model_missing_litellm_version_default(t: &str, dir: &str) -> bool {
+    is_model(t) && !is_replay_model(t, dir) && !t.contains("ENV DOCK_LITELLM_VERSION_DEFAULT=")
+}
+
 // ─── Rule catalog (data, not code) ─────────────────────────────────
 
 const RULES: &[Rule] = &[
@@ -695,6 +727,30 @@ const RULES: &[Rule] = &[
         "Dockerfile fetches from a mutable ref (refs/convert/parquet, main, master) without pinning dock.benchmark.data_revision",
         |t, _| missing_data_revision_when_fetching_mutable_ref(t),
     ),
+    // ── Version-override contract (RULES.md principle 9) ──────────
+    // Each image declares its baked-in upstream version as an ENV so
+    // core/entrypoint/dock-entrypoint.sh can compare it to a runtime
+    // DOCK_*_VERSION override and decide whether to refetch/reinstall.
+    Rule::red(
+        "benchmark_missing_version_default",
+        "benchmark Dockerfile is missing ENV DOCK_BENCHMARK_VERSION_DEFAULT (RULES.md 9)",
+        benchmark_missing_version_default,
+    ),
+    Rule::red(
+        "agent_missing_version_default",
+        "agent Dockerfile is missing ENV DOCK_AGENT_VERSION_DEFAULT (RULES.md 9)",
+        agent_missing_version_default,
+    ),
+    Rule::red(
+        "model_missing_litellm_version_label",
+        "model Dockerfile is missing LABEL dock.model.litellm_version (models/RULES.md 15)",
+        model_missing_litellm_version_label,
+    ),
+    Rule::red(
+        "model_missing_litellm_version_default",
+        "model Dockerfile is missing ENV DOCK_LITELLM_VERSION_DEFAULT (RULES.md 9)",
+        model_missing_litellm_version_default,
+    ),
 ];
 
 // ─── Engine ────────────────────────────────────────────────────────
@@ -724,7 +780,7 @@ fn inspect_dockerfile(path: &Path, text: &str, dir: &str) -> Vec<Finding> {
 
 fn walk_dockerfiles() -> Vec<(PathBuf, String)> {
     let mut out = Vec::new();
-    for root in ["benchmarks", "agents"] {
+    for root in ["benchmarks", "agents", "models"] {
         let Ok(entries) = fs::read_dir(root) else {
             continue;
         };
