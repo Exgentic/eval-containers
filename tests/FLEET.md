@@ -127,7 +127,7 @@ health check.
 
 1. **Run all mechanical gates.** In order:
    ```
-   scripts/validate-all.sh
+   cargo test --test check structural_validation
    cargo test --test compose -- --ignored
    cargo test --test dockerfile_inspection -- --ignored
    cargo test --test task_inspection -- --ignored

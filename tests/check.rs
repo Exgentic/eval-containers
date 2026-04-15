@@ -1,0 +1,290 @@
+//! Mechanical fast checks — always run on `cargo test`.
+//!
+//! This test file collects the cheap, pure-file-I/O gates that belong
+//! in the "sanity" phase of [VERIFY.md](VERIFY.md):
+//!
+//! - step 6: structural validation (files present, required labels)
+//! - step 10: count reconciliation (README claims vs. filesystem)
+//! - step 30: every benchmark has a README.md
+//! - step 31: every agent has a README.md
+//!
+//! The compose parse (step 7), Dockerfile health (step 8), and
+//! trajectory health (step 9) live in their own test files next to
+//! their rule catalogs:
+//!
+//! - [tests/compose.rs](compose.rs)
+//! - [tests/dockerfile_inspection.rs](dockerfile_inspection.rs)
+//! - [tests/task_inspection.rs](task_inspection.rs)
+//!
+//! All four test files run on plain `cargo test` (no --ignored) and
+//! together cover VERIFY.md steps 5–10. None of them need the docker
+//! daemon; `docker compose config` parses YAML locally.
+//!
+//! Run just this file: `cargo test --test check`
+//! Run a single gate:  `cargo test --test check structural`
+
+use std::collections::BTreeMap;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+// ─── Small helpers ────────────────────────────────────────────────
+
+fn sibling_dirs(root: &str) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(root) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        // Skip underscore-prefixed dirs and any dotfiles
+        if name.starts_with('_') || name.starts_with('.') {
+            continue;
+        }
+        out.push((name.to_string(), path));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn contains_line(path: &Path, needle: &str) -> bool {
+    let Ok(text) = fs::read_to_string(path) else {
+        return false;
+    };
+    text.lines().any(|l| l.contains(needle))
+}
+
+// ─── step 6: structural validation ────────────────────────────────
+
+const REQUIRED_BENCHMARK_LABELS: &[&str] = &[
+    r#"LABEL dock.type="benchmark""#,
+    "LABEL dock.benchmark.name=",
+    "LABEL dock.benchmark.env=",
+    "LABEL dock.benchmark.tasks=",
+    "LABEL dock.benchmark.internet=",
+];
+
+const REQUIRED_AGENT_LABELS: &[&str] = &[
+    r#"LABEL dock.type="agent""#,
+    "LABEL dock.agent.name=",
+    "LABEL dock.agent.version=",
+];
+
+const REQUIRED_COMPOSE_MARKERS: &[&str] = &[
+    "services:",
+    "  model:",
+    "  eval:",
+    "networks:",
+    "compose/services.yaml",
+];
+
+fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
+    let mut issues = Vec::new();
+    let dockerfile = dir.join("Dockerfile");
+    let compose = dir.join("compose.yaml");
+
+    if !dockerfile.is_file() {
+        issues.push(format!("{name}: no Dockerfile"));
+        return issues;
+    }
+    if !compose.is_file() {
+        issues.push(format!("{name}: no compose.yaml"));
+    }
+
+    for label in REQUIRED_BENCHMARK_LABELS {
+        if !contains_line(&dockerfile, label) {
+            issues.push(format!("{name}: missing {label}"));
+        }
+    }
+
+    if compose.is_file() {
+        for marker in REQUIRED_COMPOSE_MARKERS {
+            if !contains_line(&compose, marker) {
+                issues.push(format!("{name}: compose missing `{marker}`"));
+            }
+        }
+    }
+    issues
+}
+
+fn check_agent_structure(name: &str, dir: &Path) -> Vec<String> {
+    let mut issues = Vec::new();
+    let dockerfile = dir.join("Dockerfile");
+    if !dockerfile.is_file() {
+        issues.push(format!("{name}: no Dockerfile"));
+        return issues;
+    }
+    for label in REQUIRED_AGENT_LABELS {
+        if !contains_line(&dockerfile, label) {
+            issues.push(format!("{name}: missing {label}"));
+        }
+    }
+    if contains_line(&dockerfile, r#"LABEL dock.agent.version="latest""#) {
+        issues.push(format!("{name}: dock.agent.version is `latest` — must pin"));
+    }
+    issues
+}
+
+#[test]
+fn structural_validation() {
+    let benchmarks = sibling_dirs("benchmarks");
+    let agents = sibling_dirs("agents");
+    assert!(!benchmarks.is_empty(), "no benchmarks/");
+    assert!(!agents.is_empty(), "no agents/");
+
+    let mut issues: Vec<String> = Vec::new();
+    for (name, dir) in &benchmarks {
+        issues.extend(check_benchmark_structure(name, dir));
+    }
+    for (name, dir) in &agents {
+        issues.extend(check_agent_structure(name, dir));
+    }
+
+    if !issues.is_empty() {
+        let mut msg = format!(
+            "{} structural issues across {} benchmarks + {} agents:\n",
+            issues.len(),
+            benchmarks.len(),
+            agents.len()
+        );
+        for i in &issues {
+            msg.push_str(&format!("  {i}\n"));
+        }
+        panic!("{msg}");
+    }
+
+    eprintln!(
+        "✓ structure: {} benchmarks + {} agents pass",
+        benchmarks.len(),
+        agents.len()
+    );
+}
+
+// ─── step 10: README count reconciliation ─────────────────────────
+
+fn readme_counts() -> BTreeMap<&'static str, u32> {
+    // Extract "N benchmarks, M agents" claims from README.md. Keeping
+    // this brittle on purpose: if the README's headline sentence stops
+    // containing these exact tokens, the test should fail so we notice
+    // that the claim moved.
+    let text = fs::read_to_string("README.md").expect("README.md missing");
+    let mut claims = BTreeMap::new();
+    for (key, suffix) in [("benchmarks", "benchmarks"), ("agents", "agents")] {
+        if let Some(n) = extract_count_before(&text, suffix) {
+            claims.insert(key, n);
+        }
+    }
+    claims
+}
+
+/// Look for `<digits> <suffix>` anywhere in the file and return the first match.
+fn extract_count_before(text: &str, suffix: &str) -> Option<u32> {
+    for line in text.lines() {
+        let mut rest = line;
+        while let Some(pos) = rest.find(suffix) {
+            let before = &rest[..pos];
+            // Strip trailing whitespace/punct, read a number from the right
+            let trimmed = before.trim_end_matches(|c: char| !c.is_ascii_digit());
+            if trimmed.len() < before.len() || before.ends_with(' ') {
+                let digits: String = trimmed
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .chars()
+                    .rev()
+                    .collect();
+                if let Ok(n) = digits.parse::<u32>() {
+                    return Some(n);
+                }
+            }
+            rest = &rest[pos + suffix.len()..];
+        }
+    }
+    None
+}
+
+#[test]
+fn count_reconciliation() {
+    let claims = readme_counts();
+    let bench_on_disk = sibling_dirs("benchmarks").len() as u32;
+    let agent_on_disk = sibling_dirs("agents").len() as u32;
+
+    let mut mismatches = Vec::new();
+    if let Some(&claimed) = claims.get("benchmarks") {
+        if claimed != bench_on_disk {
+            mismatches.push(format!(
+                "README claims {claimed} benchmarks, filesystem has {bench_on_disk}"
+            ));
+        }
+    } else {
+        mismatches.push("README has no `<N> benchmarks` claim".into());
+    }
+    if let Some(&claimed) = claims.get("agents") {
+        if claimed != agent_on_disk {
+            mismatches.push(format!(
+                "README claims {claimed} agents, filesystem has {agent_on_disk}"
+            ));
+        }
+    } else {
+        mismatches.push("README has no `<N> agents` claim".into());
+    }
+
+    if !mismatches.is_empty() {
+        panic!("count mismatch:\n  {}", mismatches.join("\n  "));
+    }
+
+    eprintln!(
+        "✓ counts: {bench_on_disk} benchmarks + {agent_on_disk} agents match README"
+    );
+}
+
+// ─── steps 30, 31: README presence ────────────────────────────────
+//
+// These are release-phase gates in VERIFY.md, not sanity-phase, so
+// they're #[ignore] and run under `--ignored`. Today both fail — no
+// benchmark or agent has a README.md. That's a tracked yellow in
+// FLEET.md (missing per-benchmark README).
+
+#[test]
+#[ignore]
+fn every_benchmark_has_readme() {
+    let mut missing = Vec::new();
+    for (name, dir) in sibling_dirs("benchmarks") {
+        if !dir.join("README.md").is_file() {
+            missing.push(name);
+        }
+    }
+    if !missing.is_empty() {
+        panic!(
+            "{} benchmarks missing README.md:\n  {}",
+            missing.len(),
+            missing.join("\n  ")
+        );
+    }
+    eprintln!("✓ all benchmarks have README.md");
+}
+
+#[test]
+#[ignore]
+fn every_agent_has_readme() {
+    let mut missing = Vec::new();
+    for (name, dir) in sibling_dirs("agents") {
+        if !dir.join("README.md").is_file() {
+            missing.push(name);
+        }
+    }
+    if !missing.is_empty() {
+        panic!(
+            "{} agents missing README.md:\n  {}",
+            missing.len(),
+            missing.join("\n  ")
+        );
+    }
+    eprintln!("✓ all agents have README.md");
+}

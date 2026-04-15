@@ -4,7 +4,10 @@
 //! `docker compose -f <file> config` against each. Reports all
 //! failures in one assert so a single run surfaces the full picture.
 //!
-//! Run: cargo test --test compose -- --ignored
+//! Run: cargo test --test compose
+//!
+//! `docker compose config` parses the YAML without contacting the docker
+//! daemon, so this test is fast (~6s for 96 files) and always runs.
 
 use std::fs;
 use std::path::PathBuf;
@@ -30,7 +33,6 @@ fn benchmark_compose_files() -> Vec<PathBuf> {
 }
 
 #[test]
-#[ignore]
 fn compose_config_every_benchmark() {
     let files = benchmark_compose_files();
     assert!(!files.is_empty(), "no benchmark compose files found");
