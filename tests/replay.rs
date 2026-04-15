@@ -8,7 +8,9 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use testcontainers::GenericBuildableImage;
 use testcontainers::compose::DockerCompose;
+use testcontainers::runners::AsyncBuilder;
 
 fn read_json(path: &Path) -> Option<serde_json::Value> {
     let content = fs::read_to_string(path).ok()?;
@@ -88,20 +90,26 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 
 /// Build all required images before running replay test.
 /// In CI, nothing is pre-built — tests must be self-contained.
-fn ensure_images(benchmark: &str, agent: &str) {
-    // Build replay model
-    let status = Command::new("docker")
-        .args([
-            "build",
-            "-t",
-            "quay.io/dock-eval/models/replay:latest",
-            "models/replay/",
-        ])
-        .status()
-        .expect("failed to build replay model");
-    assert!(status.success(), "failed to build replay model");
+///
+/// The replay model is built through testcontainers-rs to satisfy
+/// tests/RULES.md principle 2 (container tests MUST go through the
+/// library). The eval image is built by shelling out to `cargo run --
+/// build eval`, which is a legitimate CLI black-box test — we're
+/// testing that Dock's own `build eval` subcommand works end-to-end
+/// and the docker invocations happen inside the CLI under test, not
+/// inside this file.
+async fn ensure_images(benchmark: &str, agent: &str) {
+    // Build replay model via testcontainers-rs. The resulting Image
+    // handle is dropped immediately — the replay compose stack pulls
+    // the image by its `quay.io/dock-eval/models/replay:latest`
+    // descriptor when it runs. We only need the build to succeed.
+    let _image = GenericBuildableImage::new("quay.io/dock-eval/models/replay", "latest")
+        .with_dockerfile("models/replay/Dockerfile")
+        .build_image()
+        .await
+        .expect("failed to build replay model via GenericBuildableImage");
 
-    // Build eval image (auto-builds benchmark + agent base images)
+    // Build eval image via the Dock CLI under test
     let status = Command::new("cargo")
         .args(["run", "--", "build", "eval", benchmark, "--agent", agent])
         .status()
@@ -119,7 +127,7 @@ macro_rules! replay_test {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            ensure_images($benchmark, $agent);
+            ensure_images($benchmark, $agent).await;
 
             let _compose = replay_compose(
                 $compose,
