@@ -54,6 +54,12 @@ struct Benchmark {
 }
 
 fn list_benchmarks() -> Vec<Benchmark> {
+    // Optional filter: DOCK_LIVE_FILTER=aime,mmlu,... restricts the
+    // sweep to the listed benchmarks. Used for smoke runs during
+    // gradual scale-up. Unset = full fleet.
+    let filter: Option<BTreeSet<String>> = std::env::var("DOCK_LIVE_FILTER")
+        .ok()
+        .map(|s| s.split(',').map(|x| x.trim().to_string()).collect());
     let mut out = Vec::new();
     let known_broken = load_known_broken_builds();
     let entries = fs::read_dir("benchmarks").expect("benchmarks/ missing");
@@ -68,6 +74,11 @@ fn list_benchmarks() -> Vec<Benchmark> {
         }
         if known_broken.contains(&name) {
             continue;
+        }
+        if let Some(ref f) = filter {
+            if !f.contains(&name) {
+                continue;
+            }
         }
         let Ok(dockerfile) = fs::read_to_string(path.join("Dockerfile")) else {
             continue;
@@ -291,6 +302,33 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     // artifact.
     let cwd_output = PathBuf::from("output").join(benchmark).join(task_id);
     let _ = fs::remove_dir_all(&cwd_output);
+
+    // Pre-build the eval combination image. `dock run --local` uses
+    // the in-repo compose file but the `image:` field still refers
+    // to `quay.io/dock-eval/evals/<bench>--<agent>:latest`; without a
+    // local build of that tag, compose tries to pull from the
+    // registry and fails. `dock build eval` auto-builds the
+    // benchmark and agent base images if they're missing, so this
+    // one call covers the whole dependency chain.
+    let build_status = Command::new("cargo")
+        .args([
+            "run", "--quiet", "--",
+            "build", "eval", benchmark,
+            "--agent", agent,
+        ])
+        .status();
+    if !matches!(build_status, Ok(s) if s.success()) {
+        return RunRecord {
+            benchmark: benchmark.into(),
+            task_id: task_id.into(),
+            agent: agent.into(),
+            outcome: Outcome::RunFailed,
+            reward: None,
+            cost_usd: None,
+            duration_ms: started.elapsed().as_millis(),
+            detail: "eval combo build failed".into(),
+        };
+    }
 
     let status = Command::new("cargo")
         .args([

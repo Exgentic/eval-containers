@@ -17,3 +17,10 @@
 *~
 .idea/
 .vscode/
+
+# Live sweep ephemeral outputs — regenerated on every run.
+# The driver's checkpoint and report are meant to be local state;
+# the authoritative plan lives in tests/live/matrix.md (committed).
+tests/live/runs/
+tests/live/checkpoint.json
+tests/live/report.md
