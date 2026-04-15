@@ -98,16 +98,65 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 /// testing that Dock's own `build eval` subcommand works end-to-end
 /// and the docker invocations happen inside the CLI under test, not
 /// inside this file.
-async fn ensure_images(benchmark: &str, agent: &str) {
-    // Build replay model via testcontainers-rs. The resulting Image
-    // handle is dropped immediately — the replay compose stack pulls
-    // the image by its `quay.io/dock-eval/models/replay:latest`
-    // descriptor when it runs. We only need the build to succeed.
-    let _image = GenericBuildableImage::new("quay.io/dock-eval/models/replay", "latest")
-        .with_dockerfile("models/replay/Dockerfile")
+/// Build an image directly from a local context via testcontainers-rs
+/// `GenericBuildableImage`. This is the shared helper for bootstrapping
+/// core images and the replay model — every file under `ctx_dir` except
+/// the Dockerfile itself is added to the build context with `with_file`.
+async fn tc_build_context(descriptor: &str, tag: &str, ctx_dir: &str, dockerfile: &str) {
+    let mut image = GenericBuildableImage::new(descriptor, tag).with_dockerfile(dockerfile);
+    let ctx = std::path::Path::new(ctx_dir);
+    for entry in std::fs::read_dir(ctx).unwrap_or_else(|e| panic!("{ctx_dir}: {e}")) {
+        let entry = entry.expect("read_dir entry");
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let name = path.file_name().unwrap().to_string_lossy().to_string();
+        if path.to_string_lossy() == dockerfile {
+            continue;
+        }
+        image = image.with_file(path, name);
+    }
+    let _built = image
         .build_image()
         .await
-        .expect("failed to build replay model via GenericBuildableImage");
+        .unwrap_or_else(|e| panic!("tc build {descriptor}:{tag}: {e:?}"));
+}
+
+async fn ensure_images(benchmark: &str, agent: &str) {
+    // Bootstrap core images the replay stack depends on. The build
+    // sweep's ImageGuard RAII deletes every image it built, including
+    // core — so after a sweep these may be missing. We rebuild them
+    // unconditionally; build cache makes it cheap when already current.
+    tc_build_context(
+        "quay.io/dock-eval/core/entrypoint",
+        "latest",
+        "core/entrypoint",
+        "core/entrypoint/Dockerfile",
+    )
+    .await;
+    tc_build_context(
+        "quay.io/dock-eval/core/test-exact-match",
+        "latest",
+        "core/test-exact-match",
+        "core/test-exact-match/Dockerfile",
+    )
+    .await;
+    tc_build_context(
+        "quay.io/dock-eval/core/litellm",
+        "latest",
+        "core/litellm",
+        "core/litellm/Dockerfile",
+    )
+    .await;
+    // Replay model (also a testcontainers-rs build per RULES.md 2).
+    tc_build_context(
+        "quay.io/dock-eval/models/replay",
+        "latest",
+        "models/replay",
+        "models/replay/Dockerfile",
+    )
+    .await;
 
     // Build eval image via the Dock CLI under test
     let status = Command::new("cargo")
