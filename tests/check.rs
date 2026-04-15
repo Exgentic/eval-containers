@@ -239,9 +239,7 @@ fn count_reconciliation() {
         panic!("count mismatch:\n  {}", mismatches.join("\n  "));
     }
 
-    eprintln!(
-        "✓ counts: {bench_on_disk} benchmarks + {agent_on_disk} agents match README"
-    );
+    eprintln!("✓ counts: {bench_on_disk} benchmarks + {agent_on_disk} agents match README");
 }
 
 // ─── steps 30, 31: README presence ────────────────────────────────
