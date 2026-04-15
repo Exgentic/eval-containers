@@ -26,8 +26,8 @@ ENV DOCK_BENCHMARK=swe-bench
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 
 # Install grading deps to root-only path (agent cannot access or tamper)
-RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.18) \
- || pip install --no-cache-dir --target /tests/deps swebench==3.0.18
+RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.17) \
+ || pip install --no-cache-dir --target /tests/deps swebench==3.0.17
 
 # Fetch this task's metadata from HuggingFace API
 ARG DOCK_TASK_ID

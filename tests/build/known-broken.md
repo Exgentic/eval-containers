@@ -1,47 +1,58 @@
 # Known-broken benchmark builds
 
-The local build sweep (`cargo test --test build build_every_benchmark -- --ignored`) attempts to build every benchmark image from scratch. 81 of 96 succeed cleanly. 5 skip cleanly (per-task-build pattern, see `tests/build.rs::is_per_task_benchmark`). The 10 below fail on the dev laptop, but **9 of them pass on the GitHub Actions `ubuntu-latest` x86_64 runner** that `.github/workflows/build-sweep.yml` uses for CI. They are documented here so a local sweep operator can diff their failure set against this list before opening a ticket.
+The local build sweep (`cargo test --test build build_every_benchmark -- --ignored`) attempts to build every benchmark image from scratch. Most succeed cleanly. A handful need credentials the local host doesn't have. This file documents them so a local operator can diff their failure set against it before opening a ticket.
 
-This list is tracked by commit. Before each release, re-run the sweep on CI and update the first section below.
+This list is tracked by commit. Update the status snapshot below with every release sweep.
 
-## Current status (sweep round 4, 2026-04-15, 2582s wall)
+## Prerequisites for a full local sweep on Apple Silicon
 
-```
-81/96 pass · 5 skip (per-task-build) · 10 fail
-```
+1. **Podman with Rosetta** — x86_64 benchmarks use Rosetta native translation, not qemu. ~10× faster, no pyarrow / numpy segfaults. Enable via `podman machine ssh "sudo touch /etc/containers/enable-rosetta"` then restart the machine. See [tests/LOCAL.md](../LOCAL.md) for the full setup.
+2. **`HF_TOKEN` in `.env`** — required for HuggingFace gated datasets. Get one at https://huggingface.co/settings/tokens (read scope).
+3. **Accepted gated-dataset licenses** on HuggingFace for:
+   - https://huggingface.co/datasets/cais/hle
+   - https://huggingface.co/datasets/gaia-benchmark/GAIA
+   - https://huggingface.co/datasets/lmsys/mt_bench_human_judgments
+   - https://huggingface.co/datasets/xai-org/RealWorldQA
 
-## Platform-only failures (pass on x86_64 CI)
+With all three in place, 11 of the 13 benchmarks in the "upstream-gated" section below move to green locally. The remaining 2 (`flores200`, `frontiermath`) depend on upstream hosts that have no HuggingFace path.
 
-These fail under `qemu-user-static` emulation on an arm64 host (Apple Silicon laptop running podman). The root cause is a native dependency that segfaults or aborts when run under QEMU. The failures are reproducible: retrying the same commit on the same host always fails at the same step. The failures are also consistently absent on `ubuntu-latest` runners.
+## Current status
 
-| Benchmark | Upstream cause | Local failure |
+`81/96 pass · 5 skip (per-task-build) · 10 fail` — sweep round 4, 2026-04-15, 2582s wall (before the Rosetta + `swebench` pin fixes below landed). The next sweep will reflect those fixes.
+
+## Upstream data-reachability failures
+
+These benchmarks need credentials or network paths the local host doesn't have. With the `HF_TOKEN` + accepted licenses described above, 6 of the 8 become runnable.
+
+| Benchmark | Upstream | Gate | HF_TOKEN fixes? |
+|---|---|---|---|
+| `flores200` | `dl.fbaipublicfiles.com/nllb/flores200_dataset.tar.gz` | Meta pulled the anonymous link; requires their signup form | no |
+| `gaia` | `huggingface.co/datasets/gaia-benchmark/GAIA` | Gated dataset | yes |
+| `hle` | `huggingface.co/datasets/cais/hle` | Gated dataset | yes |
+| `mt-bench` | `huggingface.co/datasets/lmsys/mt_bench_human_judgments` | Gated dataset | yes |
+| `osworld` | upstream Python package install | transient packaging issue — needs revisit | maybe |
+| `realworldqa` | `huggingface.co/datasets/xai-org/RealWorldQA` | Gated dataset | yes |
+| `workarena` | upstream GitHub raw | transient / rate-limit — needs revisit | maybe |
+| `frontiermath` | private Epoch dataset | not publicly reachable | no |
+
+## Fixed since round 4
+
+| Benchmark | Root cause | Fix |
 |---|---|---|
-| `appworld` | `pyarrow` 18.1.0 wheel segfaults under qemu inside `ghcr.io/stonybrooknlp/appworld:latest` (itself x86_64-only) | `qemu: uncaught target signal 11 (Segmentation fault)` during `RUN python3 <<PYEOF` |
-| `swe-bench` | `swebench==3.0.18` pip install pulls native deps that abort under qemu; base image is also x86_64-only | `exit 1` during `pip install --target /tests/deps swebench==3.0.18` |
+| `appworld` | we were running under qemu-user-static; pyarrow segfaulted | Enable Rosetta on podman machine (see [tests/LOCAL.md](../LOCAL.md)) |
+| `swe-bench` | `swebench==3.0.18` was yanked from PyPI; package jumps 3.0.17 → 4.0.0 | Bumped pin to `swebench==3.0.17` |
 
-## Upstream data-reachability failures (credential- or auth-gated)
+Both verified locally. Deleting from the "failures" section above once the next round confirms green.
 
-These benchmarks need credentials or access to gated datasets that aren't available at `docker build` time on an unauthenticated host. CI passes them because the CI runner has `HF_TOKEN` configured via GitHub secrets; local laptops usually don't.
+## What to do about a failure
 
-| Benchmark | Upstream | Gate |
-|---|---|---|
-| `flores200` | `dl.fbaipublicfiles.com/nllb/flores200_dataset.tar.gz` | Meta hosting dropped / requires signup form |
-| `gaia` | `huggingface.co/datasets/gaia-benchmark/GAIA` | `HF_TOKEN` required for gated dataset |
-| `hle` | `huggingface.co/datasets/cais/hle` | `HF_TOKEN` required |
-| `mt-bench` | `huggingface.co/datasets/lmsys/mt_bench_human_judgments` | `HF_TOKEN` required |
-| `osworld` | upstream Python package install | packaging issue or network |
-| `realworldqa` | `huggingface.co/datasets/xai-org/RealWorldQA` | `HF_TOKEN` required |
-| `workarena` | upstream GitHub raw | transient / rate-limit |
-| `frontiermath` | private Epoch dataset | not publicly reachable |
-
-## What to do about them
-
-- **Before release**: run the full sweep on CI (`.github/workflows/build-sweep.yml`, manual dispatch). The 2 platform-only failures should pass there. The 8 auth-gated ones should also pass once CI secrets are wired for the relevant providers.
-- **On a fresh laptop**: if your failure set matches this list, nothing is wrong with your branch. If it's a superset, diff and investigate the new entries.
-- **If one of these starts passing locally**: celebrate, and delete it from this file in the same commit.
+- **Your failure set matches this list**: nothing is wrong with your branch. Continue.
+- **Your failure set is a superset**: diff against this file and investigate new entries.
+- **A listed failure starts passing locally**: delete it from this file in the same commit. This file is ground truth.
 
 ## Cross-reference
 
-- `tests/fixtures/broken.json` — broken trajectory fixtures (different axis: run-time, not build-time).
-- `tests/VERIFY.md` step 12-13 — where the build sweep lives in the release checklist.
-- `.github/workflows/build-sweep.yml` — the CI sweep that is the authoritative green/red for these benchmarks.
+- [tests/replay/fixtures/broken.json](../replay/fixtures/broken.json) — broken trajectory fixtures (run-time axis, not build-time).
+- [tests/VERIFY.md](../VERIFY.md) steps 12-13 — where the build sweep lives in the release checklist.
+- [tests/LOCAL.md](../LOCAL.md) — local podman + Rosetta + BuildKit GC setup.
+- [.github/workflows/build-sweep.yml](../../.github/workflows/build-sweep.yml) — the CI sweep that is the authoritative green/red for these benchmarks.
