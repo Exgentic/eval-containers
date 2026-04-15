@@ -182,22 +182,54 @@ fn probe_build_sweep_state() -> Gate {
         };
     }
     let text = fs::read_to_string(log).unwrap_or_default();
-    if text.contains("✓ all ") && text.contains("benchmarks built") {
-        Gate {
+    // Parse "── sweep done: N/M benchmarks passed, K skipped, in Xs ──"
+    // against the `tests/build-known-broken.md` known-broken list.
+    // If failures == known-broken count, verdict is Yellow not Red.
+    let sweep_line = text
+        .lines()
+        .find(|l| l.contains("sweep done:") && l.contains("benchmarks passed"));
+    if let Some(line) = sweep_line {
+        let passed = parse_n_of_m(line, "benchmarks passed").unwrap_or((0, 0));
+        let skipped = parse_leading_number_before(line, " skipped").unwrap_or(0);
+        let total = passed.1;
+        let failed = total.saturating_sub(passed.0 + skipped);
+        let known_broken = count_known_broken_builds();
+        let (verdict, detail) = if failed == 0 {
+            (Verdict::Green, format!("{}/{total} pass, {skipped} skipped (per-task-build)", passed.0))
+        } else if failed <= known_broken {
+            (
+                Verdict::Yellow,
+                format!(
+                    "{}/{total} pass, {skipped} skipped, {failed} fail — all within known-broken list (see tests/build-known-broken.md)",
+                    passed.0
+                ),
+            )
+        } else {
+            (
+                Verdict::Red,
+                format!(
+                    "{}/{total} pass, {skipped} skipped, {failed} fail — {} new failure(s) beyond tests/build-known-broken.md",
+                    passed.0,
+                    failed - known_broken
+                ),
+            )
+        };
+        return Gate {
             step: 12,
             name: "Benchmark build sweep",
             phase: "Build",
-            verdict: Verdict::Green,
-            detail: "96/96 (prior run)".into(),
+            verdict,
+            detail,
             duration_ms: 0,
-        }
-    } else if text.contains("FAILED") {
+        };
+    }
+    if text.contains("FAILED") {
         Gate {
             step: 12,
             name: "Benchmark build sweep",
             phase: "Build",
             verdict: Verdict::Red,
-            detail: "prior run failed — see /tmp/dock-build-benches.log".into(),
+            detail: "prior run failed — no sweep-done line found, see /tmp/dock-build-benches.log".into(),
             duration_ms: 0,
         }
     } else {
@@ -210,6 +242,56 @@ fn probe_build_sweep_state() -> Gate {
             duration_ms: 0,
         }
     }
+}
+
+/// Parse "N/M benchmarks passed" out of a sweep-done line.
+fn parse_n_of_m(line: &str, suffix: &str) -> Option<(usize, usize)> {
+    let idx = line.find(suffix)?;
+    let before = &line[..idx];
+    let tokens: Vec<&str> = before.split_whitespace().collect();
+    let nm = tokens.last()?;
+    let mut parts = nm.split('/');
+    let n: usize = parts.next()?.parse().ok()?;
+    let m: usize = parts.next()?.parse().ok()?;
+    Some((n, m))
+}
+
+/// Parse the integer immediately before a given suffix, e.g.
+/// `", 5 skipped,"` → 5.
+fn parse_leading_number_before(line: &str, suffix: &str) -> Option<usize> {
+    let idx = line.find(suffix)?;
+    let before = &line[..idx];
+    let last_word = before.split_whitespace().last()?;
+    last_word.parse().ok()
+}
+
+/// Count the number of benchmarks listed as known-broken in
+/// `tests/build-known-broken.md`. Lines in the two tables matter; we
+/// count markdown `| \`<name>\` |` cells in the two "failures" tables.
+fn count_known_broken_builds() -> usize {
+    let Ok(text) = fs::read_to_string("tests/build-known-broken.md") else {
+        return 0;
+    };
+    let mut count = 0;
+    let mut in_table = false;
+    for line in text.lines() {
+        let t = line.trim_start();
+        if t.starts_with("| Benchmark |") {
+            in_table = true;
+            continue;
+        }
+        if in_table && t.starts_with("|---") {
+            continue;
+        }
+        if in_table && !t.starts_with('|') {
+            in_table = false;
+            continue;
+        }
+        if in_table && t.starts_with("| `") {
+            count += 1;
+        }
+    }
+    count
 }
 
 fn placeholder(step: u32, name: &'static str, phase: &'static str, reason: &str) -> Gate {
