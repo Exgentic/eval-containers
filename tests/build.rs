@@ -4,11 +4,31 @@
 //! Walks `benchmarks/*/` and `agents/*/` at test time so adding a new
 //! benchmark or agent is automatically covered with no test-file edits.
 //!
-//! Per-task benchmarks (those whose Dockerfiles declare `ARG TASK_ID`)
+//! Per-task benchmarks (those whose Dockerfiles declare `ARG DOCK_TASK_ID`)
 //! are built with a sentinel task ID that must be supported by the
-//! upstream dataset. These are listed in PER_TASK_BUILD_ARGS below.
+//! upstream dataset. These are listed in `per_task_build_args` below.
 //!
-//! Run: cargo test --test build -- --ignored
+//! ## How this satisfies tests/RULES.md principle 2
+//!
+//! All container work MUST go through testcontainers-rs. The heavy
+//! lifting — build context tarball assembly, Docker daemon connection,
+//! build argument wiring, build options — is done by
+//! `GenericBuildableImage::build_image_with()`. This file only shells
+//! out to the `docker` CLI for two operations testcontainers-rs 0.27
+//! does not expose as first-class APIs:
+//!
+//!   1. **Label reading on a built image.** `docker inspect --format
+//!      '{{index .Config.Labels "<key>"}}'`. testcontainers reads labels
+//!      off containers, not bare images, so the post-build metadata
+//!      query stays CLI-based.
+//!   2. **Image removal.** `docker rmi -f <tag>` on scope exit via an
+//!      RAII `ImageGuard`. testcontainers auto-cleans containers via
+//!      Drop but not images, so every benchmark image left on disk after
+//!      a sweep fills the podman machine within one or two runs.
+//!
+//! The build itself — the expensive part — never touches raw docker.
+//!
+//! Run: `cargo test --test build -- --ignored`
 
 use std::collections::HashMap;
 use std::fs;
@@ -16,69 +36,53 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
+use testcontainers::GenericBuildableImage;
+use testcontainers::core::BuildImageOptions;
+use testcontainers::runners::AsyncBuilder;
 
 // ─── Per-task benchmark build arguments ────────────────────────────
 //
-// Per-task benchmarks pin TASK_ID at build time. For the build test
-// we pick a single known-good task per benchmark. Add entries here
-// as new per-task benchmarks land.
+// Per-task benchmarks pin DOCK_TASK_ID at build time. For the build test
+// we pick a single known-good task per benchmark. Add entries here as
+// new per-task benchmarks land.
 
-fn per_task_build_args(benchmark: &str) -> Option<Vec<&'static str>> {
-    let mut map: HashMap<&str, Vec<&str>> = HashMap::new();
-    map.insert(
-        "swe-bench",
-        vec!["--build-arg", "DOCK_TASK_ID=sympy__sympy-24066"],
-    );
-    map.insert(
-        "compilebench",
-        vec![
-            "--build-arg",
-            "DOCK_TASK_ID=curl",
-            "--build-arg",
-            "BASE_IMAGE=ubuntu:22.04",
-        ],
-    );
-    map.get(benchmark).cloned()
+fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
+    let mut out: HashMap<&str, HashMap<String, String>> = HashMap::new();
+
+    let mut swe_bench = HashMap::new();
+    swe_bench.insert("DOCK_TASK_ID".into(), "sympy__sympy-24066".into());
+    out.insert("swe-bench", swe_bench);
+
+    let mut compile = HashMap::new();
+    compile.insert("DOCK_TASK_ID".into(), "curl".into());
+    compile.insert("BASE_IMAGE".into(), "ubuntu:22.04".into());
+    out.insert("compilebench", compile);
+
+    out.remove(benchmark)
 }
 
-// ─── Docker shell-outs ─────────────────────────────────────────────
+// ─── RAII cleanup ──────────────────────────────────────────────────
+//
+// testcontainers-rs auto-cleans containers but not images built via
+// `build_image()`. A full benchmark sweep produces 96 × ~1 GB images
+// that persist on disk across runs. Without cleanup the podman machine
+// fills within one or two sweeps and every subsequent build fails with
+// `no space left on device`. This guard makes the image behave like a
+// container: scoped, dropped, gone.
 
-fn docker_build(context: &Path, extra_args: &[&str]) -> Result<String, String> {
-    let tag = format!(
-        "dock-build-test-{}",
-        context.to_string_lossy().replace('/', "-")
-    );
-    let mut cmd = Command::new("docker");
-    cmd.arg("build").arg("-q").arg("-t").arg(&tag);
-    for arg in extra_args {
-        cmd.arg(arg);
-    }
-    cmd.arg(context);
-    let output = cmd
-        .output()
-        .map_err(|e| format!("failed to spawn docker build: {e}"))?;
-    if output.status.success() {
-        Ok(tag)
-    } else {
-        Err(String::from_utf8_lossy(&output.stderr).to_string())
-    }
-}
-
-/// RAII guard that removes a docker image when dropped. The build test
-/// only needs to prove the image builds and carries the right labels;
-/// the image itself is not a deliverable. Without this guard a full
-/// sweep leaves 96 tagged images on disk (~100 GB on podman), which
-/// fills the machine mid-sweep with cryptic `no space left on device`
-/// failures. Drop fires whether the test passes, fails, or panics.
 struct ImageGuard(String);
 
 impl Drop for ImageGuard {
     fn drop(&mut self) {
-        // Best-effort — if `docker rmi` fails we still finish the test.
-        // `-f` forces removal even if the image has untagged children.
         let _ = Command::new("docker").args(["rmi", "-f", &self.0]).output();
     }
 }
+
+// ─── Label query ───────────────────────────────────────────────────
+//
+// testcontainers-rs 0.27 does not expose a "read this label off this
+// image" API — its metadata surface is container-level. One CLI shell
+// per label. Cheap: `docker inspect` is a daemon round-trip, no disk.
 
 fn docker_label(image: &str, label: &str) -> Option<String> {
     let output = Command::new("docker")
@@ -99,6 +103,90 @@ fn docker_label(image: &str, label: &str) -> Option<String> {
     } else {
         Some(val)
     }
+}
+
+// ─── Build context: walk the benchmark directory ───────────────────
+//
+// testcontainers' `GenericBuildableImage::with_file(src, target)` adds
+// one file at a time. Our benchmarks sometimes have a handful of files
+// (Dockerfile, install.sh, task data) so we walk the directory and add
+// every file under a target path relative to the directory root.
+//
+// Skips hidden files (.git, .DS_Store), symlinks, and anything over
+// 64 MB (prevents accidentally tarballing cached test data).
+
+const MAX_CONTEXT_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
+fn collect_context_files(root: &Path) -> Vec<(PathBuf, String)> {
+    let mut out = Vec::new();
+    walk(root, root, &mut out);
+    out
+}
+
+fn walk(root: &Path, current: &Path, out: &mut Vec<(PathBuf, String)>) {
+    let Ok(entries) = fs::read_dir(current) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(md) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if md.file_type().is_symlink() {
+            continue;
+        }
+        if md.is_dir() {
+            walk(root, &path, out);
+        } else if md.is_file() {
+            if md.len() > MAX_CONTEXT_FILE_BYTES {
+                continue;
+            }
+            let rel = path.strip_prefix(root).unwrap_or(&path);
+            let target = format!("./{}", rel.to_string_lossy());
+            out.push((path, target));
+        }
+    }
+}
+
+// ─── Async build through testcontainers ───────────────────────────
+
+async fn tc_build(
+    context: &Path,
+    name: &str,
+    build_args: Option<HashMap<String, String>>,
+) -> Result<String, String> {
+    let tag = format!("dock-build-test-{}", name);
+    let dockerfile = context.join("Dockerfile");
+
+    let mut image =
+        GenericBuildableImage::new(format!("dock-build-test-{}", name), "latest".to_string())
+            .with_dockerfile(dockerfile.clone());
+
+    // Attach every non-Dockerfile file in the context as a build file.
+    // with_dockerfile() already handles the Dockerfile itself.
+    for (src, target) in collect_context_files(context) {
+        if src == dockerfile {
+            continue;
+        }
+        image = image.with_file(src, target);
+    }
+
+    let mut options = BuildImageOptions::new();
+    if let Some(args) = build_args {
+        options = options.with_build_args(args);
+    }
+
+    image
+        .build_image_with(options)
+        .await
+        .map(|_img| format!("{tag}:latest"))
+        .map_err(|e| e.to_string())
 }
 
 // ─── Discovery ─────────────────────────────────────────────────────
@@ -125,11 +213,11 @@ struct BuildFailure {
     reason: String,
 }
 
-fn run_build_sweep(
+async fn run_build_sweep(
     label_root: &str,
     required_labels: &[&str],
     dir: &str,
-    args_for: impl Fn(&str) -> Vec<&'static str>,
+    args_for: impl Fn(&str) -> Option<HashMap<String, String>>,
 ) -> Vec<BuildFailure> {
     let mut failures = Vec::new();
     let contexts = subdirs_with_dockerfile(dir);
@@ -137,11 +225,6 @@ fn run_build_sweep(
     let total = contexts.len();
     let kind = label_root;
 
-    // Per-item streaming progress so a silent multi-hour sweep becomes
-    // readable. One line per item at start, one line per item at end.
-    // stderr is flushed manually — cargo test captures it but the
-    // `--nocapture` path (and background task output files) sees it
-    // live.
     let mut stderr = std::io::stderr();
     let _ = writeln!(stderr, "\n── build sweep over {total} {kind}s ──");
     let _ = stderr.flush();
@@ -161,10 +244,8 @@ fn run_build_sweep(
         let _ = write!(stderr, "[{idx}/{total}] {name} building...");
         let _ = stderr.flush();
 
-        let extras_owned = args_for(&name);
-        let extras: Vec<&str> = extras_owned.to_vec();
-
-        let build_result = docker_build(context, &extras);
+        let build_args = args_for(&name);
+        let build_result = tc_build(context, &name, build_args).await;
         let elapsed = start.elapsed().as_secs();
 
         let tag = match build_result {
@@ -181,18 +262,17 @@ fn run_build_sweep(
                 let _ = stderr.flush();
                 failures.push(BuildFailure {
                     path: context.clone(),
-                    reason: format!("docker build failed:\n{}", truncate(&err, 2000)),
+                    reason: format!("build failed:\n{}", truncate(&err, 2000)),
                 });
                 continue;
             }
         };
 
-        // `_image` drops at the end of this iteration, which `docker rmi
-        // -f`s the tag. Must be declared BEFORE the label inspection so
-        // a panic mid-inspection still triggers cleanup on unwind.
+        // `_image` drops at the end of this iteration, running `docker
+        // rmi -f` on the built tag. Declared BEFORE the label inspection
+        // so a panic mid-inspection still triggers cleanup on unwind.
         let _image = ImageGuard(tag.clone());
 
-        // Verify required labels
         let mut label_failed = false;
         for label in required_labels {
             match docker_label(&tag, label) {
@@ -217,7 +297,6 @@ fn run_build_sweep(
             pass_count += 1;
         }
         let _ = stderr.flush();
-        // _image drops here → docker rmi -f fires before the next build
     }
 
     let total_elapsed = sweep_start.elapsed().as_secs();
@@ -256,38 +335,41 @@ fn assert_no_failures(kind: &str, failures: &[BuildFailure], total: usize) {
 
 // ─── Tests ─────────────────────────────────────────────────────────
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn build_every_benchmark() {
+async fn build_every_benchmark() {
     let contexts = subdirs_with_dockerfile("benchmarks");
     let total = contexts.len();
     let failures = run_build_sweep(
         "benchmark",
         &["dock.type", "dock.benchmark.name"],
         "benchmarks",
-        |name| per_task_build_args(name).unwrap_or_default(),
-    );
+        per_task_build_args,
+    )
+    .await;
     assert_no_failures("benchmarks", &failures, total);
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn build_every_agent() {
+async fn build_every_agent() {
     let contexts = subdirs_with_dockerfile("agents");
     let total = contexts.len();
     let failures = run_build_sweep(
         "agent",
         &["dock.type", "dock.agent.name", "dock.agent.version"],
         "agents",
-        |_| Vec::new(),
-    );
+        |_| None,
+    )
+    .await;
     assert_no_failures("agents", &failures, total);
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn build_replay_model() {
-    let tag = docker_build(Path::new("models/replay"), &[])
+async fn build_replay_model() {
+    let tag = tc_build(Path::new("models/replay"), "replay-model", None)
+        .await
         .unwrap_or_else(|e| panic!("replay model failed to build:\n{e}"));
     let _image = ImageGuard(tag.clone());
     assert_eq!(
