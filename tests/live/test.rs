@@ -98,26 +98,52 @@ fn list_benchmarks() -> Vec<Benchmark> {
         if task_count == 0 {
             continue;
         }
-        // Per-task-build benchmarks are those whose *FROM* line
-        // interpolates ${DOCK_TASK_ID} — they build a different base
-        // image per task. Runtime entrypoint references to
-        // $DOCK_TASK_ID don't count; those are for materialization
-        // via /dock-materialize-task and exist in every JSONL
-        // benchmark. Must keep this logic in sync with
-        // tests/build/test.rs::is_per_task_benchmark.
-        let per_task_build = dockerfile
-            .lines()
-            .filter(|l| l.trim_start().starts_with("FROM "))
-            .any(|l| l.contains("${DOCK_TASK_ID}") || l.contains("$DOCK_TASK_ID"));
+        // Per-task-build benchmarks fall into TWO categories:
+        //   (1) FROM line interpolates ${DOCK_TASK_ID} — e.g. swe-bench
+        //       pulls a different base image per task.
+        //   (2) Dockerfile declares `ARG DOCK_TASK_ID` without a
+        //       default — e.g. compilebench uses the task id inside
+        //       a RUN block but the FROM line is static.
+        // Both require an explicit DOCK_TASK_ID build-arg and both
+        // are incompatible with the JSONL `all.jsonl` runtime
+        // materialization path. A runtime reference to $DOCK_TASK_ID
+        // (e.g. `cat /tasks/$DOCK_TASK_ID/problem.txt` inside an
+        // entrypoint) does NOT count — those exist in every JSONL
+        // benchmark and are resolved by /dock-materialize-task.
+        let per_task_build = dockerfile.lines().any(|l| {
+            let t = l.trim_start();
+            if t.starts_with("FROM ")
+                && (t.contains("${DOCK_TASK_ID}") || t.contains("$DOCK_TASK_ID"))
+            {
+                return true;
+            }
+            // `ARG DOCK_TASK_ID` on its own line with no `=<default>`.
+            if t.starts_with("ARG DOCK_TASK_ID") {
+                let rest = t.trim_start_matches("ARG DOCK_TASK_ID");
+                let rest = rest.trim();
+                if rest.is_empty() {
+                    return true;
+                }
+            }
+            false
+        });
         let per_task_ids = if per_task_build {
-            // For the build sweep we keep a canonical known-good task id
-            // per per-task benchmark (see tests/build/test.rs
-            // ::per_task_build_args). For the live sweep we currently
-            // run only that single representative task id across all
-            // 3 rotations — 3 runs same task id, different agents.
-            // A future improvement: ship a curated list of 3 task ids
-            // per per-task benchmark.
-            vec![per_task_representative(&name).to_string()]
+            // For per-task-build benchmarks we reuse a single curated
+            // representative task id (see tests/build/test.rs
+            // ::per_task_build_args) across all 6 agent rotations.
+            // If we don't have a curated representative, SKIP this
+            // benchmark entirely — running with task id "0" produces
+            // a build-time `image not found` because upstream
+            // per-task registries don't use numeric indices.
+            match per_task_representative(&name) {
+                Some(rep) => vec![rep.to_string()],
+                None => {
+                    eprintln!(
+                        "live sweep: skipping per-task-build benchmark `{name}` — no curated representative task id"
+                    );
+                    continue;
+                }
+            }
         } else {
             vec![]
         };
@@ -145,12 +171,18 @@ fn extract_task_count(dockerfile: &str) -> Option<u32> {
     None
 }
 
-fn per_task_representative(name: &str) -> &'static str {
-    // Keep in sync with tests/build/test.rs::per_task_build_args.
+/// Returns a known-good representative task id for a per-task-build
+/// benchmark, or `None` if we don't have one. Benchmarks without a
+/// representative are excluded from the live sweep — running them
+/// with task id "0" produces a build-time `image not found` because
+/// upstream per-task registries don't use numeric indices.
+///
+/// Keep in sync with tests/build/test.rs::per_task_build_args.
+fn per_task_representative(name: &str) -> Option<&'static str> {
     match name {
-        "swe-bench" => "sympy__sympy-24066",
-        "compilebench" => "curl",
-        _ => "0",
+        "swe-bench" => Some("sympy__sympy-24066"),
+        "compilebench" => Some("curl"),
+        _ => None,
     }
 }
 
@@ -569,9 +601,18 @@ fn live_fleet_sweep() {
             records.push(r);
 
             // Persist report after every run so a crash mid-sweep
-            // doesn't lose progress.
+            // doesn't lose progress. Under parallel sweeps (multiple
+            // processes with disjoint DOCK_LIVE_FILTER halves), each
+            // process writes its OWN slice of the report to a pid-
+            // specific file; the final merged report is rendered from
+            // the shared checkpoint at the end. This avoids the
+            // last-writer-wins problem with a single shared file.
             let report = render_report(&records, started);
-            fs::write("tests/live/report.md", &report).expect("write report");
+            let report_path = format!(
+                "tests/live/report-{}.md",
+                std::process::id()
+            );
+            fs::write(&report_path, &report).expect("write report");
 
             // Safety valve: halt if cumulative spend exceeds 10x the
             // per-run cap, regardless of individual run enforcement.
@@ -590,9 +631,12 @@ fn live_fleet_sweep() {
         wall
     );
 
-    // Final report write.
+    // Final report write — this process's slice. The merged fleet
+    // report is the responsibility of the aggregator that reads
+    // tests/live/checkpoint.json at the end.
     let report = render_report(&records, started);
-    fs::write("tests/live/report.md", &report).expect("write report");
+    let report_path = format!("tests/live/report-{}.md", std::process::id());
+    fs::write(&report_path, &report).expect("write report");
 
     let red_or_failed = records
         .iter()
