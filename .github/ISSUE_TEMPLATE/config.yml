@@ -1,0 +1,16 @@
+# Disable blank issues — every issue MUST pick a template so the
+# triager knows which class it belongs to. This mirrors the PR
+# template pattern: structured input, structured triage.
+#
+# Template ordering below controls the picker on the "New issue"
+# page. Rule-code drift and bugs are listed first because they are
+# the highest-signal reports. New-artifact requests come next. The
+# known-broken entry lives at the end — it's a housekeeping form,
+# not a bug report.
+
+blank_issues_enabled: false
+
+contact_links:
+  - name: Question / discussion
+    url: https://github.com/dock-eval/dock/discussions
+    about: Open-ended questions and architectural discussions belong in GitHub Discussions, not here.
