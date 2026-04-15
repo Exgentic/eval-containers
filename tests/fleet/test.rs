@@ -1,7 +1,7 @@
 //! Fleet health driver — VERIFY.md step 35.
 //!
 //! Runs the mechanical chain across the whole repository and writes
-//! `tests/fleet-report.md` in the format defined by
+//! `tests/fleet/report.md` in the format defined by
 //! [tests/FLEET.md](FLEET.md). The report has two sections:
 //!
 //! 1. **Auto-generated** — filled in here from the mechanical results.
@@ -183,7 +183,7 @@ fn probe_build_sweep_state() -> Gate {
     }
     let text = fs::read_to_string(log).unwrap_or_default();
     // Parse "── sweep done: N/M benchmarks passed, K skipped, in Xs ──"
-    // against the `tests/build-known-broken.md` known-broken list.
+    // against the `tests/build/known-broken.md` known-broken list.
     // If failures == known-broken count, verdict is Yellow not Red.
     let sweep_line = text
         .lines()
@@ -200,7 +200,7 @@ fn probe_build_sweep_state() -> Gate {
             (
                 Verdict::Yellow,
                 format!(
-                    "{}/{total} pass, {skipped} skipped, {failed} fail — all within known-broken list (see tests/build-known-broken.md)",
+                    "{}/{total} pass, {skipped} skipped, {failed} fail — all within known-broken list (see tests/build/known-broken.md)",
                     passed.0
                 ),
             )
@@ -208,7 +208,7 @@ fn probe_build_sweep_state() -> Gate {
             (
                 Verdict::Red,
                 format!(
-                    "{}/{total} pass, {skipped} skipped, {failed} fail — {} new failure(s) beyond tests/build-known-broken.md",
+                    "{}/{total} pass, {skipped} skipped, {failed} fail — {} new failure(s) beyond tests/build/known-broken.md",
                     passed.0,
                     failed - known_broken
                 ),
@@ -266,10 +266,10 @@ fn parse_leading_number_before(line: &str, suffix: &str) -> Option<usize> {
 }
 
 /// Count the number of benchmarks listed as known-broken in
-/// `tests/build-known-broken.md`. Lines in the two tables matter; we
+/// `tests/build/known-broken.md`. Lines in the two tables matter; we
 /// count markdown `| \`<name>\` |` cells in the two "failures" tables.
 fn count_known_broken_builds() -> usize {
-    let Ok(text) = fs::read_to_string("tests/build-known-broken.md") else {
+    let Ok(text) = fs::read_to_string("tests/build/known-broken.md") else {
         return 0;
     };
     let mut count = 0;
@@ -469,7 +469,7 @@ fn render_report(gates: &[Gate], verdict: Verdict) -> String {
                 .count()
         })
         .unwrap_or(0);
-    let fixtures = fs::read_dir("tests/fixtures")
+    let fixtures = fs::read_dir("tests/replay/fixtures")
         .map(|d| {
             d.filter_map(Result::ok)
                 .filter(|e| {
@@ -593,10 +593,10 @@ fn generate_fleet_report() {
     }
     let report = render_report(&gates, verdict);
 
-    fs::write("tests/fleet-report.md", &report).expect("failed to write fleet-report.md");
+    fs::write("tests/fleet/report.md", &report).expect("failed to write fleet-report.md");
 
     eprintln!("\n{report}");
-    eprintln!("→ wrote tests/fleet-report.md ({} bytes)", report.len());
+    eprintln!("→ wrote tests/fleet/report.md ({} bytes)", report.len());
 
     // The test itself always passes — the report is the artifact. A
     // human (or CI) reads the file and decides what to do with it.

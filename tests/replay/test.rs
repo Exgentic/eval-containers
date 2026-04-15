@@ -22,7 +22,7 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 // Cleanup is automatic on drop — even if the test panics.
 //
 // Each test runs a full evaluation with a recorded trajectory fixture.
-// Fixtures are in tests/fixtures/{benchmark}-0-{agent}.trajectory.jsonl
+// Fixtures are in tests/replay/fixtures/{benchmark}-0-{agent}.trajectory.jsonl
 
 /// Helper: start a compose stack with the replay model serving a recorded fixture.
 async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> DockerCompose {
@@ -201,7 +201,7 @@ macro_rules! replay_test {
 replay_test!(
     replay_aime_claude_code,
     "benchmarks/aime/compose.yaml",
-    "tests/fixtures/aime-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/aime-0-claude-code.trajectory.jsonl",
     "aime",
     "claude-code"
 );
@@ -209,7 +209,7 @@ replay_test!(
 replay_test!(
     replay_gpqa_codex,
     "benchmarks/gpqa-diamond/compose.yaml",
-    "tests/fixtures/gpqa-diamond-0-codex.trajectory.jsonl",
+    "tests/replay/fixtures/gpqa-diamond-0-codex.trajectory.jsonl",
     "gpqa-diamond",
     "codex"
 );
@@ -217,7 +217,7 @@ replay_test!(
 replay_test!(
     replay_simpleqa_goose,
     "benchmarks/simpleqa/compose.yaml",
-    "tests/fixtures/simpleqa-0-goose.trajectory.jsonl",
+    "tests/replay/fixtures/simpleqa-0-goose.trajectory.jsonl",
     "simpleqa",
     "goose"
 );
@@ -225,7 +225,7 @@ replay_test!(
 replay_test!(
     replay_math500_aider,
     "benchmarks/math-500/compose.yaml",
-    "tests/fixtures/math-500-0-aider.trajectory.jsonl",
+    "tests/replay/fixtures/math-500-0-aider.trajectory.jsonl",
     "math-500",
     "aider"
 );
@@ -233,7 +233,7 @@ replay_test!(
 replay_test!(
     replay_mgsm_codex,
     "benchmarks/mgsm/compose.yaml",
-    "tests/fixtures/mgsm-0-codex.trajectory.jsonl",
+    "tests/replay/fixtures/mgsm-0-codex.trajectory.jsonl",
     "mgsm",
     "codex"
 );
@@ -241,7 +241,7 @@ replay_test!(
 replay_test!(
     replay_mmlu_openhands,
     "benchmarks/mmlu-pro/compose.yaml",
-    "tests/fixtures/mmlu-pro-0-openhands.trajectory.jsonl",
+    "tests/replay/fixtures/mmlu-pro-0-openhands.trajectory.jsonl",
     "mmlu-pro",
     "openhands"
 );
@@ -249,7 +249,7 @@ replay_test!(
 replay_test!(
     replay_hle_claude_code,
     "benchmarks/hle/compose.yaml",
-    "tests/fixtures/hle-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/hle-0-claude-code.trajectory.jsonl",
     "hle",
     "claude-code"
 );
@@ -257,7 +257,7 @@ replay_test!(
 replay_test!(
     replay_mrcr_claude_code,
     "benchmarks/mrcr/compose.yaml",
-    "tests/fixtures/mrcr-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/mrcr-0-claude-code.trajectory.jsonl",
     "mrcr",
     "claude-code"
 );
@@ -265,7 +265,7 @@ replay_test!(
 replay_test!(
     replay_humaneval_gemini,
     "benchmarks/humaneval/compose.yaml",
-    "tests/fixtures/humaneval-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/humaneval-0-claude-code.trajectory.jsonl",
     "humaneval",
     "claude-code"
 );
@@ -273,7 +273,7 @@ replay_test!(
 replay_test!(
     replay_mbpp_claude_code,
     "benchmarks/mbpp/compose.yaml",
-    "tests/fixtures/mbpp-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/mbpp-0-claude-code.trajectory.jsonl",
     "mbpp",
     "claude-code"
 );
@@ -281,7 +281,7 @@ replay_test!(
 replay_test!(
     replay_livecodebench_codex,
     "benchmarks/livecodebench/compose.yaml",
-    "tests/fixtures/livecodebench-0-codex.trajectory.jsonl",
+    "tests/replay/fixtures/livecodebench-0-codex.trajectory.jsonl",
     "livecodebench",
     "codex"
 );
@@ -289,7 +289,7 @@ replay_test!(
 replay_test!(
     replay_usaco_codex,
     "benchmarks/usaco/compose.yaml",
-    "tests/fixtures/usaco-0-codex.trajectory.jsonl",
+    "tests/replay/fixtures/usaco-0-codex.trajectory.jsonl",
     "usaco",
     "codex"
 );
@@ -297,7 +297,7 @@ replay_test!(
 replay_test!(
     replay_ifeval_claude_code,
     "benchmarks/ifeval/compose.yaml",
-    "tests/fixtures/ifeval-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/ifeval-0-claude-code.trajectory.jsonl",
     "ifeval",
     "claude-code"
 );
@@ -305,7 +305,7 @@ replay_test!(
 replay_test!(
     replay_browsecomp_codex,
     "benchmarks/browsecomp/compose.yaml",
-    "tests/fixtures/browsecomp-0-codex.trajectory.jsonl",
+    "tests/replay/fixtures/browsecomp-0-codex.trajectory.jsonl",
     "browsecomp",
     "codex"
 );
@@ -313,7 +313,7 @@ replay_test!(
 replay_test!(
     replay_healthbench_claude_code,
     "benchmarks/healthbench/compose.yaml",
-    "tests/fixtures/healthbench-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/healthbench-0-claude-code.trajectory.jsonl",
     "healthbench",
     "claude-code"
 );
@@ -321,7 +321,7 @@ replay_test!(
 replay_test!(
     replay_kumo_codex,
     "benchmarks/kumo/compose.yaml",
-    "tests/fixtures/kumo-0-codex.trajectory.jsonl",
+    "tests/replay/fixtures/kumo-0-codex.trajectory.jsonl",
     "kumo",
     "codex"
 );
@@ -329,7 +329,7 @@ replay_test!(
 replay_test!(
     replay_gdpval_claude_code,
     "benchmarks/gdpval/compose.yaml",
-    "tests/fixtures/gdpval-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/gdpval-0-claude-code.trajectory.jsonl",
     "gdpval",
     "claude-code"
 );
@@ -337,7 +337,7 @@ replay_test!(
 replay_test!(
     replay_bfcl_codex,
     "benchmarks/bfcl/compose.yaml",
-    "tests/fixtures/bfcl-0-codex.trajectory.jsonl",
+    "tests/replay/fixtures/bfcl-0-codex.trajectory.jsonl",
     "bfcl",
     "codex"
 );
@@ -345,7 +345,7 @@ replay_test!(
 replay_test!(
     replay_appworld_claude_code,
     "benchmarks/appworld/compose.yaml",
-    "tests/fixtures/appworld-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/appworld-0-claude-code.trajectory.jsonl",
     "appworld",
     "claude-code"
 );
@@ -353,7 +353,7 @@ replay_test!(
 replay_test!(
     replay_arcagi_claude_code,
     "benchmarks/arc-agi/compose.yaml",
-    "tests/fixtures/arc-agi-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/arc-agi-0-claude-code.trajectory.jsonl",
     "arc-agi",
     "claude-code"
 );
@@ -361,7 +361,7 @@ replay_test!(
 replay_test!(
     replay_mmmu_claude_code,
     "benchmarks/mmmu/compose.yaml",
-    "tests/fixtures/mmmu-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/mmmu-0-claude-code.trajectory.jsonl",
     "mmmu",
     "claude-code"
 );
@@ -369,7 +369,7 @@ replay_test!(
 replay_test!(
     replay_aider_polyglot_aider,
     "benchmarks/aider-polyglot/compose.yaml",
-    "tests/fixtures/aider-polyglot-0-aider.trajectory.jsonl",
+    "tests/replay/fixtures/aider-polyglot-0-aider.trajectory.jsonl",
     "aider-polyglot",
     "aider"
 );
@@ -377,7 +377,7 @@ replay_test!(
 replay_test!(
     replay_gaia_goose,
     "benchmarks/gaia/compose.yaml",
-    "tests/fixtures/gaia-0-goose.trajectory.jsonl",
+    "tests/replay/fixtures/gaia-0-goose.trajectory.jsonl",
     "gaia",
     "goose"
 );

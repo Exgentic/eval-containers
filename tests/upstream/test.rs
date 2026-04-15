@@ -13,7 +13,7 @@
 //!    tests/RULES.md principle 2a.
 //! 3. `FROM <registry>/<image>:<tag>` — same as above.
 //!
-//! Benchmarks listed in `tests/build-known-broken.md` are excluded: if
+//! Benchmarks listed in `tests/build/known-broken.md` are excluded: if
 //! the upstream has already been documented as gated/broken, this
 //! check would just rediscover the same failure. We want to catch
 //! NEW drift, not re-report known issues.
@@ -33,7 +33,7 @@ use std::time::Duration;
 // ─── Known-broken loader ──────────────────────────────────────────
 
 fn known_broken_benchmarks() -> HashSet<String> {
-    let Ok(text) = fs::read_to_string("tests/build-known-broken.md") else {
+    let Ok(text) = fs::read_to_string("tests/build/known-broken.md") else {
         return HashSet::new();
     };
     let mut out = HashSet::new();
