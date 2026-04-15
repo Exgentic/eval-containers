@@ -257,6 +257,25 @@ fn subdirs_with_dockerfile(root: &str) -> Vec<PathBuf> {
     out
 }
 
+/// True if the Dockerfile's `FROM` line references `${DOCK_TASK_ID}`
+/// or `$DOCK_TASK_ID`. Such images can only be built with an explicit
+/// task id — `per_task_build_args` must have an entry for them.
+fn is_per_task_benchmark(dir: &Path) -> bool {
+    let Ok(text) = fs::read_to_string(dir.join("Dockerfile")) else {
+        return false;
+    };
+    for line in text.lines() {
+        let trimmed = line.trim_start();
+        if !trimmed.starts_with("FROM ") {
+            continue;
+        }
+        if trimmed.contains("${DOCK_TASK_ID}") || trimmed.contains("$DOCK_TASK_ID") {
+            return true;
+        }
+    }
+    false
+}
+
 // ─── Test driver ───────────────────────────────────────────────────
 
 struct BuildFailure {
@@ -282,6 +301,7 @@ async fn run_build_sweep(
 
     let sweep_start = Instant::now();
     let mut pass_count = 0usize;
+    let mut skip_count = 0usize;
 
     for (i, context) in contexts.iter().enumerate() {
         let idx = i + 1;
@@ -292,10 +312,25 @@ async fn run_build_sweep(
             .to_string();
         let start = Instant::now();
 
+        // Per-task benchmarks require an explicit DOCK_TASK_ID build-arg
+        // and usually pull a per-task upstream base. If we don't have
+        // an entry in per_task_build_args for them, the build would
+        // fail at the FROM with "invalid reference format" because
+        // ${DOCK_TASK_ID} expands to empty. Skip them with a visible
+        // note instead of recording a bogus failure.
+        let build_args = args_for(&name);
+        if is_per_task_benchmark(context) && build_args.is_none() {
+            let _ = writeln!(
+                stderr,
+                "[{idx}/{total}] {name} ⊘ skipped (per-task, no build-arg entry)"
+            );
+            let _ = stderr.flush();
+            skip_count += 1;
+            continue;
+        }
+
         let _ = write!(stderr, "[{idx}/{total}] {name} building...");
         let _ = stderr.flush();
-
-        let build_args = args_for(&name);
         let build_result = tc_build(context, &name, build_args).await;
         let elapsed = start.elapsed().as_secs();
 
@@ -353,7 +388,7 @@ async fn run_build_sweep(
     let total_elapsed = sweep_start.elapsed().as_secs();
     let _ = writeln!(
         stderr,
-        "── sweep done: {pass_count}/{total} {kind}s passed in {total_elapsed}s ──\n"
+        "── sweep done: {pass_count}/{total} {kind}s passed, {skip_count} skipped, in {total_elapsed}s ──\n"
     );
     let _ = stderr.flush();
 
