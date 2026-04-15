@@ -57,6 +57,10 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 15. **Labels.** Every model image MUST include labels: `dock.type`, `dock.model.name`, `dock.model.provider`, `dock.model.litellm_version`.
 
+### Budget
+
+16. **Hard budget cap.** The proxy MUST enforce a per-run hard cap on spend via `DOCK_MODEL_MAX_BUDGET` (USD). When crossed, the proxy MUST reject further requests with `BudgetExceededError` so the agent's next call fails fast. Default cap is `$1`. Configurable via `.env` or `dock run --max-budget <N>`; no model-specific value MAY be hardcoded in image config (per [compose/RULES.md](../compose/RULES.md) rule 10). The enforcement entrypoint lives in `core/litellm/dock-litellm-entrypoint.sh` and rewrites `/app/config.yaml`'s `max_budget` at container start from the env var.
+
 ## References
 
 - [Process](../RULES.md)
@@ -68,3 +72,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 |------|--------|
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Added versioning section (rules 12-13): reproducible LiteLLM version pinned at build time, runtime override via `DOCK_LITELLM_VERSION`, container tag selection via `DOCK_MODEL_TAG`. Added `dock.model.litellm_version` to required labels (rule 15). Renumbered Image rules 14-15. |
+| 2026-04-15 | Added rule 16: `DOCK_MODEL_MAX_BUDGET` hard-cap (default $1) enforced by the shared core/litellm entrypoint wrapper. |
