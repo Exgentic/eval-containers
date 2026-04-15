@@ -19,7 +19,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.07972"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Install OSWorld evaluation tools
-RUN pip install --no-cache-dir desktop-env
+RUN pip install --no-cache-dir desktop-env==1.0.2
 
 # Fetch task metadata
 RUN pip install --no-cache-dir pyarrow

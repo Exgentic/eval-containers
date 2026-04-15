@@ -17,7 +17,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2305.01210"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch and extract tasks
-RUN pip install --no-cache-dir pyarrow numpy
+RUN pip install --no-cache-dir pyarrow numpy==2.0.2
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 urllib.request.urlretrieve(

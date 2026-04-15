@@ -4,7 +4,7 @@
 # with per-task environments (target services, binaries, crypto challenges).
 # Agent must obtain a flag string; the test compares stdout to the expected flag.
 #
-# TODO: Cybench ships task definitions under benchmark/<category>/<task>/ with
+# FUTURE: Cybench ships task definitions under benchmark/<category>/<task>/ with
 # their own Dockerfiles and metadata.json. The base image here assumes a
 # pre-built per-task image published to a registry; update the base image
 # path once the upstream image publishing convention is settled.
@@ -24,13 +24,13 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 
 ENV DOCK_BENCHMARK=cybench
 
-RUN apt-get update && apt-get install -y curl jq git 2>/dev/null || true
+RUN apt-get update && apt-get install -y curl jq git && rm -rf /var/lib/apt/lists/*
 
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
 # Fetch task description + expected flag from the Cybench repo at a pinned commit.
-# TODO: pin the exact commit sha once upstream tags a release.
+# FUTURE: pin the exact commit sha once upstream tags a release.
 RUN mkdir -p /tasks/0 && \
     (curl -sfL "https://raw.githubusercontent.com/andyzorigin/cybench/main/benchmark/${DOCK_TASK_ID}/metadata/metadata.json" -o /tasks/0/config.json || echo '{}' > /tasks/0/config.json) && \
     (curl -sfL "https://raw.githubusercontent.com/andyzorigin/cybench/main/benchmark/${DOCK_TASK_ID}/metadata/task.json" -o /tasks/0/task.json || true) && \

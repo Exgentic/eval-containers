@@ -18,7 +18,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.13168"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Runtime deps for test execution (tests use numpy/scipy/h5py and call the loader)
-RUN pip install --no-cache-dir numpy scipy h5py sympy
+RUN pip install --no-cache-dir numpy==2.0.2 scipy==1.14.1 h5py==3.12.1 sympy==1.13.3
 
 # Fetch SciCode problems + numeric test_data.h5
 RUN pip install --no-cache-dir pyarrow

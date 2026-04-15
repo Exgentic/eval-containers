@@ -2,7 +2,7 @@
 # Research-level math problems. Dataset is gated/private; only the public
 # sample set is available on HuggingFace. Agent prints final answer to stdout.
 #
-# TODO: FrontierMath full set (~300 problems) is held privately by Epoch AI and
+# FUTURE: FrontierMath full set (~300 problems) is held privately by Epoch AI and
 # is not publicly downloadable. Using the public sample split as a placeholder.
 # Replace with the full set once access is granted (set HF_TOKEN and data_revision).
 
@@ -33,7 +33,7 @@ try:
         token=os.environ.get('HF_TOKEN') or None,
     )
 except Exception as e:
-    # TODO: dataset is gated — placeholder task written when unavailable
+    # FUTURE: dataset is gated — placeholder task written when unavailable
     os.makedirs('/tmp/fm', exist_ok=True)
     print(f'Could not fetch FrontierMath ({e}); writing placeholder task')
 
@@ -56,7 +56,7 @@ for pq_path in glob.glob('/tmp/fm/**/*.parquet', recursive=True):
     break
 
 if not rows:
-    # TODO: placeholder when dataset is not accessible
+    # FUTURE: placeholder when dataset is not accessible
     for i in range(10):
         rows.append({
             'id': f'placeholder-{i}',

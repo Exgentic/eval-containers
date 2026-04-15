@@ -226,14 +226,22 @@ fn has_untagged_from(t: &str) -> bool {
 }
 
 fn has_legacy_env_var(t: &str) -> bool {
-    // Find references to unprefixed $TASK_ID / $BENCHMARK.
-    // Must NOT match $DOCK_TASK_ID or $DOCK_BENCHMARK (those start with D).
+    // Find references to unprefixed $TASK_ID / $BENCHMARK. Must NOT
+    // match $DOCK_TASK_ID / $DOCK_BENCHMARK (prefixed), and must not
+    // match longer identifiers like $TASK_ID_STR (substring false
+    // positive). Whole-identifier match: the character after the
+    // needle must not be an identifier continuation character.
+    let ident_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
     for needle in ["$TASK_ID", "${TASK_ID", "$BENCHMARK", "${BENCHMARK"] {
         let mut rest = t;
         while let Some(i) = rest.find(needle) {
-            // Check the character before to ensure it's not $DOCK_...
             let before = &rest[..i];
-            if !before.ends_with("DOCK_") && !before.ends_with("docK_") {
+            // Skip if preceded by DOCK_ (e.g. $DOCK_TASK_ID)
+            let prefixed = before.ends_with("DOCK_");
+            // Skip if followed by an identifier char (e.g. $TASK_ID_STR)
+            let after = &rest[i + needle.len()..];
+            let extended = after.chars().next().map(ident_char).unwrap_or(false);
+            if !prefixed && !extended {
                 return true;
             }
             rest = &rest[i + 1..];
@@ -262,8 +270,49 @@ fn has_todo_or_fixme(t: &str) -> bool {
     false
 }
 
-fn apt_install_without_cleanup(t: &str) -> bool {
+fn strip_heredocs(t: &str) -> String {
+    // Dockerfiles often write install scripts via `cat > file <<'NAME'`
+    // heredocs. The body of those heredocs is not a RUN command — it's
+    // content being written to a file. Installation rules (apt cleanup,
+    // pip pinning, etc.) should skip heredoc bodies.
+    let mut out = String::with_capacity(t.len());
+    let mut in_heredoc: Option<String> = None;
     for line in t.lines() {
+        if let Some(tag) = &in_heredoc {
+            if line.trim() == tag {
+                in_heredoc = None;
+            }
+            out.push('\n');
+            continue;
+        }
+        // Detect `<<'TAG'` or `<<TAG` or `<<"TAG"`
+        if let Some(i) = line.find("<<") {
+            let after = &line[i + 2..];
+            let after = after.trim_start_matches('-');
+            let tag: String = after
+                .trim_start_matches('\'')
+                .trim_start_matches('"')
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+                .collect();
+            if !tag.is_empty() {
+                in_heredoc = Some(tag);
+                out.push_str(line);
+                out.push('\n');
+                continue;
+            }
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
+fn apt_install_without_cleanup(t: &str) -> bool {
+    // Skip heredoc bodies, then join multi-line RUN continuations.
+    let stripped = strip_heredocs(t);
+    let joined = stripped.replace("\\\r\n", " ").replace("\\\n", " ");
+    for line in joined.lines() {
         let line = line.trim();
         if line.starts_with('#') {
             continue;
@@ -271,10 +320,7 @@ fn apt_install_without_cleanup(t: &str) -> bool {
         if !line.contains("apt-get install") {
             continue;
         }
-        // Same RUN should chain the cleanup
-        if !line.contains("rm -rf /var/lib/apt/lists")
-            && !line.contains("rm -rf /var/lib/apt/lists/*")
-        {
+        if !line.contains("rm -rf /var/lib/apt/lists") {
             return true;
         }
     }
@@ -282,7 +328,9 @@ fn apt_install_without_cleanup(t: &str) -> bool {
 }
 
 fn pip_install_without_no_cache(t: &str) -> bool {
-    for line in t.lines() {
+    let stripped = strip_heredocs(t);
+    let joined = stripped.replace("\\\r\n", " ").replace("\\\n", " ");
+    for line in joined.lines() {
         let line = line.trim();
         if line.starts_with('#') {
             continue;

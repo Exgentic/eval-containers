@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
 
 # Install SWE-agent from source at a pinned tag
 RUN python3 -m venv /opt/swe-agent-venv \
-    && /opt/swe-agent-venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/swe-agent-venv/bin/pip install --no-cache-dir --upgrade pip==24.2 \
     && /opt/swe-agent-venv/bin/pip install --no-cache-dir \
          "git+https://github.com/SWE-agent/SWE-agent.git@${SWE_AGENT_VERSION}"
 
@@ -40,7 +40,7 @@ apt-get update && apt-get install -y \
     curl git python3 python3-pip python3-venv \
     && rm -rf /var/lib/apt/lists/*
 python3 -m venv /opt/swe-agent-venv
-/opt/swe-agent-venv/bin/pip install --no-cache-dir --upgrade pip
+/opt/swe-agent-venv/bin/pip install --no-cache-dir --upgrade pip==24.2
 /opt/swe-agent-venv/bin/pip install --no-cache-dir \
     "git+https://github.com/SWE-agent/SWE-agent.git@${SWE_AGENT_VERSION}"
 INSTALL

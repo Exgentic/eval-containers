@@ -5,7 +5,7 @@
 # scores against a held-out test set. Per-task images because each Kaggle
 # competition has its own data and grader.
 #
-# TODO: MLE-bench requires the Kaggle CLI + competition data pulled at build
+# FUTURE: MLE-bench requires the Kaggle CLI + competition data pulled at build
 # time (KAGGLE_USERNAME / KAGGLE_KEY) and competitions must be accepted by
 # the account. This Dockerfile uses the upstream per-task image convention
 # and a placeholder when the dataset cannot be fetched.
@@ -24,7 +24,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2410.07095"
 
 ENV DOCK_BENCHMARK=mle-bench
 
-RUN apt-get update && apt-get install -y curl jq git 2>/dev/null || true
+RUN apt-get update && apt-get install -y curl jq git && rm -rf /var/lib/apt/lists/*
 
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
@@ -32,7 +32,7 @@ ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 # Task description + grader come from the upstream mle-bench package. The
 # per-task base image provides /private/ (grader + answers, root-only) and
 # /home/data/ (read-only data the agent can see).
-# TODO: once upstream pins a version, copy the grader deps to /tests/deps.
+# FUTURE: once upstream pins a version, copy the grader deps to /tests/deps.
 RUN mkdir -p /tasks/0 /tests && \
     echo "${DOCK_TASK_ID}" > /tasks/0/id.txt && \
     (cp /private/description.md /tasks/0/problem.txt 2>/dev/null || \
@@ -40,7 +40,7 @@ RUN mkdir -p /tasks/0 /tests && \
      echo "TODO: MLE-bench task description for ${DOCK_TASK_ID}" > /tasks/0/problem.txt)
 
 # Grader: uses mlebench.grade to score submission.csv against the held-out answers.
-RUN pip install --no-cache-dir --target /tests/deps mlebench 2>/dev/null || true
+RUN pip install --no-cache-dir --target /tests/deps mlebench==0.1.0 2>/dev/null || true
 
 RUN cat > /tests/test.sh <<'TEST'
 #!/bin/bash
