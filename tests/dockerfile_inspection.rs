@@ -11,7 +11,7 @@
 //! Rule IDs match the signal catalog in DOCKERFILE.md so the doc and
 //! the code can't drift.
 //!
-//! Run: cargo test --test dockerfile_inspection -- --ignored
+//! Run: cargo test --test dockerfile_inspection
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -634,10 +634,9 @@ fn rule_todo_allows_future_block() {
     assert!(!fs.iter().any(|f| f.rule == "todo_or_fixme"));
 }
 
-// ─── Fleet sweep (ignored by default, expensive-ish) ───────────────
+// ─── Fleet sweep (always runs — it's pure file I/O, <100ms) ────────
 
 #[test]
-#[ignore]
 fn inspect_every_dockerfile() {
     let dockerfiles = walk_dockerfiles();
     assert!(

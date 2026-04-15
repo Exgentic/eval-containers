@@ -109,7 +109,7 @@ Note: Podman's docker-compat socket does not support `buildx`. For fleet builds 
 No containers built. Catches missing Dockerfiles, missing labels, broken compose files.
 
 ```bash
-scripts/validate-all.sh                      # every benchmark + agent on disk
+cargo test --test check structural_validation                      # every benchmark + agent on disk
 cargo test --test compose -- --ignored       # cargo equivalent for the 29 committed benchmarks
 ```
 
@@ -189,7 +189,7 @@ With BuildKit GC configured in setup, you rarely need `dock prune` manually.
 **Starting fresh on a benchmark:**
 ```bash
 # 1. Structural smoke test
-scripts/validate-all.sh
+cargo test --test check structural_validation
 
 # 2. Build + verify labels
 docker build -t local/aime benchmarks/aime/
@@ -204,7 +204,7 @@ cat output/aime/0/task/result.json
 
 **Before pushing a PR:**
 ```bash
-scripts/validate-all.sh                      # every benchmark + agent structurally
+cargo test --test check structural_validation                      # every benchmark + agent structurally
 cargo test --test compose -- --ignored       # cargo compose tests
 docker build benchmarks/aime/                # only the ones you changed
 cargo test --test replay -- --ignored        # only the ones you changed

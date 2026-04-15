@@ -331,9 +331,9 @@ fn fixture_paths() -> Vec<PathBuf> {
 
 // ─── Tests ─────────────────────────────────────────────────────────
 //
-// Unit tests for the rule engine use no fixtures — run on plain `cargo
-// test --test task_inspection` (no --ignored). The fixture sweep is
-// ignored by default so it doesn't run on unrelated commits.
+// Unit tests for the rule engine use synthetic inputs. The fixture
+// sweep reads tests/fixtures/ — pure file I/O, completes in ~10ms —
+// so it always runs on `cargo test` (no --ignored needed).
 
 #[test]
 fn rule_empty_fires_on_whitespace() {
@@ -371,7 +371,6 @@ fn clean_task_produces_no_findings() {
 }
 
 #[test]
-#[ignore]
 fn inspect_every_existing_fixture() {
     let fixtures = fixture_paths();
     assert!(
