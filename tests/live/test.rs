@@ -38,8 +38,19 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 // ─── Configuration ────────────────────────────────────────────────
 
 const MODEL: &str = "gpt-5.4";
-const AGENTS: &[&str] = &["claude-code", "codex", "aider"];
-const TASKS_PER_BENCHMARK: usize = 3;
+// 6-agent rotation: every benchmark runs once against EACH agent, so
+// the full sweep covers 88 × 6 = 528 (benchmark, agent) pairs. Every
+// agent sees every benchmark, every benchmark sees every agent — the
+// "good coverage of all the fleet" goal. Adding a 7th agent here
+// extends the matrix to 616 runs; removing one drops to 440.
+const AGENTS: &[&str] = &[
+    "claude-code", // Anthropic SDK reference
+    "codex",       // OpenAI Responses API
+    "aider",       // multi-file code editor
+    "goose",       // Block's tool-heavy agent
+    "openhands",   // AllHands multi-step
+    "gemini-cli",  // Google SDK
+];
 const DEFAULT_MAX_BUDGET_USD: f64 = 1.0;
 const DEFAULT_TIMEOUT_SECS: u32 = 600;
 
@@ -143,24 +154,33 @@ fn per_task_representative(name: &str) -> &'static str {
     }
 }
 
+/// Pick one task id per agent, spread evenly across the benchmark's
+/// task id range. The i-th agent gets task round(i * (N-1) / (K-1))
+/// where K = AGENTS.len(), so the set includes 0, N-1, and K-2 evenly
+/// spaced intermediates. For very small benchmarks (N < K) we cycle
+/// back to 0 — one task id may be repeated across agents.
 fn pick_task_ids(b: &Benchmark) -> Vec<String> {
+    let k = AGENTS.len();
     if b.per_task_build {
-        // Use the curated representative three times (agent rotates
-        // but the task doesn't — per-task benchmarks are heavy to
-        // rebuild per task id).
+        // Per-task-build benchmarks require a separate image per task
+        // id and are heavy to rebuild. We run all K agents against the
+        // same curated representative task.
         let rep = b.per_task_ids[0].clone();
-        return vec![rep.clone(), rep.clone(), rep];
+        return vec![rep; k];
     }
-    let n = b.task_count;
-    if n < TASKS_PER_BENCHMARK as u32 {
-        (0..n).map(|i| i.to_string()).collect()
-    } else {
-        vec![
-            "0".to_string(),
-            (n / 2).to_string(),
-            (n - 1).to_string(),
-        ]
+    let n = b.task_count as usize;
+    if n == 0 {
+        return vec!["0".into(); k];
     }
+    if n == 1 {
+        return vec!["0".into(); k];
+    }
+    let mut out = Vec::with_capacity(k);
+    for i in 0..k {
+        let idx = (i * (n - 1)) / (k - 1);
+        out.push(idx.to_string());
+    }
+    out
 }
 
 // ─── Known-broken loader ──────────────────────────────────────────
