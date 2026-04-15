@@ -13,6 +13,7 @@ LABEL dock.agent.description="Princeton SWE-agent: Agent-Computer Interface for 
 LABEL dock.agent.runtime="python"
 LABEL dock.agent.url="https://github.com/SWE-agent/SWE-agent"
 LABEL dock.agent.version="1.1.0"
+ENV DOCK_AGENT_VERSION_DEFAULT="1.1.0"
 ENV DOCK_AGENT=swe-agent
 
 ENV SWE_AGENT_VERSION=v1.1.0

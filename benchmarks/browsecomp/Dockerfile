@@ -14,14 +14,15 @@ LABEL dock.benchmark.internet="true"
 LABEL dock.benchmark.url="https://github.com/openai/simple-evals"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2504.16186"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir pandas
 
-# Fetch encrypted CSV and decrypt to flat files
+# Fetch encrypted CSV, decrypt, and write everything to a single JSONL file.
 RUN python3 <<'PYEOF'
-import urllib.request, pandas as pd, base64, hashlib, os
+import urllib.request, pandas as pd, base64, hashlib, os, json
 
 def derive_key(password, length):
     key = hashlib.sha256(password.encode()).digest()
@@ -36,15 +37,20 @@ urllib.request.urlretrieve(
     'https://openaipublic.blob.core.windows.net/simple-evals/browse_comp_test_set.csv',
     '/tmp/browsecomp.csv')
 df = pd.read_csv('/tmp/browsecomp.csv')
-for i, row in df.iterrows():
-    canary = row['canary']
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/problem.txt','w').write(decrypt(row['problem'], canary))
-    open(f'/tasks/{i}/answer.txt','w').write(decrypt(row['answer'], canary))
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for i, row_in in df.iterrows():
+        canary = row_in['canary']
+        row = {
+            'id': str(i),
+            'problem': decrypt(row_in['problem'], canary),
+            'answer': decrypt(row_in['answer'], canary),
+        }
+        out.write(json.dumps(row) + '\n')
 print(f'Extracted {len(df)} tasks')
 PYEOF
 RUN rm -f /tmp/browsecomp.csv && pip uninstall -y pandas
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=browsecomp
@@ -54,10 +60,12 @@ COPY test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Browse the web to answer this question. Print only the answer, nothing else.
 

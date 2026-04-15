@@ -15,6 +15,7 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/THUDM/LongBench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2308.14508"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
 
 RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
 
@@ -25,19 +26,17 @@ RUN curl -sSfL \
     && unzip -q /tmp/data.zip -d /tmp/ \
     && rm /tmp/data.zip
 
-# Extract tasks. We include the English-language subsets that support
-# simple reference-answer scoring (F1/ROUGE/edit-match per LongBench spec).
+# Single-JSONL task layout (see benchmarks/RULES.md #22). English-language
+# subsets with simple reference-answer scoring (F1/ROUGE/edit-match).
 RUN python3 <<'PYEOF'
-import os, json, glob
+import os, json
 
-# English tasks from LongBench (skip zh-specific and non-scoreable ones)
 ENGLISH_TASKS = [
     'narrativeqa', 'qasper', 'multifieldqa_en', 'hotpotqa', '2wikimqa',
     'musique', 'gov_report', 'qmsum', 'multi_news', 'trec', 'triviaqa',
     'samsum', 'passage_count', 'passage_retrieval_en', 'lcc', 'repobench-p',
 ]
 
-# Official LongBench prompt templates (abridged to what we need)
 PROMPTS = {
     'narrativeqa': 'You are given a story, which can be either a novel or a movie script, and a question. Answer the question as concisely as you can, using a single phrase if possible. Do not provide any explanation.\n\nStory: {context}\n\nNow, answer the question based on the story as concisely as you can, using a single phrase if possible. Do not provide any explanation.\n\nQuestion: {input}\n\nAnswer:',
     'qasper': 'You are given a scientific article and a question. Answer the question as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write "unanswerable". If the question is a yes/no question, answer "yes", "no", or "unanswerable". Do not provide any explanation.\n\nArticle: {context}\n\n Answer the question based on the above article as concisely as you can, using a single phrase or sentence if possible. If the question cannot be answered based on the information in the article, write "unanswerable". If the question is a yes/no question, answer "yes", "no", or "unanswerable". Do not provide any explanation.\n\nQuestion: {input}\n\nAnswer:',
@@ -57,7 +56,6 @@ PROMPTS = {
     'repobench-p': 'Please complete the code given below. \n{context}{input}Next line of code:\n',
 }
 
-# F1 for qa, rouge for summary, exact for classification, edit-sim for code
 METRICS = {
     'narrativeqa': 'qa_f1', 'qasper': 'qa_f1', 'multifieldqa_en': 'qa_f1',
     'hotpotqa': 'qa_f1', '2wikimqa': 'qa_f1', 'musique': 'qa_f1',
@@ -67,40 +65,36 @@ METRICS = {
     'lcc': 'code_sim', 'repobench-p': 'code_sim',
 }
 
-idx = 0
-for task_name in ENGLISH_TASKS:
-    path = f'/tmp/data/{task_name}.jsonl'
-    if not os.path.exists(path):
-        print(f'SKIP missing: {task_name}')
-        continue
-    with open(path) as f:
-        for line in f:
-            row = json.loads(line)
-            d = f'/tasks/{idx}'
-            os.makedirs(d, exist_ok=True)
-            upstream_id = row.get('_id', f'{task_name}_{idx}')
-            with open(f'{d}/id.txt', 'w') as fh:
-                fh.write(str(upstream_id))
-            with open(f'{d}/task_type.txt', 'w') as fh:
-                fh.write(task_name)
-            with open(f'{d}/metric.txt', 'w') as fh:
-                fh.write(METRICS[task_name])
-            prompt = PROMPTS[task_name].format(
-                context=row.get('context', ''),
-                input=row.get('input', ''),
-            )
-            with open(f'{d}/problem.txt', 'w') as fh:
-                fh.write(prompt)
-            with open(f'{d}/answers.json', 'w') as fh:
-                json.dump(row.get('answers', []), fh)
-            with open(f'{d}/all_classes.json', 'w') as fh:
-                json.dump(row.get('all_classes') or [], fh)
-            idx += 1
-
-print(f'Generated {idx} LongBench tasks')
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for task_name in ENGLISH_TASKS:
+        path = f'/tmp/data/{task_name}.jsonl'
+        if not os.path.exists(path):
+            print(f'SKIP missing: {task_name}')
+            continue
+        with open(path) as f:
+            for line in f:
+                row_in = json.loads(line)
+                upstream_id = row_in.get('_id', f'{task_name}_{count}')
+                prompt = PROMPTS[task_name].format(
+                    context=row_in.get('context', ''),
+                    input=row_in.get('input', ''),
+                )
+                row = {
+                    'id': str(upstream_id),
+                    'task_type': task_name,
+                    'metric': METRICS[task_name],
+                    'problem': prompt,
+                    'answers_json': json.dumps(row_in.get('answers', [])),
+                    'all_classes_json': json.dumps(row_in.get('all_classes') or []),
+                }
+                out.write(json.dumps(row) + '\n')
+                count += 1
+print(f'Generated {count} LongBench tasks')
 PYEOF
 RUN rm -rf /tmp/data
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=longbench
@@ -121,7 +115,7 @@ from difflib import SequenceMatcher
 task_id = os.environ.get('DOCK_TASK_ID', '')
 d = f'/tasks/{task_id}'
 metric = open(f'{d}/metric.txt').read().strip()
-answers = json.load(open(f'{d}/answers.json'))
+answers = json.load(open(f'{d}/answers_json.txt'))
 try:
     response = open('/output/agent/stdout.log').read().strip()
 except FileNotFoundError:
@@ -147,7 +141,6 @@ def f1(pred, gold):
     return 2 * p * r / (p + r)
 
 def rouge_l(pred, gold):
-    # Approximate ROUGE-L via longest common subsequence
     pred_tokens = normalize(pred).split()
     gold_tokens = normalize(gold).split()
     if not pred_tokens or not gold_tokens:
@@ -168,7 +161,7 @@ def rouge_l(pred, gold):
     return 2 * p * r / (p + r)
 
 def classification_score(pred, gold):
-    all_classes = json.load(open(f'{d}/all_classes.json'))
+    all_classes = json.load(open(f'{d}/all_classes_json.txt'))
     pred_l = pred.lower()
     matched = [c for c in all_classes if c.lower() in pred_l]
     if gold.lower() in [m.lower() for m in matched] and len(matched) == 1:
@@ -221,10 +214,12 @@ GRADE
 RUN chmod -R 700 /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   cp /tasks/$DOCK_TASK_ID/problem.txt /app/task.txt
   chmod 644 /app/task.txt

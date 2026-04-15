@@ -9,6 +9,7 @@ LABEL dock.agent.description="Charm Crush terminal AI coding assistant"
 LABEL dock.agent.runtime="go"
 LABEL dock.agent.url="https://github.com/charmbracelet/crush"
 LABEL dock.agent.version="0.57.0"
+ENV DOCK_AGENT_VERSION_DEFAULT="0.57.0"
 ENV DOCK_AGENT=crush
 
 RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*

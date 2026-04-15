@@ -18,10 +18,11 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="98b68ef82a47690c316f42fddb05baafaab56851"
 LABEL dock.benchmark.url="https://github.com/TheAgentCompany/TheAgentCompany"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2412.14161"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="98b68ef82a47690c316f42fddb05baafaab56851"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch the repo tree, then download each task.md to /tasks/<idx>/problem.txt.
+# Fetch the repo tree, then download each task.md into /tasks/all.jsonl.
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
 
@@ -35,16 +36,19 @@ paths = sorted(
     if x["path"].startswith("workspaces/tasks/") and x["path"].endswith("/task.md")
 )
 
-for idx, path in enumerate(paths):
-    name = path.split("/")[2]
-    body = urllib.request.urlopen(RAW + path).read().decode("utf-8")
-    d = f"/tasks/{idx}"
-    os.makedirs(d, exist_ok=True)
-    open(f"{d}/id.txt", "w").write(name)
-    open(f"{d}/problem.txt", "w").write(body)
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for path in paths:
+        name = path.split("/")[2]
+        body = urllib.request.urlopen(RAW + path).read().decode("utf-8")
+        row = {
+            'id': name,
+            'problem': body,
+        }
+        out.write(json.dumps(row) + '\n')
 print(f"Extracted {len(paths)} tasks")
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=agentcompany
@@ -60,10 +64,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are an AI assistant working at a simulated tech company. Read the task brief below and respond with the steps you would take and any final deliverables (messages to send, files to create, answers to compute).
 

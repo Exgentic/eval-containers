@@ -9,6 +9,7 @@ LABEL dock.agent.description="OpenHands open-source AI software engineer"
 LABEL dock.agent.runtime="python"
 LABEL dock.agent.url="https://github.com/All-Hands-AI/OpenHands"
 LABEL dock.agent.version="1.14.0"
+ENV DOCK_AGENT_VERSION_DEFAULT="1.14.0"
 ENV DOCK_AGENT=openhands
 
 ARG OPENHANDS_VERSION=1.14.0

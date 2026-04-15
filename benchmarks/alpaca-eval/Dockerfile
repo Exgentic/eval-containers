@@ -15,6 +15,7 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
 LABEL dock.benchmark.url="https://github.com/tatsu-lab/alpaca_eval"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.04475"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
@@ -30,31 +31,29 @@ import json, os
 eval_set = json.load(open('/tmp/eval.json'))
 baseline = json.load(open('/tmp/baseline.json'))
 
-# Index baseline by instruction text (stable matching)
 baseline_by_instr = {row['instruction']: row['output'] for row in baseline}
 
+os.makedirs('/tasks', exist_ok=True)
 idx = 0
-for row in eval_set:
-    instr = row['instruction']
-    base = baseline_by_instr.get(instr, '')
-    if not base:
-        continue
-    d = f'/tasks/{idx}'
-    os.makedirs(d, exist_ok=True)
-    with open(f'{d}/id.txt', 'w') as f:
-        f.write(row.get('dataset', 'unknown') + '_' + str(idx))
-    with open(f'{d}/dataset.txt', 'w') as f:
-        f.write(row.get('dataset', ''))
-    with open(f'{d}/problem.txt', 'w') as f:
-        f.write(instr)
-    with open(f'{d}/baseline.txt', 'w') as f:
-        f.write(base)
-    idx += 1
+with open('/tasks/all.jsonl', 'w') as out:
+    for row in eval_set:
+        instr = row['instruction']
+        base = baseline_by_instr.get(instr, '')
+        if not base:
+            continue
+        line = {
+            'id': row.get('dataset', 'unknown') + '_' + str(idx),
+            'dataset': row.get('dataset', ''),
+            'problem': instr,
+            'baseline': base,
+        }
+        out.write(json.dumps(line) + '\n')
+        idx += 1
 
 print(f'Generated {idx} AlpacaEval tasks')
 PYEOF
 RUN rm -f /tmp/eval.json /tmp/baseline.json
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=alpaca-eval
@@ -158,10 +157,12 @@ GRADE
 RUN chmod -R 700 /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi

@@ -13,13 +13,15 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/web-arena-x/webarena"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2307.13854"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="1.2.3"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Install evaluator
 RUN pip install --no-cache-dir webarena-verified==1.2.3
 
-# Fetch task dataset and extract to flat files
+# Write every task to a single JSONL file (root-only). Runtime entrypoint
+# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
 import json, os, urllib.request
 urllib.request.urlretrieve(
@@ -27,15 +29,19 @@ urllib.request.urlretrieve(
     '/tmp/tasks.json')
 with open('/tmp/tasks.json') as f:
     tasks = json.load(f)
-for i, t in enumerate(tasks):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['task_id']))
-    open(f'/tasks/{i}/problem.txt', 'w').write(t['intent'])
-    json.dump(t, open(f'/tasks/{i}/task.json', 'w'))
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for t in tasks:
+        row = {
+            'id': str(t['task_id']),
+            'problem': t['intent'],
+            'task': t,
+        }
+        out.write(json.dumps(row) + '\n')
 os.remove('/tmp/tasks.json')
-print(f'Extracted {len(tasks)} tasks')
+print(f'Wrote {len(tasks)} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=webarena-verified
@@ -129,13 +135,15 @@ RUN chmod +x /tests/extract_response.py
 
 # Shared entrypoint
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 # Entrypoint: build task prompt with sidecar URLs and credentials
 # FUTURE: Consider a structured JSON output contract; currently agent-specific.
 #       This should be solved by the benchmark, not forced on the agent.
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   INTENT=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
   export TASK="You are a web browsing agent. Complete this task by interacting with websites.

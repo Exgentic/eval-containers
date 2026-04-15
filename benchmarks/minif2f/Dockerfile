@@ -13,8 +13,13 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
 LABEL dock.benchmark.url="https://github.com/yangky11/miniF2F"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2109.00110"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
 
 RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Single-JSONL task layout. One line per task. Agent never sees this file
+# (root-only). Runtime entrypoint materializes just the requested task's
+# fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, tarfile, io, os, json, re
 
@@ -29,31 +34,35 @@ members = sorted(m for m in tf.getnames() if m.startswith(prefix) and m.endswith
 
 show_re = re.compile(r'[Ss]how that it is\s+([^.]+?)\.?\s*$')
 
-task_idx = 0
-for name in members:
-    f = tf.extractfile(name)
-    if f is None:
-        continue
-    obj = json.loads(f.read().decode('utf-8'))
-    stmt = obj.get('informal_statement', '').strip()
-    proof = obj.get('informal_proof', '')
-    pname = obj.get('problem_name', os.path.basename(name).removesuffix('.json'))
-    m = show_re.search(stmt)
-    if m:
-        answer = m.group(1).strip()
-        problem = show_re.sub('', stmt).strip()
-    else:
-        answer = ''
-        problem = stmt
-    os.makedirs(f'/tasks/{task_idx}', exist_ok=True)
-    open(f'/tasks/{task_idx}/id.txt', 'w').write(pname)
-    open(f'/tasks/{task_idx}/problem.txt', 'w').write(problem)
-    open(f'/tasks/{task_idx}/answer.txt', 'w').write(answer)
-    open(f'/tasks/{task_idx}/informal_proof.txt', 'w').write(proof)
-    task_idx += 1
-print('total tasks:', task_idx)
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for name in members:
+        f = tf.extractfile(name)
+        if f is None:
+            continue
+        obj = json.loads(f.read().decode('utf-8'))
+        stmt = obj.get('informal_statement', '').strip()
+        proof = obj.get('informal_proof', '')
+        pname = obj.get('problem_name', os.path.basename(name).removesuffix('.json'))
+        m = show_re.search(stmt)
+        if m:
+            answer = m.group(1).strip()
+            problem = show_re.sub('', stmt).strip()
+        else:
+            answer = ''
+            problem = stmt
+        row = {
+            'id': pname,
+            'problem': problem,
+            'answer': answer,
+            'informal_proof': proof,
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print('total tasks:', count)
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=minif2f
@@ -62,10 +71,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this competition math problem. Print only the final answer in its simplest form (a number or expression). Do not include any explanation.
 

@@ -13,30 +13,41 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="218ec52e09a7e7462a5400043bb9a69a41d06b76"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/Rowan/hellaswag"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1905.07830"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="218ec52e09a7e7462a5400043bb9a69a41d06b76"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow==18.1.0
+
+# Single-JSONL task layout. Root-only; runtime entrypoint materializes the
+# requested task's fields into /tasks/$DOCK_TASK_ID/ on demand.
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/Rowan/hellaswag/resolve/218ec52e09a7e7462a5400043bb9a69a41d06b76/data/validation-00000-of-00001.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
 letters = ['A', 'B', 'C', 'D']
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['ind'][i].as_py()))
-    activity = t['activity_label'][i].as_py()
-    ctx = t['ctx'][i].as_py()
-    endings = t['endings'][i].as_py()
-    label_idx = int(t['label'][i].as_py())
-    lines = [f"Activity: {activity}", "", f"Context: {ctx}", "", "Which ending is most likely?"]
-    for j, ending in enumerate(endings):
-        lines.append(f"{letters[j]}. {ending}")
-    open(f'/tasks/{i}/problem.txt', 'w').write("\n".join(lines))
-    open(f'/tasks/{i}/answer.txt', 'w').write(letters[label_idx])
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        activity = t['activity_label'][i].as_py()
+        ctx = t['ctx'][i].as_py()
+        endings = t['endings'][i].as_py()
+        label_idx = int(t['label'][i].as_py())
+        lines = [f"Activity: {activity}", "", f"Context: {ctx}", "", "Which ending is most likely?"]
+        for j, ending in enumerate(endings):
+            lines.append(f"{letters[j]}. {ending}")
+        row = {
+            'id': str(t['ind'][i].as_py()),
+            'problem': "\n".join(lines),
+            'answer': letters[label_idx],
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=hellaswag
@@ -45,10 +56,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Pick the most plausible continuation of the context. Print only the letter of the correct answer (A, B, C, or D), nothing else.
 

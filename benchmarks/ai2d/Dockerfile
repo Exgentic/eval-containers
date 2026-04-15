@@ -14,40 +14,46 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="c83a9b9692933aff8349157c88a413df9d02c4e5"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/lmms-lab/ai2d"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1603.07396"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="c83a9b9692933aff8349157c88a413df9d02c4e5"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir pyarrow==18.1.0
+
+# Single-JSONL task layout. Image bytes are base64-encoded inline; the runtime
+# entrypoint materializes just the requested row and decodes image.png.
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, os, json, base64
 LETTERS = ["A", "B", "C", "D", "E", "F"]
-task_idx = 0
-for shard in range(2):
-    url = f"https://huggingface.co/api/datasets/lmms-lab/ai2d/parquet/default/test/{shard}.parquet"
-    urllib.request.urlretrieve(url, "/tmp/data.parquet")
-    t = pq.read_table("/tmp/data.parquet")
-    for i in range(len(t)):
-        d = f"/tasks/{task_idx}"
-        os.makedirs(d, exist_ok=True)
-        open(f"{d}/id.txt", "w").write(str(task_idx))
-        open(f"{d}/problem.txt", "w").write(str(t["question"][i]))
-        opts = t["options"][i].as_py() or []
-        lines = [f"{LETTERS[k]}. {opt}" for k, opt in enumerate(opts)]
-        open(f"{d}/options.txt", "w").write("\n".join(lines))
-        try:
-            ans_letter = LETTERS[int(str(t["answer"][i]))]
-        except Exception:
-            ans_letter = str(t["answer"][i])
-        open(f"{d}/answer.txt", "w").write(ans_letter)
-        img = t["image"][i].as_py()
-        if isinstance(img, dict) and img.get("bytes"):
-            with open(f"{d}/image.png", "wb") as f:
-                f.write(img["bytes"])
-        task_idx += 1
-    os.remove("/tmp/data.parquet")
-print(f"Extracted {task_idx} tasks")
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for shard in range(2):
+        url = f"https://huggingface.co/api/datasets/lmms-lab/ai2d/parquet/default/test/{shard}.parquet"
+        urllib.request.urlretrieve(url, "/tmp/data.parquet")
+        t = pq.read_table("/tmp/data.parquet")
+        for i in range(len(t)):
+            opts = t["options"][i].as_py() or []
+            lines = [f"{LETTERS[k]}. {opt}" for k, opt in enumerate(opts)]
+            try:
+                ans_letter = LETTERS[int(str(t["answer"][i]))]
+            except Exception:
+                ans_letter = str(t["answer"][i])
+            row = {
+                'id': str(count),
+                'problem': str(t["question"][i]),
+                'options': "\n".join(lines),
+                'answer': ans_letter,
+            }
+            img = t["image"][i].as_py()
+            if isinstance(img, dict) and img.get("bytes"):
+                row['image_b64'] = base64.b64encode(img["bytes"]).decode('ascii')
+            out.write(json.dumps(row) + '\n')
+            count += 1
+        os.remove("/tmp/data.parquet")
+print(f"Extracted {count} tasks")
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=ai2d
@@ -56,10 +62,24 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
+if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/image_b64.txt ]; then
+  python3 - <<'PY'
+import base64, os
+tid = os.environ['DOCK_TASK_ID']
+with open(f'/tasks/{tid}/image_b64.txt') as f:
+    data = f.read()
+with open(f'/tasks/{tid}/image.png', 'wb') as f:
+    f.write(base64.b64decode(data))
+PY
+  rm -f /tasks/$DOCK_TASK_ID/image_b64.txt
+  chmod 600 /tasks/$DOCK_TASK_ID/image.png
+fi
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   if [ -f /tasks/$DOCK_TASK_ID/image.png ]; then
     cp /tasks/$DOCK_TASK_ID/image.png /app/image.png

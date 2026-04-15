@@ -15,15 +15,20 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/lmsys/mt_bench_human_judgments"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2306.05685"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
+# Single-JSONL task layout. One line per task. Agent never sees this file
+# (root-only). Runtime entrypoint materializes just the requested task's
+# fields into /tasks/$DOCK_TASK_ID/.
+#
 # Extract the 80 unique MT-Bench questions from the human judgments parquet.
 # Each question has 2 turns; we expose each (question_id, turn) as a task,
 # giving 160 single-turn tasks. For turn 2, we prepend turn 1 context.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
+import urllib.request, pyarrow.parquet as pq, json, os
 
 url = ('https://huggingface.co/datasets/lmsys/mt_bench_human_judgments/resolve/'
        'refs%2Fconvert%2Fparquet/default/human/0.parquet')
@@ -61,36 +66,35 @@ CATEGORIES = {
     156:'humanities',157:'humanities',158:'humanities',159:'humanities',160:'humanities',
 }
 
+os.makedirs('/tasks', exist_ok=True)
 idx = 0
-for qid in sorted(questions.keys()):
-    turns = questions[qid]
-    category = CATEGORIES.get(qid, 'general')
-    for turn_idx, _ in enumerate(turns[:2]):
-        d = f'/tasks/{idx}'
-        os.makedirs(d, exist_ok=True)
-        with open(f'{d}/id.txt', 'w') as f:
-            f.write(f'{qid}_turn{turn_idx+1}')
-        with open(f'{d}/category.txt', 'w') as f:
-            f.write(category)
-        # For turn 2, include a note that this is a follow-up
-        if turn_idx == 0:
-            prompt = turns[0]
-        else:
-            prompt = (
-                f'This is the second turn of a conversation.\n\n'
-                f'[User turn 1]: {turns[0]}\n\n'
-                f'[User turn 2]: {turns[1]}\n\n'
-                f'Please respond to the second user turn. You should act as if '
-                f'you already answered turn 1 (you may reference your own turn 1 '
-                f'response conceptually, but only your turn 2 reply is being evaluated).'
-            )
-        with open(f'{d}/problem.txt', 'w') as f:
-            f.write(prompt)
-        idx += 1
+with open('/tasks/all.jsonl', 'w') as out:
+    for qid in sorted(questions.keys()):
+        turns = questions[qid]
+        category = CATEGORIES.get(qid, 'general')
+        for turn_idx, _ in enumerate(turns[:2]):
+            if turn_idx == 0:
+                prompt = turns[0]
+            else:
+                prompt = (
+                    f'This is the second turn of a conversation.\n\n'
+                    f'[User turn 1]: {turns[0]}\n\n'
+                    f'[User turn 2]: {turns[1]}\n\n'
+                    f'Please respond to the second user turn. You should act as if '
+                    f'you already answered turn 1 (you may reference your own turn 1 '
+                    f'response conceptually, but only your turn 2 reply is being evaluated).'
+                )
+            row = {
+                'id': f'{qid}_turn{turn_idx+1}',
+                'category': category,
+                'problem': prompt,
+            }
+            out.write(json.dumps(row) + '\n')
+            idx += 1
 
 print(f'Generated {idx} MT-Bench tasks from {len(questions)} questions')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=mt-bench
@@ -171,10 +175,12 @@ GRADE
 RUN chmod -R 700 /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi

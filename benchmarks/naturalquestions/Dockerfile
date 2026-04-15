@@ -18,30 +18,43 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="5dd9790a83002ad084ddeb7c420dc716852c6f28"
 LABEL dock.benchmark.url="https://ai.google.com/research/NaturalQuestions"
 LABEL dock.benchmark.paper="https://aclanthology.org/Q19-1026/"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="5dd9790a83002ad084ddeb7c420dc716852c6f28"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow==18.1.0
+
+# Single-JSONL task layout. One line per task. Agent never sees this file
+# (root-only). Runtime entrypoint materializes just the requested task's
+# fields into /tasks/$DOCK_TASK_ID/ (and converts aliases to JSON).
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
+import urllib.request, pyarrow.parquet as pq, json, os
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/google-research-datasets/nq_open/resolve/5dd9790a83002ad084ddeb7c420dc716852c6f28/nq_open/validation-00000-of-00001.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(i))
-    open(f'/tasks/{i}/problem.txt', 'w').write(str(t['question'][i]))
-    answers = list(t['answer'][i].as_py() or [])
-    open(f'/tasks/{i}/answer.txt', 'w').write(answers[0] if answers else '')
-    open(f'/tasks/{i}/aliases.json', 'w').write(json.dumps(answers))
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        answers = list(t['answer'][i].as_py() or [])
+        row = {
+            'id': str(i),
+            'problem': str(t['question'][i]),
+            'answer': answers[0] if answers else '',
+            'aliases': json.dumps(answers),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=naturalquestions
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
@@ -85,6 +98,11 @@ PY
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
+if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/aliases.txt ]; then
+  mv /tasks/$DOCK_TASK_ID/aliases.txt /tasks/$DOCK_TASK_ID/aliases.json
+  chmod 600 /tasks/$DOCK_TASK_ID/aliases.json
+fi
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this open-domain question. Print only the answer, nothing else.
 

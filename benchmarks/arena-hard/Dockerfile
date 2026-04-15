@@ -15,6 +15,7 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="196f6b826783b3da7310e361a805fa36f0be83f3"
 LABEL dock.benchmark.url="https://github.com/lmarena/arena-hard-auto"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.11939"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="196f6b826783b3da7310e361a805fa36f0be83f3"
 
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
@@ -40,7 +41,6 @@ with open('/tmp/ah/data/arena-hard-v0.1/model_answer/gpt-4-0314.jsonl') as f:
     for line in f:
         row = json.loads(line)
         uid = row['uid']
-        # Answer is in messages[1].content.answer
         try:
             baseline_text = row['messages'][1]['content']['answer']
         except Exception:
@@ -48,32 +48,27 @@ with open('/tmp/ah/data/arena-hard-v0.1/model_answer/gpt-4-0314.jsonl') as f:
         baselines[uid] = baseline_text
 
 ordered_uids = [uid for uid in questions if uid in baselines]
-for idx, uid in enumerate(ordered_uids):
-    q = questions[uid]
-    d = f'/tasks/{idx}'
-    os.makedirs(d, exist_ok=True)
-    with open(f'{d}/id.txt', 'w') as f:
-        f.write(uid)
-    with open(f'{d}/cluster.txt', 'w') as f:
-        f.write(q.get('cluster', ''))
-    with open(f'{d}/problem.txt', 'w') as f:
-        f.write(q['prompt'])
-    with open(f'{d}/baseline.txt', 'w') as f:
-        f.write(baselines[uid])
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for uid in ordered_uids:
+        q = questions[uid]
+        row = {
+            'id': uid,
+            'cluster': q.get('cluster', ''),
+            'problem': q['prompt'],
+            'baseline': baselines[uid],
+        }
+        out.write(json.dumps(row) + '\n')
 
 print(f'Generated {len(ordered_uids)} Arena-Hard tasks')
 PYEOF
 RUN rm -rf /tmp/ah
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=arena-hard
 
 # Custom test: LLM-as-judge pairwise comparison (agent vs baseline).
-# We run two judgments with swapped positions (A=agent,B=baseline; then B=agent,A=baseline)
-# and average the scores per the Arena-Hard protocol.
-# Mapping: agent wins=1.0, agent much_better=1.0, agent slightly_better=0.75,
-#          tie=0.5, baseline slightly_better=0.25, baseline much_better=0.0
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
@@ -151,25 +146,21 @@ def call_judge(user_content):
     return ''
 
 VERDICT_RE = re.compile(r'\[\[(A>>B|A>B|A=B|B>A|B>>A)\]\]')
-# Score when the agent is "A" (agent vs baseline)
 AGENT_A_MAP = {'A>>B': 1.0, 'A>B': 0.75, 'A=B': 0.5, 'B>A': 0.25, 'B>>A': 0.0}
-# Score when the agent is "B"
 AGENT_B_MAP = {'A>>B': 0.0, 'A>B': 0.25, 'A=B': 0.5, 'B>A': 0.75, 'B>>A': 1.0}
 
 scores = []
-# Judgment 1: agent=A, baseline=B
 content1 = call_judge(build_user(agent, baseline))
 m1 = VERDICT_RE.search(content1)
 if m1:
     scores.append(AGENT_A_MAP[m1.group(1)])
-# Judgment 2: baseline=A, agent=B
 content2 = call_judge(build_user(baseline, agent))
 m2 = VERDICT_RE.search(content2)
 if m2:
     scores.append(AGENT_B_MAP[m2.group(1)])
 
 if not scores:
-    print('0.5')  # unable to parse: default to tie
+    print('0.5')
 else:
     print(f'{sum(scores)/len(scores):.4f}')
 GRADE
@@ -177,10 +168,12 @@ GRADE
 RUN chmod -R 700 /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi

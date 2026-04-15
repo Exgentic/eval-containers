@@ -22,10 +22,11 @@ LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="true"
 LABEL dock.benchmark.url="https://github.com/openai/mle-bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2410.07095"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="0.1.0"
 
 ENV DOCK_BENCHMARK=mle-bench
 
-RUN apt-get update && apt-get install -y curl jq git && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y curl jq git python3 && rm -rf /var/lib/apt/lists/*
 
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
@@ -33,12 +34,24 @@ ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 # Task description + grader come from the upstream mle-bench package. The
 # per-task base image provides /private/ (grader + answers, root-only) and
 # /home/data/ (read-only data the agent can see).
-# FUTURE: once upstream pins a version, copy the grader deps to /tests/deps.
-RUN mkdir -p /tasks/0 /tests && \
-    echo "${DOCK_TASK_ID}" > /tasks/0/id.txt && \
-    (cp /private/description.md /tasks/0/problem.txt 2>/dev/null || \
-     cp /home/data/description.md /tasks/0/problem.txt 2>/dev/null || \
-     echo "TODO: MLE-bench task description for ${DOCK_TASK_ID}" > /tasks/0/problem.txt)
+# Write the description to a single-JSONL task (one row, since this is a
+# per-task image and DOCK_TASK_ID is fixed at build time).
+RUN mkdir -p /tasks && python3 <<PYEOF
+import json, os
+tid = os.environ.get('DOCK_TASK_ID', '')
+desc = None
+for p in ('/private/description.md', '/home/data/description.md'):
+    if os.path.exists(p):
+        with open(p) as f:
+            desc = f.read()
+        break
+if desc is None:
+    desc = f"TODO: MLE-bench task description for {tid}"
+row = {'id': tid, 'problem': desc}
+with open('/tasks/all.jsonl', 'w') as out:
+    out.write(json.dumps(row) + '\n')
+PYEOF
+RUN chmod 600 /tasks/all.jsonl
 
 # Grader: uses mlebench.grade to score submission.csv against the held-out answers.
 RUN pip install --no-cache-dir --target /tests/deps mlebench==0.1.0
@@ -84,10 +97,12 @@ GRADE
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 # Agent workspace
 mkdir -p /home/submission
 chown -R agent:agent /home/submission /home/data 2>/dev/null || true
@@ -95,7 +110,7 @@ chown -R agent:agent /home/submission /home/data 2>/dev/null || true
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are an ML engineer. The competition data is mounted at /home/data (read-only). Train a model and write your predictions to /home/submission/submission.csv. You may install packages and use the network.
 
-$(cat /tasks/0/problem.txt)"
+$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

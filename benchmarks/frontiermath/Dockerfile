@@ -16,6 +16,7 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://epochai.org/frontiermath"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2411.04872"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow==18.1.0 huggingface_hub==0.26.2
@@ -33,11 +34,9 @@ try:
         token=os.environ.get('HF_TOKEN') or None,
     )
 except Exception as e:
-    # FUTURE: dataset is gated — placeholder task written when unavailable
     os.makedirs('/tmp/fm', exist_ok=True)
     print(f'Could not fetch FrontierMath ({e}); writing placeholder task')
 
-# Try parquet first, fall back to JSONL, fall back to placeholder
 import glob
 rows = []
 for pq_path in glob.glob('/tmp/fm/**/*.parquet', recursive=True):
@@ -67,13 +66,12 @@ if not rows:
     )
 
 os.makedirs('/tasks', exist_ok=True)
-for i, r in enumerate(rows):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(r['id'])
-    open(f'/tasks/{i}/problem.txt', 'w').write(r['problem'])
-    open(f'/tasks/{i}/answer.txt', 'w').write(r['answer'])
+with open('/tasks/all.jsonl', 'w') as out:
+    for r in rows:
+        out.write(json.dumps(r) + '\n')
+print(f'Wrote {len(rows)} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=frontiermath
@@ -82,10 +80,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this research-level mathematics problem. Print only the final answer on the last line.
 

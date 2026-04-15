@@ -16,6 +16,7 @@ LABEL dock.benchmark.url="https://github.com/ShishirPatil/gorilla"
 LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/bfcl"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bfcl"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.06840"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
@@ -28,34 +29,33 @@ RUN for cat in simple multiple parallel; do \
         -o /tmp/bfcl/answers/${cat}.json; \
     done
 
-# Extract to flat files
+# Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
 RUN python3 <<'PYEOF'
 import json, os
+os.makedirs('/tasks', exist_ok=True)
 idx = 0
-for cat in ['simple', 'multiple', 'parallel']:
-    tasks = [json.loads(l) for l in open(f'/tmp/bfcl/tasks/{cat}.json')]
-    answers = [json.loads(l) for l in open(f'/tmp/bfcl/answers/{cat}.json')]
-    answer_map = {a['id']: a for a in answers}
-    for t in tasks:
-        os.makedirs(f'/tasks/{idx}', exist_ok=True)
-        open(f'/tasks/{idx}/id.txt','w').write(t['id'])
-        # Build problem: function schemas + conversation
-        funcs = json.dumps(t.get('function', []), indent=2)
-        # question is [[{role, content}, ...]] — flatten
-        q = t.get('question', [[]])
-        msgs_list = q[0] if q and isinstance(q[0], list) else q
-        msgs = '\n'.join(f"{m['role']}: {m['content']}" for m in msgs_list if isinstance(m, dict))
-        open(f'/tasks/{idx}/problem.txt','w').write(
-            f"Given these function definitions:\n{funcs}\n\n{msgs}")
-        # Ground truth answer
-        ans = answer_map.get(t['id'], {})
-        open(f'/tasks/{idx}/answer.txt','w').write(
-            json.dumps(ans.get('ground_truth', [])))
-        idx += 1
+with open('/tasks/all.jsonl', 'w') as out:
+    for cat in ['simple', 'multiple', 'parallel']:
+        tasks = [json.loads(l) for l in open(f'/tmp/bfcl/tasks/{cat}.json')]
+        answers = [json.loads(l) for l in open(f'/tmp/bfcl/answers/{cat}.json')]
+        answer_map = {a['id']: a for a in answers}
+        for t in tasks:
+            funcs = json.dumps(t.get('function', []), indent=2)
+            q = t.get('question', [[]])
+            msgs_list = q[0] if q and isinstance(q[0], list) else q
+            msgs = '\n'.join(f"{m['role']}: {m['content']}" for m in msgs_list if isinstance(m, dict))
+            ans = answer_map.get(t['id'], {})
+            row = {
+                'id': t['id'],
+                'problem': f"Given these function definitions:\n{funcs}\n\n{msgs}",
+                'answer': json.dumps(ans.get('ground_truth', [])),
+            }
+            out.write(json.dumps(row) + '\n')
+            idx += 1
 print(f'Extracted {idx} tasks')
 PYEOF
 RUN rm -rf /tmp/bfcl
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=bfcl
@@ -65,10 +65,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Call the correct function(s) based on the conversation. Print ONLY the function call(s) as JSON, nothing else.
 

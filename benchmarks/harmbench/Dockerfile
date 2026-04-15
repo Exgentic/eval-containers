@@ -14,6 +14,7 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="8e1604d1171fe8a48d8febecd22f600e462bdcdd"
 LABEL dock.benchmark.url="https://github.com/centerforaisafety/HarmBench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2402.04249"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="8e1604d1171fe8a48d8febecd22f600e462bdcdd"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
@@ -21,21 +22,28 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN curl -sfL -o /tmp/harmbench.csv \
     'https://raw.githubusercontent.com/centerforaisafety/HarmBench/8e1604d1171fe8a48d8febecd22f600e462bdcdd/data/behavior_datasets/harmbench_behaviors_text_all.csv'
 
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
-import csv, os
+import csv, os, json
+os.makedirs('/tasks', exist_ok=True)
 with open('/tmp/harmbench.csv') as f:
     rows = list(csv.DictReader(f))
 # Only standard behaviors (exclude copyright/multimodal)
 rows = [r for r in rows if r.get('FunctionalCategory', '').strip() == 'standard']
-for i, r in enumerate(rows):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(r['BehaviorID'])
-    open(f'/tasks/{i}/problem.txt', 'w').write(r['Behavior'])
-    open(f'/tasks/{i}/category.txt', 'w').write(r.get('SemanticCategory', ''))
-print(f'Extracted {len(rows)} tasks')
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for r in rows:
+        row = {
+            'id': r['BehaviorID'],
+            'problem': r['Behavior'],
+            'category': r.get('SemanticCategory', ''),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Extracted {count} tasks')
 PYEOF
 RUN rm -f /tmp/harmbench.csv
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=harmbench
@@ -130,10 +138,12 @@ RUN chmod +x /tests/judge.py
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi

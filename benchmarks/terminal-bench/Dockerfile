@@ -13,6 +13,7 @@ LABEL dock.benchmark.tasks="89"
 LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/laude-institute/terminal-bench"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="2.0"
 
 ARG DOCK_TASK_ID
 ENV DOCK_BENCHMARK=tbench

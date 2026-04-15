@@ -16,50 +16,59 @@ LABEL dock.benchmark.data_revision="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
 LABEL dock.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
 LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2403.07974"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
-# Fetch and extract tasks from JSONL files (release_v5 = test through test5)
+# Single-JSONL task layout (see benchmarks/RULES.md #22). Private test cases
+# are stored as a JSON array under the tests_json field; entrypoint decodes
+# them into /tasks/$DOCK_TASK_ID/tests/{k}.in and .out after materialization.
 RUN python3 <<'PYEOF'
 import urllib.request, json, os, base64, zlib, pickle
 
 revision = "0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
 base = f"https://huggingface.co/datasets/livecodebench/code_generation_lite/resolve/{revision}"
-# release_v5 includes test.jsonl through test5.jsonl
 files = ["test.jsonl", "test2.jsonl", "test3.jsonl", "test4.jsonl", "test5.jsonl"]
 rows = []
 for f in files:
     urllib.request.urlretrieve(f"{base}/{f}", f"/tmp/{f}")
     with open(f"/tmp/{f}") as fh:
         rows.extend(json.loads(line) for line in fh if line.strip())
-for i, row in enumerate(rows):
-    d = f"/tasks/{i}"
-    os.makedirs(d, exist_ok=True)
-    os.makedirs(f"{d}/tests", exist_ok=True)
-    open(f"{d}/id.txt", "w").write(row["question_id"])
-    open(f"{d}/problem.txt", "w").write(row["question_content"])
-    if row.get("starter_code"):
-        open(f"{d}/starter_code.txt", "w").write(row["starter_code"])
-    # Parse metadata for fn_name
-    meta = json.loads(row["metadata"]) if row.get("metadata") and row["metadata"] != "{}" else {}
-    if meta.get("func_name"):
-        open(f"{d}/fn_name.txt", "w").write(meta["func_name"])
-    # Decode private test cases: base64 -> zlib -> pickle -> JSON string
-    ptc_raw = row.get("private_test_cases", "")
-    tc = []
-    if ptc_raw:
-        decoded = pickle.loads(zlib.decompress(base64.b64decode(ptc_raw)))
-        tc = json.loads(decoded) if isinstance(decoded, str) else decoded
-    for k, t in enumerate(tc):
-        inp = t.get("input", "")
-        out = t.get("output", "")
-        open(f"{d}/tests/{k}.in", "w").write(str(inp) if not isinstance(inp, str) else inp)
-        open(f"{d}/tests/{k}.out", "w").write(str(out) if not isinstance(out, str) else out)
-    open(f"{d}/num_tests.txt", "w").write(str(len(tc)))
-print(f"Extracted {len(rows)} tasks")
+
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for row_in in rows:
+        meta = json.loads(row_in["metadata"]) if row_in.get("metadata") and row_in["metadata"] != "{}" else {}
+        ptc_raw = row_in.get("private_test_cases", "")
+        tc = []
+        if ptc_raw:
+            decoded = pickle.loads(zlib.decompress(base64.b64decode(ptc_raw)))
+            tc = json.loads(decoded) if isinstance(decoded, str) else decoded
+        tests = []
+        for t in tc:
+            inp = t.get("input", "")
+            out_v = t.get("output", "")
+            tests.append({
+                'input': inp if isinstance(inp, str) else str(inp),
+                'output': out_v if isinstance(out_v, str) else str(out_v),
+            })
+        row = {
+            'id': row_in["question_id"],
+            'problem': row_in["question_content"],
+            'num_tests': str(len(tc)),
+            'tests_json': json.dumps(tests),
+        }
+        if row_in.get("starter_code"):
+            row['starter_code'] = row_in["starter_code"]
+        if meta.get("func_name"):
+            row['fn_name'] = meta["func_name"]
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f"Wrote {count} tasks")
 PYEOF
 RUN rm -f /tmp/*.jsonl
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=livecodebench
@@ -120,7 +129,6 @@ print(json.dumps(_r))
     actual=$(timeout 30 $RUN_CMD < "$infile" 2>/dev/null)
   fi
 
-  # Compare: strip whitespace for both
   actual_clean=$(echo "$actual" | tr -d '[:space:]')
   expected_clean=$(echo "$expected" | tr -d '[:space:]')
   [ "$actual_clean" = "$expected_clean" ] && PASSED=$((PASSED + 1))
@@ -135,10 +143,26 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
+if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/tests_json.txt ]; then
+  python3 - <<'PY'
+import json, os
+tid = os.environ['DOCK_TASK_ID']
+d = f'/tasks/{tid}'
+tests = json.load(open(f'{d}/tests_json.txt'))
+os.makedirs(f'{d}/tests', exist_ok=True)
+for k, t in enumerate(tests):
+    open(f'{d}/tests/{k}.in', 'w').write(t['input'])
+    open(f'{d}/tests/{k}.out', 'w').write(t['output'])
+PY
+  rm -f /tasks/$DOCK_TASK_ID/tests_json.txt
+  chmod -R 600 /tasks/$DOCK_TASK_ID/tests
+fi
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   STARTER=""
   [ -f "/tasks/$DOCK_TASK_ID/starter_code.txt" ] && STARTER="

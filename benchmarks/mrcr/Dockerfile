@@ -16,15 +16,17 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/mrcr"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.14993"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch and extract tasks from 6 parquet shards.
-# Pre-render prompt.json into problem.txt (flattened conversation text)
-# so the entrypoint stays simple.
+# Single-JSONL task layout. One line per task. Agent never sees this file
+# (root-only). Runtime entrypoint materializes just the requested task's
+# fields into /tasks/$DOCK_TASK_ID/. Pre-render prompt.json into problem.txt
+# (flattened conversation text) so the entrypoint stays simple.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, pyarrow as pa, os, json
+import urllib.request, pyarrow.parquet as pq, pyarrow as pa, json, os
 
 tables = []
 for shard in range(6):
@@ -38,34 +40,36 @@ for shard in range(6):
     os.remove(path)
 
 t = pa.concat_tables(tables)
-for i in range(len(t)):
-    d = f'/tasks/{i}'
-    os.makedirs(d, exist_ok=True)
-    open(f'{d}/id.txt', 'w').write(str(i))
-
-    # Store raw answer and prefix for scoring
-    answer = t['answer'][i].as_py()
-    prefix = t['random_string_to_prepend'][i].as_py()
-    open(f'{d}/answer.txt', 'w').write(answer)
-    open(f'{d}/prefix.txt', 'w').write(prefix)
-
-    # Flatten JSON messages into readable conversation text
-    messages = json.loads(t['prompt'][i].as_py())
-    lines = []
-    for m in messages:
-        role = m['role'].upper()
-        lines.append(f'{role}: {m["content"]}')
-    lines.append('')
-    lines.append(
-        'IMPORTANT: You MUST start your response with the following '
-        'exact string (no extra whitespace or characters before it):'
-    )
-    lines.append(prefix)
-    lines.append('')
-    lines.append('Then provide the requested content immediately after that prefix.')
-    open(f'{d}/problem.txt', 'w').write('\n'.join(lines))
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        answer = t['answer'][i].as_py()
+        prefix = t['random_string_to_prepend'][i].as_py()
+        messages = json.loads(t['prompt'][i].as_py())
+        lines = []
+        for m in messages:
+            role = m['role'].upper()
+            lines.append(f'{role}: {m["content"]}')
+        lines.append('')
+        lines.append(
+            'IMPORTANT: You MUST start your response with the following '
+            'exact string (no extra whitespace or characters before it):'
+        )
+        lines.append(prefix)
+        lines.append('')
+        lines.append('Then provide the requested content immediately after that prefix.')
+        row = {
+            'id': str(i),
+            'problem': '\n'.join(lines),
+            'answer': answer,
+            'prefix': prefix,
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=mrcr
@@ -101,10 +105,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   cp /tasks/$DOCK_TASK_ID/problem.txt /app/task.txt
   chmod 644 /app/task.txt

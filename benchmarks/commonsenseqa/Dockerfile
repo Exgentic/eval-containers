@@ -13,27 +13,33 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="94630fe30dad47192a8546eb75f094926d47e155"
 LABEL dock.benchmark.url="https://www.tau-nlp.sites.tau.ac.il/commonsenseqa"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1811.00937"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="94630fe30dad47192a8546eb75f094926d47e155"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/tau/commonsense_qa/resolve/94630fe30dad47192a8546eb75f094926d47e155/data/validation-00000-of-00001.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['id'][i]))
-    choices = t['choices'][i].as_py()
-    q = t['question'][i].as_py()
-    lines = [q, ""]
-    for label, text in zip(choices['label'], choices['text']):
-        lines.append(f"{label}. {text}")
-    open(f'/tasks/{i}/problem.txt', 'w').write("\n".join(lines))
-    open(f'/tasks/{i}/answer.txt', 'w').write(str(t['answerKey'][i]))
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        choices = t['choices'][i].as_py()
+        q = t['question'][i].as_py()
+        lines = [q, ""]
+        for label, text in zip(choices['label'], choices['text']):
+            lines.append(f"{label}. {text}")
+        row = {
+            'id': str(t['id'][i]),
+            'problem': "\n".join(lines),
+            'answer': str(t['answerKey'][i]),
+        }
+        out.write(json.dumps(row) + '\n')
+print(f'Wrote {len(t)} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=commonsenseqa
@@ -42,10 +48,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this commonsense multiple choice question. Print only the letter of the correct answer (A, B, C, D, or E), nothing else.
 

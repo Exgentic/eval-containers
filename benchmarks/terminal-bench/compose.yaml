@@ -16,7 +16,7 @@ services:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/tbench-${DOCK_TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_VERSION:-latest}
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/tbench-${DOCK_TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
     env_file: ../../.env
     environment:
       - DOCK_BENCHMARK=tbench

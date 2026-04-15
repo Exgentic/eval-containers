@@ -3,6 +3,9 @@ FROM quay.io/dock-eval/core/litellm:latest
 LABEL dock.type="model"
 LABEL dock.model.name="gpt-4.1-mini"
 LABEL dock.model.provider="azure"
+LABEL dock.model.litellm_version="main-v1.52.0-stable"
+
+ENV DOCK_LITELLM_VERSION_DEFAULT="main-v1.52.0-stable"
 
 COPY config.yaml /app/config.yaml
 CMD ["--port", "4000", "--config", "/app/config.yaml"]

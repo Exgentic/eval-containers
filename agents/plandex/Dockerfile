@@ -23,6 +23,7 @@ LABEL dock.agent.description="Plandex terminal AI coding agent (self-hosted)"
 LABEL dock.agent.runtime="go"
 LABEL dock.agent.url="https://github.com/plandex-ai/plandex"
 LABEL dock.agent.version="2.2.1"
+ENV DOCK_AGENT_VERSION_DEFAULT="2.2.1"
 ENV DOCK_AGENT=plandex
 
 ENV PLANDEX_CLI_VERSION=2.2.1

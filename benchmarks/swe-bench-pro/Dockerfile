@@ -20,6 +20,7 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/SWE-bench/SWE-bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2509.16941"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/swe_bench"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="3.0.18"
 
 ENV DOCK_BENCHMARK=swe-bench-pro
 

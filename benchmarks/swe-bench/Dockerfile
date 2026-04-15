@@ -18,6 +18,7 @@ LABEL dock.benchmark.url="https://github.com/princeton-nlp/SWE-bench"
 LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/swebench-verified"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/swe_bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2310.06770"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="c104f840cc67f8c6eec6f759ebc8b2693d585d4a"
 
 ENV DOCK_BENCHMARK=swe-bench
 

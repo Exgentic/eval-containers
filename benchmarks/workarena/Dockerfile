@@ -17,12 +17,15 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/ServiceNow/WorkArena"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2403.07718"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="v0.5.3"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Pin the upstream tag. We only need the task-id enumeration (not the runtime), so
 # parse the registered task-id constants directly from the repo to avoid the heavy
 # playwright/browsergym dependency chain at build time.
+# Write every task to a single JSONL file (root-only). Runtime entrypoint
+# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, os, json, re
 VERSION = 'v0.5.3'
@@ -65,23 +68,26 @@ if isinstance(raw, dict):
 if not raw:
     raise SystemExit(
         'workarena: upstream task list not reachable from any source. '
-        'Refusing to ship an empty /tasks directory — the resulting '
+        'Refusing to ship an empty /tasks directory - the resulting '
         'image would grade every run against nothing.'
     )
 
 os.makedirs('/tasks', exist_ok=True)
-for i, tid in enumerate(raw):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt','w').write(str(tid))
-    # WorkArena task descriptions are generated at runtime from the live instance; we
-    # pass the task-id as the instruction so the agent can look up the contract.
-    open(f'/tasks/{i}/problem.txt','w').write(
-        f"WorkArena task: {tid}\n\nInteract with the provided ServiceNow instance to "
-        f"complete this task. The task contract is defined by the browsergym-workarena "
-        f"class `{tid}`.")
-print(f'Extracted {len(raw)} tasks')
+with open('/tasks/all.jsonl', 'w') as out:
+    for tid in raw:
+        problem = (
+            f"WorkArena task: {tid}\n\nInteract with the provided ServiceNow instance to "
+            f"complete this task. The task contract is defined by the browsergym-workarena "
+            f"class `{tid}`."
+        )
+        row = {
+            'id': str(tid),
+            'problem': problem,
+        }
+        out.write(json.dumps(row) + '\n')
+print(f'Wrote {len(raw)} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=workarena
@@ -96,10 +102,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)
 

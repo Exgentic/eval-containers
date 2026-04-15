@@ -14,10 +14,13 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/dapumptu/usaco_benchmark"
 LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/usaco"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/usaco"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
-# Fetch tasks
+# Write every task to a single JSONL file (root-only). Runtime entrypoint
+# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/,
+# then explodes the per-case inputs/outputs dict into /tasks/$DOCK_TASK_ID/tests/.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
@@ -27,20 +30,23 @@ for part in range(3):
     urllib.request.urlretrieve(url, f'/tmp/data_{part}.parquet')
     tables.append(pq.read_table(f'/tmp/data_{part}.parquet'))
 t = pyarrow.concat_tables(tables)
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt','w').write(str(t['problem_id'][i]))
-    open(f'/tasks/{i}/problem.txt','w').write(str(t['description'][i]))
-    # Save test cases as numbered input/output files
-    inputs = t['input'][i].as_py()
-    outputs = t['output'][i].as_py()
-    os.makedirs(f'/tasks/{i}/tests', exist_ok=True)
-    for k in inputs:
-        open(f'/tasks/{i}/tests/{k}.in','w').write(str(inputs[k]))
-        open(f'/tasks/{i}/tests/{k}.out','w').write(str(outputs[k]))
-    open(f'/tasks/{i}/num_tests.txt','w').write(str(t['num_tests'][i]))
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        inputs = t['input'][i].as_py()
+        outputs = t['output'][i].as_py()
+        row = {
+            'id': str(t['problem_id'][i]),
+            'problem': str(t['description'][i]),
+            'num_tests': str(t['num_tests'][i]),
+            'tests': json.dumps({'inputs': inputs, 'outputs': outputs}),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=usaco
@@ -83,10 +89,29 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
+# Explode the packed tests JSON back into per-case .in/.out files under tests/.
+if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/tests.txt ]; then
+  python3 - <<'PY'
+import json, os
+tid = os.environ['DOCK_TASK_ID']
+with open(f'/tasks/{tid}/tests.txt') as f:
+    data = json.loads(f.read())
+td = f'/tasks/{tid}/tests'
+os.makedirs(td, exist_ok=True)
+for k, v in data.get('inputs', {}).items():
+    open(f'{td}/{k}.in', 'w').write(str(v))
+for k, v in data.get('outputs', {}).items():
+    open(f'{td}/{k}.out', 'w').write(str(v))
+PY
+  rm -f /tasks/$DOCK_TASK_ID/tests.txt
+  chmod -R 600 /tasks/$DOCK_TASK_ID/tests
+fi
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this competitive programming problem. Print ONLY the complete source code (Python or C++), nothing else.
 

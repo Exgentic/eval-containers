@@ -14,6 +14,7 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="7b90d285651b68d39a94f3d3bd3672f84192c989"
 LABEL dock.benchmark.url="https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="7b90d285651b68d39a94f3d3bd3672f84192c989"
 
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
@@ -25,6 +26,7 @@ RUN git clone --depth 1 https://github.com/gkamradt/LLMTest_NeedleInAHaystack.gi
 
 # Generate tasks: grid of context lengths x depth percents.
 # Context length here is measured in characters (approx 4 chars/token).
+# Single-JSONL task layout. One line per task.
 RUN python3 <<'PYEOF'
 import os, glob, json, random
 
@@ -44,47 +46,41 @@ NEEDLE = (
 QUESTION = 'What is the best thing to do in San Francisco?'
 ANSWER_SUBSTRING = 'sandwich'  # canonical NIAH answer fragment
 
-# Context lengths in approx tokens -> chars (x4)
 CTX_LENGTHS_TOKENS = [1000, 2000, 4000, 8000, 16000, 32000, 64000]
 DEPTH_PERCENTS = [0, 25, 50, 75, 100] + [10, 40, 60, 90]
 
-# Build task grid: for each ctx length, for each depth
+os.makedirs('/tasks', exist_ok=True)
 i = 0
 CHAR_PER_TOK = 4
-for ctx_tok in CTX_LENGTHS_TOKENS:
-    target_chars = ctx_tok * CHAR_PER_TOK
-    # Trim or repeat haystack to target size (minus needle length)
-    if len(haystack_full) >= target_chars:
-        base = haystack_full[:target_chars - len(NEEDLE) - 2]
-    else:
-        reps = (target_chars // len(haystack_full)) + 1
-        base = (haystack_full * reps)[:target_chars - len(NEEDLE) - 2]
-    for depth in DEPTH_PERCENTS:
-        if ctx_tok >= 32000 and depth not in (0, 50, 100):
-            continue  # keep very long context tasks to depths 0/50/100
-        insert_at = int(len(base) * depth / 100)
-        # Try to insert at a sentence boundary
-        period = base.rfind('. ', 0, insert_at)
-        if period > 0:
-            insert_at = period + 2
-        context = base[:insert_at] + NEEDLE + ' ' + base[insert_at:]
-
-        d = f'/tasks/{i}'
-        os.makedirs(d, exist_ok=True)
-        with open(f'{d}/id.txt', 'w') as f:
-            f.write(f'ctx{ctx_tok}_depth{depth}')
-        with open(f'{d}/context.txt', 'w') as f:
-            f.write(context)
-        with open(f'{d}/question.txt', 'w') as f:
-            f.write(QUESTION)
-        with open(f'{d}/answer.txt', 'w') as f:
-            f.write(ANSWER_SUBSTRING)
-        i += 1
+with open('/tasks/all.jsonl', 'w') as out:
+    for ctx_tok in CTX_LENGTHS_TOKENS:
+        target_chars = ctx_tok * CHAR_PER_TOK
+        if len(haystack_full) >= target_chars:
+            base = haystack_full[:target_chars - len(NEEDLE) - 2]
+        else:
+            reps = (target_chars // len(haystack_full)) + 1
+            base = (haystack_full * reps)[:target_chars - len(NEEDLE) - 2]
+        for depth in DEPTH_PERCENTS:
+            if ctx_tok >= 32000 and depth not in (0, 50, 100):
+                continue
+            insert_at = int(len(base) * depth / 100)
+            period = base.rfind('. ', 0, insert_at)
+            if period > 0:
+                insert_at = period + 2
+            context = base[:insert_at] + NEEDLE + ' ' + base[insert_at:]
+            row = {
+                'id': f'ctx{ctx_tok}_depth{depth}',
+                'context': context,
+                'question': QUESTION,
+                'answer': ANSWER_SUBSTRING,
+            }
+            out.write(json.dumps(row) + '\n')
+            i += 1
 
 print(f'Generated {i} NIAH tasks')
 PYEOF
 RUN rm -rf /tmp/niah
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=niah
@@ -108,10 +104,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   cp /tasks/$DOCK_TASK_ID/context.txt /app/context.txt
   cp /tasks/$DOCK_TASK_ID/question.txt /app/question.txt

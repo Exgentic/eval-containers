@@ -13,10 +13,11 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="21e74ddf8de1a21436da12e3e653065c5213e9d1"
 LABEL dock.benchmark.url="https://github.com/hendrycks/apps"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2105.09938"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="21e74ddf8de1a21436da12e3e653065c5213e9d1"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch and extract tasks (2 parquet shards)
+# Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
@@ -26,28 +27,30 @@ for part in (0, 1):
     urllib.request.urlretrieve(url, f'/tmp/data_{part}.parquet')
     tables.append(pq.read_table(f'/tmp/data_{part}.parquet'))
 t = pyarrow.concat_tables(tables)
-for i in range(len(t)):
-    d = f'/tasks/{i}'
-    os.makedirs(d, exist_ok=True)
-    open(f'{d}/id.txt', 'w').write(str(t['problem_id'][i]))
-    open(f'{d}/problem.txt', 'w').write(str(t['question'][i]))
-    open(f'{d}/difficulty.txt', 'w').write(str(t['difficulty'][i]))
-    starter = str(t['starter_code'][i]) if t['starter_code'][i] else ''
-    open(f'{d}/starter_code.txt', 'w').write(starter)
-    io_raw = str(t['input_output'][i]) if t['input_output'][i] else ''
-    open(f'{d}/input_output.json', 'w').write(io_raw)
-    # Derive fn_name (functional tests) if present
-    fn_name = ''
-    if io_raw:
-        try:
-            io_obj = json.loads(io_raw)
-            fn_name = io_obj.get('fn_name', '') or ''
-        except Exception:
-            pass
-    open(f'{d}/fn_name.txt', 'w').write(fn_name)
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        starter = str(t['starter_code'][i]) if t['starter_code'][i] else ''
+        io_raw = str(t['input_output'][i]) if t['input_output'][i] else ''
+        fn_name = ''
+        if io_raw:
+            try:
+                io_obj = json.loads(io_raw)
+                fn_name = io_obj.get('fn_name', '') or ''
+            except Exception:
+                pass
+        row = {
+            'id': str(t['problem_id'][i]),
+            'problem': str(t['question'][i]),
+            'difficulty': str(t['difficulty'][i]),
+            'starter_code': starter,
+            'input_output': io_raw,
+            'fn_name': fn_name,
+        }
+        out.write(json.dumps(row) + '\n')
 print(f'Extracted {len(t)} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=apps
@@ -60,14 +63,14 @@ mkdir -p /logs/verifier
 TASK_DIR="/tasks/$DOCK_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 
-if [ -z "$SOLUTION" ] || [ ! -s "$TASK_DIR/input_output.json" ]; then
+if [ -z "$SOLUTION" ] || [ ! -s "$TASK_DIR/input_output.txt" ]; then
   echo 0 > /logs/verifier/reward.txt
   exit 0
 fi
 
 TMPDIR=$(mktemp -d)
 printf '%s' "$SOLUTION" > $TMPDIR/sol.py
-cp "$TASK_DIR/input_output.json" $TMPDIR/io.json
+cp "$TASK_DIR/input_output.txt" $TMPDIR/io.json
 cp "$TASK_DIR/fn_name.txt" $TMPDIR/fn.txt
 export APPS_TMPDIR="$TMPDIR"
 
@@ -145,10 +148,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   STARTER=""
   if [ -s "/tasks/$DOCK_TASK_ID/starter_code.txt" ]; then

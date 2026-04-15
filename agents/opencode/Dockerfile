@@ -10,6 +10,7 @@ LABEL dock.agent.description="SST opencode open-source AI coding agent"
 LABEL dock.agent.runtime="node"
 LABEL dock.agent.url="https://github.com/sst/opencode"
 LABEL dock.agent.version="1.4.3"
+ENV DOCK_AGENT_VERSION_DEFAULT="1.4.3"
 ENV DOCK_AGENT=opencode
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

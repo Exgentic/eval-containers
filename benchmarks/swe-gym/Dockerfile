@@ -5,7 +5,7 @@
 # Each task has (repo, base_commit, problem_statement, patch, test_patch,
 # FAIL_TO_PASS, PASS_TO_PASS). Full grading requires checking out the repo at
 # base_commit, applying the test_patch, running the specified tests and parsing the
-# results — which is what the upstream SWE-Gym / SWE-bench harness does. This image
+# results - which is what the upstream SWE-Gym / SWE-bench harness does. This image
 # exposes the problem statement to the agent, captures the produced patch, and writes
 # -1 (externally graded).
 
@@ -20,33 +20,38 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
 LABEL dock.benchmark.url="https://github.com/SWE-Gym/SWE-Gym"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2412.21139"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 RUN pip install --no-cache-dir pyarrow==18.1.0
+
+# Write every task to a single JSONL file (root-only). Runtime entrypoint
+# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/api/datasets/SWE-Gym/SWE-Gym/parquet/default/train/0.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt','w').write(str(t['instance_id'][i]))
-    open(f'/tasks/{i}/problem.txt','w').write(str(t['problem_statement'][i]))
-    config = {
-        'instance_id':       str(t['instance_id'][i]),
-        'repo':              str(t['repo'][i]),
-        'base_commit':       str(t['base_commit'][i]),
-        'version':           str(t['version'][i]),
-        'FAIL_TO_PASS':      list(t['FAIL_TO_PASS'][i].as_py() or []),
-        'PASS_TO_PASS':      list(t['PASS_TO_PASS'][i].as_py() or []),
-        'test_patch':        str(t['test_patch'][i]),
-    }
-    json.dump(config, open(f'/tasks/{i}/config.json','w'))
-print(f'Extracted {len(t)} tasks')
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        row = {
+            'id': str(t['instance_id'][i]),
+            'problem': str(t['problem_statement'][i]),
+            'repo': str(t['repo'][i]),
+            'base_commit': str(t['base_commit'][i]),
+            'version': str(t['version'][i]),
+            'fail_to_pass': list(t['FAIL_TO_PASS'][i].as_py() or []),
+            'pass_to_pass': list(t['PASS_TO_PASS'][i].as_py() or []),
+            'test_patch': str(t['test_patch'][i]),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=swe-gym
@@ -64,14 +69,15 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  CONFIG=$(cat /tasks/$DOCK_TASK_ID/config.json)
-  REPO=$(python3 -c "import json; print(json.loads('''$CONFIG''')['repo'])")
-  COMMIT=$(python3 -c "import json; print(json.loads('''$CONFIG''')['base_commit'])")
+  REPO=$(cat /tasks/$DOCK_TASK_ID/repo.txt)
+  COMMIT=$(cat /tasks/$DOCK_TASK_ID/base_commit.txt)
   export TASK="Fix this GitHub issue in the Python repository $REPO at commit $COMMIT.
 Produce a unified diff patch that resolves the bug. Print the patch to stdout.
 Do NOT modify any test files.

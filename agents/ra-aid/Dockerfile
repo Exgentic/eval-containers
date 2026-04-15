@@ -9,6 +9,7 @@ LABEL dock.agent.description="RA.Aid — autonomous research-first coding agent"
 LABEL dock.agent.runtime="python"
 LABEL dock.agent.url="https://github.com/ai-christianson/RA.Aid"
 LABEL dock.agent.version="0.30.2"
+ENV DOCK_AGENT_VERSION_DEFAULT="0.30.2"
 ENV DOCK_AGENT=ra-aid
 
 RUN apt-get update && apt-get install -y \

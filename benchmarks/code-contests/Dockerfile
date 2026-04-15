@@ -13,40 +13,42 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="802411c3010cb00d1b05bad57ca77365a3c699d6"
 LABEL dock.benchmark.url="https://github.com/google-deepmind/code_contests"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2203.07814"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="802411c3010cb00d1b05bad57ca77365a3c699d6"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
-# Fetch and extract tasks
+# Single-JSONL task layout. Merged I/O tests are stored as a JSON array in the
+# "tests_json" field; the entrypoint expands them into /tasks/$DOCK_TASK_ID/tests/.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/deepmind/code_contests/resolve/refs%2Fconvert%2Fparquet/default/partial-test/0000.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    d = f'/tasks/{i}'
-    os.makedirs(d, exist_ok=True)
-    os.makedirs(f'{d}/tests', exist_ok=True)
-    open(f'{d}/id.txt', 'w').write(str(t['name'][i]))
-    open(f'{d}/problem.txt', 'w').write(str(t['description'][i]))
-    # Merge public + private + generated tests
-    k = 0
-    for group in ('public_tests', 'private_tests', 'generated_tests'):
-        col = t[group][i].as_py() or {}
-        ins = col.get('input') or []
-        outs = col.get('output') or []
-        for inp, out in zip(ins, outs):
-            open(f'{d}/tests/{k}.in', 'w').write(str(inp))
-            open(f'{d}/tests/{k}.out', 'w').write(str(out))
-            k += 1
-    open(f'{d}/num_tests.txt', 'w').write(str(k))
-    tl = t['time_limit'][i].as_py() if t['time_limit'][i] else None
-    secs = (tl or {}).get('seconds', 10) if isinstance(tl, dict) else 10
-    open(f'{d}/time_limit.txt', 'w').write(str(secs))
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        tests = []
+        for group in ('public_tests', 'private_tests', 'generated_tests'):
+            col = t[group][i].as_py() or {}
+            ins = col.get('input') or []
+            outs = col.get('output') or []
+            for inp, o in zip(ins, outs):
+                tests.append({'input': str(inp), 'output': str(o)})
+        tl = t['time_limit'][i].as_py() if t['time_limit'][i] else None
+        secs = (tl or {}).get('seconds', 10) if isinstance(tl, dict) else 10
+        row = {
+            'id': str(t['name'][i]),
+            'problem': str(t['description'][i]),
+            'num_tests': str(len(tests)),
+            'time_limit': str(secs),
+            'tests_json': json.dumps(tests),
+        }
+        out.write(json.dumps(row) + '\n')
 print(f'Extracted {len(t)} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=code-contests
@@ -99,10 +101,28 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
+if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/tests_json.txt ]; then
+  python3 - <<'PY'
+import json, os
+tid = os.environ['DOCK_TASK_ID']
+with open(f'/tasks/{tid}/tests_json.txt') as f:
+    tests = json.loads(f.read())
+os.makedirs(f'/tasks/{tid}/tests', exist_ok=True)
+for k, tc in enumerate(tests):
+    with open(f'/tasks/{tid}/tests/{k}.in', 'w') as fi:
+        fi.write(tc['input'])
+    with open(f'/tasks/{tid}/tests/{k}.out', 'w') as fo:
+        fo.write(tc['output'])
+PY
+  rm -f /tasks/$DOCK_TASK_ID/tests_json.txt
+  chmod -R 600 /tasks/$DOCK_TASK_ID/tests
+fi
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this competitive programming problem. Read input from stdin and write output to stdout. Print ONLY the complete source code (Python or C++), nothing else.
 

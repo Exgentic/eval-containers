@@ -16,10 +16,11 @@ LABEL dock.benchmark.data_revision="e32a2980e72fe6eb04ee04eb749458f570625663"
 LABEL dock.benchmark.url="https://github.com/siegelz/core-bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2409.11363"
 LABEL dock.benchmark.external_grading="true"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="e32a2980e72fe6eb04ee04eb749458f570625663"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch task metadata from upstream repository
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
 REV = "e32a2980e72fe6eb04ee04eb749458f570625663"
@@ -28,29 +29,33 @@ prompts_url = f"https://raw.githubusercontent.com/siegelz/core-bench/{REV}/bench
 tasks = json.loads(urllib.request.urlopen(data_url).read())
 prompts = json.loads(urllib.request.urlopen(prompts_url).read())
 os.makedirs('/tasks', exist_ok=True)
-# Cache templates
+# Cache prompt templates as plain files for the entrypoint to reference.
 open('/tasks/.prompt_easy.txt', 'w').write(prompts['codeocean_easy'])
 open('/tasks/.prompt_hard.txt', 'w').write(prompts['codeocean_hard'])
-for i, task in enumerate(tasks):
-    d = f'/tasks/{i}'
-    os.makedirs(d, exist_ok=True)
-    open(f'{d}/id.txt', 'w').write(str(task.get('capsule_id', i)))
-    open(f'{d}/title.txt', 'w').write(str(task.get('capsule_title', '')))
-    open(f'{d}/field.txt', 'w').write(str(task.get('field', '')))
-    open(f'{d}/language.txt', 'w').write(str(task.get('language', '')))
-    open(f'{d}/task_prompt.txt', 'w').write(str(task.get('task_prompt', '')))
-    open(f'{d}/capsule_doi.txt', 'w').write(str(task.get('capsule_doi', '')))
-    open(f'{d}/results.json', 'w').write(json.dumps(task.get('results', []), indent=2))
-    # Collect all result questions as json_fields
-    questions = []
-    for rdict in task.get('results', []):
-        for q in rdict.keys():
-            if q not in questions:
-                questions.append(q)
-    open(f'{d}/questions.json', 'w').write(json.dumps(questions, indent=2))
-print(f'Extracted {len(tasks)} tasks')
+
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i, task in enumerate(tasks):
+        questions = []
+        for rdict in task.get('results', []):
+            for q in rdict.keys():
+                if q not in questions:
+                    questions.append(q)
+        row = {
+            'id': str(task.get('capsule_id', i)),
+            'title': str(task.get('capsule_title', '')),
+            'field': str(task.get('field', '')),
+            'language': str(task.get('language', '')),
+            'task_prompt': str(task.get('task_prompt', '')),
+            'capsule_doi': str(task.get('capsule_doi', '')),
+            'results_json': json.dumps(task.get('results', [])),
+            'questions_json': json.dumps(questions),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Extracted {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl /tasks/.prompt_easy.txt /tasks/.prompt_hard.txt
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=core-bench
@@ -77,7 +82,7 @@ if [ -n "$REPORT" ] && [ -s "$REPORT" ]; then
   cp "$REPORT" /logs/verifier/agent_report.json 2>/dev/null || true
 fi
 
-cp "$TASK_DIR/results.json" /logs/verifier/expected_results.json 2>/dev/null || true
+cp "$TASK_DIR/results_json.txt" /logs/verifier/expected_results.json 2>/dev/null || true
 
 # CORE-Bench requires an external grader (capsule reproducibility cannot be
 # verified inside this image). Per RULES rule 19, record -1.
@@ -86,15 +91,17 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   TITLE=$(cat /tasks/$DOCK_TASK_ID/title.txt)
   FIELD=$(cat /tasks/$DOCK_TASK_ID/field.txt)
   PROMPT=$(cat /tasks/$DOCK_TASK_ID/task_prompt.txt)
-  QUESTIONS=$(cat /tasks/$DOCK_TASK_ID/questions.json)
+  QUESTIONS=$(cat /tasks/$DOCK_TASK_ID/questions_json.txt)
   export TASK="You are reproducing results from a published scientific code capsule.
 
 Title: $TITLE

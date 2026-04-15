@@ -17,39 +17,44 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="17ece8eb89862368edc0cc806acee6fca5163474"
 LABEL dock.benchmark.url="https://github.com/OSU-NLP-Group/Mind2Web"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2306.06070"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="17ece8eb89862368edc0cc806acee6fca5163474"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch the first parquet shard (task metadata; full HTML traces live in other shards).
-# The instruction text ("confirmed_task") + action_reprs gold trace is enough to grade
-# externally and to expose the task to the agent.
+# Single-JSONL task layout. One line per task. Agent never sees this file
+# (root-only). Runtime entrypoint materializes just the requested task's
+# fields into /tasks/$DOCK_TASK_ID/ and renames meta/gold_trace to .json.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
+import urllib.request, pyarrow.parquet as pq, json, os
 BASE = 'https://huggingface.co/api/datasets/osunlp/Mind2Web/parquet/default/train'
+os.makedirs('/tasks', exist_ok=True)
 idx = 0
-for shard in range(8):
-    url = f'{BASE}/{shard}.parquet'
-    local = f'/tmp/s{shard}.parquet'
-    urllib.request.urlretrieve(url, local)
-    t = pq.read_table(local, columns=['annotation_id','website','domain','subdomain','confirmed_task','action_reprs'])
-    for i in range(len(t)):
-        os.makedirs(f'/tasks/{idx}', exist_ok=True)
-        with open(f'/tasks/{idx}/id.txt','w') as f: f.write(str(t['annotation_id'][i]))
-        with open(f'/tasks/{idx}/problem.txt','w') as f: f.write(str(t['confirmed_task'][i]))
-        meta = {
-            'website':   str(t['website'][i]),
-            'domain':    str(t['domain'][i]),
-            'subdomain': str(t['subdomain'][i]),
-        }
-        json.dump(meta, open(f'/tasks/{idx}/meta.json','w'))
-        actions = [str(a) for a in t['action_reprs'][i].as_py()]
-        json.dump(actions, open(f'/tasks/{idx}/gold_trace.json','w'))
-        idx += 1
-    os.remove(local)
+with open('/tasks/all.jsonl', 'w') as out:
+    for shard in range(8):
+        url = f'{BASE}/{shard}.parquet'
+        local = f'/tmp/s{shard}.parquet'
+        urllib.request.urlretrieve(url, local)
+        t = pq.read_table(local, columns=['annotation_id','website','domain','subdomain','confirmed_task','action_reprs'])
+        for i in range(len(t)):
+            meta = {
+                'website':   str(t['website'][i]),
+                'domain':    str(t['domain'][i]),
+                'subdomain': str(t['subdomain'][i]),
+            }
+            actions = [str(a) for a in t['action_reprs'][i].as_py()]
+            row = {
+                'id': str(t['annotation_id'][i]),
+                'problem': str(t['confirmed_task'][i]),
+                'meta': json.dumps(meta),
+                'gold_trace': json.dumps(actions),
+            }
+            out.write(json.dumps(row) + '\n')
+            idx += 1
+        os.remove(local)
 print(f'Extracted {idx} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=mind2web
@@ -65,10 +70,17 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
+if [ -n "$DOCK_TASK_ID" ]; then
+  TDIR="/tasks/$DOCK_TASK_ID"
+  [ -f "$TDIR/meta.txt" ] && mv "$TDIR/meta.txt" "$TDIR/meta.json" && chmod 600 "$TDIR/meta.json"
+  [ -f "$TDIR/gold_trace.txt" ] && mv "$TDIR/gold_trace.txt" "$TDIR/gold_trace.json" && chmod 600 "$TDIR/gold_trace.json"
+fi
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   META=$(cat /tasks/$DOCK_TASK_ID/meta.json)
   export TASK="You are a generalist web agent. Produce a step-by-step action trace that

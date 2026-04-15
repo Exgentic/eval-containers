@@ -13,26 +13,32 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="95cda593fae71b60b5b19f82de3fcf3298c1239c"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/ucinlp/drop"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1903.00161"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="95cda593fae71b60b5b19f82de3fcf3298c1239c"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/ucinlp/drop/resolve/95cda593fae71b60b5b19f82de3fcf3298c1239c/data/validation-00000-of-00001.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['query_id'][i].as_py()))
-    passage = t['passage'][i].as_py()
-    question = t['question'][i].as_py()
-    spans = t['answers_spans'][i].as_py()['spans']
-    answer = spans[0] if spans else ''
-    open(f'/tasks/{i}/problem.txt', 'w').write(f"Passage:\n{passage}\n\nQuestion: {question}")
-    open(f'/tasks/{i}/answer.txt', 'w').write(answer)
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        passage = t['passage'][i].as_py()
+        question = t['question'][i].as_py()
+        spans = t['answers_spans'][i].as_py()['spans']
+        answer = spans[0] if spans else ''
+        row = {
+            'id': str(t['query_id'][i].as_py()),
+            'problem': f"Passage:\n{passage}\n\nQuestion: {question}",
+            'answer': answer,
+        }
+        out.write(json.dumps(row) + '\n')
+print(f'Wrote {len(t)} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=drop
@@ -41,10 +47,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Read the passage and answer the question. Print only the final answer with no explanation. For numeric answers, print only the number. For span answers, print the exact text from the passage.
 

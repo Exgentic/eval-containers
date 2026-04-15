@@ -14,13 +14,17 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="4510f6a6aa27c43fad7b43da2c59602a86e88480"
 LABEL dock.benchmark.url="https://github.com/scicode-bench/SciCode"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.13168"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="4510f6a6aa27c43fad7b43da2c59602a86e88480"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Runtime deps for test execution (tests use numpy/scipy/h5py and call the loader)
 RUN pip install --no-cache-dir numpy==2.0.2 scipy==1.14.1 h5py==3.12.1 sympy==1.13.3
 
-# Fetch SciCode problems + numeric test_data.h5
+# Write every task to a single JSONL file (root-only). Runtime entrypoint
+# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# sub_steps and general_tests are stored as JSON strings so that when the
+# materializer writes them to <field>.txt the file contains valid JSON text.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
@@ -28,24 +32,24 @@ urllib.request.urlretrieve(
     'https://huggingface.co/datasets/SciCode1/SciCode/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    d = f'/tasks/{i}'
-    os.makedirs(d, exist_ok=True)
-    open(f'{d}/id.txt', 'w').write(str(t['problem_id'][i]))
-    # Main description + optional background
-    desc = str(t['problem_description_main'][i] or '')
-    bg = str(t['problem_background_main'][i] or '')
-    io_hdr = str(t['problem_io'][i] or '')
-    deps = str(t['required_dependencies'][i] or '')
-    open(f'{d}/problem.txt', 'w').write(desc)
-    open(f'{d}/background.txt', 'w').write(bg)
-    open(f'{d}/io.txt', 'w').write(io_hdr)
-    open(f'{d}/dependencies.txt', 'w').write(deps)
-    sub = t['sub_steps'][i].as_py() or []
-    open(f'{d}/sub_steps.json', 'w').write(json.dumps(sub))
-    gen_tests = t['general_tests'][i].as_py() or []
-    open(f'{d}/general_tests.json', 'w').write(json.dumps(list(gen_tests)))
-print(f'Extracted {len(t)} tasks')
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        sub = t['sub_steps'][i].as_py() or []
+        gen_tests = list(t['general_tests'][i].as_py() or [])
+        row = {
+            'id': str(t['problem_id'][i]),
+            'problem': str(t['problem_description_main'][i] or ''),
+            'background': str(t['problem_background_main'][i] or ''),
+            'io': str(t['problem_io'][i] or ''),
+            'dependencies': str(t['required_dependencies'][i] or ''),
+            'sub_steps': json.dumps(sub),
+            'general_tests': json.dumps(gen_tests),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
 
 # Download test_data.h5 from Google Drive (file id 17G_k65N_6yFFZ2O-jQH00Lh6iaw3z-AW, ~1GB)
@@ -70,7 +74,7 @@ if size < 1_000_000:
     # Likely an HTML error page; bail out loudly.
     sys.exit("test_data.h5 download too small; Google Drive may have changed tokens")
 PYEOF
-RUN chmod -R 600 /tasks && chmod 600 /tests/data/test_data.h5
+RUN chmod 600 /tasks/all.jsonl /tests/data/test_data.h5
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=scicode
@@ -90,7 +94,7 @@ fi
 
 TMPDIR=$(mktemp -d)
 printf '%s' "$SOLUTION" > $TMPDIR/sol.py
-cp "$TASK_DIR/sub_steps.json" $TMPDIR/sub_steps.json
+cp "$TASK_DIR/sub_steps.txt" $TMPDIR/sub_steps.json
 cp "$TASK_DIR/dependencies.txt" $TMPDIR/deps.txt
 cp "$TASK_DIR/id.txt" $TMPDIR/id.txt
 export SC_TMP="$TMPDIR"
@@ -215,10 +219,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   BG=""
   [ -s "/tasks/$DOCK_TASK_ID/background.txt" ] && BG="
@@ -227,7 +233,7 @@ Background:
 $(cat /tasks/$DOCK_TASK_ID/background.txt)"
   SUBS=$(python3 -c "
 import json
-sub = json.loads(open('/tasks/$DOCK_TASK_ID/sub_steps.json').read())
+sub = json.loads(open('/tasks/$DOCK_TASK_ID/sub_steps.txt').read())
 for s in sub:
     print(f\"Step {s.get('step_number','')}:\")
     print(s.get('step_description_prompt',''))
