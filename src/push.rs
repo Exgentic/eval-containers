@@ -25,9 +25,7 @@ pub enum PushTarget {
     },
     /// Push a model image to the registry
     /// Docker: docker push {registry}/models/{name}:latest
-    Model {
-        name: String,
-    },
+    Model { name: String },
     /// Push a combined eval image to the registry
     /// Docker: docker push {registry}/evals/{benchmark}--{agent}:{version}
     Eval {
@@ -56,7 +54,12 @@ pub fn execute(registry: &str, args: PushArgs) -> Result<(), String> {
         PushTarget::Model { name } => {
             format!("{registry}/models/{name}:latest")
         }
-        PushTarget::Eval { benchmark, agent, task_id, version } => {
+        PushTarget::Eval {
+            benchmark,
+            agent,
+            task_id,
+            version,
+        } => {
             let eval_name = if let Some(tid) = task_id {
                 format!("{benchmark}-{tid}--{agent}")
             } else {

@@ -70,7 +70,9 @@ fn find_results(dir: &Path) -> Vec<EvalResult> {
 }
 
 fn walk_for_results(dir: &Path, results: &mut Vec<EvalResult>, depth: u32) {
-    if depth == 0 { return; }
+    if depth == 0 {
+        return;
+    }
 
     // If this directory contains task/result.json, it's an eval result
     if dir.join("task/result.json").exists() {
@@ -102,8 +104,8 @@ fn load_eval(dir: &Path) -> EvalResult {
 
 fn print_table(results: &[EvalResult]) {
     println!(
-        "{:<20} {:<30} {:<15} {:<30} {:<8} {:<6} {:<10} {}",
-        "BENCHMARK", "TASK", "AGENT", "MODEL", "REWARD", "PASS", "TOKENS", "COST"
+        "{:<20} {:<30} {:<15} {:<30} {:<8} {:<6} {:<10} COST",
+        "BENCHMARK", "TASK", "AGENT", "MODEL", "REWARD", "PASS", "TOKENS"
     );
     println!("{}", "-".repeat(130));
 
@@ -114,17 +116,35 @@ fn print_table(results: &[EvalResult]) {
     let count = results.len();
 
     for r in results {
-        let task_id = r.task.as_ref().and_then(|t| t.task_id.as_deref()).unwrap_or("-");
-        let benchmark = r.task.as_ref().and_then(|t| t.benchmark.as_deref()).unwrap_or("-");
+        let task_id = r
+            .task
+            .as_ref()
+            .and_then(|t| t.task_id.as_deref())
+            .unwrap_or("-");
+        let benchmark = r
+            .task
+            .as_ref()
+            .and_then(|t| t.benchmark.as_deref())
+            .unwrap_or("-");
         let reward = r.task.as_ref().and_then(|t| t.reward).unwrap_or(0.0);
         let passed = r.task.as_ref().and_then(|t| t.passed).unwrap_or(false);
-        let agent_name = r.agent.as_ref().and_then(|a| a.agent.as_deref()).unwrap_or("-");
-        let model_name = r.model.as_ref().and_then(|m| m.model.as_deref()).unwrap_or("-");
+        let agent_name = r
+            .agent
+            .as_ref()
+            .and_then(|a| a.agent.as_deref())
+            .unwrap_or("-");
+        let model_name = r
+            .model
+            .as_ref()
+            .and_then(|m| m.model.as_deref())
+            .unwrap_or("-");
         let tokens = r.model.as_ref().and_then(|m| m.total_tokens).unwrap_or(0);
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
         total_reward += reward;
-        if passed { total_passed += 1; }
+        if passed {
+            total_passed += 1;
+        }
         total_tokens += tokens;
         total_cost += cost;
 
@@ -135,26 +155,56 @@ fn print_table(results: &[EvalResult]) {
     }
 
     println!("{}", "-".repeat(130));
-    let avg_reward = if count > 0 { total_reward / count as f64 } else { 0.0 };
+    let avg_reward = if count > 0 {
+        total_reward / count as f64
+    } else {
+        0.0
+    };
     println!(
         "{:<20} {:<30} {:<15} {:<30} {:<8.2} {}/{:<4} {:<10} ${:.3}",
-        "TOTAL", format!("{count} tasks"), "", "", avg_reward, total_passed, count, total_tokens, total_cost
+        "TOTAL",
+        format!("{count} tasks"),
+        "",
+        "",
+        avg_reward,
+        total_passed,
+        count,
+        total_tokens,
+        total_cost
     );
 }
 
 fn print_csv(results: &[EvalResult]) {
     println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd");
     for r in results {
-        let task_id = r.task.as_ref().and_then(|t| t.task_id.as_deref()).unwrap_or("");
-        let benchmark = r.task.as_ref().and_then(|t| t.benchmark.as_deref()).unwrap_or("");
+        let task_id = r
+            .task
+            .as_ref()
+            .and_then(|t| t.task_id.as_deref())
+            .unwrap_or("");
+        let benchmark = r
+            .task
+            .as_ref()
+            .and_then(|t| t.benchmark.as_deref())
+            .unwrap_or("");
         let reward = r.task.as_ref().and_then(|t| t.reward).unwrap_or(0.0);
         let passed = r.task.as_ref().and_then(|t| t.passed).unwrap_or(false);
-        let agent_name = r.agent.as_ref().and_then(|a| a.agent.as_deref()).unwrap_or("");
-        let model_name = r.model.as_ref().and_then(|m| m.model.as_deref()).unwrap_or("");
+        let agent_name = r
+            .agent
+            .as_ref()
+            .and_then(|a| a.agent.as_deref())
+            .unwrap_or("");
+        let model_name = r
+            .model
+            .as_ref()
+            .and_then(|m| m.model.as_deref())
+            .unwrap_or("");
         let tokens = r.model.as_ref().and_then(|m| m.total_tokens).unwrap_or(0);
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
-        println!("{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost}");
+        println!(
+            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost}"
+        );
     }
 }
 
@@ -162,17 +212,35 @@ fn print_json(results: &[EvalResult]) {
     // Build a simple JSON array manually to avoid pulling in serde_json::to_string_pretty
     println!("[");
     for (i, r) in results.iter().enumerate() {
-        let task_id = r.task.as_ref().and_then(|t| t.task_id.as_deref()).unwrap_or("unknown");
-        let benchmark = r.task.as_ref().and_then(|t| t.benchmark.as_deref()).unwrap_or("unknown");
+        let task_id = r
+            .task
+            .as_ref()
+            .and_then(|t| t.task_id.as_deref())
+            .unwrap_or("unknown");
+        let benchmark = r
+            .task
+            .as_ref()
+            .and_then(|t| t.benchmark.as_deref())
+            .unwrap_or("unknown");
         let reward = r.task.as_ref().and_then(|t| t.reward).unwrap_or(0.0);
         let passed = r.task.as_ref().and_then(|t| t.passed).unwrap_or(false);
-        let agent_name = r.agent.as_ref().and_then(|a| a.agent.as_deref()).unwrap_or("unknown");
-        let model_name = r.model.as_ref().and_then(|m| m.model.as_deref()).unwrap_or("unknown");
+        let agent_name = r
+            .agent
+            .as_ref()
+            .and_then(|a| a.agent.as_deref())
+            .unwrap_or("unknown");
+        let model_name = r
+            .model
+            .as_ref()
+            .and_then(|m| m.model.as_deref())
+            .unwrap_or("unknown");
         let tokens = r.model.as_ref().and_then(|m| m.total_tokens).unwrap_or(0);
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
         let comma = if i < results.len() - 1 { "," } else { "" };
-        println!("  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost}}}{comma}");
+        println!(
+            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost}}}{comma}"
+        );
     }
     println!("]");
 }

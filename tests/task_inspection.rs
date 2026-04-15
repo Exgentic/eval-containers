@@ -45,20 +45,28 @@ struct Rule {
 
 impl Rule {
     const fn red(id: &'static str, why: &'static str, test: fn(&str) -> bool) -> Self {
-        Self { id, severity: Severity::Red, why, test }
+        Self {
+            id,
+            severity: Severity::Red,
+            why,
+            test,
+        }
     }
     const fn yellow(id: &'static str, why: &'static str, test: fn(&str) -> bool) -> Self {
-        Self { id, severity: Severity::Yellow, why, test }
+        Self {
+            id,
+            severity: Severity::Yellow,
+            why,
+            test,
+        }
     }
 }
 
 const RULES: &[Rule] = &[
     // ── Red ─────────────────────────────────────────────────────────
-    Rule::red(
-        "empty",
-        "user message is empty or whitespace",
-        |t| t.trim().is_empty(),
-    ),
+    Rule::red("empty", "user message is empty or whitespace", |t| {
+        t.trim().is_empty()
+    }),
     Rule::red(
         "env_leaked",
         "unresolved DOCK_* env var in task (substitution failed)",
@@ -74,33 +82,45 @@ const RULES: &[Rule] = &[
         "template_leak",
         "TEMPLATE.md placeholder leaked into task (author forgot to fill in)",
         |t| {
-            ["{NAME}", "{TASK_PROMPT}", "{DATASET}", "{SPLIT}",
-             "{QUESTION_FIELD}", "{ANSWER_FIELD}", "{ID_FIELD}"]
-                .iter()
-                .any(|p| t.contains(p))
+            [
+                "{NAME}",
+                "{TASK_PROMPT}",
+                "{DATASET}",
+                "{SPLIT}",
+                "{QUESTION_FIELD}",
+                "{ANSWER_FIELD}",
+                "{ID_FIELD}",
+            ]
+            .iter()
+            .any(|p| t.contains(p))
         },
     ),
     Rule::red(
         "fetch_failed",
         "task contains evidence of a failed dataset download",
         |t| {
-            ["404 Not Found", "403 Forbidden", "HF_TOKEN required",
-             "access denied", "401 Unauthorized"]
-                .iter()
-                .any(|s| t.contains(s))
+            [
+                "404 Not Found",
+                "403 Forbidden",
+                "HF_TOKEN required",
+                "access denied",
+                "401 Unauthorized",
+            ]
+            .iter()
+            .any(|s| t.contains(s))
         },
     ),
-    Rule::red(
-        "file_missing",
-        "task contains filesystem errors",
-        |t| {
-            let lc = t.to_lowercase();
-            ["no such file or directory", "permission denied",
-             "cannot open", "not a directory"]
-                .iter()
-                .any(|s| lc.contains(s))
-        },
-    ),
+    Rule::red("file_missing", "task contains filesystem errors", |t| {
+        let lc = t.to_lowercase();
+        [
+            "no such file or directory",
+            "permission denied",
+            "cannot open",
+            "not a directory",
+        ]
+        .iter()
+        .any(|s| lc.contains(s))
+    }),
     Rule::red(
         "unresolved_url_var",
         "task contains a URL with an unsubstituted shell var — fetch returned literal",
@@ -113,7 +133,9 @@ const RULES: &[Rule] = &[
             // Match as standalone tokens so we don't flag the word "todo" inside prose
             for tok in ["TODO", "FIXME", "XXX"] {
                 for w in t.split(|c: char| !c.is_alphanumeric()) {
-                    if w == tok { return true; }
+                    if w == tok {
+                        return true;
+                    }
                 }
             }
             false
@@ -123,12 +145,10 @@ const RULES: &[Rule] = &[
         "control_garbage",
         "task contains non-printable control chars (encoding corruption)",
         |t| {
-            t.chars().any(|c| {
-                c.is_control() && c != '\n' && c != '\t' && c != '\r'
-            })
+            t.chars()
+                .any(|c| c.is_control() && c != '\n' && c != '\t' && c != '\r')
         },
     ),
-
     // ── Yellow ──────────────────────────────────────────────────────
     Rule::yellow(
         "too_short",
@@ -153,11 +173,15 @@ const RULES: &[Rule] = &[
         "same 200-char block repeats 10+ times — possible concat runaway",
         |t| {
             // Cheap heuristic: any 200-char window that appears 10+ times.
-            if t.len() < 2_000 { return false; }
+            if t.len() < 2_000 {
+                return false;
+            }
             // Check just the first ~5 positions as probes — not exhaustive,
             // but catches real runaway concatenation without full scan.
             for start in [0, 200, 400, 600, 800] {
-                if start + 200 > t.len() { break; }
+                if start + 200 > t.len() {
+                    break;
+                }
                 let probe = &t[start..start + 200];
                 if t.matches(probe).count() >= 10 {
                     return true;
@@ -171,12 +195,28 @@ const RULES: &[Rule] = &[
         "no instruction verb (solve/write/compute/answer/translate/find/explain/return/print/select)",
         |t| {
             let lc = t.to_lowercase();
-            !["solve", "write", "compute", "answer", "translate",
-              "find", "explain", "return", "print", "select",
-              "complete", "analyze", "identify", "classify",
-              "generate", "implement", "describe", "summarize"]
-                .iter()
-                .any(|v| lc.contains(v))
+            ![
+                "solve",
+                "write",
+                "compute",
+                "answer",
+                "translate",
+                "find",
+                "explain",
+                "return",
+                "print",
+                "select",
+                "complete",
+                "analyze",
+                "identify",
+                "classify",
+                "generate",
+                "implement",
+                "describe",
+                "summarize",
+            ]
+            .iter()
+            .any(|v| lc.contains(v))
         },
     ),
 ];
@@ -303,7 +343,10 @@ fn rule_empty_fires_on_whitespace() {
 
 #[test]
 fn rule_env_leaked_fires_on_unresolved_dock_var() {
-    let fs = inspect("t", "Solve task $DOCK_TASK_ID from benchmark ${DOCK_BENCHMARK}.");
+    let fs = inspect(
+        "t",
+        "Solve task $DOCK_TASK_ID from benchmark ${DOCK_BENCHMARK}.",
+    );
     assert!(fs.iter().any(|f| f.rule == "env_leaked"));
 }
 
@@ -355,9 +398,15 @@ fn inspect_every_existing_fixture() {
 
     // Report
     let red: Vec<&Finding> = all.iter().filter(|f| f.severity == Severity::Red).collect();
-    let yellow: Vec<&Finding> = all.iter().filter(|f| f.severity == Severity::Yellow).collect();
+    let yellow: Vec<&Finding> = all
+        .iter()
+        .filter(|f| f.severity == Severity::Yellow)
+        .collect();
 
-    eprintln!("\n─── trajectory inspection over {} fixtures ───", fixtures.len());
+    eprintln!(
+        "\n─── trajectory inspection over {} fixtures ───",
+        fixtures.len()
+    );
     if !yellow.is_empty() {
         eprintln!("\n{} yellow findings:", yellow.len());
         for f in &yellow {
@@ -387,7 +436,10 @@ fn inspect_every_existing_fixture() {
         }
     }
     if !extraction_errors.is_empty() {
-        msg.push_str(&format!("\n{} extraction errors:\n", extraction_errors.len()));
+        msg.push_str(&format!(
+            "\n{} extraction errors:\n",
+            extraction_errors.len()
+        ));
         for e in &extraction_errors {
             msg.push_str(&format!("  {e}\n"));
         }
