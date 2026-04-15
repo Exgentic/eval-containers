@@ -17,7 +17,7 @@ LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-data
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/aime2024"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 urllib.request.urlretrieve('https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet', '/tmp/data.parquet')
@@ -28,7 +28,6 @@ for i in range(len(t)):
     open(f'/tasks/{i}/problem.txt','w').write(str(t['problem'][i]))
     open(f'/tasks/{i}/answer.txt','w').write(str(t['answer'][i]))
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

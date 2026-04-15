@@ -18,7 +18,7 @@ LABEL dock.benchmark.url="https://epochai.org/frontiermath"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2411.04872"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow huggingface_hub
+RUN pip install --no-cache-dir pyarrow==18.1.0 huggingface_hub==0.26.2
 
 # Public sample set. The full evaluation set is gated and held by Epoch AI.
 ARG HF_TOKEN=""
@@ -56,13 +56,15 @@ for pq_path in glob.glob('/tmp/fm/**/*.parquet', recursive=True):
     break
 
 if not rows:
-    # FUTURE: placeholder when dataset is not accessible
-    for i in range(10):
-        rows.append({
-            'id': f'placeholder-{i}',
-            'problem': f'TODO: FrontierMath problem {i}. Replace by setting HF_TOKEN with Epoch AI access.',
-            'answer': 'TODO',
-        })
+    # FrontierMath is gated by Epoch AI. We intentionally fail the
+    # build rather than ship placeholder tasks that would silently
+    # grade agents against garbage. To unlock, set HF_TOKEN to an
+    # account with access and rebuild.
+    raise SystemExit(
+        'frontiermath: upstream dataset not accessible. '
+        'Set HF_TOKEN with Epoch AI access and rebuild. '
+        'Refusing to ship placeholder task content.'
+    )
 
 os.makedirs('/tasks', exist_ok=True)
 for i, r in enumerate(rows):
@@ -71,7 +73,6 @@ for i, r in enumerate(rows):
     open(f'/tasks/{i}/problem.txt', 'w').write(r['problem'])
     open(f'/tasks/{i}/answer.txt', 'w').write(r['answer'])
 PYEOF
-RUN rm -rf /tmp/fm && pip uninstall -y pyarrow huggingface_hub
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

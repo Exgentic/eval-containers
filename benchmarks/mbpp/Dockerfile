@@ -19,7 +19,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2108.07732"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch and extract tasks
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -37,7 +37,6 @@ for i in range(len(t)):
     setup = str(t['test_setup_code'][i]) if t['test_setup_code'][i] else ''
     open(f'/tasks/{i}/setup.txt', 'w').write(setup)
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

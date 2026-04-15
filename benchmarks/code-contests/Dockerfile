@@ -17,7 +17,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2203.07814"
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
 # Fetch and extract tasks
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 urllib.request.urlretrieve(
@@ -46,7 +46,6 @@ for i in range(len(t)):
     open(f'{d}/time_limit.txt', 'w').write(str(secs))
 print(f'Extracted {len(t)} tasks')
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

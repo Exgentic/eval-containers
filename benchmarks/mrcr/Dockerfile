@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 # Fetch and extract tasks from 6 parquet shards.
 # Pre-render prompt.json into problem.txt (flattened conversation text)
 # so the entrypoint stays simple.
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow as pa, os, json
 
@@ -65,7 +65,6 @@ for i in range(len(t)):
     lines.append('Then provide the requested content immediately after that prefix.')
     open(f'{d}/problem.txt', 'w').write('\n'.join(lines))
 PYEOF
-RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

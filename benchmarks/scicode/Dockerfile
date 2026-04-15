@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir numpy==2.0.2 scipy==1.14.1 h5py==3.12.1 sympy==1.13.3
 
 # Fetch SciCode problems + numeric test_data.h5
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -47,7 +47,6 @@ for i in range(len(t)):
     open(f'{d}/general_tests.json', 'w').write(json.dumps(list(gen_tests)))
 print(f'Extracted {len(t)} tasks')
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 
 # Download test_data.h5 from Google Drive (file id 17G_k65N_6yFFZ2O-jQH00Lh6iaw3z-AW, ~1GB)
 # Uses the "confirm" token bypass required for large files.

@@ -18,14 +18,14 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.12983"
 
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir huggingface_hub
+RUN pip install --no-cache-dir huggingface_hub==0.26.2
 
 # Download dataset files (gated — requires HF_TOKEN)
 ARG HF_TOKEN
 RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download('gaia-benchmark/GAIA', repo_type='dataset', revision='682dd723ee1e1697e00360edccf2366dc8418dd9', allow_patterns=['2023/validation/*'], local_dir='/tmp/gaia', token='$HF_TOKEN')"
 
 # Extract tasks to flat files from the parquet
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import pyarrow.parquet as pq, os, shutil
 t = pq.read_table('/tmp/gaia/2023/validation/metadata.parquet')
@@ -42,7 +42,6 @@ for i in range(len(t)):
     if fname and os.path.exists(src):
         shutil.move(src, f'/tasks/{i}/{fname}')
 PYEOF
-RUN rm -rf /tmp/gaia && pip uninstall -y pyarrow huggingface_hub
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

@@ -18,7 +18,7 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
 # Fetch tasks
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
 tables = []
@@ -40,7 +40,6 @@ for i in range(len(t)):
         open(f'/tasks/{i}/tests/{k}.out','w').write(str(outputs[k]))
     open(f'/tasks/{i}/num_tests.txt','w').write(str(t['num_tests'][i]))
 PYEOF
-RUN rm -f /tmp/data_*.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

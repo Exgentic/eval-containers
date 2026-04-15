@@ -19,7 +19,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.07911"
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
 # Fetch and extract tasks (prompt, instruction_id_list, kwargs per task)
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -45,7 +45,6 @@ for i in range(len(t)):
             parsed_kwargs.append({})
     open(f'/tasks/{i}/kwargs.json', 'w').write(json.dumps(parsed_kwargs))
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 
 # Install official IFEval verification code from google-research
 RUN pip install --no-cache-dir absl-py==2.1.0 langdetect==1.0.9 nltk==3.9.1 immutabledict==4.2.0

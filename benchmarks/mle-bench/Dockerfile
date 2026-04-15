@@ -41,7 +41,7 @@ RUN mkdir -p /tasks/0 /tests && \
      echo "TODO: MLE-bench task description for ${DOCK_TASK_ID}" > /tasks/0/problem.txt)
 
 # Grader: uses mlebench.grade to score submission.csv against the held-out answers.
-RUN pip install --no-cache-dir --target /tests/deps mlebench==0.1.0 2>/dev/null || true
+RUN pip install --no-cache-dir --target /tests/deps mlebench==0.1.0
 
 RUN cat > /tests/test.sh <<'TEST'
 #!/bin/bash

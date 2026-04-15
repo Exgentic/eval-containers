@@ -18,7 +18,7 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 LABEL dock.benchmark.paper="https://openai.com/index/introducing-simpleqa/"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 urllib.request.urlretrieve('https://huggingface.co/datasets/basicv8vc/SimpleQA/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet', '/tmp/data.parquet')
@@ -28,7 +28,6 @@ for i in range(len(t)):
     open(f'/tasks/{i}/problem.txt','w').write(str(t['problem'][i]))
     open(f'/tasks/{i}/answer.txt','w').write(str(t['answer'][i]))
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

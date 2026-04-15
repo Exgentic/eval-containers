@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 ENV DOCK_BENCHMARK=appworld
 
 # Fetch task metadata from HuggingFace
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 urllib.request.urlretrieve(
@@ -38,7 +38,6 @@ for i in range(len(t)):
         f.write(str(t['instruction'][i]))
 print(f'Extracted {len(t)} tasks')
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

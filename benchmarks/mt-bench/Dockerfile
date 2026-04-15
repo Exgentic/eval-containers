@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 # Extract the 80 unique MT-Bench questions from the human judgments parquet.
 # Each question has 2 turns; we expose each (question_id, turn) as a task,
 # giving 160 single-turn tasks. For turn 2, we prepend turn 1 context.
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 
@@ -90,7 +90,6 @@ for qid in sorted(questions.keys()):
 
 print(f'Generated {idx} MT-Bench tasks from {len(questions)} questions')
 PYEOF
-RUN rm -f /tmp/mtb.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

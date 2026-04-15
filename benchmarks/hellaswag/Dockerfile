@@ -15,7 +15,7 @@ LABEL dock.benchmark.url="https://huggingface.co/datasets/Rowan/hellaswag"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1905.07830"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 urllib.request.urlretrieve(
@@ -36,7 +36,6 @@ for i in range(len(t)):
     open(f'/tasks/{i}/problem.txt', 'w').write("\n".join(lines))
     open(f'/tasks/{i}/answer.txt', 'w').write(letters[label_idx])
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

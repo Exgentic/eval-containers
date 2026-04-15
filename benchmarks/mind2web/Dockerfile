@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 # Fetch the first parquet shard (task metadata; full HTML traces live in other shards).
 # The instruction text ("confirmed_task") + action_reprs gold trace is enough to grade
 # externally and to expose the task to the agent.
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 BASE = 'https://huggingface.co/api/datasets/osunlp/Mind2Web/parquet/default/train'
@@ -49,7 +49,6 @@ for shard in range(8):
     os.remove(local)
 print(f'Extracted {idx} tasks')
 PYEOF
-RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

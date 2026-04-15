@@ -17,7 +17,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/1603.07396"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 LETTERS = ["A", "B", "C", "D", "E", "F"]
@@ -47,7 +47,6 @@ for shard in range(2):
     os.remove("/tmp/data.parquet")
 print(f"Extracted {task_idx} tasks")
 PYEOF
-RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

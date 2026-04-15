@@ -18,7 +18,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.08857"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch tasks from all 5 environment splits
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 idx = 0
@@ -38,7 +38,6 @@ for env in ['ChemicalEnv', 'EducationEnv', 'FantasyEnv', 'MedicalEnv', 'MusicEnv
     os.remove('/tmp/data.parquet')
 print(f'Extracted {idx} tasks')
 PYEOF
-RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

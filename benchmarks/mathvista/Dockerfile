@@ -18,7 +18,7 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 url = "https://huggingface.co/api/datasets/AI4Math/MathVista/parquet/default/testmini/0.parquet"
@@ -37,7 +37,6 @@ for i in range(len(t)):
 os.remove("/tmp/data.parquet")
 print(f"Extracted {len(t)} tasks")
 PYEOF
-RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

@@ -23,7 +23,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install --no-cache-dir huggingface_hub[cli]
 
 # Fetch tasks
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve('https://huggingface.co/datasets/openai/gdpval/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet', '/tmp/data.parquet')
@@ -38,7 +38,6 @@ for i in range(len(t)):
         v = ref_urls.as_py() if hasattr(ref_urls, 'as_py') else ref_urls
         open(f'/tasks/{i}/reference_urls.json','w').write(json.dumps(v))
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

@@ -23,11 +23,12 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 
 ENV DOCK_BENCHMARK=swe-bench-pro
 
-# Install grading deps to root-only path (agent cannot access or tamper)
-RUN pip install --no-cache-dir --target /tests/deps swebench==3.0.18 2>/dev/null || \
-    pip3 install --no-cache-dir --target /tests/deps swebench==3.0.18
-
+# System deps first (stable layer — cache-friendly)
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
+
+# Install grading deps to root-only path (agent cannot access or tamper)
+RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.18) \
+ || pip install --no-cache-dir --target /tests/deps swebench==3.0.18
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
