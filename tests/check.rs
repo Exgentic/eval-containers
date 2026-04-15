@@ -331,13 +331,11 @@ fn released_benchmarks_have_fixtures() {
 
 // ─── steps 30, 31: README presence ────────────────────────────────
 //
-// These are release-phase gates in VERIFY.md, not sanity-phase, so
-// they're #[ignore] and run under `--ignored`. Today both fail — no
-// benchmark or agent has a README.md. That's a tracked yellow in
-// FLEET.md (missing per-benchmark README).
+// All 96 benchmark + 17 agent READMEs were written by the 2026-04-15
+// repo-healing sub-agent dispatch. Now enforced on every `cargo test`
+// — any new benchmark or agent missing README.md fails CI immediately.
 
 #[test]
-#[ignore]
 fn every_benchmark_has_readme() {
     let mut missing = Vec::new();
     for (name, dir) in sibling_dirs("benchmarks") {
@@ -356,7 +354,6 @@ fn every_benchmark_has_readme() {
 }
 
 #[test]
-#[ignore]
 fn every_agent_has_readme() {
     let mut missing = Vec::new();
     for (name, dir) in sibling_dirs("agents") {
