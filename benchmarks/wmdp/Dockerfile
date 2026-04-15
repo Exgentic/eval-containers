@@ -16,7 +16,7 @@ LABEL dock.benchmark.url="https://huggingface.co/datasets/cais/wmdp"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2403.03218"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
@@ -42,7 +42,6 @@ for subset in subsets:
         idx += 1
 print(f'Extracted {idx} tasks')
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Dataset is gated — download with huggingface_hub
 ARG HF_TOKEN
-RUN pip install --no-cache-dir huggingface_hub pyarrow
+RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import os, glob, pyarrow.parquet as pq
 from huggingface_hub import snapshot_download
@@ -47,7 +47,6 @@ for i in range(len(t)):
     if img is not None and str(img).strip():
         open(f'/tasks/{i}/image.txt', 'w').write(str(img))
 PYEOF
-RUN rm -rf /tmp/hle /root/.cache/huggingface && pip uninstall -y huggingface_hub pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

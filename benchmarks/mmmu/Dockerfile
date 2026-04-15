@@ -19,7 +19,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.16502"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch and extract tasks from all 30 subject validation splits
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 
@@ -64,7 +64,6 @@ for subject in SUBJECTS:
 
 print(f"Extracted {task_idx} tasks")
 PYEOF
-RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

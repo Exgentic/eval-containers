@@ -32,12 +32,14 @@ ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
 # Fetch task description + expected flag from the Cybench repo at a pinned commit.
 # FUTURE: pin the exact commit sha once upstream tags a release.
+# Fail the build if upstream metadata is unreachable — a silently-shipped
+# placeholder image would grade agents against garbage.
 RUN mkdir -p /tasks/0 && \
-    (curl -sfL "https://raw.githubusercontent.com/andyzorigin/cybench/main/benchmark/${DOCK_TASK_ID}/metadata/metadata.json" -o /tasks/0/config.json || echo '{}' > /tasks/0/config.json) && \
-    (curl -sfL "https://raw.githubusercontent.com/andyzorigin/cybench/main/benchmark/${DOCK_TASK_ID}/metadata/task.json" -o /tasks/0/task.json || true) && \
+    curl -sfL "https://raw.githubusercontent.com/andyzorigin/cybench/main/benchmark/${DOCK_TASK_ID}/metadata/metadata.json" -o /tasks/0/config.json && \
+    curl -sfL "https://raw.githubusercontent.com/andyzorigin/cybench/main/benchmark/${DOCK_TASK_ID}/metadata/task.json" -o /tasks/0/task.json && \
     echo "${DOCK_TASK_ID}" > /tasks/0/id.txt && \
-    (jq -r '.task_description // .description // "TODO: fetch task description"' /tasks/0/config.json > /tasks/0/problem.txt 2>/dev/null || echo "TODO: task description" > /tasks/0/problem.txt) && \
-    (jq -r '.subtasks[-1].answer // .answer // .flag // "TODO"' /tasks/0/config.json > /tasks/0/answer.txt 2>/dev/null || echo "TODO" > /tasks/0/answer.txt)
+    jq -re '.task_description // .description' /tasks/0/config.json > /tasks/0/problem.txt && \
+    jq -re '.subtasks[-1].answer // .answer // .flag' /tasks/0/config.json > /tasks/0/answer.txt
 RUN chmod -R 600 /tasks
 
 # Scoring: exact-match on the flag the agent printed.

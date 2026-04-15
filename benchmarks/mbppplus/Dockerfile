@@ -17,7 +17,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2305.01210"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch and extract tasks
-RUN pip install --no-cache-dir pyarrow numpy==2.0.2
+RUN pip install --no-cache-dir pyarrow==18.1.0 numpy==2.0.2
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os
 urllib.request.urlretrieve(
@@ -34,7 +34,6 @@ for i in range(len(t)):
     # test is the full EvalPlus harness (imports + assertion helper + inputs/results driver)
     open(f'/tasks/{i}/test.txt', 'w').write(str(t['test'][i]))
 PYEOF
-RUN rm -f /tmp/data.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

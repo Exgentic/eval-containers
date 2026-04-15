@@ -394,6 +394,146 @@ fn missing_dock_type(t: &str) -> bool {
     !t.contains(r#"LABEL dock.type="#)
 }
 
+// ─── New rules from the 2026-04-15 dockerfile audit walk ───────────
+
+fn todo_string_literal(t: &str) -> bool {
+    // Flag literal "TODO" or 'TODO' inside RUN steps — cybench /
+    // mle-bench / swe-lancer write the word "TODO" as actual task
+    // content when upstream JSON lacks required fields, so the image
+    // then grades the agent against placeholder text. The existing
+    // todo_or_fixme rule only looks at `#` comments and misses this.
+    // Skip lines that are pure comments.
+    for line in t.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            continue;
+        }
+        // Must be inside a RUN (best-effort: only look at lines
+        // containing `"TODO"` or `'TODO'` as a quoted literal) to
+        // avoid matching the word `TODO` in unrelated positions.
+        if trimmed.contains("\"TODO\"") || trimmed.contains("'TODO'") {
+            return true;
+        }
+    }
+    false
+}
+
+fn silent_pip_fallback(t: &str) -> bool {
+    // `pip install ... 2>/dev/null || pip3 install ...` swallows
+    // stderr and falls back silently. If both fail, the dependency
+    // is missing at runtime and grade.py raises ImportError which
+    // test.sh converts to reward=0 — silent false negative.
+    for line in t.lines() {
+        let lc = line.to_lowercase();
+        if (lc.contains("pip install") || lc.contains("pip3 install")) && lc.contains("2>/dev/null")
+        {
+            return true;
+        }
+        if (lc.contains("pip install") || lc.contains("pip3 install")) && lc.contains("|| true") {
+            return true;
+        }
+    }
+    false
+}
+
+fn install_order_pip_before_apt(t: &str) -> bool {
+    // Layer-cache smell: pip install runs BEFORE apt-get install in
+    // the file. pip layers are more volatile (frequent upgrades),
+    // apt-get install is usually stable — running apt first lets the
+    // stable layer cache while pip churns.
+    let mut saw_pip_first = None;
+    for (i, line) in t.lines().enumerate() {
+        let lc = line.trim().to_lowercase();
+        if lc.starts_with('#') {
+            continue;
+        }
+        // Only consider top-level RUN lines
+        if !lc.starts_with("run ") {
+            continue;
+        }
+        if lc.contains("pip install") || lc.contains("pip3 install") {
+            saw_pip_first.get_or_insert(i);
+        } else if lc.contains("apt-get install")
+            && let Some(pip_idx) = saw_pip_first
+            && pip_idx < i
+        {
+            return true;
+        }
+    }
+    false
+}
+
+fn phantom_pip_uninstall_in_separate_run(t: &str) -> bool {
+    // `pip uninstall pyarrow` in its own RUN layer after a prior RUN
+    // that installed it reclaims zero space — the install layer still
+    // holds the files. The uninstall must be in the same RUN as the
+    // install to actually shrink the image. Heuristic: a RUN line that
+    // contains `pip uninstall` and no matching `pip install` on the
+    // same line.
+    for line in t.lines() {
+        let lc = line.trim().to_lowercase();
+        if lc.starts_with('#') {
+            continue;
+        }
+        if !lc.starts_with("run ") {
+            continue;
+        }
+        if lc.contains("pip uninstall") && !lc.contains("pip install") {
+            return true;
+        }
+    }
+    false
+}
+
+fn missing_data_revision_when_fetching_mutable_ref(t: &str) -> bool {
+    // If a RUN step pulls from a mutable HuggingFace/GitHub ref
+    // (refs/convert/parquet, main, master, HEAD) AND the image lacks
+    // a dock.benchmark.data_revision label, upstream can silently
+    // change the dataset under us.
+    //
+    // Only inspect RUN steps — LABEL values can contain "/main/"
+    // innocuously (doc links, inspect_impl URLs). We can't just grep
+    // the whole file.
+    let joined = strip_heredocs(t)
+        .replace("\\\r\n", " ")
+        .replace("\\\n", " ");
+    let mut has_mutable_fetch = false;
+    for line in joined.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') || !trimmed.to_lowercase().starts_with("run ") {
+            continue;
+        }
+        if trimmed.contains("refs/convert/parquet")
+            || trimmed.contains("?revision=main")
+            || trimmed.contains("?revision=master")
+            // github raw URL with a branch name in the path
+            || trimmed.contains("raw.githubusercontent.com/") && (trimmed.contains("/main/") || trimmed.contains("/master/"))
+        {
+            has_mutable_fetch = true;
+            break;
+        }
+    }
+    if !has_mutable_fetch {
+        return false;
+    }
+    // Allow if there's a data_revision label with a non-mutable value
+    for line in t.lines() {
+        if line.contains("dock.benchmark.data_revision=") {
+            let rest = &line[line.find('=').unwrap() + 1..];
+            let val = rest.trim_matches(['"', '\'', ' ', '\t']);
+            if !val.is_empty()
+                && val != "latest"
+                && val != "main"
+                && val != "master"
+                && val != "HEAD"
+            {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 fn upstream_base_unpinned(t: &str) -> bool {
     // Yellow signal: `dock.benchmark.upstream_base` label pins to :latest
     // (or leaves the tag unset, which is equivalent). Per benchmarks/RULES.md
@@ -528,6 +668,32 @@ const RULES: &[Rule] = &[
         "upstream_base_unpinned",
         "dock.benchmark.upstream_base pins :latest — third-party registry, supply-chain debt (benchmarks/RULES.md 21b)",
         |t, _| upstream_base_unpinned(t),
+    ),
+    // ── New rules from the 2026-04-15 dockerfile audit walk ────────
+    Rule::red(
+        "todo_string_literal",
+        "Dockerfile writes the literal string \"TODO\" as task data (silent placeholder grading)",
+        |t, _| todo_string_literal(t),
+    ),
+    Rule::red(
+        "silent_pip_fallback",
+        "pip install with 2>/dev/null or || true fallback — errors are swallowed, grade.py will silently fail",
+        |t, _| silent_pip_fallback(t),
+    ),
+    Rule::yellow(
+        "install_order_pip_before_apt",
+        "pip install runs before apt-get install — reverse the order so the stable apt layer can cache",
+        |t, _| install_order_pip_before_apt(t),
+    ),
+    Rule::yellow(
+        "phantom_pip_uninstall",
+        "pip uninstall in its own RUN layer reclaims no space (RULES.md 10b) — combine with the install",
+        |t, _| phantom_pip_uninstall_in_separate_run(t),
+    ),
+    Rule::yellow(
+        "missing_data_revision_when_fetching_mutable_ref",
+        "Dockerfile fetches from a mutable ref (refs/convert/parquet, main, master) without pinning dock.benchmark.data_revision",
+        |t, _| missing_data_revision_when_fetching_mutable_ref(t),
     ),
 ];
 

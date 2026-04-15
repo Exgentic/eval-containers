@@ -15,7 +15,7 @@ LABEL dock.benchmark.url="https://huggingface.co/datasets/Hothan/OlympiadBench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2402.14008"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, ast
 
@@ -46,7 +46,6 @@ for cfg in CONFIGS:
     os.remove('/tmp/data.parquet')
 print('total tasks:', task_idx)
 PYEOF
-RUN pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

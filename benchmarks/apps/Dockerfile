@@ -17,7 +17,7 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2105.09938"
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch and extract tasks (2 parquet shards)
-RUN pip install --no-cache-dir pyarrow
+RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
 tables = []
@@ -47,7 +47,6 @@ for i in range(len(t)):
     open(f'{d}/fn_name.txt', 'w').write(fn_name)
 print(f'Extracted {len(t)} tasks')
 PYEOF
-RUN rm -f /tmp/data_*.parquet && pip uninstall -y pyarrow
 RUN chmod -R 600 /tasks
 
 WORKDIR /app

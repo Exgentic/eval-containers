@@ -21,12 +21,14 @@ LABEL dock.benchmark.paper="https://arxiv.org/abs/2310.06770"
 
 ENV DOCK_BENCHMARK=swe-bench
 
+# System deps first (stable layer — cache-friendly)
+RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
+
 # Install grading deps to root-only path (agent cannot access or tamper)
-RUN pip install --no-cache-dir --target /tests/deps swebench==3.0.18 2>/dev/null || \
-    pip3 install --no-cache-dir --target /tests/deps swebench==3.0.18
+RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.18) \
+ || pip install --no-cache-dir --target /tests/deps swebench==3.0.18
 
 # Fetch this task's metadata from HuggingFace API
-RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 RUN mkdir -p /tasks/0 && \
