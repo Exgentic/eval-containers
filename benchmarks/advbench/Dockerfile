@@ -14,25 +14,31 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="098262edf85f807224e70ecd87b9d83716bf6b73"
 LABEL dock.benchmark.url="https://github.com/llm-attacks/llm-attacks"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2307.15043"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="098262edf85f807224e70ecd87b9d83716bf6b73"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 RUN curl -sfL -o /tmp/advbench.csv \
     'https://raw.githubusercontent.com/llm-attacks/llm-attacks/098262edf85f807224e70ecd87b9d83716bf6b73/data/advbench/harmful_behaviors.csv'
 
+# Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
 RUN python3 <<'PYEOF'
-import csv, os
+import csv, os, json
+os.makedirs('/tasks', exist_ok=True)
 with open('/tmp/advbench.csv') as f:
     rows = list(csv.DictReader(f))
-for i, r in enumerate(rows):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(i))
-    open(f'/tasks/{i}/problem.txt', 'w').write(r['goal'])
-    open(f'/tasks/{i}/target.txt', 'w').write(r['target'])
+with open('/tasks/all.jsonl', 'w') as out:
+    for i, r in enumerate(rows):
+        row = {
+            'id': str(i),
+            'problem': r['goal'],
+            'target': r['target'],
+        }
+        out.write(json.dumps(row) + '\n')
 print(f'Extracted {len(rows)} tasks')
 PYEOF
 RUN rm -f /tmp/advbench.csv
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=advbench
@@ -132,10 +138,12 @@ RUN chmod +x /tests/judge.py
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi

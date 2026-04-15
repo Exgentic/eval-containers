@@ -14,26 +14,33 @@ LABEL dock.benchmark.data_revision="b74c0d0bf70d2c0bc459be537895cca163007f1a"
 LABEL dock.benchmark.url="https://github.com/bigcode-project/bigcodebench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.15877"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bigcodebench"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="b74c0d0bf70d2c0bc459be537895cca163007f1a"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch and extract tasks
+# Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/bigcode/bigcodebench/resolve/b74c0d0bf70d2c0bc459be537895cca163007f1a/data/v0.1.4-00000-of-00001.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['task_id'][i]))
-    open(f'/tasks/{i}/instruct_prompt.txt', 'w').write(str(t['instruct_prompt'][i]))
-    open(f'/tasks/{i}/code_prompt.txt', 'w').write(str(t['code_prompt'][i]))
-    open(f'/tasks/{i}/test.txt', 'w').write(str(t['test'][i]))
-    open(f'/tasks/{i}/entry_point.txt', 'w').write(str(t['entry_point'][i]))
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        # "problem" is a synonym used elsewhere for the agent-facing prompt;
+        # here we preserve BigCodeBench's original field name "instruct_prompt".
+        row = {
+            'id': str(t['task_id'][i]),
+            'instruct_prompt': str(t['instruct_prompt'][i]),
+            'code_prompt': str(t['code_prompt'][i]),
+            'test': str(t['test'][i]),
+            'entry_point': str(t['entry_point'][i]),
+        }
+        out.write(json.dumps(row) + '\n')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=bigcodebench
@@ -71,10 +78,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Write a complete, self-contained Python solution for the following task. Print ONLY the Python code (including all needed imports and the full function definition), nothing else.
 

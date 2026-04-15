@@ -15,10 +15,12 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="ae2d5176449b7b769815482641d35926f26793eb"
 LABEL dock.benchmark.url="https://github.com/X-PLUG/WritingBench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2503.05244"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="ae2d5176449b7b769815482641d35926f26793eb"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch and flatten the WritingBench query file.
+# Write every task to a single JSONL file (root-only). Runtime entrypoint
+# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
 
@@ -26,25 +28,27 @@ SHA = "ae2d5176449b7b769815482641d35926f26793eb"
 URL = f"https://raw.githubusercontent.com/X-PLUG/WritingBench/{SHA}/benchmark_query/benchmark_all.jsonl"
 data = urllib.request.urlopen(URL).read().decode("utf-8")
 
-idx = 0
-for line in data.splitlines():
-    line = line.strip()
-    if not line:
-        continue
-    row = json.loads(line)
-    d = f"/tasks/{idx}"
-    os.makedirs(d, exist_ok=True)
-    open(f"{d}/id.txt", "w").write(str(row.get("index", idx)))
-    open(f"{d}/domain1.txt", "w").write(str(row.get("domain1", "")))
-    open(f"{d}/domain2.txt", "w").write(str(row.get("domain2", "")))
-    open(f"{d}/lang.txt", "w").write(str(row.get("lang", "")))
-    open(f"{d}/problem.txt", "w").write(str(row.get("query", "")))
-    if row.get("checklist") is not None:
-        json.dump(row["checklist"], open(f"{d}/checklist.json", "w"), ensure_ascii=False)
-    idx += 1
-print(f"Extracted {idx} tasks")
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for line in data.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        r = json.loads(line)
+        row = {
+            'id': str(r.get("index", count)),
+            'domain1': str(r.get("domain1", "")),
+            'domain2': str(r.get("domain2", "")),
+            'lang': str(r.get("lang", "")),
+            'problem': str(r.get("query", "")),
+            'checklist': r.get("checklist") or [],
+        }
+        out.write(json.dumps(row, ensure_ascii=False) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=writingbench
@@ -59,10 +63,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a professional writer. Complete the following writing request as fully and faithfully as possible. Output ONLY the finished piece of writing, with no preamble or commentary.
 

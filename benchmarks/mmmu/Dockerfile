@@ -15,13 +15,15 @@ LABEL dock.benchmark.data_revision="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
 LABEL dock.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.16502"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch and extract tasks from all 30 subject validation splits
+# Single-JSONL task layout. One line per task. Images base64-encoded inline;
+# runtime entrypoint decodes only the requested task's images.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, json, os, base64
 
 SUBJECTS = [
     "Accounting", "Agriculture", "Architecture_and_Engineering", "Art",
@@ -33,38 +35,34 @@ SUBJECTS = [
     "Music", "Pharmacy", "Physics", "Psychology", "Public_Health", "Sociology",
 ]
 
-task_idx = 0
-for subject in SUBJECTS:
-    url = f"https://huggingface.co/api/datasets/MMMU/MMMU/parquet/{subject}/validation/0.parquet"
-    urllib.request.urlretrieve(url, "/tmp/data.parquet")
-    t = pq.read_table("/tmp/data.parquet")
-    for i in range(len(t)):
-        d = f"/tasks/{task_idx}"
-        os.makedirs(d, exist_ok=True)
-        with open(f"{d}/id.txt", "w") as f:
-            f.write(str(t["id"][i]))
-        with open(f"{d}/problem.txt", "w") as f:
-            f.write(str(t["question"][i]))
-        with open(f"{d}/options.txt", "w") as f:
-            f.write(str(t["options"][i]))
-        with open(f"{d}/answer.txt", "w") as f:
-            f.write(str(t["answer"][i]))
-        # Save images (up to 7 per task)
-        for img_col in [f"image_{n}" for n in range(1, 8)]:
-            val = t[img_col][i].as_py() if img_col in t.column_names else None
-            if val is None:
-                continue
-            img_bytes = val.get("bytes") if isinstance(val, dict) else None
-            if img_bytes:
-                ext = "png"
-                with open(f"{d}/{img_col}.{ext}", "wb") as f:
-                    f.write(img_bytes)
-        task_idx += 1
-    os.remove("/tmp/data.parquet")
-
-print(f"Extracted {task_idx} tasks")
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for subject in SUBJECTS:
+        url = f"https://huggingface.co/api/datasets/MMMU/MMMU/parquet/{subject}/validation/0.parquet"
+        urllib.request.urlretrieve(url, "/tmp/data.parquet")
+        t = pq.read_table("/tmp/data.parquet")
+        for i in range(len(t)):
+            row = {
+                'id': str(t["id"][i]),
+                'problem': str(t["question"][i]),
+                'options': str(t["options"][i]),
+                'answer': str(t["answer"][i]),
+            }
+            for n in range(1, 8):
+                col = f"image_{n}"
+                if col not in t.column_names:
+                    continue
+                val = t[col][i].as_py()
+                img_bytes = val.get("bytes") if isinstance(val, dict) else None
+                if img_bytes:
+                    row[f'image_{n}_b64'] = base64.b64encode(img_bytes).decode('ascii')
+            out.write(json.dumps(row) + '\n')
+            count += 1
+        os.remove("/tmp/data.parquet")
+print(f"Extracted {count} tasks")
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=mmmu
@@ -73,10 +71,27 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
+if [ -n "$DOCK_TASK_ID" ]; then
+  python3 - <<'PY'
+import base64, os, glob
+tid = os.environ['DOCK_TASK_ID']
+for b64_path in glob.glob(f'/tasks/{tid}/image_*_b64.txt'):
+    name = os.path.basename(b64_path).removesuffix('_b64.txt')
+    with open(b64_path) as f:
+        data = f.read()
+    png_path = f'/tasks/{tid}/{name}.png'
+    with open(png_path, 'wb') as f:
+        f.write(base64.b64decode(data))
+    os.chmod(png_path, 0o600)
+    os.remove(b64_path)
+PY
+fi
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   # Copy images to /app/ so the agent can see them
   IMAGE_LIST=""

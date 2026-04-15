@@ -15,6 +15,7 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
 LABEL dock.benchmark.url="https://github.com/Aider-AI/polyglot-benchmark"
 LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aider_polyglot"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -42,62 +43,60 @@ RUN curl -sfL "https://github.com/Aider-AI/polyglot-benchmark/archive/${POLYGLOT
       | tar xz -C /tmp \
   && mv "/tmp/polyglot-benchmark-${POLYGLOT_REV}" /polyglot
 
-# --- Build task index: sequential ID -> language/exercise ---
+# --- Build task index JSONL: one line per exercise with metadata strings. ---
+# The on-disk /polyglot reference exercises remain intact (root-only); at runtime
+# the materialize helper produces /tasks/$DOCK_TASK_ID/*.txt and the entrypoint
+# copies starter files from the exercise_dir into /app.
 RUN python3 <<'PYEOF'
 import os, json
 
 languages = ["cpp", "go", "java", "javascript", "python", "rust"]
+os.makedirs('/tasks', exist_ok=True)
 task_id = 0
 
-for lang in sorted(languages):
-    practice_dir = f"/polyglot/{lang}/exercises/practice"
-    if not os.path.isdir(practice_dir):
-        continue
-    for exercise in sorted(os.listdir(practice_dir)):
-        exercise_dir = os.path.join(practice_dir, exercise)
-        if not os.path.isdir(exercise_dir):
+with open('/tasks/all.jsonl', 'w') as out_f:
+    for lang in sorted(languages):
+        practice_dir = f"/polyglot/{lang}/exercises/practice"
+        if not os.path.isdir(practice_dir):
             continue
+        for exercise in sorted(os.listdir(practice_dir)):
+            exercise_dir = os.path.join(practice_dir, exercise)
+            if not os.path.isdir(exercise_dir):
+                continue
 
-        # Read exercise metadata
-        config_path = os.path.join(exercise_dir, ".meta", "config.json")
-        if not os.path.isfile(config_path):
-            continue
-        config = json.load(open(config_path))
+            config_path = os.path.join(exercise_dir, ".meta", "config.json")
+            if not os.path.isfile(config_path):
+                continue
+            config = json.load(open(config_path))
 
-        # Read instructions
-        docs_dir = os.path.join(exercise_dir, ".docs")
-        instructions = ""
-        for doc_file in ["introduction.md", "instructions.md", "instructions.append.md"]:
-            doc_path = os.path.join(docs_dir, doc_file)
-            if os.path.isfile(doc_path):
-                instructions += open(doc_path).read() + "\n\n"
+            docs_dir = os.path.join(exercise_dir, ".docs")
+            instructions = ""
+            for doc_file in ["introduction.md", "instructions.md", "instructions.append.md"]:
+                doc_path = os.path.join(docs_dir, doc_file)
+                if os.path.isfile(doc_path):
+                    instructions += open(doc_path).read() + "\n\n"
 
-        # Get solution files (the files the agent must edit)
-        solution_files = config.get("files", {}).get("solution", [])
-        # Get test files
-        test_files = config.get("files", {}).get("test", [])
+            solution_files = config.get("files", {}).get("solution", [])
+            test_files = config.get("files", {}).get("test", [])
 
-        # Create task directory
-        task_dir = f"/tasks/{task_id}"
-        os.makedirs(task_dir, exist_ok=True)
-
-        # Store metadata
-        open(f"{task_dir}/id.txt", "w").write(f"{lang}/{exercise}")
-        open(f"{task_dir}/language.txt", "w").write(lang)
-        open(f"{task_dir}/exercise.txt", "w").write(exercise)
-        open(f"{task_dir}/instructions.txt", "w").write(instructions.strip())
-        open(f"{task_dir}/solution_files.txt", "w").write("\n".join(solution_files))
-        open(f"{task_dir}/test_files.txt", "w").write("\n".join(test_files))
-        open(f"{task_dir}/exercise_dir.txt", "w").write(exercise_dir)
-
-        task_id += 1
+            row = {
+                'id': f'{lang}/{exercise}',
+                'language': lang,
+                'exercise': exercise,
+                'instructions': instructions.strip(),
+                'solution_files': "\n".join(solution_files),
+                'test_files': "\n".join(test_files),
+                'exercise_dir': exercise_dir,
+            }
+            out_f.write(json.dumps(row) + '\n')
+            task_id += 1
 
 print(f"Indexed {task_id} tasks")
 assert task_id == 225, f"Expected 225 tasks, got {task_id}"
 PYEOF
 
 # Lock down task metadata and exercise repo from agent (includes reference solutions)
-RUN chmod -R 600 /tasks /polyglot
+RUN chmod 600 /tasks/all.jsonl && chmod -R 600 /polyglot
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=aider-polyglot
@@ -168,11 +167,13 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
-# --- Entrypoint: set TASK from task metadata, copy starter files to /app ---
+# --- Entrypoint: materialize task metadata, then copy starter files to /app ---
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   TASK_DIR="/tasks/$DOCK_TASK_ID"
   LANGUAGE=$(cat "$TASK_DIR/language.txt")

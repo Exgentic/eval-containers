@@ -13,29 +13,39 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="91c6572c454088bf71b679ad90aa8dffcd0d5868"
 LABEL dock.benchmark.url="https://github.com/MedMCQA/MedMCQA"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2203.14371"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="91c6572c454088bf71b679ad90aa8dffcd0d5868"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
+# Single-JSONL task layout. One line per task. Agent never sees this file
+# (root-only). Runtime entrypoint materializes just the requested task's
+# fields into /tasks/$DOCK_TASK_ID/.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, json, os
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/openlifescienceai/medmcqa/resolve/91c6572c454088bf71b679ad90aa8dffcd0d5868/data/validation-00000-of-00001.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
 letters = ['A', 'B', 'C', 'D']
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['id'][i]))
-    question = str(t['question'][i])
-    opts = [str(t['opa'][i]), str(t['opb'][i]), str(t['opc'][i]), str(t['opd'][i])]
-    choices = '\n'.join(f'{letters[j]}. {opts[j]}' for j in range(4))
-    open(f'/tasks/{i}/problem.txt', 'w').write(f'{question}\n\n{choices}')
-    # cop is 0-indexed integer; convert to letter
-    cop = int(t['cop'][i].as_py())
-    open(f'/tasks/{i}/answer.txt', 'w').write(letters[cop])
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        question = str(t['question'][i])
+        opts = [str(t['opa'][i]), str(t['opb'][i]), str(t['opc'][i]), str(t['opd'][i])]
+        choices = '\n'.join(f'{letters[j]}. {opts[j]}' for j in range(4))
+        cop = int(t['cop'][i].as_py())
+        row = {
+            'id': str(t['id'][i]),
+            'problem': f'{question}\n\n{choices}',
+            'answer': letters[cop],
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=medmcqa
@@ -44,10 +54,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this medical multiple choice question. Print only the letter of the correct answer (A, B, C, or D), nothing else.
 

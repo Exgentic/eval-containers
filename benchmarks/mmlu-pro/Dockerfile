@@ -15,27 +15,38 @@ LABEL dock.benchmark.data_revision="54611cde22c74cca43dd78732198de6abe971398"
 LABEL dock.benchmark.url="https://github.com/TIGER-AI-Lab/MMLU-Pro"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmlu_pro"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.01574"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="54611cde22c74cca43dd78732198de6abe971398"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir pyarrow==18.1.0
+
+# Single-JSONL task layout. Root-only; runtime entrypoint materializes the
+# requested task's fields into /tasks/$DOCK_TASK_ID/ on demand.
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, string
+import urllib.request, pyarrow.parquet as pq, os, string, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/TIGER-Lab/MMLU-Pro/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
 letters = list(string.ascii_uppercase)
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['question_id'][i]))
-    opts = t['options'][i].as_py()
-    choices = '\n'.join(f'{letters[j]}. {opt}' for j, opt in enumerate(opts))
-    problem = f"{t['question'][i]}\n\n{choices}"
-    open(f'/tasks/{i}/problem.txt', 'w').write(problem)
-    open(f'/tasks/{i}/answer.txt', 'w').write(str(t['answer'][i]))
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        opts = t['options'][i].as_py()
+        choices = '\n'.join(f'{letters[j]}. {opt}' for j, opt in enumerate(opts))
+        problem = f"{t['question'][i]}\n\n{choices}"
+        row = {
+            'id': str(t['question_id'][i]),
+            'problem': problem,
+            'answer': str(t['answer'][i]),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=mmlu-pro
@@ -44,10 +55,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this multiple choice question. Print only the letter of the correct answer (A, B, C, D, E, F, G, H, I, or J), nothing else.
 

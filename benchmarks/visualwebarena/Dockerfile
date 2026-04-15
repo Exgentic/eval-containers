@@ -14,29 +14,35 @@ LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/web-arena-x/visualwebarena"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2401.13649"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-# Fetch task configs from upstream and flatten to /tasks/<i>/
+# Write every task to a single JSONL file (root-only). Runtime entrypoint
+# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
 import json, os, urllib.request
 BASE = 'https://raw.githubusercontent.com/web-arena-x/visualwebarena/main/config_files/vwa'
-idx = 0
-for site in ('classifieds', 'reddit', 'shopping'):
-    url = f'{BASE}/test_{site}.raw.json'
-    local = f'/tmp/{site}.json'
-    urllib.request.urlretrieve(url, local)
-    tasks = json.load(open(local))
-    for t in tasks:
-        os.makedirs(f'/tasks/{idx}', exist_ok=True)
-        open(f'/tasks/{idx}/id.txt','w').write(f"{site}/{t['task_id']}")
-        open(f'/tasks/{idx}/problem.txt','w').write(t['intent'])
-        json.dump(t, open(f'/tasks/{idx}/task.json','w'))
-        idx += 1
-    os.remove(local)
-print(f'Extracted {idx} tasks')
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for site in ('classifieds', 'reddit', 'shopping'):
+        url = f'{BASE}/test_{site}.raw.json'
+        local = f'/tmp/{site}.json'
+        urllib.request.urlretrieve(url, local)
+        tasks = json.load(open(local))
+        for t in tasks:
+            row = {
+                'id': f"{site}/{t['task_id']}",
+                'problem': t['intent'],
+                'task': t,
+            }
+            out.write(json.dumps(row) + '\n')
+            count += 1
+        os.remove(local)
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=visualwebarena
@@ -52,10 +58,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   INTENT=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
   export TASK="You are a multimodal web browsing agent. Complete this task by interacting

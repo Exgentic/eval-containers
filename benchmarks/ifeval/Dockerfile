@@ -15,36 +15,45 @@ LABEL dock.benchmark.data_revision="966cd89545d6b6acfd7638bc708b98261ca58e84"
 LABEL dock.benchmark.url="https://github.com/google-research/google-research/tree/master/instruction_following_eval"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/ifeval"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.07911"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="966cd89545d6b6acfd7638bc708b98261ca58e84"
 
 RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
-
-# Fetch and extract tasks (prompt, instruction_id_list, kwargs per task)
 RUN pip install --no-cache-dir pyarrow==18.1.0
+
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# instruction_ids and kwargs are stored as JSON strings (field names
+# instruction_ids_json, kwargs_json); the verifier parses them.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
+os.makedirs('/tasks', exist_ok=True)
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/google/IFEval/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['key'][i]))
-    open(f'/tasks/{i}/prompt.txt', 'w').write(str(t['prompt'][i]))
-    # Store instruction IDs and kwargs as JSON for the verifier
-    instruction_ids = [str(x) for x in t['instruction_id_list'][i].as_py()]
-    open(f'/tasks/{i}/instruction_ids.json', 'w').write(json.dumps(instruction_ids))
-    kwargs_list = t['kwargs'][i].as_py()
-    # Each element is a dict serialized as JSON string; parse then re-dump
-    parsed_kwargs = []
-    for kw in kwargs_list:
-        if isinstance(kw, str):
-            parsed_kwargs.append(json.loads(kw))
-        elif isinstance(kw, dict):
-            parsed_kwargs.append(kw)
-        else:
-            parsed_kwargs.append({})
-    open(f'/tasks/{i}/kwargs.json', 'w').write(json.dumps(parsed_kwargs))
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        instruction_ids = [str(x) for x in t['instruction_id_list'][i].as_py()]
+        kwargs_list = t['kwargs'][i].as_py()
+        parsed_kwargs = []
+        for kw in kwargs_list:
+            if isinstance(kw, str):
+                parsed_kwargs.append(json.loads(kw))
+            elif isinstance(kw, dict):
+                parsed_kwargs.append(kw)
+            else:
+                parsed_kwargs.append({})
+        row = {
+            'id': str(t['key'][i]),
+            'prompt': str(t['prompt'][i]),
+            'instruction_ids_json': json.dumps(instruction_ids),
+            'kwargs_json': json.dumps(parsed_kwargs),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
+RUN chmod 600 /tasks/all.jsonl
 
 # Install official IFEval verification code from google-research
 RUN pip install --no-cache-dir absl-py==2.1.0 langdetect==1.0.9 nltk==3.9.1 immutabledict==4.2.0
@@ -53,8 +62,6 @@ RUN git clone --depth 1 https://github.com/google-research/google-research.git /
     && cp -r /tmp/google-research/instruction_following_eval /opt/instruction_following_eval \
     && rm -rf /tmp/google-research \
     && touch /opt/instruction_following_eval/__init__.py
-
-RUN chmod -R 600 /tasks
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=ifeval
@@ -110,8 +117,8 @@ def test_instruction_following(instruction_ids, kwargs_list, response):
 task_dir = sys.argv[1]
 response = sys.argv[2]
 
-instruction_ids = json.loads(open(os.path.join(task_dir, 'instruction_ids.json')).read())
-kwargs_list = json.loads(open(os.path.join(task_dir, 'kwargs.json')).read())
+instruction_ids = json.loads(open(os.path.join(task_dir, 'instruction_ids_json.txt')).read())
+kwargs_list = json.loads(open(os.path.join(task_dir, 'kwargs_json.txt')).read())
 
 # Use strict scoring as the primary reward
 score = test_instruction_following(instruction_ids, kwargs_list, response)
@@ -119,10 +126,12 @@ print(f"{score:.4f}")
 PYEOF
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/prompt.txt)"
 fi

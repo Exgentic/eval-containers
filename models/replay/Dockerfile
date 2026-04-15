@@ -4,7 +4,7 @@ LABEL dock.type="model"
 LABEL dock.model.name="replay"
 LABEL dock.model.provider="replay"
 
-RUN pip install --no-cache-dir flask
+RUN pip install --no-cache-dir flask==3.1.0
 
 COPY server.py /app/server.py
 

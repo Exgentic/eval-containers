@@ -10,6 +10,7 @@ LABEL dock.agent.description="Anthropic Claude Code CLI"
 LABEL dock.agent.runtime="node"
 LABEL dock.agent.url="https://github.com/anthropics/claude-code"
 LABEL dock.agent.version="2.1.104"
+ENV DOCK_AGENT_VERSION_DEFAULT="2.1.104"
 ENV DOCK_AGENT=claude-code
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
@@ -35,6 +36,17 @@ npm install -g @anthropic-ai/claude-code@2.1.104
 INSTALL
 chmod +x /opt/agent/install.sh
 EOF
+
+# Reference implementation of the DOCK_AGENT_VERSION override hook.
+# core/entrypoint/dock-entrypoint.sh invokes /dock-reinstall-agent <version>
+# when DOCK_AGENT_VERSION is set and differs from DOCK_AGENT_VERSION_DEFAULT.
+# This is the first agent to ship the hook; the pattern is copyable.
+RUN cat > /dock-reinstall-agent <<'RELOAD' && chmod +x /dock-reinstall-agent
+#!/bin/bash
+set -euo pipefail
+VERSION="${1:?usage: /dock-reinstall-agent <version>}"
+npm install -g "@anthropic-ai/claude-code@${VERSION}"
+RELOAD
 
 RUN <<'EOF'
 cat > /opt/agent/entrypoint.sh <<'ENTRY'

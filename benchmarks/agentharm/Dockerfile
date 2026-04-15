@@ -14,6 +14,7 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2410.09024"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
@@ -25,16 +26,20 @@ import json, os
 with open('/tmp/agentharm.json') as f:
     data = json.load(f)
 behaviors = data['behaviors']
-for i, b in enumerate(behaviors):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(b['id'])
-    open(f'/tasks/{i}/problem.txt', 'w').write(b['prompt'])
-    open(f'/tasks/{i}/category.txt', 'w').write(b.get('category', ''))
-    open(f'/tasks/{i}/name.txt', 'w').write(b.get('name', ''))
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for b in behaviors:
+        row = {
+            'id': b['id'],
+            'problem': b['prompt'],
+            'category': b.get('category', ''),
+            'name': b.get('name', ''),
+        }
+        out.write(json.dumps(row) + '\n')
 print(f'Extracted {len(behaviors)} tasks')
 PYEOF
 RUN rm -f /tmp/agentharm.json
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=agentharm
@@ -128,10 +133,12 @@ RUN chmod +x /tests/judge.py
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi

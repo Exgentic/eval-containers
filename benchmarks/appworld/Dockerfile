@@ -17,28 +17,31 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="refs/convert/parquet"
 LABEL dock.benchmark.url="https://github.com/stonybrooknlp/appworld"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.18901"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="refs/convert/parquet"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 ENV DOCK_BENCHMARK=appworld
 
-# Fetch task metadata from HuggingFace
+# Fetch task metadata from HuggingFace and write to a single JSONL file.
 RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/LukaszTP/AppWorld-Tasks/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet',
     '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    with open(f'/tasks/{i}/id.txt', 'w') as f:
-        f.write(str(t['task_id'][i]))
-    with open(f'/tasks/{i}/problem.txt', 'w') as f:
-        f.write(str(t['instruction'][i]))
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        row = {
+            'id': str(t['task_id'][i]),
+            'problem': str(t['instruction'][i]),
+        }
+        out.write(json.dumps(row) + '\n')
 print(f'Extracted {len(t)} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 
@@ -52,10 +55,12 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi

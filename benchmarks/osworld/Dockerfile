@@ -15,29 +15,37 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/xlang-ai/OSWorld"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/osworld"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.07972"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-# Fetch task metadata
 RUN pip install --no-cache-dir pyarrow==18.1.0
+
+# Single-JSONL task layout. One line per task. Runtime entrypoint
+# materializes the requested task and renames task.txt -> task.json.
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
 
-# OSWorld tasks are in the GitHub repo
 urllib.request.urlretrieve(
     'https://raw.githubusercontent.com/xlang-ai/OSWorld/main/evaluation_examples/test_all.json',
     '/tmp/tasks.json')
 with open('/tmp/tasks.json') as f:
     tasks = json.load(f)
-for i, (tid, t) in enumerate(tasks.items()):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(tid)
-    open(f'/tasks/{i}/problem.txt', 'w').write(t.get('instruction', ''))
-    json.dump(t, open(f'/tasks/{i}/task.json', 'w'))
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i, (tid, task) in enumerate(tasks.items()):
+        row = {
+            'id': str(i),
+            'upstream_id': tid,
+            'problem': task.get('instruction', ''),
+            'task': json.dumps(task),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
 os.remove('/tmp/tasks.json')
-print(f'Extracted {len(tasks)} tasks')
+print(f'Extracted {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=osworld
@@ -52,10 +60,16 @@ TEST
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
+if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/task.txt ]; then
+  mv /tasks/$DOCK_TASK_ID/task.txt /tasks/$DOCK_TASK_ID/task.json
+  chmod 600 /tasks/$DOCK_TASK_ID/task.json
+fi
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a computer use agent. Complete this task using the desktop.
 

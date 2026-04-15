@@ -14,10 +14,13 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
 LABEL dock.benchmark.url="https://github.com/HazyResearch/legalbench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2308.11462"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Known 83 classification subtasks with uniform (index, answer, text) / (index, text, answer) schema.
+# Write every task to a single JSONL file (root-only). Runtime entrypoint
+# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, csv, os, io, json
 
@@ -68,54 +71,51 @@ SUBTASKS = [
     'cuad_expiration_date', 'cuad_governing_law',
 ]
 
+os.makedirs('/tasks', exist_ok=True)
 task_idx = 0
-for sub in SUBTASKS:
-    url = f'{BASE}/{sub}/test.tsv'
-    try:
-        with urllib.request.urlopen(url, timeout=60) as r:
-            content = r.read().decode('utf-8')
-    except Exception as e:
-        print(f'SKIP {sub}: {e}')
-        continue
-    reader = csv.DictReader(io.StringIO(content), delimiter='\t')
-    cols = reader.fieldnames
-    if not cols or 'text' not in cols or 'answer' not in cols:
-        print(f'SKIP {sub}: unexpected columns {cols}')
-        continue
-    rows = list(reader)
-    # Collect answer label set for this subtask
-    labels = sorted({r['answer'].strip() for r in rows if r['answer']})
-    labels_str = ', '.join(labels) if labels else 'the correct label'
-    for r in rows:
-        ans = (r.get('answer') or '').strip()
-        txt = (r.get('text') or '').strip()
-        if not ans or not txt:
+with open('/tasks/all.jsonl', 'w') as out:
+    for sub in SUBTASKS:
+        url = f'{BASE}/{sub}/test.tsv'
+        try:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                content = r.read().decode('utf-8')
+        except Exception as e:
+            print(f'SKIP {sub}: {e}')
             continue
-        d = f'/tasks/{task_idx}'
-        os.makedirs(d, exist_ok=True)
-        with open(f'{d}/id.txt', 'w') as fh:
-            fh.write(f'{sub}:{r.get("index","")}')
-        with open(f'{d}/subtask.txt', 'w') as fh:
-            fh.write(sub)
-        with open(f'{d}/labels.txt', 'w') as fh:
-            fh.write(labels_str)
-        prompt = (
-            f'LegalBench subtask: {sub}\n'
-            f'Classify the following legal text.\n'
-            f'Valid answer labels: {labels_str}\n\n'
-            f'Text:\n{txt}'
-        )
-        with open(f'{d}/problem.txt', 'w') as fh:
-            fh.write(prompt)
-        with open(f'{d}/answer.txt', 'w') as fh:
-            fh.write(ans)
-        task_idx += 1
+        reader = csv.DictReader(io.StringIO(content), delimiter='\t')
+        cols = reader.fieldnames
+        if not cols or 'text' not in cols or 'answer' not in cols:
+            print(f'SKIP {sub}: unexpected columns {cols}')
+            continue
+        rows = list(reader)
+        labels = sorted({r['answer'].strip() for r in rows if r['answer']})
+        labels_str = ', '.join(labels) if labels else 'the correct label'
+        for r in rows:
+            ans = (r.get('answer') or '').strip()
+            txt = (r.get('text') or '').strip()
+            if not ans or not txt:
+                continue
+            prompt = (
+                f'LegalBench subtask: {sub}\n'
+                f'Classify the following legal text.\n'
+                f'Valid answer labels: {labels_str}\n\n'
+                f'Text:\n{txt}'
+            )
+            row = {
+                'id': f'{sub}:{r.get("index","")}',
+                'subtask': sub,
+                'labels': labels_str,
+                'problem': prompt,
+                'answer': ans,
+            }
+            out.write(json.dumps(row) + '\n')
+            task_idx += 1
 
 print(f'Total tasks: {task_idx}')
 with open('/tasks/.count', 'w') as fh:
     fh.write(str(task_idx))
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl /tasks/.count
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=legalbench
@@ -124,10 +124,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a legal reasoning assistant. Read the classification task and legal text below, then print ONLY one of the listed valid answer labels. Print nothing else.
 

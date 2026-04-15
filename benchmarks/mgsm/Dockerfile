@@ -15,28 +15,38 @@ LABEL dock.benchmark.data_revision="8b764d53dba2de1f684b836bb45c7ce389900fde"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/juletxara/mgsm"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mgsm"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2210.03057"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="8b764d53dba2de1f684b836bb45c7ce389900fde"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow==18.1.0
+
+# Single-JSONL task layout. One line per task. Agent never sees this file
+# (root-only). Runtime entrypoint materializes just the requested task's
+# fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os
+import urllib.request, pyarrow.parquet as pq, json, os
 
 LANGUAGES = ['bn', 'de', 'en', 'es', 'fr', 'ja', 'ru', 'sw', 'te', 'th', 'zh']
-task_idx = 0
-for lang in LANGUAGES:
-    url = f'https://huggingface.co/api/datasets/juletxara/mgsm/parquet/{lang}/test/0.parquet'
-    urllib.request.urlretrieve(url, '/tmp/data.parquet')
-    t = pq.read_table('/tmp/data.parquet')
-    for i in range(len(t)):
-        os.makedirs(f'/tasks/{task_idx}', exist_ok=True)
-        open(f'/tasks/{task_idx}/id.txt', 'w').write(f'{lang}_{i}')
-        open(f'/tasks/{task_idx}/problem.txt', 'w').write(str(t['question'][i]))
-        open(f'/tasks/{task_idx}/answer.txt', 'w').write(str(t['answer_number'][i]))
-        open(f'/tasks/{task_idx}/language.txt', 'w').write(lang)
-        task_idx += 1
-    os.remove('/tmp/data.parquet')
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for lang in LANGUAGES:
+        url = f'https://huggingface.co/api/datasets/juletxara/mgsm/parquet/{lang}/test/0.parquet'
+        urllib.request.urlretrieve(url, '/tmp/data.parquet')
+        t = pq.read_table('/tmp/data.parquet')
+        for i in range(len(t)):
+            row = {
+                'id': f'{lang}_{i}',
+                'problem': str(t['question'][i]),
+                'answer': str(t['answer_number'][i]),
+                'language': lang,
+            }
+            out.write(json.dumps(row) + '\n')
+            count += 1
+        os.remove('/tmp/data.parquet')
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=mgsm
@@ -45,10 +55,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this math problem. Print only the final numeric answer as a single number. Do not include any explanation or units.
 

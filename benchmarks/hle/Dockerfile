@@ -16,14 +16,17 @@ LABEL dock.benchmark.url="https://github.com/centerforaisafety/hle"
 LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/hle"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/hle"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2501.14249"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Dataset is gated — download with huggingface_hub
 ARG HF_TOKEN
 RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0
+
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
-import os, glob, pyarrow.parquet as pq
+import os, glob, json, pyarrow.parquet as pq
 from huggingface_hub import snapshot_download
 
 snapshot_download(
@@ -36,18 +39,24 @@ snapshot_download(
 )
 parquets = sorted(glob.glob("/tmp/hle/data/*.parquet"))
 t = pq.read_table(parquets[0]) if len(parquets) == 1 else pq.concat_tables([pq.read_table(p) for p in parquets])
-for i in range(len(t)):
-    os.makedirs(f'/tasks/{i}', exist_ok=True)
-    open(f'/tasks/{i}/id.txt', 'w').write(str(t['id'][i]))
-    open(f'/tasks/{i}/problem.txt', 'w').write(str(t['question'][i]))
-    open(f'/tasks/{i}/answer.txt', 'w').write(str(t['answer'][i]))
-    open(f'/tasks/{i}/answer_type.txt', 'w').write(str(t['answer_type'][i]))
-    # Save image reference if present
-    img = t['image'][i].as_py() if hasattr(t['image'][i], 'as_py') else t['image'][i]
-    if img is not None and str(img).strip():
-        open(f'/tasks/{i}/image.txt', 'w').write(str(img))
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tasks/all.jsonl', 'w') as out:
+    for i in range(len(t)):
+        row = {
+            'id': str(t['id'][i]),
+            'problem': str(t['question'][i]),
+            'answer': str(t['answer'][i]),
+            'answer_type': str(t['answer_type'][i]),
+        }
+        img = t['image'][i].as_py() if hasattr(t['image'][i], 'as_py') else t['image'][i]
+        if img is not None and str(img).strip():
+            row['image'] = str(img)
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=hle
@@ -56,10 +65,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   ANSWER_TYPE=$(cat /tasks/$DOCK_TASK_ID/answer_type.txt 2>/dev/null)
   if [ "$ANSWER_TYPE" = "multiple_choice" ]; then

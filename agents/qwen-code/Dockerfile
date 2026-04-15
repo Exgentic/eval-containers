@@ -9,6 +9,7 @@ LABEL dock.agent.description="Qwen Code — Alibaba's terminal AI coding agent (
 LABEL dock.agent.runtime="node"
 LABEL dock.agent.url="https://github.com/QwenLM/qwen-code"
 LABEL dock.agent.version="0.14.4"
+ENV DOCK_AGENT_VERSION_DEFAULT="0.14.4"
 ENV DOCK_AGENT=qwen-code
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*

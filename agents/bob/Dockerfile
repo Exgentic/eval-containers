@@ -9,6 +9,7 @@ LABEL dock.agent.description="IBM Bob Shell — AI SDLC partner"
 LABEL dock.agent.runtime="node"
 LABEL dock.agent.url="https://github.com/ibm/bob-shell"
 LABEL dock.agent.version="1.0.1"
+ENV DOCK_AGENT_VERSION_DEFAULT="1.0.1"
 ENV DOCK_AGENT=bob
 
 ARG BOB_VERSION=1.0.1

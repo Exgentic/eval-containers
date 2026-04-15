@@ -15,6 +15,7 @@ LABEL dock.benchmark.data_revision="40ee1968852fc57f625934251ac22be47077a8fb"
 LABEL dock.benchmark.url="https://github.com/openai/healthbench"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/healthbench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.11709"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="40ee1968852fc57f625934251ac22be47077a8fb"
 
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 
@@ -22,23 +23,16 @@ RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 RUN curl -sfL -o /tmp/eval.jsonl \
     'https://openaipublic.blob.core.windows.net/simple-evals/healthbench/2025-05-07-06-14-12_oss_eval.jsonl'
 
-# Extract tasks: each line is one task with prompt + rubrics
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
 import json, os
-
-with open('/tmp/eval.jsonl') as f:
-    for i, line in enumerate(f):
-        row = json.loads(line)
-        task_dir = f'/tasks/{i}'
-        os.makedirs(task_dir, exist_ok=True)
-
-        # Store original ID
-        with open(f'{task_dir}/id.txt', 'w') as fh:
-            fh.write(row['prompt_id'])
-
+os.makedirs('/tasks', exist_ok=True)
+count = 0
+with open('/tmp/eval.jsonl') as f, open('/tasks/all.jsonl', 'w') as out:
+    for line in f:
+        row_in = json.loads(line)
         # Build the conversation prompt for the agent
-        # Multi-turn: format as a conversation the agent must continue
-        messages = row['prompt']
+        messages = row_in['prompt']
         if len(messages) == 1:
             prompt_text = messages[0]['content']
         else:
@@ -48,33 +42,29 @@ with open('/tmp/eval.jsonl') as f:
                 parts.append(f'{role}: {msg["content"]}')
             parts.append(f'\n{messages[-1]["role"].upper()}: {messages[-1]["content"]}')
             prompt_text = '\n\n'.join(parts)
-        with open(f'{task_dir}/problem.txt', 'w') as fh:
-            fh.write(prompt_text)
-
-        # Store rubrics as JSON (used by test script for LLM-as-judge scoring)
-        with open(f'{task_dir}/rubrics.json', 'w') as fh:
-            json.dump(row['rubrics'], fh)
-
-        # Store example tags
-        with open(f'{task_dir}/tags.json', 'w') as fh:
-            json.dump(row.get('example_tags', []), fh)
+        row = {
+            'id': row_in['prompt_id'],
+            'problem': prompt_text,
+            'rubrics_json': json.dumps(row_in['rubrics']),
+            'tags_json': json.dumps(row_in.get('example_tags', [])),
+        }
+        out.write(json.dumps(row) + '\n')
+        count += 1
+print(f'Wrote {count} tasks')
 PYEOF
 RUN rm -f /tmp/eval.jsonl
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=healthbench
 
 # Custom test: LLM-as-judge scoring using physician rubrics
-# The test script calls the model service to grade each rubric criterion
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
 TASK_DIR="/tasks/$DOCK_TASK_ID"
 AGENT_RESPONSE=$(cat /output/agent/stdout.log 2>/dev/null)
-RUBRICS=$(cat "$TASK_DIR/rubrics.json" 2>/dev/null)
-PROMPT=$(cat "$TASK_DIR/problem.txt" 2>/dev/null)
 
 if [ -z "$AGENT_RESPONSE" ]; then
   echo "0.0" > /logs/verifier/reward.txt
@@ -91,7 +81,7 @@ import json, sys, os, urllib.request
 task_dir = sys.argv[1]
 agent_response = sys.argv[2]
 prompt = open(f'{task_dir}/problem.txt').read()
-rubrics = json.load(open(f'{task_dir}/rubrics.json'))
+rubrics = json.load(open(f'{task_dir}/rubrics_json.txt'))
 
 OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'http://model:4000')
 
@@ -145,7 +135,6 @@ def call_judge(conversation, response, criterion):
             with urllib.request.urlopen(req, timeout=60) as resp:
                 result = json.loads(resp.read())
             content = result['choices'][0]['message']['content'].strip()
-            # Extract JSON from response (handle markdown code blocks)
             if '```' in content:
                 content = content.split('```')[1]
                 if content.startswith('json'):
@@ -168,13 +157,11 @@ for rubric in rubrics:
     results.append({'criterion': criterion, 'points': points, 'met': met})
     print(f'Criterion (pts={points}): met={met}', file=sys.stderr)
 
-# Calculate score: achieved_points / total_possible_points
-# Only positive-point criteria count toward the denominator
 total_possible = sum(r['points'] for r in results if r['points'] > 0)
 achieved = 0
 for r in results:
     if r['met']:
-        achieved += r['points']  # negative points reduce score if undesirable behavior detected
+        achieved += r['points']
 
 if total_possible > 0:
     score = max(0.0, min(1.0, achieved / total_possible))
@@ -183,7 +170,6 @@ else:
 
 print(f'{score:.4f}')
 
-# Save detailed grading log
 with open('/logs/verifier/grading_details.json', 'w') as f:
     json.dump({'results': results, 'total_possible': total_possible,
                'achieved': achieved, 'score': score}, f, indent=2)
@@ -193,10 +179,12 @@ GRADE
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a helpful health assistant. Respond to the following health-related question or conversation thoughtfully and accurately. Provide complete, evidence-based information. If the situation may be urgent or dangerous, include appropriate safety guidance.
 

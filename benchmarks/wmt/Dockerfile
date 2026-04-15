@@ -13,6 +13,7 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/google/wmt24pp"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2502.12404"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
@@ -34,28 +35,31 @@ PAIRS = [
 ]
 
 BASE = 'https://huggingface.co/datasets/google/wmt24pp/resolve/e65f5856b1de3319c748c15e5aec0bc2336ec3b0'
+os.makedirs('/tasks', exist_ok=True)
 task_idx = 0
-for pair, lang_name in PAIRS:
-    url = f'{BASE}/{pair}.jsonl'
-    urllib.request.urlretrieve(url, '/tmp/data.jsonl')
-    with open('/tmp/data.jsonl') as f:
-        rows = [json.loads(line) for line in f]
-    for r in rows:
-        if str(r.get('is_bad_source', '')).lower() == 'true':
-            continue
-        d = f'/tasks/{task_idx}'
-        os.makedirs(d, exist_ok=True)
-        open(f'{d}/id.txt', 'w').write(f"{pair}_{r['segment_id']}")
-        open(f'{d}/problem.txt', 'w').write(r['source'])
-        open(f'{d}/answer.txt', 'w').write(r['target'])
-        open(f'{d}/language.txt', 'w').write(pair)
-        open(f'{d}/language_name.txt', 'w').write(lang_name)
-        task_idx += 1
-    os.remove('/tmp/data.jsonl')
+with open('/tasks/all.jsonl', 'w') as out:
+    for pair, lang_name in PAIRS:
+        url = f'{BASE}/{pair}.jsonl'
+        urllib.request.urlretrieve(url, '/tmp/data.jsonl')
+        with open('/tmp/data.jsonl') as f:
+            rows = [json.loads(line) for line in f]
+        for r in rows:
+            if str(r.get('is_bad_source', '')).lower() == 'true':
+                continue
+            row = {
+                'id': f"{pair}_{r['segment_id']}",
+                'problem': r['source'],
+                'answer': r['target'],
+                'language': pair,
+                'language_name': lang_name,
+            }
+            out.write(json.dumps(row) + '\n')
+            task_idx += 1
+        os.remove('/tmp/data.jsonl')
 
 print(f'Wrote {task_idx} tasks')
 PYEOF
-RUN chmod -R 600 /tasks
+RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=wmt
@@ -64,10 +68,12 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
+RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+/dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
   LANG_NAME=$(cat /tasks/$DOCK_TASK_ID/language_name.txt)
   export TASK="Translate the following English text into ${LANG_NAME}. Print only the translated text with no explanation, quotes, or additional commentary.

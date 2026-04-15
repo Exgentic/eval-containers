@@ -19,6 +19,7 @@ LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/openai/SWELancer-Benchmark"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2502.12115"
+ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
 
 ENV DOCK_BENCHMARK=swe-lancer
 

@@ -25,6 +25,7 @@ LABEL dock.agent.description="Harbor Terminus-2 reference agent"
 LABEL dock.agent.runtime="python"
 LABEL dock.agent.url="https://github.com/harbor-ai/harbor"
 LABEL dock.agent.version="0.3.0"
+ENV DOCK_AGENT_VERSION_DEFAULT="0.3.0"
 ENV DOCK_AGENT=terminus-2
 
 # tmux is required by Terminus-2's TmuxSession terminal interaction layer

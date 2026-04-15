@@ -9,6 +9,7 @@ LABEL dock.agent.description="Mini-SWE-agent: lightweight AI coding agent for so
 LABEL dock.agent.runtime="python"
 LABEL dock.agent.url="https://github.com/princeton-nlp/SWE-agent"
 LABEL dock.agent.version="2.2.8"
+ENV DOCK_AGENT_VERSION_DEFAULT="2.2.8"
 ENV DOCK_AGENT=mini-swe-agent
 
 RUN apt-get update && apt-get install -y curl python3 python3-pip python3-venv git && rm -rf /var/lib/apt/lists/*
