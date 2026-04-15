@@ -107,54 +107,6 @@ def test_instruction_following(instruction_ids, kwargs_list, response):
 
     return followed / total
 
-def test_instruction_following_loose(instruction_ids, kwargs_list, response):
-    """Loose check: try response variants (strip markdown, first/last line removal)."""
-    total = len(instruction_ids)
-    if total == 0:
-        return 1.0
-
-    # Generate response variants for loose evaluation
-    response_stripped = response.strip()
-    lines = response_stripped.split('\n')
-    variants = [response_stripped]
-    # Remove asterisks (markdown bold/italic)
-    no_asterisks = response_stripped.replace('*', '')
-    variants.append(no_asterisks)
-    # Remove first line
-    if len(lines) > 1:
-        variants.append('\n'.join(lines[1:]))
-        variants.append('\n'.join(lines[1:]).replace('*', ''))
-    # Remove last line
-    if len(lines) > 1:
-        variants.append('\n'.join(lines[:-1]))
-        variants.append('\n'.join(lines[:-1]).replace('*', ''))
-    # Remove first and last
-    if len(lines) > 2:
-        variants.append('\n'.join(lines[1:-1]))
-        variants.append('\n'.join(lines[1:-1]).replace('*', ''))
-
-    followed = 0
-    for inst_id, kwargs in zip(instruction_ids, kwargs_list):
-        inst_cls = instructions_registry.INSTRUCTION_DICT.get(inst_id)
-        if inst_cls is None:
-            followed += 1
-            continue
-        clean_kwargs = {k: v for k, v in kwargs.items() if v is not None}
-
-        inst_followed = False
-        for variant in variants:
-            if not variant.strip():
-                continue
-            instruction = inst_cls(inst_id)
-            instruction.build_description(**clean_kwargs)
-            if instruction.check_following(variant):
-                inst_followed = True
-                break
-        if inst_followed:
-            followed += 1
-
-    return followed / total
-
 task_dir = sys.argv[1]
 response = sys.argv[2]
 
