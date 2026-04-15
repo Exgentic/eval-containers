@@ -15,6 +15,7 @@ FROM ghcr.io/openai/mle-bench.${DOCK_TASK_ID}:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mle-bench"
+LABEL dock.benchmark.upstream_base="ghcr.io/openai/mle-bench.${DOCK_TASK_ID}:latest"
 LABEL dock.benchmark.description="MLE-bench - Kaggle-style ML engineering tasks (OpenAI)"
 LABEL dock.benchmark.tasks="75"
 LABEL dock.benchmark.env="per-task"

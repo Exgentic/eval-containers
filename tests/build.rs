@@ -64,6 +64,22 @@ fn docker_build(context: &Path, extra_args: &[&str]) -> Result<String, String> {
     }
 }
 
+/// RAII guard that removes a docker image when dropped. The build test
+/// only needs to prove the image builds and carries the right labels;
+/// the image itself is not a deliverable. Without this guard a full
+/// sweep leaves 96 tagged images on disk (~100 GB on podman), which
+/// fills the machine mid-sweep with cryptic `no space left on device`
+/// failures. Drop fires whether the test passes, fails, or panics.
+struct ImageGuard(String);
+
+impl Drop for ImageGuard {
+    fn drop(&mut self) {
+        // Best-effort — if `docker rmi` fails we still finish the test.
+        // `-f` forces removal even if the image has untagged children.
+        let _ = Command::new("docker").args(["rmi", "-f", &self.0]).output();
+    }
+}
+
 fn docker_label(image: &str, label: &str) -> Option<String> {
     let output = Command::new("docker")
         .args([
@@ -171,6 +187,11 @@ fn run_build_sweep(
             }
         };
 
+        // `_image` drops at the end of this iteration, which `docker rmi
+        // -f`s the tag. Must be declared BEFORE the label inspection so
+        // a panic mid-inspection still triggers cleanup on unwind.
+        let _image = ImageGuard(tag.clone());
+
         // Verify required labels
         let mut label_failed = false;
         for label in required_labels {
@@ -196,6 +217,7 @@ fn run_build_sweep(
             pass_count += 1;
         }
         let _ = stderr.flush();
+        // _image drops here → docker rmi -f fires before the next build
     }
 
     let total_elapsed = sweep_start.elapsed().as_secs();
@@ -267,6 +289,7 @@ fn build_every_agent() {
 fn build_replay_model() {
     let tag = docker_build(Path::new("models/replay"), &[])
         .unwrap_or_else(|e| panic!("replay model failed to build:\n{e}"));
+    let _image = ImageGuard(tag.clone());
     assert_eq!(
         docker_label(&tag, "dock.type").as_deref(),
         Some("model"),

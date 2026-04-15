@@ -14,6 +14,7 @@ FROM ghcr.io/andyzorigin/cybench.${DOCK_TASK_ID}:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="cybench"
+LABEL dock.benchmark.upstream_base="ghcr.io/andyzorigin/cybench.${DOCK_TASK_ID}:latest"
 LABEL dock.benchmark.description="Cybench - professional CTF cybersecurity reasoning tasks"
 LABEL dock.benchmark.tasks="40"
 LABEL dock.benchmark.env="per-task"

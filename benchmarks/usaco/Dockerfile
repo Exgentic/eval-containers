@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="usaco"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="USACO - competitive programming"
 LABEL dock.benchmark.tasks="307"
 LABEL dock.benchmark.env="shared-env"

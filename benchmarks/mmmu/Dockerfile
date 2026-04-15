@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mmmu"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="MMMU - massive multi-discipline multimodal understanding"
 LABEL dock.benchmark.tasks="900"
 LABEL dock.benchmark.env="shared-env"

@@ -7,6 +7,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="gdpval"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="GDPval - professional knowledge work"
 LABEL dock.benchmark.tasks="220"
 LABEL dock.benchmark.env="shared-env"

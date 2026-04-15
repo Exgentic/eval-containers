@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="gaia"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="GAIA - General AI Assistants"
 LABEL dock.benchmark.tasks="165"
 LABEL dock.benchmark.env="shared-env"

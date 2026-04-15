@@ -1,0 +1,58 @@
+name: Test
+
+# Runs the VERIFY.md sanity phase (steps 4–10) on every push and PR.
+# Fast mechanical gates only — no docker build, no live API calls.
+# The release workflow (release.yml) is the slow per-image build sweep
+# and runs separately on tag / main push.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanity:
+    name: Sanity phase (VERIFY.md steps 4–10)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: fmt --check (VERIFY step 4a)
+        run: cargo fmt --check
+
+      - name: clippy --all-targets -D warnings (VERIFY step 4b)
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: cargo test (VERIFY steps 5–10)
+        # Runs every #[test] that isn't behind #[ignore]:
+        #   - rule-engine unit tests for dockerfile + trajectory inspection
+        #   - tests/check.rs: structural validation, count reconciliation,
+        #     released_benchmarks_have_fixtures
+        #   - tests/compose.rs: every compose.yaml parses
+        #   - tests/dockerfile_inspection.rs: 113-file rule sweep
+        #   - tests/task_inspection.rs: 23-fixture task-half + run-half sweep
+        # Pure file I/O + docker compose config (no daemon). ~10 seconds.
+        run: cargo test
+
+      - name: Report fleet report artifact (if present)
+        if: always()
+        run: |
+          if [ -f tests/fleet-report.md ]; then
+            echo "::group::tests/fleet-report.md"
+            cat tests/fleet-report.md
+            echo "::endgroup::"
+          fi

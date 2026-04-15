@@ -8,6 +8,8 @@ FROM ghcr.io/stonybrooknlp/appworld:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="appworld"
+LABEL dock.benchmark.upstream_base="ghcr.io/stonybrooknlp/appworld:latest"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="AppWorld - 9 simulated apps with 457 APIs"
 LABEL dock.benchmark.tasks="732"
 LABEL dock.benchmark.env="shared-env"

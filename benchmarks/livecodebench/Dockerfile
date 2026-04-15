@@ -7,6 +7,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="livecodebench"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="LiveCodeBench - competitive programming from recent contests"
 LABEL dock.benchmark.tasks="880"
 LABEL dock.benchmark.env="shared-env"

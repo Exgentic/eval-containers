@@ -65,7 +65,11 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Image
 
-21. **Labels.** Every benchmark image MUST include labels: `dock.type`, `dock.benchmark.name`, `dock.benchmark.description`, `dock.benchmark.tasks`, `dock.benchmark.env`, `dock.benchmark.internet`.
+21. **Labels.** Every benchmark image MUST include labels: `dock.type`, `dock.benchmark.name`, `dock.benchmark.description`, `dock.benchmark.tasks`, `dock.benchmark.env`, `dock.benchmark.internet`. Benchmarks that have graduated to the release gate MUST also carry `dock.benchmark.released="true"` (see principle 21a).
+
+21a. **Release readiness gate.** A benchmark is **released** when it has been proven end-to-end against at least one agent with a recorded replay fixture under `tests/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`. Released benchmarks MUST carry `LABEL dock.benchmark.released="true"`. Unreleased benchmarks MAY exist in `benchmarks/` (the source tree is the full catalog of what Dock COULD support), but MUST NOT carry the label until a fixture lands and they pass the replay sweep. `tests/FLEET.md` question 3 (replay coverage) checks this label, not the directory count — the filesystem can hold 96 benchmarks while only a subset are released.
+
+21b. **Upstream base tracking.** Benchmarks whose `FROM` line points at a third-party registry not under Dock's control (e.g. `ghcr.io/andyzorigin/*`, `ghcr.io/openai/*`) MUST declare `LABEL dock.benchmark.upstream_base="<full image ref>"` recording the exact upstream reference. This makes the external dependency visible to audit tools and to anyone reading the image metadata. Benchmarks that build from a Dock-controlled or fully in-repo base (e.g. `FROM python:3.12-slim`) do NOT need this label. `tests/FLEET.md` question 6 (stale upstream images) walks every `upstream_base` label and reports yellow if any still points at `:latest` — such bases are legal but flagged as known supply-chain debt until mirrored or pinned by digest.
 
 22. **Shared components.** Benchmarks SHOULD use shared core images (`dock-entrypoint.sh`, `test-exact-match`) when applicable. Benchmarks MUST NOT reimplement shared logic.
 
