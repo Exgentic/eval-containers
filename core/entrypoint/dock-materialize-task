@@ -1,0 +1,35 @@
+#!/bin/bash
+# Materialize one task's fields from /tasks/all.jsonl into /tasks/$DOCK_TASK_ID/.
+#
+# Benchmarks ship a single /tasks/all.jsonl at build time (one JSON object per
+# line, field names become filenames). At runtime this helper seeks to the
+# requested line, writes each field as /tasks/$DOCK_TASK_ID/<field>.txt, and
+# chmods the result root-readable-only. This is the shared replacement for the
+# ~20-line python block every JSONL benchmark used to inline in its own
+# /entrypoint.sh — see benchmarks/RULES.md principle 22 (shared components).
+#
+# No-op if /tasks/all.jsonl is missing (per-task-directory benchmarks keep
+# working unchanged) or if $DOCK_TASK_ID is empty.
+set -euo pipefail
+
+if [ -z "${DOCK_TASK_ID:-}" ] || [ ! -f /tasks/all.jsonl ]; then
+  exit 0
+fi
+
+mkdir -p "/tasks/$DOCK_TASK_ID"
+python3 - <<'PY'
+import json, os
+tid = int(os.environ['DOCK_TASK_ID'])
+with open('/tasks/all.jsonl') as f:
+    row = None
+    for i, line in enumerate(f):
+        if i == tid:
+            row = json.loads(line)
+            break
+if row is None:
+    raise SystemExit(f'dock-materialize-task: task id {tid} out of range')
+for k, v in row.items():
+    with open(f'/tasks/{tid}/{k}.txt', 'w') as out:
+        out.write(str(v))
+PY
+chmod -R 600 "/tasks/$DOCK_TASK_ID"

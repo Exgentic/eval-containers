@@ -65,3 +65,65 @@ fn compose_config_every_benchmark() {
 
     eprintln!("all {} compose files parsed OK", files.len());
 }
+
+// ─── RULES.md principle 9: image tag axis ────────────────────────
+//
+// `DOCK_*_VERSION` is the *runtime upstream version* axis — the
+// entrypoint reads it to re-fetch/re-install. Image tags are a
+// different axis, selected by `DOCK_*_TAG`. Using `_VERSION` as a
+// placeholder in an `image:` field conflates them. This test catches
+// that drift on every `cargo test`.
+
+#[test]
+fn compose_image_tags_use_tag_not_version_axis() {
+    let mut files = benchmark_compose_files();
+    // Also include the base compose templates.
+    for extra in ["compose/services.yaml", "compose/evaluate.yaml"] {
+        let p = PathBuf::from(extra);
+        if p.is_file() {
+            files.push(p);
+        }
+    }
+
+    let bad_placeholders = [
+        "${DOCK_AGENT_VERSION",
+        "${DOCK_BENCHMARK_VERSION",
+        "${DOCK_MODEL_VERSION",
+        "${DOCK_LITELLM_VERSION",
+    ];
+
+    let mut bad: Vec<String> = Vec::new();
+    for file in &files {
+        let Ok(text) = fs::read_to_string(file) else {
+            continue;
+        };
+        for (lineno, line) in text.lines().enumerate() {
+            let trim = line.trim_start();
+            if !trim.starts_with("image:") {
+                continue;
+            }
+            for needle in &bad_placeholders {
+                if line.contains(needle) {
+                    bad.push(format!(
+                        "{}:{}: {} (use DOCK_*_TAG for image tags, not *_VERSION)",
+                        file.display(),
+                        lineno + 1,
+                        line.trim()
+                    ));
+                }
+            }
+        }
+    }
+
+    if !bad.is_empty() {
+        let mut msg = format!(
+            "{} compose `image:` field(s) use *_VERSION as tag placeholder (RULES.md 9):\n",
+            bad.len()
+        );
+        for b in &bad {
+            msg.push_str(&format!("  {b}\n"));
+        }
+        panic!("{msg}");
+    }
+    eprintln!("✓ compose image tags all use DOCK_*_TAG (RULES.md 9)");
+}

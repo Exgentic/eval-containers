@@ -115,9 +115,15 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 .and_then(|mut f| f.write_all(COMBINATION_DOCKERFILE.as_bytes()))
                 .map_err(|e| format!("failed to write temp Dockerfile: {e}"))?;
 
+            // Read the agent image's dock.agent.version label so we can
+            // propagate it into the combined image as DOCK_AGENT_VERSION_DEFAULT
+            // (RULES.md principle 9 — version-override axis).
+            let agent_version = docker_label(&agent_tag, "dock.agent.version")
+                .unwrap_or_else(|_| String::new());
             let build_args = vec![
                 format!("BENCHMARK_IMAGE={bench_tag}"),
                 format!("AGENT_IMAGE={agent_tag}"),
+                format!("AGENT_VERSION={agent_version}"),
             ];
             let result = docker_build(
                 &eval_tag,
@@ -171,6 +177,24 @@ fn image_exists(tag: &str) -> bool {
         .status()
         .map(|s| s.success())
         .unwrap_or(false)
+}
+
+/// Read a single label from a local Docker image. Used by `build eval`
+/// to propagate the agent's pinned version into the combined image as a
+/// build-arg (RULES.md principle 9).
+fn docker_label(tag: &str, label: &str) -> Result<String, String> {
+    let format = format!("{{{{ index .Config.Labels \"{label}\" }}}}");
+    let out = Command::new("docker")
+        .args(["image", "inspect", "--format", &format, tag])
+        .output()
+        .map_err(|e| format!("failed to run docker image inspect: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "docker image inspect {tag} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
 fn docker_build(
