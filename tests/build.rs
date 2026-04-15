@@ -292,11 +292,49 @@ async fn run_build_sweep(
     let mut failures = Vec::new();
     let contexts = subdirs_with_dockerfile(dir);
     assert!(!contexts.is_empty(), "no subdirectories found under {dir}");
+
+    // Optional filter via env var: DOCK_BUILD_FILTER=aime,gsm8k,aider-polyglot
+    // builds only those three. Empty or unset = build all. CI jobs set this
+    // to one name so each runner builds exactly one image.
+    let filter: Vec<String> = std::env::var("DOCK_BUILD_FILTER")
+        .unwrap_or_default()
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    let contexts: Vec<PathBuf> = if filter.is_empty() {
+        contexts
+    } else {
+        contexts
+            .into_iter()
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|s| s.to_str())
+                    .map(|n| filter.iter().any(|f| f == n))
+                    .unwrap_or(false)
+            })
+            .collect()
+    };
+    if !filter.is_empty() && contexts.is_empty() {
+        panic!(
+            "DOCK_BUILD_FILTER matched zero items in {dir}/ (filter: {})",
+            filter.join(",")
+        );
+    }
+
     let total = contexts.len();
     let kind = label_root;
 
     let mut stderr = std::io::stderr();
-    let _ = writeln!(stderr, "\n── build sweep over {total} {kind}s ──");
+    if filter.is_empty() {
+        let _ = writeln!(stderr, "\n── build sweep over {total} {kind}s ──");
+    } else {
+        let _ = writeln!(
+            stderr,
+            "\n── build sweep over {total} {kind}s (DOCK_BUILD_FILTER={}) ──",
+            filter.join(",")
+        );
+    }
     let _ = stderr.flush();
 
     let sweep_start = Instant::now();

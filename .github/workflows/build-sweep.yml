@@ -1,0 +1,123 @@
+name: Build sweep
+
+# Fan out the benchmark and agent build sweeps across GitHub Actions
+# runners. Every benchmark builds in its own job via a matrix strategy,
+# so 96 benchmarks land in parallel instead of an hour-long serial
+# sweep. Each job runs:
+#
+#   DOCK_BUILD_FILTER=<name> cargo test --test build build_every_benchmark -- --ignored
+#
+# which the build test honors by only building the matching subdir.
+#
+# This workflow is the CI-side counterpart to the VERIFY.md build
+# phase (steps 11–13). Runs on PR changes under benchmarks/ or agents/.
+# On manual dispatch (workflow_dispatch), builds everything.
+
+on:
+  pull_request:
+    paths:
+      - 'benchmarks/**'
+      - 'agents/**'
+      - 'core/**'
+      - 'tests/build.rs'
+      - 'tests/check.rs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # Stage 1 — enumerate the benchmark + agent targets the rest of the
+  # workflow will fan out over. Uses `jq` to emit a JSON array that the
+  # next job consumes as its matrix.
+  enumerate:
+    name: Enumerate targets
+    runs-on: ubuntu-latest
+    outputs:
+      benchmarks: ${{ steps.list.outputs.benchmarks }}
+      agents: ${{ steps.list.outputs.agents }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: list
+        run: |
+          BENCH=$(ls -1 benchmarks/ | grep -v '^_' | grep -v '\.md$' | jq -R -s -c 'split("\n")[:-1]')
+          AGENT=$(ls -1 agents/ | grep -v '^_' | grep -v '\.md$' | jq -R -s -c 'split("\n")[:-1]')
+          echo "benchmarks=$BENCH" >> $GITHUB_OUTPUT
+          echo "agents=$AGENT" >> $GITHUB_OUTPUT
+          echo "── enumeration ──"
+          echo "benchmarks: $BENCH"
+          echo "agents:     $AGENT"
+
+  # Stage 2 — one job per benchmark. Matrix fails-fast is off so one
+  # failure doesn't cancel the rest; the aggregate job at the end
+  # summarizes the result.
+  benchmark:
+    name: build ${{ matrix.bench }}
+    needs: enumerate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        bench: ${{ fromJson(needs.enumerate.outputs.benchmarks) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: build-${{ matrix.bench }}
+
+      - name: Build ${{ matrix.bench }}
+        env:
+          DOCK_BUILD_FILTER: ${{ matrix.bench }}
+        run: |
+          cargo test --test build build_every_benchmark -- --ignored --nocapture
+
+  # Stage 3 — one job per agent, same shape as benchmark.
+  agent:
+    name: build ${{ matrix.agent }}
+    needs: enumerate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        agent: ${{ fromJson(needs.enumerate.outputs.agents) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: build-agent-${{ matrix.agent }}
+
+      - name: Build ${{ matrix.agent }}
+        env:
+          DOCK_BUILD_FILTER: ${{ matrix.agent }}
+        run: |
+          cargo test --test build build_every_agent -- --ignored --nocapture
+
+  # Stage 4 — summary that depends on both matrices. Fails the
+  # workflow if any matrix job failed, so branch protection rules
+  # can gate PR merges on "build-sweep / summary".
+  summary:
+    name: summary
+    needs: [benchmark, agent]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if any matrix job failed
+        run: |
+          echo "benchmark result: ${{ needs.benchmark.result }}"
+          echo "agent result:     ${{ needs.agent.result }}"
+          if [ "${{ needs.benchmark.result }}" != "success" ] \
+          || [ "${{ needs.agent.result }}" != "success" ]; then
+            exit 1
+          fi
