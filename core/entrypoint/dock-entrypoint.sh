@@ -61,6 +61,19 @@ printf '{"agent":"%s","default":"%s","override":"%s","resolved":"%s"}' \
   "${DOCK_AGENT:-unknown}" "$AGENT_DEFAULT" "$AGENT_OVERRIDE" "$AGENT_RESOLVED" \
   > /output/agent/version.json
 
+# ─── Preserve task input for inspection ──────────────────────────
+# Copy the materialized task files into /output/task/input/ so every
+# run artifact is self-describing — you can read what the agent was
+# asked, the ground truth, and any attached files without needing the
+# benchmark image. Used by the live-sweep driver for audit trails.
+# See tests/live/RULES.md. Silent on failure because not every
+# benchmark populates /tasks/$DOCK_TASK_ID (per-task-build images
+# build the task into the image itself).
+if [ -n "${DOCK_TASK_ID:-}" ] && [ -d "/tasks/$DOCK_TASK_ID" ]; then
+  mkdir -p /output/task/input
+  cp -r "/tasks/$DOCK_TASK_ID/." /output/task/input/ 2>/dev/null || true
+fi
+
 # Hide expected answer from agent
 SAVED_EXPECTED_ANSWER="${EXPECTED_ANSWER:-}"
 unset EXPECTED_ANSWER
