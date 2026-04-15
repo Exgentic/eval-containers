@@ -62,6 +62,14 @@ if raw is None:
 if isinstance(raw, dict):
     raw = list(raw.keys())
 
+if not raw:
+    raise SystemExit(
+        'workarena: upstream task list not reachable from any source. '
+        'Refusing to ship an empty /tasks directory — the resulting '
+        'image would grade every run against nothing.'
+    )
+
+os.makedirs('/tasks', exist_ok=True)
 for i, tid in enumerate(raw):
     os.makedirs(f'/tasks/{i}', exist_ok=True)
     open(f'/tasks/{i}/id.txt','w').write(str(tid))
