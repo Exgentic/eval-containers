@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="math-500"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="MATH-500 - competition-level math problems"
 LABEL dock.benchmark.tasks="500"
 LABEL dock.benchmark.env="shared-env"

@@ -149,7 +149,7 @@ health check.
    |---|---|
    | 1 | Does every benchmark in `benchmarks/` have both a `Dockerfile` and a `compose.yaml`? |
    | 2 | Does every committed benchmark and agent actually build? |
-   | 3 | Does every benchmark we claim to support have at least one replay fixture? |
+   | 3 | Does every benchmark labeled `dock.benchmark.released="true"` have at least one replay fixture under `tests/fixtures/`? (see benchmarks/RULES.md 21a) |
    | 4 | Does the README's benchmark/agent/model count match the filesystem? |
    | 5 | Does every agent in `agents/` have a pinned `dock.agent.version` label — no `unpinned`, no `latest`? |
    | 6 | Are there any benchmarks whose Dockerfiles reference upstream images we no longer control or that have gone stale? |

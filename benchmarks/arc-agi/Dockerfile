@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="arc-agi"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="ARC-AGI-2 - Abstract grid reasoning tasks"
 LABEL dock.benchmark.tasks="120"
 LABEL dock.benchmark.env="shared-env"

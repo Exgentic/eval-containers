@@ -7,6 +7,7 @@ FROM ghcr.io/laude-institute/terminal-bench/${DOCK_TASK_ID}:2.0
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="terminal-bench"
+LABEL dock.benchmark.upstream_base="ghcr.io/laude-institute/terminal-bench/${DOCK_TASK_ID}:2.0"
 LABEL dock.benchmark.description="Terminal-Bench 2.0 - terminal tasks"
 LABEL dock.benchmark.tasks="89"
 LABEL dock.benchmark.env="per-task"

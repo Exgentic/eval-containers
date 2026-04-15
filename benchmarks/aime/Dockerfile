@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="aime"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="American Invitational Mathematics Examination"
 LABEL dock.benchmark.tasks="90"
 LABEL dock.benchmark.env="shared-env"

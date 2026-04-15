@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="browsecomp"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="BrowseComp - web browsing QA"
 LABEL dock.benchmark.tasks="1266"
 LABEL dock.benchmark.env="shared-env"

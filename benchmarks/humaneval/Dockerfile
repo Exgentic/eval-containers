@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="humaneval"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="HumanEval - Python code generation"
 LABEL dock.benchmark.tasks="164"
 LABEL dock.benchmark.env="shared-env"

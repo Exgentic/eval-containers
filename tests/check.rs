@@ -242,6 +242,93 @@ fn count_reconciliation() {
     eprintln!("✓ counts: {bench_on_disk} benchmarks + {agent_on_disk} agents match README");
 }
 
+// ─── step 3 / FLEET.md Q3: released benchmarks have a fixture ────
+//
+// Every benchmark whose Dockerfile declares `LABEL dock.benchmark.released="true"`
+// MUST have at least one replay fixture under tests/fixtures/. Unreleased
+// benchmarks are allowed to be fixture-less — they're in the source tree as
+// the full catalog of what Dock could support, but they haven't graduated
+// to the release gate. See benchmarks/RULES.md principle 21a.
+
+fn released_benchmarks() -> Vec<String> {
+    let needle = r#"LABEL dock.benchmark.released="true""#;
+    let mut out = Vec::new();
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let dockerfile = dir.join("Dockerfile");
+        if contains_line(&dockerfile, needle) {
+            out.push(name);
+        }
+    }
+    out.sort();
+    out
+}
+
+fn fixture_benchmarks() -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir("tests/fixtures") else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !name.ends_with(".trajectory.jsonl") {
+            continue;
+        }
+        // Filename convention: <benchmark>-<task>-<agent>.trajectory.jsonl
+        // The benchmark name is everything before the first "-<digit>-"
+        // (task ids are typically "0", "1", ...). Fall back to everything
+        // before the last "-" pair if that doesn't match.
+        let stem = name.trim_end_matches(".trajectory.jsonl");
+        // Find "<benchmark>-<task>-<agent>" by scanning for "-\d+-" first.
+        let bench = stem
+            .find('-')
+            .and_then(|_| {
+                // Greedy: take the longest prefix such that the remainder
+                // starts with "<digit>-<agent>"
+                let mut best = None;
+                for (i, c) in stem.char_indices() {
+                    if c != '-' {
+                        continue;
+                    }
+                    let rest = &stem[i + 1..];
+                    let after_digit: String =
+                        rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    if !after_digit.is_empty() && rest[after_digit.len()..].starts_with('-') {
+                        best = Some(stem[..i].to_string());
+                    }
+                }
+                best
+            })
+            .unwrap_or_else(|| stem.to_string());
+        out.push(bench);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[test]
+fn released_benchmarks_have_fixtures() {
+    let released = released_benchmarks();
+    let fixtures = fixture_benchmarks();
+    let covered: std::collections::HashSet<&String> = fixtures.iter().collect();
+    let missing: Vec<&String> = released.iter().filter(|b| !covered.contains(b)).collect();
+    if !missing.is_empty() {
+        panic!(
+            "{} released benchmarks have no fixture under tests/fixtures/:\n  {}",
+            missing.len(),
+            missing
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join("\n  ")
+        );
+    }
+    eprintln!(
+        "✓ fixture coverage: {} released benchmarks, all have ≥1 fixture",
+        released.len()
+    );
+}
+
 // ─── steps 30, 31: README presence ────────────────────────────────
 //
 // These are release-phase gates in VERIFY.md, not sanity-phase, so

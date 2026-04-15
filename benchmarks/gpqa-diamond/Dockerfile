@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="gpqa-diamond"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="GPQA Diamond - graduate-level science"
 LABEL dock.benchmark.tasks="198"
 LABEL dock.benchmark.env="shared-env"

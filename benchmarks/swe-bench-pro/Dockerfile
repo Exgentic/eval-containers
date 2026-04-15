@@ -12,6 +12,7 @@ FROM ghcr.io/swe-bench/swe-bench-pro.eval.x86_64.${DOCK_TASK_ID}:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="swe-bench-pro"
+LABEL dock.benchmark.upstream_base="ghcr.io/swe-bench/swe-bench-pro.eval.x86_64.${DOCK_TASK_ID}:latest"
 LABEL dock.benchmark.description="SWE-bench Pro - harder, professional-grade software engineering tasks"
 LABEL dock.benchmark.tasks="731"
 LABEL dock.benchmark.env="per-task"

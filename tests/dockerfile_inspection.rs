@@ -394,6 +394,28 @@ fn missing_dock_type(t: &str) -> bool {
     !t.contains(r#"LABEL dock.type="#)
 }
 
+fn upstream_base_unpinned(t: &str) -> bool {
+    // Yellow signal: `dock.benchmark.upstream_base` label pins to :latest
+    // (or leaves the tag unset, which is equivalent). Per benchmarks/RULES.md
+    // principle 21b, third-party bases are legal but MUST be flagged as
+    // supply-chain debt until mirrored or pinned by digest.
+    for line in t.lines() {
+        if let Some(i) = line.find("dock.benchmark.upstream_base=") {
+            let rest = &line[i + "dock.benchmark.upstream_base=".len()..];
+            let val = rest
+                .trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())
+                .split(['"', '\''])
+                .next()
+                .unwrap_or("");
+            // Strip any variable substitution before tag analysis.
+            if val.ends_with(":latest") || (!val.contains(':') && !val.contains('@')) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn data_revision_is_stale_pointer(t: &str) -> bool {
     // dock.benchmark.data_revision="latest|main|master|HEAD|''"
     for line in t.lines() {
@@ -501,6 +523,11 @@ const RULES: &[Rule] = &[
         "python_full_base",
         "FROM python:X without -slim suffix (RULES.md 10a)",
         |t, _| uses_full_python_when_slim_exists(t),
+    ),
+    Rule::yellow(
+        "upstream_base_unpinned",
+        "dock.benchmark.upstream_base pins :latest — third-party registry, supply-chain debt (benchmarks/RULES.md 21b)",
+        |t, _| upstream_base_unpinned(t),
     ),
 ];
 

@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="hle"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="HLE - Humanity's Last Exam, hardest standardized AI evaluation"
 LABEL dock.benchmark.tasks="2500"
 LABEL dock.benchmark.env="shared-env"

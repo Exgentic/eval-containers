@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mmlu-pro"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="MMLU-Pro - graduate-level knowledge, multiple choice"
 LABEL dock.benchmark.tasks="12032"
 LABEL dock.benchmark.env="shared-env"

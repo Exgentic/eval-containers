@@ -7,6 +7,7 @@ FROM ubuntu:22.04
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="aider-polyglot"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="Aider Polyglot - multi-language code editing (Exercism)"
 LABEL dock.benchmark.tasks="225"
 LABEL dock.benchmark.env="shared-env"

@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="kumo"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="Kumo - diagnostic reasoning"
 LABEL dock.benchmark.tasks="250"
 LABEL dock.benchmark.env="shared-env"

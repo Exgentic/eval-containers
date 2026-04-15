@@ -6,6 +6,7 @@ FROM python:3.12-slim
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="simpleqa"
+LABEL dock.benchmark.released="true"
 LABEL dock.benchmark.description="SimpleQA - factual question answering"
 LABEL dock.benchmark.tasks="4326"
 LABEL dock.benchmark.env="shared-env"
