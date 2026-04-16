@@ -13,7 +13,7 @@ LABEL dock.benchmark.tasks="160"
 LABEL dock.benchmark.env="shared-env"
 LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/lmsys/mt_bench_human_judgments"
+LABEL dock.benchmark.url="https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge/data/mt_bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2306.05685"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
 
@@ -23,28 +23,26 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 # (root-only). Runtime entrypoint materializes just the requested task's
 # fields into /tasks/$DOCK_TASK_ID/.
 #
-# Extract the 80 unique MT-Bench questions from the human judgments parquet.
-# Each question has 2 turns; we expose each (question_id, turn) as a task,
-# giving 160 single-turn tasks. For turn 2, we prepend turn 1 context.
-RUN pip install --no-cache-dir pyarrow==18.1.0
+# MT-Bench questions themselves are open-source in FastChat (Apache-2.0).
+# The lmsys/mt_bench_human_judgments HF dataset is gated, but we don't need
+# the judgments — only the 80 questions. Pull question.jsonl directly from
+# the FastChat repo. Each question has 2 turns; we expose each (question_id,
+# turn) as a task, giving 160 single-turn tasks. For turn 2, we prepend turn 1.
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, json, os
+import urllib.request, json, os
 
-url = ('https://huggingface.co/datasets/lmsys/mt_bench_human_judgments/resolve/'
-       'refs%2Fconvert%2Fparquet/default/human/0.parquet')
-urllib.request.urlretrieve(url, '/tmp/mtb.parquet')
-t = pq.read_table('/tmp/mtb.parquet').to_pydict()
+url = ('https://raw.githubusercontent.com/lm-sys/FastChat/main/'
+       'fastchat/llm_judge/data/mt_bench/question.jsonl')
+with urllib.request.urlopen(url, timeout=30) as r:
+    lines = [json.loads(l) for l in r.read().decode().splitlines() if l.strip()]
 
-# Extract unique (question_id -> [turn1_user, turn2_user]) pairs
+# Questions already carry {question_id, category, turns: [t1, t2]}
 questions = {}
-for i in range(len(t['question_id'])):
-    qid = t['question_id'][i]
-    if qid in questions:
-        continue
-    conv = t['conversation_a'][i]  # list of {role, content}
-    user_turns = [m['content'] for m in conv if m['role'] == 'user']
-    if len(user_turns) >= 2:
-        questions[qid] = user_turns[:2]
+for q in lines:
+    qid = q['question_id']
+    turns = q.get('turns', [])
+    if len(turns) >= 2:
+        questions[qid] = turns[:2]
 
 # MT-Bench categories by question_id (from FastChat question.jsonl)
 CATEGORIES = {

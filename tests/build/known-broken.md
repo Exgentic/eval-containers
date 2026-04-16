@@ -11,10 +11,9 @@ This list is tracked by commit. Update the status snapshot below with every rele
 3. **Accepted gated-dataset licenses** on HuggingFace for:
    - https://huggingface.co/datasets/cais/hle
    - https://huggingface.co/datasets/gaia-benchmark/GAIA
-   - https://huggingface.co/datasets/lmsys/mt_bench_human_judgments
-   - https://huggingface.co/datasets/xai-org/RealWorldQA
+   - https://huggingface.co/datasets/openlanguagedata/flores_plus  (flores200 now reads from here)
 
-With all three in place, 11 of the 13 benchmarks in the "upstream-gated" section below move to green locally. The remaining 2 (`flores200`, `frontiermath`) depend on upstream hosts that have no HuggingFace path.
+With all three in place, 12 of the 13 benchmarks in the "upstream-gated" section below move to green locally. The remaining 1 (`frontiermath`) depends on the private Epoch AI dataset which has no HuggingFace path.
 
 ## Current status
 
@@ -26,14 +25,30 @@ These benchmarks need credentials or network paths the local host doesn't have. 
 
 | Benchmark | Upstream | Gate | HF_TOKEN fixes? |
 |---|---|---|---|
-| `flores200` | `dl.fbaipublicfiles.com/nllb/flores200_dataset.tar.gz` | Meta pulled the anonymous link; requires their signup form | no |
-| `gaia` | `huggingface.co/datasets/gaia-benchmark/GAIA` | Gated dataset | yes |
-| `hle` | `huggingface.co/datasets/cais/hle` | Gated dataset | yes |
-| `mt-bench` | `huggingface.co/datasets/lmsys/mt_bench_human_judgments` | Gated dataset | yes |
-| `osworld` | upstream Python package install | transient packaging issue — needs revisit | maybe |
-| `realworldqa` | `huggingface.co/datasets/xai-org/RealWorldQA` | Gated dataset | yes |
-| `workarena` | upstream GitHub raw | transient / rate-limit — needs revisit | maybe |
-| `frontiermath` | private Epoch dataset | not publicly reachable | no |
+| `flores200` | `huggingface.co/datasets/openlanguagedata/flores_plus` | License-gated on HF | yes |
+| `gaia` | `huggingface.co/datasets/gaia-benchmark/GAIA` | License-gated dataset | yes |
+| `hle` | `huggingface.co/datasets/cais/hle` | License-gated dataset | yes |
+| `mt-bench` | `raw.githubusercontent.com/lm-sys/FastChat/...question.jsonl` | Open (FastChat Apache-2.0) — rebuilt, no gate | n/a |
+| `osworld` | `raw.githubusercontent.com/xlang-ai/OSWorld/...` | Open — transient packaging issue only, URL is live | n/a |
+| `realworldqa` | `huggingface.co/datasets/xai-org/RealworldQA` (parquet convert branch) | Anonymous via convert/parquet branch — no HF_TOKEN needed | n/a |
+| `workarena` | upstream GitHub raw | Task-id paths fixed + retry loop added at v0.5.3 | n/a |
+| `frontiermath` | `huggingface.co/datasets/epoch-ai/frontiermath` | Private repo (returns 401 even for logged-in users). Requires `HF_TOKEN` on an account explicitly granted access via `math_evals@epochai.org` — not just license acceptance. | no (private, not gated) |
+
+## Per-task-build benchmarks needing private GHCR access
+
+These 7 benchmarks have `FROM ghcr.io/<upstream>/<name>.${DOCK_TASK_ID}:...` in their Dockerfiles — they pull per-task base images from private GHCR packages that return 401 anonymously. Running them requires authenticated `GHCR_TOKEN` with access to the respective organizations, or a local mirror of the upstream per-task images.
+
+| Benchmark | Upstream registry | Gate |
+|---|---|---|
+| `swe-bench` | `ghcr.io/epoch-research/swe-bench.eval.x86_64.*` | 401 — needs Epoch Research access |
+| `swe-bench-pro` | `ghcr.io/swe-bench/swe-bench-pro.eval.x86_64.*` | 401 — needs SWE-Bench access |
+| `swe-lancer` | `ghcr.io/openai/swelancer.*` | 401 — OpenAI private registry |
+| `mle-bench` | `ghcr.io/openai/mle-bench.*` | 401 — OpenAI private registry |
+| `terminal-bench` | `ghcr.io/laude-institute/terminal-bench/*` | 401 — needs Laude Institute access |
+| `cybench` | `ghcr.io/andyzorigin/cybench.*` | Per-task images not yet published upstream |
+| `compilebench` | builds locally; transient apt issues under load | — |
+
+The sweep driver adds curated representative task IDs (`tests/live/test.rs::per_task_representative`) but cannot complete a green run until credentials land in the release-runner secrets. This is a deployment prerequisite, not a code bug.
 
 ## Fixed since round 4
 

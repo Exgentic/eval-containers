@@ -27,43 +27,65 @@ RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
 RUN python3 <<'PYEOF'
-import urllib.request, os, json, re
+import urllib.request, os, json, re, time
 VERSION = 'v0.5.3'
 BASE = f'https://raw.githubusercontent.com/ServiceNow/WorkArena/{VERSION}/src/browsergym/workarena'
 
-# Grab the task-id lists the package exposes as module constants.
-# We fetch all_configs.json which the upstream repo ships for benchmark enumeration.
-SOURCES = [
-    'tasks/all_configs.json',
-    'config/tasks_all.json',
-]
-raw = None
-for path in SOURCES:
-    try:
-        with urllib.request.urlopen(f'{BASE}/{path}') as r:
-            raw = json.loads(r.read())
-            break
-    except Exception:
-        continue
-
-if raw is None:
-    # Fallback: scrape task-id strings from registered task modules
-    task_modules = ['form/__init__.py','list/__init__.py','navigation/__init__.py',
-                    'dashboard/__init__.py','knowledge/__init__.py',
-                    'service_catalog/__init__.py','compositional/update_task.py']
-    ids = set()
-    for mod in task_modules:
+def fetch(url, retries=5):
+    """Fetch with exponential backoff for transient GitHub raw 429s/5xx."""
+    last = None
+    for attempt in range(retries):
         try:
-            with urllib.request.urlopen(f'{BASE}/tasks/{mod}') as r:
-                txt = r.read().decode()
-            for m in re.finditer(r'["\'](workarena\.servicenow\.[a-zA-Z0-9_\-\.]+)["\']', txt):
-                ids.add(m.group(1))
-        except Exception:
-            continue
-    raw = sorted(ids)
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'dock-eval/workarena-build'},
+            )
+            with urllib.request.urlopen(req, timeout=20) as r:
+                return r.read().decode()
+        except urllib.error.HTTPError as e:
+            last = e
+            if e.code == 404:
+                return None
+            time.sleep(2 ** attempt)
+        except Exception as e:
+            last = e
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f'failed to fetch {url}: {last}')
 
-if isinstance(raw, dict):
-    raw = list(raw.keys())
+# Grab the task-id lists the package exposes as module constants. The upstream
+# repo doesn't ship a single enumeration JSON, so we scrape task-id literals
+# from the registered task modules. Note that at v0.5.3 each task category is
+# a single .py file (form.py, list.py, ...) rather than a subpackage.
+task_modules = [
+    'tasks/form.py',
+    'tasks/list.py',
+    'tasks/navigation.py',
+    'tasks/dashboard.py',
+    'tasks/knowledge.py',
+    'tasks/service_catalog.py',
+    'tasks/send_chat_message.py',
+    'tasks/mark_duplicate_problem.py',
+    'tasks/__init__.py',
+    'tasks/compositional/__init__.py',
+    'tasks/compositional/update_task.py',
+    'tasks/compositional/base.py',
+]
+ids = set()
+for mod in task_modules:
+    txt = fetch(f'{BASE}/{mod}')
+    if not txt:
+        continue
+    for m in re.finditer(r'["\'](workarena\.servicenow\.[a-zA-Z0-9_\-\.]+)["\']', txt):
+        ids.add(m.group(1))
+
+# Also scrape the top-level package __init__.py which registers tasks with
+# browsergym and is a canonical source of task-id strings at this version.
+pkg_init = fetch(f'{BASE}/__init__.py')
+if pkg_init:
+    for m in re.finditer(r'["\'](workarena\.servicenow\.[a-zA-Z0-9_\-\.]+)["\']', pkg_init):
+        ids.add(m.group(1))
+
+raw = sorted(ids)
 
 if not raw:
     raise SystemExit(
