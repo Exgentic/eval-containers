@@ -21,14 +21,36 @@ RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout. One line per task. Image bytes are base64-encoded
 # inline; runtime entrypoint decodes only the requested task's image.
+#
+# Data source: the auto-converted parquet branch on the xai-org repo. This branch
+# is built by the HF dataset-server and is served anonymously even when the main
+# repo requires license acceptance, so no HF_TOKEN is needed at build time.
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, json, os, base64
+import urllib.request, pyarrow.parquet as pq, json, os, base64, time
 os.makedirs('/tasks', exist_ok=True)
 count = 0
+
+# Shard enumeration: try 0000.parquet, 0001.parquet, ... until 404.
+def fetch(shard):
+    url = (
+        "https://huggingface.co/datasets/xai-org/RealworldQA/resolve/"
+        f"refs%2Fconvert%2Fparquet/default/test/{shard:04d}.parquet"
+    )
+    for attempt in range(3):
+        try:
+            urllib.request.urlretrieve(url, "/tmp/data.parquet")
+            return True
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return False
+            time.sleep(2 ** attempt)
+        except Exception:
+            time.sleep(2 ** attempt)
+    raise RuntimeError(f"failed to fetch shard {shard}")
+
 with open('/tasks/all.jsonl', 'w') as out:
-    for shard in range(2):
-        url = f"https://huggingface.co/api/datasets/xai-org/RealworldQA/parquet/default/test/{shard}.parquet"
-        urllib.request.urlretrieve(url, "/tmp/data.parquet")
+    shard = 0
+    while fetch(shard):
         t = pq.read_table("/tmp/data.parquet")
         for i in range(len(t)):
             row = {
@@ -42,6 +64,9 @@ with open('/tasks/all.jsonl', 'w') as out:
             out.write(json.dumps(row) + '\n')
             count += 1
         os.remove("/tmp/data.parquet")
+        shard += 1
+if count == 0:
+    raise SystemExit("realworldqa: no data extracted from parquet convert branch")
 print(f"Extracted {count} tasks")
 PYEOF
 RUN chmod 600 /tasks/all.jsonl

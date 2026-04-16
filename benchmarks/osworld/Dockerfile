@@ -23,26 +23,48 @@ RUN pip install --no-cache-dir pyarrow==18.1.0
 # Single-JSONL task layout. One line per task. Runtime entrypoint
 # materializes the requested task and renames task.txt -> task.json.
 RUN python3 <<'PYEOF'
-import urllib.request, json, os
+import urllib.request, json, os, time
 
-urllib.request.urlretrieve(
-    'https://raw.githubusercontent.com/xlang-ai/OSWorld/main/evaluation_examples/test_all.json',
-    '/tmp/tasks.json')
-with open('/tmp/tasks.json') as f:
-    tasks = json.load(f)
+BASE_RAW = 'https://raw.githubusercontent.com/xlang-ai/OSWorld/main'
+
+def fetch_json(url, retries=4):
+    for attempt in range(retries):
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                return json.loads(r.read())
+        except Exception:
+            if attempt == retries - 1:
+                raise
+            time.sleep(2 ** attempt)
+
+# test_all.json is a grouping map: {category: [task_uuid, ...]}. The per-task
+# instruction lives in evaluation_examples/examples/<category>/<uuid>.json.
+groups = fetch_json(f'{BASE_RAW}/evaluation_examples/test_all.json')
+
 os.makedirs('/tasks', exist_ok=True)
 count = 0
 with open('/tasks/all.jsonl', 'w') as out:
-    for i, (tid, task) in enumerate(tasks.items()):
-        row = {
-            'id': str(i),
-            'upstream_id': tid,
-            'problem': task.get('instruction', ''),
-            'task': json.dumps(task),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-os.remove('/tmp/tasks.json')
+    for category, uuids in groups.items():
+        if not isinstance(uuids, list):
+            continue
+        for uid in uuids:
+            task_url = f'{BASE_RAW}/evaluation_examples/examples/{category}/{uid}.json'
+            try:
+                task = fetch_json(task_url)
+            except Exception as e:
+                print(f'skip {category}/{uid}: {e}')
+                continue
+            row = {
+                'id': str(count),
+                'upstream_id': uid,
+                'category': category,
+                'problem': task.get('instruction', ''),
+                'task': json.dumps(task),
+            }
+            out.write(json.dumps(row) + '\n')
+            count += 1
+if count == 0:
+    raise SystemExit('osworld: no tasks extracted from upstream repo')
 print(f'Extracted {count} tasks')
 PYEOF
 RUN chmod 600 /tasks/all.jsonl
