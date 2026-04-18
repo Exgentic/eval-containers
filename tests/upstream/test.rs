@@ -72,18 +72,34 @@ struct UpstreamRef {
     target: String,     // URL or image reference
 }
 
+/// First-party images — built from `core/*` in this repo, tagged with
+/// the `quay.io/dock-eval/core/...` ref so benchmarks and agents can
+/// resolve them after the bootstrap phase in `tests/build/test.rs`.
+/// Not yet published to the real registry, so `docker manifest
+/// inspect` would always 404. These are out of scope for the upstream
+/// drift probe.
+fn is_first_party(image: &str) -> bool {
+    image.starts_with("quay.io/dock-eval/")
+}
+
 fn probe_benchmark(dir: &Path) -> Vec<UpstreamRef> {
     let mut out = Vec::new();
     let Ok(text) = fs::read_to_string(dir.join("Dockerfile")) else {
         return out;
     };
 
-    // FROM lines (skip ${DOCK_TASK_ID} interpolations — per-task-build)
+    // FROM lines (skip ${DOCK_TASK_ID} interpolations — per-task-build,
+    // and first-party Dock images — those are locally built from
+    // `core/*` in this repo, not pulled from the registry; no upstream
+    // drift to probe).
     for line in text.lines() {
         let trim = line.trim_start();
         if let Some(rest) = trim.strip_prefix("FROM ") {
             let first = rest.split_whitespace().next().unwrap_or("");
             if first.is_empty() || first == "scratch" || first.contains('$') {
+                continue;
+            }
+            if is_first_party(first) {
                 continue;
             }
             out.push(UpstreamRef {
@@ -114,8 +130,7 @@ fn probe_benchmark(dir: &Path) -> Vec<UpstreamRef> {
             continue;
         }
         for url in extract_urls(line) {
-            if url.contains("huggingface.co/datasets/")
-                || url.contains("raw.githubusercontent.com")
+            if url.contains("huggingface.co/datasets/") || url.contains("raw.githubusercontent.com")
             {
                 out.push(UpstreamRef {
                     kind: "data-url",
@@ -246,7 +261,10 @@ fn upstream_references_resolve() {
     );
 
     if !failures.is_empty() {
-        let mut msg = format!("{} upstream references failed to resolve:\n", failures.len());
+        let mut msg = format!(
+            "{} upstream references failed to resolve:\n",
+            failures.len()
+        );
         for (name, r, err) in &failures {
             msg.push_str(&format!("  {name} ({}): {} → {err}\n", r.kind, r.target));
         }

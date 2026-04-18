@@ -67,7 +67,12 @@ services:
     volumes:
       - ./output/${DOCK_BENCHMARK}/${DOCK_TASK_ID:-default}/model:/output:rw
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
+      # /health exercises every model alias with a real upstream call
+      # (20+ Azure/OpenAI roundtrips) and routinely exceeds the 5s
+      # healthcheck timeout. /health/liveness returns immediately once
+      # the uvicorn worker is accepting traffic — the correct signal
+      # for "the proxy process is up".
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveness')"]
       interval: 5s
       timeout: 5s
       retries: 30

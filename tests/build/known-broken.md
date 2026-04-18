@@ -17,7 +17,17 @@ With all three in place, 12 of the 13 benchmarks in the "upstream-gated" section
 
 ## Current status
 
-`81/96 pass · 5 skip (per-task-build) · 10 fail` — sweep round 4, 2026-04-15, 2582s wall (before the Rosetta + `swebench` pin fixes below landed). The next sweep will reflect those fixes.
+Fleet is now **100 benchmarks × 20 agents** after the April 2026 expansion.
+Last serial sweep (round 4, 2026-04-15 at 96 benchmarks) was
+`81/96 pass · 5 skip · 10 fail`. A fresh sweep against the 100-benchmark
+fleet is pending and lands with the next release snapshot.
+
+**Local full-fleet caveat.** On podman, `DOCK_BUILD_PARALLEL >= 4`
+saturates the VM's network stack and produces non-deterministic
+`curl`/`pip`/`apt-get` timeout storms (observed 2026-04-17). For local
+full-fleet sweeps use `DOCK_BUILD_PARALLEL=2` or fewer; CI under real
+Docker runs them reliably at higher concurrency. See
+[tests/LOCAL.md](../LOCAL.md) Level 2b.
 
 ## Upstream data-reachability failures
 
@@ -34,21 +44,33 @@ These benchmarks need credentials or network paths the local host doesn't have. 
 | `workarena` | upstream GitHub raw | Task-id paths fixed + retry loop added at v0.5.3 | n/a |
 | `frontiermath` | `huggingface.co/datasets/epoch-ai/frontiermath` | Private repo (returns 401 even for logged-in users). Requires `HF_TOKEN` on an account explicitly granted access via `math_evals@epochai.org` — not just license acceptance. | no (private, not gated) |
 
-## Per-task-build benchmarks needing private GHCR access
+## Per-task-build benchmarks
 
-These 7 benchmarks have `FROM ghcr.io/<upstream>/<name>.${DOCK_TASK_ID}:...` in their Dockerfiles — they pull per-task base images from private GHCR packages that return 401 anonymously. Running them requires authenticated `GHCR_TOKEN` with access to the respective organizations, or a local mirror of the upstream per-task images.
+These benchmarks have `FROM …${DOCK_TASK_ID}…` in their Dockerfiles. The
+build sweep drives each with a curated representative task id from
+`per_task_build_args` in `tests/build/test.rs`. Some upstreams are
+anonymously pullable; others require credentials or a locally-built
+upstream image.
 
-| Benchmark | Upstream registry | Gate |
+| Benchmark | Upstream base | Gate |
 |---|---|---|
-| `swe-bench` | `ghcr.io/epoch-research/swe-bench.eval.x86_64.*` | 401 — needs Epoch Research access |
-| `swe-bench-pro` | `ghcr.io/swe-bench/swe-bench-pro.eval.x86_64.*` | 401 — needs SWE-Bench access |
-| `swe-lancer` | `ghcr.io/openai/swelancer.*` | 401 — OpenAI private registry |
-| `mle-bench` | `ghcr.io/openai/mle-bench.*` | 401 — OpenAI private registry |
-| `terminal-bench` | `ghcr.io/laude-institute/terminal-bench/*` | 401 — needs Laude Institute access |
-| `cybench` | `ghcr.io/andyzorigin/cybench.*` | Per-task images not yet published upstream |
-| `compilebench` | builds locally; transient apt issues under load | — |
+| `swe-bench` | `docker.io/swebench/sweb.eval.x86_64.<task_id>` | Public — but the HF instance id must be sanitized (`__` → `_1776_`) to match the published tag. Fixed in `tests/build/test.rs` (2026-04-18). |
+| `terminal-bench` | `ghcr.io/laude-institute/t-bench/python-3-13:20250620` | Public — anonymously pullable. Previous 60s failures were transient. |
+| `cybench` | `ubuntu:24.04` + upstream git clone | Public — builds from source. Retry loop added 2026-04-18. |
+| `compilebench` | parametric `${BASE_IMAGE}` + curl fetch | Public — curl retry added 2026-04-18. |
+| `swe-bench-pro` | `sbp/instance:<task_id>` | **Local-only** — needs a pre-built instance image from `scaleapi/SWE-bench_Pro-os` harness. Deployment prerequisite, not a code bug. |
+| `swe-lancer` | `swelancer_x86:latest` | **Local-only** — needs a pre-built image from `openai/preparedness`. Deployment prerequisite. |
+| `mle-bench` | `mlebench-env:latest` | **Local-only** — needs a pre-built image from `openai/mle-bench`. Deployment prerequisite. |
 
-The sweep driver adds curated representative task IDs (`tests/live/test.rs::per_task_representative`) but cannot complete a green run until credentials land in the release-runner secrets. This is a deployment prerequisite, not a code bug.
+The "local-only" row entries cannot be fixed inside this repo; they
+require either a CI step that pre-builds the upstream image, or an
+ahead-of-time mirror in the release registry. See release runbook.
+
+## Agents with known local-harness failures
+
+| Agent | Root cause | Mitigation |
+|---|---|---|
+| `plandex` | Multi-stage Dockerfile combines `FROM plandexai/plandex-server:...` and `FROM quay.io/dock-eval/core/agent-base-rust:latest`. testcontainers-rs / bollard / BuildKit can't resolve the second locally-tagged FROM when the first references a remote image — attempts to pull `quay.io/dock-eval/core/agent-base-rust` from the registry and fails with `unauthorized`. Direct `docker build agents/plandex/` from the shell succeeds (BuildKit classic-image-store path). | Runs fine on CI Linux real Docker. Locally, `docker build -t quay.io/dock-eval/agents/plandex:latest agents/plandex/` works. Not a structural defect — a podman-BuildKit multi-stage quirk. |
 
 ## Fixed since round 4
 

@@ -195,7 +195,13 @@ fn probe_build_sweep_state() -> Gate {
         let failed = total.saturating_sub(passed.0 + skipped);
         let known_broken = count_known_broken_builds();
         let (verdict, detail) = if failed == 0 {
-            (Verdict::Green, format!("{}/{total} pass, {skipped} skipped (per-task-build)", passed.0))
+            (
+                Verdict::Green,
+                format!(
+                    "{}/{total} pass, {skipped} skipped (per-task-build)",
+                    passed.0
+                ),
+            )
         } else if failed <= known_broken {
             (
                 Verdict::Yellow,
@@ -229,7 +235,8 @@ fn probe_build_sweep_state() -> Gate {
             name: "Benchmark build sweep",
             phase: "Build",
             verdict: Verdict::Red,
-            detail: "prior run failed — no sweep-done line found, see /tmp/dock-build-benches.log".into(),
+            detail: "prior run failed — no sweep-done line found, see /tmp/dock-build-benches.log"
+                .into(),
             duration_ms: 0,
         }
     } else {

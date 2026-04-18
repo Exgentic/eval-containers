@@ -58,7 +58,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
         BuildTarget::Bench { benchmark, task_id } => {
             let mut build_args = vec![];
             let tag = if let Some(ref tid) = task_id {
-                build_args.push(format!("TASK_ID={tid}"));
+                build_args.push(format!("DOCK_TASK_ID={tid}"));
                 format!("{registry}/benchmarks/{benchmark}-{tid}:latest")
             } else {
                 format!("{registry}/benchmarks/{benchmark}:latest")
@@ -89,7 +89,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 eprintln!("bench image not found, building {bench_tag}...");
                 let mut bench_build_args = vec![];
                 if let Some(ref tid) = task_id {
-                    bench_build_args.push(format!("TASK_ID={tid}"));
+                    bench_build_args.push(format!("DOCK_TASK_ID={tid}"));
                 }
                 let context = format!("./benchmarks/{benchmark}");
                 docker_build(&bench_tag, &context, None, &bench_build_args)?;
@@ -109,8 +109,15 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             };
             let eval_tag = format!("{registry}/evals/{eval_name}:{version}");
 
-            // Write embedded combination Dockerfile to temp file
-            let tmp_dockerfile = std::env::temp_dir().join("dock-combination.Dockerfile");
+            // Write embedded combination Dockerfile to a temp directory.
+            // The Dockerfile only uses COPY --from= (named images), never
+            // COPY from the build context, so the context can be empty.
+            // Using an empty temp dir avoids sending the entire repo as
+            // context (which is slow and breaks on broken symlinks in output/).
+            let tmp_dir =
+                std::env::temp_dir().join(format!("dock-combo-ctx-{}", std::process::id()));
+            let _ = std::fs::create_dir_all(&tmp_dir);
+            let tmp_dockerfile = tmp_dir.join("Dockerfile");
             std::fs::File::create(&tmp_dockerfile)
                 .and_then(|mut f| f.write_all(COMBINATION_DOCKERFILE.as_bytes()))
                 .map_err(|e| format!("failed to write temp Dockerfile: {e}"))?;
@@ -118,8 +125,8 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             // Read the agent image's dock.agent.version label so we can
             // propagate it into the combined image as DOCK_AGENT_VERSION_DEFAULT
             // (RULES.md principle 9 — version-override axis).
-            let agent_version = docker_label(&agent_tag, "dock.agent.version")
-                .unwrap_or_else(|_| String::new());
+            let agent_version =
+                docker_label(&agent_tag, "dock.agent.version").unwrap_or_else(|_| String::new());
             let build_args = vec![
                 format!("BENCHMARK_IMAGE={bench_tag}"),
                 format!("AGENT_IMAGE={agent_tag}"),
@@ -127,7 +134,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             ];
             let result = docker_build(
                 &eval_tag,
-                ".",
+                tmp_dir.to_str().unwrap(),
                 Some(tmp_dockerfile.to_str().unwrap()),
                 &build_args,
             );
@@ -203,24 +210,43 @@ fn docker_build(
     dockerfile: Option<&str>,
     build_args: &[String],
 ) -> Result<(), String> {
-    let mut cmd = Command::new("docker");
-    cmd.arg("build");
-    cmd.arg("-t").arg(tag);
-    if let Some(df) = dockerfile {
-        cmd.arg("-f").arg(df);
-    }
-    for arg in build_args {
-        cmd.arg("--build-arg").arg(arg);
-    }
-    cmd.arg(context);
-
     eprintln!("$ docker build -t {tag} {context}");
 
-    let status = cmd
-        .status()
-        .map_err(|e| format!("failed to run docker: {e}"))?;
-    if !status.success() {
-        return Err(format!("docker build failed with {status}"));
+    // Retry builds up to 3 times to survive transient podman / apt network
+    // flakes. Most benchmark Dockerfiles have apt-get update without retry
+    // loops, and podman's network to debian mirrors flakes under load.
+    // Retrying the whole build is cheap (most layers are cached).
+    let mut last_err = String::new();
+    for attempt in 1..=3 {
+        let mut cmd_retry = Command::new("docker");
+        cmd_retry.arg("build");
+        cmd_retry.arg("-t").arg(tag);
+        if let Some(df) = dockerfile {
+            cmd_retry.arg("-f").arg(df);
+        }
+        for arg in build_args {
+            cmd_retry.arg("--build-arg").arg(arg);
+        }
+        cmd_retry.arg(context);
+        match cmd_retry.status() {
+            Ok(s) if s.success() => return Ok(()),
+            Ok(s) => {
+                last_err = format!("docker build failed with {s}");
+                if attempt < 3 {
+                    eprintln!(
+                        "build attempt {attempt} failed; retrying in {}s",
+                        attempt * 10
+                    );
+                    std::thread::sleep(std::time::Duration::from_secs(attempt as u64 * 10));
+                }
+            }
+            Err(e) => {
+                last_err = format!("failed to run docker: {e}");
+                if attempt < 3 {
+                    std::thread::sleep(std::time::Duration::from_secs(attempt as u64 * 10));
+                }
+            }
+        }
     }
-    Ok(())
+    Err(last_err)
 }

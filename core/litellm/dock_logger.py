@@ -10,6 +10,15 @@ from litellm.integrations.custom_logger import CustomLogger
 
 
 class DockLogger(CustomLogger):
+    # Fallback per-token rates when LiteLLM returns response_cost=0 for
+    # custom model paths (e.g. openai/azure/gpt-5.4).  These match the
+    # model_info values in models/gpt-5.4/config.yaml so cost accounting
+    # stays consistent.
+    _FALLBACK_INPUT_COST = float(os.environ.get(
+        "DOCK_FALLBACK_INPUT_COST_PER_TOKEN", 0.0000025))   # $2.50/1M
+    _FALLBACK_OUTPUT_COST = float(os.environ.get(
+        "DOCK_FALLBACK_OUTPUT_COST_PER_TOKEN", 0.000010))   # $10.00/1M
+
     def __init__(self):
         self.output_dir = os.environ.get("DOCK_OUTPUT_DIR", "/output")
         self.log_file = os.path.join(self.output_dir, "trajectory.jsonl")
@@ -46,7 +55,16 @@ class DockLogger(CustomLogger):
             self.model = payload.get("model", self.model)
             self.provider = payload.get("custom_llm_provider", self.provider)
             self.total_tokens += payload.get("total_tokens", 0) or 0
-            self.total_cost += payload.get("response_cost", 0) or 0
+
+            cost = payload.get("response_cost", 0) or 0
+            if cost == 0:
+                # LiteLLM lacks pricing for custom model paths like
+                # openai/azure/gpt-5.4 — compute from token counts.
+                prompt_tokens = payload.get("prompt_tokens", 0) or 0
+                completion_tokens = payload.get("completion_tokens", 0) or 0
+                cost = (prompt_tokens * self._FALLBACK_INPUT_COST
+                        + completion_tokens * self._FALLBACK_OUTPUT_COST)
+            self.total_cost += cost
 
             result = {
                 "model": self.model,

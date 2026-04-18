@@ -44,12 +44,26 @@ const MODEL: &str = "gpt-5.4";
 // "good coverage of all the fleet" goal. Adding a 7th agent here
 // extends the matrix to 616 runs; removing one drops to 440.
 const AGENTS: &[&str] = &[
-    "claude-code", // Anthropic SDK reference
-    "codex",       // OpenAI Responses API
-    "aider",       // multi-file code editor
-    "goose",       // Block's tool-heavy agent
-    "openhands",   // AllHands multi-step
-    "gemini-cli",  // Google SDK
+    "claude-code",      // Anthropic SDK reference
+    "codex",            // OpenAI Responses API
+    "aider",            // multi-file code editor
+    "goose",            // Block's tool-heavy agent
+    "openhands",        // AllHands multi-step
+    "gemini-cli",       // Google SDK
+    "cline",            // Plan/Act modes, MCP
+    "open-interpreter", // terminal code execution
+    "continue-cli",     // multi-model coding CLI
+    "opencode",         // 75+ provider support, LSP
+    "openclaw",         // clean-room Claude Code rewrite
+    "crush",            // Go-based, LSP-aware TUI
+    "qwen-code",        // Alibaba Qwen coding
+    "plandex",          // plan-first multi-file agent
+    "copilot-cli",      // GitHub Copilot CLI
+    "bob",              // Exgentic issue-solver
+    "swe-agent",        // Princeton GitHub-issue agent
+    "mini-swe-agent",   // minimal SWE-agent variant
+    "ra-aid",           // research-and-act iterative
+    "terminus-2",       // terminal-native harness
 ];
 const DEFAULT_MAX_BUDGET_USD: f64 = 1.0;
 const DEFAULT_TIMEOUT_SECS: u32 = 600;
@@ -182,6 +196,13 @@ fn per_task_representative(name: &str) -> Option<&'static str> {
     match name {
         "swe-bench" => Some("sympy__sympy-24066"),
         "compilebench" => Some("curl"),
+        "cybench" => Some("LosFuzzys/GlacierCTF2023_writeups/intro/skilift"),
+        "mle-bench" => Some("spaceship-titanic"),
+        "swe-bench-pro" => {
+            Some("instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan")
+        }
+        "swe-lancer" => Some("16912_4"),
+        "terminal-bench" => Some("hello-world"),
         _ => None,
     }
 }
@@ -255,11 +276,11 @@ fn load_known_broken_builds() -> BTreeSet<String> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Outcome {
-    Green,      // run completed, mechanical rules green, trajectory ready for promotion
-    Yellow,     // run completed, yellow findings only (fixture still promoted)
-    Red,        // mechanical rule red finding — NOT promoted, logged to known-broken
-    RunFailed,  // `dock run` exited non-zero or produced no result.json
-    Skipped,    // already in checkpoint (resume path)
+    Green,     // run completed, mechanical rules green, trajectory ready for promotion
+    Yellow,    // run completed, yellow findings only (fixture still promoted)
+    Red,       // mechanical rule red finding — NOT promoted, logged to known-broken
+    RunFailed, // `dock run` exited non-zero or produced no result.json
+    Skipped,   // already in checkpoint (resume path)
 }
 
 impl Outcome {
@@ -345,15 +366,17 @@ fn append_file(path: &str, content: &str) -> std::io::Result<()> {
 
 fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     let started = Instant::now();
-    let run_dir = PathBuf::from("tests/live/runs").join(format!(
-        "{benchmark}-{task_id}-{agent}"
-    ));
+    let run_dir = PathBuf::from("tests/live/runs").join(format!("{benchmark}-{task_id}-{agent}"));
 
     // Every run starts from a clean output dir to avoid stale state
     // from a prior aborted run getting mistaken for the current run's
     // artifact.
     let cwd_output = PathBuf::from("output").join(benchmark).join(task_id);
     let _ = fs::remove_dir_all(&cwd_output);
+    // Pre-create output subdirs so crun doesn't fail on missing host paths
+    for sub in &["model", "agent", "task"] {
+        let _ = fs::create_dir_all(cwd_output.join(sub));
+    }
 
     // Pre-build the eval combination image. `dock run --local` uses
     // the in-repo compose file but the `image:` field still refers
@@ -362,13 +385,24 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     // registry and fails. `dock build eval` auto-builds the
     // benchmark and agent base images if they're missing, so this
     // one call covers the whole dependency chain.
-    let build_status = Command::new("cargo")
-        .args([
-            "run", "--quiet", "--",
-            "build", "eval", benchmark,
-            "--agent", agent,
-        ])
-        .status();
+    // For per-task-build benchmarks the bench image FROM line depends on
+    // the task id, so pass --task-id through to `dock build eval`.
+    let is_per_task_build = per_task_representative(benchmark).is_some();
+    let mut build_args: Vec<String> = vec![
+        "run".into(),
+        "--quiet".into(),
+        "--".into(),
+        "build".into(),
+        "eval".into(),
+        benchmark.into(),
+        "--agent".into(),
+        agent.into(),
+    ];
+    if is_per_task_build {
+        build_args.push("--task-id".into());
+        build_args.push(task_id.into());
+    }
+    let build_status = Command::new("cargo").args(&build_args).status();
     if !matches!(build_status, Ok(s) if s.success()) {
         return RunRecord {
             benchmark: benchmark.into(),
@@ -523,10 +557,19 @@ fn render_report(records: &[RunRecord], started: SystemTime) -> String {
         "# Live Fleet Sweep — {ts}\n\nModel: `{MODEL}` | Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run | Timeout: {DEFAULT_TIMEOUT_SECS}s\n\n"
     ));
 
-    let green = records.iter().filter(|r| r.outcome == Outcome::Green).count();
-    let yellow = records.iter().filter(|r| r.outcome == Outcome::Yellow).count();
+    let green = records
+        .iter()
+        .filter(|r| r.outcome == Outcome::Green)
+        .count();
+    let yellow = records
+        .iter()
+        .filter(|r| r.outcome == Outcome::Yellow)
+        .count();
     let red = records.iter().filter(|r| r.outcome == Outcome::Red).count();
-    let failed = records.iter().filter(|r| r.outcome == Outcome::RunFailed).count();
+    let failed = records
+        .iter()
+        .filter(|r| r.outcome == Outcome::RunFailed)
+        .count();
     let total = records.len();
 
     out.push_str(&format!(
@@ -586,7 +629,10 @@ fn live_fleet_sweep() {
                 continue;
             }
 
-            eprintln!("▶ {} task={} agent={} building+running...", b.name, task_id, agent);
+            eprintln!(
+                "▶ {} task={} agent={} building+running...",
+                b.name, task_id, agent
+            );
             let r = run_one(&b.name, task_id, agent);
             eprintln!(
                 "  {} {} {} {}  [{}ms]",
@@ -608,10 +654,7 @@ fn live_fleet_sweep() {
             // the shared checkpoint at the end. This avoids the
             // last-writer-wins problem with a single shared file.
             let report = render_report(&records, started);
-            let report_path = format!(
-                "tests/live/report-{}.md",
-                std::process::id()
-            );
+            let report_path = format!("tests/live/report-{}.md", std::process::id());
             fs::write(&report_path, &report).expect("write report");
 
             // Safety valve: halt if cumulative spend exceeds 10x the
@@ -643,9 +686,7 @@ fn live_fleet_sweep() {
         .filter(|r| matches!(r.outcome, Outcome::Red | Outcome::RunFailed))
         .count();
     if red_or_failed > 0 {
-        panic!(
-            "{red_or_failed} red/failed run(s) — see tests/live/report.md and tests/live/runs/"
-        );
+        panic!("{red_or_failed} red/failed run(s) — see tests/live/report.md and tests/live/runs/");
     }
 }
 
@@ -681,12 +722,20 @@ fn write_matrix() {
             "| {} | `{}` | {} | {} | {} |\n",
             i + 1,
             b.name,
-            if b.per_task_build { format!("per-task-build ({})", b.task_count) } else { b.task_count.to_string() },
+            if b.per_task_build {
+                format!("per-task-build ({})", b.task_count)
+            } else {
+                b.task_count.to_string()
+            },
             task_ids.len(),
             rotation.join(", ")
         ));
         total_runs += task_ids.len();
-        if b.per_task_build { per_task_benchmarks += 1; } else { normal_benchmarks += 1; }
+        if b.per_task_build {
+            per_task_benchmarks += 1;
+        } else {
+            normal_benchmarks += 1;
+        }
     }
 
     out.push_str(&format!(
@@ -701,7 +750,11 @@ fn write_matrix() {
 
     fs::create_dir_all("tests/live").expect("create tests/live");
     fs::write("tests/live/matrix.md", &out).expect("write matrix");
-    eprintln!("→ wrote tests/live/matrix.md ({} benchmarks, {} runs)", benchmarks.len(), total_runs);
+    eprintln!(
+        "→ wrote tests/live/matrix.md ({} benchmarks, {} runs)",
+        benchmarks.len(),
+        total_runs
+    );
 }
 
 #[test]
