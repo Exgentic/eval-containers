@@ -13,6 +13,10 @@ model_list:
       model: "openai/azure/gpt-5.4"
       api_key: "os.environ/OPENAI_API_KEY"
       api_base: "os.environ/OPENAI_API_BASE"
+      service_tier: "default"
+    model_info:
+      input_cost_per_token: 0.0000025    # $2.50 / 1M tokens
+      output_cost_per_token: 0.000010    # $10.00 / 1M tokens
 
   # ── OpenAI-family explicit aliases (chat completions path) ──────
   - model_name: "gpt-4o"
@@ -20,50 +24,74 @@ model_list:
       model: "openai/azure/gpt-5.4"
       api_key: "os.environ/OPENAI_API_KEY"
       api_base: "os.environ/OPENAI_API_BASE"
+      service_tier: "default"
+    model_info: &gpt54_info
+      input_cost_per_token: 0.0000025    # $2.50 / 1M tokens
+      output_cost_per_token: 0.000010    # $10.00 / 1M tokens
   - model_name: "gpt-4o-mini"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gpt-4-turbo"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gpt-4"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gpt-4.1"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gpt-4.1-mini"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gpt-5"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gpt-5-mini"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gpt-5.4"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "o1"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "o1-mini"
     litellm_params: *gpt54
+    model_info: *gpt54_info
 
   # ── Anthropic-family explicit aliases ──────────────────────────
   - model_name: "claude-3-5-sonnet-20241022"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "claude-3-5-haiku-20241022"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "claude-3-opus-20240229"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "claude-sonnet-4-5"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "claude-sonnet-4-5-20250929"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "claude-opus-4-5"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "claude-opus-4-5-20250929"
     litellm_params: *gpt54
+    model_info: *gpt54_info
 
   # ── Gemini-family explicit aliases ─────────────────────────────
   - model_name: "gemini-2.5-pro"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gemini-1.5-pro"
     litellm_params: *gpt54
+    model_info: *gpt54_info
   - model_name: "gemini-pro"
     litellm_params: *gpt54
+    model_info: *gpt54_info
 
 litellm_settings:
   callbacks: ["dock_logger.dock_logger_instance"]

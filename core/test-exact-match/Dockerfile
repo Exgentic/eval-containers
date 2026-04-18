@@ -1,4 +1,5 @@
-FROM scratch
+# Pinned amd64 — see core/entrypoint/Dockerfile for rationale.
+FROM --platform=linux/amd64 scratch
 
 LABEL dock.type="core"
 LABEL dock.core.component="test-exact-match"

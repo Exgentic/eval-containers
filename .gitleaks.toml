@@ -1,0 +1,32 @@
+# Gitleaks config for Dock.
+#
+# Extends the default ruleset with an allowlist for two patterns that
+# repeatedly trip `generic-api-key` inside recorded LLM trajectories:
+#
+#   - `user_api_key_hash`: a one-way hash LiteLLM emits for
+#     observability. It is *derived from* a real key but is not the
+#     key itself. Harmless to commit.
+#   - `prompt_cache_key`: an OpenAI / Anthropic cache routing UUID. Not
+#     a credential.
+#
+# Both live only inside `tests/fixtures/*.trajectory.jsonl` (replay
+# fixtures recorded from release-verification live sweeps — see
+# tests/replay/RULES.md). Allowlist is scoped to that path prefix so a
+# real key leaking into a fixture would still fail the scan.
+#
+# Verify after edits:
+#   gitleaks detect --source . --report-format json --report-path /tmp/gitleaks.json
+#   jq length /tmp/gitleaks.json   # expect 0
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Trajectory fixture observability IDs are not credentials"
+paths = [
+  '''tests/fixtures/.*\.trajectory\.jsonl$''',
+]
+regexes = [
+  '''user_api_key_hash''',
+  '''prompt_cache_key''',
+]

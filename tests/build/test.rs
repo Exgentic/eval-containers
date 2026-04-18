@@ -35,10 +35,13 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::Instant;
 use testcontainers::GenericBuildableImage;
 use testcontainers::core::BuildImageOptions;
 use testcontainers::runners::AsyncBuilder;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 // ─── Per-task benchmark build arguments ────────────────────────────
 //
@@ -50,13 +53,42 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     let mut out: HashMap<&str, HashMap<String, String>> = HashMap::new();
 
     let mut swe_bench = HashMap::new();
-    swe_bench.insert("DOCK_TASK_ID".into(), "sympy__sympy-24066".into());
+    // SWE-bench sanitizes "__" → "_1776_" for Docker tags (see
+    // swebench.harness.test_spec.test_spec). The published Docker Hub
+    // tag is `sympy_1776_sympy-24066`, not the raw instance id.
+    swe_bench.insert("DOCK_TASK_ID".into(), "sympy_1776_sympy-24066".into());
     out.insert("swe-bench", swe_bench);
 
     let mut compile = HashMap::new();
     compile.insert("DOCK_TASK_ID".into(), "curl".into());
     compile.insert("BASE_IMAGE".into(), "ubuntu:22.04".into());
     out.insert("compilebench", compile);
+
+    let mut cybench = HashMap::new();
+    cybench.insert(
+        "DOCK_TASK_ID".into(),
+        "LosFuzzys/GlacierCTF2023_writeups/intro/skilift".into(),
+    );
+    out.insert("cybench", cybench);
+
+    let mut mle = HashMap::new();
+    mle.insert("DOCK_TASK_ID".into(), "spaceship-titanic".into());
+    out.insert("mle-bench", mle);
+
+    let mut swe_pro = HashMap::new();
+    swe_pro.insert(
+        "DOCK_TASK_ID".into(),
+        "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan".into(),
+    );
+    out.insert("swe-bench-pro", swe_pro);
+
+    let mut swelancer = HashMap::new();
+    swelancer.insert("DOCK_TASK_ID".into(), "16912_4".into());
+    out.insert("swe-lancer", swelancer);
+
+    let mut tbench = HashMap::new();
+    tbench.insert("DOCK_TASK_ID".into(), "hello-world".into());
+    out.insert("terminal-bench", tbench);
 
     out.remove(benchmark)
 }
@@ -173,28 +205,67 @@ fn walk(root: &Path, current: &Path, out: &mut Vec<(PathBuf, String)>) {
 // via cleanup_bootstrap_images().
 
 async fn build_bootstrap_core_images() -> Result<Vec<String>, String> {
-    let targets = [
+    // Order matters: entrypoint + test-exact-match are leaves;
+    // benchmark-base-* COPY from entrypoint, so those must build first.
+    // agent-base-* are leaves independent of the benchmark chain.
+    //
+    // Bootstrap uses `docker build` (not `testcontainers::GenericBuildableImage`)
+    // because testcontainers' bollard-backed build loads images into
+    // the BuildKit cache but does NOT always tag them in the daemon's
+    // classic image store in time for the next build's `COPY --from=<tag>`
+    // lookup. `docker build -t <tag> .` loads the tag into the image
+    // store synchronously. This is inside the rule 6b carve-out per
+    // tests/containers/RULES.md rule 1: "Build tests MAY shell out to
+    // `docker build` and `docker inspect` — testcontainers does not
+    // cover image builds." The SWEEP itself (which these bootstrap
+    // images support) still goes through testcontainers for the
+    // images under test.
+    let targets: &[(&str, &str)] = &[
         ("quay.io/dock-eval/core/entrypoint", "core/entrypoint"),
         (
             "quay.io/dock-eval/core/test-exact-match",
             "core/test-exact-match",
         ),
+        (
+            "quay.io/dock-eval/core/benchmark-base-hf",
+            "core/benchmark-base-hf",
+        ),
+        (
+            "quay.io/dock-eval/core/benchmark-base-github",
+            "core/benchmark-base-github",
+        ),
+        (
+            "quay.io/dock-eval/core/benchmark-base-external",
+            "core/benchmark-base-external",
+        ),
+        (
+            "quay.io/dock-eval/core/agent-base-node",
+            "core/agent-base-node",
+        ),
+        (
+            "quay.io/dock-eval/core/agent-base-python",
+            "core/agent-base-python",
+        ),
+        (
+            "quay.io/dock-eval/core/agent-base-rust",
+            "core/agent-base-rust",
+        ),
     ];
     let mut tags = Vec::new();
     for (image_name, context_path) in targets {
-        let mut image = GenericBuildableImage::new(image_name, "latest")
-            .with_dockerfile(Path::new(context_path).join("Dockerfile"));
-        for (src, target) in collect_context_files(Path::new(context_path)) {
-            if src.file_name().and_then(|n| n.to_str()) == Some("Dockerfile") {
-                continue;
-            }
-            image = image.with_file(src, target);
+        let tag = format!("{image_name}:latest");
+        let output = Command::new("docker")
+            .args(["build", "-t", &tag, context_path])
+            .output()
+            .map_err(|e| format!("bootstrap {image_name}: failed to invoke docker: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(format!(
+                "bootstrap {image_name}: docker build failed\n{}",
+                truncate(&stderr, 4000)
+            ));
         }
-        let _ = image
-            .build_image()
-            .await
-            .map_err(|e| format!("bootstrap {image_name}: {e}"))?;
-        tags.push(format!("{image_name}:latest"));
+        tags.push(tag);
     }
     Ok(tags)
 }
@@ -228,8 +299,21 @@ async fn tc_build(
         image = image.with_file(src, target);
     }
 
+    // Collect build args from caller + ambient `HF_TOKEN` env var so
+    // HF-gated benchmarks (gaia, flores200, hle, frontiermath) can pull
+    // their datasets during the build. These Dockerfiles declare
+    // `ARG HF_TOKEN=""` with a `--mount=type=secret,id=HF_TOKEN` fallback;
+    // the secret mount is preferred (CI uses `docker buildx --secret`),
+    // but testcontainers 0.27 has no secret API, so we pass it as a
+    // build-arg here. Non-HF Dockerfiles ignore the unknown arg.
+    let mut args = build_args.unwrap_or_default();
+    if let Ok(hf) = std::env::var("HF_TOKEN") {
+        if !hf.is_empty() {
+            args.insert("HF_TOKEN".to_string(), hf);
+        }
+    }
     let mut options = BuildImageOptions::new();
-    if let Some(args) = build_args {
+    if !args.is_empty() {
         options = options.with_build_args(args);
     }
 
@@ -281,6 +365,164 @@ fn is_per_task_benchmark(dir: &Path) -> bool {
 struct BuildFailure {
     path: PathBuf,
     reason: String,
+}
+
+/// A single build to execute concurrently. Owns its inputs so the
+/// spawned task has no borrow constraints on the outer scope.
+struct BuildTask {
+    idx: usize,
+    name: String,
+    context: PathBuf,
+    build_args: Option<HashMap<String, String>>,
+}
+
+/// Result of one build, kept in original (discovery) order so the
+/// label-check phase iterates deterministically.
+struct BuildOutcome {
+    idx: usize,
+    name: String,
+    context: PathBuf,
+    result: Result<String, String>,
+    elapsed_secs: u64,
+}
+
+/// Parse `DOCK_BUILD_PARALLEL`. Invalid, missing, or <1 → serial (1).
+fn parse_parallel_env() -> usize {
+    std::env::var("DOCK_BUILD_PARALLEL")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|&n| n >= 1)
+        .unwrap_or(1)
+}
+
+/// Split `contexts` into (buildable tasks, skip count). Per-task
+/// benchmarks without a registered DOCK_TASK_ID are skipped with a
+/// visible note — building them would fail at the FROM line because
+/// `${DOCK_TASK_ID}` would expand to empty.
+fn partition_contexts(
+    contexts: &[PathBuf],
+    args_for: &dyn Fn(&str) -> Option<HashMap<String, String>>,
+    total: usize,
+    stderr: &mut std::io::Stderr,
+) -> (Vec<BuildTask>, usize) {
+    let mut tasks = Vec::with_capacity(contexts.len());
+    let mut skipped = 0usize;
+    for (i, context) in contexts.iter().enumerate() {
+        let name = context
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("?")
+            .to_string();
+        let build_args = args_for(&name);
+        if is_per_task_benchmark(context) && build_args.is_none() {
+            let idx = i + 1;
+            let _ = writeln!(
+                stderr,
+                "[{idx}/{total}] {name} ⊘ skipped (per-task, no build-arg entry)"
+            );
+            let _ = stderr.flush();
+            skipped += 1;
+            continue;
+        }
+        tasks.push(BuildTask {
+            idx: i,
+            name,
+            context: context.clone(),
+            build_args,
+        });
+    }
+    (tasks, skipped)
+}
+
+/// Run `tasks` concurrently, bounded by `parallel`. Logs each
+/// completion as it lands (out-of-order is expected and desirable —
+/// shows live progress). Guarantees every spawned task is joined
+/// before returning, even if one panics, so `ImageGuard` cleanup in
+/// the caller never misses an image.
+async fn run_builds_concurrently(
+    tasks: Vec<BuildTask>,
+    parallel: usize,
+    total: usize,
+    stderr: &mut std::io::Stderr,
+) -> Vec<BuildOutcome> {
+    let sem = Arc::new(Semaphore::new(parallel));
+    let mut set: JoinSet<BuildOutcome> = JoinSet::new();
+
+    for task in tasks {
+        let permit = sem.clone();
+        set.spawn(async move {
+            let _p = permit.acquire_owned().await.expect("semaphore closed");
+            let start = Instant::now();
+            let result = tc_build(&task.context, &task.name, task.build_args).await;
+            BuildOutcome {
+                idx: task.idx,
+                name: task.name,
+                context: task.context,
+                result,
+                elapsed_secs: start.elapsed().as_secs(),
+            }
+        });
+    }
+
+    let mut outcomes = Vec::new();
+    let mut completed = 0usize;
+    let mut panics: Vec<String> = Vec::new();
+
+    while let Some(joined) = set.join_next().await {
+        completed += 1;
+        match joined {
+            Ok(outcome) => {
+                log_outcome(stderr, &outcome, completed, total);
+                outcomes.push(outcome);
+            }
+            Err(e) => {
+                // A spawned build task panicked. Log and keep draining
+                // so remaining tasks finish (and their ImageGuards can
+                // run via outcomes pushed back here on the happy path).
+                // After the drain we surface the first panic.
+                let msg = format!("build task panicked: {e}");
+                let _ = writeln!(stderr, "[{completed}/{total}] ✗ {msg}");
+                let _ = stderr.flush();
+                panics.push(msg);
+            }
+        }
+    }
+
+    if let Some(first) = panics.into_iter().next() {
+        panic!("{first}");
+    }
+
+    outcomes.sort_by_key(|o| o.idx);
+    outcomes
+}
+
+/// Print one build result line.
+fn log_outcome(stderr: &mut std::io::Stderr, o: &BuildOutcome, completed: usize, total: usize) {
+    let mark = if o.result.is_ok() { '✓' } else { '✗' };
+    let _ = writeln!(
+        stderr,
+        "[{completed}/{total}] {name} {mark} {secs}s",
+        name = o.name,
+        secs = o.elapsed_secs,
+    );
+    let _ = stderr.flush();
+}
+
+/// Inspect `required_labels` on the built image. Returns `Err(reason)`
+/// on the first label problem, `Ok(())` if all pass.
+fn check_labels(tag: &str, required: &[&str], label_root: &str) -> Result<(), String> {
+    for label in required {
+        match docker_label(tag, label) {
+            None => return Err(format!("missing required label `{label}`")),
+            Some(val) if *label == "dock.type" && val != label_root => {
+                return Err(format!(
+                    "label dock.type should be `{label_root}` but is `{val}`"
+                ));
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 async fn run_build_sweep(
@@ -337,90 +579,47 @@ async fn run_build_sweep(
     }
     let _ = stderr.flush();
 
+    let parallel = parse_parallel_env();
+    if parallel > 1 {
+        let _ = writeln!(stderr, "   (DOCK_BUILD_PARALLEL={parallel})");
+        let _ = stderr.flush();
+    }
+
     let sweep_start = Instant::now();
     let mut pass_count = 0usize;
-    let mut skip_count = 0usize;
 
-    for (i, context) in contexts.iter().enumerate() {
-        let idx = i + 1;
-        let name = context
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("?")
-            .to_string();
-        let start = Instant::now();
+    // Phase 1: partition into build tasks + skip decisions. Runs
+    // serially so skip messages land in stable order.
+    let (tasks, skip_count) = partition_contexts(&contexts, &args_for, total, &mut stderr);
 
-        // Per-task benchmarks require an explicit DOCK_TASK_ID build-arg
-        // and usually pull a per-task upstream base. If we don't have
-        // an entry in per_task_build_args for them, the build would
-        // fail at the FROM with "invalid reference format" because
-        // ${DOCK_TASK_ID} expands to empty. Skip them with a visible
-        // note instead of recording a bogus failure.
-        let build_args = args_for(&name);
-        if is_per_task_benchmark(context) && build_args.is_none() {
-            let _ = writeln!(
-                stderr,
-                "[{idx}/{total}] {name} ⊘ skipped (per-task, no build-arg entry)"
-            );
-            let _ = stderr.flush();
-            skip_count += 1;
-            continue;
-        }
+    // Phase 2: run builds concurrently (bounded by `parallel`). Logs
+    // completions as they land, out-of-original-order, so the user
+    // sees live progress. Returns outcomes sorted by original index so
+    // the label-check phase reads deterministically.
+    let outcomes = run_builds_concurrently(tasks, parallel, total, &mut stderr).await;
 
-        let _ = write!(stderr, "[{idx}/{total}] {name} building...");
-        let _ = stderr.flush();
-        let build_result = tc_build(context, &name, build_args).await;
-        let elapsed = start.elapsed().as_secs();
-
-        let tag = match build_result {
-            Ok(tag) => {
-                let _ = writeln!(stderr, "\r[{idx}/{total}] {name} ✓ {elapsed}s          ");
-                tag
-            }
+    // Phase 3: serial label inspection + cleanup. ImageGuard drop runs
+    // `docker rmi -f`, so iterating serially keeps stderr readable and
+    // avoids ImageGuards racing each other during the final tear-down.
+    for outcome in outcomes {
+        let tag = match outcome.result {
+            Ok(tag) => tag,
             Err(err) => {
-                let _ = writeln!(
-                    stderr,
-                    "\r[{idx}/{total}] {name} ✗ {elapsed}s  →  re-run: \
-                     cargo test --test build -- --ignored build_every_{kind} {name}"
-                );
-                let _ = stderr.flush();
                 failures.push(BuildFailure {
-                    path: context.clone(),
+                    path: outcome.context,
                     reason: format!("build failed:\n{}", truncate(&err, 2000)),
                 });
                 continue;
             }
         };
-
-        // `_image` drops at the end of this iteration, running `docker
-        // rmi -f` on the built tag. Declared BEFORE the label inspection
-        // so a panic mid-inspection still triggers cleanup on unwind.
         let _image = ImageGuard(tag.clone());
-
-        let mut label_failed = false;
-        for label in required_labels {
-            match docker_label(&tag, label) {
-                None => {
-                    failures.push(BuildFailure {
-                        path: context.clone(),
-                        reason: format!("missing required label `{label}`"),
-                    });
-                    label_failed = true;
-                }
-                Some(val) if *label == "dock.type" && val != label_root => {
-                    failures.push(BuildFailure {
-                        path: context.clone(),
-                        reason: format!("label dock.type should be `{label_root}` but is `{val}`"),
-                    });
-                    label_failed = true;
-                }
-                _ => {}
-            }
+        match check_labels(&tag, required_labels, label_root) {
+            Ok(()) => pass_count += 1,
+            Err(reason) => failures.push(BuildFailure {
+                path: outcome.context,
+                reason,
+            }),
         }
-        if !label_failed {
-            pass_count += 1;
-        }
-        let _ = stderr.flush();
     }
 
     let total_elapsed = sweep_start.elapsed().as_secs();
@@ -488,6 +687,12 @@ async fn build_every_benchmark() {
 #[tokio::test]
 #[ignore]
 async fn build_every_agent() {
+    // Agents now extend `core/agent-base-*` (Rule 11a). Bootstrap the
+    // base images just like benchmarks do so every agent's FROM resolves.
+    let bootstrap_tags = build_bootstrap_core_images()
+        .await
+        .expect("failed to bootstrap core images");
+
     let contexts = subdirs_with_dockerfile("agents");
     let total = contexts.len();
     let failures = run_build_sweep(
@@ -497,6 +702,8 @@ async fn build_every_agent() {
         |_| None,
     )
     .await;
+
+    cleanup_bootstrap_images(&bootstrap_tags);
     assert_no_failures("agents", &failures, total);
 }
 

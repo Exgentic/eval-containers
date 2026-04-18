@@ -31,7 +31,7 @@ Dock is a **Docker-first** project. Everything — Dockerfiles, compose files, C
 | Eval combination | 1 – 3 GB | on demand |
 | Per-task benchmark (swe-bench, compilebench) | 2 GB × N tasks | 500+ |
 
-Building everything locally is **not** an option. Don't try.
+Building everything locally is expensive — the full fleet is ~150 GB of images before cleanup and ~30–90 min of build time depending on parallelism. It's technically fine on Mac with Rosetta (see Level 2b below for the parallel sweep flag), but prefer the targeted Level 2 workflow for day-to-day dev. CI builds the fleet on every release.
 
 ## Setup: Docker Desktop (recommended)
 
@@ -131,6 +131,22 @@ dock build eval aime --agent codex
 ```
 
 That's it. Don't try to build the fleet locally — CI does that via [RELEASE.md](../RELEASE.md).
+
+### Level 2b: Full-fleet build sweep (local)
+
+Locally buildable and valid on Mac/Linux with Podman or Docker — the "don't build the fleet locally" warning above is about disk/time cost, not capability. With Rosetta on (see setup above), every image builds fine. The cost is just disk (~150 GB peak before `ImageGuard` cleans each tag) and time.
+
+```bash
+# Serial (default) — one image at a time, ~90 min for the full fleet
+cargo test --test build -- --ignored
+
+# Parallel — run up to N builds concurrently via DOCK_BUILD_PARALLEL
+DOCK_BUILD_PARALLEL=4 cargo test --test build -- --ignored
+```
+
+`DOCK_BUILD_PARALLEL=N` bounds the number of in-flight `docker build` calls. Rule of thumb: `N ≈ VM_CPUS / 2` (BuildKit saturates a couple of cores per image during `RUN` layers). On a 5-cpu / 32 GB podman VM, `N=4` is a good fit and cuts the full sweep roughly to 1/3. Higher values (`N=6+`) mostly fight each other on the network during `apt-get update` / `pip install`.
+
+The harness still verifies via testcontainers-rs — it only parallelizes the outer loop, not the per-image build mechanism (per `tests/RULES.md` rule 6b).
 
 ### Level 3: Replay tests (minutes, free)
 
