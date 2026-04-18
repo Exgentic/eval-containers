@@ -2,7 +2,7 @@
 # 16621 tasks (1511 eval examples x 11 languages). Data: HuggingFace juletxara/xstory_cloze
 # Agent prints 1 or 2. Test compares to expected correct ending.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="xstory-cloze"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="c4c2d88a1ec8b37fe22166d2a610f272726724b6"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/juletxara/xstory_cloze"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2112.10668"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="c4c2d88a1ec8b37fe22166d2a610f272726724b6"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
@@ -59,10 +56,6 @@ ENV DOCK_BENCHMARK=xstory-cloze
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

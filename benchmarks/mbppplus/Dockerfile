@@ -2,7 +2,7 @@
 # 378 tasks. Data: HuggingFace evalplus/mbppplus
 # Agent writes a Python function. Test runs it against the EvalPlus extended test harness.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mbppplus"
@@ -14,8 +14,6 @@ LABEL dock.benchmark.data_revision="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
 LABEL dock.benchmark.url="https://github.com/evalplus/evalplus"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2305.01210"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
@@ -73,10 +71,6 @@ fi
 rm -rf $TMPDIR
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

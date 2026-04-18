@@ -29,10 +29,10 @@ services:
       - default
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
-      interval: 5s
-      timeout: 5s
-      retries: 30
-      start_period: 30s
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 120s
 
   bridge:
     build:
@@ -55,7 +55,7 @@ services:
       - MODEL_URL=http://user-model:4000/v1
       - OPENAI_API_KEY=sk-proxy
       - MODEL_NAME=${MODEL_NAME:-gpt-4o}
-    entrypoint: ["python3", "/app/run_tau_bench.py"]
+    entrypoint: ["bash", "-c", "/dock-materialize-task && python3 /app/run_tau_bench.py"]
     depends_on:
       bridge:
         condition: service_healthy

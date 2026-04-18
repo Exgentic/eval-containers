@@ -15,7 +15,6 @@ services:
       file: ../../compose/services.yaml
       service: eval
     image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/assistantbench--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
-    env_file: ../../.env
     environment:
       - DOCK_BENCHMARK=assistantbench
       - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}

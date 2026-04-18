@@ -5,7 +5,7 @@
 # Choices are deterministically shuffled per-task (seeded by task id) so the
 # correct answer is not always the first option.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="truthfulqa"
@@ -17,9 +17,6 @@ LABEL dock.benchmark.data_revision="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/truthfulqa/truthful_qa"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2109.07958"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
@@ -59,10 +56,6 @@ ENV DOCK_BENCHMARK=truthfulqa
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

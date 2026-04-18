@@ -2,7 +2,7 @@
 # 1000 tasks. Data: HuggingFace echo840/OCRBench
 # Agent sees question + image. Prints OCR answer text. Test compares to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="ocrbench"
@@ -16,11 +16,8 @@ LABEL dock.benchmark.url="https://github.com/Yuliang-Liu/MultimodalOCR"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2305.07895"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="92a54bd1384387c178d5a07140a2d85e0a3d12e1"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 # Single-JSONL task layout. One line per task. Image bytes are base64-encoded
 # inline; runtime entrypoint decodes only the requested task's image.
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os, base64
 url = "https://huggingface.co/api/datasets/echo840/OCRBench/parquet/default/test/0.parquet"
@@ -52,10 +49,6 @@ ENV DOCK_BENCHMARK=ocrbench
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

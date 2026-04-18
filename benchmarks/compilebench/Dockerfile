@@ -28,16 +28,36 @@ ENV DOCK_BENCHMARK=compilebench
 ENV DOCK_COMPILEBENCH_UPSTREAM_ID=${DOCK_TASK_ID}
 ENV DOCK_TASK_ID=0
 
-RUN (apt-get update && apt-get install -y curl python3 && rm -rf /var/lib/apt/lists/*) 2>/dev/null || apk add --no-cache curl python3
+# Install curl + python3 on whatever base the task's Dockerfile picks.
+# Retry apt-get up to 3 times to survive transient network hiccups, then
+# fall back to apk (alpine) if apt is not present at all.
+RUN set -eux; \
+    if command -v apt-get >/dev/null 2>&1; then \
+      success=0; \
+      for i in 1 2 3 4 5; do \
+        if apt-get update && apt-get install -y --no-install-recommends ca-certificates curl python3; then \
+          success=1; break; \
+        fi; \
+        echo "apt attempt $i failed; retrying" >&2; sleep $((i*5)); \
+      done; \
+      [ "$success" = "1" ] || { echo "apt-get failed after 5 attempts" >&2; exit 1; }; \
+      rm -rf /var/lib/apt/lists/*; \
+    elif command -v apk >/dev/null 2>&1; then \
+      for i in 1 2 3; do apk add --no-cache curl python3 && break || sleep $((i*5)); done; \
+    else \
+      echo "no supported package manager on base image" >&2; exit 1; \
+    fi; \
+    command -v curl >/dev/null 2>&1 || { echo "curl still missing after install" >&2; exit 1; }
 
 # Fetch task instruction and tests from upstream, then write a single-row
 # /tasks/all.jsonl. Single-JSONL task layout (see benchmarks/RULES.md #22).
 ARG COMPILEBENCH_REV=66e27468505706643088b79f8efad6260c274dc5
 RUN mkdir -p /tasks /tests && \
-    curl -sfL "https://raw.githubusercontent.com/QuesmaOrg/CompileBench/${COMPILEBENCH_REV}/datasets/compilebench/${DOCK_COMPILEBENCH_UPSTREAM_ID}/instruction.md" \
-      -o /tmp/instruction.md && \
-    curl -sfL "https://raw.githubusercontent.com/QuesmaOrg/CompileBench/${COMPILEBENCH_REV}/datasets/compilebench/${DOCK_COMPILEBENCH_UPSTREAM_ID}/tests/test.sh" \
-      -o /tests/test.sh && \
+    BASE="https://raw.githubusercontent.com/QuesmaOrg/CompileBench/${COMPILEBENCH_REV}/datasets/compilebench/${DOCK_COMPILEBENCH_UPSTREAM_ID}" && \
+    curl -sfL --retry 5 --retry-delay 3 --retry-connrefused --max-time 120 \
+      "$BASE/instruction.md" -o /tmp/instruction.md && \
+    curl -sfL --retry 5 --retry-delay 3 --retry-connrefused --max-time 120 \
+      "$BASE/tests/test.sh" -o /tests/test.sh && \
     chmod +x /tests/test.sh && \
     python3 -c "import json; open('/tasks/all.jsonl','w').write(json.dumps({'id':'${DOCK_COMPILEBENCH_UPSTREAM_ID}','problem':open('/tmp/instruction.md').read()})+'\n')" && \
     rm -f /tmp/instruction.md

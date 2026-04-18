@@ -2,7 +2,7 @@
 # ~9600 tasks (~960 usable segments x 10 language pairs, en->X). Data: HuggingFace google/wmt24pp
 # Agent prints translation to stdout. Test compares to expected reference translation.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="wmt"
@@ -14,8 +14,6 @@ LABEL dock.benchmark.data_revision="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/google/wmt24pp"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2502.12404"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
@@ -66,10 +64,6 @@ ENV DOCK_BENCHMARK=wmt
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

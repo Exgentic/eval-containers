@@ -2,7 +2,7 @@
 # 900 tasks. Data: HuggingFace MMMU/MMMU (validation split, 30 subjects x 30)
 # Agent sees question + options + image(s). Prints answer letter. Test compares to expected.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mmmu"
@@ -17,11 +17,8 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.16502"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 # Single-JSONL task layout. One line per task. Images base64-encoded inline;
 # runtime entrypoint decodes only the requested task's images.
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os, base64
 
@@ -69,10 +66,6 @@ ENV DOCK_BENCHMARK=mmmu
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

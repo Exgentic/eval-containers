@@ -2,7 +2,7 @@
 # 1266 tasks. Data: OpenAI public blob (encrypted, decrypted at build time)
 # Agent browses the web and prints answer to stdout.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="browsecomp"
@@ -15,8 +15,6 @@ LABEL dock.benchmark.url="https://github.com/openai/simple-evals"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2504.16186"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 RUN pip install --no-cache-dir pandas
 
@@ -58,10 +56,6 @@ ENV DOCK_BENCHMARK=browsecomp
 COPY judge.py /tests/judge.py
 COPY test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

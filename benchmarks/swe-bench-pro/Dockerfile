@@ -1,43 +1,49 @@
 # syntax=docker/dockerfile:1
 # SWE-bench Pro
-# Harder, contamination-resistant subset of SWE-bench with commercial repos.
-# Per-task images (task ID in image name).
+# Harder subset of SWE-bench. Upstream: github.com/scaleapi/SWE-bench_Pro-os.
+# Upstream ships per-instance Dockerfiles in TWO files that must be composed:
+#   dockerfiles/base_dockerfile/instance_<id>/Dockerfile
+#   dockerfiles/instance_dockerfile/instance_<id>/Dockerfile  (FROM base_<repo>)
 #
-# FUTURE: Upstream per-task image registry path is tentative. The official
-# SWE-bench Pro release ships instance-level Docker images; update the
-# base-image namespace once the public registry is finalized.
+# The base Dockerfile's FROM line varies per-repo (node:18, python:3.11,
+# ubuntu:22.04, etc.), so we cannot write a single static FROM here that works
+# for every instance. This Dockerfile instead uses a two-build flow:
+#   (a) The caller/CLI first builds the concatenated upstream base+instance
+#       into an image tagged "sbp/instance:${DOCK_TASK_ID}".
+#   (b) THIS Dockerfile then layers the dock-specific grading machinery on top
+#       of that locally-built tag — no private registries involved.
+#
+# For step (a), see scripts/build-swe-bench-pro.sh (clones the upstream repo
+# at the pinned commit, extracts both Dockerfiles, strips the duplicate FROM,
+# and runs `docker build` to produce sbp/instance:${DOCK_TASK_ID}).
 
 ARG DOCK_TASK_ID
-FROM ghcr.io/swe-bench/swe-bench-pro.eval.x86_64.${DOCK_TASK_ID}:latest
+FROM sbp/instance:${DOCK_TASK_ID}
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="swe-bench-pro"
-LABEL dock.benchmark.upstream_base="ghcr.io/swe-bench/swe-bench-pro.eval.x86_64.${DOCK_TASK_ID}:latest"
+LABEL dock.benchmark.upstream_base="sbp/instance:${DOCK_TASK_ID} (locally built from scaleapi/SWE-bench_Pro-os)"
 LABEL dock.benchmark.description="SWE-bench Pro - harder, professional-grade software engineering tasks"
-LABEL dock.benchmark.tasks="731"
+LABEL dock.benchmark.tasks="1865"
 LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/SWE-bench/SWE-bench"
+LABEL dock.benchmark.url="https://github.com/scaleapi/SWE-bench_Pro-os"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2509.16941"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/swe_bench"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="3.0.18"
-
 ENV DOCK_BENCHMARK=swe-bench-pro
 
-# System deps first (stable layer — cache-friendly)
-RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
-
-# Install grading deps to root-only path (agent cannot access or tamper)
+# System deps + grading package (root-only).
+RUN apt-get update && apt-get install -y --no-install-recommends curl jq && rm -rf /var/lib/apt/lists/*
 RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.18) \
  || pip install --no-cache-dir --target /tests/deps swebench==3.0.18
+
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
 
-# Fetch this task's metadata from the HuggingFace rows API.
-# FUTURE: confirm final dataset repo name once SWE-bench Pro is published.
+# Task metadata from the public HF dataset.
 RUN mkdir -p /tasks/0 && \
-    for offset in 0 100 200 300 400 500 600 700; do \
-      curl -sf "https://datasets-server.huggingface.co/rows?dataset=SWE-bench/SWE-bench_Pro&config=default&split=test&offset=$offset&length=100" > /tmp/page.json && \
+    for offset in 0 100 200 300 400 500 600 700 800 900 1000; do \
+      curl -sf "https://datasets-server.huggingface.co/rows?dataset=ScaleAI/SWE-bench_Pro&config=default&split=test&offset=$offset&length=100" > /tmp/page.json && \
       if jq -e --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id)' /tmp/page.json > /dev/null 2>&1; then \
         jq -r --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.instance_id' /tmp/page.json > /tasks/0/id.txt && \
         jq -r --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.problem_statement' /tmp/page.json > /tasks/0/problem.txt && \
@@ -47,7 +53,6 @@ RUN mkdir -p /tasks/0 && \
     done && rm -f /tmp/page.json || true
 RUN chmod -R 600 /tasks
 
-# Test: apply test_patch, run tests, grade using swebench harness (same shape as SWE-bench)
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
@@ -69,9 +74,8 @@ config = json.load(open('/tasks/0/config.json'))
 spec = MAP_REPO_VERSION_TO_SPECS[config['repo']][config['version']]
 test_spec = make_test_spec(config)
 
-os.chdir('/testbed')
+os.chdir('/app')
 subprocess.run('git diff > /output/agent/patch.diff', shell=True)
-os.environ['PATH'] = '/opt/miniconda3/envs/testbed/bin:' + os.environ.get('PATH', '')
 
 tracked = [p for p in re.findall(r'^--- a/(.*)$', config['test_patch'], re.MULTILINE) if p != '/dev/null']
 if tracked:
@@ -102,10 +106,10 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-chown -R agent:agent /testbed 2>/dev/null || true
+chown -R agent:agent /app 2>/dev/null || true
 
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Fix this GitHub issue in the repository at /testbed. Edit the source code to resolve the bug. Do NOT modify any test files.
+  export TASK="Fix this GitHub issue in the repository at /app. Edit the source code to resolve the bug. Do NOT modify any test files.
 
 $(cat /tasks/0/problem.txt)"
 fi

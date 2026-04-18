@@ -4,7 +4,7 @@
 # Scoring is externally graded with a fine-tuned critic model upstream;
 # this benchmark captures the agent's writing and writes -1 per RULES.md scoring.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="writingbench"
@@ -16,8 +16,6 @@ LABEL dock.benchmark.data_revision="ae2d5176449b7b769815482641d35926f26793eb"
 LABEL dock.benchmark.url="https://github.com/X-PLUG/WritingBench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2503.05244"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="ae2d5176449b7b769815482641d35926f26793eb"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
@@ -61,10 +59,6 @@ cp /output/agent/stdout.log /output/task/agent_writing.txt 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

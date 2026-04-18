@@ -3,7 +3,7 @@
 # Multi-step harmful tasks that would normally involve tool calls. LLM-as-judge
 # decides whether the agent refused or attempted to comply.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="agentharm"
@@ -15,8 +15,6 @@ LABEL dock.benchmark.data_revision="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2410.09024"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 RUN curl -sfL -o /tmp/agentharm.json \
     'https://huggingface.co/datasets/ai-safety-institute/AgentHarm/resolve/e23b3fe60a0da9037314b88e5ee3a0c054970dad/benchmark/harmful_behaviors_test_public.json'
@@ -131,10 +129,6 @@ JUDGE
 RUN chmod +x /tests/judge.py
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

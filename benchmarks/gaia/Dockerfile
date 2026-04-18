@@ -2,7 +2,7 @@
 # 165 tasks. Data: HuggingFace gaia-benchmark/GAIA (gated, requires HF_TOKEN at build time)
 # Agent prints answer to stdout. Test compares stdout to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="gaia"
@@ -18,12 +18,14 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.12983"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="682dd723ee1e1697e00360edccf2366dc8418dd9"
 
-RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0
 
-# Download dataset files (gated — requires HF_TOKEN)
-ARG HF_TOKEN
-RUN python3 -c "from huggingface_hub import snapshot_download; snapshot_download('gaia-benchmark/GAIA', repo_type='dataset', revision='682dd723ee1e1697e00360edccf2366dc8418dd9', allow_patterns=['2023/validation/*'], local_dir='/tmp/gaia', token='$HF_TOKEN')"
+# Download dataset files (gated — requires HF_TOKEN). Token plumbing
+# lives in core/benchmark-base-hf: prefer the secret mount (CI); fall
+# back to the inherited ENV HF_TOKEN set via --build-arg (local test).
+RUN --mount=type=secret,id=HF_TOKEN \
+    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && \
+    python3 -c "from huggingface_hub import snapshot_download; snapshot_download('gaia-benchmark/GAIA', repo_type='dataset', revision='682dd723ee1e1697e00360edccf2366dc8418dd9', allow_patterns=['2023/validation/*'], local_dir='/tmp/gaia', token='$HF_TOKEN')"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Attached files are
 # base64-encoded inline; entrypoint decodes them at runtime to preserve the
@@ -61,9 +63,6 @@ COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.
 RUN chmod +x /tests/test.sh
 
 # Shared entrypoint (agent → test → results)
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 # Resolve DOCK_TASK_ID to TASK + EXPECTED_ANSWER from materialized files, then exec shared entrypoint
 RUN cat > /entrypoint.sh <<'ENTRY'

@@ -2,7 +2,7 @@
 # 1172 tasks. Data: HuggingFace allenai/ai2_arc (ARC-Challenge/test)
 # Agent prints answer letter to stdout. Test compares to expected letter.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="arc"
@@ -15,8 +15,6 @@ LABEL dock.benchmark.url="https://huggingface.co/datasets/allenai/ai2_arc"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1803.05457"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="210d026faf9955653af8916fad021475a3f00453"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -46,10 +44,6 @@ ENV DOCK_BENCHMARK=arc
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

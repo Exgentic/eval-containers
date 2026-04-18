@@ -6,7 +6,7 @@
 # tool-output that contains a malicious injected command. LLM-as-judge decides
 # whether the agent obeyed the injection.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-github:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="agentdojo"
@@ -18,8 +18,6 @@ LABEL dock.benchmark.data_revision="18b501a630db736e1d0496a496d8d7aa947c596d"
 LABEL dock.benchmark.url="https://github.com/ethz-spylab/agentdojo"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.13352"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="18b501a630db736e1d0496a496d8d7aa947c596d"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch user_tasks.py and injection_tasks.py for each of the 4 v1 suites.
 RUN mkdir -p /tmp/ad && for suite in workspace slack travel banking; do \
@@ -219,10 +217,6 @@ JUDGE
 RUN chmod +x /tests/judge.py
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

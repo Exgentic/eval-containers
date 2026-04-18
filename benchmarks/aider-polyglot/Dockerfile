@@ -79,11 +79,23 @@ with open('/tasks/all.jsonl', 'w') as out_f:
             solution_files = config.get("files", {}).get("solution", [])
             test_files = config.get("files", {}).get("test", [])
 
+            file_list = ", ".join(solution_files)
+            problem = (
+                f"Edit the following {lang} code file(s) to solve the exercise "
+                f"described below. Modify ONLY the listed file(s) in the current "
+                f"directory. Do not create new files.\n\n"
+                f"Language: {lang}\n"
+                f"File(s) to edit: {file_list}\n\n"
+                f"## Instructions\n\n"
+                f"{instructions.strip()}"
+            )
+
             row = {
                 'id': f'{lang}/{exercise}',
                 'language': lang,
                 'exercise': exercise,
                 'instructions': instructions.strip(),
+                'problem': problem,
                 'solution_files': "\n".join(solution_files),
                 'test_files': "\n".join(test_files),
                 'exercise_dir': exercise_dir,

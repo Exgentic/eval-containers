@@ -2,7 +2,7 @@
 # 244 tasks (test split informal statements). Source: github yangky11/miniF2F
 # Agent prints final answer to stdout. Test compares to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="minif2f"
@@ -14,8 +14,6 @@ LABEL dock.benchmark.data_revision="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
 LABEL dock.benchmark.url="https://github.com/yangky11/miniF2F"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2109.00110"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
-
-RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
@@ -69,10 +67,6 @@ ENV DOCK_BENCHMARK=minif2f
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

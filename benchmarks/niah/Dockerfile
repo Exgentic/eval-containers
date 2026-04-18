@@ -4,7 +4,7 @@
 # Tasks cover a grid of (context_length, depth_percent).
 # Scoring: substring match of the needle answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="niah"
@@ -15,8 +15,6 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.data_revision="7b90d285651b68d39a94f3d3bd3672f84192c989"
 LABEL dock.benchmark.url="https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="7b90d285651b68d39a94f3d3bd3672f84192c989"
-
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
 # Fetch the Paul Graham essays from the upstream NIAH repo (pinned sha)
 RUN git clone --depth 1 https://github.com/gkamradt/LLMTest_NeedleInAHaystack.git /tmp/niah \
@@ -102,10 +100,6 @@ open('/logs/verifier/reward.txt', 'w').write(f'{reward:.6f}\n')
 GRADE
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

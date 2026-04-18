@@ -4,7 +4,7 @@
 # Full reproduction requires the upstream CodeOcean capsules (not distributed here),
 # so scoring is deferred to an external grader: reward = -1 per benchmarks/RULES.md rule 19.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="core-bench"
@@ -17,8 +17,6 @@ LABEL dock.benchmark.url="https://github.com/siegelz/core-bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2409.11363"
 LABEL dock.benchmark.external_grading="true"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="e32a2980e72fe6eb04ee04eb749458f570625663"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
@@ -41,15 +39,31 @@ with open('/tasks/all.jsonl', 'w') as out:
             for q in rdict.keys():
                 if q not in questions:
                     questions.append(q)
+        title = str(task.get('capsule_title', ''))
+        field = str(task.get('field', ''))
+        task_prompt = str(task.get('task_prompt', ''))
+        questions_str = json.dumps(questions)
+        problem = (
+            f"You are reproducing results from a published scientific code capsule.\n\n"
+            f"Title: {title}\n"
+            f"Field: {field}\n\n"
+            f"Task: {task_prompt}\n\n"
+            f"Produce a single JSON object whose keys are the questions below "
+            f"and whose values are the numerical answers you derive. Write this "
+            f"object to /output/agent/report.json AND print it to stdout. Do not "
+            f"include any other text in stdout.\n\n"
+            f"Questions:\n{questions_str}"
+        )
         row = {
             'id': str(task.get('capsule_id', i)),
-            'title': str(task.get('capsule_title', '')),
-            'field': str(task.get('field', '')),
+            'problem': problem,
+            'title': title,
+            'field': field,
             'language': str(task.get('language', '')),
-            'task_prompt': str(task.get('task_prompt', '')),
+            'task_prompt': task_prompt,
             'capsule_doi': str(task.get('capsule_doi', '')),
             'results_json': json.dumps(task.get('results', [])),
-            'questions_json': json.dumps(questions),
+            'questions_json': questions_str,
         }
         out.write(json.dumps(row) + '\n')
         count += 1
@@ -90,29 +104,11 @@ echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
-
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 /dock-materialize-task
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  TITLE=$(cat /tasks/$DOCK_TASK_ID/title.txt)
-  FIELD=$(cat /tasks/$DOCK_TASK_ID/field.txt)
-  PROMPT=$(cat /tasks/$DOCK_TASK_ID/task_prompt.txt)
-  QUESTIONS=$(cat /tasks/$DOCK_TASK_ID/questions_json.txt)
-  export TASK="You are reproducing results from a published scientific code capsule.
-
-Title: $TITLE
-Field: $FIELD
-
-Task: $PROMPT
-
-Produce a single JSON object whose keys are the questions below and whose values are the numerical answers you derive. Write this object to /output/agent/report.json AND print it to stdout. Do not include any other text in stdout.
-
-Questions:
-$QUESTIONS"
+  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
 fi
 exec /dock-entrypoint.sh
 ENTRY

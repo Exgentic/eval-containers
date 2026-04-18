@@ -4,7 +4,7 @@
 # Evaluation is externally handled by the upstream visualwebarena harness; this image
 # captures the agent's final answer + network HAR and writes -1.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="visualwebarena"
@@ -15,8 +15,6 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/web-arena-x/visualwebarena"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2401.13649"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
@@ -56,10 +54,6 @@ cp /output/agent/network.har /output/task/network.har 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

@@ -7,7 +7,7 @@
 # Wikipedia pages and byte-offset annotations). `nq_open` is the standard
 # version used in open-book QA evaluations (RAG, closed-book LLMs, etc.).
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="naturalquestions"
@@ -19,9 +19,6 @@ LABEL dock.benchmark.data_revision="5dd9790a83002ad084ddeb7c420dc716852c6f28"
 LABEL dock.benchmark.url="https://ai.google.com/research/NaturalQuestions"
 LABEL dock.benchmark.paper="https://aclanthology.org/Q19-1026/"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="5dd9790a83002ad084ddeb7c420dc716852c6f28"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
@@ -51,10 +48,6 @@ RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=naturalquestions
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash

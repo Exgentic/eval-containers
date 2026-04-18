@@ -3,7 +3,7 @@
 # 220 tasks. Data: HuggingFace openai/gdpval
 # Professional knowledge work. Scoring: LLM-as-judge via model proxy.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="gdpval"
@@ -30,7 +30,6 @@ RUN apt-get update && apt-get install -y \
 
 # HuggingFace CLI for uploading results to the auto-grader
 RUN pip install --no-cache-dir huggingface_hub[cli]
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
@@ -96,10 +95,6 @@ fi
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 # Load task, download reference files to /app, then exec shared entrypoint
 RUN cat > /entrypoint.sh <<'ENTRY'

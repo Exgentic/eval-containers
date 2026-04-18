@@ -4,7 +4,7 @@
 # Scoring: LLM-as-judge single-answer grading on a 1-10 scale.
 # Ref: https://arxiv.org/abs/2306.05685
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-github:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mt-bench"
@@ -16,8 +16,6 @@ LABEL dock.benchmark.data_revision="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
 LABEL dock.benchmark.url="https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge/data/mt_bench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2306.05685"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
@@ -171,10 +169,6 @@ print(f'{score:.4f}')
 GRADE
 
 RUN chmod -R 700 /tests
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

@@ -4,7 +4,7 @@
 # subset (14 tasks) for simplicity.
 # Ref: https://huggingface.co/datasets/THUDM/LongBench (arXiv:2308.14508)
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="longbench"
@@ -81,12 +81,17 @@ with open('/tasks/all.jsonl', 'w') as out:
                     context=row_in.get('context', ''),
                     input=row_in.get('input', ''),
                 )
+                answers = row_in.get('answers', []) or []
                 row = {
                     'id': str(upstream_id),
                     'task_type': task_name,
                     'metric': METRICS[task_name],
                     'problem': prompt,
-                    'answers_json': json.dumps(row_in.get('answers', [])),
+                    # First acceptable answer under the standard name for
+                    # task/input/answer.txt conformance (rule 14). Full list
+                    # preserved in answers_json for metric computation.
+                    'answer': answers[0] if answers else '',
+                    'answers_json': json.dumps(answers),
                     'all_classes_json': json.dumps(row_in.get('all_classes') or []),
                 }
                 out.write(json.dumps(row) + '\n')
@@ -212,10 +217,6 @@ print(f'{max(scores):.4f}')
 GRADE
 
 RUN chmod -R 700 /tests
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

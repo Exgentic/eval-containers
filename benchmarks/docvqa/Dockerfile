@@ -2,7 +2,7 @@
 # 5349 tasks (validation split). Data: HuggingFace lmms-lab/DocVQA (DocVQA subset)
 # Agent sees question + document image. Prints the final answer. Test compares to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="docvqa"
@@ -15,10 +15,6 @@ LABEL dock.benchmark.data_revision="539088ef8a8ada01ac8e2e6d4e372586748a265e"
 LABEL dock.benchmark.url="https://www.docvqa.org"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2007.00398"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="539088ef8a8ada01ac8e2e6d4e372586748a265e"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Write every task to a single JSONL file. One line per task. Image bytes
 # are base64-encoded inline so the whole benchmark lives in a single
@@ -56,10 +52,6 @@ ENV DOCK_BENCHMARK=docvqa
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 # Runtime: materialize only the requested task's files from the JSONL.
 # Keeps the agent-visible layout identical: id.txt, problem.txt, answer.txt,

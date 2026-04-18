@@ -2,7 +2,7 @@
 # 1319 tasks. Data: HuggingFace openai/gsm8k (main/test)
 # Agent prints answer to stdout. Test compares to expected numeric answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="gsm8k"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="740312add88f781978c0658806c59bc2815b9866"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/gsm8k"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2110.14168"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="740312add88f781978c0658806c59bc2815b9866"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). One line per task,
 # /dock-materialize-task materializes only the requested row at runtime.
@@ -48,10 +45,6 @@ ENV DOCK_BENCHMARK=gsm8k
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

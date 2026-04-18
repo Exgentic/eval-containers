@@ -3,7 +3,7 @@
 # Data: HuggingFace nguha/legalbench (TSV files, test splits).
 # Agent reads a legal text and prints a classification label. Test compares exact match (case-insensitive).
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="legalbench"
@@ -15,8 +15,6 @@ LABEL dock.benchmark.data_revision="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
 LABEL dock.benchmark.url="https://github.com/HazyResearch/legalbench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2308.11462"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Known 83 classification subtasks with uniform (index, answer, text) / (index, text, answer) schema.
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
@@ -122,10 +120,6 @@ ENV DOCK_BENCHMARK=legalbench
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

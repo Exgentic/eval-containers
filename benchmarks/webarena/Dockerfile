@@ -3,7 +3,7 @@
 # Multi-service with website sidecars + mitmproxy for HAR capture.
 # Evaluation via official webarena-verified package.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-github:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="webarena"
@@ -14,8 +14,6 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/web-arena-x/webarena"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2307.13854"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="1.2.3"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Install evaluator
 RUN pip install --no-cache-dir webarena-verified==1.2.3
@@ -134,9 +132,6 @@ EXTRACT
 RUN chmod +x /tests/extract_response.py
 
 # Shared entrypoint
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 # Entrypoint: build task prompt with sidecar URLs and credentials
 # FUTURE: Consider a structured JSON output contract; currently agent-specific.

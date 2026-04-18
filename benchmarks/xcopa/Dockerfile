@@ -2,7 +2,7 @@
 # 5500 tasks (500 test examples x 11 languages). Data: HuggingFace cambridgeltl/xcopa
 # Agent prints A or B. Test compares to expected choice.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="xcopa"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="042f78955ba48e6404616762fa6e05e839c3907a"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/cambridgeltl/xcopa"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2005.00333"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="042f78955ba48e6404616762fa6e05e839c3907a"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Write every task to a single JSONL file. One line per task. Agent never
 # sees this file (root-only). Runtime entrypoint materializes just the
@@ -59,10 +56,6 @@ ENV DOCK_BENCHMARK=xcopa
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 # Runtime: materialize only the requested task's files from the JSONL.
 RUN cat > /entrypoint.sh <<'ENTRY'

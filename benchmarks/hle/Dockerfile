@@ -2,7 +2,7 @@
 # 2500 tasks. Data: HuggingFace cais/hle (gated)
 # Agent prints answer to stdout. Test compares to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="hle"
@@ -18,14 +18,14 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2501.14249"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 # Dataset is gated — download with huggingface_hub
-ARG HF_TOKEN
 RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN \
+    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && \
+    export HF_TOKEN && \
+    python3 <<'PYEOF'
 import os, glob, json, pyarrow.parquet as pq
 from huggingface_hub import snapshot_download
 
@@ -63,10 +63,6 @@ ENV DOCK_BENCHMARK=hle
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
