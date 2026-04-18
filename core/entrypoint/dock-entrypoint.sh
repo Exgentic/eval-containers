@@ -83,8 +83,11 @@ STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 su agent -s /bin/bash -c "
   export TASK='$(echo "$TASK" | sed "s/'/'\\\\''/g")'
   export DOCK_TASK_ID='${DOCK_TASK_ID:-}'
+  export DOCK_MODEL='${DOCK_MODEL:-}'
   export OPENAI_BASE_URL='${OPENAI_BASE_URL:-}'
+  export OPENAI_API_KEY='${OPENAI_API_KEY:-}'
   export ANTHROPIC_BASE_URL='${ANTHROPIC_BASE_URL:-}'
+  export ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY:-}'
   timeout ${DOCK_TIMEOUT:-300} /opt/agent/entrypoint.sh
 " > /output/agent/stdout.log 2> /output/agent/stderr.log || true
 AGENT_EXIT=$?
@@ -100,6 +103,9 @@ bash /tests/test.sh || true
 
 # Phase 3: Write task result
 REWARD=$(cat /logs/verifier/reward.txt 2>/dev/null || echo 0)
-PASSED=$([ "$REWARD" = "1" ] && echo true || echo false)
+# Numeric comparison so "1.0" == 1 (graders that emit floats still resolve
+# to passed=true when they hit perfect score). `bc` is available in every
+# benchmark base; fall back to python if missing.
+PASSED=$(awk -v r="$REWARD" 'BEGIN{print (r+0 >= 1) ? "true" : "false"}')
 printf '{"task_id":"%s","benchmark":"%s","reward":%s,"passed":%s}' \
   "${DOCK_TASK_ID:-unknown}" "${DOCK_BENCHMARK:-unknown}" "$REWARD" "$PASSED" > /output/task/result.json
