@@ -2,7 +2,7 @@
 # 589764 tasks (14042 test questions x 42 languages). Data: HuggingFace CohereLabs/Global-MMLU
 # Agent prints letter A/B/C/D. Test compares to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="global-mmlu"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="0e619dbeb34206cd48705a1a0ea7fb21cae09993"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/CohereLabs/Global-MMLU"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2412.03304"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="0e619dbeb34206cd48705a1a0ea7fb21cae09993"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Write every task to a single JSONL file. One line per task, ~200 bytes each.
 # Agent never sees this file (root-only). Runtime entrypoint materializes just
@@ -71,10 +68,6 @@ ENV DOCK_BENCHMARK=global-mmlu
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 # Reference implementation of the DOCK_BENCHMARK_VERSION override hook.
 # core/entrypoint/dock-entrypoint.sh invokes /dock-refetch-data <revision>

@@ -1,0 +1,34 @@
+# AssetOpsBench
+# Industrial asset operations benchmark. Shared environment, externally graded.
+#
+# dock run assetopsbench --agent claude-code --task-id 1
+
+services:
+  model:
+    extends:
+      file: ../../compose/services.yaml
+      service: model
+    env_file: ../../.env
+    volumes:
+      - ../../output/${DOCK_BENCHMARK:-assetopsbench}/${DOCK_TASK_ID:-default}/model:/output:rw
+
+  eval:
+    extends:
+      file: ../../compose/services.yaml
+      service: eval
+    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/assetopsbench--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
+    environment:
+      - DOCK_BENCHMARK=assetopsbench
+      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+    volumes:
+      - ../../output/${DOCK_BENCHMARK:-assetopsbench}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${DOCK_BENCHMARK:-assetopsbench}/${DOCK_TASK_ID:-default}/task:/output/task:rw
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+networks:
+  internal:
+    internal: true

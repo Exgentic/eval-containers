@@ -2,7 +2,7 @@
 # 2500 tasks (test split). Data: HuggingFace HuggingFaceM4/ChartQA
 # Agent sees question + chart image. Prints the final answer. Test compares to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="chartqa"
@@ -15,10 +15,6 @@ LABEL dock.benchmark.data_revision="b605b6e08b57faf4359aeb2fe6a3ca595f99b6c5"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/HuggingFaceM4/ChartQA"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2203.10244"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="b605b6e08b57faf4359aeb2fe6a3ca595f99b6c5"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout. Image bytes are base64-encoded inline; the runtime
 # entrypoint materializes just the requested row and decodes image.png.
@@ -53,10 +49,6 @@ ENV DOCK_BENCHMARK=chartqa
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

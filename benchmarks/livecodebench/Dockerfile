@@ -3,7 +3,7 @@
 # Data: HuggingFace livecodebench/code_generation_lite release_v5
 # Agent writes solution code. Test runs it against hidden test cases.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="livecodebench"
@@ -141,10 +141,6 @@ else
 fi
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

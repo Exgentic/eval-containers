@@ -2,7 +2,7 @@
 # 14042 tasks. Data: HuggingFace cais/mmlu (all/test)
 # Agent prints answer letter to stdout. Test compares to expected letter.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mmlu"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="c30699e8356da336a370243923dbaf21066bb9fe"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/cais/mmlu"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2009.03300"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="c30699e8356da336a370243923dbaf21066bb9fe"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
@@ -55,10 +52,6 @@ ENV DOCK_BENCHMARK=mmlu
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

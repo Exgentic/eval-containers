@@ -2,7 +2,7 @@
 # 164 tasks. Data: HuggingFace openai/openai_humaneval
 # Agent completes a Python function. Test runs it against unit tests.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="humaneval"
@@ -17,9 +17,6 @@ LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2107.03374"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
-
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
@@ -33,6 +30,7 @@ with open('/tasks/all.jsonl', 'w') as out:
     for i in range(len(t)):
         row = {
             'id': str(t['task_id'][i]),
+            'problem': str(t['prompt'][i]),
             'prompt': str(t['prompt'][i]),
             'test': str(t['test'][i]),
             'entry_point': str(t['entry_point'][i]),
@@ -76,10 +74,6 @@ fi
 rm -rf $TMPDIR
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

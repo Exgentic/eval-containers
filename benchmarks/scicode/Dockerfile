@@ -3,7 +3,7 @@
 # Numeric ground-truth tensors: Google Drive (~1GB test_data.h5).
 # Agent writes Python code for each sub-step. Test asserts output equals loaded targets.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="scicode"
@@ -16,8 +16,6 @@ LABEL dock.benchmark.url="https://github.com/scicode-bench/SciCode"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.13168"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="4510f6a6aa27c43fad7b43da2c59602a86e88480"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 # Runtime deps for test execution (tests use numpy/scipy/h5py and call the loader)
 RUN pip install --no-cache-dir numpy==2.0.2 scipy==1.14.1 h5py==3.12.1 sympy==1.13.3
 
@@ -25,7 +23,6 @@ RUN pip install --no-cache-dir numpy==2.0.2 scipy==1.14.1 h5py==3.12.1 sympy==1.
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
 # sub_steps and general_tests are stored as JSON strings so that when the
 # materializer writes them to <field>.txt the file contains valid JSON text.
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -217,10 +214,6 @@ fi
 rm -rf $TMPDIR
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

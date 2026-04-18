@@ -2,7 +2,7 @@
 # 541 tasks. Data: HuggingFace google/IFEval
 # Agent follows a prompt with verifiable constraints. Test checks instruction compliance.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="ifeval"
@@ -16,9 +16,6 @@ LABEL dock.benchmark.url="https://github.com/google-research/google-research/tre
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/ifeval"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.07911"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="966cd89545d6b6acfd7638bc708b98261ca58e84"
-
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # instruction_ids and kwargs are stored as JSON strings (field names
@@ -45,6 +42,7 @@ with open('/tasks/all.jsonl', 'w') as out:
                 parsed_kwargs.append({})
         row = {
             'id': str(t['key'][i]),
+            'problem': str(t['prompt'][i]),
             'prompt': str(t['prompt'][i]),
             'instruction_ids_json': json.dumps(instruction_ids),
             'kwargs_json': json.dumps(parsed_kwargs),
@@ -124,10 +122,6 @@ kwargs_list = json.loads(open(os.path.join(task_dir, 'kwargs_json.txt')).read())
 score = test_instruction_following(instruction_ids, kwargs_list, response)
 print(f"{score:.4f}")
 PYEOF
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

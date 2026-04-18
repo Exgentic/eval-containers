@@ -2,7 +2,7 @@
 # 307 tasks. Data: HuggingFace dapumptu/usaco_benchmark
 # Agent writes solution code. Test runs it against I/O test cases.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="usaco"
@@ -21,7 +21,6 @@ RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lis
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/,
 # then explodes the per-case inputs/outputs dict into /tasks/$DOCK_TASK_ID/tests/.
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
 tables = []
@@ -87,10 +86,6 @@ else
 fi
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

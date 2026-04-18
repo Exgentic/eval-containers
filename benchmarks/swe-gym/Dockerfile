@@ -9,7 +9,7 @@
 # exposes the problem statement to the agent, captures the produced patch, and writes
 # -1 (externally graded).
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="swe-gym"
@@ -21,9 +21,6 @@ LABEL dock.benchmark.data_revision="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
 LABEL dock.benchmark.url="https://github.com/SWE-Gym/SWE-Gym"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2412.21139"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
@@ -67,10 +64,6 @@ fi
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

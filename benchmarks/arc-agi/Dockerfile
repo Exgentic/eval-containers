@@ -2,7 +2,7 @@
 # 120 tasks. Data: GitHub arcprize/ARC-AGI-2 evaluation set
 # Agent sees train examples and test input grids, prints predicted output grid as JSON.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-github:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="arc-agi"
@@ -17,8 +17,6 @@ LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-data
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/arc"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1911.01547"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="f3283f727488ad98fe575ea6a5ac981e4a188e49"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Download all 120 evaluation tasks from pinned commit and write a single JSONL.
 RUN python3 <<'PYEOF'
@@ -79,10 +77,6 @@ ENV DOCK_BENCHMARK=arc-agi
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

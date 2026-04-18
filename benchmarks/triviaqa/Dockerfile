@@ -2,7 +2,7 @@
 # 17944 tasks. Data: HuggingFace mandarjoshi/trivia_qa (rc.nocontext/validation)
 # Agent prints answer to stdout. Test matches against any normalized alias.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="triviaqa"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
 LABEL dock.benchmark.url="https://nlp.cs.washington.edu/triviaqa/"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1705.03551"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
@@ -55,10 +52,6 @@ RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 ENV DOCK_BENCHMARK=triviaqa
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 # Custom test: normalize agent output + any alias; accept if any match.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'

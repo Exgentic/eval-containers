@@ -4,7 +4,7 @@
 # request hidden in a synthetic multi-turn conversation.
 # Scoring: difflib.SequenceMatcher ratio with required prefix check.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mrcr"
@@ -18,13 +18,10 @@ LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/mrcr"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.14993"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
 # fields into /tasks/$DOCK_TASK_ID/. Pre-render prompt.json into problem.txt
 # (flattened conversation text) so the entrypoint stays simple.
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow as pa, json, os
 
@@ -103,10 +100,6 @@ open('/logs/verifier/reward.txt', 'w').write(f'{reward:.6f}\n')
 GRADE
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

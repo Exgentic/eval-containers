@@ -2,7 +2,7 @@
 # 165 test tasks from Codeforces/AtCoder/etc. Data: HuggingFace deepmind/code_contests
 # Agent writes a solution. Test runs it against public + private + generated I/O tests.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="code-contests"
@@ -19,7 +19,6 @@ RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lis
 
 # Single-JSONL task layout. Merged I/O tests are stored as a JSON array in the
 # "tests_json" field; the entrypoint expands them into /tasks/$DOCK_TASK_ID/tests/.
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -99,10 +98,6 @@ fi
 rm -rf $TMPDIR
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

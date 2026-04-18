@@ -2,7 +2,7 @@
 # 500 tasks. Data: HuggingFace google-research-datasets/mbpp
 # Agent writes a Python function. Test runs it against assert-based test cases.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mbpp"
@@ -16,9 +16,6 @@ LABEL dock.benchmark.url="https://github.com/google-research/google-research/tre
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mbpp"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2108.07732"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="4bb6404fdc6cacfda99d4ac4205087b89d32030c"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
@@ -75,10 +72,6 @@ fi
 rm -rf $TMPDIR
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

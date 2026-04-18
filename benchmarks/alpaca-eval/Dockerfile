@@ -4,7 +4,7 @@
 # We follow the AlpacaEval 2.0 protocol using the gpt4_baseline outputs.
 # Ref: https://github.com/tatsu-lab/alpaca_eval (Li et al. 2023)
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="alpaca-eval"
@@ -16,8 +16,6 @@ LABEL dock.benchmark.data_revision="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
 LABEL dock.benchmark.url="https://github.com/tatsu-lab/alpaca_eval"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.04475"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch the 805-example eval set and the gpt-4-turbo baseline outputs
 RUN curl -sSfL -o /tmp/eval.json \
@@ -155,10 +153,6 @@ else:
 GRADE
 
 RUN chmod -R 700 /tests
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

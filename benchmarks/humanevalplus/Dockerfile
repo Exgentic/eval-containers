@@ -2,7 +2,7 @@
 # 164 tasks. Data: HuggingFace evalplus/humanevalplus
 # Agent completes a Python function. Test runs it against the EvalPlus extended test harness.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="humanevalplus"
@@ -15,7 +15,6 @@ LABEL dock.benchmark.url="https://github.com/evalplus/evalplus"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2305.01210"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow==18.1.0 numpy==2.0.2
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
@@ -31,6 +30,7 @@ with open('/tasks/all.jsonl', 'w') as out:
     for i in range(len(t)):
         row = {
             'id': str(t['task_id'][i]),
+            'problem': str(t['prompt'][i]),
             'prompt': str(t['prompt'][i]),
             'test': str(t['test'][i]),
             'entry_point': str(t['entry_point'][i]),
@@ -74,10 +74,6 @@ fi
 rm -rf $TMPDIR
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

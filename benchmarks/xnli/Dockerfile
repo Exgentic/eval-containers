@@ -2,7 +2,7 @@
 # 75150 tasks (5010 test examples x 15 languages). Data: HuggingFace facebook/xnli
 # Agent prints entailment/neutral/contradiction. Test compares to expected label.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="xnli"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="b8dd5d7af51114dbda02c0e3f6133f332186418e"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/facebook/xnli"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1809.05053"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="b8dd5d7af51114dbda02c0e3f6133f332186418e"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
@@ -55,10 +52,6 @@ ENV DOCK_BENCHMARK=xnli
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

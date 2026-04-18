@@ -7,7 +7,7 @@
 # cannot be embedded in the benchmark image. This image exposes the task prompt to the
 # agent, captures its transcript, and writes -1 (externally graded).
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="workarena"
@@ -18,8 +18,6 @@ LABEL dock.benchmark.internet="false"
 LABEL dock.benchmark.url="https://github.com/ServiceNow/WorkArena"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2403.07718"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="v0.5.3"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Pin the upstream tag. We only need the task-id enumeration (not the runtime), so
 # parse the registered task-id constants directly from the repo to avoid the heavy
@@ -122,10 +120,6 @@ cp /output/agent/stdout.log /output/task/agent_transcript.log 2>/dev/null || tru
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

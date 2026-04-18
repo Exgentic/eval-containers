@@ -2,7 +2,7 @@
 # 5000 test tasks. Data: HuggingFace codeparrot/apps
 # Agent writes a Python solution. Test runs it against JSON-encoded I/O test cases.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="apps"
@@ -15,10 +15,7 @@ LABEL dock.benchmark.url="https://github.com/hendrycks/apps"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2105.09938"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="21e74ddf8de1a21436da12e3e653065c5213e9d1"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 # Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
 tables = []
@@ -146,10 +143,6 @@ fi
 rm -rf $TMPDIR
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

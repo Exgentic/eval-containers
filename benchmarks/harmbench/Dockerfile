@@ -3,7 +3,7 @@
 # Agent is given a harmful instruction. Test uses LLM-as-judge to detect whether
 # the agent complied (harmful response) or refused. Reward = 1 - compliance (refusal is correct).
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-github:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="harmbench"
@@ -15,8 +15,6 @@ LABEL dock.benchmark.data_revision="8e1604d1171fe8a48d8febecd22f600e462bdcdd"
 LABEL dock.benchmark.url="https://github.com/centerforaisafety/HarmBench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2402.04249"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="8e1604d1171fe8a48d8febecd22f600e462bdcdd"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch HarmBench standard text behaviors CSV
 RUN curl -sfL -o /tmp/harmbench.csv \
@@ -136,10 +134,6 @@ RUN chmod +x /tests/judge.py
 
 # Lock test infrastructure from agent
 RUN chmod -R 700 /tests && chown -R root:root /tests
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

@@ -1,14 +1,21 @@
 # syntax=docker/dockerfile:1
 # SWE-bench Verified
-# 500 per-task images from ghcr.io/epoch-research/swe-bench.eval.x86_64.{task_id}
-# Agent fixes a bug in a real Python repo. Tests verify the fix.
+# Per-task base images come from the upstream PUBLIC Docker Hub registry at
+# docker.io/swebench/sweb.eval.x86_64.<task_id>:latest — anonymously pullable,
+# no auth required.
+#
+# NOTE: The SWE-bench harness sanitizes instance ids for Docker by replacing
+# "__" with "_1776_" (see swebench.harness.test_spec.test_spec). Callers must
+# pass DOCK_TASK_ID in the sanitized form used by the published images — e.g.
+# "sympy_1776_sympy-24066" rather than "sympy__sympy-24066". The HuggingFace
+# dataset lookup below reverses the transform so we fetch the right row.
 
 ARG DOCK_TASK_ID
-FROM ghcr.io/epoch-research/swe-bench.eval.x86_64.${DOCK_TASK_ID}:latest
+FROM docker.io/swebench/sweb.eval.x86_64.${DOCK_TASK_ID}:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="swe-bench"
-LABEL dock.benchmark.upstream_base="ghcr.io/epoch-research/swe-bench.eval.x86_64.${DOCK_TASK_ID}:latest"
+LABEL dock.benchmark.upstream_base="docker.io/swebench/sweb.eval.x86_64.${DOCK_TASK_ID}:latest"
 LABEL dock.benchmark.description="SWE-bench Verified - software engineering"
 LABEL dock.benchmark.tasks="500"
 LABEL dock.benchmark.env="per-task"
@@ -29,16 +36,20 @@ RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.17) \
  || pip install --no-cache-dir --target /tests/deps swebench==3.0.17
 
-# Fetch this task's metadata from HuggingFace API
+# Fetch this task's metadata from HuggingFace. The dataset stores instance_id
+# in its human form (e.g. "sympy__sympy-24066"); DOCK_TASK_ID is the Docker-
+# sanitized form (e.g. "sympy_1776_sympy-24066"). Reverse the transform for
+# the dataset lookup.
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
-RUN mkdir -p /tasks/0 && \
+RUN HF_ID="$(echo "${DOCK_TASK_ID}" | sed 's/_1776_/__/g')" && \
+    mkdir -p /tasks/0 && \
     for offset in 0 100 200 300 400 500; do \
       curl -sf "https://datasets-server.huggingface.co/rows?dataset=princeton-nlp/SWE-bench_Verified&config=default&split=test&offset=$offset&length=100" > /tmp/page.json && \
-      if jq -e --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id)' /tmp/page.json > /dev/null 2>&1; then \
-        jq -r --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.instance_id' /tmp/page.json > /tasks/0/id.txt && \
-        jq -r --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.problem_statement' /tmp/page.json > /tasks/0/problem.txt && \
-        jq --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row' /tmp/page.json > /tasks/0/config.json && \
+      if jq -e --arg id "$HF_ID" '.rows[] | select(.row.instance_id == $id)' /tmp/page.json > /dev/null 2>&1; then \
+        jq -r --arg id "$HF_ID" '.rows[] | select(.row.instance_id == $id) | .row.instance_id' /tmp/page.json > /tasks/0/id.txt && \
+        jq -r --arg id "$HF_ID" '.rows[] | select(.row.instance_id == $id) | .row.problem_statement' /tmp/page.json > /tasks/0/problem.txt && \
+        jq --arg id "$HF_ID" '.rows[] | select(.row.instance_id == $id) | .row' /tmp/page.json > /tasks/0/config.json && \
         break; \
       fi; \
     done && rm -f /tmp/page.json

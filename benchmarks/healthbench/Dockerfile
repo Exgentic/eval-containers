@@ -2,7 +2,7 @@
 # 5000 tasks. Data: openai/healthbench via Azure blob
 # Agent responds to health conversations. Test uses LLM-as-judge with physician rubrics.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="healthbench"
@@ -16,8 +16,6 @@ LABEL dock.benchmark.url="https://github.com/openai/healthbench"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/healthbench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.11709"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="40ee1968852fc57f625934251ac22be47077a8fb"
-
-RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 
 # Fetch dataset (JSONL from OpenAI public blob storage)
 RUN curl -sfL -o /tmp/eval.jsonl \
@@ -177,10 +175,6 @@ GRADE
 
 # Lock test infrastructure from agent
 RUN chmod -R 700 /tests && chown -R root:root /tests
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

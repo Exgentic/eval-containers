@@ -4,7 +4,7 @@
 # LLM-as-judge, with both orderings considered to reduce position bias.
 # Ref: https://github.com/lmarena/arena-hard-auto (Li et al. 2024)
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="arena-hard"
@@ -16,8 +16,6 @@ LABEL dock.benchmark.data_revision="196f6b826783b3da7310e361a805fa36f0be83f3"
 LABEL dock.benchmark.url="https://github.com/lmarena/arena-hard-auto"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.11939"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="196f6b826783b3da7310e361a805fa36f0be83f3"
-
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
 # Fetch the Arena-Hard v0.1 question set and baseline answers (pinned sha)
 RUN git clone --depth 1 https://github.com/lmarena/arena-hard-auto.git /tmp/ah \
@@ -166,10 +164,6 @@ else:
 GRADE
 
 RUN chmod -R 700 /tests
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

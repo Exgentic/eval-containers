@@ -2,7 +2,7 @@
 # 10042 tasks. Data: HuggingFace Rowan/hellaswag (validation)
 # Agent prints the letter of the most plausible continuation. Test compares letters.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="hellaswag"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="218ec52e09a7e7462a5400043bb9a69a41d06b76"
 LABEL dock.benchmark.url="https://huggingface.co/datasets/Rowan/hellaswag"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1905.07830"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="218ec52e09a7e7462a5400043bb9a69a41d06b76"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout. Root-only; runtime entrypoint materializes the
 # requested task's fields into /tasks/$DOCK_TASK_ID/ on demand.
@@ -54,10 +51,6 @@ ENV DOCK_BENCHMARK=hellaswag
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

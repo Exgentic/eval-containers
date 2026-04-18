@@ -3,7 +3,7 @@
 # ~2000 tasks (simple/multiple/parallel categories). Data: HuggingFace gorilla-llm
 # Agent outputs function call(s). Test compares to ground truth.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="bfcl"
@@ -17,8 +17,6 @@ LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-data
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bfcl"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.06840"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch task and answer files from HuggingFace
 RUN mkdir -p /tmp/bfcl/tasks /tmp/bfcl/answers
@@ -63,10 +61,6 @@ ENV DOCK_BENCHMARK=bfcl
 # Test: exact match on agent stdout (simplified — full BFCL uses AST comparison)
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

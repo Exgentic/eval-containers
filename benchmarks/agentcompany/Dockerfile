@@ -7,7 +7,7 @@
 #
 # Data: github TheAgentCompany/TheAgentCompany (workspaces/tasks/*/task.md)
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="agentcompany"
@@ -19,8 +19,6 @@ LABEL dock.benchmark.data_revision="98b68ef82a47690c316f42fddb05baafaab56851"
 LABEL dock.benchmark.url="https://github.com/TheAgentCompany/TheAgentCompany"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2412.14161"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="98b68ef82a47690c316f42fddb05baafaab56851"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch the repo tree, then download each task.md into /tasks/all.jsonl.
 RUN python3 <<'PYEOF'
@@ -62,10 +60,6 @@ cp /output/agent/stdout.log /output/task/agent_response.txt 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

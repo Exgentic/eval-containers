@@ -6,7 +6,7 @@
 # is not publicly downloadable. Using the public sample split as a placeholder.
 # Replace with the full set once access is granted (set HF_TOKEN and data_revision).
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="frontiermath"
@@ -18,12 +18,13 @@ LABEL dock.benchmark.url="https://epochai.org/frontiermath"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2411.04872"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir pyarrow==18.1.0 huggingface_hub==0.26.2
 
 # Public sample set. The full evaluation set is gated and held by Epoch AI.
-ARG HF_TOKEN=""
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN \
+    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && \
+    export HF_TOKEN && \
+    python3 <<'PYEOF'
 import os, json
 from huggingface_hub import snapshot_download
 try:
@@ -78,10 +79,6 @@ ENV DOCK_BENCHMARK=frontiermath
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

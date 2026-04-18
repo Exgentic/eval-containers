@@ -6,7 +6,7 @@
 # script, which can't be parquet-converted by HF. We fetch the original raw
 # JSONL files hosted by the authors at yonatanbisk.com (same data).
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="piqa"
@@ -18,8 +18,6 @@ LABEL dock.benchmark.data_revision="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
 LABEL dock.benchmark.url="https://yonatanbisk.com/piqa"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/1911.11641"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
@@ -53,10 +51,6 @@ ENV DOCK_BENCHMARK=piqa
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

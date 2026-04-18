@@ -4,7 +4,7 @@
 # Agent connects via HTTP API: GET /screenshot, POST /execute_action.
 # VM disk image (11GB) must be downloaded separately.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="osworld"
@@ -16,9 +16,6 @@ LABEL dock.benchmark.url="https://github.com/xlang-ai/OSWorld"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/osworld"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.07972"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout. One line per task. Runtime entrypoint
 # materializes the requested task and renames task.txt -> task.json.
@@ -80,10 +77,6 @@ mkdir -p /logs/verifier
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

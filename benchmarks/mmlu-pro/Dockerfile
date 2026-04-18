@@ -2,7 +2,7 @@
 # 12032 tasks. Data: HuggingFace TIGER-Lab/MMLU-Pro
 # Agent prints answer to stdout. Test compares stdout to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mmlu-pro"
@@ -16,10 +16,6 @@ LABEL dock.benchmark.url="https://github.com/TIGER-AI-Lab/MMLU-Pro"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmlu_pro"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.01574"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="54611cde22c74cca43dd78732198de6abe971398"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout. Root-only; runtime entrypoint materializes the
 # requested task's fields into /tasks/$DOCK_TASK_ID/ on demand.
@@ -53,10 +49,6 @@ ENV DOCK_BENCHMARK=mmlu-pro
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

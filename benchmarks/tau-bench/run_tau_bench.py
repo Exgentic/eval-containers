@@ -17,7 +17,7 @@ import json
 
 BRIDGE_URL = os.environ.get("BRIDGE_URL", "http://bridge:8000/v1")
 MODEL_URL = os.environ.get("MODEL_URL", "http://user-model:4000/v1")
-TASK_ID = int(os.environ.get("TASK_ID", "0"))
+TASK_ID = int(os.environ.get("DOCK_TASK_ID", os.environ.get("TASK_ID", "0")))
 MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o")
 
 # Set OPENAI_BASE_URL to bridge — this is what the agent's litellm calls will use

@@ -2,7 +2,7 @@
 # 1000 tasks (testmini split). Data: HuggingFace AI4Math/MathVista
 # Agent sees question + image. Prints the final answer. Test compares to expected answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mathvista"
@@ -16,9 +16,6 @@ LABEL dock.benchmark.url="https://mathvista.github.io"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2310.02255"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mathvista"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="2b6ad69445fbb5695c9b165475e8decdbeb97747"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Image bytes are
 # base64-encoded inline; entrypoint decodes back to image.png at runtime.
@@ -51,10 +48,6 @@ ENV DOCK_BENCHMARK=mathvista
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

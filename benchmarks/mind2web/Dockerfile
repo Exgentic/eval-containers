@@ -6,7 +6,7 @@
 # trace is tightly coupled to upstream tooling). This benchmark captures the agent's
 # output trace and writes -1 per RULES.md section Scoring.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="mind2web"
@@ -19,12 +19,9 @@ LABEL dock.benchmark.url="https://github.com/OSU-NLP-Group/Mind2Web"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2306.06070"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="17ece8eb89862368edc0cc806acee6fca5163474"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
 # fields into /tasks/$DOCK_TASK_ID/ and renames meta/gold_trace to .json.
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 BASE = 'https://huggingface.co/api/datasets/osunlp/Mind2Web/parquet/default/train'
@@ -68,10 +65,6 @@ cp /output/agent/stdout.log /output/task/agent_trace.log 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

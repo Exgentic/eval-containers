@@ -5,7 +5,7 @@
 # Data: github THUDM/AgentBench (data/dbbench/standard.jsonl)
 # Agent prints the answer to stdout. Test compares stdout to expected label.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-github:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="agentbench"
@@ -17,8 +17,6 @@ LABEL dock.benchmark.data_revision="d1e4a10db08c87075c78972e48ecc182be03e2d5"
 LABEL dock.benchmark.url="https://github.com/THUDM/AgentBench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2308.03688"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="d1e4a10db08c87075c78972e48ecc182be03e2d5"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch the DBBench standard split and write every task to /tasks/all.jsonl.
 RUN python3 <<'PYEOF'
@@ -71,10 +69,6 @@ ENV DOCK_BENCHMARK=agentbench
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

@@ -1,55 +1,61 @@
 # syntax=docker/dockerfile:1
 # SWE-Lancer (OpenAI)
-# 1,488 freelance software engineering tasks sourced from Upwork. Each task
-# has a real-world bug fix / feature request in the Expensify codebase, and
-# is graded by running Playwright end-to-end tests.
+# Freelance software engineering tasks (Expensify codebase, Playwright E2E
+# tests). Upstream source: github.com/openai/preparedness (project/swelancer).
+# The legacy repo github.com/openai/SWELancer-Benchmark now redirects there.
 #
-# FUTURE: SWE-Lancer ships upstream per-task Docker images under OpenAI's
-# registry; confirm the exact image namespace once published publicly.
+# Two-stage build flow (no private registries involved):
+#   (1) Pre-build the shared base image ONCE:
+#         scripts/build-swe-lancer.sh
+#       clones openai/preparedness at the pinned commit, builds
+#       swelancer_x86:latest from project/swelancer/Dockerfile_x86_base.
+#       This installs Ubuntu+conda+Python+Playwright+Node deps and bakes in
+#       the issues/ directory (per-task issue data + test files).
+#   (2) Per-task build uses THIS Dockerfile, which layers on top of
+#       swelancer_x86 and runs the upstream per-task playbook to check out
+#       Expensify at the right commit for DOCK_TASK_ID.
 
 ARG DOCK_TASK_ID
-FROM ghcr.io/openai/swelancer.${DOCK_TASK_ID}:latest
+FROM swelancer_x86:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="swe-lancer"
-LABEL dock.benchmark.upstream_base="ghcr.io/openai/swelancer.${DOCK_TASK_ID}:latest"
-LABEL dock.benchmark.description="SWE-Lancer - real-world freelance software engineering tasks (OpenAI)"
+LABEL dock.benchmark.upstream_base="swelancer_x86:latest (locally built from openai/preparedness@project/swelancer)"
+LABEL dock.benchmark.description="SWE-Lancer - real-world freelance SWE tasks (OpenAI)"
 LABEL dock.benchmark.tasks="1488"
 LABEL dock.benchmark.env="per-task"
 LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/openai/SWELancer-Benchmark"
+LABEL dock.benchmark.url="https://github.com/openai/preparedness"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2502.12115"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
-
 ENV DOCK_BENCHMARK=swe-lancer
-
-RUN apt-get update && apt-get install -y curl jq git && rm -rf /var/lib/apt/lists/*
 
 ARG DOCK_TASK_ID
 ENV DOCK_TASK_ID=${DOCK_TASK_ID}
+ENV ISSUE_ID=${DOCK_TASK_ID}
 
-# Task metadata (issue description + E2E test command) lives in the upstream
-# per-task image. Task description is at /private/task.md or similar.
-# FUTURE: confirm the exact layout once images are published.
-RUN mkdir -p /tasks/0 /tests && \
-    echo "${DOCK_TASK_ID}" > /tasks/0/id.txt && \
-    (cp /private/task.md /tasks/0/problem.txt 2>/dev/null || \
-     cp /private/issue.md /tasks/0/problem.txt 2>/dev/null || \
-     cp /app/task.md /tasks/0/problem.txt 2>/dev/null || \
-     echo "TODO: SWE-Lancer task description for ${DOCK_TASK_ID}" > /tasks/0/problem.txt) && \
-    (cp /private/run_tests.sh /tests/run_tests.sh 2>/dev/null || \
-     printf '#!/bin/bash\necho "TODO: upstream run_tests.sh not found"\nexit 1\n' > /tests/run_tests.sh) && \
-    chmod +x /tests/run_tests.sh
+# Upstream per-task setup: the base image bakes in the issues/ directory and
+# setup_expensify.yml playbook. Running the playbook here checks out Expensify
+# at the commit specified in issues/${ISSUE_ID}/commit_id.txt and applies the
+# bug-reintroduce patch — same steps as Dockerfile_x86_per_task upstream.
+RUN ansible-playbook -i "localhost," --connection=local /app/tests/setup_expensify.yml
 
-# Scorer: runs the upstream E2E tests and converts a pass to 1.0.
-RUN cat > /tests/test.sh <<'TEST'
+# Record the task description (from the issue_data.json bundled in the base
+# image at /app/tests/issues/${ISSUE_ID}/issue_data.json) into a dock-shaped
+# task file for the entrypoint.
+RUN mkdir -p /tasks/0 \
+ && python3 -c "import json,os,pathlib; p=pathlib.Path('/app/tests/issues/'+os.environ['ISSUE_ID']+'/issue_data.json'); d=json.loads(p.read_text()) if p.exists() else {}; pathlib.Path('/tasks/0/problem.txt').write_text(d.get('description') or d.get('title') or os.environ['ISSUE_ID']); pathlib.Path('/tasks/0/id.txt').write_text(os.environ['ISSUE_ID'])" \
+ && chmod -R 600 /tasks
+
+# Scorer: runs the upstream Playwright E2E tests. The base image already has
+# /app/tests/run.sh that executes the full test harness.
+RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-# Capture the agent's diff for debugging
-(cd /app/expensify 2>/dev/null || cd /workspace 2>/dev/null || cd /); \
-  git diff > /output/agent/patch.diff 2>/dev/null || true
+# Capture agent's diff
+(cd /app/expensify 2>/dev/null && git diff > /output/agent/patch.diff) || true
 
-if /tests/run_tests.sh > /logs/verifier/test.log 2>&1; then
+if /bin/bash -l -c '/app/tests/run.sh' > /logs/verifier/test.log 2>&1; then
   echo 1 > /logs/verifier/reward.txt
 else
   echo 0 > /logs/verifier/reward.txt
@@ -62,11 +68,10 @@ RUN chmod +x /dock-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-# Make the Expensify checkout writable by the agent
-chown -R agent:agent /app/expensify /workspace 2>/dev/null || true
+chown -R agent:agent /app/expensify 2>/dev/null || true
 
 if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="You are fixing a freelance software engineering task in the Expensify codebase. Work in the checkout under /app/expensify (or /workspace). Do NOT modify test files. When finished, your change must pass the upstream end-to-end tests.
+  export TASK="You are fixing a freelance software engineering task in the Expensify codebase at /app/expensify. Do NOT modify test files. When finished, your change must pass the upstream end-to-end tests.
 
 $(cat /tasks/0/problem.txt)"
 fi

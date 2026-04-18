@@ -4,7 +4,7 @@
 # Test compares stdout to the reference fix (exact match; upstream follows the same
 # convention — all identifiers are normalized).
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="coderefine"
@@ -17,9 +17,6 @@ LABEL dock.benchmark.url="https://github.com/microsoft/CodeXGLUE/tree/main/Code-
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2102.04664"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-
-RUN pip install --no-cache-dir pyarrow==18.1.0
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -44,10 +41,6 @@ ENV DOCK_BENCHMARK=coderefine
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

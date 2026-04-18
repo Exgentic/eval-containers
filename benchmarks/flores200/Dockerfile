@@ -2,7 +2,7 @@
 # 10120 tasks (1012 devtest sentences x 10 target languages, en->X). Data: NLLB FLORES-200 devtest
 # Agent prints translation to stdout. Test compares to expected reference translation.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="flores200"
@@ -15,7 +15,6 @@ LABEL dock.benchmark.url="https://huggingface.co/datasets/openlanguagedata/flore
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2207.04672"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="flores_plus-v2.0"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir huggingface_hub==0.26.2
 
 # Data strategy:
@@ -31,7 +30,7 @@ RUN pip install --no-cache-dir huggingface_hub==0.26.2
 # arb/hin/swh). `Muennighoff/flores200` is a loader script that points back at
 # the dead Meta URL.
 RUN --mount=type=secret,id=HF_TOKEN \
-    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "") && \
+    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && \
     export HF_TOKEN && \
     python3 <<'PYEOF'
 import os, json
@@ -94,10 +93,6 @@ ENV DOCK_BENCHMARK=flores200
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

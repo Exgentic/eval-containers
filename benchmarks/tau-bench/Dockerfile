@@ -4,7 +4,7 @@
 # Evaluation is state-based (database + output checks), requires the TAU-bench runtime.
 # Externally graded: test writes -1.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-external:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="tau-bench"
@@ -17,8 +17,6 @@ LABEL dock.benchmark.url="https://github.com/sierra-research/tau-bench"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/tau2"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.12045"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="59a200c6d575d595120f1cb70fea53cef0632f6b"
-
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
 # Install tau-bench at pinned commit and extract tasks + policy docs
 RUN pip install --no-cache-dir git+https://github.com/sierra-research/tau-bench.git@59a200c6d575d595120f1cb70fea53cef0632f6b
@@ -77,10 +75,6 @@ mkdir -p /logs/verifier
 echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

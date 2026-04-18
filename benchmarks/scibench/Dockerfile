@@ -2,7 +2,7 @@
 # 692 tasks. Data: HuggingFace xw27/scibench
 # Agent prints answer to stdout. Test compares to expected numeric answer.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="scibench"
@@ -14,9 +14,6 @@ LABEL dock.benchmark.data_revision="93931252bc1b71d495e67390235940643d926958"
 LABEL dock.benchmark.url="https://github.com/mandyyyyii/scibench"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2307.10635"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="93931252bc1b71d495e67390235940643d926958"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
-RUN pip install --no-cache-dir pyarrow==18.1.0
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
@@ -49,10 +46,6 @@ ENV DOCK_BENCHMARK=scibench
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

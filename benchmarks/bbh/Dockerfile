@@ -3,7 +3,7 @@
 # Data: github suzgunmirac/BIG-Bench-Hard
 # Agent prints answer to stdout. Test compares to expected target.
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-github:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="bbh"
@@ -16,8 +16,6 @@ LABEL dock.benchmark.url="https://github.com/suzgunmirac/BIG-Bench-Hard"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2210.09261"
 LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bbh"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="9ee07bd481feebf959a6b59d61ea57bdcf30964d"
-
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
 # Fetch all 27 BBH JSON files and write one JSONL row per task.
 RUN python3 <<'PYEOF'
@@ -63,10 +61,6 @@ ENV DOCK_BENCHMARK=bbh
 
 COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash

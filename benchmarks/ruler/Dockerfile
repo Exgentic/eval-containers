@@ -4,7 +4,7 @@
 # common_words_extraction across a range of context lengths.
 # Ref: https://github.com/hsiehjackson/RULER (Hsieh et al. 2024, arXiv:2404.06654)
 
-FROM python:3.12-slim
+FROM quay.io/dock-eval/core/benchmark-base-hf:latest
 
 LABEL dock.type="benchmark"
 LABEL dock.benchmark.name="ruler"
@@ -16,8 +16,6 @@ LABEL dock.benchmark.data_revision="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
 LABEL dock.benchmark.url="https://github.com/hsiehjackson/RULER"
 LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.06654"
 ENV DOCK_BENCHMARK_VERSION_DEFAULT="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
-
-RUN apt-get update && apt-get install -y curl git && rm -rf /var/lib/apt/lists/*
 
 # Generate RULER-style tasks deterministically. Uses Paul Graham essays
 # as the haystack source (same style as the reference implementation's
@@ -177,10 +175,6 @@ open('/logs/verifier/reward.txt', 'w').write(f'{reward:.6f}\n')
 GRADE
 TEST
 RUN chmod +x /tests/test.sh
-
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
