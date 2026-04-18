@@ -24,3 +24,8 @@
 tests/live/runs/
 tests/live/checkpoint.json
 tests/live/report.md
+tests/live/report-*.md
+tests/live/fleet-report.md
+
+# Claude Code local session state
+.claude/
