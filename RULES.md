@@ -49,11 +49,23 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
     e. **No required rebuild on `docker history`.** A reviewer MUST be able to read the Dockerfile top-to-bottom and see why each layer exists. Reordering layers for optimal cache hits is fine; obscuring them for layer count is not.
 
-11. **Env var namespace.** All Dock-controlled environment variables MUST be prefixed with `DOCK_`. This includes axis selection (`DOCK_BENCHMARK`, `DOCK_AGENT`, `DOCK_MODEL`), versioning (`DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_MODEL_VERSION`), runtime config (`DOCK_TASK_ID`, `DOCK_TIMEOUT`), and infrastructure (`DOCK_REGISTRY`). No Dock env var MAY be unprefixed. Upstream env vars (`OPENAI_API_KEY`, `HF_TOKEN`, etc.) are untouched. Prefixing prevents collision with CI, Airflow, Celery, and other orchestrators that use unprefixed names like `TASK_ID`, `AGENT`, and `MODEL`.
+11. **Reuse over repetition.** Any infrastructure concern shared by more than two images MUST be factored into a shared base image or helper, not inlined. If a Dockerfile contains ten lines of apt-retry boilerplate, network-flake defense, runtime staging, or label setup that another Dockerfile also contains, that ten lines belongs in `core/<something>-base`. Consequences:
 
-12. **Self-contained repository.** The repository MUST be the sole source of information about itself — every rule, convention, process, assumption, and verification procedure MUST be documented inside the tree. No essential information MAY live only in a tool-specific directory (`.claude/`, `.cursor/`, `.vscode/`), in a single contributor's head, in a chat log, or in an external wiki. A reader who clones the repo on a clean machine MUST be able to build, test, verify, and release it using only the files in the tree. Tool-specific folders (`.claude/` etc.) MAY exist, but MUST contain only convenience wrappers that delegate to the canonical docs — never original, load-bearing content.
+    a. **Agent base images.** Every agent image MUST extend `core/agent-base-<runtime>` (node, python, go, universal) for its runtime. The base provides: apt-retry wrapper, runtime install with arch detection, `/opt/agent/` staging scaffold, standard `install.sh` skeleton that the combination image calls.
 
-13. **Verification is normative.** Every change MUST pass the mechanical gates, and every release MUST also pass the procedural audits defined in [tests/VERIFY.md](tests/VERIFY.md). VERIFY.md is the complete release checklist: 46 numbered steps across Preflight, Sanity, Build, Replay, End-to-end, Upstream, Security, Audit, Docs, CI, Fleet, Release, and Post phases, each with its executor (`cargo test`, external tool, or human/sub-agent checklist) and artifact.
+    b. **Benchmark base images.** Every benchmark image MUST extend `core/benchmark-base-<pattern>` (hf-dataset, github-raw, per-task-upstream, external-graded). The base provides: Python + pyarrow + datasets, the shared label/ENV scaffold, copies of `/dock-entrypoint.sh` and `/dock-materialize-task`, a standard `entrypoint.sh` template, and a default `test.sh` for the matching grader.
+
+    c. **One home per concern.** A retry loop for apt, a tarball-size check, an arch detection `case` statement — each MUST appear in exactly one Dockerfile (the base). If you find yourself copy-pasting defensive code from another Dockerfile, you are violating this rule; the correct fix is to move that code to the base and have both callers inherit.
+
+    d. **Rule precedence.** Reuse wins over "keep files self-contained". A 108-line agent Dockerfile that duplicates the base is worse than a 15-line one that extends it, even if the 108-line version is readable on its own. The 10-line base + 15-line subclass is readable too, and it's readable across 20 agents instead of 1.
+
+    e. **No drift between inlined copies.** If a fix has to be applied (e.g. "use linux-arm64 on Apple Silicon"), applying it once in the base MUST propagate to every subclass on the next rebuild. Fleets that require N copies of a fix are a code smell.
+
+12. **Env var namespace.** All Dock-controlled environment variables MUST be prefixed with `DOCK_`. This includes axis selection (`DOCK_BENCHMARK`, `DOCK_AGENT`, `DOCK_MODEL`), versioning (`DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_MODEL_VERSION`), runtime config (`DOCK_TASK_ID`, `DOCK_TIMEOUT`), and infrastructure (`DOCK_REGISTRY`). No Dock env var MAY be unprefixed. Upstream env vars (`OPENAI_API_KEY`, `HF_TOKEN`, etc.) are untouched. Prefixing prevents collision with CI, Airflow, Celery, and other orchestrators that use unprefixed names like `TASK_ID`, `AGENT`, and `MODEL`.
+
+13. **Self-contained repository.** The repository MUST be the sole source of information about itself — every rule, convention, process, assumption, and verification procedure MUST be documented inside the tree. No essential information MAY live only in a tool-specific directory (`.claude/`, `.cursor/`, `.vscode/`), in a single contributor's head, in a chat log, or in an external wiki. A reader who clones the repo on a clean machine MUST be able to build, test, verify, and release it using only the files in the tree. Tool-specific folders (`.claude/` etc.) MAY exist, but MUST contain only convenience wrappers that delegate to the canonical docs — never original, load-bearing content.
+
+14. **Verification is normative.** Every change MUST pass the mechanical gates, and every release MUST also pass the procedural audits defined in [tests/VERIFY.md](tests/VERIFY.md). VERIFY.md is the complete release checklist: 46 numbered steps across Preflight, Sanity, Build, Replay, End-to-end, Upstream, Security, Audit, Docs, CI, Fleet, Release, and Post phases, each with its executor (`cargo test`, external tool, or human/sub-agent checklist) and artifact.
 
     - **Mechanical gates** (steps 4–10, 11–16, 18–22, 30, 31, 35) MUST run from plain `cargo test` with no bash glue. Every gate is a data-driven rule catalog — a `const RULES: &[Rule]` array whose IDs match the entries in its companion procedural markdown. The two MUST NOT drift.
 
@@ -63,19 +75,19 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## Rules Process
 
-14. **Rules are normative.** All contributions MUST comply with active RULES documents. Code that violates a rule MUST NOT be merged.
+15. **Rules are normative.** All contributions MUST comply with active RULES documents. Code that violates a rule MUST NOT be merged.
 
-15. **Principles over implementations.** Rules describe what MUST be true, not how to achieve it.
+16. **Principles over implementations.** Rules describe what MUST be true, not how to achieve it.
 
-16. **Rules live next to the code they govern.** `benchmarks/RULES.md` for benchmarks, `agents/RULES.md` for agents, `tests/*.md` for the verification procedures, and so on.
+17. **Rules live next to the code they govern.** `benchmarks/RULES.md` for benchmarks, `agents/RULES.md` for agents, `tests/*.md` for the verification procedures, and so on.
 
-17. **No repetition.** Each rule has exactly one home. A rule that applies to every Dockerfile lives in top-level `RULES.md`, not mirrored into `benchmarks/RULES.md` and `agents/RULES.md`. If you find yourself restating an existing rule, delete your copy and link to the original. Duplication makes rules drift.
+18. **No repetition.** Each rule has exactly one home. A rule that applies to every Dockerfile lives in top-level `RULES.md`, not mirrored into `benchmarks/RULES.md` and `agents/RULES.md`. If you find yourself restating an existing rule, delete your copy and link to the original. Duplication makes rules drift.
 
-18. **Status lifecycle.** Each RULES document has a status: **Draft** (proposed, not yet enforced), **Active** (enforced), or **Superseded** (replaced, linked in changelog).
+19. **Status lifecycle.** Each RULES document has a status: **Draft** (proposed, not yet enforced), **Active** (enforced), or **Superseded** (replaced, linked in changelog).
 
-19. **Format.** Every RULES document MUST contain: Status, Date, Abstract, Terminology (RFC 2119 reference), numbered Principles, References, and Changelog.
+20. **Format.** Every RULES document MUST contain: Status, Date, Abstract, Terminology (RFC 2119 reference), numbered Principles, References, and Changelog.
 
-20. **Changelog is required.** Every change to an active RULES document MUST be recorded in the changelog with date and summary.
+21. **Changelog is required.** Every change to an active RULES document MUST be recorded in the changelog with date and summary.
 
 ## The rules graph
 

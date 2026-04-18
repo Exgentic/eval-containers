@@ -1,6 +1,6 @@
 # Dock
 
-Container-native AI agent evaluations. 96 benchmarks, 17 agents, one `docker compose up`.
+Container-native AI agent evaluations. 100 benchmarks, 20 agents, one `docker compose up`.
 
 ## Quick start
 
