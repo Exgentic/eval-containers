@@ -1,0 +1,49 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "providers": {
+    "openai": {
+      "keys": [
+        { "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }
+      ],
+      "network_config": { "base_url": "${OPENAI_API_BASE}" }
+    },
+    "anthropic": {
+      "keys": [
+        { "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }
+      ],
+      "network_config": { "base_url": "${OPENAI_API_BASE}" }
+    },
+    "gemini": {
+      "keys": [
+        { "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }
+      ],
+      "network_config": { "base_url": "${OPENAI_API_BASE}" }
+    }
+  },
+  "governance": {
+    "routing_rules": [
+      {
+        "id": "rewrite-to-upstream",
+        "name": "rewrite-to-upstream",
+        "enabled": true,
+        "cel_expression": "true",
+        "scope": "global",
+        "targets": [
+          { "provider": "${PROVIDER}", "model": "${MODEL_NAME}", "weight": 1.0 }
+        ]
+      }
+    ]
+  },
+  "plugins": [
+    {
+      "enabled": true,
+      "name": "otel",
+      "config": {
+        "service_name": "dock-gateway",
+        "collector_url": "http://otelcol:4318/v1/traces",
+        "trace_type": "genai_extension",
+        "protocol": "http"
+      }
+    }
+  ]
+}

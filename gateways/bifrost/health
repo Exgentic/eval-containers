@@ -1,0 +1,3 @@
+#!/bin/sh
+# Bifrost readiness probe. Returns 0 when /api/health returns 200.
+exec curl -sf -m 1 http://127.0.0.1:"${PORT:-4000}"/api/health > /dev/null

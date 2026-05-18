@@ -1,0 +1,80 @@
+#!/bin/bash
+# Eval entrypoint — preps env/dirs/output, then exec's process-compose.
+#
+# Picks one of two orchestration files based on whether the caller
+# pre-set ANTHROPIC_BASE_URL:
+#
+#   unset (single-image mode)  → /etc/process-compose.yaml
+#       runs otelcol → gateway → agent → verifier → result locally.
+#
+#   set (compose / k8s mode)   → /etc/process-compose-runner.yaml
+#       runs only agent → verifier → result; otelcol+gateway are
+#       sibling containers/pods that the orchestrator started.
+#
+# Same image, same script, same agent/verifier/result semantics in
+# both modes. Mode-specific bits are which YAML and whether the URLs
+# point at 127.0.0.1 (single-image) or at the gateway service name
+# (compose/k8s).
+#
+# Env-var contract (set by /root/entrypoint.sh wrapper):
+#   TASK              agent's task prompt
+#   EXPECTED_ANSWER   verifier's ground truth (NOT visible to agent)
+#   TASK_ID           task identifier
+#   BENCHMARK         benchmark name (for result.json)
+#   AGENT             agent name (for result.json)
+#   MODEL             model name (for result.json)
+#   TIMEOUT           agent wall-clock timeout in seconds
+#   OPENAI_API_KEY    read by the in-container gateway in single-image mode
+set -euo pipefail
+
+# Resolve env-var defaults so process-compose.yaml's commands can use
+# plain $VAR — process-compose's ${VAR:-default} pre-substitution breaks
+# YAML when defaults contain colons.
+export TIMEOUT="${TIMEOUT:-300}"
+export TASK_ID="${TASK_ID:-}"
+export MODEL="${MODEL:-}"
+export BENCHMARK="${BENCHMARK:-unknown}"
+export AGENT="${AGENT:-unknown}"
+export TASK="${TASK:-}"
+
+# Mode detection: external gateway iff ANTHROPIC_BASE_URL was set by
+# the caller. In single-image mode we set it ourselves AFTER this check.
+PC_FLAGS=(--config /etc/process-compose.yaml)
+if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
+  # Overlay disables the in-container otelcol+gateway. Agent/verifier/
+  # result blocks come from the base file unchanged.
+  PC_FLAGS+=(--config /etc/process-compose-runner.yaml)
+fi
+export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://127.0.0.1:4000/anthropic}"
+export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai}"
+# litellm's OTel callback honors this env var. bifrost reads its
+# collector_url from config.json (the model image bakes in `otelcol`),
+# so this is litellm-specific. Setting it unconditionally is harmless
+# for bifrost.
+export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
+
+# Defensive fallback (agent uid baked into image at build time).
+id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
+
+# Resolve `otelcol` to loopback if nothing else does. The bifrost/litellm
+# config hardcodes the hostname `otelcol` so the same config works in
+# compose mode (docker DNS resolves the service name) and single-image
+# mode (no DNS — we add a /etc/hosts entry). getent checks both
+# /etc/hosts and DNS — only patch when neither has it.
+if ! getent hosts otelcol >/dev/null 2>&1; then
+  echo "127.0.0.1 otelcol" >> /etc/hosts
+fi
+
+# Output dirs.
+mkdir -p /output/{model,agent,task} /logs/verifier
+chown -R agent:agent /output/agent /tmp 2>/dev/null || true
+chmod 0755 /output /output/agent /output/task /output/model
+
+# Capture run start time for the result writer.
+date -u +%Y-%m-%dT%H:%M:%SZ > /output/agent/.started-at
+
+# Hand off to process-compose.
+exec /usr/local/bin/process-compose up \
+  "${PC_FLAGS[@]}" \
+  --disable-dotenv \
+  --tui=false
