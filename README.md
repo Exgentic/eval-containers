@@ -4,6 +4,14 @@ AI agent evaluations in containers. 100 benchmarks, 20 agents — ready to deplo
 
 Our goal is to deliver agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
 
+## Why Eval Containers
+
+|                     | Cloud-native | Framework-free | Full interchangeability (agent × model × benchmark) | Speed audit | Size audit | Reliability audit | Native model tracing |
+| ------------------- | :----------: | :------------: | :-------------------------------------------------: | :---------: | :--------: | :---------------: | :------------------: |
+| Harbor              |       ✗      |        ✗       |                          ✗                          |      ✗      |      ✗     |         ✗         |           ✗          |
+| Inspect AI          |       ✗      |        ✗       |                          ✗                          |      ✗      |      ✗     |         ✗         |           ✗          |
+| **Eval Containers** |       ✓      |        ✓       |                          ✓                          |      ✓      |      ✓     |         ✓         |           ✓          |
+
 ## Quick start
 
 ```bash
