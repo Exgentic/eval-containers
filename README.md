@@ -1,6 +1,6 @@
 # Eval Containers
 
-Container-native AI agent evaluations. 100 benchmarks, 20 agents, one `docker compose up`.
+Fast, thin, reliable, faithful AI agent evaluations in containers. 100 benchmarks, 20 agents — ready to deploy at massive scale on any cloud.
 
 ## Quick start
 
