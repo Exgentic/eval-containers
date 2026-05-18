@@ -1,6 +1,8 @@
 # Eval Containers
 
-Fast, thin, reliable, faithful AI agent evaluations in containers. 100 benchmarks, 20 agents — ready to deploy at massive scale on any cloud.
+AI agent evaluations in containers. 100 benchmarks, 20 agents — ready to deploy at massive scale on any cloud.
+
+Our goal is to deliver agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
 
 ## Quick start
 
