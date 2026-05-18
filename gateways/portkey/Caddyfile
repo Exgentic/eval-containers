@@ -1,0 +1,45 @@
+# Path-prefix shim for portkey, with a bifrost sidecar for the two
+# protocols self-hosted portkey can't cross-translate against an
+# OpenAI-compatible upstream.
+#
+# Routes:
+#   /openai/*                → portkey :8787  (model rewrite via x-portkey-config)
+#   /anthropic/*  /genai/*   → bifrost :4002  (cross-protocol translator)
+#
+# Why split: portkey self-hosted forwards each protocol to that
+# provider's native upstream — it doesn't translate Anthropic Messages
+# or Google Gemini into OpenAI Chat. Bifrost does. So /openai gets
+# portkey (caching, retries, OTel); the other two get bifrost.
+
+{
+	admin off
+	log {
+		output discard
+	}
+}
+
+:4000 {
+	handle_path /openai/* {
+		reverse_proxy 127.0.0.1:8787 {
+			# Full portkey routing config: provider + upstream api_key
+			# + override_params.model = ${MODEL_NAME}. Rewrites the
+			# agent's chosen model to the configured upstream model —
+			# matches bifrost governance + litellm model_list aliasing.
+			header_up x-portkey-config      "{env.PORTKEY_CONFIG}"
+			header_up x-portkey-custom-host "{env.CUSTOM_HOST}"
+		}
+	}
+	# Anthropic + Google → bifrost. Preserve the prefix (use `handle`,
+	# not `handle_path`) so bifrost serves /anthropic/v1/messages and
+	# /genai/v1beta/... at its native paths.
+	handle /anthropic/* {
+		reverse_proxy 127.0.0.1:4002
+	}
+	handle /genai/* {
+		reverse_proxy 127.0.0.1:4002
+	}
+	# Health/admin pass through to portkey.
+	handle {
+		reverse_proxy 127.0.0.1:8787
+	}
+}

@@ -1,0 +1,61 @@
+# Provider-agnostic litellm config. EVAL_MODEL=<provider>/<model>
+# (envsubst'd at startup) tells litellm which provider plugin to dispatch
+# to and which upstream model name to use. Upstream credentials are read
+# via `os.environ/VAR` — by provider-native names, whatever the user's
+# SDK conventionally reads (OPENAI_API_KEY+OPENAI_API_BASE for OpenAI-
+# compatible endpoints, ANTHROPIC_API_KEY for direct Anthropic, AWS_*
+# for Bedrock, etc.). The framework does NOT introduce a `EVAL_API_*`
+# umbrella alias — see gateways/RULES.md rule 3.
+#
+# Why the explicit model_name enumeration (instead of just `*`):
+# litellm 1.83.3 routes Anthropic-format /v1/messages requests through
+# its built-in pass_through_endpoints to api.anthropic.com if the inbound
+# model name isn't an exact match in model_list — the wildcard `*` is
+# NOT consulted on that path. To intercept all Anthropic/OpenAI traffic
+# and rewrite to ${EVAL_MODEL}, every model name the agent might
+# send must appear explicitly. Add aliases below when new agents show up.
+
+model_list:
+  # ── Wildcard catch-all (works for OpenAI /v1/chat/completions for unknown names) ──
+  - model_name: "*"
+    litellm_params:
+      model: "${EVAL_MODEL}"
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "os.environ/OPENAI_API_BASE"
+
+  # ── OpenAI-family explicit aliases ──────────────────────────────
+  - model_name: "gpt-4o"
+    litellm_params: &upstream
+      model: "${EVAL_MODEL}"
+      api_key: "os.environ/OPENAI_API_KEY"
+      api_base: "os.environ/OPENAI_API_BASE"
+  - { model_name: "gpt-4o-mini", litellm_params: *upstream }
+  - { model_name: "gpt-4-turbo", litellm_params: *upstream }
+  - { model_name: "gpt-4",       litellm_params: *upstream }
+  - { model_name: "gpt-4.1",     litellm_params: *upstream }
+  - { model_name: "gpt-4.1-mini",litellm_params: *upstream }
+  - { model_name: "gpt-5",       litellm_params: *upstream }
+  - { model_name: "gpt-5-mini",  litellm_params: *upstream }
+  - { model_name: "gpt-5.4",     litellm_params: *upstream }
+  - { model_name: "o1",          litellm_params: *upstream }
+  - { model_name: "o1-mini",     litellm_params: *upstream }
+
+  # ── Anthropic-family explicit aliases (load-bearing — see header) ─
+  - { model_name: "claude-3-5-sonnet-20241022",       litellm_params: *upstream }
+  - { model_name: "claude-3-5-haiku-20241022",        litellm_params: *upstream }
+  - { model_name: "claude-3-opus-20240229",           litellm_params: *upstream }
+  - { model_name: "claude-sonnet-4-5",                litellm_params: *upstream }
+  - { model_name: "claude-sonnet-4-5-20250929",       litellm_params: *upstream }
+  - { model_name: "claude-opus-4-5",                  litellm_params: *upstream }
+  - { model_name: "claude-opus-4-5-20250929",         litellm_params: *upstream }
+
+  # ── Gemini-family explicit aliases ──────────────────────────────
+  - { model_name: "gemini-2.5-pro", litellm_params: *upstream }
+  - { model_name: "gemini-1.5-pro", litellm_params: *upstream }
+  - { model_name: "gemini-pro",     litellm_params: *upstream }
+
+litellm_settings:
+  # OTel callback emits gen_ai.* semconv spans to OTEL_EXPORTER_OTLP_ENDPOINT.
+  # The collector (a sibling process or container) writes them to
+  # /output/trajectory.jsonl.
+  callbacks: ["otel"]
