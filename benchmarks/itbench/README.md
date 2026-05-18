@@ -16,7 +16,7 @@ ITBench — IT-automation scenarios spanning SRE, CISO, and FinOps personas (IBM
 
 ## What the agent sees
 
-Each task is a realistic IT-operations scenario: a CISO incident-response question, an SRE troubleshooting runbook, or a FinOps cost-attribution problem. The agent is expected to produce a structured action plan or answer as JSON. The current image ships 10 CISO scenarios as a skeleton; the full benchmark includes a live Kubernetes/DB/web environment that Dock will layer in over subsequent releases.
+Each task is a realistic IT-operations scenario: a CISO incident-response question, an SRE troubleshooting runbook, or a FinOps cost-attribution problem. The agent is expected to produce a structured action plan or answer as JSON. The current image ships 10 CISO scenarios as a skeleton; the full benchmark includes a live Kubernetes/DB/web environment that Eval Containers will layer in over subsequent releases.
 
 ## How it's graded
 

@@ -9,8 +9,8 @@
 #   - /opt/agent skeleton (install.sh, entrypoint.sh) that subclasses
 #     override
 FROM --platform=linux/amd64 python:3.12-slim
-LABEL dock.type="core-base"
-LABEL dock.base.runtime="python"
+LABEL eval.type="core-base"
+LABEL eval.base.runtime="python"
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
@@ -48,7 +48,7 @@ ENV UV_SYSTEM_PYTHON=1
 ENV UV_HTTP_TIMEOUT=120
 RUN cat > /usr/local/bin/pip <<'SHIM' && chmod +x /usr/local/bin/pip
 #!/bin/bash
-# Dock pip shim → uv pip with retry (core/agent-base-python).
+# Eval Containers pip shim → uv pip with retry (core/agent-base-python).
 args=()
 skip_next=0
 for a in "$@"; do
@@ -61,10 +61,10 @@ for a in "$@"; do
 done
 for i in 1 2 3 4 5; do
   if uv pip "${args[@]}"; then exit 0; fi
-  echo "[dock-pip-shim] uv pip attempt $i/5 failed; retry in $((i*5))s" >&2
+  echo "[eval-pip-shim] uv pip attempt $i/5 failed; retry in $((i*5))s" >&2
   sleep $((i*5))
 done
-echo "[dock-pip-shim] uv pip failed after 5 tries" >&2
+echo "[eval-pip-shim] uv pip failed after 5 tries" >&2
 exit 1
 SHIM
 

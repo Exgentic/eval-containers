@@ -7,23 +7,23 @@
 # cannot be embedded in the benchmark image. This image exposes the task prompt to the
 # agent, captures its transcript, and writes -1 (externally graded).
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="workarena"
-LABEL dock.benchmark.description="WorkArena - enterprise web workflows on ServiceNow"
-LABEL dock.benchmark.tasks="682"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/ServiceNow/WorkArena"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2403.07718"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="v0.5.3"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="workarena"
+LABEL eval.benchmark.description="WorkArena - enterprise web workflows on ServiceNow"
+LABEL eval.benchmark.tasks="682"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://github.com/ServiceNow/WorkArena"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.07718"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="v0.5.3"
 
 # Pin the upstream tag. We only need the task-id enumeration (not the runtime), so
 # parse the registered task-id constants directly from the repo to avoid the heavy
 # playwright/browsergym dependency chain at build time.
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, os, json, re, time
 VERSION = 'v0.5.3'
@@ -36,7 +36,7 @@ def fetch(url, retries=5):
         try:
             req = urllib.request.Request(
                 url,
-                headers={'User-Agent': 'dock-eval/workarena-build'},
+                headers={'User-Agent': 'eval-containers/workarena-build'},
             )
             with urllib.request.urlopen(req, timeout=20) as r:
                 return r.read().decode()
@@ -110,7 +110,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=workarena
+ENV EVAL_BENCHMARK=workarena
 
 # Test: externally graded. Capture transcript, write -1.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -123,9 +123,9 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)
 
 ServiceNow instance: $SNOW_INSTANCE_URL
 ServiceNow user:     $SNOW_INSTANCE_UNAME
@@ -133,7 +133,7 @@ ServiceNow password: $SNOW_INSTANCE_PWD
 
 When done, print a short summary of the actions you took."
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

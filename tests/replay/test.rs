@@ -35,7 +35,7 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
         fixture_abs.display()
     );
     let override_path =
-        std::env::temp_dir().join(format!("dock-replay-{}.yaml", fixture.replace('/', "-")));
+        std::env::temp_dir().join(format!("eval-replay-{}.yaml", fixture.replace('/', "-")));
     fs::write(&override_path, &override_content).expect("failed to write compose override");
 
     let compose_abs = cwd.join(compose_file);
@@ -95,7 +95,7 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 /// tests/RULES.md principle 2 (container tests MUST go through the
 /// library). The eval image is built by shelling out to `cargo run --
 /// build eval`, which is a legitimate CLI black-box test — we're
-/// testing that Dock's own `build eval` subcommand works end-to-end
+/// testing that Eval Containers's own `build eval` subcommand works end-to-end
 /// and the docker invocations happen inside the CLI under test, not
 /// inside this file.
 /// Build an image directly from a local context via testcontainers-rs
@@ -129,21 +129,21 @@ async fn ensure_images(benchmark: &str, agent: &str) {
     // core — so after a sweep these may be missing. We rebuild them
     // unconditionally; build cache makes it cheap when already current.
     tc_build_context(
-        "quay.io/dock-eval/core/entrypoint",
+        "quay.io/eval-containers/core/entrypoint",
         "latest",
         "core/entrypoint",
         "core/entrypoint/Dockerfile",
     )
     .await;
     tc_build_context(
-        "quay.io/dock-eval/core/test-exact-match",
+        "quay.io/eval-containers/core/test-exact-match",
         "latest",
         "core/test-exact-match",
         "core/test-exact-match/Dockerfile",
     )
     .await;
     tc_build_context(
-        "quay.io/dock-eval/core/litellm",
+        "quay.io/eval-containers/core/litellm",
         "latest",
         "core/litellm",
         "core/litellm/Dockerfile",
@@ -151,14 +151,14 @@ async fn ensure_images(benchmark: &str, agent: &str) {
     .await;
     // Replay model (also a testcontainers-rs build per RULES.md 2).
     tc_build_context(
-        "quay.io/dock-eval/models/replay",
+        "quay.io/eval-containers/models/replay",
         "latest",
         "models/replay",
         "models/replay/Dockerfile",
     )
     .await;
 
-    // Build eval image via the Dock CLI under test
+    // Build eval image via the Eval Containers CLI under test
     let status = Command::new("cargo")
         .args(["run", "--", "build", "eval", benchmark, "--agent", agent])
         .status()
@@ -182,9 +182,9 @@ macro_rules! replay_test {
                 $compose,
                 $fixture,
                 &[
-                    ("DOCK_TASK_ID", "0"),
-                    ("DOCK_AGENT", $agent),
-                    ("DOCK_MODEL", "replay"),
+                    ("EVAL_TASK_ID", "0"),
+                    ("EVAL_AGENT", $agent),
+                    ("EVAL_MODEL", "replay"),
                 ],
             )
             .await;

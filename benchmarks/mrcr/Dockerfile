@@ -4,23 +4,23 @@
 # request hidden in a synthetic multi-turn conversation.
 # Scoring: difflib.SequenceMatcher ratio with required prefix check.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mrcr"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="MRCR v2 - Multi-Round Coreference Resolution (long-context retrieval)"
-LABEL dock.benchmark.tasks="2400"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/mrcr"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.14993"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mrcr"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="MRCR v2 - Multi-Round Coreference Resolution (long-context retrieval)"
+LABEL eval.benchmark.tasks="2400"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/mrcr"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.14993"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/. Pre-render prompt.json into problem.txt
+# fields into /tasks/$EVAL_TASK_ID/. Pre-render prompt.json into problem.txt
 # (flattened conversation text) so the entrypoint stays simple.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow as pa, json, os
@@ -69,7 +69,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=mrcr
+ENV EVAL_BENCHMARK=mrcr
 
 # Custom test: SequenceMatcher ratio with prefix check (per MRCR spec)
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -79,7 +79,7 @@ python3 <<'GRADE'
 from difflib import SequenceMatcher
 import os
 
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 
 try:
     response = open('/output/agent/stdout.log').read()
@@ -103,14 +103,14 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  cp /tasks/$DOCK_TASK_ID/problem.txt /app/task.txt
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  cp /tasks/$EVAL_TASK_ID/problem.txt /app/task.txt
   chmod 644 /app/task.txt
   export TASK="Your task is described in the file /app/task.txt — read it and follow the instructions inside."
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

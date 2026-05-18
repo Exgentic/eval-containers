@@ -13,15 +13,15 @@ OpenAI Codex CLI: autonomous coding agent from OpenAI.
 
 ## What it does
 
-Codex CLI is OpenAI's terminal coding agent. It edits and executes code against the current workspace using OpenAI models (or any OpenAI-compatible endpoint configured through its `config.toml`). Dock registers a `dock` model provider pointing at the LiteLLM proxy so every request leaves via `http://model:4000`.
+Codex CLI is OpenAI's terminal coding agent. It edits and executes code against the current workspace using OpenAI models (or any OpenAI-compatible endpoint configured through its `config.toml`). Eval Containers registers a `eval-containers` model provider pointing at the LiteLLM proxy so every request leaves via `http://model:4000`.
 
-## How Dock runs it
+## How Eval Containers runs it
 
-The entrypoint writes `~/.codex/config.toml` declaring a `dock` model provider whose `base_url` is `$OPENAI_BASE_URL/v1` and whose `env_key` is `OPENAI_API_KEY`, then runs `codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"`. Approvals are bypassed because Docker is the sandbox. Answer is streamed to stdout.
+The entrypoint writes `~/.codex/config.toml` declaring a `eval-containers` model provider whose `base_url` is `$OPENAI_BASE_URL/v1` and whose `env_key` is `OPENAI_API_KEY`, then runs `codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"`. Approvals are bypassed because Docker is the sandbox. Answer is streamed to stdout.
 
 ## Version
 
-Pinned to `0.120.0` at image build time. Override with `DOCK_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
+Pinned to `0.120.0` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
 
 ## Files
 

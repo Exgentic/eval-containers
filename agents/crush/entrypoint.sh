@@ -2,14 +2,14 @@
 set -euo pipefail
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 mkdir -p "$XDG_CONFIG_HOME/crush"
-DM="${DOCK_MODEL:-default}"
+DM="${EVAL_MODEL:-default}"
 DB="${OPENAI_BASE_URL:-http://model:4000}/v1"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 cat > "$XDG_CONFIG_HOME/crush/crush.json" <<CONF
 {
   "\$schema": "https://charm.land/crush.json",
   "providers": {
-    "dock": {
+    "eval-containers": {
       "type": "openai-compat",
       "base_url": "${DB}",
       "api_key": "\$OPENAI_API_KEY",
@@ -22,4 +22,4 @@ cat > "$XDG_CONFIG_HOME/crush/crush.json" <<CONF
   "options": {"disable_metrics":true,"disable_provider_auto_update":true,"disable_default_providers":true,"disable_notifications":true}
 }
 CONF
-exec crush run -q -m "dock/${DM}" "$TASK"
+exec crush run -q -m "eval-containers/${DM}" "$TASK"

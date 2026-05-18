@@ -79,10 +79,10 @@ struct Benchmark {
 }
 
 fn list_benchmarks() -> Vec<Benchmark> {
-    // Optional filter: DOCK_LIVE_FILTER=aime,mmlu,... restricts the
+    // Optional filter: EVAL_LIVE_FILTER=aime,mmlu,... restricts the
     // sweep to the listed benchmarks. Used for smoke runs during
     // gradual scale-up. Unset = full fleet.
-    let filter: Option<BTreeSet<String>> = std::env::var("DOCK_LIVE_FILTER")
+    let filter: Option<BTreeSet<String>> = std::env::var("EVAL_LIVE_FILTER")
         .ok()
         .map(|s| s.split(',').map(|x| x.trim().to_string()).collect());
     let mut out = Vec::new();
@@ -113,27 +113,27 @@ fn list_benchmarks() -> Vec<Benchmark> {
             continue;
         }
         // Per-task-build benchmarks fall into TWO categories:
-        //   (1) FROM line interpolates ${DOCK_TASK_ID} — e.g. swe-bench
+        //   (1) FROM line interpolates ${EVAL_TASK_ID} — e.g. swe-bench
         //       pulls a different base image per task.
-        //   (2) Dockerfile declares `ARG DOCK_TASK_ID` without a
+        //   (2) Dockerfile declares `ARG EVAL_TASK_ID` without a
         //       default — e.g. compilebench uses the task id inside
         //       a RUN block but the FROM line is static.
-        // Both require an explicit DOCK_TASK_ID build-arg and both
+        // Both require an explicit EVAL_TASK_ID build-arg and both
         // are incompatible with the JSONL `all.jsonl` runtime
-        // materialization path. A runtime reference to $DOCK_TASK_ID
-        // (e.g. `cat /tasks/$DOCK_TASK_ID/problem.txt` inside an
+        // materialization path. A runtime reference to $EVAL_TASK_ID
+        // (e.g. `cat /tasks/$EVAL_TASK_ID/problem.txt` inside an
         // entrypoint) does NOT count — those exist in every JSONL
-        // benchmark and are resolved by /dock-materialize-task.
+        // benchmark and are resolved by /eval-materialize-task.
         let per_task_build = dockerfile.lines().any(|l| {
             let t = l.trim_start();
             if t.starts_with("FROM ")
-                && (t.contains("${DOCK_TASK_ID}") || t.contains("$DOCK_TASK_ID"))
+                && (t.contains("${EVAL_TASK_ID}") || t.contains("$EVAL_TASK_ID"))
             {
                 return true;
             }
-            // `ARG DOCK_TASK_ID` on its own line with no `=<default>`.
-            if t.starts_with("ARG DOCK_TASK_ID") {
-                let rest = t.trim_start_matches("ARG DOCK_TASK_ID");
+            // `ARG EVAL_TASK_ID` on its own line with no `=<default>`.
+            if t.starts_with("ARG EVAL_TASK_ID") {
+                let rest = t.trim_start_matches("ARG EVAL_TASK_ID");
                 let rest = rest.trim();
                 if rest.is_empty() {
                     return true;
@@ -175,7 +175,7 @@ fn list_benchmarks() -> Vec<Benchmark> {
 fn extract_task_count(dockerfile: &str) -> Option<u32> {
     for line in dockerfile.lines() {
         let t = line.trim_start();
-        if let Some(rest) = t.strip_prefix("LABEL dock.benchmark.tasks=") {
+        if let Some(rest) = t.strip_prefix("LABEL eval.benchmark.tasks=") {
             let cleaned = rest.trim().trim_matches('"');
             if let Ok(n) = cleaned.parse::<u32>() {
                 return Some(n);
@@ -279,7 +279,7 @@ enum Outcome {
     Green,     // run completed, mechanical rules green, trajectory ready for promotion
     Yellow,    // run completed, yellow findings only (fixture still promoted)
     Red,       // mechanical rule red finding — NOT promoted, logged to known-broken
-    RunFailed, // `dock run` exited non-zero or produced no result.json
+    RunFailed, // `eval-containers run` exited non-zero or produced no result.json
     Skipped,   // already in checkpoint (resume path)
 }
 
@@ -378,15 +378,15 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
         let _ = fs::create_dir_all(cwd_output.join(sub));
     }
 
-    // Pre-build the eval combination image. `dock run --local` uses
+    // Pre-build the eval combination image. `eval-containers run --local` uses
     // the in-repo compose file but the `image:` field still refers
-    // to `quay.io/dock-eval/evals/<bench>--<agent>:latest`; without a
+    // to `quay.io/eval-containers/evals/<bench>--<agent>:latest`; without a
     // local build of that tag, compose tries to pull from the
-    // registry and fails. `dock build eval` auto-builds the
+    // registry and fails. `eval-containers build eval` auto-builds the
     // benchmark and agent base images if they're missing, so this
     // one call covers the whole dependency chain.
     // For per-task-build benchmarks the bench image FROM line depends on
-    // the task id, so pass --task-id through to `dock build eval`.
+    // the task id, so pass --task-id through to `eval-containers build eval`.
     let is_per_task_build = per_task_representative(benchmark).is_some();
     let mut build_args: Vec<String> = vec![
         "run".into(),
@@ -463,7 +463,7 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
             detail: if run_ok {
                 "no task/result.json".into()
             } else {
-                "dock run exited non-zero".into()
+                "eval-containers run exited non-zero".into()
             },
         };
     }
@@ -483,7 +483,7 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     } else if !run_ok {
         (
             Outcome::RunFailed,
-            "dock run exited non-zero (artifact preserved)".into(),
+            "eval-containers run exited non-zero (artifact preserved)".into(),
         )
     } else {
         let detail = format!(
@@ -648,7 +648,7 @@ fn live_fleet_sweep() {
 
             // Persist report after every run so a crash mid-sweep
             // doesn't lose progress. Under parallel sweeps (multiple
-            // processes with disjoint DOCK_LIVE_FILTER halves), each
+            // processes with disjoint EVAL_LIVE_FILTER halves), each
             // process writes its OWN slice of the report to a pid-
             // specific file; the final merged report is rendered from
             // the shared checkpoint at the end. This avoids the
@@ -828,8 +828,8 @@ fn pick_task_ids_per_task_build_reuses_representative() {
 #[test]
 fn extract_task_count_parses_label() {
     let df = r#"FROM python:3.12-slim
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.tasks="589764"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.tasks="589764"
 "#;
     assert_eq!(extract_task_count(df), Some(589764));
 }

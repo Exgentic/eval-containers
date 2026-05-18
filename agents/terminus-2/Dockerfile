@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # Terminus-2 agent image (Harbor Framework)
-FROM quay.io/dock-eval/core/agent-base-python:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="terminus-2"
-LABEL dock.agent.description="Harbor Terminus-2 reference agent"
-LABEL dock.agent.runtime="python"
-LABEL dock.agent.url="https://github.com/harbor-ai/harbor"
-LABEL dock.agent.version="0.3.0"
-ENV DOCK_AGENT_VERSION_DEFAULT="0.3.0"
-ENV DOCK_AGENT=terminus-2
+FROM quay.io/eval-containers/core/agent-base-python:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="terminus-2"
+LABEL eval.agent.description="Harbor Terminus-2 reference agent"
+LABEL eval.agent.runtime="python"
+LABEL eval.agent.url="https://github.com/harbor-ai/harbor"
+LABEL eval.agent.version="0.3.0"
+ENV EVAL_AGENT_VERSION_DEFAULT="0.3.0"
+ENV EVAL_AGENT=terminus-2
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
       if apt-get update && apt-get install -y --no-install-recommends tmux; then ok=1; break; fi; \

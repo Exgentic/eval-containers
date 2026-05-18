@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 env:
-  REGISTRY: quay.io/dock-eval
+  REGISTRY: quay.io/eval-containers
 
 jobs:
   bake:

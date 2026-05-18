@@ -1,4 +1,4 @@
-//! `dock images` — thin wrapper around `docker images` filtered to dock images.
+//! `eval-containers images` — thin wrapper around `docker images` filtered to eval-containers images.
 //!
 //! Shows repository, tag, created, size — same columns as native `docker images`.
 

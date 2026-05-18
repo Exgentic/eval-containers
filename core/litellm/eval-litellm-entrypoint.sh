@@ -1,9 +1,9 @@
 #!/bin/bash
-# Dock LiteLLM entrypoint wrapper.
+# Eval Containers LiteLLM entrypoint wrapper.
 #
 # The upstream litellm image's ENTRYPOINT is `litellm` and CMD is
 # `--port 4000`. This wrapper sits in front of that and does ONE thing:
-# inject the per-run `DOCK_MODEL_MAX_BUDGET` value into `/app/config.yaml`
+# inject the per-run `EVAL_MODEL_MAX_BUDGET` value into `/app/config.yaml`
 # so the proxy enforces a hard cap on cost before starting.
 #
 # Why a wrapper and not `os.environ/VAR` in config.yaml directly: litellm
@@ -17,12 +17,12 @@
 # compose/services.yaml for the passthrough.
 set -euo pipefail
 
-BUDGET="${DOCK_MODEL_MAX_BUDGET:-1}"
+BUDGET="${EVAL_MODEL_MAX_BUDGET:-1}"
 
 # Sanity check: must be a positive number. Refuse to start on garbage
 # (fail-loud, per tests/RULES.md rule 8).
 if ! [[ "$BUDGET" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-    echo "dock-litellm: DOCK_MODEL_MAX_BUDGET=$BUDGET is not a valid number" >&2
+    echo "eval-litellm: EVAL_MODEL_MAX_BUDGET=$BUDGET is not a valid number" >&2
     exit 64
 fi
 
@@ -50,7 +50,7 @@ if n == 0:
 
 with open('/app/config.yaml', 'w') as f:
     f.write(new)
-print(f'dock-litellm: enforced max_budget={budget} USD', file=sys.stderr)
+print(f'eval-litellm: enforced max_budget={budget} USD', file=sys.stderr)
 PY
 
 # Hand off to the real litellm entrypoint. All args we receive come

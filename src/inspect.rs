@@ -1,4 +1,4 @@
-//! `dock inspect` — thin wrapper around `docker inspect` for a dock image.
+//! `eval-containers inspect` — thin wrapper around `docker inspect` for a eval-containers image.
 //!
 //! Shows full metadata: labels, entrypoint, size, architecture, everything.
 

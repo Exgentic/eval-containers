@@ -5,7 +5,7 @@
 
 ## Abstract
 
-This document defines the repository structure, image naming conventions, compose patterns, output format, and registry usage for Dock.
+This document defines the repository structure, image naming conventions, compose patterns, output format, and registry usage for Eval Containers.
 
 ## Terminology
 
@@ -29,7 +29,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Labels
 
-6. **Self-describing images.** Every image MUST include `dock.*` labels describing its type and metadata. `dock list` reads these labels — no external database.
+6. **Self-describing images.** Every image MUST include `eval-containers.*` labels describing its type and metadata. `eval-containers list` reads these labels — no external database.
 
 ### Compose
 
@@ -37,7 +37,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 8. **Shared service definitions.** Compose files MUST extend model and eval base config from `compose/services.yaml`. Benchmark-specific config goes in the benchmark's own compose file.
 
-9. **Parameterized.** Compose files MUST be parameterized by `DOCK_TASK_ID`, `DOCK_AGENT`, `DOCK_MODEL`, and `DOCK_REGISTRY`. Defaults MUST be provided for all except `DOCK_TASK_ID`.
+9. **Parameterized.** Compose files MUST be parameterized by `EVAL_TASK_ID`, `EVAL_AGENT`, `EVAL_MODEL`, and `EVAL_REGISTRY`. Defaults MUST be provided for all except `EVAL_TASK_ID`.
 
 10. **`.env` is the single config.** API keys, registry, agent, model, and timeout MUST all be configurable from a single `.env` file. No provider-specific variables hardcoded in compose.
 
@@ -69,11 +69,11 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 19. **Registry is source of truth.** Published images and compose files MUST be self-contained. If the source repository is deleted, every published artifact MUST still work.
 
-20. **Any OCI registry.** All Dock operations MUST work against any OCI-compliant registry. `DOCK_REGISTRY` selects the registry. Local registries MUST be supported for development.
+20. **Any OCI registry.** All Eval Containers operations MUST work against any OCI-compliant registry. `EVAL_REGISTRY` selects the registry. Local registries MUST be supported for development.
 
 ### Portability
 
-21. **No framework dependency.** Running a Dock evaluation MUST NOT require Dock to be installed. `docker pull` and `docker compose up` MUST be sufficient.
+21. **No framework dependency.** Running a Eval Containers evaluation MUST NOT require Eval Containers to be installed. `docker pull` and `docker compose up` MUST be sufficient.
 
 22. **Build once, run anywhere.** Pre-built images MUST be pushed to the registry. Users pull images, not source code. No build step at evaluation time for published benchmarks.
 

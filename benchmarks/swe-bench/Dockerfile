@@ -6,28 +6,28 @@
 #
 # NOTE: The SWE-bench harness sanitizes instance ids for Docker by replacing
 # "__" with "_1776_" (see swebench.harness.test_spec.test_spec). Callers must
-# pass DOCK_TASK_ID in the sanitized form used by the published images — e.g.
+# pass EVAL_TASK_ID in the sanitized form used by the published images — e.g.
 # "sympy_1776_sympy-24066" rather than "sympy__sympy-24066". The HuggingFace
 # dataset lookup below reverses the transform so we fetch the right row.
 
-ARG DOCK_TASK_ID
-FROM docker.io/swebench/sweb.eval.x86_64.${DOCK_TASK_ID}:latest
+ARG EVAL_TASK_ID
+FROM docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="swe-bench"
-LABEL dock.benchmark.upstream_base="docker.io/swebench/sweb.eval.x86_64.${DOCK_TASK_ID}:latest"
-LABEL dock.benchmark.description="SWE-bench Verified - software engineering"
-LABEL dock.benchmark.tasks="500"
-LABEL dock.benchmark.env="per-task"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="c104f840cc67f8c6eec6f759ebc8b2693d585d4a"
-LABEL dock.benchmark.url="https://github.com/princeton-nlp/SWE-bench"
-LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/swebench-verified"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/swe_bench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2310.06770"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="c104f840cc67f8c6eec6f759ebc8b2693d585d4a"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="swe-bench"
+LABEL eval.benchmark.upstream_base="docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest"
+LABEL eval.benchmark.description="SWE-bench Verified - software engineering"
+LABEL eval.benchmark.tasks="500"
+LABEL eval.benchmark.env="per-task"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="c104f840cc67f8c6eec6f759ebc8b2693d585d4a"
+LABEL eval.benchmark.url="https://github.com/princeton-nlp/SWE-bench"
+LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/swebench-verified"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/swe_bench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2310.06770"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="c104f840cc67f8c6eec6f759ebc8b2693d585d4a"
 
-ENV DOCK_BENCHMARK=swe-bench
+ENV EVAL_BENCHMARK=swe-bench
 
 # System deps first (stable layer — cache-friendly)
 RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
@@ -37,12 +37,12 @@ RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/d
  || pip install --no-cache-dir --target /tests/deps swebench==3.0.17
 
 # Fetch this task's metadata from HuggingFace. The dataset stores instance_id
-# in its human form (e.g. "sympy__sympy-24066"); DOCK_TASK_ID is the Docker-
+# in its human form (e.g. "sympy__sympy-24066"); EVAL_TASK_ID is the Docker-
 # sanitized form (e.g. "sympy_1776_sympy-24066"). Reverse the transform for
 # the dataset lookup.
-ARG DOCK_TASK_ID
-ENV DOCK_TASK_ID=${DOCK_TASK_ID}
-RUN HF_ID="$(echo "${DOCK_TASK_ID}" | sed 's/_1776_/__/g')" && \
+ARG EVAL_TASK_ID
+ENV EVAL_TASK_ID=${EVAL_TASK_ID}
+RUN HF_ID="$(echo "${EVAL_TASK_ID}" | sed 's/_1776_/__/g')" && \
     mkdir -p /tasks/0 && \
     for offset in 0 100 200 300 400 500; do \
       curl -sf "https://datasets-server.huggingface.co/rows?dataset=princeton-nlp/SWE-bench_Verified&config=default&split=test&offset=$offset&length=100" > /tmp/page.json && \
@@ -113,20 +113,20 @@ GRADE
 # Lock test infrastructure from agent (root-only read + execute)
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 # Make repo writable by agent
 chown -R agent:agent /testbed 2>/dev/null || true
 
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Fix this GitHub issue in the repository at /testbed. Edit the source code to resolve the bug. Do NOT modify any test files.
 
 $(cat /tasks/0/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

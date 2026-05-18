@@ -23,26 +23,26 @@
 # For our representative task (spaceship-titanic) this is straightforward:
 # Kaggle's spaceship-titanic is a free, public "Getting Started" competition.
 
-ARG DOCK_TASK_ID
+ARG EVAL_TASK_ID
 FROM mlebench-env:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mle-bench"
-LABEL dock.benchmark.upstream_base="mlebench-env:latest (locally built from openai/mle-bench)"
-LABEL dock.benchmark.description="MLE-bench - Kaggle-style ML engineering tasks (OpenAI)"
-LABEL dock.benchmark.tasks="75"
-LABEL dock.benchmark.env="per-task"
-LABEL dock.benchmark.internet="true"
-LABEL dock.benchmark.url="https://github.com/openai/mle-bench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2410.07095"
-LABEL dock.benchmark.requires="Kaggle API credentials + per-competition rules acceptance"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="0.1.0"
-ENV DOCK_BENCHMARK=mle-bench
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mle-bench"
+LABEL eval.benchmark.upstream_base="mlebench-env:latest (locally built from openai/mle-bench)"
+LABEL eval.benchmark.description="MLE-bench - Kaggle-style ML engineering tasks (OpenAI)"
+LABEL eval.benchmark.tasks="75"
+LABEL eval.benchmark.env="per-task"
+LABEL eval.benchmark.internet="true"
+LABEL eval.benchmark.url="https://github.com/openai/mle-bench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.07095"
+LABEL eval.benchmark.requires="Kaggle API credentials + per-competition rules acceptance"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="0.1.0"
+ENV EVAL_BENCHMARK=mle-bench
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl jq && rm -rf /var/lib/apt/lists/*
 
-ARG DOCK_TASK_ID
-ENV DOCK_TASK_ID=${DOCK_TASK_ID}
+ARG EVAL_TASK_ID
+ENV EVAL_TASK_ID=${EVAL_TASK_ID}
 
 # Install mlebench into a dedicated root-only location so the grader is
 # tamper-resistant. (The base image already has heavy ML deps.)
@@ -56,7 +56,7 @@ RUN --mount=type=secret,id=kaggle,target=/root/.kaggle/kaggle.json,required=fals
     mkdir -p /home/data /private /tasks && PYTHONPATH=/tests/deps python3 - <<'PY'
 import os, sys, shutil, pathlib, json
 sys.path.insert(0, "/tests/deps")
-tid = os.environ["DOCK_TASK_ID"]
+tid = os.environ["EVAL_TASK_ID"]
 try:
     from mlebench.registry import registry
     from mlebench.data import download_and_prepare_dataset
@@ -103,7 +103,7 @@ if not os.path.exists(submission):
 try:
     from mlebench.grade import grade_csv
     from mlebench.registry import registry
-    competition = registry.get_competition(os.environ.get('DOCK_TASK_ID'))
+    competition = registry.get_competition(os.environ.get('EVAL_TASK_ID'))
     report = grade_csv(submission, competition)
     print(float(bool(getattr(report, 'any_medal', False) or getattr(report, 'gold_medal', False))))
 except Exception as e:
@@ -113,22 +113,22 @@ GRADE
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
+/eval-materialize-task
 mkdir -p /home/submission
 chown -R agent:agent /home/submission /home/data 2>/dev/null || true
 
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are an ML engineer. The competition data is mounted at /home/data (read-only). Train a model and write your predictions to /home/submission/submission.csv. You may install packages and use the network.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

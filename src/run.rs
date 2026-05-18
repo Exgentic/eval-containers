@@ -1,14 +1,14 @@
-//! `dock run` — shells out to `docker compose` against the unified evaluate
-//! artifact, passing every axis as a `DOCK_*` environment variable.
+//! `eval-containers run` — shells out to `docker compose` against the unified evaluate
+//! artifact, passing every axis as a `EVAL_*` environment variable.
 //!
-//! Maps: `dock run aime --task-id 0 --agent codex --model gpt-5.4`
+//! Maps: `eval-containers run aime --task-id 0 --agent codex --model gpt-5.4`
 //!   ->  `docker compose -f oci://<registry>/evaluate up`
-//!       with DOCK_BENCHMARK=aime DOCK_TASK_ID=0 DOCK_AGENT=codex DOCK_MODEL=gpt-5.4
+//!       with EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4
 //!
 //! Two orthogonal versioning axes (see RULES.md principle 9):
 //!
-//! - Container tag  → which image to pull (DOCK_*_TAG, flags --*-tag)
-//! - Internal ver.  → which upstream software runs inside (DOCK_*_VERSION,
+//! - Container tag  → which image to pull (EVAL_*_TAG, flags --*-tag)
+//! - Internal ver.  → which upstream software runs inside (EVAL_*_VERSION,
 //!   flags --*-version)
 //!
 //! With `--local`, uses the in-repo `benchmarks/<name>/compose.yaml`
@@ -19,61 +19,61 @@ use std::process::Command;
 
 #[derive(Args)]
 pub struct RunArgs {
-    /// Benchmark name (positional shortcut for --benchmark, maps to $DOCK_BENCHMARK)
+    /// Benchmark name (positional shortcut for --benchmark, maps to $EVAL_BENCHMARK)
     #[arg(value_name = "BENCHMARK")]
     benchmark_positional: Option<String>,
 
-    /// Benchmark name (maps to $DOCK_BENCHMARK)
+    /// Benchmark name (maps to $EVAL_BENCHMARK)
     #[arg(long = "benchmark")]
     benchmark_flag: Option<String>,
 
-    /// Agent to use (maps to $DOCK_AGENT)
+    /// Agent to use (maps to $EVAL_AGENT)
     #[arg(long)]
     agent: Option<String>,
 
-    /// Model to use (maps to $DOCK_MODEL)
+    /// Model to use (maps to $EVAL_MODEL)
     #[arg(long)]
     model: Option<String>,
 
-    /// Task ID within the benchmark (maps to $DOCK_TASK_ID)
+    /// Task ID within the benchmark (maps to $EVAL_TASK_ID)
     #[arg(long)]
     task_id: Option<String>,
 
     // ---- Container tags (which image to pull) ----
-    /// Benchmark image tag (maps to $DOCK_BENCHMARK_TAG)
+    /// Benchmark image tag (maps to $EVAL_BENCHMARK_TAG)
     #[arg(long)]
     benchmark_tag: Option<String>,
 
-    /// Agent image tag (maps to $DOCK_AGENT_TAG)
+    /// Agent image tag (maps to $EVAL_AGENT_TAG)
     #[arg(long)]
     agent_tag: Option<String>,
 
-    /// Model image tag (maps to $DOCK_MODEL_TAG)
+    /// Model image tag (maps to $EVAL_MODEL_TAG)
     #[arg(long)]
     model_tag: Option<String>,
 
     // ---- Internal upstream versions (what runs inside the container) ----
     /// Override the dataset revision inside the benchmark image
-    /// (maps to $DOCK_BENCHMARK_VERSION)
+    /// (maps to $EVAL_BENCHMARK_VERSION)
     #[arg(long)]
     benchmark_version: Option<String>,
 
     /// Override the upstream CLI version inside the agent image
-    /// (maps to $DOCK_AGENT_VERSION)
+    /// (maps to $EVAL_AGENT_VERSION)
     #[arg(long)]
     agent_version: Option<String>,
 
     /// Override the LiteLLM version inside the model image
-    /// (maps to $DOCK_LITELLM_VERSION)
+    /// (maps to $EVAL_LITELLM_VERSION)
     #[arg(long)]
     litellm_version: Option<String>,
 
-    /// Agent timeout in seconds (maps to $DOCK_TIMEOUT)
+    /// Agent timeout in seconds (maps to $EVAL_TIMEOUT)
     #[arg(long)]
     timeout: Option<u32>,
 
     /// Hard cap on model spend in USD for this run (maps to
-    /// $DOCK_MODEL_MAX_BUDGET). The litellm proxy enforces it and
+    /// $EVAL_MODEL_MAX_BUDGET). The litellm proxy enforces it and
     /// returns an error once spend crosses the cap, which crashes
     /// the agent's next request. Default: $1.
     #[arg(long)]
@@ -100,48 +100,48 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
         format!("oci://{registry}/evaluate")
     };
 
-    // Build the env var set. Every flag maps to DOCK_* per src/RULES.md rule 10.
+    // Build the env var set. Every flag maps to EVAL_* per src/RULES.md rule 10.
     let mut envs: Vec<(&str, String)> = vec![
-        ("DOCK_REGISTRY", registry.to_string()),
-        ("DOCK_BENCHMARK", benchmark.clone()),
+        ("EVAL_REGISTRY", registry.to_string()),
+        ("EVAL_BENCHMARK", benchmark.clone()),
     ];
     if let Some(ref v) = args.agent {
-        envs.push(("DOCK_AGENT", v.clone()));
+        envs.push(("EVAL_AGENT", v.clone()));
     }
     if let Some(ref v) = args.model {
-        envs.push(("DOCK_MODEL", v.clone()));
+        envs.push(("EVAL_MODEL", v.clone()));
     }
     if let Some(ref v) = args.task_id {
-        envs.push(("DOCK_TASK_ID", v.clone()));
+        envs.push(("EVAL_TASK_ID", v.clone()));
     }
 
     // Container tags
     if let Some(ref v) = args.benchmark_tag {
-        envs.push(("DOCK_BENCHMARK_TAG", v.clone()));
+        envs.push(("EVAL_BENCHMARK_TAG", v.clone()));
     }
     if let Some(ref v) = args.agent_tag {
-        envs.push(("DOCK_AGENT_TAG", v.clone()));
+        envs.push(("EVAL_AGENT_TAG", v.clone()));
     }
     if let Some(ref v) = args.model_tag {
-        envs.push(("DOCK_MODEL_TAG", v.clone()));
+        envs.push(("EVAL_MODEL_TAG", v.clone()));
     }
 
     // Internal upstream versions
     if let Some(ref v) = args.benchmark_version {
-        envs.push(("DOCK_BENCHMARK_VERSION", v.clone()));
+        envs.push(("EVAL_BENCHMARK_VERSION", v.clone()));
     }
     if let Some(ref v) = args.agent_version {
-        envs.push(("DOCK_AGENT_VERSION", v.clone()));
+        envs.push(("EVAL_AGENT_VERSION", v.clone()));
     }
     if let Some(ref v) = args.litellm_version {
-        envs.push(("DOCK_LITELLM_VERSION", v.clone()));
+        envs.push(("EVAL_LITELLM_VERSION", v.clone()));
     }
 
     if let Some(timeout) = args.timeout {
-        envs.push(("DOCK_TIMEOUT", timeout.to_string()));
+        envs.push(("EVAL_TIMEOUT", timeout.to_string()));
     }
     if let Some(budget) = args.max_budget {
-        envs.push(("DOCK_MODEL_MAX_BUDGET", budget.to_string()));
+        envs.push(("EVAL_MODEL_MAX_BUDGET", budget.to_string()));
     }
 
     // Print the equivalent shell invocation (RULES src/RULES.md rule 2: transparent).

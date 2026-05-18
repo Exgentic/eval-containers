@@ -2,19 +2,19 @@
 # 3088 tasks (test split). Data: HuggingFace lmms-lab/ai2d
 # Agent sees question + options + diagram image. Prints answer letter. Test compares to expected.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="ai2d"
-LABEL dock.benchmark.description="AI2D - multiple choice questions about science diagrams"
-LABEL dock.benchmark.tasks="3088"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.modality="multimodal"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="c83a9b9692933aff8349157c88a413df9d02c4e5"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/lmms-lab/ai2d"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1603.07396"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="c83a9b9692933aff8349157c88a413df9d02c4e5"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="ai2d"
+LABEL eval.benchmark.description="AI2D - multiple choice questions about science diagrams"
+LABEL eval.benchmark.tasks="3088"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.modality="multimodal"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="c83a9b9692933aff8349157c88a413df9d02c4e5"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/lmms-lab/ai2d"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1603.07396"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="c83a9b9692933aff8349157c88a413df9d02c4e5"
 
 # Single-JSONL task layout. Image bytes are base64-encoded inline; the runtime
 # entrypoint materializes just the requested row and decodes image.png.
@@ -52,46 +52,46 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=ai2d
+ENV EVAL_BENCHMARK=ai2d
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/image_b64.txt ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/image_b64.txt ]; then
   python3 - <<'PY'
 import base64, os
-tid = os.environ['DOCK_TASK_ID']
+tid = os.environ['EVAL_TASK_ID']
 with open(f'/tasks/{tid}/image_b64.txt') as f:
     data = f.read()
 with open(f'/tasks/{tid}/image.png', 'wb') as f:
     f.write(base64.b64decode(data))
 PY
-  rm -f /tasks/$DOCK_TASK_ID/image_b64.txt
-  chmod 600 /tasks/$DOCK_TASK_ID/image.png
+  rm -f /tasks/$EVAL_TASK_ID/image_b64.txt
+  chmod 600 /tasks/$EVAL_TASK_ID/image.png
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  if [ -f /tasks/$DOCK_TASK_ID/image.png ]; then
-    cp /tasks/$DOCK_TASK_ID/image.png /app/image.png
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  if [ -f /tasks/$EVAL_TASK_ID/image.png ]; then
+    cp /tasks/$EVAL_TASK_ID/image.png /app/image.png
     IMAGE_LINE="
 
 Image: /app/image.png"
   else
     IMAGE_LINE=""
   fi
-  PROBLEM=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
-  OPTIONS=$(cat /tasks/$DOCK_TASK_ID/options.txt)
+  PROBLEM=$(cat /tasks/$EVAL_TASK_ID/problem.txt)
+  OPTIONS=$(cat /tasks/$EVAL_TASK_ID/options.txt)
   export TASK="Look at the provided diagram and answer the multiple choice question. Print only the answer letter (A, B, C, D, ...), nothing else.
 
 Question: ${PROBLEM}
 
 Options:
 ${OPTIONS}${IMAGE_LINE}"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

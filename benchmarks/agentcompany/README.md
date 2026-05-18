@@ -16,7 +16,7 @@ TheAgentCompany - long-horizon professional workplace tasks for AI agents
 
 ## What the agent sees
 
-The agent receives a task of the form: "You are an AI assistant working at a simulated tech company. Read the task brief below and respond with the steps you would take and any final deliverables (messages to send, files to create, answers to compute)." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "You are an AI assistant working at a simulated tech company. Read the task brief below and respond with the steps you would take and any final deliverables (messages to send, files to create, answers to compute)." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -25,5 +25,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile. Reward is hard-coded t
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run agentcompany`
+- `compose.yaml` — compose file for `eval-containers run agentcompany`
 - `README.md` — this file

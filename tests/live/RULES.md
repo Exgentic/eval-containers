@@ -42,7 +42,7 @@ Parent: [../RULES.md](../RULES.md)
 ## Budget
 
 7. **Respect a budget cap.** The sweep driver MUST accept a
-   `DOCK_LIVE_BUDGET_USD` env var and halt if projected cost exceeds
+   `EVAL_LIVE_BUDGET_USD` env var and halt if projected cost exceeds
    it. Estimated cost is the sum of `total_cost` from each run's
    `/output/model/result.json`.
 
@@ -181,12 +181,12 @@ human or agent judgment until we get more mechanical coverage.
 
 28. **Timeout was not hit.** `agent/result.json` `exit_code` is not
     124 (GNU timeout code). A timeout-killed run is red — raise
-    `DOCK_TIMEOUT` or investigate why the agent looped.
+    `EVAL_TIMEOUT` or investigate why the agent looped.
 
 29. **Version axis recorded.** `task/version.json` and
     `agent/version.json` exist and have the pinned default values
     matching the benchmark and agent's
-    `DOCK_*_VERSION_DEFAULT` ENVs. If either is empty, RULES.md
+    `EVAL_*_VERSION_DEFAULT` ENVs. If either is empty, RULES.md
     principle 9 is not being honored for that image.
 
 30. **No secrets in logs.** Neither `agent/stdout.log` nor

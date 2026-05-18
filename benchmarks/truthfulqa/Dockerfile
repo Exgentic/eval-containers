@@ -5,21 +5,21 @@
 # Choices are deterministically shuffled per-task (seeded by task id) so the
 # correct answer is not always the first option.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="truthfulqa"
-LABEL dock.benchmark.description="TruthfulQA - measures whether a model gives truthful answers to questions designed to elicit common misconceptions (mc1)"
-LABEL dock.benchmark.tasks="817"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/truthfulqa/truthful_qa"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2109.07958"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="truthfulqa"
+LABEL eval.benchmark.description="TruthfulQA - measures whether a model gives truthful answers to questions designed to elicit common misconceptions (mc1)"
+LABEL eval.benchmark.tasks="817"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/truthfulqa/truthful_qa"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2109.07958"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, random, string, json
 urllib.request.urlretrieve(
@@ -52,21 +52,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=truthfulqa
+ENV EVAL_BENCHMARK=truthfulqa
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this multiple choice question by selecting the single best answer. Print only the letter of the correct answer (e.g., A), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

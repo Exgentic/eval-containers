@@ -2,19 +2,19 @@
 # 1266 tasks. Data: OpenAI public blob (encrypted, decrypted at build time)
 # Agent browses the web and prints answer to stdout.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="browsecomp"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="BrowseComp - web browsing QA"
-LABEL dock.benchmark.tasks="1266"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="true"
-LABEL dock.benchmark.url="https://github.com/openai/simple-evals"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2504.16186"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="browsecomp"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="BrowseComp - web browsing QA"
+LABEL eval.benchmark.tasks="1266"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="true"
+LABEL eval.benchmark.url="https://github.com/openai/simple-evals"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2504.16186"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 RUN pip install --no-cache-dir pandas
 
@@ -51,7 +51,7 @@ RUN rm -f /tmp/browsecomp.csv && pip uninstall -y pandas
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=browsecomp
+ENV EVAL_BENCHMARK=browsecomp
 
 COPY judge.py /tests/judge.py
 COPY test.sh /tests/test.sh
@@ -59,14 +59,14 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Browse the web to answer this question. Print only the answer, nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

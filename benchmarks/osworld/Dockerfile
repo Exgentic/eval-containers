@@ -4,18 +4,18 @@
 # Agent connects via HTTP API: GET /screenshot, POST /execute_action.
 # VM disk image (11GB) must be downloaded separately.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="osworld"
-LABEL dock.benchmark.description="OSWorld - real computer environment for multimodal agents"
-LABEL dock.benchmark.tasks="369"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/xlang-ai/OSWorld"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/osworld"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.07972"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="osworld"
+LABEL eval.benchmark.description="OSWorld - real computer environment for multimodal agents"
+LABEL eval.benchmark.tasks="369"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://github.com/xlang-ai/OSWorld"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/osworld"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.07972"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 # Single-JSONL task layout. One line per task. Runtime entrypoint
 # materializes the requested task and renames task.txt -> task.json.
@@ -67,7 +67,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=osworld
+ENV EVAL_BENCHMARK=osworld
 
 # Test: OSWorld evaluation checks desktop state after agent finishes.
 # Placeholder — full evaluation requires the desktop-env package + VM access.
@@ -80,21 +80,21 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/task.txt ]; then
-  mv /tasks/$DOCK_TASK_ID/task.txt /tasks/$DOCK_TASK_ID/task.json
-  chmod 600 /tasks/$DOCK_TASK_ID/task.json
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/task.txt ]; then
+  mv /tasks/$EVAL_TASK_ID/task.txt /tasks/$EVAL_TASK_ID/task.json
+  chmod 600 /tasks/$EVAL_TASK_ID/task.json
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a computer use agent. Complete this task using the desktop.
 
 Desktop API: http://desktop:5000
 - GET /screenshot — returns a PNG screenshot
 - POST /execute_action — send mouse/keyboard actions
 
-Task: $(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+Task: $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -2,25 +2,25 @@
 # 307 tasks. Data: HuggingFace dapumptu/usaco_benchmark
 # Agent writes solution code. Test runs it against I/O test cases.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="usaco"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="USACO - competitive programming"
-LABEL dock.benchmark.tasks="307"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/dapumptu/usaco_benchmark"
-LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/usaco"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/usaco"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="usaco"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="USACO - competitive programming"
+LABEL eval.benchmark.tasks="307"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/dapumptu/usaco_benchmark"
+LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/usaco"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/usaco"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/,
-# then explodes the per-case inputs/outputs dict into /tasks/$DOCK_TASK_ID/tests/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/,
+# then explodes the per-case inputs/outputs dict into /tasks/$EVAL_TASK_ID/tests/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
 tables = []
@@ -48,13 +48,13 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=usaco
+ENV EVAL_BENCHMARK=usaco
 
 # Test: compile agent's solution and run against test cases
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 PASSED=0
 TOTAL=0
@@ -89,12 +89,12 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
+/eval-materialize-task
 # Explode the packed tests JSON back into per-case .in/.out files under tests/.
-if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/tests.txt ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/tests.txt ]; then
   python3 - <<'PY'
 import json, os
-tid = os.environ['DOCK_TASK_ID']
+tid = os.environ['EVAL_TASK_ID']
 with open(f'/tasks/{tid}/tests.txt') as f:
     data = json.loads(f.read())
 td = f'/tasks/{tid}/tests'
@@ -104,15 +104,15 @@ for k, v in data.get('inputs', {}).items():
 for k, v in data.get('outputs', {}).items():
     open(f'{td}/{k}.out', 'w').write(str(v))
 PY
-  rm -f /tasks/$DOCK_TASK_ID/tests.txt
-  chmod -R 600 /tasks/$DOCK_TASK_ID/tests
+  rm -f /tasks/$EVAL_TASK_ID/tests.txt
+  chmod -R 600 /tasks/$EVAL_TASK_ID/tests
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this competitive programming problem. Print ONLY the complete source code (Python or C++), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

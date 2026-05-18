@@ -8,7 +8,7 @@
 #   unzip Ubuntu.qcow2.zip
 #
 # Then run:
-#   DOCK_TASK_ID=0 docker compose -f benchmarks/osworld/compose.yaml up
+#   EVAL_TASK_ID=0 docker compose -f benchmarks/osworld/compose.yaml up
 
 services:
   model:
@@ -17,20 +17,20 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-osworld}/${DOCK_TASK_ID:-default}/model:/output:rw
+      - ../../output/${EVAL_BENCHMARK:-osworld}/${EVAL_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/osworld--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/osworld--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
     environment:
-      - DOCK_BENCHMARK=osworld
-      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+      - EVAL_BENCHMARK=osworld
+      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-1800}
       - DESKTOP_URL=http://desktop:5000
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-osworld}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${DOCK_BENCHMARK:-osworld}/${DOCK_TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${EVAL_BENCHMARK:-osworld}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${EVAL_BENCHMARK:-osworld}/${EVAL_TASK_ID:-default}/task:/output/task:rw
     depends_on:
       desktop:
         condition: service_started

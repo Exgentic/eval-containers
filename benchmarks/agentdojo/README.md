@@ -16,7 +16,7 @@ AgentDojo - indirect prompt injection resistance for LLM agents
 
 ## What the agent sees
 
-The agent receives a task of the form: "$(cat /tasks/$DOCK_TASK_ID/problem.txt)"" The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "$(cat /tasks/$EVAL_TASK_ID/problem.txt)"" The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -25,5 +25,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile.
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run agentdojo`
+- `compose.yaml` — compose file for `eval-containers run agentdojo`
 - `README.md` — this file

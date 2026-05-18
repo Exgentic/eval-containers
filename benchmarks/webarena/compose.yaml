@@ -10,16 +10,16 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-webarena}/${DOCK_TASK_ID:-default}/model:/output:rw
+      - ../../output/${EVAL_BENCHMARK:-webarena}/${EVAL_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/webarena--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/webarena--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
     environment:
-      - DOCK_BENCHMARK=webarena-verified
-      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-1800}
+      - EVAL_BENCHMARK=webarena-verified
+      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-1800}
       - HTTP_PROXY=http://proxy:8080
       - HTTPS_PROXY=http://proxy:8080
       - NO_PROXY=model,localhost,127.0.0.1
@@ -31,8 +31,8 @@ services:
       - WIKIPEDIA_URL=http://wikipedia:80
       - MAP_URL=http://map:80
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-webarena}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${DOCK_BENCHMARK:-webarena}/${DOCK_TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${EVAL_BENCHMARK:-webarena}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${EVAL_BENCHMARK:-webarena}/${EVAL_TASK_ID:-default}/task:/output/task:rw
     depends_on:
       proxy:
         condition: service_started
@@ -53,7 +53,7 @@ services:
       --listen-port 8080
       --set hardump=/output/network.har
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-webarena}/${DOCK_TASK_ID:-default}/agent:/output:rw
+      - ../../output/${EVAL_BENCHMARK:-webarena}/${EVAL_TASK_ID:-default}/agent:/output:rw
     networks:
       - internal
       - default

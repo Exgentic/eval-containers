@@ -16,7 +16,7 @@ SWE-bench Verified - software engineering
 
 ## What the agent sees
 
-The agent receives a task of the form: "Fix this GitHub issue in the repository at /testbed. Edit the source code to resolve the bug. Do NOT modify any test files." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable. Because this benchmark uses a per-task environment, each task builds a separate image; the agent works inside the checked-out upstream base and must modify files in place.
+The agent receives a task of the form: "Fix this GitHub issue in the repository at /testbed. Edit the source code to resolve the bug. Do NOT modify any test files." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable. Because this benchmark uses a per-task environment, each task builds a separate image; the agent works inside the checked-out upstream base and must modify files in place.
 
 ## How it's graded
 
@@ -25,10 +25,10 @@ Custom `/tests/test.sh` defined inline in the Dockerfile. Grading runs inside th
 
 ## Per-task build
 
-This benchmark uses `env=per-task`: the Dockerfile takes a `DOCK_TASK_ID` build-arg and pulls a per-task upstream base (`ghcr.io/epoch-research/swe-bench.eval.x86_64.${DOCK_TASK_ID}:latest`).
+This benchmark uses `env=per-task`: the Dockerfile takes a `EVAL_TASK_ID` build-arg and pulls a per-task upstream base (`ghcr.io/epoch-research/swe-bench.eval.x86_64.${EVAL_TASK_ID}:latest`).
 
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run swe-bench`
+- `compose.yaml` — compose file for `eval-containers run swe-bench`
 - `README.md` — this file

@@ -4,7 +4,7 @@
 Terminus-2 has no standalone CLI. It is an out-of-container orchestrator
 that normally connects to a sandboxed environment via Harbor's BaseEnvironment.
 This wrapper creates a local environment shim so it can run inside this
-container for Dock evaluation.
+container for Eval Containers evaluation.
 """
 import asyncio
 import os
@@ -64,7 +64,7 @@ async def main():
         print("Error: TASK environment variable is empty", file=sys.stderr)
         sys.exit(1)
 
-    model = os.environ.get("DOCK_MODEL", os.environ.get("MODEL", "openai/gpt-4o"))
+    model = os.environ.get("EVAL_MODEL", os.environ.get("MODEL", "openai/gpt-4o"))
     api_base = os.environ.get("OPENAI_BASE_URL", "http://model:4000")
     api_key = os.environ.get("OPENAI_API_KEY", "sk-proxy")
     os.environ["OPENAI_API_KEY"] = api_key

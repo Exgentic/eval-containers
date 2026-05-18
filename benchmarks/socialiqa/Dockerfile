@@ -6,23 +6,23 @@
 # Python loader script, which can't be parquet-converted by HF. We fetch the
 # original zip hosted by AI2 on Google Cloud Storage (same data).
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="socialiqa"
-LABEL dock.benchmark.description="SocialIQA - social interaction reasoning (3-way multiple choice)"
-LABEL dock.benchmark.tasks="1954"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
-LABEL dock.benchmark.url="https://leaderboard.allenai.org/socialiqa"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1904.09728"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="socialiqa"
+LABEL eval.benchmark.description="SocialIQA - social interaction reasoning (3-way multiple choice)"
+LABEL eval.benchmark.tasks="1954"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
+LABEL eval.benchmark.url="https://leaderboard.allenai.org/socialiqa"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1904.09728"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
 
 RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, zipfile, json, os
 urllib.request.urlretrieve(
@@ -56,21 +56,21 @@ RUN rm -rf /tmp/siqa /tmp/siqa.zip && apt-get purge -y unzip && apt-get autoremo
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=socialiqa
+ENV EVAL_BENCHMARK=socialiqa
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this social reasoning multiple choice question. Print only the letter of the correct answer (A, B, or C), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

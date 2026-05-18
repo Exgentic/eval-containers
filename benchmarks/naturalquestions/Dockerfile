@@ -7,22 +7,22 @@
 # Wikipedia pages and byte-offset annotations). `nq_open` is the standard
 # version used in open-book QA evaluations (RAG, closed-book LLMs, etc.).
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="naturalquestions"
-LABEL dock.benchmark.description="NaturalQuestions - Google search queries (open-domain short answer)"
-LABEL dock.benchmark.tasks="3610"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="5dd9790a83002ad084ddeb7c420dc716852c6f28"
-LABEL dock.benchmark.url="https://ai.google.com/research/NaturalQuestions"
-LABEL dock.benchmark.paper="https://aclanthology.org/Q19-1026/"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="5dd9790a83002ad084ddeb7c420dc716852c6f28"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="naturalquestions"
+LABEL eval.benchmark.description="NaturalQuestions - Google search queries (open-domain short answer)"
+LABEL eval.benchmark.tasks="3610"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="5dd9790a83002ad084ddeb7c420dc716852c6f28"
+LABEL eval.benchmark.url="https://ai.google.com/research/NaturalQuestions"
+LABEL eval.benchmark.paper="https://aclanthology.org/Q19-1026/"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="5dd9790a83002ad084ddeb7c420dc716852c6f28"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/ (and converts aliases to JSON).
+# fields into /tasks/$EVAL_TASK_ID/ (and converts aliases to JSON).
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 urllib.request.urlretrieve(
@@ -47,7 +47,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=naturalquestions
+ENV EVAL_BENCHMARK=naturalquestions
 
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
@@ -66,7 +66,7 @@ def normalize(s):
     s = ' '.join(s.split())
     return s
 
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 try:
     with open('/output/agent/stdout.log') as f:
         agent = f.read()
@@ -91,18 +91,18 @@ PY
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/aliases.txt ]; then
-  mv /tasks/$DOCK_TASK_ID/aliases.txt /tasks/$DOCK_TASK_ID/aliases.json
-  chmod 600 /tasks/$DOCK_TASK_ID/aliases.json
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/aliases.txt ]; then
+  mv /tasks/$EVAL_TASK_ID/aliases.txt /tasks/$EVAL_TASK_ID/aliases.json
+  chmod 600 /tasks/$EVAL_TASK_ID/aliases.json
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this open-domain question. Print only the answer, nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

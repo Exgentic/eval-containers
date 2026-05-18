@@ -16,14 +16,14 @@ WMT24++ - multilingual machine translation from English to 10 target locales
 
 ## What the agent sees
 
-The agent receives a task of the form: "Translate the following English text into ${LANG_NAME}. Print only the translated text with no explanation, quotes, or additional commentary." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Translate the following English text into ${LANG_NAME}. Print only the translated text with no explanation, quotes, or additional commentary." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
-Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared against `/tasks/$DOCK_TASK_ID/answer.txt` by exact string match.
+Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared against `/tasks/$EVAL_TASK_ID/answer.txt` by exact string match.
 
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run wmt`
+- `compose.yaml` — compose file for `eval-containers run wmt`
 - `README.md` — this file

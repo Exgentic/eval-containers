@@ -19,7 +19,7 @@ MRCR v2 - Multi-Round Coreference Resolution (long-context retrieval)
 
 ## What the agent sees
 
-The agent receives a task of the form: "Your task is described in the file /app/task.txt — read it and follow the instructions inside."" The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Your task is described in the file /app/task.txt — read it and follow the instructions inside."" The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -28,5 +28,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile.
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run mrcr`
+- `compose.yaml` — compose file for `eval-containers run mrcr`
 - `README.md` — this file

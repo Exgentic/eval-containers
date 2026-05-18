@@ -62,17 +62,17 @@ fn contains_line(path: &Path, needle: &str) -> bool {
 // ─── step 6: structural validation ────────────────────────────────
 
 const REQUIRED_BENCHMARK_LABELS: &[&str] = &[
-    r#"LABEL dock.type="benchmark""#,
-    "LABEL dock.benchmark.name=",
-    "LABEL dock.benchmark.env=",
-    "LABEL dock.benchmark.tasks=",
-    "LABEL dock.benchmark.internet=",
+    r#"LABEL eval.type="benchmark""#,
+    "LABEL eval.benchmark.name=",
+    "LABEL eval.benchmark.env=",
+    "LABEL eval.benchmark.tasks=",
+    "LABEL eval.benchmark.internet=",
 ];
 
 const REQUIRED_AGENT_LABELS: &[&str] = &[
-    r#"LABEL dock.type="agent""#,
-    "LABEL dock.agent.name=",
-    "LABEL dock.agent.version=",
+    r#"LABEL eval.type="agent""#,
+    "LABEL eval.agent.name=",
+    "LABEL eval.agent.version=",
 ];
 
 const REQUIRED_COMPOSE_MARKERS: &[&str] = &[
@@ -124,8 +124,8 @@ fn check_agent_structure(name: &str, dir: &Path) -> Vec<String> {
             issues.push(format!("{name}: missing {label}"));
         }
     }
-    if contains_line(&dockerfile, r#"LABEL dock.agent.version="latest""#) {
-        issues.push(format!("{name}: dock.agent.version is `latest` — must pin"));
+    if contains_line(&dockerfile, r#"LABEL eval.agent.version="latest""#) {
+        issues.push(format!("{name}: eval.agent.version is `latest` — must pin"));
     }
     issues
 }
@@ -244,14 +244,14 @@ fn count_reconciliation() {
 
 // ─── step 3 / FLEET.md Q3: released benchmarks have a fixture ────
 //
-// Every benchmark whose Dockerfile declares `LABEL dock.benchmark.released="true"`
+// Every benchmark whose Dockerfile declares `LABEL eval.benchmark.released="true"`
 // MUST have at least one replay fixture under tests/replay/fixtures/. Unreleased
 // benchmarks are allowed to be fixture-less — they're in the source tree as
-// the full catalog of what Dock could support, but they haven't graduated
+// the full catalog of what Eval Containers could support, but they haven't graduated
 // to the release gate. See benchmarks/RULES.md principle 21a.
 
 fn released_benchmarks() -> Vec<String> {
-    let needle = r#"LABEL dock.benchmark.released="true""#;
+    let needle = r#"LABEL eval.benchmark.released="true""#;
     let mut out = Vec::new();
     for (name, dir) in sibling_dirs("benchmarks") {
         let dockerfile = dir.join("Dockerfile");
@@ -356,17 +356,17 @@ fn every_benchmark_has_readme() {
 // ─── RULES.md principle 9: shared entrypoint honors version override ─
 //
 // The version-override contract (benchmarks/RULES.md 4, agents/RULES.md 13)
-// is implemented in core/entrypoint/dock-entrypoint.sh. It MUST read
-// DOCK_BENCHMARK_VERSION + DOCK_AGENT_VERSION and write version.json files.
+// is implemented in core/entrypoint/eval-entrypoint.sh. It MUST read
+// EVAL_BENCHMARK_VERSION + EVAL_AGENT_VERSION and write version.json files.
 // If this script ever stops referencing those vars, the whole axis is dead.
 
 #[test]
 fn shared_entrypoint_reads_version_vars() {
-    let path = "core/entrypoint/dock-entrypoint.sh";
+    let path = "core/entrypoint/eval-entrypoint.sh";
     let text = fs::read_to_string(path).expect("shared entrypoint missing");
     let needles = [
-        "DOCK_BENCHMARK_VERSION",
-        "DOCK_AGENT_VERSION",
+        "EVAL_BENCHMARK_VERSION",
+        "EVAL_AGENT_VERSION",
         "/output/task/version.json",
         "/output/agent/version.json",
     ];

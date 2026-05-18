@@ -16,7 +16,7 @@ VisualWebArena - multimodal web agent tasks with sidecars
 
 ## What the agent sees
 
-The agent receives a task of the form: "You are a multimodal web browsing agent. Complete this task by interacting" The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "You are a multimodal web browsing agent. Complete this task by interacting" The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -25,5 +25,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile. Reward is hard-coded t
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run visualwebarena`
+- `compose.yaml` — compose file for `eval-containers run visualwebarena`
 - `README.md` — this file

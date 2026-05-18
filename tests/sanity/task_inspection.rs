@@ -75,12 +75,12 @@ const RULES: &[Rule] = &[
     }),
     Rule::red(
         "env_leaked",
-        "unresolved DOCK_* env var in task (substitution failed)",
+        "unresolved EVAL_* env var in task (substitution failed)",
         |t| {
-            t.contains("$DOCK_BENCHMARK")
-                || t.contains("${DOCK_BENCHMARK}")
-                || t.contains("$DOCK_TASK_ID")
-                || t.contains("${DOCK_TASK_ID}")
+            t.contains("$EVAL_BENCHMARK")
+                || t.contains("${EVAL_BENCHMARK}")
+                || t.contains("$EVAL_TASK_ID")
+                || t.contains("${EVAL_TASK_ID}")
                 || t.contains("${TASK}")
         },
     ),
@@ -870,10 +870,10 @@ fn rule_empty_fires_on_whitespace() {
 }
 
 #[test]
-fn rule_env_leaked_fires_on_unresolved_dock_var() {
+fn rule_env_leaked_fires_on_unresolved_eval_var() {
     let fs = inspect(
         "t",
-        "Solve task $DOCK_TASK_ID from benchmark ${DOCK_BENCHMARK}.",
+        "Solve task $EVAL_TASK_ID from benchmark ${EVAL_BENCHMARK}.",
     );
     assert!(fs.iter().any(|f| f.rule == "env_leaked"));
 }

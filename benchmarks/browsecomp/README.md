@@ -19,7 +19,7 @@ BrowseComp - web browsing QA
 
 ## What the agent sees
 
-The agent receives a task of the form: "Browse the web to answer this question. Print only the answer, nothing else." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Browse the web to answer this question. Print only the answer, nothing else." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -28,5 +28,5 @@ See `/tests/test.sh` in the built image for the scoring logic.
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run browsecomp`
+- `compose.yaml` — compose file for `eval-containers run browsecomp`
 - `README.md` — this file

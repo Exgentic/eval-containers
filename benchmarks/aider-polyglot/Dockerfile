@@ -5,17 +5,17 @@
 
 FROM ubuntu:22.04
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="aider-polyglot"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="Aider Polyglot - multi-language code editing (Exercism)"
-LABEL dock.benchmark.tasks="225"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
-LABEL dock.benchmark.url="https://github.com/Aider-AI/polyglot-benchmark"
-LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aider_polyglot"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="aider-polyglot"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="Aider Polyglot - multi-language code editing (Exercism)"
+LABEL eval.benchmark.tasks="225"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
+LABEL eval.benchmark.url="https://github.com/Aider-AI/polyglot-benchmark"
+LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aider_polyglot"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -45,7 +45,7 @@ RUN curl -sfL "https://github.com/Aider-AI/polyglot-benchmark/archive/${POLYGLOT
 
 # --- Build task index JSONL: one line per exercise with metadata strings. ---
 # The on-disk /polyglot reference exercises remain intact (root-only); at runtime
-# the materialize helper produces /tasks/$DOCK_TASK_ID/*.txt and the entrypoint
+# the materialize helper produces /tasks/$EVAL_TASK_ID/*.txt and the entrypoint
 # copies starter files from the exercise_dir into /app.
 RUN python3 <<'PYEOF'
 import os, json
@@ -111,14 +111,14 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl && chmod -R 600 /polyglot
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=aider-polyglot
+ENV EVAL_BENCHMARK=aider-polyglot
 
 # --- Test script: run language-specific test suite ---
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 LANGUAGE=$(cat "$TASK_DIR/language.txt")
 EXERCISE=$(cat "$TASK_DIR/exercise.txt")
 EXERCISE_DIR=$(cat "$TASK_DIR/exercise_dir.txt")
@@ -178,16 +178,16 @@ fi
 TEST
 RUN chmod +x /tests/test.sh
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 # --- Entrypoint: materialize task metadata, then copy starter files to /app ---
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  TASK_DIR="/tasks/$DOCK_TASK_ID"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  TASK_DIR="/tasks/$EVAL_TASK_ID"
   LANGUAGE=$(cat "$TASK_DIR/language.txt")
   EXERCISE=$(cat "$TASK_DIR/exercise.txt")
   EXERCISE_DIR=$(cat "$TASK_DIR/exercise_dir.txt")
@@ -237,7 +237,7 @@ $(for f in $SOLUTION_FILES; do
     echo
   done)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

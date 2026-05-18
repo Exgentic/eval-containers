@@ -6,22 +6,22 @@
 
 FROM ghcr.io/stonybrooknlp/appworld:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="appworld"
-LABEL dock.benchmark.upstream_base="ghcr.io/stonybrooknlp/appworld:latest"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="AppWorld - 9 simulated apps with 457 APIs"
-LABEL dock.benchmark.tasks="732"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="refs/convert/parquet"
-LABEL dock.benchmark.url="https://github.com/stonybrooknlp/appworld"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.18901"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="refs/convert/parquet"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="appworld"
+LABEL eval.benchmark.upstream_base="ghcr.io/stonybrooknlp/appworld:latest"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="AppWorld - 9 simulated apps with 457 APIs"
+LABEL eval.benchmark.tasks="732"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="refs/convert/parquet"
+LABEL eval.benchmark.url="https://github.com/stonybrooknlp/appworld"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.18901"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="refs/convert/parquet"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
-ENV DOCK_BENCHMARK=appworld
+ENV EVAL_BENCHMARK=appworld
 
 # Fetch task metadata from HuggingFace and write to a single JSONL file.
 RUN pip install --no-cache-dir pyarrow==18.1.0
@@ -54,17 +54,17 @@ echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

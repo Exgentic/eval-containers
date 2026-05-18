@@ -1,4 +1,4 @@
-# Gitleaks config for Dock.
+# Gitleaks config for Eval Containers.
 #
 # Extends the default ruleset with an allowlist for two patterns that
 # repeatedly trip `generic-api-key` inside recorded LLM trajectories:

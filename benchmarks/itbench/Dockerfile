@@ -13,18 +13,18 @@
 # prometheus, loki, opa, test app) and wire scenario-specific ground-truth
 # verifiers from the upstream eval.py into test.sh.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="itbench"
-LABEL dock.benchmark.description="ITBench - IT automation across SRE, CISO, FinOps scenarios (skeleton)"
-LABEL dock.benchmark.tasks="10"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="3c36485964b059621d439343009ec0e7b4d2354b"
-LABEL dock.benchmark.url="https://github.com/itbench-hub/ITBench"
-LABEL dock.benchmark.paper="https://research.ibm.com/publications/developing-ai-agents-for-it-automation-tasks-with-itbench"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="3c36485964b059621d439343009ec0e7b4d2354b"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="itbench"
+LABEL eval.benchmark.description="ITBench - IT automation across SRE, CISO, FinOps scenarios (skeleton)"
+LABEL eval.benchmark.tasks="10"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="3c36485964b059621d439343009ec0e7b4d2354b"
+LABEL eval.benchmark.url="https://github.com/itbench-hub/ITBench"
+LABEL eval.benchmark.paper="https://research.ibm.com/publications/developing-ai-agents-for-it-automation-tasks-with-itbench"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="3c36485964b059621d439343009ec0e7b4d2354b"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # For the first pass we ingest only CISO k8s-opa-static scenarios from
@@ -61,7 +61,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=itbench
+ENV EVAL_BENCHMARK=itbench
 
 # ITBench evaluation replays agent remediations against a live environment
 # (K8s cluster with injected incidents, OPA policies, Prometheus targets,
@@ -76,11 +76,11 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

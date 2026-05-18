@@ -25,11 +25,11 @@ Parent: [../RULES.md](../RULES.md)
 
 ## What to probe
 
-4. **`LABEL dock.benchmark.upstream_base`** — every benchmark that
+4. **`LABEL eval.benchmark.upstream_base`** — every benchmark that
    inherits from a third-party image declares this label. `docker
    manifest inspect` MUST succeed for the pinned tag.
 
-5. **`FROM` lines** — every non-`scratch`, non-`${DOCK_TASK_ID}`
+5. **`FROM` lines** — every non-`scratch`, non-`${EVAL_TASK_ID}`
    interpolated `FROM` MUST resolve via `docker manifest inspect`.
 
 6. **HuggingFace + GitHub raw URLs** — every RUN line that fetches

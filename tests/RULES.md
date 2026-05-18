@@ -5,7 +5,7 @@
 
 ## Abstract
 
-Dock's product is Docker images, Compose files, and the evaluations they produce. This document defines the overall testing strategy — what testing *means* in this repo, regardless of which specific category of test is being written. Per-category rules live next door in `tests/<category>/RULES.md`.
+Eval Containers's product is Docker images, Compose files, and the evaluations they produce. This document defines the overall testing strategy — what testing *means* in this repo, regardless of which specific category of test is being written. Per-category rules live next door in `tests/<category>/RULES.md`.
 
 ## Terminology
 

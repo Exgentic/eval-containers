@@ -5,35 +5,35 @@
 # tests/, and run-tests.sh. We clone the repo at a pinned commit and layer the
 # task on top of its upstream base image.
 
-ARG DOCK_TASK_ID
+ARG EVAL_TASK_ID
 
 # Stage 1: fetch the task directory from upstream at a pinned commit.
 FROM alpine/git:2.47.2 AS upstream
-ARG DOCK_TASK_ID
+ARG EVAL_TASK_ID
 ARG TBENCH_REF=1a6ffa9674b571da0ed040c470cb40c4d85f9b9b
 RUN git clone https://github.com/laude-institute/terminal-bench.git /tb \
  && cd /tb && git checkout ${TBENCH_REF} \
- && test -d "/tb/original-tasks/${DOCK_TASK_ID}" \
- && cp -r "/tb/original-tasks/${DOCK_TASK_ID}" /task \
+ && test -d "/tb/original-tasks/${EVAL_TASK_ID}" \
+ && cp -r "/tb/original-tasks/${EVAL_TASK_ID}" /task \
  && rm -rf /tb
 
 # Stage 2: layer the task on top of the upstream shared base (a public image,
 # anonymously pullable).
 FROM ghcr.io/laude-institute/t-bench/python-3-13:20250620
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="terminal-bench"
-LABEL dock.benchmark.upstream_base="ghcr.io/laude-institute/t-bench/python-3-13:20250620"
-LABEL dock.benchmark.description="Terminal-Bench 2.0 - terminal tasks, built from upstream source"
-LABEL dock.benchmark.tasks="100+"
-LABEL dock.benchmark.env="per-task"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/laude-institute/terminal-bench"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="2.0"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="terminal-bench"
+LABEL eval.benchmark.upstream_base="ghcr.io/laude-institute/t-bench/python-3-13:20250620"
+LABEL eval.benchmark.description="Terminal-Bench 2.0 - terminal tasks, built from upstream source"
+LABEL eval.benchmark.tasks="100+"
+LABEL eval.benchmark.env="per-task"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://github.com/laude-institute/terminal-bench"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="2.0"
 
-ARG DOCK_TASK_ID
-ENV DOCK_BENCHMARK=tbench
-ENV DOCK_TASK_ID=${DOCK_TASK_ID}
+ARG EVAL_TASK_ID
+ENV EVAL_BENCHMARK=tbench
+ENV EVAL_TASK_ID=${EVAL_TASK_ID}
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3-yaml \
@@ -68,15 +68,15 @@ fi
 TEST
 RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 if [ -z "$TASK" ] && [ -f /task/instruction.md ]; then
   export TASK="$(cat /task/instruction.md)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

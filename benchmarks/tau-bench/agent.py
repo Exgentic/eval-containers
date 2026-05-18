@@ -28,7 +28,7 @@ def poll_next():
     Returns None when the bridge has been idle for IDLE_EXIT_SECONDS, which
     signals that the tau-bench runner has finished and the pass-through
     agent should terminate. Without this, agent.py loops forever and the
-    outer sweep runner times out at the DOCK_TIMEOUT boundary.
+    outer sweep runner times out at the EVAL_TIMEOUT boundary.
     """
     url = f"{BRIDGE_URL}/next"
     idle_started = None

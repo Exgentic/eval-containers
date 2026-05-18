@@ -2,18 +2,18 @@
 # 10120 tasks (1012 devtest sentences x 10 target languages, en->X). Data: NLLB FLORES-200 devtest
 # Agent prints translation to stdout. Test compares to expected reference translation.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="flores200"
-LABEL dock.benchmark.description="FLORES-200 - multilingual machine translation from English to 10 target languages"
-LABEL dock.benchmark.tasks="10120"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="flores_plus-v2.0"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/openlanguagedata/flores_plus"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2207.04672"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="flores_plus-v2.0"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="flores200"
+LABEL eval.benchmark.description="FLORES-200 - multilingual machine translation from English to 10 target languages"
+LABEL eval.benchmark.tasks="10120"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="flores_plus-v2.0"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/openlanguagedata/flores_plus"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2207.04672"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="flores_plus-v2.0"
 
 RUN pip install --no-cache-dir huggingface_hub==0.26.2
 
@@ -89,22 +89,22 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=flores200
+ENV EVAL_BENCHMARK=flores200
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  LANG_NAME=$(cat /tasks/$DOCK_TASK_ID/language_name.txt)
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  LANG_NAME=$(cat /tasks/$EVAL_TASK_ID/language_name.txt)
   export TASK="Translate the following English sentence into ${LANG_NAME}. Print only the translated sentence with no explanation, quotes, or additional text.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

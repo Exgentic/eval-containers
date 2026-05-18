@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # RA.Aid agent image
-FROM quay.io/dock-eval/core/agent-base-python:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="ra-aid"
-LABEL dock.agent.description="RA.Aid — autonomous research-first coding agent"
-LABEL dock.agent.runtime="python"
-LABEL dock.agent.url="https://github.com/ai-christianson/RA.Aid"
-LABEL dock.agent.version="0.30.2"
-ENV DOCK_AGENT_VERSION_DEFAULT="0.30.2"
-ENV DOCK_AGENT=ra-aid
+FROM quay.io/eval-containers/core/agent-base-python:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="ra-aid"
+LABEL eval.agent.description="RA.Aid — autonomous research-first coding agent"
+LABEL eval.agent.runtime="python"
+LABEL eval.agent.url="https://github.com/ai-christianson/RA.Aid"
+LABEL eval.agent.version="0.30.2"
+ENV EVAL_AGENT_VERSION_DEFAULT="0.30.2"
+ENV EVAL_AGENT=ra-aid
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
       if apt-get update && apt-get install -y --no-install-recommends ripgrep; then ok=1; break; fi; \
@@ -30,7 +30,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_API_BASE="${OPENAI_BASE_URL:-http://model:4000}/v1"
 export EXPERT_OPENAI_API_KEY="${OPENAI_API_KEY}"
 export EXPERT_OPENAI_API_BASE="${OPENAI_API_BASE}"
-exec ra-aid --cowboy-mode --provider openai-compatible --model "${DOCK_MODEL:-default}" \
-  --expert-provider openai-compatible --expert-model "${DOCK_MODEL:-default}" -m "$TASK"
+exec ra-aid --cowboy-mode --provider openai-compatible --model "${EVAL_MODEL:-default}" \
+  --expert-provider openai-compatible --expert-model "${EVAL_MODEL:-default}" -m "$TASK"
 E
 ENTRYPOINT ["/opt/agent/entrypoint.sh"]

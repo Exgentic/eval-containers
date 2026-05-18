@@ -2,21 +2,21 @@
 # 17944 tasks. Data: HuggingFace mandarjoshi/trivia_qa (rc.nocontext/validation)
 # Agent prints answer to stdout. Test matches against any normalized alias.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="triviaqa"
-LABEL dock.benchmark.description="TriviaQA - trivia question answering"
-LABEL dock.benchmark.tasks="17944"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
-LABEL dock.benchmark.url="https://nlp.cs.washington.edu/triviaqa/"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1705.03551"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="triviaqa"
+LABEL eval.benchmark.description="TriviaQA - trivia question answering"
+LABEL eval.benchmark.tasks="17944"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
+LABEL eval.benchmark.url="https://nlp.cs.washington.edu/triviaqa/"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1705.03551"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 # Note: aliases is written as JSON (to aliases.json) to preserve list structure
 # for the custom grader.
 RUN python3 <<'PYEOF'
@@ -51,7 +51,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=triviaqa
+ENV EVAL_BENCHMARK=triviaqa
 
 # Custom test: normalize agent output + any alias; accept if any match.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -71,7 +71,7 @@ def normalize(s):
     s = ' '.join(s.split())
     return s
 
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 try:
     with open('/output/agent/stdout.log') as f:
         agent = f.read()
@@ -96,26 +96,26 @@ PY
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/aliases.txt ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/aliases.txt ]; then
   python3 - <<'PY'
 import ast, json, os
-tid = os.environ['DOCK_TASK_ID']
+tid = os.environ['EVAL_TASK_ID']
 with open(f'/tasks/{tid}/aliases.txt') as f:
     aliases = ast.literal_eval(f.read())
 with open(f'/tasks/{tid}/aliases.json', 'w') as f:
     json.dump(aliases, f)
 PY
-  rm -f /tasks/$DOCK_TASK_ID/aliases.txt
-  chmod 600 /tasks/$DOCK_TASK_ID/aliases.json
+  rm -f /tasks/$EVAL_TASK_ID/aliases.txt
+  chmod 600 /tasks/$EVAL_TASK_ID/aliases.json
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this trivia question. Print only the answer, nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

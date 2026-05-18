@@ -9,7 +9,7 @@
 #   docker buildx bake -f <(scripts/bake-plan.sh) --push
 #
 # Env:
-#   REGISTRY   (default: quay.io/dock-eval)
+#   REGISTRY   (default: quay.io/eval-containers)
 #   TAG        (default: latest)
 #   GIT_SHA    (default: empty)
 #   BUILD_DATE (default: empty)
@@ -17,7 +17,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-REGISTRY="${REGISTRY:-quay.io/dock-eval}"
+REGISTRY="${REGISTRY:-quay.io/eval-containers}"
 TAG="${TAG:-latest}"
 GIT_SHA="${GIT_SHA:-}"
 BUILD_DATE="${BUILD_DATE:-}"
@@ -37,8 +37,8 @@ emit_target() {
       platforms: ["linux/amd64"],
       tags:      [$tag],
       labels: {
-        "dock.type":                         $type,
-        "org.opencontainers.image.source":   "https://github.com/dock-eval/dock",
+        "eval.type":                         $type,
+        "org.opencontainers.image.source":   "https://github.com/eval-containers/eval-containers",
         "org.opencontainers.image.revision": $sha,
         "org.opencontainers.image.created":  $date
       }

@@ -2,22 +2,22 @@
 # 4183 tasks. Data: HuggingFace openlifescienceai/medmcqa (validation split - test has no labels)
 # Agent prints answer letter (A-D) to stdout. Test compares to expected answer.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="medmcqa"
-LABEL dock.benchmark.description="MedMCQA - multi-subject multi-choice medical entrance exam questions"
-LABEL dock.benchmark.tasks="4183"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="91c6572c454088bf71b679ad90aa8dffcd0d5868"
-LABEL dock.benchmark.url="https://github.com/MedMCQA/MedMCQA"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2203.14371"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="91c6572c454088bf71b679ad90aa8dffcd0d5868"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="medmcqa"
+LABEL eval.benchmark.description="MedMCQA - multi-subject multi-choice medical entrance exam questions"
+LABEL eval.benchmark.tasks="4183"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="91c6572c454088bf71b679ad90aa8dffcd0d5868"
+LABEL eval.benchmark.url="https://github.com/MedMCQA/MedMCQA"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.14371"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="91c6572c454088bf71b679ad90aa8dffcd0d5868"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/.
+# fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 urllib.request.urlretrieve(
@@ -45,21 +45,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=medmcqa
+ENV EVAL_BENCHMARK=medmcqa
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this medical multiple choice question. Print only the letter of the correct answer (A, B, C, or D), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

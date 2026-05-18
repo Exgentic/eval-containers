@@ -5,7 +5,7 @@ name: Build sweep
 # so 96 benchmarks land in parallel instead of an hour-long serial
 # sweep. Each job runs:
 #
-#   DOCK_BUILD_FILTER=<name> cargo test --test build build_every_benchmark -- --ignored
+#   EVAL_BUILD_FILTER=<name> cargo test --test build build_every_benchmark -- --ignored
 #
 # which the build test honors by only building the matching subdir.
 #
@@ -73,7 +73,7 @@ jobs:
 
       - name: Build ${{ matrix.bench }}
         env:
-          DOCK_BUILD_FILTER: ${{ matrix.bench }}
+          EVAL_BUILD_FILTER: ${{ matrix.bench }}
         run: |
           cargo test --test build build_every_benchmark -- --ignored --nocapture
 
@@ -100,7 +100,7 @@ jobs:
 
       - name: Build ${{ matrix.agent }}
         env:
-          DOCK_BUILD_FILTER: ${{ matrix.agent }}
+          EVAL_BUILD_FILTER: ${{ matrix.agent }}
         run: |
           cargo test --test build build_every_agent -- --ignored --nocapture
 

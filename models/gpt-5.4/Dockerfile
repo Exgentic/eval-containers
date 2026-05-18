@@ -1,11 +1,11 @@
-FROM quay.io/dock-eval/core/litellm:latest
+FROM quay.io/eval-containers/core/litellm:latest
 
-LABEL dock.type="model"
-LABEL dock.model.name="gpt-5.4"
-LABEL dock.model.provider="azure"
-LABEL dock.model.litellm_version="main-v1.83.3-stable"
+LABEL eval.type="model"
+LABEL eval.model.name="gpt-5.4"
+LABEL eval.model.provider="azure"
+LABEL eval.model.litellm_version="main-v1.83.3-stable"
 
-ENV DOCK_LITELLM_VERSION_DEFAULT="main-v1.83.3-stable"
+ENV EVAL_LITELLM_VERSION_DEFAULT="main-v1.83.3-stable"
 
 COPY config.yaml /app/config.yaml
 CMD ["--port", "4000", "--config", "/app/config.yaml"]

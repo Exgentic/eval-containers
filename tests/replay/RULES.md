@@ -59,7 +59,7 @@ Parent: [../RULES.md](../RULES.md)
 
 9. **Emergency fixture addition.** If a new benchmark is added to the
    released set between release cycles, its fixture MAY be captured
-   out-of-band via `dock run <bench> --agent <agent> --model <model>`,
+   out-of-band via `eval-containers run <bench> --agent <agent> --model <model>`,
    as long as the provenance record is updated in the same commit.
 
 ## Core image dependency

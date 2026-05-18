@@ -1,14 +1,14 @@
-//! `dock prune` — reclaim disk by removing stale dock images and build cache.
+//! `eval-containers prune` — reclaim disk by removing stale eval-containers images and build cache.
 //!
 //! By default: removes dangling images and build cache (safe, keeps tagged images).
-//! With --all: also removes all dock.type labeled images (destructive).
+//! With --all: also removes all eval.type labeled images (destructive).
 
 use clap::Args;
 use std::process::Command;
 
 #[derive(Args)]
 pub struct PruneArgs {
-    /// Also remove all dock.* labeled images (destructive)
+    /// Also remove all eval-containers.* labeled images (destructive)
     #[arg(long)]
     pub all: bool,
 }
@@ -19,11 +19,11 @@ pub fn execute(args: PruneArgs) -> Result<(), String> {
     run(&["image", "prune", "-f"])?;
 
     if args.all {
-        eprintln!("$ docker images --filter 'label=dock.type' -q | xargs -r docker rmi -f");
+        eprintln!("$ docker images --filter 'label=eval.type' -q | xargs -r docker rmi -f");
         let images = Command::new("docker")
-            .args(["images", "--filter", "label=dock.type", "-q"])
+            .args(["images", "--filter", "label=eval.type", "-q"])
             .output()
-            .map_err(|e| format!("failed to list dock images: {e}"))?;
+            .map_err(|e| format!("failed to list eval-containers images: {e}"))?;
         let ids: Vec<&str> = std::str::from_utf8(&images.stdout)
             .unwrap_or("")
             .lines()

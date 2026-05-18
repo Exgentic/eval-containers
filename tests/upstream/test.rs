@@ -4,10 +4,10 @@
 //! upstream artifact still resolves. Three kinds of reference are
 //! checked:
 //!
-//! 1. `LABEL dock.benchmark.data_revision` paired with any URL in the
+//! 1. `LABEL eval.benchmark.data_revision` paired with any URL in the
 //!    same Dockerfile that embeds `{revision}` — we probe the URL via
 //!    HEAD.
-//! 2. `LABEL dock.benchmark.upstream_base="<registry>/<image>:<tag>"` —
+//! 2. `LABEL eval.benchmark.upstream_base="<registry>/<image>:<tag>"` —
 //!    pullability checked via `docker manifest inspect` (metadata-only,
 //!    no pull, no daemon write). This is a static validation per
 //!    tests/RULES.md principle 2a.
@@ -73,13 +73,13 @@ struct UpstreamRef {
 }
 
 /// First-party images — built from `core/*` in this repo, tagged with
-/// the `quay.io/dock-eval/core/...` ref so benchmarks and agents can
+/// the `quay.io/eval-containers/core/...` ref so benchmarks and agents can
 /// resolve them after the bootstrap phase in `tests/build/test.rs`.
 /// Not yet published to the real registry, so `docker manifest
 /// inspect` would always 404. These are out of scope for the upstream
 /// drift probe.
 fn is_first_party(image: &str) -> bool {
-    image.starts_with("quay.io/dock-eval/")
+    image.starts_with("quay.io/eval-containers/")
 }
 
 fn probe_benchmark(dir: &Path) -> Vec<UpstreamRef> {
@@ -88,8 +88,8 @@ fn probe_benchmark(dir: &Path) -> Vec<UpstreamRef> {
         return out;
     };
 
-    // FROM lines (skip ${DOCK_TASK_ID} interpolations — per-task-build,
-    // and first-party Dock images — those are locally built from
+    // FROM lines (skip ${EVAL_TASK_ID} interpolations — per-task-build,
+    // and first-party Eval Containers images — those are locally built from
     // `core/*` in this repo, not pulled from the registry; no upstream
     // drift to probe).
     for line in text.lines() {
@@ -111,7 +111,7 @@ fn probe_benchmark(dir: &Path) -> Vec<UpstreamRef> {
 
     // upstream_base label
     for line in text.lines() {
-        if let Some(val) = extract_label_value(line, "dock.benchmark.upstream_base") {
+        if let Some(val) = extract_label_value(line, "eval.benchmark.upstream_base") {
             if !val.contains('$') {
                 out.push(UpstreamRef {
                     kind: "upstream_base",
@@ -290,8 +290,8 @@ fn extract_urls_handles_multiple() {
 
 #[test]
 fn extract_label_value_parses() {
-    let line = r#"LABEL dock.benchmark.upstream_base="ghcr.io/foo/bar:1.0""#;
-    let val = extract_label_value(line, "dock.benchmark.upstream_base");
+    let line = r#"LABEL eval.benchmark.upstream_base="ghcr.io/foo/bar:1.0""#;
+    let val = extract_label_value(line, "eval.benchmark.upstream_base");
     assert_eq!(val, Some("ghcr.io/foo/bar:1.0".into()));
 }
 

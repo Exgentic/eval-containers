@@ -2,23 +2,23 @@
 # 165 test tasks from Codeforces/AtCoder/etc. Data: HuggingFace deepmind/code_contests
 # Agent writes a solution. Test runs it against public + private + generated I/O tests.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="code-contests"
-LABEL dock.benchmark.description="CodeContests - DeepMind competitive programming problems"
-LABEL dock.benchmark.tasks="165"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="802411c3010cb00d1b05bad57ca77365a3c699d6"
-LABEL dock.benchmark.url="https://github.com/google-deepmind/code_contests"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2203.07814"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="802411c3010cb00d1b05bad57ca77365a3c699d6"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="code-contests"
+LABEL eval.benchmark.description="CodeContests - DeepMind competitive programming problems"
+LABEL eval.benchmark.tasks="165"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="802411c3010cb00d1b05bad57ca77365a3c699d6"
+LABEL eval.benchmark.url="https://github.com/google-deepmind/code_contests"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.07814"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="802411c3010cb00d1b05bad57ca77365a3c699d6"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout. Merged I/O tests are stored as a JSON array in the
-# "tests_json" field; the entrypoint expands them into /tasks/$DOCK_TASK_ID/tests/.
+# "tests_json" field; the entrypoint expands them into /tasks/$EVAL_TASK_ID/tests/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -50,13 +50,13 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=code-contests
+ENV EVAL_BENCHMARK=code-contests
 
 # Test: compile or run agent solution and check against stdio test cases
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 PASSED=0
 TOTAL=0
@@ -101,11 +101,11 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/tests_json.txt ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/tests_json.txt ]; then
   python3 - <<'PY'
 import json, os
-tid = os.environ['DOCK_TASK_ID']
+tid = os.environ['EVAL_TASK_ID']
 with open(f'/tasks/{tid}/tests_json.txt') as f:
     tests = json.loads(f.read())
 os.makedirs(f'/tasks/{tid}/tests', exist_ok=True)
@@ -115,15 +115,15 @@ for k, tc in enumerate(tests):
     with open(f'/tasks/{tid}/tests/{k}.out', 'w') as fo:
         fo.write(tc['output'])
 PY
-  rm -f /tasks/$DOCK_TASK_ID/tests_json.txt
-  chmod -R 600 /tasks/$DOCK_TASK_ID/tests
+  rm -f /tasks/$EVAL_TASK_ID/tests_json.txt
+  chmod -R 600 /tasks/$EVAL_TASK_ID/tests
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this competitive programming problem. Read input from stdin and write output to stdout. Print ONLY the complete source code (Python or C++), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

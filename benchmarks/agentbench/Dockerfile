@@ -5,18 +5,18 @@
 # Data: github THUDM/AgentBench (data/dbbench/standard.jsonl)
 # Agent prints the answer to stdout. Test compares stdout to expected label.
 
-FROM quay.io/dock-eval/core/benchmark-base-github:latest
+FROM quay.io/eval-containers/core/benchmark-base-github:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="agentbench"
-LABEL dock.benchmark.description="AgentBench (DBBench subset) - LLM-as-agent evaluation on tabular database questions"
-LABEL dock.benchmark.tasks="300"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="d1e4a10db08c87075c78972e48ecc182be03e2d5"
-LABEL dock.benchmark.url="https://github.com/THUDM/AgentBench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2308.03688"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="d1e4a10db08c87075c78972e48ecc182be03e2d5"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="agentbench"
+LABEL eval.benchmark.description="AgentBench (DBBench subset) - LLM-as-agent evaluation on tabular database questions"
+LABEL eval.benchmark.tasks="300"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="d1e4a10db08c87075c78972e48ecc182be03e2d5"
+LABEL eval.benchmark.url="https://github.com/THUDM/AgentBench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.03688"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="d1e4a10db08c87075c78972e48ecc182be03e2d5"
 
 # Fetch the DBBench standard split and write every task to /tasks/all.jsonl.
 RUN python3 <<'PYEOF'
@@ -65,21 +65,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=agentbench
+ENV EVAL_BENCHMARK=agentbench
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a database agent. Answer the following question using the provided table. Print ONLY the final answer value, with no explanation, no units, and no extra text.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

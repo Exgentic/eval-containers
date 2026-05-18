@@ -36,11 +36,11 @@ Parent: [../RULES.md](../RULES.md)
 
 7. **Compose parse** — every `benchmarks/*/compose.yaml` MUST parse
    via `docker compose config` (static YAML parse, no daemon write).
-   Plus: no compose `image:` field MUST use `DOCK_*_VERSION` as a
-   placeholder (use `DOCK_*_TAG` per [/RULES.md](/RULES.md) rule 9).
+   Plus: no compose `image:` field MUST use `EVAL_*_VERSION` as a
+   placeholder (use `EVAL_*_TAG` per [/RULES.md](/RULES.md) rule 9).
 
-8. **Shared entrypoint contract** — `core/entrypoint/dock-entrypoint.sh`
-   MUST reference `DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, and
+8. **Shared entrypoint contract** — `core/entrypoint/eval-entrypoint.sh`
+   MUST reference `EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, and
    write `/output/task/version.json` + `/output/agent/version.json`.
 
 ## Adding a new rule

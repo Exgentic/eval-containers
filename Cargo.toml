@@ -1,5 +1,5 @@
 [package]
-name = "dock"
+name = "eval-containers"
 version = "0.1.0"
 edition = "2024"
 description = "A build system for AI agent evaluations"

@@ -1,4 +1,4 @@
-# Shared service definitions for Dock benchmarks.
+# Shared service definitions for Eval Containers benchmarks.
 # Benchmark compose files use `extends` to inherit these.
 #
 # Note: volume mounts are NOT defined here because `extends` resolves
@@ -7,15 +7,15 @@
 
 services:
   model:
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/models/${DOCK_MODEL:-claude-sonnet-4}:latest
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/${EVAL_MODEL:-claude-sonnet-4}:latest
     environment:
       # Hard cap on model spend per run. The litellm entrypoint reads
       # this env var and rewrites the max_budget field in config.yaml
       # before starting the proxy. When spend crosses the cap, litellm
       # returns BudgetExceededError and the agent's next request fails.
-      # Default $1; override via `dock run --max-budget <N>` or the
-      # DOCK_MODEL_MAX_BUDGET env var. See compose/RULES.md rule 10.
-      - DOCK_MODEL_MAX_BUDGET=${DOCK_MODEL_MAX_BUDGET:-1}
+      # Default $1; override via `eval-containers run --max-budget <N>` or the
+      # EVAL_MODEL_MAX_BUDGET env var. See compose/RULES.md rule 10.
+      - EVAL_MODEL_MAX_BUDGET=${EVAL_MODEL_MAX_BUDGET:-1}
     networks:
       - internal
       - default
@@ -39,10 +39,10 @@ services:
       - ANTHROPIC_API_KEY=sk-proxy
       - OPENAI_API_KEY=sk-proxy
       # Non-secret config vars the agent needs (previously from env_file)
-      - DOCK_MODEL=${DOCK_MODEL:-claude-sonnet-4}
-      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
+      - EVAL_MODEL=${EVAL_MODEL:-claude-sonnet-4}
+      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-300}
       - TASK=${TASK:-}
-      - DOCK_TASK_ID=${DOCK_TASK_ID:-}
+      - EVAL_TASK_ID=${EVAL_TASK_ID:-}
       - EXPECTED_ANSWER=${EXPECTED_ANSWER:-}
     depends_on:
       model:

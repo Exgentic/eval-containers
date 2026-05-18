@@ -5,7 +5,7 @@
 
 ## Abstract
 
-A model image is a pre-configured LLM proxy. It routes API calls to a provider, logs every request and response, and enforces key isolation. This document defines the requirements for model images in Dock.
+A model image is a pre-configured LLM proxy. It routes API calls to a provider, logs every request and response, and enforces key isolation. This document defines the requirements for model images in Eval Containers.
 
 ## Terminology
 
@@ -37,7 +37,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 8. **Third axis.** The model is the third independent axis of an evaluation (alongside benchmark and agent). Changing the model MUST NOT require changes to the benchmark or agent.
 
-9. **Any provider.** Model images MUST work with any LiteLLM-supported provider (Anthropic, OpenAI, Azure, Google, Ollama, custom endpoints) without modifying Dock.
+9. **Any provider.** Model images MUST work with any LiteLLM-supported provider (Anthropic, OpenAI, Azure, Google, Ollama, custom endpoints) without modifying Eval Containers.
 
 ### Multiple Roles
 
@@ -47,19 +47,19 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Versioning
 
-12. **Reproducible by default.** The LiteLLM version MUST be pinned at build time as a default (`ARG LITELLM_VERSION=<semver>` or via the `core/litellm` base image tag) and recorded in `dock.model.litellm_version`. The image MUST produce a reproducible routing layer with no environment variables set.
+12. **Reproducible by default.** The LiteLLM version MUST be pinned at build time as a default (`ARG LITELLM_VERSION=<semver>` or via the `core/litellm` base image tag) and recorded in `eval.model.litellm_version`. The image MUST produce a reproducible routing layer with no environment variables set.
 
-13. **Runtime version override.** The entrypoint MUST read `DOCK_LITELLM_VERSION` and, when set, install or activate that LiteLLM version in place of the default before the proxy starts. The entrypoint MUST write the resolved version to `/output/model/version.json`. When unset, the build-time default applies. `DOCK_MODEL_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
+13. **Runtime version override.** The entrypoint MUST read `EVAL_LITELLM_VERSION` and, when set, install or activate that LiteLLM version in place of the default before the proxy starts. The entrypoint MUST write the resolved version to `/output/model/version.json`. When unset, the build-time default applies. `EVAL_MODEL_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
 
 ### Image
 
 14. **Health endpoint.** The model service MUST expose a health check on port 4000. The eval container MUST wait for it before starting.
 
-15. **Labels.** Every model image MUST include labels: `dock.type`, `dock.model.name`, `dock.model.provider`, `dock.model.litellm_version`.
+15. **Labels.** Every model image MUST include labels: `eval.type`, `eval.model.name`, `eval.model.provider`, `eval.model.litellm_version`.
 
 ### Budget
 
-16. **Hard budget cap.** The proxy MUST enforce a per-run hard cap on spend via `DOCK_MODEL_MAX_BUDGET` (USD). When crossed, the proxy MUST reject further requests with `BudgetExceededError` so the agent's next call fails fast. Default cap is `$1`. Configurable via `.env` or `dock run --max-budget <N>`; no model-specific value MAY be hardcoded in image config (per [compose/RULES.md](../compose/RULES.md) rule 10). The enforcement entrypoint lives in `core/litellm/dock-litellm-entrypoint.sh` and rewrites `/app/config.yaml`'s `max_budget` at container start from the env var.
+16. **Hard budget cap.** The proxy MUST enforce a per-run hard cap on spend via `EVAL_MODEL_MAX_BUDGET` (USD). When crossed, the proxy MUST reject further requests with `BudgetExceededError` so the agent's next call fails fast. Default cap is `$1`. Configurable via `.env` or `eval-containers run --max-budget <N>`; no model-specific value MAY be hardcoded in image config (per [compose/RULES.md](../compose/RULES.md) rule 10). The enforcement entrypoint lives in `core/litellm/eval-litellm-entrypoint.sh` and rewrites `/app/config.yaml`'s `max_budget` at container start from the env var.
 
 ## References
 
@@ -71,5 +71,5 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | Date | Change |
 |------|--------|
 | 2026-04-13 | Initial version |
-| 2026-04-14 | Added versioning section (rules 12-13): reproducible LiteLLM version pinned at build time, runtime override via `DOCK_LITELLM_VERSION`, container tag selection via `DOCK_MODEL_TAG`. Added `dock.model.litellm_version` to required labels (rule 15). Renumbered Image rules 14-15. |
-| 2026-04-15 | Added rule 16: `DOCK_MODEL_MAX_BUDGET` hard-cap (default $1) enforced by the shared core/litellm entrypoint wrapper. |
+| 2026-04-14 | Added versioning section (rules 12-13): reproducible LiteLLM version pinned at build time, runtime override via `EVAL_LITELLM_VERSION`, container tag selection via `EVAL_MODEL_TAG`. Added `eval.model.litellm_version` to required labels (rule 15). Renumbered Image rules 14-15. |
+| 2026-04-15 | Added rule 16: `EVAL_MODEL_MAX_BUDGET` hard-cap (default $1) enforced by the shared core/litellm entrypoint wrapper. |

@@ -1,6 +1,6 @@
-# How to verify Dock
+# How to verify Eval Containers
 
-Dock is verified on **two axes**:
+Eval Containers is verified on **two axes**:
 
 - **Mechanical** — deterministic checks, run by `cargo test` or an external
   tool, produce pass/fail.
@@ -34,7 +34,7 @@ executor, every artifact. Nothing ships without walking it.
 | 14 | Build       | Build every model image                                  | mechanical  | `cargo test --test build models -- --ignored`                    | N/N                                                     |
 | 15 | Replay      | Replay every recorded fixture                            | mechanical  | `cargo test --test replay -- --ignored`                          | 23/23 trajectories reproduce same score                 |
 | 16 | End-to-end  | One fresh live run (smoke)                               | mechanical  | `cargo test --test run smoke -- --ignored`                       | score file exists, score ∈ [0, 1]                       |
-| 17 | End-to-end  | Eyeball the smoke trajectory                             | manual      | read `/tmp/dock-smoke/trajectory.jsonl`                          | agent saw a real task, response looks sane              |
+| 17 | End-to-end  | Eyeball the smoke trajectory                             | manual      | read `/tmp/eval-smoke/trajectory.jsonl`                          | agent saw a real task, response looks sane              |
 | 18 | Upstream    | Every pinned dataset revision still resolves            | mechanical  | `cargo test --test upstream datasets -- --ignored`               | no 404s on HuggingFace / GitHub raw URLs                |
 | 19 | Upstream    | Every pinned pip / npm version still exists              | mechanical  | `cargo test --test upstream packages -- --ignored`               | no yanked or removed versions                           |
 | 20 | Upstream    | Every `FROM` base image still pullable                  | mechanical  | `cargo test --test upstream bases -- --ignored`                  | no dangling base refs                                   |
@@ -55,11 +55,11 @@ executor, every artifact. Nothing ships without walking it.
 | 35 | Fleet       | Generate the mechanical half of the report              | mechanical  | `cargo test --test fleet -- --ignored`                           | `tests/fleet-report.md` (auto section)                  |
 | 36 | Fleet       | Paste audit answers into the report                     | manual      | edit `tests/fleet-report.md`                                     | manual section filled in                                |
 | 37 | Fleet       | Classify the overall verdict                            | manual      | apply FLEET.md rules to the report                               | red / yellow / green                                    |
-| 38 | Release     | Tag the commit                                           | manual      | `git tag -s dock-vX.Y.Z`                                         | signed tag                                              |
-| 39 | Release     | Push tag + trigger release workflow                     | manual      | `git push origin dock-vX.Y.Z`                                    | workflow running                                        |
-| 40 | Release     | Verify images published to `quay.io`                    | manual      | `docker pull quay.io/dock-eval/<image>:dock-vX.Y.Z` on each     | every expected tag exists                               |
-| 41 | Release     | Verify image signatures / attestations                  | manual      | `cosign verify quay.io/dock-eval/<image>:dock-vX.Y.Z`            | signatures valid                                        |
-| 42 | Release     | Smoke test one image from a clean machine               | manual      | pull + `dock run` from a different host                          | end-to-end works from nothing                           |
+| 38 | Release     | Tag the commit                                           | manual      | `git tag -s eval-vX.Y.Z`                                         | signed tag                                              |
+| 39 | Release     | Push tag + trigger release workflow                     | manual      | `git push origin eval-vX.Y.Z`                                    | workflow running                                        |
+| 40 | Release     | Verify images published to `quay.io`                    | manual      | `docker pull quay.io/eval-containers/<image>:eval-vX.Y.Z` on each     | every expected tag exists                               |
+| 41 | Release     | Verify image signatures / attestations                  | manual      | `cosign verify quay.io/eval-containers/<image>:eval-vX.Y.Z`            | signatures valid                                        |
+| 42 | Release     | Smoke test one image from a clean machine               | manual      | pull + `eval-containers run` from a different host                          | end-to-end works from nothing                           |
 | 43 | Release     | Attach `fleet-report.md` to GitHub release              | manual      | `gh release create ... --notes-file tests/fleet-report.md`       | release visible                                         |
 | 44 | Post        | Announce release (Slack / Discord / site)               | manual      | paste release notes                                              | linked release URL                                      |
 | 45 | Post        | File follow-up issues for yellow findings               | manual      | `gh issue create` per yellow                                     | every known gap has an issue                            |

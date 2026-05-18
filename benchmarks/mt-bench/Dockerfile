@@ -4,22 +4,22 @@
 # Scoring: LLM-as-judge single-answer grading on a 1-10 scale.
 # Ref: https://arxiv.org/abs/2306.05685
 
-FROM quay.io/dock-eval/core/benchmark-base-github:latest
+FROM quay.io/eval-containers/core/benchmark-base-github:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mt-bench"
-LABEL dock.benchmark.description="MT-Bench - multi-turn chat evaluation with LLM-as-judge grading"
-LABEL dock.benchmark.tasks="160"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
-LABEL dock.benchmark.url="https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge/data/mt_bench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2306.05685"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mt-bench"
+LABEL eval.benchmark.description="MT-Bench - multi-turn chat evaluation with LLM-as-judge grading"
+LABEL eval.benchmark.tasks="160"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
+LABEL eval.benchmark.url="https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge/data/mt_bench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2306.05685"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/.
+# fields into /tasks/$EVAL_TASK_ID/.
 #
 # MT-Bench questions themselves are open-source in FastChat (Apache-2.0).
 # The lmsys/mt_bench_human_judgments HF dataset is gated, but we don't need
@@ -93,7 +93,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=mt-bench
+ENV EVAL_BENCHMARK=mt-bench
 
 # Custom test: LLM-as-judge single-answer grading (1-10 scale, normalized to [0,1])
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -106,7 +106,7 @@ RUN chmod +x /tests/test.sh
 RUN cat > /tests/grade.py <<'GRADE'
 import os, json, re, urllib.request
 
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 d = f'/tasks/{task_id}'
 category = open(f'{d}/category.txt').read().strip()
 prompt = open(f'{d}/problem.txt').read()
@@ -172,11 +172,11 @@ RUN chmod -R 700 /tests
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

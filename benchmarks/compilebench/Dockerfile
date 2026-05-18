@@ -4,29 +4,29 @@
 # Tasks are in Harbor format — each has environment/Dockerfile, instruction.md, tests/test.sh.
 #
 # This Dockerfile fetches a single task's assets from the upstream repo
-# and sets up the Dock entrypoint. The base image comes from the task's own Dockerfile.
+# and sets up the Eval Containers entrypoint. The base image comes from the task's own Dockerfile.
 #
-# Build: docker build --build-arg DOCK_TASK_ID=curl -t quay.io/dock-eval/benchmarks/compilebench-curl:latest .
+# Build: docker build --build-arg EVAL_TASK_ID=curl -t quay.io/eval-containers/benchmarks/compilebench-curl:latest .
 
-ARG DOCK_TASK_ID
+ARG EVAL_TASK_ID
 ARG BASE_IMAGE=ubuntu:22.04
 
 FROM ${BASE_IMAGE}
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="compilebench"
-LABEL dock.benchmark.description="CompileBench - compile open source projects"
-LABEL dock.benchmark.tasks="15"
-LABEL dock.benchmark.env="per-task"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="66e27468505706643088b79f8efad6260c274dc5"
-LABEL dock.benchmark.url="https://github.com/QuesmaOrg/CompileBench"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="66e27468505706643088b79f8efad6260c274dc5"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="compilebench"
+LABEL eval.benchmark.description="CompileBench - compile open source projects"
+LABEL eval.benchmark.tasks="15"
+LABEL eval.benchmark.env="per-task"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="66e27468505706643088b79f8efad6260c274dc5"
+LABEL eval.benchmark.url="https://github.com/QuesmaOrg/CompileBench"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="66e27468505706643088b79f8efad6260c274dc5"
 
-ARG DOCK_TASK_ID
-ENV DOCK_BENCHMARK=compilebench
-ENV DOCK_COMPILEBENCH_UPSTREAM_ID=${DOCK_TASK_ID}
-ENV DOCK_TASK_ID=0
+ARG EVAL_TASK_ID
+ENV EVAL_BENCHMARK=compilebench
+ENV EVAL_COMPILEBENCH_UPSTREAM_ID=${EVAL_TASK_ID}
+ENV EVAL_TASK_ID=0
 
 # Install curl + python3 on whatever base the task's Dockerfile picks.
 # Retry apt-get up to 3 times to survive transient network hiccups, then
@@ -53,29 +53,29 @@ RUN set -eux; \
 # /tasks/all.jsonl. Single-JSONL task layout (see benchmarks/RULES.md #22).
 ARG COMPILEBENCH_REV=66e27468505706643088b79f8efad6260c274dc5
 RUN mkdir -p /tasks /tests && \
-    BASE="https://raw.githubusercontent.com/QuesmaOrg/CompileBench/${COMPILEBENCH_REV}/datasets/compilebench/${DOCK_COMPILEBENCH_UPSTREAM_ID}" && \
+    BASE="https://raw.githubusercontent.com/QuesmaOrg/CompileBench/${COMPILEBENCH_REV}/datasets/compilebench/${EVAL_COMPILEBENCH_UPSTREAM_ID}" && \
     curl -sfL --retry 5 --retry-delay 3 --retry-connrefused --max-time 120 \
       "$BASE/instruction.md" -o /tmp/instruction.md && \
     curl -sfL --retry 5 --retry-delay 3 --retry-connrefused --max-time 120 \
       "$BASE/tests/test.sh" -o /tests/test.sh && \
     chmod +x /tests/test.sh && \
-    python3 -c "import json; open('/tasks/all.jsonl','w').write(json.dumps({'id':'${DOCK_COMPILEBENCH_UPSTREAM_ID}','problem':open('/tmp/instruction.md').read()})+'\n')" && \
+    python3 -c "import json; open('/tasks/all.jsonl','w').write(json.dumps({'id':'${EVAL_COMPILEBENCH_UPSTREAM_ID}','problem':open('/tmp/instruction.md').read()})+'\n')" && \
     rm -f /tmp/instruction.md
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /workdir
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

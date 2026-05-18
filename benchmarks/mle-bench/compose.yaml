@@ -2,7 +2,7 @@
 # 75 Kaggle-style ML engineering tasks. Per-task images. Requires internet
 # (agent installs ML packages and may download pretrained weights at runtime).
 #
-# dock run mle-bench --agent claude-code --task-id <competition-slug>
+# eval-containers run mle-bench --agent claude-code --task-id <competition-slug>
 
 services:
   model:
@@ -11,20 +11,20 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-mle-bench}/${DOCK_TASK_ID:-default}/model:/output:rw
+      - ../../output/${EVAL_BENCHMARK:-mle-bench}/${EVAL_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/mle-bench-${DOCK_TASK_ID}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/mle-bench-${EVAL_TASK_ID}--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
     environment:
-      - DOCK_BENCHMARK=mle-bench
-      - DOCK_TASK_ID=${DOCK_TASK_ID}
-      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-86400}
+      - EVAL_BENCHMARK=mle-bench
+      - EVAL_TASK_ID=${EVAL_TASK_ID}
+      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-86400}
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-mle-bench}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${DOCK_BENCHMARK:-mle-bench}/${DOCK_TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${EVAL_BENCHMARK:-mle-bench}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${EVAL_BENCHMARK:-mle-bench}/${EVAL_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

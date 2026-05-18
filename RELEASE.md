@@ -1,15 +1,15 @@
-# Releasing Dock Images
+# Releasing Eval Containers Images
 
 **Status:** Production release flow
 **Date:** April 2026
 
-This document covers how Dock images get built, tagged, and pushed to the registry in bulk. For the local dev loop (build one benchmark, run one replay), see [tests/LOCAL.md](tests/LOCAL.md) instead.
+This document covers how Eval Containers images get built, tagged, and pushed to the registry in bulk. For the local dev loop (build one benchmark, run one replay), see [tests/LOCAL.md](tests/LOCAL.md) instead.
 
 ## Principle
 
 **CI builds the fleet. Humans build one thing at a time.**
 
-Releasing means producing 77 benchmark images + 11 agent images, all tagged, labeled, and pushed to `quay.io/dock-eval`. That's a fleet build. The right tool is [Docker Bake](https://docs.docker.com/build/bake/) — Docker's native declarative multi-image build tool.
+Releasing means producing 77 benchmark images + 11 agent images, all tagged, labeled, and pushed to `quay.io/eval-containers`. That's a fleet build. The right tool is [Docker Bake](https://docs.docker.com/build/bake/) — Docker's native declarative multi-image build tool.
 
 ## The plan
 
@@ -17,7 +17,7 @@ There is no committed bake file. `scripts/bake-plan.sh` emits a bake plan as JSO
 
 Every target gets:
 - `platforms: ["linux/amd64"]`
-- `dock.type` label (benchmark or agent)
+- `eval.type` label (benchmark or agent)
 - OCI labels: `image.source`, `image.revision` (git sha), `image.created` (build date)
 - Tag: `${REGISTRY}/{benchmarks|agents}/<name>:${TAG}`
 
@@ -37,7 +37,7 @@ docker buildx bake -f <(scripts/bake-plan.sh) --check
 # Build everything locally (no push)
 docker buildx bake -f <(scripts/bake-plan.sh)
 
-# Build + push to quay.io/dock-eval (the actual release step)
+# Build + push to quay.io/eval-containers (the actual release step)
 docker buildx bake -f <(scripts/bake-plan.sh) --push
 
 # One target by name
@@ -78,7 +78,7 @@ But in practice, you probably shouldn't. Let CI do fleet builds. Humans build on
 ## What Bake does not do
 
 - **Run tests.** Use `cargo test --test compose` and `cargo test --test replay`.
-- **Run agents.** Use `docker compose up` or `dock run`.
+- **Run agents.** Use `docker compose up` or `eval-containers run`.
 - **Verify labels post-build.** That's `tests/build.rs`.
 
 ## References

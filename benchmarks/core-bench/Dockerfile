@@ -4,19 +4,19 @@
 # Full reproduction requires the upstream CodeOcean capsules (not distributed here),
 # so scoring is deferred to an external grader: reward = -1 per benchmarks/RULES.md rule 19.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="core-bench"
-LABEL dock.benchmark.description="CORE-Bench - reproducing scientific research code results"
-LABEL dock.benchmark.tasks="45"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="e32a2980e72fe6eb04ee04eb749458f570625663"
-LABEL dock.benchmark.url="https://github.com/siegelz/core-bench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2409.11363"
-LABEL dock.benchmark.external_grading="true"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="e32a2980e72fe6eb04ee04eb749458f570625663"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="core-bench"
+LABEL eval.benchmark.description="CORE-Bench - reproducing scientific research code results"
+LABEL eval.benchmark.tasks="45"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="e32a2980e72fe6eb04ee04eb749458f570625663"
+LABEL eval.benchmark.url="https://github.com/siegelz/core-bench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2409.11363"
+LABEL eval.benchmark.external_grading="true"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="e32a2980e72fe6eb04ee04eb749458f570625663"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
@@ -72,7 +72,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl /tasks/.prompt_easy.txt /tasks/.prompt_hard.txt
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=core-bench
+ENV EVAL_BENCHMARK=core-bench
 
 # Test: collect agent's report.json for external grading; write reward=-1.
 # If the agent-produced report.json is a strict superset of expected results
@@ -82,7 +82,7 @@ ENV DOCK_BENCHMARK=core-bench
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 
 # Collect the agent's report.json (best effort) for downstream grading.
 REPORT=""
@@ -106,11 +106,11 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

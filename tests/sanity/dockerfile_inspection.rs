@@ -242,7 +242,7 @@ fn has_untagged_from(t: &str) -> bool {
 
 fn has_legacy_env_var(t: &str) -> bool {
     // Find references to unprefixed $TASK_ID / $BENCHMARK. Must NOT
-    // match $DOCK_TASK_ID / $DOCK_BENCHMARK (prefixed), and must not
+    // match $EVAL_TASK_ID / $EVAL_BENCHMARK (prefixed), and must not
     // match longer identifiers like $TASK_ID_STR (substring false
     // positive). Whole-identifier match: the character after the
     // needle must not be an identifier continuation character.
@@ -251,8 +251,8 @@ fn has_legacy_env_var(t: &str) -> bool {
         let mut rest = t;
         while let Some(i) = rest.find(needle) {
             let before = &rest[..i];
-            // Skip if preceded by DOCK_ (e.g. $DOCK_TASK_ID)
-            let prefixed = before.ends_with("DOCK_");
+            // Skip if preceded by EVAL_ (e.g. $EVAL_TASK_ID)
+            let prefixed = before.ends_with("EVAL_");
             // Skip if followed by an identifier char (e.g. $TASK_ID_STR)
             let after = &rest[i + needle.len()..];
             let extended = after.chars().next().map(ident_char).unwrap_or(false);
@@ -367,13 +367,13 @@ fn pip_install_without_no_cache(t: &str) -> bool {
 }
 
 fn label_name_matches_dir(t: &str, dir: &str) -> bool {
-    // Look for dock.benchmark.name or dock.agent.name and compare to dir.
+    // Look for eval.benchmark.name or eval.agent.name and compare to dir.
     for line in t.lines() {
         let l = line.trim();
         if !l.starts_with("LABEL ") {
             continue;
         }
-        for key in ["dock.benchmark.name=", "dock.agent.name="] {
+        for key in ["eval.benchmark.name=", "eval.agent.name="] {
             if let Some(i) = l.find(key) {
                 let rest = &l[i + key.len()..];
                 // Extract value between quotes if quoted
@@ -391,7 +391,7 @@ fn label_name_matches_dir(t: &str, dir: &str) -> bool {
 }
 
 fn missing_dock_type(t: &str) -> bool {
-    !t.contains(r#"LABEL dock.type="#)
+    !t.contains(r#"LABEL eval.type="#)
 }
 
 // ─── New rules from the 2026-04-15 dockerfile audit walk ───────────
@@ -488,7 +488,7 @@ fn phantom_pip_uninstall_in_separate_run(t: &str) -> bool {
 fn missing_data_revision_when_fetching_mutable_ref(t: &str) -> bool {
     // If a RUN step pulls from a mutable HuggingFace/GitHub ref
     // (refs/convert/parquet, main, master, HEAD) AND the image lacks
-    // a dock.benchmark.data_revision label, upstream can silently
+    // a eval.benchmark.data_revision label, upstream can silently
     // change the dataset under us.
     //
     // Only inspect RUN steps — LABEL values can contain "/main/"
@@ -518,7 +518,7 @@ fn missing_data_revision_when_fetching_mutable_ref(t: &str) -> bool {
     }
     // Allow if there's a data_revision label with a non-mutable value
     for line in t.lines() {
-        if line.contains("dock.benchmark.data_revision=") {
+        if line.contains("eval.benchmark.data_revision=") {
             let rest = &line[line.find('=').unwrap() + 1..];
             let val = rest.trim_matches(['"', '\'', ' ', '\t']);
             if !val.is_empty()
@@ -535,13 +535,13 @@ fn missing_data_revision_when_fetching_mutable_ref(t: &str) -> bool {
 }
 
 fn upstream_base_unpinned(t: &str) -> bool {
-    // Yellow signal: `dock.benchmark.upstream_base` label pins to :latest
+    // Yellow signal: `eval.benchmark.upstream_base` label pins to :latest
     // (or leaves the tag unset, which is equivalent). Per benchmarks/RULES.md
     // principle 21b, third-party bases are legal but MUST be flagged as
     // supply-chain debt until mirrored or pinned by digest.
     for line in t.lines() {
-        if let Some(i) = line.find("dock.benchmark.upstream_base=") {
-            let rest = &line[i + "dock.benchmark.upstream_base=".len()..];
+        if let Some(i) = line.find("eval.benchmark.upstream_base=") {
+            let rest = &line[i + "eval.benchmark.upstream_base=".len()..];
             let val = rest
                 .trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())
                 .split(['"', '\''])
@@ -557,10 +557,10 @@ fn upstream_base_unpinned(t: &str) -> bool {
 }
 
 fn data_revision_is_stale_pointer(t: &str) -> bool {
-    // dock.benchmark.data_revision="latest|main|master|HEAD|''"
+    // eval.benchmark.data_revision="latest|main|master|HEAD|''"
     for line in t.lines() {
-        if let Some(i) = line.find("dock.benchmark.data_revision=") {
-            let rest = &line[i + "dock.benchmark.data_revision=".len()..];
+        if let Some(i) = line.find("eval.benchmark.data_revision=") {
+            let rest = &line[i + "eval.benchmark.data_revision=".len()..];
             let val = rest
                 .trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())
                 .split(|c: char| c == '"' || c == '\'' || c.is_whitespace())
@@ -602,13 +602,13 @@ fn uses_full_python_when_slim_exists(t: &str) -> bool {
 // ─── Type predicates (RULES.md principle 9: version-override axis) ─
 
 fn is_benchmark(t: &str) -> bool {
-    t.contains(r#"LABEL dock.type="benchmark""#)
+    t.contains(r#"LABEL eval.type="benchmark""#)
 }
 fn is_agent(t: &str) -> bool {
-    t.contains(r#"LABEL dock.type="agent""#)
+    t.contains(r#"LABEL eval.type="agent""#)
 }
 fn is_model(t: &str) -> bool {
-    t.contains(r#"LABEL dock.type="model""#)
+    t.contains(r#"LABEL eval.type="model""#)
 }
 
 // Exemption: models/replay is the in-repo replay stub that does NOT
@@ -619,16 +619,16 @@ fn is_replay_model(_t: &str, dir: &str) -> bool {
 }
 
 fn benchmark_missing_version_default(t: &str, _dir: &str) -> bool {
-    is_benchmark(t) && !t.contains("ENV DOCK_BENCHMARK_VERSION_DEFAULT=")
+    is_benchmark(t) && !t.contains("ENV EVAL_BENCHMARK_VERSION_DEFAULT=")
 }
 fn agent_missing_version_default(t: &str, _dir: &str) -> bool {
-    is_agent(t) && !t.contains("ENV DOCK_AGENT_VERSION_DEFAULT=")
+    is_agent(t) && !t.contains("ENV EVAL_AGENT_VERSION_DEFAULT=")
 }
 fn model_missing_litellm_version_label(t: &str, dir: &str) -> bool {
-    is_model(t) && !is_replay_model(t, dir) && !t.contains("LABEL dock.model.litellm_version=")
+    is_model(t) && !is_replay_model(t, dir) && !t.contains("LABEL eval.model.litellm_version=")
 }
 fn model_missing_litellm_version_default(t: &str, dir: &str) -> bool {
-    is_model(t) && !is_replay_model(t, dir) && !t.contains("ENV DOCK_LITELLM_VERSION_DEFAULT=")
+    is_model(t) && !is_replay_model(t, dir) && !t.contains("ENV EVAL_LITELLM_VERSION_DEFAULT=")
 }
 
 // ─── Rule catalog (data, not code) ─────────────────────────────────
@@ -637,7 +637,7 @@ const RULES: &[Rule] = &[
     // ── Red ─────────────────────────────────────────────────────────
     Rule::red(
         "missing_dock_type",
-        "Dockerfile is missing a LABEL dock.type= declaration",
+        "Dockerfile is missing a LABEL eval.type= declaration",
         |t, _| missing_dock_type(t),
     ),
     Rule::red(
@@ -652,12 +652,12 @@ const RULES: &[Rule] = &[
     ),
     Rule::red(
         "legacy_env_var",
-        "references $TASK_ID or $BENCHMARK — must use $DOCK_TASK_ID / $DOCK_BENCHMARK",
+        "references $TASK_ID or $BENCHMARK — must use $EVAL_TASK_ID / $EVAL_BENCHMARK",
         |t, _| has_legacy_env_var(t),
     ),
     Rule::red(
         "label_dir_mismatch",
-        "dock.benchmark.name / dock.agent.name label does not match directory name",
+        "eval.benchmark.name / eval.agent.name label does not match directory name",
         |t, dir| !label_name_matches_dir(t, dir),
     ),
     Rule::red(
@@ -688,7 +688,7 @@ const RULES: &[Rule] = &[
     // ── Yellow ──────────────────────────────────────────────────────
     Rule::yellow(
         "stale_data_revision",
-        "dock.benchmark.data_revision is empty, latest, main, master, or HEAD",
+        "eval.benchmark.data_revision is empty, latest, main, master, or HEAD",
         |t, _| data_revision_is_stale_pointer(t),
     ),
     Rule::yellow(
@@ -698,7 +698,7 @@ const RULES: &[Rule] = &[
     ),
     Rule::yellow(
         "upstream_base_unpinned",
-        "dock.benchmark.upstream_base pins :latest — third-party registry, supply-chain debt (benchmarks/RULES.md 21b)",
+        "eval.benchmark.upstream_base pins :latest — third-party registry, supply-chain debt (benchmarks/RULES.md 21b)",
         |t, _| upstream_base_unpinned(t),
     ),
     // ── New rules from the 2026-04-15 dockerfile audit walk ────────
@@ -724,31 +724,31 @@ const RULES: &[Rule] = &[
     ),
     Rule::yellow(
         "missing_data_revision_when_fetching_mutable_ref",
-        "Dockerfile fetches from a mutable ref (refs/convert/parquet, main, master) without pinning dock.benchmark.data_revision",
+        "Dockerfile fetches from a mutable ref (refs/convert/parquet, main, master) without pinning eval.benchmark.data_revision",
         |t, _| missing_data_revision_when_fetching_mutable_ref(t),
     ),
     // ── Version-override contract (RULES.md principle 9) ──────────
     // Each image declares its baked-in upstream version as an ENV so
-    // core/entrypoint/dock-entrypoint.sh can compare it to a runtime
-    // DOCK_*_VERSION override and decide whether to refetch/reinstall.
+    // core/entrypoint/eval-entrypoint.sh can compare it to a runtime
+    // EVAL_*_VERSION override and decide whether to refetch/reinstall.
     Rule::red(
         "benchmark_missing_version_default",
-        "benchmark Dockerfile is missing ENV DOCK_BENCHMARK_VERSION_DEFAULT (RULES.md 9)",
+        "benchmark Dockerfile is missing ENV EVAL_BENCHMARK_VERSION_DEFAULT (RULES.md 9)",
         benchmark_missing_version_default,
     ),
     Rule::red(
         "agent_missing_version_default",
-        "agent Dockerfile is missing ENV DOCK_AGENT_VERSION_DEFAULT (RULES.md 9)",
+        "agent Dockerfile is missing ENV EVAL_AGENT_VERSION_DEFAULT (RULES.md 9)",
         agent_missing_version_default,
     ),
     Rule::red(
         "model_missing_litellm_version_label",
-        "model Dockerfile is missing LABEL dock.model.litellm_version (models/RULES.md 15)",
+        "model Dockerfile is missing LABEL eval.model.litellm_version (models/RULES.md 15)",
         model_missing_litellm_version_label,
     ),
     Rule::red(
         "model_missing_litellm_version_default",
-        "model Dockerfile is missing ENV DOCK_LITELLM_VERSION_DEFAULT (RULES.md 9)",
+        "model Dockerfile is missing ENV EVAL_LITELLM_VERSION_DEFAULT (RULES.md 9)",
         model_missing_litellm_version_default,
     ),
 ];
@@ -815,70 +815,70 @@ fn rule_missing_dock_type_fires() {
 
 #[test]
 fn rule_hardcoded_secret_fires() {
-    let bad = "FROM alpine:3\nENV OPENAI_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789abcdefghij\nLABEL dock.type=\"agent\"\n";
+    let bad = "FROM alpine:3\nENV OPENAI_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789abcdefghij\nLABEL eval.type=\"agent\"\n";
     let fs = inspect_dockerfile(Path::new("t"), bad, "t");
     assert!(fs.iter().any(|f| f.rule == "hardcoded_secret"));
 }
 
 #[test]
 fn rule_untagged_from_fires() {
-    let bad = "FROM ubuntu\nLABEL dock.type=\"agent\"\n";
+    let bad = "FROM ubuntu\nLABEL eval.type=\"agent\"\n";
     let fs = inspect_dockerfile(Path::new("t"), bad, "t");
     assert!(fs.iter().any(|f| f.rule == "untagged_from"));
 }
 
 #[test]
 fn rule_untagged_from_allows_scratch() {
-    let ok = "FROM scratch\nLABEL dock.type=\"agent\"\n";
+    let ok = "FROM scratch\nLABEL eval.type=\"agent\"\n";
     let fs = inspect_dockerfile(Path::new("t"), ok, "t");
     assert!(!fs.iter().any(|f| f.rule == "untagged_from"));
 }
 
 #[test]
 fn rule_legacy_env_var_fires() {
-    let bad = "FROM alpine:3\nLABEL dock.type=\"benchmark\"\nRUN echo $TASK_ID\n";
+    let bad = "FROM alpine:3\nLABEL eval.type=\"benchmark\"\nRUN echo $TASK_ID\n";
     let fs = inspect_dockerfile(Path::new("t"), bad, "t");
     assert!(fs.iter().any(|f| f.rule == "legacy_env_var"));
 }
 
 #[test]
 fn rule_legacy_env_var_allows_dock_prefix() {
-    let ok = "FROM alpine:3\nLABEL dock.type=\"benchmark\"\nRUN echo $DOCK_TASK_ID\n";
+    let ok = "FROM alpine:3\nLABEL eval.type=\"benchmark\"\nRUN echo $EVAL_TASK_ID\n";
     let fs = inspect_dockerfile(Path::new("t"), ok, "t");
     assert!(!fs.iter().any(|f| f.rule == "legacy_env_var"));
 }
 
 #[test]
 fn rule_label_dir_mismatch_fires() {
-    let bad = "FROM alpine:3\nLABEL dock.type=\"benchmark\"\nLABEL dock.benchmark.name=\"other\"\n";
+    let bad = "FROM alpine:3\nLABEL eval.type=\"benchmark\"\nLABEL eval.benchmark.name=\"other\"\n";
     let fs = inspect_dockerfile(Path::new("t"), bad, "mybench");
     assert!(fs.iter().any(|f| f.rule == "label_dir_mismatch"));
 }
 
 #[test]
 fn rule_apt_cleanup_fires() {
-    let bad = "FROM ubuntu:24.04\nLABEL dock.type=\"agent\"\nRUN apt-get update && apt-get install -y curl\n";
+    let bad = "FROM ubuntu:24.04\nLABEL eval.type=\"agent\"\nRUN apt-get update && apt-get install -y curl\n";
     let fs = inspect_dockerfile(Path::new("t"), bad, "t");
     assert!(fs.iter().any(|f| f.rule == "apt_no_cleanup"));
 }
 
 #[test]
 fn rule_apt_cleanup_allows_inline_rm() {
-    let ok = "FROM ubuntu:24.04\nLABEL dock.type=\"agent\"\nRUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*\n";
+    let ok = "FROM ubuntu:24.04\nLABEL eval.type=\"agent\"\nRUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*\n";
     let fs = inspect_dockerfile(Path::new("t"), ok, "t");
     assert!(!fs.iter().any(|f| f.rule == "apt_no_cleanup"));
 }
 
 #[test]
 fn rule_todo_or_fixme_fires() {
-    let bad = "FROM alpine:3\nLABEL dock.type=\"agent\"\n# TODO: fix this\n";
+    let bad = "FROM alpine:3\nLABEL eval.type=\"agent\"\n# TODO: fix this\n";
     let fs = inspect_dockerfile(Path::new("t"), bad, "t");
     assert!(fs.iter().any(|f| f.rule == "todo_or_fixme"));
 }
 
 #[test]
 fn rule_todo_allows_future_block() {
-    let ok = "FROM alpine:3\nLABEL dock.type=\"agent\"\n# FUTURE: consider swapping to alpine\n";
+    let ok = "FROM alpine:3\nLABEL eval.type=\"agent\"\n# FUTURE: consider swapping to alpine\n";
     let fs = inspect_dockerfile(Path::new("t"), ok, "t");
     assert!(!fs.iter().any(|f| f.rule == "todo_or_fixme"));
 }

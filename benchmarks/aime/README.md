@@ -19,14 +19,14 @@ American Invitational Mathematics Examination
 
 ## What the agent sees
 
-The agent receives a task of the form: "Solve this problem. Print only the answer as a single integer." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Solve this problem. Print only the answer as a single integer." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
-Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared against `/tasks/$DOCK_TASK_ID/answer.txt` by exact string match.
+Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared against `/tasks/$EVAL_TASK_ID/answer.txt` by exact string match.
 
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run aime`
+- `compose.yaml` — compose file for `eval-containers run aime`
 - `README.md` — this file

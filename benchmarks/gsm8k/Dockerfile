@@ -2,21 +2,21 @@
 # 1319 tasks. Data: HuggingFace openai/gsm8k (main/test)
 # Agent prints answer to stdout. Test compares to expected numeric answer.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="gsm8k"
-LABEL dock.benchmark.description="GSM8K - grade school math word problems requiring multi-step reasoning"
-LABEL dock.benchmark.tasks="1319"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="740312add88f781978c0658806c59bc2815b9866"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/gsm8k"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2110.14168"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="740312add88f781978c0658806c59bc2815b9866"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="gsm8k"
+LABEL eval.benchmark.description="GSM8K - grade school math word problems requiring multi-step reasoning"
+LABEL eval.benchmark.tasks="1319"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="740312add88f781978c0658806c59bc2815b9866"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/gsm8k"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2110.14168"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="740312add88f781978c0658806c59bc2815b9866"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). One line per task,
-# /dock-materialize-task materializes only the requested row at runtime.
+# /eval-materialize-task materializes only the requested row at runtime.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 os.makedirs('/tasks', exist_ok=True)
@@ -41,21 +41,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=gsm8k
+ENV EVAL_BENCHMARK=gsm8k
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this grade school math problem. Print only the final numeric answer as a single number with no units, commas, or explanation.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

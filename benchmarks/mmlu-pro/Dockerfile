@@ -2,23 +2,23 @@
 # 12032 tasks. Data: HuggingFace TIGER-Lab/MMLU-Pro
 # Agent prints answer to stdout. Test compares stdout to expected answer.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mmlu-pro"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="MMLU-Pro - graduate-level knowledge, multiple choice"
-LABEL dock.benchmark.tasks="12032"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="54611cde22c74cca43dd78732198de6abe971398"
-LABEL dock.benchmark.url="https://github.com/TIGER-AI-Lab/MMLU-Pro"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmlu_pro"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.01574"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="54611cde22c74cca43dd78732198de6abe971398"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mmlu-pro"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="MMLU-Pro - graduate-level knowledge, multiple choice"
+LABEL eval.benchmark.tasks="12032"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="54611cde22c74cca43dd78732198de6abe971398"
+LABEL eval.benchmark.url="https://github.com/TIGER-AI-Lab/MMLU-Pro"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmlu_pro"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.01574"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="54611cde22c74cca43dd78732198de6abe971398"
 
 # Single-JSONL task layout. Root-only; runtime entrypoint materializes the
-# requested task's fields into /tasks/$DOCK_TASK_ID/ on demand.
+# requested task's fields into /tasks/$EVAL_TASK_ID/ on demand.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, string, json
 urllib.request.urlretrieve(
@@ -45,21 +45,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=mmlu-pro
+ENV EVAL_BENCHMARK=mmlu-pro
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this multiple choice question. Print only the letter of the correct answer (A, B, C, D, E, F, G, H, I, or J), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

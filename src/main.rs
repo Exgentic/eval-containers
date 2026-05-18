@@ -11,13 +11,13 @@ use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
-    name = "dock",
+    name = "eval-containers",
     version,
     about = "A build system for AI agent evaluations"
 )]
 struct Cli {
     /// Docker registry to use
-    #[arg(long, env = "DOCK_REGISTRY", default_value = "quay.io/dock-eval")]
+    #[arg(long, env = "EVAL_REGISTRY", default_value = "quay.io/eval-containers")]
     registry: String,
 
     #[command(subcommand)]
@@ -30,11 +30,11 @@ enum Commands {
     Build(build::BuildArgs),
     /// Push images to the registry
     Push(push::PushArgs),
-    /// List dock images with metadata (benchmarks, agents, models, evals)
+    /// List eval-containers images with metadata (benchmarks, agents, models, evals)
     List(list::ListArgs),
-    /// Show dock images with sizes (wraps `docker images`)
+    /// Show eval-containers images with sizes (wraps `docker images`)
     Images(images::ImagesArgs),
-    /// Inspect a dock image (wraps `docker inspect`)
+    /// Inspect a eval-containers image (wraps `docker inspect`)
     Inspect(inspect::InspectArgs),
     /// Reclaim disk (wraps `docker builder prune` + `docker image prune`)
     Prune(prune::PruneArgs),

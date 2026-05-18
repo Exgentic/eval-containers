@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # Open Interpreter agent image
-FROM quay.io/dock-eval/core/agent-base-python:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="open-interpreter"
-LABEL dock.agent.description="Open Interpreter: natural-language code execution agent"
-LABEL dock.agent.runtime="python"
-LABEL dock.agent.url="https://github.com/OpenInterpreter/open-interpreter"
-LABEL dock.agent.version="0.4.3"
-ENV DOCK_AGENT_VERSION_DEFAULT="0.4.3"
-ENV DOCK_AGENT=open-interpreter
+FROM quay.io/eval-containers/core/agent-base-python:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="open-interpreter"
+LABEL eval.agent.description="Open Interpreter: natural-language code execution agent"
+LABEL eval.agent.runtime="python"
+LABEL eval.agent.url="https://github.com/OpenInterpreter/open-interpreter"
+LABEL eval.agent.version="0.4.3"
+ENV EVAL_AGENT_VERSION_DEFAULT="0.4.3"
+ENV EVAL_AGENT=open-interpreter
 RUN pip install --no-cache-dir open-interpreter==0.4.3
 COPY run_oi.py /opt/agent/run_oi.py
 RUN chmod +x /opt/agent/run_oi.py

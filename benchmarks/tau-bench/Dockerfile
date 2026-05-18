@@ -4,25 +4,25 @@
 # Evaluation is state-based (database + output checks), requires the TAU-bench runtime.
 # Externally graded: test writes -1.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="tau-bench"
-LABEL dock.benchmark.description="TAU-bench - Tool-Agent-User interaction (retail + airline)"
-LABEL dock.benchmark.tasks="165"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="59a200c6d575d595120f1cb70fea53cef0632f6b"
-LABEL dock.benchmark.url="https://github.com/sierra-research/tau-bench"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/tau2"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.12045"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="59a200c6d575d595120f1cb70fea53cef0632f6b"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="tau-bench"
+LABEL eval.benchmark.description="TAU-bench - Tool-Agent-User interaction (retail + airline)"
+LABEL eval.benchmark.tasks="165"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="59a200c6d575d595120f1cb70fea53cef0632f6b"
+LABEL eval.benchmark.url="https://github.com/sierra-research/tau-bench"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/tau2"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.12045"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="59a200c6d575d595120f1cb70fea53cef0632f6b"
 
 # Install tau-bench at pinned commit and extract tasks + policy docs
 RUN pip install --no-cache-dir git+https://github.com/sierra-research/tau-bench.git@59a200c6d575d595120f1cb70fea53cef0632f6b
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import json, os
 
@@ -65,7 +65,7 @@ COPY agent.py /app/agent.py
 COPY run_tau_bench.py /app/run_tau_bench.py
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=tau-bench
+ENV EVAL_BENCHMARK=tau-bench
 
 # Test: TAU-bench evaluation is state-based (database checks + output verification)
 # and requires the full TAU-bench runtime with a user simulator. Externally graded.
@@ -78,11 +78,11 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

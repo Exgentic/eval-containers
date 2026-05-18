@@ -2,22 +2,22 @@
 # 14042 tasks. Data: HuggingFace cais/mmlu (all/test)
 # Agent prints answer letter to stdout. Test compares to expected letter.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mmlu"
-LABEL dock.benchmark.description="MMLU - massive multitask multiple choice across 57 academic subjects"
-LABEL dock.benchmark.tasks="14042"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="c30699e8356da336a370243923dbaf21066bb9fe"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/cais/mmlu"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2009.03300"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="c30699e8356da336a370243923dbaf21066bb9fe"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mmlu"
+LABEL eval.benchmark.description="MMLU - massive multitask multiple choice across 57 academic subjects"
+LABEL eval.benchmark.tasks="14042"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="c30699e8356da336a370243923dbaf21066bb9fe"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/cais/mmlu"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2009.03300"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="c30699e8356da336a370243923dbaf21066bb9fe"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/.
+# fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 urllib.request.urlretrieve(
@@ -48,21 +48,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=mmlu
+ENV EVAL_BENCHMARK=mmlu
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this multiple choice question. Print only the letter of the correct answer (A, B, C, or D), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

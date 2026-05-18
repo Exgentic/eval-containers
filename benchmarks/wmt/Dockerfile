@@ -2,18 +2,18 @@
 # ~9600 tasks (~960 usable segments x 10 language pairs, en->X). Data: HuggingFace google/wmt24pp
 # Agent prints translation to stdout. Test compares to expected reference translation.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="wmt"
-LABEL dock.benchmark.description="WMT24++ - multilingual machine translation from English to 10 target locales"
-LABEL dock.benchmark.tasks="9600"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/google/wmt24pp"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2502.12404"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="wmt"
+LABEL eval.benchmark.description="WMT24++ - multilingual machine translation from English to 10 target locales"
+LABEL eval.benchmark.tasks="9600"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/google/wmt24pp"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.12404"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
 
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
@@ -60,22 +60,22 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=wmt
+ENV EVAL_BENCHMARK=wmt
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  LANG_NAME=$(cat /tasks/$DOCK_TASK_ID/language_name.txt)
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  LANG_NAME=$(cat /tasks/$EVAL_TASK_ID/language_name.txt)
   export TASK="Translate the following English text into ${LANG_NAME}. Print only the translated text with no explanation, quotes, or additional commentary.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

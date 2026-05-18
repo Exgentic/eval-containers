@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # Gemini CLI agent image (Google)
-FROM quay.io/dock-eval/core/agent-base-node:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="gemini-cli"
-LABEL dock.agent.description="Google Gemini CLI"
-LABEL dock.agent.runtime="node"
-LABEL dock.agent.url="https://github.com/google-gemini/gemini-cli"
-LABEL dock.agent.version="0.37.2"
-ENV DOCK_AGENT_VERSION_DEFAULT="0.37.2"
-ENV DOCK_AGENT=gemini-cli
+FROM quay.io/eval-containers/core/agent-base-node:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="gemini-cli"
+LABEL eval.agent.description="Google Gemini CLI"
+LABEL eval.agent.runtime="node"
+LABEL eval.agent.url="https://github.com/google-gemini/gemini-cli"
+LABEL eval.agent.version="0.37.2"
+ENV EVAL_AGENT_VERSION_DEFAULT="0.37.2"
+ENV EVAL_AGENT=gemini-cli
 RUN npm install -g @google/gemini-cli@0.37.2
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash

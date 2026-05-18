@@ -3,22 +3,22 @@
 # 220 tasks. Data: HuggingFace openai/gdpval
 # Professional knowledge work. Scoring: LLM-as-judge via model proxy.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="gdpval"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="GDPval - professional knowledge work"
-LABEL dock.benchmark.tasks="220"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="true"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/openai/gdpval"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gdpval"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="gdpval"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="GDPval - professional knowledge work"
+LABEL eval.benchmark.tasks="220"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="true"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/gdpval"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gdpval"
 # FUTURE: pin to a specific parquet conversion commit once upstream
 # publishes a stable release. Currently uses the auto-generated parquet
 # ref which is stable-enough but not formally pinned.
-LABEL dock.benchmark.data_revision="auto-parquet-ref"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="auto-parquet-ref"
+LABEL eval.benchmark.data_revision="auto-parquet-ref"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="auto-parquet-ref"
 
 # libreoffice is installed for AGENT runtime use — gdpval tasks include
 # reference docx/xlsx/pptx files downloaded via reference_urls.json in
@@ -57,7 +57,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=gdpval
+ENV EVAL_BENCHMARK=gdpval
 
 # Test: GDPval is externally graded by OpenAI's auto-grader.
 # test.sh packages deliverables and uploads to HuggingFace for submission.
@@ -69,7 +69,7 @@ mkdir -p /logs/verifier
 cp /app/deliverable* /output/agent/ 2>/dev/null || true
 
 # Package results for HuggingFace upload (same format as inspect_evals)
-TASK_ID_STR=$(cat /tasks/${DOCK_TASK_ID}/id.txt 2>/dev/null || echo "unknown")
+TASK_ID_STR=$(cat /tasks/${EVAL_TASK_ID}/id.txt 2>/dev/null || echo "unknown")
 TIMESTAMP=$(date +%Y-%m-%dT%H-%M-%S%z | sed 's/+/plus/;s/-\([0-9]\)/minus\1/')
 UPLOAD_DIR="/tmp/gdpval_hf_upload/${TIMESTAMP}_gdpval"
 mkdir -p "$UPLOAD_DIR/$TASK_ID_STR"
@@ -99,14 +99,14 @@ RUN chmod +x /tests/test.sh
 # Load task, download reference files to /app, then exec shared entrypoint
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
   # Download reference files to /app for the agent
-  if [ -f /tasks/$DOCK_TASK_ID/reference_urls_json.txt ]; then
+  if [ -f /tasks/$EVAL_TASK_ID/reference_urls_json.txt ]; then
     python3 -c "
 import json, urllib.request
-urls = json.load(open('/tasks/$DOCK_TASK_ID/reference_urls_json.txt'))
+urls = json.load(open('/tasks/$EVAL_TASK_ID/reference_urls_json.txt'))
 if isinstance(urls, list):
     for url in urls:
         name = url.split('/')[-1].split('?')[0]
@@ -117,7 +117,7 @@ elif isinstance(urls, dict):
 " 2>/dev/null || true
   fi
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

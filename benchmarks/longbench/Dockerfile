@@ -4,18 +4,18 @@
 # subset (14 tasks) for simplicity.
 # Ref: https://huggingface.co/datasets/THUDM/LongBench (arXiv:2308.14508)
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="longbench"
-LABEL dock.benchmark.description="LongBench - long-context multi-task (QA, summarization, code, few-shot)"
-LABEL dock.benchmark.tasks="3750"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/THUDM/LongBench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2308.14508"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="longbench"
+LABEL eval.benchmark.description="LongBench - long-context multi-task (QA, summarization, code, few-shot)"
+LABEL eval.benchmark.tasks="3750"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/THUDM/LongBench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.14508"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
 
 RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
 
@@ -102,7 +102,7 @@ RUN rm -rf /tmp/data
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=longbench
+ENV EVAL_BENCHMARK=longbench
 
 # Custom test: metric selected per task type (F1 / ROUGE-L / classification / edit-sim)
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -117,7 +117,7 @@ import os, json, re, string
 from collections import Counter
 from difflib import SequenceMatcher
 
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 d = f'/tasks/{task_id}'
 metric = open(f'{d}/metric.txt').read().strip()
 answers = json.load(open(f'{d}/answers_json.txt'))
@@ -220,13 +220,13 @@ RUN chmod -R 700 /tests
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  cp /tasks/$DOCK_TASK_ID/problem.txt /app/task.txt
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  cp /tasks/$EVAL_TASK_ID/problem.txt /app/task.txt
   chmod 644 /app/task.txt
   export TASK="Your task is in /app/task.txt. Read the instructions and context there carefully, then print only the requested answer to stdout."
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

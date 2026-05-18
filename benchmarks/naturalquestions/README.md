@@ -16,7 +16,7 @@ NaturalQuestions - Google search queries (open-domain short answer)
 
 ## What the agent sees
 
-The agent receives a task of the form: "Answer this open-domain question. Print only the answer, nothing else." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Answer this open-domain question. Print only the answer, nothing else." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -25,5 +25,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile.
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run naturalquestions`
+- `compose.yaml` — compose file for `eval-containers run naturalquestions`
 - `README.md` — this file

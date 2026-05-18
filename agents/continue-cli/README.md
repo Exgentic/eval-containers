@@ -13,15 +13,15 @@ Continue CLI (`cn`) — a terminal-native, multi-model coding agent from the Con
 
 ## What it does
 
-Continue started as an IDE extension; the `cn` CLI exposes the same agent loop in a terminal. It supports multiple model providers, configurable tool permissions, and a plan/execute pattern. Dock points it at the LiteLLM proxy so every provider backend routes through a single logged endpoint.
+Continue started as an IDE extension; the `cn` CLI exposes the same agent loop in a terminal. It supports multiple model providers, configurable tool permissions, and a plan/execute pattern. Eval Containers points it at the LiteLLM proxy so every provider backend routes through a single logged endpoint.
 
-## How Dock runs it
+## How Eval Containers runs it
 
 The entrypoint wires `cn` to the proxy via the OpenAI-compatible API surface, runs one turn with the task as the user prompt, and captures stdout. `cn` prints its final answer on completion; the evaluator reads that.
 
 ## Version
 
-Pinned to `1.5.45` at image build time. Override with `DOCK_AGENT_VERSION=<version>` at build or run time per [RULES.md](../RULES.md) principle 9.
+Pinned to `1.5.45` at image build time. Override with `EVAL_AGENT_VERSION=<version>` at build or run time per [RULES.md](../RULES.md) principle 9.
 
 ## Files
 

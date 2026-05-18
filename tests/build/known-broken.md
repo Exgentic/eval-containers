@@ -22,10 +22,10 @@ Last serial sweep (round 4, 2026-04-15 at 96 benchmarks) was
 `81/96 pass · 5 skip · 10 fail`. A fresh sweep against the 100-benchmark
 fleet is pending and lands with the next release snapshot.
 
-**Local full-fleet caveat.** On podman, `DOCK_BUILD_PARALLEL >= 4`
+**Local full-fleet caveat.** On podman, `EVAL_BUILD_PARALLEL >= 4`
 saturates the VM's network stack and produces non-deterministic
 `curl`/`pip`/`apt-get` timeout storms (observed 2026-04-17). For local
-full-fleet sweeps use `DOCK_BUILD_PARALLEL=2` or fewer; CI under real
+full-fleet sweeps use `EVAL_BUILD_PARALLEL=2` or fewer; CI under real
 Docker runs them reliably at higher concurrency. See
 [tests/LOCAL.md](../LOCAL.md) Level 2b.
 
@@ -46,7 +46,7 @@ These benchmarks need credentials or network paths the local host doesn't have. 
 
 ## Per-task-build benchmarks
 
-These benchmarks have `FROM …${DOCK_TASK_ID}…` in their Dockerfiles. The
+These benchmarks have `FROM …${EVAL_TASK_ID}…` in their Dockerfiles. The
 build sweep drives each with a curated representative task id from
 `per_task_build_args` in `tests/build/test.rs`. Some upstreams are
 anonymously pullable; others require credentials or a locally-built
@@ -70,7 +70,7 @@ ahead-of-time mirror in the release registry. See release runbook.
 
 | Agent | Root cause | Mitigation |
 |---|---|---|
-| `plandex` | Multi-stage Dockerfile combines `FROM plandexai/plandex-server:...` and `FROM quay.io/dock-eval/core/agent-base-rust:latest`. testcontainers-rs / bollard / BuildKit can't resolve the second locally-tagged FROM when the first references a remote image — attempts to pull `quay.io/dock-eval/core/agent-base-rust` from the registry and fails with `unauthorized`. Direct `docker build agents/plandex/` from the shell succeeds (BuildKit classic-image-store path). | Runs fine on CI Linux real Docker. Locally, `docker build -t quay.io/dock-eval/agents/plandex:latest agents/plandex/` works. Not a structural defect — a podman-BuildKit multi-stage quirk. |
+| `plandex` | Multi-stage Dockerfile combines `FROM plandexai/plandex-server:...` and `FROM quay.io/eval-containers/core/agent-base-rust:latest`. testcontainers-rs / bollard / BuildKit can't resolve the second locally-tagged FROM when the first references a remote image — attempts to pull `quay.io/eval-containers/core/agent-base-rust` from the registry and fails with `unauthorized`. Direct `docker build agents/plandex/` from the shell succeeds (BuildKit classic-image-store path). | Runs fine on CI Linux real Docker. Locally, `docker build -t quay.io/eval-containers/agents/plandex:latest agents/plandex/` works. Not a structural defect — a podman-BuildKit multi-stage quirk. |
 
 ## Fixed since round 4
 

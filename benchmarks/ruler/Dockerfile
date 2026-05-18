@@ -4,18 +4,18 @@
 # common_words_extraction across a range of context lengths.
 # Ref: https://github.com/hsiehjackson/RULER (Hsieh et al. 2024, arXiv:2404.06654)
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="ruler"
-LABEL dock.benchmark.description="RULER - synthetic long-context benchmark (NIAH variants at multiple lengths)"
-LABEL dock.benchmark.tasks="200"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
-LABEL dock.benchmark.url="https://github.com/hsiehjackson/RULER"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.06654"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="ruler"
+LABEL eval.benchmark.description="RULER - synthetic long-context benchmark (NIAH variants at multiple lengths)"
+LABEL eval.benchmark.tasks="200"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
+LABEL eval.benchmark.url="https://github.com/hsiehjackson/RULER"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.06654"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
 
 # Generate RULER-style tasks deterministically. Uses Paul Graham essays
 # as the haystack source (same style as the reference implementation's
@@ -149,7 +149,7 @@ RUN rm -rf /tmp/niah
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=ruler
+ENV EVAL_BENCHMARK=ruler
 
 # Custom test: token-level recall of expected answer tokens in response
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -157,7 +157,7 @@ RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 mkdir -p /logs/verifier
 python3 <<'GRADE'
 import os
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 try:
     response = open('/output/agent/stdout.log').read()
 except FileNotFoundError:
@@ -178,15 +178,15 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  cp /tasks/$DOCK_TASK_ID/context.txt /app/context.txt
-  cp /tasks/$DOCK_TASK_ID/question.txt /app/question.txt
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  cp /tasks/$EVAL_TASK_ID/context.txt /app/context.txt
+  cp /tasks/$EVAL_TASK_ID/question.txt /app/question.txt
   chmod 644 /app/context.txt /app/question.txt
   export TASK="Read the long context in /app/context.txt carefully. Then answer the question in /app/question.txt based solely on information found in the context. Print only the answer tokens/values, with no explanation."
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

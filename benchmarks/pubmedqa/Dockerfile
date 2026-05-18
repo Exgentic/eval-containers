@@ -2,22 +2,22 @@
 # 1000 tasks. Data: HuggingFace qiaojin/PubMedQA (pqa_labeled/train)
 # Agent reads a biomedical abstract and answers yes/no/maybe to a question.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="pubmedqa"
-LABEL dock.benchmark.description="PubMedQA - biomedical research question answering from abstracts"
-LABEL dock.benchmark.tasks="1000"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="9001f2853fb87cab8d220904e0de81ac6973b318"
-LABEL dock.benchmark.url="https://github.com/pubmedqa/pubmedqa"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1909.06146"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="9001f2853fb87cab8d220904e0de81ac6973b318"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="pubmedqa"
+LABEL eval.benchmark.description="PubMedQA - biomedical research question answering from abstracts"
+LABEL eval.benchmark.tasks="1000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="9001f2853fb87cab8d220904e0de81ac6973b318"
+LABEL eval.benchmark.url="https://github.com/pubmedqa/pubmedqa"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1909.06146"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="9001f2853fb87cab8d220904e0de81ac6973b318"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/.
+# fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 urllib.request.urlretrieve(
@@ -53,21 +53,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=pubmedqa
+ENV EVAL_BENCHMARK=pubmedqa
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Read the biomedical research abstract and answer the question. Print only one of: yes, no, or maybe. Nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

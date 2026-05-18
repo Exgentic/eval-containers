@@ -2,20 +2,20 @@
 # 90 tasks. Data: HuggingFace AI-MO/aimo-validation-aime
 # Agent prints answer to stdout. Test compares stdout to expected answer.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="aime"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="American Invitational Mathematics Examination"
-LABEL dock.benchmark.tasks="90"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="13f9e12f613e720c2a2b2f345dd04b998a29494d"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/AI-MO/aimo-validation-aime"
-LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aime"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/aime2024"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="13f9e12f613e720c2a2b2f345dd04b998a29494d"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="aime"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="American Invitational Mathematics Examination"
+LABEL eval.benchmark.tasks="90"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="13f9e12f613e720c2a2b2f345dd04b998a29494d"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/AI-MO/aimo-validation-aime"
+LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aime"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/aime2024"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="13f9e12f613e720c2a2b2f345dd04b998a29494d"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
@@ -35,21 +35,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=aime
+ENV EVAL_BENCHMARK=aime
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this problem. Print only the answer as a single integer.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

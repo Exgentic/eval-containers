@@ -3,19 +3,19 @@
 # Data: github suzgunmirac/BIG-Bench-Hard
 # Agent prints answer to stdout. Test compares to expected target.
 
-FROM quay.io/dock-eval/core/benchmark-base-github:latest
+FROM quay.io/eval-containers/core/benchmark-base-github:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="bbh"
-LABEL dock.benchmark.description="BIG-Bench Hard - 27 challenging BIG-Bench subtasks for chain-of-thought reasoning"
-LABEL dock.benchmark.tasks="6511"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="9ee07bd481feebf959a6b59d61ea57bdcf30964d"
-LABEL dock.benchmark.url="https://github.com/suzgunmirac/BIG-Bench-Hard"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2210.09261"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bbh"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="9ee07bd481feebf959a6b59d61ea57bdcf30964d"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="bbh"
+LABEL eval.benchmark.description="BIG-Bench Hard - 27 challenging BIG-Bench subtasks for chain-of-thought reasoning"
+LABEL eval.benchmark.tasks="6511"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="9ee07bd481feebf959a6b59d61ea57bdcf30964d"
+LABEL eval.benchmark.url="https://github.com/suzgunmirac/BIG-Bench-Hard"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2210.09261"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bbh"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="9ee07bd481feebf959a6b59d61ea57bdcf30964d"
 
 # Fetch all 27 BBH JSON files and write one JSONL row per task.
 RUN python3 <<'PYEOF'
@@ -57,21 +57,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=bbh
+ENV EVAL_BENCHMARK=bbh
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve the following BIG-Bench Hard problem. Print ONLY the final answer exactly as it should appear (no explanation, no extra text, no quotes).
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

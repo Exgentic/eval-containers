@@ -9,45 +9,45 @@
 # ubuntu:22.04, etc.), so we cannot write a single static FROM here that works
 # for every instance. This Dockerfile instead uses a two-build flow:
 #   (a) The caller/CLI first builds the concatenated upstream base+instance
-#       into an image tagged "sbp/instance:${DOCK_TASK_ID}".
-#   (b) THIS Dockerfile then layers the dock-specific grading machinery on top
+#       into an image tagged "sbp/instance:${EVAL_TASK_ID}".
+#   (b) THIS Dockerfile then layers the eval-specific grading machinery on top
 #       of that locally-built tag — no private registries involved.
 #
 # For step (a), see scripts/build-swe-bench-pro.sh (clones the upstream repo
 # at the pinned commit, extracts both Dockerfiles, strips the duplicate FROM,
-# and runs `docker build` to produce sbp/instance:${DOCK_TASK_ID}).
+# and runs `docker build` to produce sbp/instance:${EVAL_TASK_ID}).
 
-ARG DOCK_TASK_ID
-FROM sbp/instance:${DOCK_TASK_ID}
+ARG EVAL_TASK_ID
+FROM sbp/instance:${EVAL_TASK_ID}
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="swe-bench-pro"
-LABEL dock.benchmark.upstream_base="sbp/instance:${DOCK_TASK_ID} (locally built from scaleapi/SWE-bench_Pro-os)"
-LABEL dock.benchmark.description="SWE-bench Pro - harder, professional-grade software engineering tasks"
-LABEL dock.benchmark.tasks="1865"
-LABEL dock.benchmark.env="per-task"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/scaleapi/SWE-bench_Pro-os"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2509.16941"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="3.0.18"
-ENV DOCK_BENCHMARK=swe-bench-pro
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="swe-bench-pro"
+LABEL eval.benchmark.upstream_base="sbp/instance:${EVAL_TASK_ID} (locally built from scaleapi/SWE-bench_Pro-os)"
+LABEL eval.benchmark.description="SWE-bench Pro - harder, professional-grade software engineering tasks"
+LABEL eval.benchmark.tasks="1865"
+LABEL eval.benchmark.env="per-task"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://github.com/scaleapi/SWE-bench_Pro-os"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2509.16941"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="3.0.18"
+ENV EVAL_BENCHMARK=swe-bench-pro
 
 # System deps + grading package (root-only).
 RUN apt-get update && apt-get install -y --no-install-recommends curl jq && rm -rf /var/lib/apt/lists/*
 RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.18) \
  || pip install --no-cache-dir --target /tests/deps swebench==3.0.18
 
-ARG DOCK_TASK_ID
-ENV DOCK_TASK_ID=${DOCK_TASK_ID}
+ARG EVAL_TASK_ID
+ENV EVAL_TASK_ID=${EVAL_TASK_ID}
 
 # Task metadata from the public HF dataset.
 RUN mkdir -p /tasks/0 && \
     for offset in 0 100 200 300 400 500 600 700 800 900 1000; do \
       curl -sf "https://datasets-server.huggingface.co/rows?dataset=ScaleAI/SWE-bench_Pro&config=default&split=test&offset=$offset&length=100" > /tmp/page.json && \
-      if jq -e --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id)' /tmp/page.json > /dev/null 2>&1; then \
-        jq -r --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.instance_id' /tmp/page.json > /tasks/0/id.txt && \
-        jq -r --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.problem_statement' /tmp/page.json > /tasks/0/problem.txt && \
-        jq --arg id "${DOCK_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row' /tmp/page.json > /tasks/0/config.json && \
+      if jq -e --arg id "${EVAL_TASK_ID}" '.rows[] | select(.row.instance_id == $id)' /tmp/page.json > /dev/null 2>&1; then \
+        jq -r --arg id "${EVAL_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.instance_id' /tmp/page.json > /tasks/0/id.txt && \
+        jq -r --arg id "${EVAL_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.problem_statement' /tmp/page.json > /tasks/0/problem.txt && \
+        jq --arg id "${EVAL_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row' /tmp/page.json > /tasks/0/config.json && \
         break; \
       fi; \
     done && rm -f /tmp/page.json || true
@@ -101,19 +101,19 @@ GRADE
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 chown -R agent:agent /app 2>/dev/null || true
 
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Fix this GitHub issue in the repository at /app. Edit the source code to resolve the bug. Do NOT modify any test files.
 
 $(cat /tasks/0/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

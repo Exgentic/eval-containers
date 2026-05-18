@@ -3,22 +3,22 @@
 # Data: HuggingFace nguha/legalbench (TSV files, test splits).
 # Agent reads a legal text and prints a classification label. Test compares exact match (case-insensitive).
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="legalbench"
-LABEL dock.benchmark.description="LegalBench - legal reasoning classification tasks (83-subtask subset)"
-LABEL dock.benchmark.tasks="19000"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
-LABEL dock.benchmark.url="https://github.com/HazyResearch/legalbench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2308.11462"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="legalbench"
+LABEL eval.benchmark.description="LegalBench - legal reasoning classification tasks (83-subtask subset)"
+LABEL eval.benchmark.tasks="19000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
+LABEL eval.benchmark.url="https://github.com/HazyResearch/legalbench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.11462"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
 
 # Known 83 classification subtasks with uniform (index, answer, text) / (index, text, answer) schema.
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, csv, os, io, json
 
@@ -116,21 +116,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl /tasks/.count
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=legalbench
+ENV EVAL_BENCHMARK=legalbench
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a legal reasoning assistant. Read the classification task and legal text below, then print ONLY one of the listed valid answer labels. Print nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

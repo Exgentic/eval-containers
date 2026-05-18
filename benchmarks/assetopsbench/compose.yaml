@@ -1,7 +1,7 @@
 # AssetOpsBench
 # Industrial asset operations benchmark. Shared environment, externally graded.
 #
-# dock run assetopsbench --agent claude-code --task-id 1
+# eval-containers run assetopsbench --agent claude-code --task-id 1
 
 services:
   model:
@@ -10,19 +10,19 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-assetopsbench}/${DOCK_TASK_ID:-default}/model:/output:rw
+      - ../../output/${EVAL_BENCHMARK:-assetopsbench}/${EVAL_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/assetopsbench--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/assetopsbench--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
     environment:
-      - DOCK_BENCHMARK=assetopsbench
-      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+      - EVAL_BENCHMARK=assetopsbench
+      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-600}
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-assetopsbench}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${DOCK_BENCHMARK:-assetopsbench}/${DOCK_TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${EVAL_BENCHMARK:-assetopsbench}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${EVAL_BENCHMARK:-assetopsbench}/${EVAL_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

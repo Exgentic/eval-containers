@@ -13,26 +13,26 @@
 #       the issues/ directory (per-task issue data + test files).
 #   (2) Per-task build uses THIS Dockerfile, which layers on top of
 #       swelancer_x86 and runs the upstream per-task playbook to check out
-#       Expensify at the right commit for DOCK_TASK_ID.
+#       Expensify at the right commit for EVAL_TASK_ID.
 
-ARG DOCK_TASK_ID
+ARG EVAL_TASK_ID
 FROM swelancer_x86:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="swe-lancer"
-LABEL dock.benchmark.upstream_base="swelancer_x86:latest (locally built from openai/preparedness@project/swelancer)"
-LABEL dock.benchmark.description="SWE-Lancer - real-world freelance SWE tasks (OpenAI)"
-LABEL dock.benchmark.tasks="1488"
-LABEL dock.benchmark.env="per-task"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/openai/preparedness"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2502.12115"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
-ENV DOCK_BENCHMARK=swe-lancer
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="swe-lancer"
+LABEL eval.benchmark.upstream_base="swelancer_x86:latest (locally built from openai/preparedness@project/swelancer)"
+LABEL eval.benchmark.description="SWE-Lancer - real-world freelance SWE tasks (OpenAI)"
+LABEL eval.benchmark.tasks="1488"
+LABEL eval.benchmark.env="per-task"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://github.com/openai/preparedness"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.12115"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
+ENV EVAL_BENCHMARK=swe-lancer
 
-ARG DOCK_TASK_ID
-ENV DOCK_TASK_ID=${DOCK_TASK_ID}
-ENV ISSUE_ID=${DOCK_TASK_ID}
+ARG EVAL_TASK_ID
+ENV EVAL_TASK_ID=${EVAL_TASK_ID}
+ENV ISSUE_ID=${EVAL_TASK_ID}
 
 # Upstream per-task setup: the base image bakes in the issues/ directory and
 # setup_expensify.yml playbook. Running the playbook here checks out Expensify
@@ -41,7 +41,7 @@ ENV ISSUE_ID=${DOCK_TASK_ID}
 RUN ansible-playbook -i "localhost," --connection=local /app/tests/setup_expensify.yml
 
 # Record the task description (from the issue_data.json bundled in the base
-# image at /app/tests/issues/${ISSUE_ID}/issue_data.json) into a dock-shaped
+# image at /app/tests/issues/${ISSUE_ID}/issue_data.json) into a eval-shaped
 # task file for the entrypoint.
 RUN mkdir -p /tasks/0 \
  && python3 -c "import json,os,pathlib; p=pathlib.Path('/app/tests/issues/'+os.environ['ISSUE_ID']+'/issue_data.json'); d=json.loads(p.read_text()) if p.exists() else {}; pathlib.Path('/tasks/0/problem.txt').write_text(d.get('description') or d.get('title') or os.environ['ISSUE_ID']); pathlib.Path('/tasks/0/id.txt').write_text(os.environ['ISSUE_ID'])" \
@@ -63,19 +63,19 @@ fi
 TEST
 RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 chown -R agent:agent /app/expensify 2>/dev/null || true
 
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are fixing a freelance software engineering task in the Expensify codebase at /app/expensify. Do NOT modify test files. When finished, your change must pass the upstream end-to-end tests.
 
 $(cat /tasks/0/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

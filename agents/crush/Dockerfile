@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # Crush agent image (Charm)
-FROM quay.io/dock-eval/core/agent-base-rust:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="crush"
-LABEL dock.agent.description="Charm Crush terminal AI coding assistant"
-LABEL dock.agent.runtime="go"
-LABEL dock.agent.url="https://github.com/charmbracelet/crush"
-LABEL dock.agent.version="0.57.0"
-ENV DOCK_AGENT_VERSION_DEFAULT="0.57.0"
-ENV DOCK_AGENT=crush
+FROM quay.io/eval-containers/core/agent-base-rust:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="crush"
+LABEL eval.agent.description="Charm Crush terminal AI coding assistant"
+LABEL eval.agent.runtime="go"
+LABEL eval.agent.url="https://github.com/charmbracelet/crush"
+LABEL eval.agent.version="0.57.0"
+ENV EVAL_AGENT_VERSION_DEFAULT="0.57.0"
+ENV EVAL_AGENT=crush
 # Download-to-file with retry + size check; avoids streaming curl|tar
 # corruption on partial bytes under flaky networks (same pattern as
 # agents/goose/Dockerfile).

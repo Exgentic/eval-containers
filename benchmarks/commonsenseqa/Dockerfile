@@ -2,18 +2,18 @@
 # 1221 tasks. Data: HuggingFace tau/commonsense_qa (validation split; test labels are hidden)
 # Agent prints answer letter to stdout. Test compares stdout to expected letter.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="commonsenseqa"
-LABEL dock.benchmark.description="CommonsenseQA - commonsense multiple choice QA"
-LABEL dock.benchmark.tasks="1221"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="94630fe30dad47192a8546eb75f094926d47e155"
-LABEL dock.benchmark.url="https://www.tau-nlp.sites.tau.ac.il/commonsenseqa"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1811.00937"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="94630fe30dad47192a8546eb75f094926d47e155"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="commonsenseqa"
+LABEL eval.benchmark.description="CommonsenseQA - commonsense multiple choice QA"
+LABEL eval.benchmark.tasks="1221"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="94630fe30dad47192a8546eb75f094926d47e155"
+LABEL eval.benchmark.url="https://www.tau-nlp.sites.tau.ac.il/commonsenseqa"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1811.00937"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="94630fe30dad47192a8546eb75f094926d47e155"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
@@ -40,21 +40,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=commonsenseqa
+ENV EVAL_BENCHMARK=commonsenseqa
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Answer this commonsense multiple choice question. Print only the letter of the correct answer (A, B, C, D, or E), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

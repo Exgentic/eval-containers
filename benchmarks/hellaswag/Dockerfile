@@ -2,21 +2,21 @@
 # 10042 tasks. Data: HuggingFace Rowan/hellaswag (validation)
 # Agent prints the letter of the most plausible continuation. Test compares letters.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="hellaswag"
-LABEL dock.benchmark.description="HellaSwag - commonsense sentence completion: pick the most plausible ending"
-LABEL dock.benchmark.tasks="10042"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="218ec52e09a7e7462a5400043bb9a69a41d06b76"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/Rowan/hellaswag"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1905.07830"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="218ec52e09a7e7462a5400043bb9a69a41d06b76"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="hellaswag"
+LABEL eval.benchmark.description="HellaSwag - commonsense sentence completion: pick the most plausible ending"
+LABEL eval.benchmark.tasks="10042"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="218ec52e09a7e7462a5400043bb9a69a41d06b76"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/Rowan/hellaswag"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1905.07830"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="218ec52e09a7e7462a5400043bb9a69a41d06b76"
 
 # Single-JSONL task layout. Root-only; runtime entrypoint materializes the
-# requested task's fields into /tasks/$DOCK_TASK_ID/ on demand.
+# requested task's fields into /tasks/$EVAL_TASK_ID/ on demand.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -47,21 +47,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=hellaswag
+ENV EVAL_BENCHMARK=hellaswag
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Pick the most plausible continuation of the context. Print only the letter of the correct answer (A, B, C, or D), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

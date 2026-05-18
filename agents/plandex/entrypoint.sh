@@ -59,8 +59,8 @@ fi
 WORK_DIR="${PLANDEX_WORK_DIR:-/tmp/plandex-work}"
 mkdir -p "$WORK_DIR"; cd "$WORK_DIR"
 if [ ! -d .git ]; then
-    git init -q; git config user.email agent@dock.local; git config user.name dock-agent
-    git commit --allow-empty -qm "dock: init" || true
+    git init -q; git config user.email agent@eval.local; git config user.name eval-agent
+    git commit --allow-empty -qm "eval-containers: init" || true
 fi
-plandex new --full --name dock-task >/dev/null 2>&1 || true
+plandex new --full --name eval-task >/dev/null 2>&1 || true
 exec plandex tell --apply --auto-exec --auto-load-context --auto-update-context --commit "$TASK"
