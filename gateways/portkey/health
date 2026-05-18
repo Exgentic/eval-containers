@@ -1,0 +1,7 @@
+#!/bin/sh
+# Readiness probe: portkey + bifrost sidecar both up.
+# Portkey's root path returns "AI Gateway says hey!" when alive;
+# bifrost has /api/health on its sidecar port.
+set -eu
+curl -sf -m 1 http://127.0.0.1:"${PORT:-4000}"/ > /dev/null
+curl -sf -m 1 http://127.0.0.1:4002/api/health > /dev/null
