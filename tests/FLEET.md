@@ -37,7 +37,7 @@ output is a fleet health report.
   successfully built. `cargo test --test build -- --ignored` fails on
   it, or it has never been run.
 - **Missing fixture for a released benchmark.** A benchmark whose
-  `dock.benchmark.*` labels declare it ready, but no replay fixture
+  `eval.benchmark.*` labels declare it ready, but no replay fixture
   exists under `tests/fixtures/`. Cannot be end-to-end verified.
 - **Documentation drift.** README claims "96 benchmarks, 17 agents"
   but the filesystem has a different count.
@@ -47,13 +47,13 @@ output is a fleet health report.
 - **CI lies.** The release workflow hasn't run in the last N days but
   the README claims the registry is live. Or vice versa: CI is green
   but the registry is empty.
-- **Unresolvable pin.** A benchmark's `dock.benchmark.data_revision`
+- **Unresolvable pin.** A benchmark's `eval.benchmark.data_revision`
   points at a sha that returns 404 upstream.
 
 ### Yellow signals (worth attention, not blocking)
 
 - **Stale agent.** An agent whose upstream version in
-  `dock.agent.version` is more than 90 days behind the project's latest
+  `eval.agent.version` is more than 90 days behind the project's latest
   release on GitHub / npm / PyPI.
 - **Missing per-benchmark README.** A benchmark directory with no
   `README.md` explaining its origin, its dataset, and any quirks.
@@ -149,12 +149,12 @@ health check.
    |---|---|
    | 1 | Does every benchmark in `benchmarks/` have both a `Dockerfile` and a `compose.yaml`? |
    | 2 | Does every committed benchmark and agent actually build? |
-   | 3 | Does every benchmark labeled `dock.benchmark.released="true"` have at least one replay fixture under `tests/fixtures/`? (see benchmarks/RULES.md 21a) |
+   | 3 | Does every benchmark labeled `eval.benchmark.released="true"` have at least one replay fixture under `tests/fixtures/`? (see benchmarks/RULES.md 21a) |
    | 4 | Does the README's benchmark/agent/model count match the filesystem? |
-   | 5 | Does every agent in `agents/` have a pinned `dock.agent.version` label — no `unpinned`, no `latest`? |
+   | 5 | Does every agent in `agents/` have a pinned `eval.agent.version` label — no `unpinned`, no `latest`? |
    | 6 | Are there any benchmarks whose Dockerfiles reference upstream images we no longer control or that have gone stale? |
    | 7 | Are there any orphan fixtures (fixture files referencing benchmarks / agents no longer in the repo)? |
-   | 8 | Is every published `dock-*` version tag in sync — no benchmark at dock-v2 while shared compose is still dock-v1? |
+   | 8 | Is every published `eval-*` version tag in sync — no benchmark at eval-v2 while shared compose is still eval-v1? |
    | 9 | Do the RULES.md principles (esp. 9, 10, 11) hold across every benchmark and agent, or has anything drifted? |
    | 10 | Does the CI release workflow reflect reality — has it run recently, is the registry actually populated, does the README Quick Start work from scratch on a clean machine? |
 

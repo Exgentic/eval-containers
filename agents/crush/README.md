@@ -13,15 +13,15 @@ Charm Crush: terminal AI coding assistant from the Charm toolkit.
 
 ## What it does
 
-Crush is a TUI / headless coding agent with an integrated tool set (bash, edit, multiedit, fetch, LSP, todos, MCP). It supports OpenAI-compatible providers out of the box, which is exactly how Dock wires it to the proxy. Strength: focused, ergonomic coding loops and good LSP integration.
+Crush is a TUI / headless coding agent with an integrated tool set (bash, edit, multiedit, fetch, LSP, todos, MCP). It supports OpenAI-compatible providers out of the box, which is exactly how Eval Containers wires it to the proxy. Strength: focused, ergonomic coding loops and good LSP integration.
 
-## How Dock runs it
+## How Eval Containers runs it
 
-The entrypoint writes `$XDG_CONFIG_HOME/crush/crush.json` declaring a `dock` provider of type `openai-compat` whose `base_url` is `$OPENAI_BASE_URL/v1` and whose `api_key` is `$OPENAI_API_KEY`. All tools are allowlisted, metrics/notifications/auto-update are disabled. It then runs `crush run -q -m "dock/$DOCK_MODEL" "$TASK"` and prints the answer to stdout.
+The entrypoint writes `$XDG_CONFIG_HOME/crush/crush.json` declaring a `eval-containers` provider of type `openai-compat` whose `base_url` is `$OPENAI_BASE_URL/v1` and whose `api_key` is `$OPENAI_API_KEY`. All tools are allowlisted, metrics/notifications/auto-update are disabled. It then runs `crush run -q -m "eval-containers/$EVAL_MODEL" "$TASK"` and prints the answer to stdout.
 
 ## Version
 
-Pinned to `0.57.0` at image build time. Override with `DOCK_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
+Pinned to `0.57.0` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
 
 ## Files
 

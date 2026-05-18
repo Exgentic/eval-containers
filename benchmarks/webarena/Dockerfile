@@ -3,23 +3,23 @@
 # Multi-service with website sidecars + mitmproxy for HAR capture.
 # Evaluation via official webarena-verified package.
 
-FROM quay.io/dock-eval/core/benchmark-base-github:latest
+FROM quay.io/eval-containers/core/benchmark-base-github:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="webarena"
-LABEL dock.benchmark.description="WebArena Verified - web browsing with sidecars"
-LABEL dock.benchmark.tasks="812"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/web-arena-x/webarena"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2307.13854"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="1.2.3"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="webarena"
+LABEL eval.benchmark.description="WebArena Verified - web browsing with sidecars"
+LABEL eval.benchmark.tasks="812"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://github.com/web-arena-x/webarena"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2307.13854"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="1.2.3"
 
 # Install evaluator
 RUN pip install --no-cache-dir webarena-verified==1.2.3
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import json, os, urllib.request
 urllib.request.urlretrieve(
@@ -42,14 +42,14 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=webarena-verified
+ENV EVAL_BENCHMARK=webarena-verified
 
 # Test: run official webarena-verified evaluator
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
-TASK_ORIG_ID=$(cat /tasks/$DOCK_TASK_ID/id.txt)
+TASK_ORIG_ID=$(cat /tasks/$EVAL_TASK_ID/id.txt)
 
 # Prepare eval directory structure: {task_id}/agent_response.json + network.har
 EVAL_DIR=$(mktemp -d)
@@ -138,9 +138,9 @@ RUN chmod +x /tests/extract_response.py
 #       This should be solved by the benchmark, not forced on the agent.
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  INTENT=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  INTENT=$(cat /tasks/$EVAL_TASK_ID/problem.txt)
   export TASK="You are a web browsing agent. Complete this task by interacting with websites.
 
 Task: $INTENT
@@ -162,7 +162,7 @@ Credentials:
 When done, output a JSON object with:
 {\"task_type\": \"RETRIEVE|NAVIGATE|MUTATE\", \"status\": \"SUCCESS|NOT_FOUND_ERROR\", \"retrieved_data\": <data or null>, \"error_details\": <string or null>}"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

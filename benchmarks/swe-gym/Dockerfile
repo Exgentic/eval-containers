@@ -9,21 +9,21 @@
 # exposes the problem statement to the agent, captures the produced patch, and writes
 # -1 (externally graded).
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="swe-gym"
-LABEL dock.benchmark.description="SWE-Gym - 2438 Python SWE tasks for agent training / eval"
-LABEL dock.benchmark.tasks="2438"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
-LABEL dock.benchmark.url="https://github.com/SWE-Gym/SWE-Gym"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2412.21139"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="swe-gym"
+LABEL eval.benchmark.description="SWE-Gym - 2438 Python SWE tasks for agent training / eval"
+LABEL eval.benchmark.tasks="2438"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
+LABEL eval.benchmark.url="https://github.com/SWE-Gym/SWE-Gym"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.21139"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
@@ -51,7 +51,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=swe-gym
+ENV EVAL_BENCHMARK=swe-gym
 
 # Test: externally graded. Preserve agent patch/transcript for offline SWE-bench grading.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -67,17 +67,17 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  REPO=$(cat /tasks/$DOCK_TASK_ID/repo.txt)
-  COMMIT=$(cat /tasks/$DOCK_TASK_ID/base_commit.txt)
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  REPO=$(cat /tasks/$EVAL_TASK_ID/repo.txt)
+  COMMIT=$(cat /tasks/$EVAL_TASK_ID/base_commit.txt)
   export TASK="Fix this GitHub issue in the Python repository $REPO at commit $COMMIT.
 Produce a unified diff patch that resolves the bug. Print the patch to stdout.
 Do NOT modify any test files.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

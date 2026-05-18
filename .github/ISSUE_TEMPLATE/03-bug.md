@@ -46,7 +46,7 @@ screenshots. -->
 - **OS**: <!-- macOS 15 / Ubuntu 22.04 / ... -->
 - **Arch**: <!-- arm64 / x86_64 -->
 - **Runtime**: <!-- Docker Desktop X.Y / Podman X.Y with Rosetta enabled / ... -->
-- **Dock commit**: <!-- `git rev-parse HEAD` -->
+- **Eval Containers commit**: <!-- `git rev-parse HEAD` -->
 
 ## Scope
 

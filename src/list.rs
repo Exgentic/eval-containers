@@ -39,10 +39,10 @@ pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
             );
             println!("{}", "-".repeat(110));
             for image in &images {
-                let desc = get_label(image, "dock.benchmark.description");
-                let tasks = get_label(image, "dock.benchmark.tasks");
-                let env = get_label(image, "dock.benchmark.env");
-                let internet = get_label(image, "dock.benchmark.internet");
+                let desc = get_label(image, "eval.benchmark.description");
+                let tasks = get_label(image, "eval.benchmark.tasks");
+                let env = get_label(image, "eval.benchmark.env");
+                let internet = get_label(image, "eval.benchmark.internet");
                 println!("{image:<30} {desc:<50} {tasks:<6} {env:<10} {internet}");
             }
             Ok(())
@@ -56,8 +56,8 @@ pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
             println!("{:<30} {:<40} RUNTIME", "IMAGE", "DESCRIPTION");
             println!("{}", "-".repeat(80));
             for image in &images {
-                let desc = get_label(image, "dock.agent.description");
-                let runtime = get_label(image, "dock.agent.runtime");
+                let desc = get_label(image, "eval.agent.description");
+                let runtime = get_label(image, "eval.agent.runtime");
                 println!("{image:<30} {desc:<40} {runtime}");
             }
             Ok(())
@@ -71,7 +71,7 @@ pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
             println!("{:<30} PROVIDER", "IMAGE");
             println!("{}", "-".repeat(45));
             for image in &images {
-                let provider = get_label(image, "dock.model.provider");
+                let provider = get_label(image, "eval.model.provider");
                 println!("{image:<30} {provider}");
             }
             Ok(())

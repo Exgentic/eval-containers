@@ -5,7 +5,7 @@
 
 ## Abstract
 
-Container tests verify that Docker images and Compose files produced by Dock actually work. This document defines how container tests are written.
+Container tests verify that Docker images and Compose files produced by Eval Containers actually work. This document defines how container tests are written.
 
 ## Terminology
 
@@ -15,7 +15,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Three Test Levels
 
-1. **Build tests.** Every image (benchmark, agent, model) MUST have a build test that verifies `docker build` succeeds and the image has correct `dock.*` labels. Build tests MAY shell out to `docker build` and `docker inspect` — testcontainers does not cover image builds.
+1. **Build tests.** Every image (benchmark, agent, model) MUST have a build test that verifies `docker build` succeeds and the image has correct `eval-containers.*` labels. Build tests MAY shell out to `docker build` and `docker inspect` — testcontainers does not cover image builds.
 
 2. **Compose tests.** Every benchmark MUST have a compose validation test that verifies `docker compose config` succeeds. These tests MAY shell out to `docker compose config` — they validate the YAML, not runtime behavior.
 
@@ -40,7 +40,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### What to Test
 
-9. **Image structure.** Build tests MUST verify that built images have required `dock.*` labels (type, name, description).
+9. **Image structure.** Build tests MUST verify that built images have required `eval-containers.*` labels (type, name, description).
 
 10. **Compose validity.** Compose tests MUST verify that compose files parse without errors (`docker compose config`).
 
@@ -50,7 +50,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Local Registry
 
-13. **Local registry.** Tests that exercise `dock push` or registry interactions MUST start a local `registry:2` container via testcontainers. The test MUST set `DOCK_REGISTRY=localhost:{port}`.
+13. **Local registry.** Tests that exercise `eval-containers push` or registry interactions MUST start a local `registry:2` container via testcontainers. The test MUST set `EVAL_REGISTRY=localhost:{port}`.
 
 14. **No remote registry.** Tests MUST NOT push to or pull from `ghcr.io` or any remote registry. All registry operations MUST be local.
 
@@ -70,7 +70,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 20. **One test per combination.** Each E2E test exercises one benchmark × agent pair with a replay fixture. The test matrix MUST be defined in `tests/MATRIX.md` and kept in sync with the test code.
 
-21. **Recording fixtures.** Each fixture is recorded from one real evaluation run with real API keys. The resulting `trajectory.jsonl` is committed to `tests/fixtures/`. This is a one-time cost per combination. To re-record: `TASK_ID=0 DOCK_AGENT={agent} DOCK_MODEL={model} docker compose -f benchmarks/{benchmark}/compose.yaml up --abort-on-container-exit`, then copy `output/{benchmark}/0/model/trajectory.jsonl` to `tests/fixtures/{benchmark}-0-{agent}.trajectory.jsonl`.
+21. **Recording fixtures.** Each fixture is recorded from one real evaluation run with real API keys. The resulting `trajectory.jsonl` is committed to `tests/fixtures/`. This is a one-time cost per combination. To re-record: `TASK_ID=0 EVAL_AGENT={agent} EVAL_MODEL={model} docker compose -f benchmarks/{benchmark}/compose.yaml up --abort-on-container-exit`, then copy `output/{benchmark}/0/model/trajectory.jsonl` to `tests/fixtures/{benchmark}-0-{agent}.trajectory.jsonl`.
 
 ## References
 

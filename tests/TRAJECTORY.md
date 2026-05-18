@@ -37,7 +37,7 @@ For each benchmark-agent combination, one trajectory is inspected:
   A trajectory is an ordered sequence of LiteLLM `StandardLoggingPayload`
   rows, one per LLM call the agent made.
 - **Context:** the benchmark name, task ID, expected task shape from
-  the benchmark's `dock.benchmark.*` labels, the agent name.
+  the benchmark's `eval.benchmark.*` labels, the agent name.
 - **Output:** two verdicts (task-half and run-half), each
   `green` | `yellow` | `red`, with the matching signals listed.
   The overall fixture verdict is the worse of the two halves.
@@ -55,22 +55,22 @@ Inputs: the first non-empty user message in the trajectory.
   always have instructions longer than this; shorter almost certainly
   means a template didn't render.
 - **No unresolved placeholders.** None of: `{TODO}`, `{{placeholder}}`,
-  `%s`, `{DOCK_BENCHMARK}`, `${TASK_ID}`, `<INSERT_TASK>`, `FIXME`.
+  `%s`, `{EVAL_BENCHMARK}`, `${TASK_ID}`, `<INSERT_TASK>`, `FIXME`.
   These indicate the entrypoint didn't substitute variables.
 - **Expected format specified.** The prompt mentions what the agent
   should output (`print the answer`, `write to /output`, `return
   JSON`, `final answer:`). Missing this is usually fine for open-ended
   tasks but worth flagging.
 - **Task ID resolved.** The prompt does not contain the literal string
-  `$DOCK_TASK_ID` or `${DOCK_TASK_ID}` or `/tasks/$DOCK_TASK_ID`.
+  `$EVAL_TASK_ID` or `${EVAL_TASK_ID}` or `/tasks/$EVAL_TASK_ID`.
   Presence means variable substitution failed.
 
 ### Red signals (any one triggers a `red` verdict)
 
 - **Empty task.** User message is empty, whitespace-only, or shorter
   than 20 characters.
-- **Unresolved env var.** Task contains literal `$DOCK_BENCHMARK`,
-  `${DOCK_BENCHMARK}`, `$DOCK_TASK_ID`, `${DOCK_TASK_ID}`, `$TASK`,
+- **Unresolved env var.** Task contains literal `$EVAL_BENCHMARK`,
+  `${EVAL_BENCHMARK}`, `$EVAL_TASK_ID`, `${EVAL_TASK_ID}`, `$TASK`,
   `${TASK}` — variable substitution failed.
 - **Fetch failure strings.** Task contains `404 Not Found`,
   `403 Forbidden`, `connection refused`, `TLS handshake`,
@@ -191,8 +191,8 @@ The `inspector` model (`models/inspector/`) is a tiny Flask app that:
 Usage:
 
 ```bash
-DOCK_BENCHMARK=aime DOCK_TASK_ID=0 DOCK_AGENT=claude-code DOCK_MODEL=inspector \
-  docker compose -f oci://quay.io/dock-eval/evaluate up --abort-on-container-exit
+EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=claude-code EVAL_MODEL=inspector \
+  docker compose -f oci://quay.io/eval-containers/evaluate up --abort-on-container-exit
 ```
 
 Output lands at `output/aime/0/inspector/first_request.json`.
@@ -238,7 +238,7 @@ a regression, not a legitimate change.
 
 **Layer 4 — provenance check (future, catches supply chain issues).**
 Verify the task content hash matches what's expected from the pinned
-`dock.benchmark.data_revision`. If upstream silently changed the
+`eval.benchmark.data_revision`. If upstream silently changed the
 dataset under a revision pin, this catches it.
 
 ## Audit procedure
@@ -251,7 +251,7 @@ Applies to a single fixture or batch.
 - **Input:** one or more files under `tests/fixtures/*.trajectory.jsonl`,
   or a directory of `inspector` outputs from a live run.
 - **Context for each:** the benchmark name, benchmark description from
-  the `dock.benchmark.description` label, any special notes in
+  the `eval.benchmark.description` label, any special notes in
   `benchmarks/<name>/README.md` if present.
 
 ### Steps

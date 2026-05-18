@@ -24,16 +24,16 @@ Reject the PR if any evidence section is empty.
 
 ### Required Dockerfile labels (agents/RULES.md 14)
 
-- [ ] `LABEL dock.type="agent"`
-- [ ] `LABEL dock.agent.name="<name>"` (matches directory name)
-- [ ] `LABEL dock.agent.version="<pinned version>"` — NOT `latest`, NOT empty
-- [ ] `LABEL dock.agent.description="<one line>"`
-- [ ] `LABEL dock.agent.runtime="node"` / `"python"` / `"go"` / whatever
-- [ ] `LABEL dock.agent.url="<upstream>"`
+- [ ] `LABEL eval.type="agent"`
+- [ ] `LABEL eval.agent.name="<name>"` (matches directory name)
+- [ ] `LABEL eval.agent.version="<pinned version>"` — NOT `latest`, NOT empty
+- [ ] `LABEL eval.agent.description="<one line>"`
+- [ ] `LABEL eval.agent.runtime="node"` / `"python"` / `"go"` / whatever
+- [ ] `LABEL eval.agent.url="<upstream>"`
 
 ### Required ENV (RULES.md principle 9)
 
-- [ ] `ENV DOCK_AGENT_VERSION_DEFAULT="<same as dock.agent.version>"` declared after the LABEL block
+- [ ] `ENV EVAL_AGENT_VERSION_DEFAULT="<same as eval.agent.version>"` declared after the LABEL block
 
 ### Image layout
 
@@ -44,11 +44,11 @@ Reject the PR if any evidence section is empty.
 
 ### Version override hook (optional but recommended)
 
-- [ ] `/dock-reinstall-agent` script exists and re-installs the agent at the version given as its first arg. Invoked by `core/entrypoint/dock-entrypoint.sh` when `DOCK_AGENT_VERSION` differs from the baked default. If omitted, the agent refuses to run with an override (fail-loud). See `agents/claude-code/Dockerfile` for the reference implementation.
+- [ ] `/eval-reinstall-agent` script exists and re-installs the agent at the version given as its first arg. Invoked by `core/entrypoint/eval-entrypoint.sh` when `EVAL_AGENT_VERSION` differs from the baked default. If omitted, the agent refuses to run with an override (fail-loud). See `agents/claude-code/Dockerfile` for the reference implementation.
 
 ### Local build
 
-- [ ] `dock build agent <name>` succeeds on your machine
+- [ ] `eval-containers build agent <name>` succeeds on your machine
 - [ ] `cargo test --test dockerfile_inspection` passes with zero new red findings
 - [ ] Image size ≤ 1 GB (or documented justification)
 
@@ -64,19 +64,19 @@ that needs the full surface area.
 Benchmark 1 (recommend `aime` for math reasoning):
 
 ```bash
-dock build eval aime --agent <name>
-dock run aime --agent <name> --model gpt-5.4 --task-id 0 --local --max-budget 1
+eval-containers build eval aime --agent <name>
+eval-containers run aime --agent <name> --model gpt-5.4 --task-id 0 --local --max-budget 1
 ```
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty, has real LLM calls
 - [ ] `output/aime/0/task/result.json` has a valid reward (0, 1, or fractional)
-- [ ] `output/aime/0/model/result.json` has `cost_usd > 0` — the proxy logged the call (if 0, investigate: your agent's SDK path may not trigger the logging callback, see `core/litellm/dock_logger.py`)
+- [ ] `output/aime/0/model/result.json` has `cost_usd > 0` — the proxy logged the call (if 0, investigate: your agent's SDK path may not trigger the logging callback, see `core/litellm/eval_logger.py`)
 
 Benchmark 2 (recommend `humaneval` for code generation or `gsm8k` for tool-less reasoning):
 
 ```bash
-dock build eval <second-benchmark> --agent <name>
-dock run <second-benchmark> --agent <name> --model gpt-5.4 --task-id 0 --local --max-budget 1
+eval-containers build eval <second-benchmark> --agent <name>
+eval-containers run <second-benchmark> --agent <name> --model gpt-5.4 --task-id 0 --local --max-budget 1
 ```
 
 - [ ] Same three checks as above

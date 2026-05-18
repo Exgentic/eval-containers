@@ -2,21 +2,21 @@
 # 16621 tasks (1511 eval examples x 11 languages). Data: HuggingFace juletxara/xstory_cloze
 # Agent prints 1 or 2. Test compares to expected correct ending.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="xstory-cloze"
-LABEL dock.benchmark.description="XStoryCloze - cross-lingual commonsense story completion across 11 languages"
-LABEL dock.benchmark.tasks="16621"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="c4c2d88a1ec8b37fe22166d2a610f272726724b6"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/juletxara/xstory_cloze"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2112.10668"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="c4c2d88a1ec8b37fe22166d2a610f272726724b6"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="xstory-cloze"
+LABEL eval.benchmark.description="XStoryCloze - cross-lingual commonsense story completion across 11 languages"
+LABEL eval.benchmark.tasks="16621"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="c4c2d88a1ec8b37fe22166d2a610f272726724b6"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/juletxara/xstory_cloze"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2112.10668"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="c4c2d88a1ec8b37fe22166d2a610f272726724b6"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 
@@ -52,21 +52,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=xstory-cloze
+ENV EVAL_BENCHMARK=xstory-cloze
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Read the story and choose the correct ending. Print only the number 1 or 2, nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

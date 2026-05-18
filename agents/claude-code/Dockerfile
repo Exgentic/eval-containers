@@ -1,21 +1,21 @@
 # syntax=docker/dockerfile:1
 # Claude Code agent image (Anthropic)
-FROM quay.io/dock-eval/core/agent-base-node:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="claude-code"
-LABEL dock.agent.description="Anthropic Claude Code CLI"
-LABEL dock.agent.runtime="node"
-LABEL dock.agent.url="https://github.com/anthropics/claude-code"
-LABEL dock.agent.version="2.1.104"
-ENV DOCK_AGENT_VERSION_DEFAULT="2.1.104"
-ENV DOCK_AGENT=claude-code
+FROM quay.io/eval-containers/core/agent-base-node:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="claude-code"
+LABEL eval.agent.description="Anthropic Claude Code CLI"
+LABEL eval.agent.runtime="node"
+LABEL eval.agent.url="https://github.com/anthropics/claude-code"
+LABEL eval.agent.version="2.1.104"
+ENV EVAL_AGENT_VERSION_DEFAULT="2.1.104"
+ENV EVAL_AGENT=claude-code
 RUN npm install -g @anthropic-ai/claude-code@2.1.104
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
 for b in node npm npx claude; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
-RUN cat > /dock-reinstall-agent <<'R' && chmod +x /dock-reinstall-agent
+RUN cat > /eval-reinstall-agent <<'R' && chmod +x /eval-reinstall-agent
 #!/bin/bash
 set -euo pipefail
 "$(command -v npm || echo /opt/agent/node/bin/npm)" install -g "@anthropic-ai/claude-code@${1:?version required}"

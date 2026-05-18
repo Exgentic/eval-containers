@@ -2,21 +2,21 @@
 # 75150 tasks (5010 test examples x 15 languages). Data: HuggingFace facebook/xnli
 # Agent prints entailment/neutral/contradiction. Test compares to expected label.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="xnli"
-LABEL dock.benchmark.description="XNLI - cross-lingual natural language inference across 15 languages"
-LABEL dock.benchmark.tasks="75150"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="b8dd5d7af51114dbda02c0e3f6133f332186418e"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/facebook/xnli"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1809.05053"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="b8dd5d7af51114dbda02c0e3f6133f332186418e"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="xnli"
+LABEL eval.benchmark.description="XNLI - cross-lingual natural language inference across 15 languages"
+LABEL eval.benchmark.tasks="75150"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="b8dd5d7af51114dbda02c0e3f6133f332186418e"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/facebook/xnli"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1809.05053"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="b8dd5d7af51114dbda02c0e3f6133f332186418e"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 
@@ -48,21 +48,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=xnli
+ENV EVAL_BENCHMARK=xnli
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Given the premise and hypothesis, determine the relationship. Print only one word: entailment, neutral, or contradiction. Do not include any explanation.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

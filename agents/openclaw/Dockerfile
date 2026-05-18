@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # OpenClaw agent image
-FROM quay.io/dock-eval/core/agent-base-node:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="openclaw"
-LABEL dock.agent.description="OpenClaw general-purpose AI agent"
-LABEL dock.agent.runtime="node"
-LABEL dock.agent.url="https://github.com/openclaw/openclaw"
-LABEL dock.agent.version="2026.4.11"
-ENV DOCK_AGENT_VERSION_DEFAULT="2026.4.11"
-ENV DOCK_AGENT=openclaw
+FROM quay.io/eval-containers/core/agent-base-node:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="openclaw"
+LABEL eval.agent.description="OpenClaw general-purpose AI agent"
+LABEL eval.agent.runtime="node"
+LABEL eval.agent.url="https://github.com/openclaw/openclaw"
+LABEL eval.agent.version="2026.4.11"
+ENV EVAL_AGENT_VERSION_DEFAULT="2026.4.11"
+ENV EVAL_AGENT=openclaw
 RUN npm install -g openclaw@2026.4.11
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
@@ -20,7 +20,7 @@ RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 set -euo pipefail
 mkdir -p ~/.openclaw
 cat > ~/.openclaw/openclaw.json <<CONF
-{"models":{"providers":{"dock":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000}","apiKey":"${OPENAI_API_KEY:-sk-proxy}","api":"openai-completions","models":[{"id":"dock-model","name":"Dock Proxy Model"}]}}},"agents":{"defaults":{"model":{"primary":"dock/dock-model"}}},"tools":{"exec":{"security":"full","ask":"off"}}}
+{"models":{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000}","apiKey":"${OPENAI_API_KEY:-sk-proxy}","api":"openai-completions","models":[{"id":"eval-model","name":"Eval Containers Proxy Model"}]}}},"agents":{"defaults":{"model":{"primary":"eval-containers/eval-model"}}},"tools":{"exec":{"security":"full","ask":"off"}}}
 CONF
 cat > ~/.openclaw/exec-approvals.json <<CONF
 {"version":1,"defaults":{"security":"full","ask":"off","askFallback":"full"},"agents":{"*":{"security":"full","ask":"off","askFallback":"full","allowlist":[{"pattern":"**"}]}}}

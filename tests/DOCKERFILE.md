@@ -48,11 +48,11 @@ One Dockerfile is one inspection record:
   pinned by a release directory. `deb.nodesource.com/setup_22.x` is
   allowed (major version is pinned).
 - **Legacy env var.** Any `$TASK_ID`, `${TASK_ID}`, `$BENCHMARK`,
-  `${BENCHMARK}` reference — must be `$DOCK_TASK_ID` / `$DOCK_BENCHMARK`
+  `${BENCHMARK}` reference — must be `$EVAL_TASK_ID` / `$EVAL_BENCHMARK`
   after the April 2026 migration.
 - **Untagged FROM.** `FROM ubuntu` with no `:tag`. Pulls whatever is
   tagged `latest` at build time. Never reproducible.
-- **Label drift.** The `dock.benchmark.name` or `dock.agent.name` label
+- **Label drift.** The `eval.benchmark.name` or `eval.agent.name` label
   does not match the directory name.
 - **Missing required label.** See `benchmarks/RULES.md` rule 21 and
   `agents/RULES.md` rule 14 for what's required per image type.
@@ -73,7 +73,7 @@ One Dockerfile is one inspection record:
 - **Non-slim base when slim is available.** `FROM python:3.12` where
   `python:3.12-slim` would work. Might be intentional (header files
   needed for compilation) but worth a look.
-- **`dock.benchmark.data_revision` empty or `latest`.** The label is
+- **`eval.benchmark.data_revision` empty or `latest`.** The label is
   present but its value is empty, `latest`, `main`, `master`, or `HEAD`.
   Benchmarks should pin a specific commit / dataset revision.
 - **Very long `RUN`.** A single `RUN` with more than ~20 commands
@@ -88,11 +88,11 @@ One Dockerfile is one inspection record:
 
 - **Reproducible.** No unpinned installs, no untagged FROM, no mutable
   remote script sources.
-- **Labeled.** All required `dock.*` labels present and consistent
+- **Labeled.** All required `eval-containers.*` labels present and consistent
   with the directory name.
 - **Hygienic.** Follows RULES.md principle 10: slim bases, in-layer
   cleanup, no caches in layers.
-- **Uses DOCK-prefixed env vars.** No legacy `TASK_ID` or `BENCHMARK`
+- **Uses EVAL-prefixed env vars.** No legacy `TASK_ID` or `BENCHMARK`
   references.
 - **No secrets.** No keys, tokens, or passwords in the image.
 

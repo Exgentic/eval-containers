@@ -8,7 +8,7 @@
 #   runner: runs tau-bench harness, calls bridge as its "agent LLM"
 #   eval: pass-through agent that polls bridge and forwards to model
 #
-# dock run tau-bench --task-id 0
+# eval-containers run tau-bench --task-id 0
 
 services:
   # Agent's model — logged, trajectory saved
@@ -18,11 +18,11 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-tau-bench}/${DOCK_TASK_ID:-default}/model:/output:rw
+      - ../../output/${EVAL_BENCHMARK:-tau-bench}/${EVAL_TASK_ID:-default}/model:/output:rw
 
   # User simulator's model — not logged, benchmark infrastructure
   user-model:
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/models/${DOCK_USER_MODEL:-${DOCK_MODEL:-claude-sonnet-4}}:latest
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/${EVAL_USER_MODEL:-${EVAL_MODEL:-claude-sonnet-4}}:latest
     env_file: ../../.env
     networks:
       - internal
@@ -50,12 +50,12 @@ services:
     build:
       context: .
     environment:
-      - DOCK_TASK_ID=${DOCK_TASK_ID:-0}
+      - EVAL_TASK_ID=${EVAL_TASK_ID:-0}
       - BRIDGE_URL=http://bridge:8000/v1
       - MODEL_URL=http://user-model:4000/v1
       - OPENAI_API_KEY=sk-proxy
       - MODEL_NAME=${MODEL_NAME:-gpt-4o}
-    entrypoint: ["bash", "-c", "/dock-materialize-task && python3 /app/run_tau_bench.py"]
+    entrypoint: ["bash", "-c", "/eval-materialize-task && python3 /app/run_tau_bench.py"]
     depends_on:
       bridge:
         condition: service_healthy
@@ -87,7 +87,7 @@ services:
     networks:
       - internal
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-tau-bench}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${EVAL_BENCHMARK:-tau-bench}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
     deploy:
       resources:
         limits:

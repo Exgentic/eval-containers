@@ -4,20 +4,20 @@
 # Evaluation is externally handled by the upstream visualwebarena harness; this image
 # captures the agent's final answer + network HAR and writes -1.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="visualwebarena"
-LABEL dock.benchmark.description="VisualWebArena - multimodal web agent tasks with sidecars"
-LABEL dock.benchmark.tasks="910"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://github.com/web-arena-x/visualwebarena"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2401.13649"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="visualwebarena"
+LABEL eval.benchmark.description="VisualWebArena - multimodal web agent tasks with sidecars"
+LABEL eval.benchmark.tasks="910"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://github.com/web-arena-x/visualwebarena"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2401.13649"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import json, os, urllib.request
 BASE = 'https://raw.githubusercontent.com/web-arena-x/visualwebarena/main/config_files/vwa'
@@ -43,7 +43,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=visualwebarena
+ENV EVAL_BENCHMARK=visualwebarena
 
 # Test: externally graded. Capture agent output + HAR for offline scoring.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -57,9 +57,9 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  INTENT=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  INTENT=$(cat /tasks/$EVAL_TASK_ID/problem.txt)
   export TASK="You are a multimodal web browsing agent. Complete this task by interacting
 with the provided sidecar websites. Use HTTP_PROXY=http://proxy:8080 for all requests.
 
@@ -77,7 +77,7 @@ Credentials:
 
 When done, print your final answer (or the resulting URL for navigation tasks)."
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

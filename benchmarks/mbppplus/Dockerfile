@@ -2,22 +2,22 @@
 # 378 tasks. Data: HuggingFace evalplus/mbppplus
 # Agent writes a Python function. Test runs it against the EvalPlus extended test harness.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mbppplus"
-LABEL dock.benchmark.description="MBPP+ - EvalPlus augmented MBPP with 35x more tests"
-LABEL dock.benchmark.tasks="378"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
-LABEL dock.benchmark.url="https://github.com/evalplus/evalplus"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2305.01210"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mbppplus"
+LABEL eval.benchmark.description="MBPP+ - EvalPlus augmented MBPP with 35x more tests"
+LABEL eval.benchmark.tasks="378"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
+LABEL eval.benchmark.url="https://github.com/evalplus/evalplus"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.01210"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/.
+# fields into /tasks/$EVAL_TASK_ID/.
 RUN pip install --no-cache-dir pyarrow==18.1.0 numpy==2.0.2
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
@@ -45,13 +45,13 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=mbppplus
+ENV EVAL_BENCHMARK=mbppplus
 
 # Test: agent code + EvalPlus harness
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 TEST_CODE=$(cat $TASK_DIR/test.txt)
 
@@ -74,20 +74,20 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   TESTS_HINT=""
-  if [ -s "/tasks/$DOCK_TASK_ID/test_list.txt" ]; then
+  if [ -s "/tasks/$EVAL_TASK_ID/test_list.txt" ]; then
     TESTS_HINT="
 
 Your function must satisfy:
-$(cat /tasks/$DOCK_TASK_ID/test_list.txt)"
+$(cat /tasks/$EVAL_TASK_ID/test_list.txt)"
   fi
   export TASK="Write a Python function to solve the following problem. Print ONLY the complete Python code (function definition and any needed imports), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)$TESTS_HINT"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)$TESTS_HINT"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

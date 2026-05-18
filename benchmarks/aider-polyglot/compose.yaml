@@ -1,7 +1,7 @@
 # Aider Polyglot (multi-language code editing)
 # 225 tasks, shared environment, no internet.
 #
-# dock run aider-polyglot --agent claude-code --task-id 0
+# eval-containers run aider-polyglot --agent claude-code --task-id 0
 
 services:
   model:
@@ -10,19 +10,19 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-aider-polyglot}/${DOCK_TASK_ID:-default}/model:/output:rw
+      - ../../output/${EVAL_BENCHMARK:-aider-polyglot}/${EVAL_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/aider-polyglot--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/aider-polyglot--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
     environment:
-      - DOCK_BENCHMARK=aider-polyglot
-      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-600}
+      - EVAL_BENCHMARK=aider-polyglot
+      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-600}
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-aider-polyglot}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${DOCK_BENCHMARK:-aider-polyglot}/${DOCK_TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${EVAL_BENCHMARK:-aider-polyglot}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${EVAL_BENCHMARK:-aider-polyglot}/${EVAL_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

@@ -13,15 +13,15 @@ RA.Aid: autonomous research-first coding agent with an expert sub-agent.
 
 ## What it does
 
-RA.Aid ("Research Assistant Aid") is an autonomous coding agent that runs a research phase before acting and can consult a separate "expert" reasoning sub-agent. Both the main agent and the expert are routed through the same OpenAI-compatible endpoint, which Dock points at the LiteLLM proxy.
+RA.Aid ("Research Assistant Aid") is an autonomous coding agent that runs a research phase before acting and can consult a separate "expert" reasoning sub-agent. Both the main agent and the expert are routed through the same OpenAI-compatible endpoint, which Eval Containers points at the LiteLLM proxy.
 
-## How Dock runs it
+## How Eval Containers runs it
 
-The entrypoint activates the venv, sets `OPENAI_API_KEY` and `OPENAI_API_BASE=$OPENAI_BASE_URL/v1`, mirrors those onto `EXPERT_OPENAI_API_*` so the expert sub-agent uses the same proxy, and runs `ra-aid --cowboy-mode --provider openai-compatible --model $DOCK_MODEL --expert-provider openai-compatible --expert-model $DOCK_MODEL -m "$TASK"`. `--cowboy-mode` skips shell approval prompts.
+The entrypoint activates the venv, sets `OPENAI_API_KEY` and `OPENAI_API_BASE=$OPENAI_BASE_URL/v1`, mirrors those onto `EXPERT_OPENAI_API_*` so the expert sub-agent uses the same proxy, and runs `ra-aid --cowboy-mode --provider openai-compatible --model $EVAL_MODEL --expert-provider openai-compatible --expert-model $EVAL_MODEL -m "$TASK"`. `--cowboy-mode` skips shell approval prompts.
 
 ## Version
 
-Pinned to `0.30.2` at image build time. Override with `DOCK_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
+Pinned to `0.30.2` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
 
 ## Files
 

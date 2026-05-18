@@ -16,7 +16,7 @@ APPS - Python coding problems across 3 difficulty tiers
 
 ## What the agent sees
 
-The agent receives a task of the form: "Solve this Python coding problem. Print ONLY the complete Python source code, nothing else. If starter code is given, use it.$STARTER" The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Solve this Python coding problem. Print ONLY the complete Python source code, nothing else. If starter code is given, use it.$STARTER" The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -25,5 +25,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile.
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run apps`
+- `compose.yaml` — compose file for `eval-containers run apps`
 - `README.md` — this file

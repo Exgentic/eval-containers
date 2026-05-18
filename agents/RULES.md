@@ -5,7 +5,7 @@
 
 ## Abstract
 
-An agent image packages an AI system for evaluation. It provides an installation script and an entrypoint that reads a task and produces an answer. This document defines the requirements for agent images in Dock.
+An agent image packages an AI system for evaluation. It provides an installation script and an entrypoint that reads a task and produces an answer. This document defines the requirements for agent images in Eval Containers.
 
 ## Terminology
 
@@ -35,7 +35,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 8. **Limited filesystem.** The agent MAY write to `/app/` and `/tmp/`. It MUST NOT access `/tasks/`, `/tests/`, `/logs/`, or `/output/task/`.
 
-9. **External timeout.** The entrypoint enforces `DOCK_TIMEOUT`. The agent MUST NOT implement its own timeout.
+9. **External timeout.** The entrypoint enforces `EVAL_TIMEOUT`. The agent MUST NOT implement its own timeout.
 
 10. **No self-sandboxing.** The agent MUST NOT manage its own permissions or sandbox. Docker is the sandbox. The agent SHOULD run with full permissions inside the container — no bubblewrap, no seccomp, no internal sandboxing. Isolation is the container's job, not the agent's.
 
@@ -43,11 +43,11 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 11. **Install on any base.** `install.sh` MUST work on any benchmark base image. It MUST handle missing packages and MUST NOT assume a specific OS or language runtime.
 
-12. **Reproducible by default.** The upstream CLI version MUST be pinned at build time as a default in the Dockerfile (`ARG <NAME>_VERSION=<semver>`) and recorded in `dock.agent.version`. The image MUST produce a reproducible run with no environment variables set.
+12. **Reproducible by default.** The upstream CLI version MUST be pinned at build time as a default in the Dockerfile (`ARG <NAME>_VERSION=<semver>`) and recorded in `eval.agent.version`. The image MUST produce a reproducible run with no environment variables set.
 
-13. **Runtime version override.** The entrypoint MUST read `DOCK_AGENT_VERSION` and, when set, install and activate that upstream version in place of the default before handing control to the agent. The entrypoint MUST write the resolved version to `/output/agent/version.json` before the agent starts. When `DOCK_AGENT_VERSION` is unset, the build-time default applies unchanged. Cache volumes (`/opt/agent-cache`) MAY be used to avoid reinstall cost on subsequent runs. `DOCK_AGENT_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
+13. **Runtime version override.** The entrypoint MUST read `EVAL_AGENT_VERSION` and, when set, install and activate that upstream version in place of the default before handing control to the agent. The entrypoint MUST write the resolved version to `/output/agent/version.json` before the agent starts. When `EVAL_AGENT_VERSION` is unset, the build-time default applies unchanged. Cache volumes (`/opt/agent-cache`) MAY be used to avoid reinstall cost on subsequent runs. `EVAL_AGENT_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
 
-14. **Labels.** Every agent image MUST include labels: `dock.type`, `dock.agent.name`, `dock.agent.description`, `dock.agent.version`.
+14. **Labels.** Every agent image MUST include labels: `eval.type`, `eval.agent.name`, `eval.agent.description`, `eval.agent.version`.
 
 ### Combination
 
@@ -55,7 +55,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Testing
 
-16. **Build test.** Every agent image MUST have a build test that verifies the Dockerfile builds and produces correct `dock.*` labels.
+16. **Build test.** Every agent image MUST have a build test that verifies the Dockerfile builds and produces correct `eval-containers.*` labels.
 
 17. **Replay test.** Every agent MUST participate in at least one end-to-end replay test with a recorded fixture. This verifies the agent runs correctly against real model responses without API keys.
 
@@ -69,4 +69,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | Date | Change |
 |------|--------|
 | 2026-04-13 | Initial version |
-| 2026-04-14 | Split rule 12 into rule 12 (reproducible by default via pinned `ARG <NAME>_VERSION`) and new rule 13 (runtime override via `DOCK_AGENT_VERSION`, writes resolved version to `/output/agent/version.json`). Added `dock.agent.version` to required labels (rule 14). Renumbered rules 14–17. |
+| 2026-04-14 | Split rule 12 into rule 12 (reproducible by default via pinned `ARG <NAME>_VERSION`) and new rule 13 (runtime override via `EVAL_AGENT_VERSION`, writes resolved version to `/output/agent/version.json`). Added `eval.agent.version` to required labels (rule 14). Renumbered rules 14–17. |

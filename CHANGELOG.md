@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Dock are recorded here. Each release entry lists
+All notable changes to Eval Containers are recorded here. Each release entry lists
 what shipped and why, in the voice of the change — not the PR that
 landed it.
 
@@ -26,11 +26,11 @@ addition; the patch on a bug fix that doesn't change the rule surface.
   `core/agent-base-{node,python,rust}` and
   `core/benchmark-base-{hf,github,external}` land as canonical bases;
   every agent and most benchmarks extend them.
-- **`core/entrypoint/dock-sitecustomize.py`** — single-home urllib retry
+- **`core/entrypoint/eval-sitecustomize.py`** — single-home urllib retry
   helper. Every benchmark's `RUN python3 <<'PYEOF' urllib.request.urlretrieve(...)`
   silently retries on transient HF / network failures with zero
   per-benchmark changes.
-- **`DOCK_BUILD_PARALLEL`** env var on `cargo test --test build`.
+- **`EVAL_BUILD_PARALLEL`** env var on `cargo test --test build`.
   Tokio `JoinSet + Semaphore` parallelise the build sweep; label-check
   phase stays serial for deterministic logging. Drains on panic so no
   `ImageGuard` leaks. Documented in [`tests/LOCAL.md`](tests/LOCAL.md)
@@ -72,7 +72,7 @@ addition; the patch on a bug fix that doesn't change the rule surface.
   carve-out per [`tests/containers/RULES.md`](tests/containers/RULES.md)
   rule 1.
 - **`tests/upstream/test.rs`** gained `is_first_party()` filter for
-  `quay.io/dock-eval/*` self-references — they're locally built, not
+  `quay.io/eval-containers/*` self-references — they're locally built, not
   yet published, so probing `docker manifest inspect` on them always
   404s and crowds out real drift signal.
 
@@ -115,7 +115,7 @@ addition; the patch on a bug fix that doesn't change the rule surface.
   trajectory / counts / README).
 - `cargo test --test upstream -- --ignored` — green (first-party filter).
 - `cargo test --test build build_every_agent -- --ignored
-  --test-threads=1 DOCK_BUILD_FILTER=claude-code,aider` — **2/2 green**.
+  --test-threads=1 EVAL_BUILD_FILTER=claude-code,aider` — **2/2 green**.
 - `cargo test --test fleet -- --ignored` — yellow (mechanical all
   green, procedural yellow from upstream-base tag-pinning debt).
 - `hadolint` — 0 errors, 25 review warnings (117 heredoc false-positives
@@ -130,7 +130,7 @@ addition; the patch on a bug fix that doesn't change the rule surface.
 ### CI-side follow-ups (not blocked on code)
 
 - Full 100-benchmark + 20-agent build sweep (`cargo test --test build --
-  --ignored --test-threads=1 DOCK_BUILD_PARALLEL=4`) — expected clean
+  --ignored --test-threads=1 EVAL_BUILD_PARALLEL=4`) — expected clean
   on Linux Docker in CI; podman-on-macOS saturates the VM network
   under high concurrency.
 - Live fleet sweep — requires reachable LLM backend (IBM VPN, or
@@ -143,10 +143,10 @@ addition; the patch on a bug fix that doesn't change the rule surface.
 
 - `hadolint` 2.14 heredoc parser can't handle `RUN python3 <<'PYEOF'`
   — 117 false-positive parse errors. Upstream issue.
-- 3 benchmark bases `COPY --from=quay.io/dock-eval/core/entrypoint:latest`
+- 3 benchmark bases `COPY --from=quay.io/eval-containers/core/entrypoint:latest`
   with mutable `:latest` tag. Acceptable while the core/* images are
   pre-registry; tighten to a digest once published.
-- `core/agent-base-rust` label is `dock.base.runtime="rust"` but also
+- `core/agent-base-rust` label is `eval.base.runtime="rust"` but also
   hosts Go-based agents (`crush`). Documented in its Dockerfile
   header comment; split into `core/agent-base-go/` if a Go-only base
   becomes worthwhile.

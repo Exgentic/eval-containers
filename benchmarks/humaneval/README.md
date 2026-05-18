@@ -19,7 +19,7 @@ HumanEval - Python code generation
 
 ## What the agent sees
 
-The agent receives a task of the form: "Complete the following Python function. Print ONLY the function body (the code that goes after the function signature), nothing else. Do not repeat the function signature or docstring." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Complete the following Python function. Print ONLY the function body (the code that goes after the function signature), nothing else. Do not repeat the function signature or docstring." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -28,5 +28,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile.
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run humaneval`
+- `compose.yaml` — compose file for `eval-containers run humaneval`
 - `README.md` — this file

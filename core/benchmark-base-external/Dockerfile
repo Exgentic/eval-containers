@@ -9,8 +9,8 @@
 # overrides.
 FROM --platform=linux/amd64 python:3.12-slim
 
-LABEL dock.type="core-base"
-LABEL dock.base.kind="external"
+LABEL eval.type="core-base"
+LABEL eval.base.kind="external"
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
@@ -41,10 +41,10 @@ RUN set -e; ok=0; \
     done; \
     [ "$ok" = 1 ] || { echo "uv pip install failed after 5 tries" >&2; exit 1; }
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
+RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app && \
     printf '#!/bin/bash\nmkdir -p /logs/verifier\necho -1 > /logs/verifier/reward.txt\n' > /tests/test.sh && \

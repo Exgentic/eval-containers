@@ -1,13 +1,13 @@
 # syntax=docker/dockerfile:1
 # Shared base for agents that ship prebuilt binaries in /opt/agent/bin (Rule 11a).
-# Label `dock.base.runtime="rust"` is the canonical tag; Go-based agents (like
+# Label `eval.base.runtime="rust"` is the canonical tag; Go-based agents (like
 # `crush`) also extend this base because the install shape is identical —
 # drop a prebuilt binary + symlink into /usr/local/bin. If a Go-only base
 # emerges, add a `core/agent-base-go/` and retag then.
 # Provides: apt-retry wrapper with tar/bzip2, /opt/agent skeleton + /opt/agent/bin on PATH.
 FROM --platform=linux/amd64 ubuntu:24.04
-LABEL dock.type="core-base"
-LABEL dock.base.runtime="rust"
+LABEL eval.type="core-base"
+LABEL eval.base.runtime="rust"
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
       if apt-get update --fix-missing && apt-get install -y --no-install-recommends \

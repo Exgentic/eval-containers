@@ -1,8 +1,8 @@
 FROM python:3.12-slim
 
-LABEL dock.type="model"
-LABEL dock.model.name="replay"
-LABEL dock.model.provider="replay"
+LABEL eval.type="model"
+LABEL eval.model.name="replay"
+LABEL eval.model.provider="replay"
 
 RUN pip install --no-cache-dir flask==3.1.0
 

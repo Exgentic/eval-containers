@@ -5,7 +5,7 @@
 
 ## Abstract
 
-This document defines how contributions to Dock are made. A contribution is either an issue or a PR that solves an issue. Nothing else. Filing a good issue is a contribution — you are credited as a contributor on the PR that resolves it.
+This document defines how contributions to Eval Containers are made. A contribution is either an issue or a PR that solves an issue. Nothing else. Filing a good issue is a contribution — you are credited as a contributor on the PR that resolves it.
 
 ## Terminology
 

@@ -2,20 +2,20 @@
 # 5000 tasks. Data: openai/healthbench via Azure blob
 # Agent responds to health conversations. Test uses LLM-as-judge with physician rubrics.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="healthbench"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="HealthBench - medical/health AI evaluation with physician rubrics"
-LABEL dock.benchmark.tasks="5000"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="40ee1968852fc57f625934251ac22be47077a8fb"
-LABEL dock.benchmark.url="https://github.com/openai/healthbench"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/healthbench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2505.11709"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="40ee1968852fc57f625934251ac22be47077a8fb"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="healthbench"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="HealthBench - medical/health AI evaluation with physician rubrics"
+LABEL eval.benchmark.tasks="5000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="40ee1968852fc57f625934251ac22be47077a8fb"
+LABEL eval.benchmark.url="https://github.com/openai/healthbench"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/healthbench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.11709"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="40ee1968852fc57f625934251ac22be47077a8fb"
 
 # Fetch dataset (JSONL from OpenAI public blob storage)
 RUN curl -sfL -o /tmp/eval.jsonl \
@@ -54,14 +54,14 @@ RUN rm -f /tmp/eval.jsonl
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=healthbench
+ENV EVAL_BENCHMARK=healthbench
 
 # Custom test: LLM-as-judge scoring using physician rubrics
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 AGENT_RESPONSE=$(cat /output/agent/stdout.log 2>/dev/null)
 
 if [ -z "$AGENT_RESPONSE" ]; then
@@ -178,13 +178,13 @@ RUN chmod -R 700 /tests && chown -R root:root /tests
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a helpful health assistant. Respond to the following health-related question or conversation thoughtfully and accurately. Provide complete, evidence-based information. If the situation may be urgent or dangerous, include appropriate safety guidance.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

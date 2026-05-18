@@ -2,20 +2,20 @@
 # 900 tasks. Data: HuggingFace MMMU/MMMU (validation split, 30 subjects x 30)
 # Agent sees question + options + image(s). Prints answer letter. Test compares to expected.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mmmu"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="MMMU - massive multi-discipline multimodal understanding"
-LABEL dock.benchmark.tasks="900"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
-LABEL dock.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.16502"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mmmu"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="MMMU - massive multi-discipline multimodal understanding"
+LABEL eval.benchmark.tasks="900"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
+LABEL eval.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.16502"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
 
 # Single-JSONL task layout. One line per task. Images base64-encoded inline;
 # runtime entrypoint decodes only the requested task's images.
@@ -62,18 +62,18 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=mmmu
+ENV EVAL_BENCHMARK=mmmu
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ]; then
   python3 - <<'PY'
 import base64, os, glob
-tid = os.environ['DOCK_TASK_ID']
+tid = os.environ['EVAL_TASK_ID']
 for b64_path in glob.glob(f'/tasks/{tid}/image_*_b64.txt'):
     name = os.path.basename(b64_path).removesuffix('_b64.txt')
     with open(b64_path) as f:
@@ -85,10 +85,10 @@ for b64_path in glob.glob(f'/tasks/{tid}/image_*_b64.txt'):
     os.remove(b64_path)
 PY
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   # Copy images to /app/ so the agent can see them
   IMAGE_LIST=""
-  for f in /tasks/$DOCK_TASK_ID/image_*.png; do
+  for f in /tasks/$EVAL_TASK_ID/image_*.png; do
     [ -f "$f" ] || continue
     name=$(basename "$f")
     cp "$f" /app/"$name"
@@ -96,8 +96,8 @@ if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
 /app/${name}"
   done
 
-  OPTIONS=$(cat /tasks/$DOCK_TASK_ID/options.txt)
-  PROBLEM=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
+  OPTIONS=$(cat /tasks/$EVAL_TASK_ID/options.txt)
+  PROBLEM=$(cat /tasks/$EVAL_TASK_ID/problem.txt)
 
   if [ -n "$IMAGE_LIST" ]; then
     export TASK="Look at the provided image(s) and answer this multiple choice question. Print only the answer letter (A, B, C, D, etc.), nothing else.
@@ -114,9 +114,9 @@ Question: ${PROBLEM}
 
 Options: ${OPTIONS}"
   fi
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

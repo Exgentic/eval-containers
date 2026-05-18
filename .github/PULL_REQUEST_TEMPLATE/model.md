@@ -33,22 +33,22 @@ sweet spot, context window, etc.) -->
 
 ### Required Dockerfile labels (models/RULES.md 14, 15)
 
-- [ ] `LABEL dock.type="model"`
-- [ ] `LABEL dock.model.name="<name>"` (matches directory name)
-- [ ] `LABEL dock.model.provider="<provider>"`
-- [ ] `LABEL dock.model.litellm_version="<pinned version>"` (matches the `core/litellm` base image pin)
+- [ ] `LABEL eval.type="model"`
+- [ ] `LABEL eval.model.name="<name>"` (matches directory name)
+- [ ] `LABEL eval.model.provider="<provider>"`
+- [ ] `LABEL eval.model.litellm_version="<pinned version>"` (matches the `core/litellm` base image pin)
 
 ### Required ENV
 
-- [ ] `ENV DOCK_LITELLM_VERSION_DEFAULT="<pinned version>"` (same value as the label)
+- [ ] `ENV EVAL_LITELLM_VERSION_DEFAULT="<pinned version>"` (same value as the label)
 
 ### `config.yaml` contract
 
-- [ ] `FROM quay.io/dock-eval/core/litellm:latest` (inherits the shared proxy + dock-logger + budget wrapper)
+- [ ] `FROM quay.io/eval-containers/core/litellm:latest` (inherits the shared proxy + eval-logger + budget wrapper)
 - [ ] `model_list` has a wildcard route (`model_name: "*"`) aliasing to `<provider>/<model>`
 - [ ] `model_list` ALSO has explicit aliases for every common name agents might send (gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini, claude-3-5-sonnet, claude-3-5-haiku, claude-sonnet-4-5, gemini-2.5-pro, o1, o1-mini). The wildcard alone is NOT reliable on the OpenAI `/v1/chat/completions` path — explicit aliases are the fix, see the `models/gpt-5.4/config.yaml` reference.
 - [ ] Every alias uses a YAML anchor (`&gpt54` / `*gpt54`) so the `litellm_params` block is declared once
-- [ ] `litellm_settings.callbacks: ["dock_logger.dock_logger_instance"]` — cost tracking on
+- [ ] `litellm_settings.callbacks: ["eval_logger.eval_logger_instance"]` — cost tracking on
 - [ ] `api_key: "os.environ/<PROVIDER>_API_KEY"` — NO hardcoded keys (models/RULES.md 5)
 - [ ] `api_base: "os.environ/<PROVIDER>_API_BASE"` if the provider uses a non-default endpoint
 
@@ -60,7 +60,7 @@ sweet spot, context window, etc.) -->
 
 ### Local build
 
-- [ ] `dock build model <name>` succeeds
+- [ ] `eval-containers build model <name>` succeeds
 - [ ] `cargo test --test dockerfile_inspection` passes with zero new red findings
 - [ ] Image size ≤ 300 MB (it's just a config on top of core/litellm)
 
@@ -75,16 +75,16 @@ benchmark to prove both SDK surfaces work.
 
 ```bash
 # Claude path (Anthropic /v1/messages)
-dock run aime --agent claude-code --model <name> --task-id 0 --local --max-budget 1
+eval-containers run aime --agent claude-code --model <name> --task-id 0 --local --max-budget 1
 ```
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty
-- [ ] `output/aime/0/model/result.json` `cost_usd > 0` — dock_logger captured the call
+- [ ] `output/aime/0/model/result.json` `cost_usd > 0` — eval_logger captured the call
 - [ ] No `response_cost: 0.0` throughout the trajectory (cost tracking works on this path)
 
 ```bash
 # OpenAI path (/v1/chat/completions)
-dock run aime --agent aider --model <name> --task-id 0 --local --max-budget 1
+eval-containers run aime --agent aider --model <name> --task-id 0 --local --max-budget 1
 ```
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty
@@ -96,15 +96,15 @@ dock run aime --agent aider --model <name> --task-id 0 --local --max-budget 1
 If this model targets an OpenAI reasoning endpoint (o1, o1-mini, gpt-5-*), also run:
 
 ```bash
-dock run aime --agent codex --model <name> --task-id 0 --local --max-budget 1
+eval-containers run aime --agent codex --model <name> --task-id 0 --local --max-budget 1
 ```
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty
-- [ ] Known issue: cost tracking on the `/v1/responses` path may not populate `response_cost` until [core/litellm/dock_logger.py](../../core/litellm/dock_logger.py) is fixed. Document this in the PR description if it applies.
+- [ ] Known issue: cost tracking on the `/v1/responses` path may not populate `response_cost` until [core/litellm/eval_logger.py](../../core/litellm/eval_logger.py) is fixed. Document this in the PR description if it applies.
 
 ### Budget enforcement
 
-- [ ] Smoke-test the `DOCK_MODEL_MAX_BUDGET` cap by running with `--max-budget 0.001` and confirming the run fails loud with `BudgetExceededError` before exhausting the per-run timeout
+- [ ] Smoke-test the `EVAL_MODEL_MAX_BUDGET` cap by running with `--max-budget 0.001` and confirming the run fails loud with `BudgetExceededError` before exhausting the per-run timeout
 
 ### Fixture promotion
 

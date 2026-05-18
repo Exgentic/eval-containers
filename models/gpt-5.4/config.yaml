@@ -94,4 +94,4 @@ model_list:
     model_info: *gpt54_info
 
 litellm_settings:
-  callbacks: ["dock_logger.dock_logger_instance"]
+  callbacks: ["eval_logger.eval_logger_instance"]

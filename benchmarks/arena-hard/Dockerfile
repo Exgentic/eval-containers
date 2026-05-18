@@ -4,18 +4,18 @@
 # LLM-as-judge, with both orderings considered to reduce position bias.
 # Ref: https://github.com/lmarena/arena-hard-auto (Li et al. 2024)
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="arena-hard"
-LABEL dock.benchmark.description="Arena-Hard - pairwise chat eval vs gpt-4-0314 baseline with LLM judge"
-LABEL dock.benchmark.tasks="500"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="196f6b826783b3da7310e361a805fa36f0be83f3"
-LABEL dock.benchmark.url="https://github.com/lmarena/arena-hard-auto"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.11939"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="196f6b826783b3da7310e361a805fa36f0be83f3"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="arena-hard"
+LABEL eval.benchmark.description="Arena-Hard - pairwise chat eval vs gpt-4-0314 baseline with LLM judge"
+LABEL eval.benchmark.tasks="500"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="196f6b826783b3da7310e361a805fa36f0be83f3"
+LABEL eval.benchmark.url="https://github.com/lmarena/arena-hard-auto"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.11939"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="196f6b826783b3da7310e361a805fa36f0be83f3"
 
 # Fetch the Arena-Hard v0.1 question set and baseline answers (pinned sha)
 RUN git clone --depth 1 https://github.com/lmarena/arena-hard-auto.git /tmp/ah \
@@ -64,7 +64,7 @@ RUN rm -rf /tmp/ah
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=arena-hard
+ENV EVAL_BENCHMARK=arena-hard
 
 # Custom test: LLM-as-judge pairwise comparison (agent vs baseline).
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -77,7 +77,7 @@ RUN chmod +x /tests/test.sh
 RUN cat > /tests/grade.py <<'GRADE'
 import os, json, re, sys, urllib.request
 
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 d = f'/tasks/{task_id}'
 prompt = open(f'{d}/problem.txt').read()
 baseline = open(f'{d}/baseline.txt').read()
@@ -167,11 +167,11 @@ RUN chmod -R 700 /tests
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

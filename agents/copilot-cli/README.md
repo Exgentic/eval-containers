@@ -13,15 +13,15 @@ GitHub Copilot CLI: GitHub's terminal coding assistant.
 
 ## What it does
 
-GitHub Copilot CLI is the terminal-facing Copilot agent that can read a workspace, plan multi-step edits, and run commands. In Dock it runs in "offline / BYOK" mode — `COPILOT_OFFLINE=true` disables GitHub cloud auth and all LLM traffic is redirected to an OpenAI-compatible endpoint advertised by the LiteLLM proxy.
+GitHub Copilot CLI is the terminal-facing Copilot agent that can read a workspace, plan multi-step edits, and run commands. In Eval Containers it runs in "offline / BYOK" mode — `COPILOT_OFFLINE=true` disables GitHub cloud auth and all LLM traffic is redirected to an OpenAI-compatible endpoint advertised by the LiteLLM proxy.
 
-## How Dock runs it
+## How Eval Containers runs it
 
 The entrypoint sets `COPILOT_PROVIDER_BASE_URL=$OPENAI_BASE_URL/v1`, `COPILOT_PROVIDER_API_KEY=$OPENAI_API_KEY`, `COPILOT_OFFLINE=true`, and `COPILOT_MODEL=$COPILOT_MODEL`, then pipes `$TASK` into `copilot --yolo` over stdin. `--yolo` auto-approves all tool calls. Output is printed to stdout.
 
 ## Version
 
-Pinned to `1.0.24` at image build time. Override with `DOCK_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
+Pinned to `1.0.24` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
 
 ## Files
 

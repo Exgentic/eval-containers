@@ -8,8 +8,8 @@
 # Linux amd64 is a no-op; on Apple Silicon, this forces Rosetta-assisted
 # amd64 builds so the produced node binary matches what runs at runtime.
 FROM --platform=linux/amd64 ubuntu:24.04
-LABEL dock.type="core-base"
-LABEL dock.base.runtime="node"
+LABEL eval.type="core-base"
+LABEL eval.base.runtime="node"
 ARG NODE_VERSION=22.11.0
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \

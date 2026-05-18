@@ -1,4 +1,4 @@
-# Running Dock Tests Locally
+# Running Eval Containers Tests Locally
 
 **Status:** Practical guide
 **Date:** April 2026
@@ -9,11 +9,11 @@ This document is the practical counterpart to [RULES.md](RULES.md). RULES define
 
 **Test what you touched locally. Let CI test everything.**
 
-Dock has 96+ benchmarks and 17+ agents. That's 1600+ possible eval combinations, most of which you'll never need locally. Build only what you're working on; pull everything else from the registry.
+Eval Containers has 96+ benchmarks and 17+ agents. That's 1600+ possible eval combinations, most of which you'll never need locally. Build only what you're working on; pull everything else from the registry.
 
 ## What runtime you need
 
-Dock is a **Docker-first** project. Everything — Dockerfiles, compose files, CI — is written against the standard Docker API. You can run it on any OCI-compatible runtime that exposes a Docker-compatible socket:
+Eval Containers is a **Docker-first** project. Everything — Dockerfiles, compose files, CI — is written against the standard Docker API. You can run it on any OCI-compatible runtime that exposes a Docker-compatible socket:
 
 - **Docker Desktop** — the canonical path, what CI uses. Easiest if you're on Mac or Windows and don't have a strong preference.
 - **Docker Engine** (Linux) — what the release pipeline runs against. Identical to Docker Desktop for our purposes.
@@ -64,7 +64,7 @@ Docker Desktop → Settings → Builders → edit the default builder → set **
 
 ## Setup: Podman (alternative)
 
-If you already use Podman, it works — Dock's Dockerfiles and compose files use vanilla syntax with no Docker-only or Podman-only features. You just need to install the Docker-compat CLI shim and point it at Podman, then use `docker` commands from there.
+If you already use Podman, it works — Eval Containers's Dockerfiles and compose files use vanilla syntax with no Docker-only or Podman-only features. You just need to install the Docker-compat CLI shim and point it at Podman, then use `docker` commands from there.
 
 ```bash
 brew install docker                    # the docker CLI, client only
@@ -87,7 +87,7 @@ docker version     # should report a running server
 docker info        # should say Context: default, Server OS: linux
 ```
 
-From here, use **`docker` commands for everything** — `docker build`, `docker compose`, etc. Never invoke `podman` directly for Dock workflows. If you need BuildKit garbage collection, set it via the podman machine:
+From here, use **`docker` commands for everything** — `docker build`, `docker compose`, etc. Never invoke `podman` directly for Eval Containers workflows. If you need BuildKit garbage collection, set it via the podman machine:
 
 ```bash
 podman machine ssh <<'EOF'
@@ -127,7 +127,7 @@ docker build -t local/aime benchmarks/aime/
 docker build -t local/claude-code agents/claude-code/
 
 # One eval combination (benchmark + agent + model)
-dock build eval aime --agent codex
+eval-containers build eval aime --agent codex
 ```
 
 That's it. Don't try to build the fleet locally — CI does that via [RELEASE.md](../RELEASE.md).
@@ -140,11 +140,11 @@ Locally buildable and valid on Mac/Linux with Podman or Docker — the "don't bu
 # Serial (default) — one image at a time, ~90 min for the full fleet
 cargo test --test build -- --ignored
 
-# Parallel — run up to N builds concurrently via DOCK_BUILD_PARALLEL
-DOCK_BUILD_PARALLEL=4 cargo test --test build -- --ignored
+# Parallel — run up to N builds concurrently via EVAL_BUILD_PARALLEL
+EVAL_BUILD_PARALLEL=4 cargo test --test build -- --ignored
 ```
 
-`DOCK_BUILD_PARALLEL=N` bounds the number of in-flight `docker build` calls. Rule of thumb: `N ≈ VM_CPUS / 2` (BuildKit saturates a couple of cores per image during `RUN` layers). On a 5-cpu / 32 GB podman VM, `N=4` is a good fit and cuts the full sweep roughly to 1/3. Higher values (`N=6+`) mostly fight each other on the network during `apt-get update` / `pip install`.
+`EVAL_BUILD_PARALLEL=N` bounds the number of in-flight `docker build` calls. Rule of thumb: `N ≈ VM_CPUS / 2` (BuildKit saturates a couple of cores per image during `RUN` layers). On a 5-cpu / 32 GB podman VM, `N=4` is a good fit and cuts the full sweep roughly to 1/3. Higher values (`N=6+`) mostly fight each other on the network during `apt-get update` / `pip install`.
 
 The harness still verifies via testcontainers-rs — it only parallelizes the outer loop, not the per-image build mechanism (per `tests/RULES.md` rule 6b).
 
@@ -164,7 +164,7 @@ One-time. Runs a real task with a real model, saves the trajectory as a fixture.
 
 ```bash
 # Record one combination
-TASK_ID=0 DOCK_AGENT=codex DOCK_MODEL=gpt-4.1-mini \
+TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-4.1-mini \
   docker compose -f benchmarks/aime/compose.yaml up --abort-on-container-exit
 
 cp output/aime/0/model/trajectory.jsonl \
@@ -178,27 +178,27 @@ Use `gpt-4.1-mini` — cheapest model that works. One fixture per combination fo
 Three thin wrappers around Docker's native commands, so you see both the result and the underlying `docker` call:
 
 ```bash
-# List dock images with sizes (wraps `docker images`)
-dock images                     # all dock images
-dock images benchmarks          # just benchmarks
-dock images agents
+# List eval-containers images with sizes (wraps `docker images`)
+eval-containers images                     # all eval-containers images
+eval-containers images benchmarks          # just benchmarks
+eval-containers images agents
 
-# Inspect a dock image (wraps `docker inspect`)
-dock inspect aime               # benchmark
-dock inspect codex --category agents
+# Inspect a eval-containers image (wraps `docker inspect`)
+eval-containers inspect aime               # benchmark
+eval-containers inspect codex --category agents
 ```
 
 ## Reclaiming Disk
 
 ```bash
 # Safe: prune build cache + dangling images
-dock prune
+eval-containers prune
 
-# Destructive: wipe all dock.* labeled images
-dock prune --all
+# Destructive: wipe all eval-containers.* labeled images
+eval-containers prune --all
 ```
 
-With BuildKit GC configured in setup, you rarely need `dock prune` manually.
+With BuildKit GC configured in setup, you rarely need `eval-containers prune` manually.
 
 ## Common Workflows
 
@@ -211,7 +211,7 @@ cargo test --test check structural_validation
 docker build -t local/aime benchmarks/aime/
 
 # 3. Run one task with a real model
-TASK_ID=0 DOCK_AGENT=codex DOCK_MODEL=gpt-4.1-mini \
+TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-4.1-mini \
   docker compose -f benchmarks/aime/compose.yaml up --abort-on-container-exit
 
 # 4. Check the output
@@ -230,7 +230,7 @@ Everything else — full fleet build, registry push, multi-arch — is CI's job.
 
 **Reclaim a weekend's worth of builds:**
 ```bash
-dock prune --all
+eval-containers prune --all
 ```
 
 ## Per-Task Benchmarks
@@ -238,7 +238,7 @@ dock prune --all
 `swe-bench`, `compilebench`, `terminal-bench` use `ARG TASK_ID` at build time — each task is a separate image. **Never build them all.** Pick one:
 
 ```bash
-dock build bench swe-bench --task-id sympy__sympy-24066
+eval-containers build bench swe-bench --task-id sympy__sympy-24066
 ```
 
 ## Registry Caching (Future)
@@ -246,7 +246,7 @@ dock build bench swe-bench --task-id sympy__sympy-24066
 Once images are published to the registry, local testing becomes:
 
 ```bash
-dock run aime --task-id 0 --agent codex --model gpt-5.4
+eval-containers run aime --task-id 0 --agent codex --model gpt-5.4
 ```
 
 No local builds needed. CI builds once; everyone pulls.

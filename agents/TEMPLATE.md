@@ -8,11 +8,11 @@ Read `RULES.md` first. Then copy the template below and fill in the blanks.
 # {NAME} agent
 FROM ubuntu:24.04
 
-LABEL dock.type="agent"
-LABEL dock.agent.name="{name}"
-LABEL dock.agent.description="{Short description}"
-LABEL dock.agent.runtime="{runtime}"
-ENV DOCK_AGENT={name}
+LABEL eval.type="agent"
+LABEL eval.agent.name="{name}"
+LABEL eval.agent.description="{Short description}"
+LABEL eval.agent.runtime="{runtime}"
+ENV EVAL_AGENT={name}
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
@@ -71,6 +71,6 @@ ENTRYPOINT ["/opt/agent/entrypoint.sh"]
 - **All LLM calls must go through the proxy.** The agent receives `OPENAI_BASE_URL=http://model:4000`. If your SDK ignores this env var, write a config file in the entrypoint that points to it.
 - **No self-sandboxing.** Don't use bubblewrap, seccomp, or internal sandboxes. Docker is the sandbox.
 - **Print the answer to stdout.** The entrypoint captures it. Don't write to files.
-- **Don't add your own timeout.** `DOCK_TIMEOUT` is enforced by the shared entrypoint.
+- **Don't add your own timeout.** `EVAL_TIMEOUT` is enforced by the shared entrypoint.
 - **Log actions to stderr.** The entrypoint captures stderr to `/output/agent/stderr.log`. Agents that log their steps (commands run, files edited) there give users visibility into what happened. This is optional but helpful.
 - See `agents/raw/Dockerfile` for the simplest possible agent, `agents/codex/Dockerfile` for an agent that needs proxy config.

@@ -6,22 +6,22 @@
 # trace is tightly coupled to upstream tooling). This benchmark captures the agent's
 # output trace and writes -1 per RULES.md section Scoring.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mind2web"
-LABEL dock.benchmark.description="Mind2Web - generalist web agent instruction following"
-LABEL dock.benchmark.tasks="1009"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="17ece8eb89862368edc0cc806acee6fca5163474"
-LABEL dock.benchmark.url="https://github.com/OSU-NLP-Group/Mind2Web"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2306.06070"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="17ece8eb89862368edc0cc806acee6fca5163474"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mind2web"
+LABEL eval.benchmark.description="Mind2Web - generalist web agent instruction following"
+LABEL eval.benchmark.tasks="1009"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="17ece8eb89862368edc0cc806acee6fca5163474"
+LABEL eval.benchmark.url="https://github.com/OSU-NLP-Group/Mind2Web"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2306.06070"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="17ece8eb89862368edc0cc806acee6fca5163474"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/ and renames meta/gold_trace to .json.
+# fields into /tasks/$EVAL_TASK_ID/ and renames meta/gold_trace to .json.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 BASE = 'https://huggingface.co/api/datasets/osunlp/Mind2Web/parquet/default/train'
@@ -54,7 +54,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=mind2web
+ENV EVAL_BENCHMARK=mind2web
 
 # Test: externally graded. Preserve agent trace, write -1.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -68,23 +68,23 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ]; then
-  TDIR="/tasks/$DOCK_TASK_ID"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ]; then
+  TDIR="/tasks/$EVAL_TASK_ID"
   [ -f "$TDIR/meta.txt" ] && mv "$TDIR/meta.txt" "$TDIR/meta.json" && chmod 600 "$TDIR/meta.json"
   [ -f "$TDIR/gold_trace.txt" ] && mv "$TDIR/gold_trace.txt" "$TDIR/gold_trace.json" && chmod 600 "$TDIR/gold_trace.json"
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  META=$(cat /tasks/$DOCK_TASK_ID/meta.json)
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  META=$(cat /tasks/$EVAL_TASK_ID/meta.json)
   export TASK="You are a generalist web agent. Produce a step-by-step action trace that
 would complete the following task on the target website. Each line of your output
 MUST describe one UI action in the form: [element_type] element_label -> ACTION[: value]
 
 Target site metadata: $META
 
-Task: $(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+Task: $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

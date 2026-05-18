@@ -4,18 +4,18 @@
 # Test compares stdout to the reference fix (exact match; upstream follows the same
 # convention — all identifiers are normalized).
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="coderefine"
-LABEL dock.benchmark.description="CodeRefine (CodeXGLUE) - Java bug-fix code refinement"
-LABEL dock.benchmark.tasks="6545"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
-LABEL dock.benchmark.url="https://github.com/microsoft/CodeXGLUE/tree/main/Code-Code/code-refinement"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2102.04664"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="coderefine"
+LABEL eval.benchmark.description="CodeRefine (CodeXGLUE) - Java bug-fix code refinement"
+LABEL eval.benchmark.tasks="6545"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
+LABEL eval.benchmark.url="https://github.com/microsoft/CodeXGLUE/tree/main/Code-Code/code-refinement"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2102.04664"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
@@ -37,24 +37,24 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=coderefine
+ENV EVAL_BENCHMARK=coderefine
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are given a buggy Java function. Print the refined (bug-free)
 version as a single line of Java, identifiers normalized. Print only the fixed code,
 nothing else.
 
 Buggy code:
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -2,18 +2,18 @@
 # 5000 test tasks. Data: HuggingFace codeparrot/apps
 # Agent writes a Python solution. Test runs it against JSON-encoded I/O test cases.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="apps"
-LABEL dock.benchmark.description="APPS - Python coding problems across 3 difficulty tiers"
-LABEL dock.benchmark.tasks="5000"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="21e74ddf8de1a21436da12e3e653065c5213e9d1"
-LABEL dock.benchmark.url="https://github.com/hendrycks/apps"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2105.09938"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="21e74ddf8de1a21436da12e3e653065c5213e9d1"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="apps"
+LABEL eval.benchmark.description="APPS - Python coding problems across 3 difficulty tiers"
+LABEL eval.benchmark.tasks="5000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="21e74ddf8de1a21436da12e3e653065c5213e9d1"
+LABEL eval.benchmark.url="https://github.com/hendrycks/apps"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2105.09938"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="21e74ddf8de1a21436da12e3e653065c5213e9d1"
 
 # Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
 RUN python3 <<'PYEOF'
@@ -50,14 +50,14 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=apps
+ENV EVAL_BENCHMARK=apps
 
 # Test: run agent's Python solution against decoded I/O test cases.
 # Handles both stdio mode and functional mode (when fn_name is set).
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 
 if [ -z "$SOLUTION" ] || [ ! -s "$TASK_DIR/input_output.txt" ]; then
@@ -146,20 +146,20 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   STARTER=""
-  if [ -s "/tasks/$DOCK_TASK_ID/starter_code.txt" ]; then
+  if [ -s "/tasks/$EVAL_TASK_ID/starter_code.txt" ]; then
     STARTER="
 
 Starter code:
-$(cat /tasks/$DOCK_TASK_ID/starter_code.txt)"
+$(cat /tasks/$EVAL_TASK_ID/starter_code.txt)"
   fi
   export TASK="Solve this Python coding problem. Print ONLY the complete Python source code, nothing else. If starter code is given, use it.$STARTER
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

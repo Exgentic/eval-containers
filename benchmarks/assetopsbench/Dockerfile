@@ -5,18 +5,18 @@
 # (IoT, FMSR, TSFM, WorkOrder agents with domain-specific tools).
 # Externally graded: test writes -1.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="assetopsbench"
-LABEL dock.benchmark.description="AssetOpsBench - industrial asset operations 6-dimensional evaluation"
-LABEL dock.benchmark.tasks="152"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="c4a2ebd52436580723bf2c52b3aff87aa53bf999"
-LABEL dock.benchmark.url="https://github.com/IBM/AssetOpsBench"
-LABEL dock.benchmark.paper="https://huggingface.co/blog/ibm-research/assetopsbench-playground-on-hugging-face"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="c4a2ebd52436580723bf2c52b3aff87aa53bf999"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="assetopsbench"
+LABEL eval.benchmark.description="AssetOpsBench - industrial asset operations 6-dimensional evaluation"
+LABEL eval.benchmark.tasks="152"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="c4a2ebd52436580723bf2c52b3aff87aa53bf999"
+LABEL eval.benchmark.url="https://github.com/IBM/AssetOpsBench"
+LABEL eval.benchmark.paper="https://huggingface.co/blog/ibm-research/assetopsbench-playground-on-hugging-face"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="c4a2ebd52436580723bf2c52b3aff87aa53bf999"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # Uses the scenario utterances file which contains the full 152-task set.
@@ -47,14 +47,14 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=assetopsbench
+ENV EVAL_BENCHMARK=assetopsbench
 
 # AssetOpsBench uses a 6-dimensional LLM-judge scoring across domain-specific
 # agent trajectories (IoT, FMSR, TSFM, WorkOrder). The full evaluator requires
 # the upstream AssetOpsBench runtime with live agent endpoints. Externally
 # graded: always write -1 per compose/RULES.md rule 16.
 # FUTURE: integrate the 6D scorer once the AssetOpsBench eval container is
-# mirrored into the Dock registry.
+# mirrored into the Eval Containers registry.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
@@ -64,11 +64,11 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

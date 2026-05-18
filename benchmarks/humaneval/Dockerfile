@@ -2,20 +2,20 @@
 # 164 tasks. Data: HuggingFace openai/openai_humaneval
 # Agent completes a Python function. Test runs it against unit tests.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="humaneval"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="HumanEval - Python code generation"
-LABEL dock.benchmark.tasks="164"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544"
-LABEL dock.benchmark.url="https://github.com/openai/human-eval"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/humaneval"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2107.03374"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="humaneval"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="HumanEval - Python code generation"
+LABEL eval.benchmark.tasks="164"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544"
+LABEL eval.benchmark.url="https://github.com/openai/human-eval"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/humaneval"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2107.03374"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
@@ -42,13 +42,13 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=humaneval
+ENV EVAL_BENCHMARK=humaneval
 
 # Test: combine agent code with test harness and run
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 PROMPT=$(cat $TASK_DIR/prompt.txt)
 TEST_CODE=$(cat $TASK_DIR/test.txt)
@@ -77,13 +77,13 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Complete the following Python function. Print ONLY the function body (the code that goes after the function signature), nothing else. Do not repeat the function signature or docstring.
 
-$(cat /tasks/$DOCK_TASK_ID/prompt.txt)"
+$(cat /tasks/$EVAL_TASK_ID/prompt.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

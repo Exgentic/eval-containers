@@ -5,4 +5,4 @@ model_list:
       api_key: "os.environ/ANTHROPIC_API_KEY"
 
 litellm_settings:
-  callbacks: ["dock_logger.dock_logger_instance"]
+  callbacks: ["eval_logger.eval_logger_instance"]

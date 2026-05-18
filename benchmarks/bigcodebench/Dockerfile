@@ -2,19 +2,19 @@
 # 1140 tasks. Data: HuggingFace bigcode/bigcodebench (v0.1.4)
 # Agent writes a complete Python function. Test runs upstream unittest harness.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="bigcodebench"
-LABEL dock.benchmark.description="BigCodeBench - practical Python function generation with rich tool calls"
-LABEL dock.benchmark.tasks="1140"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="b74c0d0bf70d2c0bc459be537895cca163007f1a"
-LABEL dock.benchmark.url="https://github.com/bigcode-project/bigcodebench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.15877"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bigcodebench"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="b74c0d0bf70d2c0bc459be537895cca163007f1a"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="bigcodebench"
+LABEL eval.benchmark.description="BigCodeBench - practical Python function generation with rich tool calls"
+LABEL eval.benchmark.tasks="1140"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="b74c0d0bf70d2c0bc459be537895cca163007f1a"
+LABEL eval.benchmark.url="https://github.com/bigcode-project/bigcodebench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.15877"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bigcodebench"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="b74c0d0bf70d2c0bc459be537895cca163007f1a"
 
 # Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
 RUN python3 <<'PYEOF'
@@ -40,13 +40,13 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=bigcodebench
+ENV EVAL_BENCHMARK=bigcodebench
 
 # Test: combine agent solution with upstream test and run unittest
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 TEST_CODE=$(cat $TASK_DIR/test.txt)
 
@@ -76,13 +76,13 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Write a complete, self-contained Python solution for the following task. Print ONLY the Python code (including all needed imports and the full function definition), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/instruct_prompt.txt)"
+$(cat /tasks/$EVAL_TASK_ID/instruct_prompt.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

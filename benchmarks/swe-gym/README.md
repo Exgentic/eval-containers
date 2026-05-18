@@ -16,7 +16,7 @@ SWE-Gym - 2438 Python SWE tasks for agent training / eval
 
 ## What the agent sees
 
-The agent receives a task of the form: "Fix this GitHub issue in the Python repository $REPO at commit $COMMIT." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Fix this GitHub issue in the Python repository $REPO at commit $COMMIT." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -25,5 +25,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile. Reward is hard-coded t
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run swe-gym`
+- `compose.yaml` — compose file for `eval-containers run swe-gym`
 - `README.md` — this file

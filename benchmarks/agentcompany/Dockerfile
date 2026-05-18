@@ -7,18 +7,18 @@
 #
 # Data: github TheAgentCompany/TheAgentCompany (workspaces/tasks/*/task.md)
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="agentcompany"
-LABEL dock.benchmark.description="TheAgentCompany - long-horizon professional workplace tasks for AI agents"
-LABEL dock.benchmark.tasks="175"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="98b68ef82a47690c316f42fddb05baafaab56851"
-LABEL dock.benchmark.url="https://github.com/TheAgentCompany/TheAgentCompany"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2412.14161"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="98b68ef82a47690c316f42fddb05baafaab56851"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="agentcompany"
+LABEL eval.benchmark.description="TheAgentCompany - long-horizon professional workplace tasks for AI agents"
+LABEL eval.benchmark.tasks="175"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="98b68ef82a47690c316f42fddb05baafaab56851"
+LABEL eval.benchmark.url="https://github.com/TheAgentCompany/TheAgentCompany"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.14161"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="98b68ef82a47690c316f42fddb05baafaab56851"
 
 # Fetch the repo tree, then download each task.md into /tasks/all.jsonl.
 RUN python3 <<'PYEOF'
@@ -49,7 +49,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=agentcompany
+ENV EVAL_BENCHMARK=agentcompany
 
 # Test: externally graded by upstream per-task evaluator.py against the hosted
 # services. Capture the agent's final response and write -1.
@@ -63,13 +63,13 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are an AI assistant working at a simulated tech company. Read the task brief below and respond with the steps you would take and any final deliverables (messages to send, files to create, answers to compute).
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

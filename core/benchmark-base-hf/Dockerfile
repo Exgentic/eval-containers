@@ -6,14 +6,14 @@
 #   - sitecustomize.py that monkey-patches urllib.request with retries,
 #     so every subclass's `RUN python3 <<'PYEOF' urllib.request.urlretrieve(...)`
 #     auto-retries on transient HF failures (one fix, rule 11 applied).
-#   - /dock-entrypoint.sh + /dock-materialize-task copied from core/entrypoint
+#   - /eval-entrypoint.sh + /eval-materialize-task copied from core/entrypoint
 #   - /tasks /tests /app scaffolding
 # Pin amd64 so runtime arch matches what agents' COPYd binaries expect
 # (see core/agent-base-node Dockerfile for the full rationale).
 FROM --platform=linux/amd64 python:3.12-slim
 
-LABEL dock.type="core-base"
-LABEL dock.base.kind="hf"
+LABEL eval.type="core-base"
+LABEL eval.base.kind="hf"
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
@@ -53,10 +53,10 @@ RUN set -e; ok=0; \
 # sitecustomize.py is picked up automatically by the `site` module at every
 # `python3` startup if it lives on sys.path. site-packages is the canonical
 # location. Tests this by running `python3 -c 'import sys; print(sys.modules["sitecustomize"])'`.
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
+RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app
 WORKDIR /app

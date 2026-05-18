@@ -4,21 +4,21 @@
 # Scoring is externally graded with a fine-tuned critic model upstream;
 # this benchmark captures the agent's writing and writes -1 per RULES.md scoring.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="writingbench"
-LABEL dock.benchmark.description="WritingBench - generative writing evaluation across diverse real-world scenarios"
-LABEL dock.benchmark.tasks="1000"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="ae2d5176449b7b769815482641d35926f26793eb"
-LABEL dock.benchmark.url="https://github.com/X-PLUG/WritingBench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2503.05244"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="ae2d5176449b7b769815482641d35926f26793eb"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="writingbench"
+LABEL eval.benchmark.description="WritingBench - generative writing evaluation across diverse real-world scenarios"
+LABEL eval.benchmark.tasks="1000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="ae2d5176449b7b769815482641d35926f26793eb"
+LABEL eval.benchmark.url="https://github.com/X-PLUG/WritingBench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2503.05244"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="ae2d5176449b7b769815482641d35926f26793eb"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$DOCK_TASK_ID/.
+# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
 
@@ -49,7 +49,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=writingbench
+ENV EVAL_BENCHMARK=writingbench
 
 # Test: externally graded (upstream critic model). Preserve agent output, write -1.
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -62,13 +62,13 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a professional writer. Complete the following writing request as fully and faithfully as possible. Output ONLY the finished piece of writing, with no preamble or commentary.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

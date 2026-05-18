@@ -3,8 +3,8 @@
 # Provides: apt-retry wrapper, curl + jq, entrypoint + materialize copy, /tasks /tests /app.
 FROM --platform=linux/amd64 python:3.12-slim
 
-LABEL dock.type="core-base"
-LABEL dock.base.kind="github"
+LABEL eval.type="core-base"
+LABEL eval.base.kind="github"
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
@@ -15,9 +15,9 @@ RUN set -e; ok=0; \
     [ "$ok" = 1 ] || { echo "apt install failed after 5 tries" >&2; exit 1; }; \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-materialize-task /dock-materialize-task
-RUN chmod +x /dock-entrypoint.sh /dock-materialize-task
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app
 WORKDIR /app

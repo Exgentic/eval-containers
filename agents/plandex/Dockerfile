@@ -1,15 +1,15 @@
 # syntax=docker/dockerfile:1
 # Plandex agent image — self-hosted client+server with Postgres + internal litellm.
 FROM plandexai/plandex-server:server-v2.2.1 AS plandex-server-src
-FROM quay.io/dock-eval/core/agent-base-rust:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="plandex"
-LABEL dock.agent.description="Plandex terminal AI coding agent (self-hosted)"
-LABEL dock.agent.runtime="go"
-LABEL dock.agent.url="https://github.com/plandex-ai/plandex"
-LABEL dock.agent.version="2.2.1"
-ENV DOCK_AGENT_VERSION_DEFAULT="2.2.1"
-ENV DOCK_AGENT=plandex
+FROM quay.io/eval-containers/core/agent-base-rust:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="plandex"
+LABEL eval.agent.description="Plandex terminal AI coding agent (self-hosted)"
+LABEL eval.agent.runtime="go"
+LABEL eval.agent.url="https://github.com/plandex-ai/plandex"
+LABEL eval.agent.version="2.2.1"
+ENV EVAL_AGENT_VERSION_DEFAULT="2.2.1"
+ENV EVAL_AGENT=plandex
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
         postgresql-16 postgresql-client-16 python3 python3-venv libpq5 && rm -rf /var/lib/apt/lists/*

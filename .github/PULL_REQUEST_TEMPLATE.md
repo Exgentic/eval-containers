@@ -1,5 +1,5 @@
 <!--
-Thank you for contributing to Dock.
+Thank you for contributing to Eval Containers.
 
 This is the general PR template. If your PR adds a new **benchmark**
 or a new **agent**, please use the typed template instead:
@@ -31,7 +31,7 @@ For PRs that modify existing code, fill in the sections below.
 - [ ] `cargo fmt --check` passes
 - [ ] `cargo clippy -- -D warnings` passes
 - [ ] `cargo test` passes (sanity gates: check, compose, dockerfile_inspection, task_inspection, upstream unit tests)
-- [ ] If the change touches a Dockerfile or compose file: one affected benchmark/agent builds locally (`docker build` or `dock build bench <name>`)
+- [ ] If the change touches a Dockerfile or compose file: one affected benchmark/agent builds locally (`docker build` or `eval-containers build bench <name>`)
 - [ ] If the change touches mechanical rule catalogs: every new rule has a unit test for the positive and negative case
 - [ ] If the change touches shared infrastructure (core/entrypoint, core/litellm, core/combination.Dockerfile): one smoke run against `aime` or `mmlu` via the live driver passes
 

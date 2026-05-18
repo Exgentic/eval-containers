@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # IBM Bob Shell agent image
-FROM quay.io/dock-eval/core/agent-base-node:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="bob"
-LABEL dock.agent.description="IBM Bob Shell — AI SDLC partner"
-LABEL dock.agent.runtime="node"
-LABEL dock.agent.url="https://github.com/ibm/bob-shell"
-LABEL dock.agent.version="1.0.1"
-ENV DOCK_AGENT_VERSION_DEFAULT="1.0.1"
-ENV DOCK_AGENT=bob
+FROM quay.io/eval-containers/core/agent-base-node:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="bob"
+LABEL eval.agent.description="IBM Bob Shell — AI SDLC partner"
+LABEL eval.agent.runtime="node"
+LABEL eval.agent.url="https://github.com/ibm/bob-shell"
+LABEL eval.agent.version="1.0.1"
+ENV EVAL_AGENT_VERSION_DEFAULT="1.0.1"
+ENV EVAL_AGENT=bob
 ARG BOB_VERSION=1.0.1
 RUN curl -fsSL "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOB_VERSION}.tgz" -o /tmp/bob.tgz && \
     npm install -g /tmp/bob.tgz && rm /tmp/bob.tgz

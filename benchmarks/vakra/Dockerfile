@@ -4,18 +4,18 @@
 # Full evaluation requires the VAKRA executable environment (8,000+ locally
 # hosted APIs, SQLite databases, document collections). Externally graded.
 
-FROM quay.io/dock-eval/core/benchmark-base-external:latest
+FROM quay.io/eval-containers/core/benchmark-base-external:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="vakra"
-LABEL dock.benchmark.description="VAKRA - multi-hop multi-source tool-calling benchmark"
-LABEL dock.benchmark.tasks="28"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="1511b3a6ce0bb8df8aca2ae1b578510e150b6b7e"
-LABEL dock.benchmark.url="https://github.com/IBM/vakra"
-LABEL dock.benchmark.paper="https://huggingface.co/datasets/ibm-research/VAKRA"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="1511b3a6ce0bb8df8aca2ae1b578510e150b6b7e"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="vakra"
+LABEL eval.benchmark.description="VAKRA - multi-hop multi-source tool-calling benchmark"
+LABEL eval.benchmark.tasks="28"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="1511b3a6ce0bb8df8aca2ae1b578510e150b6b7e"
+LABEL eval.benchmark.url="https://github.com/IBM/vakra"
+LABEL eval.benchmark.paper="https://huggingface.co/datasets/ibm-research/VAKRA"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="1511b3a6ce0bb8df8aca2ae1b578510e150b6b7e"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # We ingest the capability_3 multi-hop reasoning split (single-turn queries,
@@ -58,12 +58,12 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=vakra
+ENV EVAL_BENCHMARK=vakra
 
 # VAKRA scoring is trace-level - it replays the agent's API call sequence
 # against the locally hosted LiveAPIBench runtime and BIRD-SQL databases.
 # This requires the upstream VAKRA environment (8k+ APIs + SQLite DBs),
-# which is not yet mirrored into Dock. Externally graded per
+# which is not yet mirrored into Eval Containers. Externally graded per
 # compose/RULES.md rule 16.
 # FUTURE: ship the VAKRA API runtime as a sidecar; then swap in the
 # trace-verification scorer and the capability_4 multi-turn split.
@@ -76,11 +76,11 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

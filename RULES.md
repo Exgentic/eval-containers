@@ -1,11 +1,11 @@
-# Dock Rules
+# Eval Containers Rules
 
 **Status:** Active
 **Date:** April 2026
 
 ## Abstract
 
-Dock is a build system for AI agent evaluations. It produces Docker images and Compose files. This document defines the core principles of the project and how rules work.
+Eval Containers is a build system for AI agent evaluations. It produces Docker images and Compose files. This document defines the core principles of the project and how rules work.
 
 ## Terminology
 
@@ -13,9 +13,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## Core Principles
 
-1. **The image is the product.** Everything Dock produces is a Docker image or Compose file. Images are immutable, versioned, portable. If you can `docker pull` and `docker compose up`, you can run any evaluation.
+1. **The image is the product.** Everything Eval Containers produces is a Docker image or Compose file. Images are immutable, versioned, portable. If you can `docker pull` and `docker compose up`, you can run any evaluation.
 
-2. **Standalone artifacts.** Every published image and Compose file MUST work without Dock installed. If the Dock repository is deleted, every artifact MUST still work.
+2. **Standalone artifacts.** Every published image and Compose file MUST work without Eval Containers installed. If the Eval Containers repository is deleted, every artifact MUST still work.
 
 3. **Compose is the format.** Every evaluation MUST be expressible as a Docker Compose file. One format for simple and complex benchmarks alike.
 
@@ -23,7 +23,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 5. **Independent observation.** All LLM calls MUST be logged by the model service, independent of the agent. The agent MUST NOT know the proxy exists. The agent MUST NOT be able to tamper with the trajectory.
 
-6. **No framework lock-in.** Dock MUST NOT require its own runtime, daemon, or installation to execute evaluations. Everything runs with plain Docker.
+6. **No framework lock-in.** Eval Containers MUST NOT require its own runtime, daemon, or installation to execute evaluations. Everything runs with plain Docker.
 
 7. **Simplicity.** Prefer the simplest mechanism that works. File permissions over separate containers. Shell scripts over frameworks. Flat files over databases. If it can be a one-liner, it should be.
 
@@ -31,13 +31,13 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 9. **Pin by default, control via two orthogonal knobs.** Every benchmark, agent, and model image MUST ship with a reproducible default that runs with no environment variables set. Every image MUST expose two independent version controls:
 
-   - **Container version** (the Dock-authored wiring) is selected by the **image tag**, set via `DOCK_BENCHMARK_TAG`, `DOCK_AGENT_TAG`, `DOCK_MODEL_TAG`. This is Docker's native versioning mechanism — different tag, different pull, different bits.
+   - **Container version** (the Eval Containers-authored wiring) is selected by the **image tag**, set via `EVAL_BENCHMARK_TAG`, `EVAL_AGENT_TAG`, `EVAL_MODEL_TAG`. This is Docker's native versioning mechanism — different tag, different pull, different bits.
 
-   - **Internal version** (the upstream software baked or installed inside) is selected at runtime via `DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_LITELLM_VERSION`. The entrypoint MUST read these env vars, install or activate the requested version, and write the resolved version to the run output directory so every run record is self-describing.
+   - **Internal version** (the upstream software baked or installed inside) is selected at runtime via `EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_LITELLM_VERSION`. The entrypoint MUST read these env vars, install or activate the requested version, and write the resolved version to the run output directory so every run record is self-describing.
 
    Both axes are orthogonal: tag controls which container to pull, env var controls what runs inside it. Concrete implementation rules live in `benchmarks/RULES.md`, `agents/RULES.md`, and `models/RULES.md`.
 
-10. **Image hygiene.** Dock ships ~100+ images. Image thinness is not optional — it's what makes `docker pull` fast and the fleet build affordable. Every Dockerfile MUST follow these rules, and reviewers MUST enforce them:
+10. **Image hygiene.** Eval Containers ships ~100+ images. Image thinness is not optional — it's what makes `docker pull` fast and the fleet build affordable. Every Dockerfile MUST follow these rules, and reviewers MUST enforce them:
 
     a. **Slim bases.** Prefer `python:3.12-slim` over `python:3.12`. Prefer `debian:12-slim` or `ubuntu:24.04` over their full variants. Avoid `alpine` for Python workloads (musl wheels missing). `FROM scratch` only for static binaries.
 
@@ -53,7 +53,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
     a. **Agent base images.** Every agent image MUST extend `core/agent-base-<runtime>` (node, python, go, universal) for its runtime. The base provides: apt-retry wrapper, runtime install with arch detection, `/opt/agent/` staging scaffold, standard `install.sh` skeleton that the combination image calls.
 
-    b. **Benchmark base images.** Every benchmark image MUST extend `core/benchmark-base-<pattern>` (hf-dataset, github-raw, per-task-upstream, external-graded). The base provides: Python + pyarrow + datasets, the shared label/ENV scaffold, copies of `/dock-entrypoint.sh` and `/dock-materialize-task`, a standard `entrypoint.sh` template, and a default `test.sh` for the matching grader.
+    b. **Benchmark base images.** Every benchmark image MUST extend `core/benchmark-base-<pattern>` (hf-dataset, github-raw, per-task-upstream, external-graded). The base provides: Python + pyarrow + datasets, the shared label/ENV scaffold, copies of `/eval-entrypoint.sh` and `/eval-materialize-task`, a standard `entrypoint.sh` template, and a default `test.sh` for the matching grader.
 
     c. **One home per concern.** A retry loop for apt, a tarball-size check, an arch detection `case` statement — each MUST appear in exactly one Dockerfile (the base). If you find yourself copy-pasting defensive code from another Dockerfile, you are violating this rule; the correct fix is to move that code to the base and have both callers inherit.
 
@@ -61,7 +61,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
     e. **No drift between inlined copies.** If a fix has to be applied (e.g. "use linux-arm64 on Apple Silicon"), applying it once in the base MUST propagate to every subclass on the next rebuild. Fleets that require N copies of a fix are a code smell.
 
-12. **Env var namespace.** All Dock-controlled environment variables MUST be prefixed with `DOCK_`. This includes axis selection (`DOCK_BENCHMARK`, `DOCK_AGENT`, `DOCK_MODEL`), versioning (`DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_MODEL_VERSION`), runtime config (`DOCK_TASK_ID`, `DOCK_TIMEOUT`), and infrastructure (`DOCK_REGISTRY`). No Dock env var MAY be unprefixed. Upstream env vars (`OPENAI_API_KEY`, `HF_TOKEN`, etc.) are untouched. Prefixing prevents collision with CI, Airflow, Celery, and other orchestrators that use unprefixed names like `TASK_ID`, `AGENT`, and `MODEL`.
+12. **Env var namespace.** All Eval Containers-controlled environment variables MUST be prefixed with `EVAL_`. This includes axis selection (`EVAL_BENCHMARK`, `EVAL_AGENT`, `EVAL_MODEL`), versioning (`EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_MODEL_VERSION`), runtime config (`EVAL_TASK_ID`, `EVAL_TIMEOUT`), and infrastructure (`EVAL_REGISTRY`). No Eval Containers env var MAY be unprefixed. Upstream env vars (`OPENAI_API_KEY`, `HF_TOKEN`, etc.) are untouched. Prefixing prevents collision with CI, Airflow, Celery, and other orchestrators that use unprefixed names like `TASK_ID`, `AGENT`, and `MODEL`.
 
 13. **Self-contained repository.** The repository MUST be the sole source of information about itself — every rule, convention, process, assumption, and verification procedure MUST be documented inside the tree. No essential information MAY live only in a tool-specific directory (`.claude/`, `.cursor/`, `.vscode/`), in a single contributor's head, in a chat log, or in an external wiki. A reader who clones the repo on a clean machine MUST be able to build, test, verify, and release it using only the files in the tree. Tool-specific folders (`.claude/` etc.) MAY exist, but MUST contain only convenience wrappers that delegate to the canonical docs — never original, load-bearing content.
 
@@ -201,8 +201,8 @@ not as issues. The issue tracker is for tracked work only.
 |------|--------|
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Added principle 10 (Image hygiene) — slim bases, in-layer cleanup, no caches in layers, simple and maintainable over byte-golfing. Added principle 14 (No repetition) — each rule has exactly one home; renumbered subsequent rules. |
-| 2026-04-14 | Rewrote principle 9: pin by default, expose version control via `DOCK_*_VERSION` env vars. Tags encode Dock component version; upstream versions live in labels, env vars, and run records. Added principle 11 (Env var namespace) — all Dock env vars MUST be prefixed with `DOCK_` to prevent collision with CI/orchestrator env vars. Renumbered Rules Process principles (12–18). |
-| 2026-04-14 | Principle 9 refined to two orthogonal knobs: container version via image tag (`DOCK_BENCHMARK_TAG`, `DOCK_AGENT_TAG`, `DOCK_MODEL_TAG`) and internal upstream version via runtime env var (`DOCK_BENCHMARK_VERSION`, `DOCK_AGENT_VERSION`, `DOCK_LITELLM_VERSION`). Models now covered by principle 9 (LiteLLM version is the internal axis). |
+| 2026-04-14 | Rewrote principle 9: pin by default, expose version control via `EVAL_*_VERSION` env vars. Tags encode Eval Containers component version; upstream versions live in labels, env vars, and run records. Added principle 11 (Env var namespace) — all Eval Containers env vars MUST be prefixed with `EVAL_` to prevent collision with CI/orchestrator env vars. Renumbered Rules Process principles (12–18). |
+| 2026-04-14 | Principle 9 refined to two orthogonal knobs: container version via image tag (`EVAL_BENCHMARK_TAG`, `EVAL_AGENT_TAG`, `EVAL_MODEL_TAG`) and internal upstream version via runtime env var (`EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_LITELLM_VERSION`). Models now covered by principle 9 (LiteLLM version is the internal axis). |
 | 2026-04-15 | Added principle 12 (Self-contained repository) and principle 13 (Verification is normative). Added the "rules graph" section rooting every normative document in this file. Renumbered Rules Process principles (14–20). |
 | 2026-04-16 | Rewrote the rules graph to reflect the tests/ subfolder restructure (sanity/build/replay/upstream/live/fleet/cli each with its own RULES.md), added PR templates as contribution entry points, and clarified the contribution-vs-release duality: same rules, different walkers. |
 | 2026-04-16 | Added model PR template (`.github/PULL_REQUEST_TEMPLATE/model.md`) and seven issue templates covering the repo's seven tracked issue types: rule-code drift, rule change RFC, bug, new-benchmark/agent/model requests, known-broken entry. New "Issue vocabulary" section in RULES.md documents the taxonomy. |

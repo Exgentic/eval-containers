@@ -8,7 +8,7 @@
 # build context (required because the Dockerfile COPYs requirements.txt,
 # issues/, runtime_utils/, runtime_scripts/).
 #
-# Run this ONCE, then use `dock build swe-lancer --task-id <id>` per task.
+# Run this ONCE, then use `eval-containers build swe-lancer --task-id <id>` per task.
 #
 # Environment:
 #   PREP_REF: commit SHA to pin (default: known-good commit)

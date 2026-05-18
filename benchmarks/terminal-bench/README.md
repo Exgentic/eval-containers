@@ -16,7 +16,7 @@ Terminal-Bench 2.0 - terminal tasks
 
 ## What the agent sees
 
-The agent receives a task of the form: "$(cat "$f")"" The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable. Because this benchmark uses a per-task environment, each task builds a separate image; the agent works inside the checked-out upstream base and must modify files in place.
+The agent receives a task of the form: "$(cat "$f")"" The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable. Because this benchmark uses a per-task environment, each task builds a separate image; the agent works inside the checked-out upstream base and must modify files in place.
 
 ## How it's graded
 
@@ -25,10 +25,10 @@ See `/tests/test.sh` in the built image for the scoring logic. Grading runs insi
 
 ## Per-task build
 
-This benchmark uses `env=per-task`: the Dockerfile takes a `DOCK_TASK_ID` build-arg and pulls a per-task upstream base (`ghcr.io/laude-institute/terminal-bench/${DOCK_TASK_ID}:2.0`).
+This benchmark uses `env=per-task`: the Dockerfile takes a `EVAL_TASK_ID` build-arg and pulls a per-task upstream base (`ghcr.io/laude-institute/terminal-bench/${EVAL_TASK_ID}:2.0`).
 
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run terminal-bench`
+- `compose.yaml` — compose file for `eval-containers run terminal-bench`
 - `README.md` — this file

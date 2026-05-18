@@ -8,8 +8,8 @@
 # The per-task image (benchmarks/mle-bench/Dockerfile) additionally requires:
 #   1. A Kaggle API credential pair in ~/.kaggle/kaggle.json.
 #   2. Explicit rules acceptance for the target competition on kaggle.com.
-# Pass creds to `dock build` with:
-#   DOCKER_BUILDKIT=1 dock build mle-bench --task-id spaceship-titanic \
+# Pass creds to `eval-containers build` with:
+#   DOCKER_BUILDKIT=1 eval-containers build mle-bench --task-id spaceship-titanic \
 #       -- --secret id=kaggle,src=$HOME/.kaggle/kaggle.json
 
 set -euo pipefail

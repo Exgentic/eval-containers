@@ -4,18 +4,18 @@
 # We follow the AlpacaEval 2.0 protocol using the gpt4_baseline outputs.
 # Ref: https://github.com/tatsu-lab/alpaca_eval (Li et al. 2023)
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="alpaca-eval"
-LABEL dock.benchmark.description="AlpacaEval 2.0 - instruction following pairwise eval with LLM-as-judge"
-LABEL dock.benchmark.tasks="805"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
-LABEL dock.benchmark.url="https://github.com/tatsu-lab/alpaca_eval"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2404.04475"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="alpaca-eval"
+LABEL eval.benchmark.description="AlpacaEval 2.0 - instruction following pairwise eval with LLM-as-judge"
+LABEL eval.benchmark.tasks="805"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
+LABEL eval.benchmark.url="https://github.com/tatsu-lab/alpaca_eval"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.04475"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
 
 # Fetch the 805-example eval set and the gpt-4-turbo baseline outputs
 RUN curl -sSfL -o /tmp/eval.json \
@@ -54,7 +54,7 @@ RUN rm -f /tmp/eval.json /tmp/baseline.json
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=alpaca-eval
+ENV EVAL_BENCHMARK=alpaca-eval
 
 # Custom test: pairwise LLM-as-judge with both orderings (AlpacaEval protocol)
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -67,7 +67,7 @@ RUN chmod +x /tests/test.sh
 RUN cat > /tests/grade.py <<'GRADE'
 import os, json, re, sys, urllib.request
 
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 d = f'/tasks/{task_id}'
 instruction = open(f'{d}/problem.txt').read()
 baseline = open(f'{d}/baseline.txt').read()
@@ -156,11 +156,11 @@ RUN chmod -R 700 /tests
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -6,22 +6,22 @@
 # script, which can't be parquet-converted by HF. We fetch the original raw
 # JSONL files hosted by the authors at yonatanbisk.com (same data).
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="piqa"
-LABEL dock.benchmark.description="PIQA - physical commonsense reasoning (2-way multiple choice)"
-LABEL dock.benchmark.tasks="1838"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
-LABEL dock.benchmark.url="https://yonatanbisk.com/piqa"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1911.11641"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="piqa"
+LABEL eval.benchmark.description="PIQA - physical commonsense reasoning (2-way multiple choice)"
+LABEL eval.benchmark.tasks="1838"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
+LABEL eval.benchmark.url="https://yonatanbisk.com/piqa"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1911.11641"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$DOCK_TASK_ID/.
+# fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
 urllib.request.urlretrieve('https://yonatanbisk.com/piqa/data/valid.jsonl', '/tmp/valid.jsonl')
@@ -47,21 +47,21 @@ RUN rm -f /tmp/valid.jsonl /tmp/valid-labels.lst
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=piqa
+ENV EVAL_BENCHMARK=piqa
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Pick the solution that best accomplishes the goal. Print only the letter of the correct answer (A or B), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

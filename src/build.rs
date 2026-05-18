@@ -58,7 +58,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
         BuildTarget::Bench { benchmark, task_id } => {
             let mut build_args = vec![];
             let tag = if let Some(ref tid) = task_id {
-                build_args.push(format!("DOCK_TASK_ID={tid}"));
+                build_args.push(format!("EVAL_TASK_ID={tid}"));
                 format!("{registry}/benchmarks/{benchmark}-{tid}:latest")
             } else {
                 format!("{registry}/benchmarks/{benchmark}:latest")
@@ -89,7 +89,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 eprintln!("bench image not found, building {bench_tag}...");
                 let mut bench_build_args = vec![];
                 if let Some(ref tid) = task_id {
-                    bench_build_args.push(format!("DOCK_TASK_ID={tid}"));
+                    bench_build_args.push(format!("EVAL_TASK_ID={tid}"));
                 }
                 let context = format!("./benchmarks/{benchmark}");
                 docker_build(&bench_tag, &context, None, &bench_build_args)?;
@@ -115,18 +115,18 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             // Using an empty temp dir avoids sending the entire repo as
             // context (which is slow and breaks on broken symlinks in output/).
             let tmp_dir =
-                std::env::temp_dir().join(format!("dock-combo-ctx-{}", std::process::id()));
+                std::env::temp_dir().join(format!("eval-combo-ctx-{}", std::process::id()));
             let _ = std::fs::create_dir_all(&tmp_dir);
             let tmp_dockerfile = tmp_dir.join("Dockerfile");
             std::fs::File::create(&tmp_dockerfile)
                 .and_then(|mut f| f.write_all(COMBINATION_DOCKERFILE.as_bytes()))
                 .map_err(|e| format!("failed to write temp Dockerfile: {e}"))?;
 
-            // Read the agent image's dock.agent.version label so we can
-            // propagate it into the combined image as DOCK_AGENT_VERSION_DEFAULT
+            // Read the agent image's eval.agent.version label so we can
+            // propagate it into the combined image as EVAL_AGENT_VERSION_DEFAULT
             // (RULES.md principle 9 — version-override axis).
             let agent_version =
-                docker_label(&agent_tag, "dock.agent.version").unwrap_or_else(|_| String::new());
+                docker_label(&agent_tag, "eval.agent.version").unwrap_or_else(|_| String::new());
             let build_args = vec![
                 format!("BENCHMARK_IMAGE={bench_tag}"),
                 format!("AGENT_IMAGE={agent_tag}"),

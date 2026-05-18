@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1
 # Goose agent image (Block)
-FROM quay.io/dock-eval/core/agent-base-rust:latest
-LABEL dock.type="agent"
-LABEL dock.agent.name="goose"
-LABEL dock.agent.description="Block Goose AI agent"
-LABEL dock.agent.runtime="rust"
-LABEL dock.agent.url="https://github.com/block/goose"
-LABEL dock.agent.version="1.30.0"
-ENV DOCK_AGENT_VERSION_DEFAULT="1.30.0"
-ENV DOCK_AGENT=goose
+FROM quay.io/eval-containers/core/agent-base-rust:latest
+LABEL eval.type="agent"
+LABEL eval.agent.name="goose"
+LABEL eval.agent.description="Block Goose AI agent"
+LABEL eval.agent.runtime="rust"
+LABEL eval.agent.url="https://github.com/block/goose"
+LABEL eval.agent.version="1.30.0"
+ENV EVAL_AGENT_VERSION_DEFAULT="1.30.0"
+ENV EVAL_AGENT=goose
 # Download + integrity-check, then extract. Streaming `curl | tar` fails
 # on partial bytes under flaky networks (observed 2026-04-17); download
 # to a file so curl can retry and we can size-check before extracting.
@@ -35,7 +35,7 @@ RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash
 set -euo pipefail
 export GOOSE_PROVIDER="openai"
-export GOOSE_MODEL="${DOCK_MODEL:?DOCK_MODEL must be set}"
+export GOOSE_MODEL="${EVAL_MODEL:?EVAL_MODEL must be set}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_HOST="${OPENAI_BASE_URL:-http://model:4000}"
 export GOOSE_TELEMETRY_OFF=true

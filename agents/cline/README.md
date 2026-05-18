@@ -15,13 +15,13 @@ Cline — an autonomous coding agent with **Plan/Act modes** and MCP (Model Cont
 
 Cline operates a two-phase workflow: **Plan mode** surveys the workspace and drafts a change plan without mutating the repo; **Act mode** executes the plan step-by-step with read/write/exec tools. MCP integration lets Cline pull in third-party tool servers (filesystem, git, web) alongside its built-ins.
 
-## How Dock runs it
+## How Eval Containers runs it
 
-The entrypoint sets the LiteLLM proxy endpoint and API key, then invokes the CLI in non-interactive mode with the task as the user message. Cline writes its final answer to stdout; Dock's evaluator reads the last non-empty line as the submission.
+The entrypoint sets the LiteLLM proxy endpoint and API key, then invokes the CLI in non-interactive mode with the task as the user message. Cline writes its final answer to stdout; Eval Containers's evaluator reads the last non-empty line as the submission.
 
 ## Version
 
-Pinned to `2.15.0` at image build time. Override with `DOCK_AGENT_VERSION=<version>` at build or run time per [RULES.md](../RULES.md) principle 9.
+Pinned to `2.15.0` at image build time. Override with `EVAL_AGENT_VERSION=<version>` at build or run time per [RULES.md](../RULES.md) principle 9.
 
 ## Files
 

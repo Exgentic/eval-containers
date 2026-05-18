@@ -2,20 +2,20 @@
 # 541 tasks. Data: HuggingFace google/IFEval
 # Agent follows a prompt with verifiable constraints. Test checks instruction compliance.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="ifeval"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="IFEval - instruction following with verifiable constraints"
-LABEL dock.benchmark.tasks="541"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="966cd89545d6b6acfd7638bc708b98261ca58e84"
-LABEL dock.benchmark.url="https://github.com/google-research/google-research/tree/master/instruction_following_eval"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/ifeval"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2311.07911"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="966cd89545d6b6acfd7638bc708b98261ca58e84"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="ifeval"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="IFEval - instruction following with verifiable constraints"
+LABEL eval.benchmark.tasks="541"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="966cd89545d6b6acfd7638bc708b98261ca58e84"
+LABEL eval.benchmark.url="https://github.com/google-research/google-research/tree/master/instruction_following_eval"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/ifeval"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.07911"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="966cd89545d6b6acfd7638bc708b98261ca58e84"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # instruction_ids and kwargs are stored as JSON strings (field names
@@ -62,13 +62,13 @@ RUN git clone --depth 1 https://github.com/google-research/google-research.git /
     && touch /opt/instruction_following_eval/__init__.py
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=ifeval
+ENV EVAL_BENCHMARK=ifeval
 
 # Custom test: verify instruction following using official IFEval logic
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 RESPONSE=$(cat /output/agent/stdout.log 2>/dev/null)
 
 if [ -z "$RESPONSE" ]; then
@@ -125,11 +125,11 @@ PYEOF
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/prompt.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/prompt.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

@@ -1,10 +1,10 @@
 //! Build tests: verify every benchmark and agent Dockerfile builds and
-//! produces correct `dock.*` labels.
+//! produces correct `eval-containers.*` labels.
 //!
 //! Walks `benchmarks/*/` and `agents/*/` at test time so adding a new
 //! benchmark or agent is automatically covered with no test-file edits.
 //!
-//! Per-task benchmarks (those whose Dockerfiles declare `ARG DOCK_TASK_ID`)
+//! Per-task benchmarks (those whose Dockerfiles declare `ARG EVAL_TASK_ID`)
 //! are built with a sentinel task ID that must be supported by the
 //! upstream dataset. These are listed in `per_task_build_args` below.
 //!
@@ -45,7 +45,7 @@ use tokio::task::JoinSet;
 
 // ─── Per-task benchmark build arguments ────────────────────────────
 //
-// Per-task benchmarks pin DOCK_TASK_ID at build time. For the build test
+// Per-task benchmarks pin EVAL_TASK_ID at build time. For the build test
 // we pick a single known-good task per benchmark. Add entries here as
 // new per-task benchmarks land.
 
@@ -56,38 +56,38 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     // SWE-bench sanitizes "__" → "_1776_" for Docker tags (see
     // swebench.harness.test_spec.test_spec). The published Docker Hub
     // tag is `sympy_1776_sympy-24066`, not the raw instance id.
-    swe_bench.insert("DOCK_TASK_ID".into(), "sympy_1776_sympy-24066".into());
+    swe_bench.insert("EVAL_TASK_ID".into(), "sympy_1776_sympy-24066".into());
     out.insert("swe-bench", swe_bench);
 
     let mut compile = HashMap::new();
-    compile.insert("DOCK_TASK_ID".into(), "curl".into());
+    compile.insert("EVAL_TASK_ID".into(), "curl".into());
     compile.insert("BASE_IMAGE".into(), "ubuntu:22.04".into());
     out.insert("compilebench", compile);
 
     let mut cybench = HashMap::new();
     cybench.insert(
-        "DOCK_TASK_ID".into(),
+        "EVAL_TASK_ID".into(),
         "LosFuzzys/GlacierCTF2023_writeups/intro/skilift".into(),
     );
     out.insert("cybench", cybench);
 
     let mut mle = HashMap::new();
-    mle.insert("DOCK_TASK_ID".into(), "spaceship-titanic".into());
+    mle.insert("EVAL_TASK_ID".into(), "spaceship-titanic".into());
     out.insert("mle-bench", mle);
 
     let mut swe_pro = HashMap::new();
     swe_pro.insert(
-        "DOCK_TASK_ID".into(),
+        "EVAL_TASK_ID".into(),
         "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan".into(),
     );
     out.insert("swe-bench-pro", swe_pro);
 
     let mut swelancer = HashMap::new();
-    swelancer.insert("DOCK_TASK_ID".into(), "16912_4".into());
+    swelancer.insert("EVAL_TASK_ID".into(), "16912_4".into());
     out.insert("swe-lancer", swelancer);
 
     let mut tbench = HashMap::new();
-    tbench.insert("DOCK_TASK_ID".into(), "hello-world".into());
+    tbench.insert("EVAL_TASK_ID".into(), "hello-world".into());
     out.insert("terminal-bench", tbench);
 
     out.remove(benchmark)
@@ -188,13 +188,13 @@ fn walk(root: &Path, current: &Path, out: &mut Vec<(PathBuf, String)>) {
 
 // ─── Bootstrap: core images referenced by benchmark FROMs ──────────
 //
-// Every benchmark Dockerfile does `COPY --from=quay.io/dock-eval/core/*`
+// Every benchmark Dockerfile does `COPY --from=quay.io/eval-containers/core/*`
 // for shared pieces (entrypoint.sh, test-exact-match). Those aren't
 // yet published to the real quay.io — they live in this repo under
 // `core/*` and are built locally. On a fresh podman machine they do
 // not exist, so every benchmark in the sweep fails with:
 //
-//   COPY --from=quay.io/dock-eval/core/entrypoint:latest: no stage
+//   COPY --from=quay.io/eval-containers/core/entrypoint:latest: no stage
 //   or image found with that name
 //
 // Bootstrap them once before the benchmark sweep starts. Tagged with
@@ -221,33 +221,33 @@ async fn build_bootstrap_core_images() -> Result<Vec<String>, String> {
     // images support) still goes through testcontainers for the
     // images under test.
     let targets: &[(&str, &str)] = &[
-        ("quay.io/dock-eval/core/entrypoint", "core/entrypoint"),
+        ("quay.io/eval-containers/core/entrypoint", "core/entrypoint"),
         (
-            "quay.io/dock-eval/core/test-exact-match",
+            "quay.io/eval-containers/core/test-exact-match",
             "core/test-exact-match",
         ),
         (
-            "quay.io/dock-eval/core/benchmark-base-hf",
+            "quay.io/eval-containers/core/benchmark-base-hf",
             "core/benchmark-base-hf",
         ),
         (
-            "quay.io/dock-eval/core/benchmark-base-github",
+            "quay.io/eval-containers/core/benchmark-base-github",
             "core/benchmark-base-github",
         ),
         (
-            "quay.io/dock-eval/core/benchmark-base-external",
+            "quay.io/eval-containers/core/benchmark-base-external",
             "core/benchmark-base-external",
         ),
         (
-            "quay.io/dock-eval/core/agent-base-node",
+            "quay.io/eval-containers/core/agent-base-node",
             "core/agent-base-node",
         ),
         (
-            "quay.io/dock-eval/core/agent-base-python",
+            "quay.io/eval-containers/core/agent-base-python",
             "core/agent-base-python",
         ),
         (
-            "quay.io/dock-eval/core/agent-base-rust",
+            "quay.io/eval-containers/core/agent-base-rust",
             "core/agent-base-rust",
         ),
     ];
@@ -283,11 +283,11 @@ async fn tc_build(
     name: &str,
     build_args: Option<HashMap<String, String>>,
 ) -> Result<String, String> {
-    let tag = format!("dock-build-test-{}", name);
+    let tag = format!("eval-build-test-{}", name);
     let dockerfile = context.join("Dockerfile");
 
     let mut image =
-        GenericBuildableImage::new(format!("dock-build-test-{}", name), "latest".to_string())
+        GenericBuildableImage::new(format!("eval-build-test-{}", name), "latest".to_string())
             .with_dockerfile(dockerfile.clone());
 
     // Attach every non-Dockerfile file in the context as a build file.
@@ -341,8 +341,8 @@ fn subdirs_with_dockerfile(root: &str) -> Vec<PathBuf> {
     out
 }
 
-/// True if the Dockerfile's `FROM` line references `${DOCK_TASK_ID}`
-/// or `$DOCK_TASK_ID`. Such images can only be built with an explicit
+/// True if the Dockerfile's `FROM` line references `${EVAL_TASK_ID}`
+/// or `$EVAL_TASK_ID`. Such images can only be built with an explicit
 /// task id — `per_task_build_args` must have an entry for them.
 fn is_per_task_benchmark(dir: &Path) -> bool {
     let Ok(text) = fs::read_to_string(dir.join("Dockerfile")) else {
@@ -353,7 +353,7 @@ fn is_per_task_benchmark(dir: &Path) -> bool {
         if !trimmed.starts_with("FROM ") {
             continue;
         }
-        if trimmed.contains("${DOCK_TASK_ID}") || trimmed.contains("$DOCK_TASK_ID") {
+        if trimmed.contains("${EVAL_TASK_ID}") || trimmed.contains("$EVAL_TASK_ID") {
             return true;
         }
     }
@@ -386,9 +386,9 @@ struct BuildOutcome {
     elapsed_secs: u64,
 }
 
-/// Parse `DOCK_BUILD_PARALLEL`. Invalid, missing, or <1 → serial (1).
+/// Parse `EVAL_BUILD_PARALLEL`. Invalid, missing, or <1 → serial (1).
 fn parse_parallel_env() -> usize {
-    std::env::var("DOCK_BUILD_PARALLEL")
+    std::env::var("EVAL_BUILD_PARALLEL")
         .ok()
         .and_then(|s| s.parse::<usize>().ok())
         .filter(|&n| n >= 1)
@@ -396,9 +396,9 @@ fn parse_parallel_env() -> usize {
 }
 
 /// Split `contexts` into (buildable tasks, skip count). Per-task
-/// benchmarks without a registered DOCK_TASK_ID are skipped with a
+/// benchmarks without a registered EVAL_TASK_ID are skipped with a
 /// visible note — building them would fail at the FROM line because
-/// `${DOCK_TASK_ID}` would expand to empty.
+/// `${EVAL_TASK_ID}` would expand to empty.
 fn partition_contexts(
     contexts: &[PathBuf],
     args_for: &dyn Fn(&str) -> Option<HashMap<String, String>>,
@@ -514,9 +514,9 @@ fn check_labels(tag: &str, required: &[&str], label_root: &str) -> Result<(), St
     for label in required {
         match docker_label(tag, label) {
             None => return Err(format!("missing required label `{label}`")),
-            Some(val) if *label == "dock.type" && val != label_root => {
+            Some(val) if *label == "eval.type" && val != label_root => {
                 return Err(format!(
-                    "label dock.type should be `{label_root}` but is `{val}`"
+                    "label eval.type should be `{label_root}` but is `{val}`"
                 ));
             }
             _ => {}
@@ -535,10 +535,10 @@ async fn run_build_sweep(
     let contexts = subdirs_with_dockerfile(dir);
     assert!(!contexts.is_empty(), "no subdirectories found under {dir}");
 
-    // Optional filter via env var: DOCK_BUILD_FILTER=aime,gsm8k,aider-polyglot
+    // Optional filter via env var: EVAL_BUILD_FILTER=aime,gsm8k,aider-polyglot
     // builds only those three. Empty or unset = build all. CI jobs set this
     // to one name so each runner builds exactly one image.
-    let filter: Vec<String> = std::env::var("DOCK_BUILD_FILTER")
+    let filter: Vec<String> = std::env::var("EVAL_BUILD_FILTER")
         .unwrap_or_default()
         .split(',')
         .map(|s| s.trim().to_string())
@@ -559,7 +559,7 @@ async fn run_build_sweep(
     };
     if !filter.is_empty() && contexts.is_empty() {
         panic!(
-            "DOCK_BUILD_FILTER matched zero items in {dir}/ (filter: {})",
+            "EVAL_BUILD_FILTER matched zero items in {dir}/ (filter: {})",
             filter.join(",")
         );
     }
@@ -573,7 +573,7 @@ async fn run_build_sweep(
     } else {
         let _ = writeln!(
             stderr,
-            "\n── build sweep over {total} {kind}s (DOCK_BUILD_FILTER={}) ──",
+            "\n── build sweep over {total} {kind}s (EVAL_BUILD_FILTER={}) ──",
             filter.join(",")
         );
     }
@@ -581,7 +581,7 @@ async fn run_build_sweep(
 
     let parallel = parse_parallel_env();
     if parallel > 1 {
-        let _ = writeln!(stderr, "   (DOCK_BUILD_PARALLEL={parallel})");
+        let _ = writeln!(stderr, "   (EVAL_BUILD_PARALLEL={parallel})");
         let _ = stderr.flush();
     }
 
@@ -665,7 +665,7 @@ async fn build_every_benchmark() {
     // aren't published to the real quay.io yet; they live under core/*
     // in this repo. Building them via GenericBuildableImage and tagging
     // with the exact refs the benchmark Dockerfiles use lets every
-    // subsequent `COPY --from=quay.io/dock-eval/core/*` succeed.
+    // subsequent `COPY --from=quay.io/eval-containers/core/*` succeed.
     let bootstrap_tags = build_bootstrap_core_images()
         .await
         .expect("failed to bootstrap core images");
@@ -674,7 +674,7 @@ async fn build_every_benchmark() {
     let total = contexts.len();
     let failures = run_build_sweep(
         "benchmark",
-        &["dock.type", "dock.benchmark.name"],
+        &["eval.type", "eval.benchmark.name"],
         "benchmarks",
         per_task_build_args,
     )
@@ -697,7 +697,7 @@ async fn build_every_agent() {
     let total = contexts.len();
     let failures = run_build_sweep(
         "agent",
-        &["dock.type", "dock.agent.name", "dock.agent.version"],
+        &["eval.type", "eval.agent.name", "eval.agent.version"],
         "agents",
         |_| None,
     )
@@ -715,13 +715,13 @@ async fn build_replay_model() {
         .unwrap_or_else(|e| panic!("replay model failed to build:\n{e}"));
     let _image = ImageGuard(tag.clone());
     assert_eq!(
-        docker_label(&tag, "dock.type").as_deref(),
+        docker_label(&tag, "eval.type").as_deref(),
         Some("model"),
-        "replay model missing dock.type=model"
+        "replay model missing eval.type=model"
     );
     assert_eq!(
-        docker_label(&tag, "dock.model.name").as_deref(),
+        docker_label(&tag, "eval.model.name").as_deref(),
         Some("replay"),
-        "replay model missing dock.model.name=replay"
+        "replay model missing eval.model.name=replay"
     );
 }

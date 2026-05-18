@@ -4,17 +4,17 @@
 # Tasks cover a grid of (context_length, depth_percent).
 # Scoring: substring match of the needle answer.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="niah"
-LABEL dock.benchmark.description="Needle in a Haystack - long-context retrieval across context lengths and depths"
-LABEL dock.benchmark.tasks="63"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="7b90d285651b68d39a94f3d3bd3672f84192c989"
-LABEL dock.benchmark.url="https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="7b90d285651b68d39a94f3d3bd3672f84192c989"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="niah"
+LABEL eval.benchmark.description="Needle in a Haystack - long-context retrieval across context lengths and depths"
+LABEL eval.benchmark.tasks="63"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="7b90d285651b68d39a94f3d3bd3672f84192c989"
+LABEL eval.benchmark.url="https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="7b90d285651b68d39a94f3d3bd3672f84192c989"
 
 # Fetch the Paul Graham essays from the upstream NIAH repo (pinned sha)
 RUN git clone --depth 1 https://github.com/gkamradt/LLMTest_NeedleInAHaystack.git /tmp/niah \
@@ -81,7 +81,7 @@ RUN rm -rf /tmp/niah
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=niah
+ENV EVAL_BENCHMARK=niah
 
 # Custom test: case-insensitive substring match of the needle answer
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
@@ -89,7 +89,7 @@ RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 mkdir -p /logs/verifier
 python3 <<'GRADE'
 import os
-task_id = os.environ.get('DOCK_TASK_ID', '')
+task_id = os.environ.get('EVAL_TASK_ID', '')
 try:
     response = open('/output/agent/stdout.log').read()
 except FileNotFoundError:
@@ -103,15 +103,15 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  cp /tasks/$DOCK_TASK_ID/context.txt /app/context.txt
-  cp /tasks/$DOCK_TASK_ID/question.txt /app/question.txt
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  cp /tasks/$EVAL_TASK_ID/context.txt /app/context.txt
+  cp /tasks/$EVAL_TASK_ID/question.txt /app/question.txt
   chmod 644 /app/context.txt /app/question.txt
   export TASK="Read the long context in /app/context.txt carefully. Then answer the question in /app/question.txt based solely on information found in the context. Print only the answer, nothing else."
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

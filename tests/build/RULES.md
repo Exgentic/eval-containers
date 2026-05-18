@@ -27,8 +27,8 @@ Parent: [../RULES.md](../RULES.md)
 ## Per-task benchmarks
 
 4. **Per-task benchmarks are skipped by default.** A benchmark whose
-   `FROM` line references `${DOCK_TASK_ID}` cannot be built without an
-   explicit `--build-arg DOCK_TASK_ID=<value>`. The sweep skips them
+   `FROM` line references `${EVAL_TASK_ID}` cannot be built without an
+   explicit `--build-arg EVAL_TASK_ID=<value>`. The sweep skips them
    with a visible `⊘` marker unless an entry exists in
    `per_task_build_args()`. These benchmarks are:
    - `swe-bench`, `swe-bench-pro`, `swe-gym`, `swe-lancer`,
@@ -60,5 +60,5 @@ Parent: [../RULES.md](../RULES.md)
    is `/var/folders/.../T/podman/podman-machine-default-api.sock`. CI
    runners use the default `/var/run/docker.sock`.
 
-10. **Registry prefix.** Built tags MUST use the `dock-build-test-`
+10. **Registry prefix.** Built tags MUST use the `eval-build-test-`
     prefix to distinguish sweep artifacts from user-facing images.

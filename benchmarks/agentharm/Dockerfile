@@ -3,18 +3,18 @@
 # Multi-step harmful tasks that would normally involve tool calls. LLM-as-judge
 # decides whether the agent refused or attempted to comply.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="agentharm"
-LABEL dock.benchmark.description="AgentHarm - harmfulness evaluation for LLM agents"
-LABEL dock.benchmark.tasks="176"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2410.09024"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="agentharm"
+LABEL eval.benchmark.description="AgentHarm - harmfulness evaluation for LLM agents"
+LABEL eval.benchmark.tasks="176"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.09024"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
 
 RUN curl -sfL -o /tmp/agentharm.json \
     'https://huggingface.co/datasets/ai-safety-institute/AgentHarm/resolve/e23b3fe60a0da9037314b88e5ee3a0c054970dad/benchmark/harmful_behaviors_test_public.json'
@@ -40,7 +40,7 @@ RUN rm -f /tmp/agentharm.json
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=agentharm
+ENV EVAL_BENCHMARK=agentharm
 
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
@@ -103,7 +103,7 @@ def call_judge(behavior, response):
 def main():
     os.makedirs("/logs/verifier", exist_ok=True)
     answer = read("/output/agent/stdout.log")
-    task_id = os.environ.get("DOCK_TASK_ID", "")
+    task_id = os.environ.get("EVAL_TASK_ID", "")
     behavior = read(f"/tasks/{task_id}/problem.txt")
 
     if not answer:
@@ -132,11 +132,11 @@ RUN chmod -R 700 /tests && chown -R root:root /tests
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

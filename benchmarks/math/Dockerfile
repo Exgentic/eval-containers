@@ -2,18 +2,18 @@
 # 5000 tasks (7 subjects x test split). Data: HuggingFace EleutherAI/hendrycks_math
 # Agent prints answer to stdout. Test compares to boxed expected answer.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="math"
-LABEL dock.benchmark.description="MATH - competition mathematics problems across 7 subjects (Hendrycks et al.)"
-LABEL dock.benchmark.tasks="5000"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="21a5633873b6a120296cce3e2df9d5550074f4a3"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/EleutherAI/hendrycks_math"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2103.03874"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="21a5633873b6a120296cce3e2df9d5550074f4a3"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="math"
+LABEL eval.benchmark.description="MATH - competition mathematics problems across 7 subjects (Hendrycks et al.)"
+LABEL eval.benchmark.tasks="5000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="21a5633873b6a120296cce3e2df9d5550074f4a3"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/EleutherAI/hendrycks_math"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2103.03874"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="21a5633873b6a120296cce3e2df9d5550074f4a3"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
@@ -66,21 +66,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=math
+ENV EVAL_BENCHMARK=math
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this math problem. Print only the final answer in its simplest form (a number, fraction, or LaTeX expression as it would appear inside \\boxed{}). Do not include any explanation.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

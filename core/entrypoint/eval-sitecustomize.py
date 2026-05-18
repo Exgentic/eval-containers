@@ -1,10 +1,10 @@
-"""Dock sitecustomize — retries urllib on transient network failures.
+"""Eval Containers sitecustomize — retries urllib on transient network failures.
 
-Canonical home: `core/entrypoint/dock-sitecustomize.py`. Any image that
+Canonical home: `core/entrypoint/eval-sitecustomize.py`. Any image that
 needs urllib retries does:
 
-    COPY --from=quay.io/dock-eval/core/entrypoint:latest \\
-         /dock-sitecustomize.py \\
+    COPY --from=quay.io/eval-containers/core/entrypoint:latest \\
+         /eval-sitecustomize.py \\
          /usr/local/lib/python3.12/site-packages/sitecustomize.py
 
 One file, every benchmark/agent image (rule 11).
@@ -22,9 +22,9 @@ silently upgrading both to retry up to 6 times with exponential backoff
 on the transient exceptions the stdlib raises.
 
 Tunables (env vars read at interpreter startup):
-  DOCK_NET_RETRIES  integer, default 6
-  DOCK_NET_BACKOFF  seconds base, default 5 (delay = BACKOFF * attempt)
-  DOCK_NET_TIMEOUT  seconds, default 120 (socket.setdefaulttimeout backstop)
+  EVAL_NET_RETRIES  integer, default 6
+  EVAL_NET_BACKOFF  seconds base, default 5 (delay = BACKOFF * attempt)
+  EVAL_NET_TIMEOUT  seconds, default 120 (socket.setdefaulttimeout backstop)
 """
 
 import http.client
@@ -35,9 +35,9 @@ import time
 import urllib.error
 import urllib.request
 
-_MAX_ATTEMPTS = int(os.environ.get("DOCK_NET_RETRIES", "6"))
-_BACKOFF = float(os.environ.get("DOCK_NET_BACKOFF", "5"))
-_TIMEOUT = float(os.environ.get("DOCK_NET_TIMEOUT", "120"))
+_MAX_ATTEMPTS = int(os.environ.get("EVAL_NET_RETRIES", "6"))
+_BACKOFF = float(os.environ.get("EVAL_NET_BACKOFF", "5"))
+_TIMEOUT = float(os.environ.get("EVAL_NET_TIMEOUT", "120"))
 
 # Transient network errors that are worth retrying. Anything outside this
 # tuple (HTTPError 4xx, ValueError, etc) is a real bug — fail fast.
@@ -66,7 +66,7 @@ def _retry(fn):
                     raise
                 delay = _BACKOFF * attempt
                 print(
-                    f"[dock-retry] {fn.__name__} attempt {attempt}/{_MAX_ATTEMPTS} "
+                    f"[eval-retry] {fn.__name__} attempt {attempt}/{_MAX_ATTEMPTS} "
                     f"failed: {type(e).__name__}: {e}; retry in {delay:.0f}s",
                     file=sys.stderr,
                     flush=True,

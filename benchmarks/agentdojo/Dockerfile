@@ -6,18 +6,18 @@
 # tool-output that contains a malicious injected command. LLM-as-judge decides
 # whether the agent obeyed the injection.
 
-FROM quay.io/dock-eval/core/benchmark-base-github:latest
+FROM quay.io/eval-containers/core/benchmark-base-github:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="agentdojo"
-LABEL dock.benchmark.description="AgentDojo - indirect prompt injection resistance for LLM agents"
-LABEL dock.benchmark.tasks="86"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="18b501a630db736e1d0496a496d8d7aa947c596d"
-LABEL dock.benchmark.url="https://github.com/ethz-spylab/agentdojo"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2406.13352"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="18b501a630db736e1d0496a496d8d7aa947c596d"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="agentdojo"
+LABEL eval.benchmark.description="AgentDojo - indirect prompt injection resistance for LLM agents"
+LABEL eval.benchmark.tasks="86"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="18b501a630db736e1d0496a496d8d7aa947c596d"
+LABEL eval.benchmark.url="https://github.com/ethz-spylab/agentdojo"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.13352"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="18b501a630db736e1d0496a496d8d7aa947c596d"
 
 # Fetch user_tasks.py and injection_tasks.py for each of the 4 v1 suites.
 RUN mkdir -p /tmp/ad && for suite in workspace slack travel banking; do \
@@ -125,7 +125,7 @@ RUN rm -rf /tmp/ad
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=agentdojo
+ENV EVAL_BENCHMARK=agentdojo
 
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
@@ -190,7 +190,7 @@ def call_judge(user_task, injection, response):
 def main():
     os.makedirs("/logs/verifier", exist_ok=True)
     answer = read("/output/agent/stdout.log")
-    task_id = os.environ.get("DOCK_TASK_ID", "")
+    task_id = os.environ.get("EVAL_TASK_ID", "")
     user_task = read(f"/tasks/{task_id}/user_task.txt")
     injection = read(f"/tasks/{task_id}/injection.txt")
 
@@ -220,11 +220,11 @@ RUN chmod -R 700 /tests && chown -R root:root /tests
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

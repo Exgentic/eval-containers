@@ -2,21 +2,21 @@
 # 2500 tasks. Data: HuggingFace cais/hle (gated)
 # Agent prints answer to stdout. Test compares to expected answer.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="hle"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="HLE - Humanity's Last Exam, hardest standardized AI evaluation"
-LABEL dock.benchmark.tasks="2500"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
-LABEL dock.benchmark.url="https://github.com/centerforaisafety/hle"
-LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/hle"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/hle"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2501.14249"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="hle"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="HLE - Humanity's Last Exam, hardest standardized AI evaluation"
+LABEL eval.benchmark.tasks="2500"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
+LABEL eval.benchmark.url="https://github.com/centerforaisafety/hle"
+LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/hle"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/hle"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2501.14249"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
 
 # Dataset is gated — download with huggingface_hub
 RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0
@@ -59,24 +59,24 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=hle
+ENV EVAL_BENCHMARK=hle
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  ANSWER_TYPE=$(cat /tasks/$DOCK_TASK_ID/answer_type.txt 2>/dev/null)
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  ANSWER_TYPE=$(cat /tasks/$EVAL_TASK_ID/answer_type.txt 2>/dev/null)
   if [ "$ANSWER_TYPE" = "multiple_choice" ]; then
     PROMPT="Answer this multiple choice question. Print only the letter of the correct answer, nothing else."
   else
     PROMPT="Answer this question. Print only the final answer, nothing else. Be as concise as possible."
   fi
   # If the task has an image, copy it to /app/ for agent access
-  if [ -f /tasks/$DOCK_TASK_ID/image.txt ]; then
-    cp /tasks/$DOCK_TASK_ID/image.txt /app/image.txt
+  if [ -f /tasks/$EVAL_TASK_ID/image.txt ]; then
+    cp /tasks/$EVAL_TASK_ID/image.txt /app/image.txt
     chmod 644 /app/image.txt
     PROMPT="$PROMPT
 
@@ -84,10 +84,10 @@ Note: This question includes an image. See /app/image.txt for the image data."
   fi
   export TASK="$PROMPT
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

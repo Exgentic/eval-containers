@@ -3,18 +3,18 @@
 # Open-domain, time-consuming web research tasks. Agent browses the web and
 # prints a short answer. Test compares to the reference answer (exact match).
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="assistantbench"
-LABEL dock.benchmark.description="AssistantBench - realistic long-horizon web research"
-LABEL dock.benchmark.tasks="33"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="true"
-LABEL dock.benchmark.data_revision="482cbbc0400f6d048438c4021727f21a10cbff49"
-LABEL dock.benchmark.url="https://github.com/oriyor/assistant-bench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2407.15711"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="482cbbc0400f6d048438c4021727f21a10cbff49"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="assistantbench"
+LABEL eval.benchmark.description="AssistantBench - realistic long-horizon web research"
+LABEL eval.benchmark.tasks="33"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="true"
+LABEL eval.benchmark.data_revision="482cbbc0400f6d048438c4021727f21a10cbff49"
+LABEL eval.benchmark.url="https://github.com/oriyor/assistant-bench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.15711"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="482cbbc0400f6d048438c4021727f21a10cbff49"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
@@ -36,21 +36,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=assistantbench
+ENV EVAL_BENCHMARK=assistantbench
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Browse the web to answer this question. Print only the answer, nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

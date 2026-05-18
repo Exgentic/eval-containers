@@ -169,14 +169,14 @@ fn probe_build_sweep_state() -> Gate {
     // and reports what it finds. If you want a fresh build sweep, run
     // `cargo test --test build -- --ignored` out of band, then re-run
     // `cargo test --test fleet -- --ignored`.
-    let log = Path::new("/tmp/dock-build-benches.log");
+    let log = Path::new("/tmp/eval-build-benches.log");
     if !log.exists() {
         return Gate {
             step: 12,
             name: "Benchmark build sweep",
             phase: "Build",
             verdict: Verdict::NotRun,
-            detail: "no /tmp/dock-build-benches.log — run `cargo test --test build -- --ignored`"
+            detail: "no /tmp/eval-build-benches.log — run `cargo test --test build -- --ignored`"
                 .into(),
             duration_ms: 0,
         };
@@ -235,7 +235,7 @@ fn probe_build_sweep_state() -> Gate {
             name: "Benchmark build sweep",
             phase: "Build",
             verdict: Verdict::Red,
-            detail: "prior run failed — no sweep-done line found, see /tmp/dock-build-benches.log"
+            detail: "prior run failed — no sweep-done line found, see /tmp/eval-build-benches.log"
                 .into(),
             duration_ms: 0,
         }

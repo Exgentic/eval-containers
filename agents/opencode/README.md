@@ -13,15 +13,15 @@ SST opencode: MIT open-source AI coding agent.
 
 ## What it does
 
-opencode is SST's open-source terminal coding agent. It supports arbitrary providers declared in `opencode.json` through the Vercel AI SDK; Dock uses `@ai-sdk/openai-compatible` to register the LiteLLM proxy as a `dock` provider and disables the built-in `anthropic`/`openai` providers so nothing escapes the proxy.
+opencode is SST's open-source terminal coding agent. It supports arbitrary providers declared in `opencode.json` through the Vercel AI SDK; Eval Containers uses `@ai-sdk/openai-compatible` to register the LiteLLM proxy as a `eval-containers` provider and disables the built-in `anthropic`/`openai` providers so nothing escapes the proxy.
 
-## How Dock runs it
+## How Eval Containers runs it
 
-The entrypoint writes `~/.config/opencode/opencode.json` with a `dock` provider (`baseURL: $OPENAI_BASE_URL/v1`), allow-listed permissions for edit/bash/webfetch, `autoshare: false`, and both auto-update and model fetching disabled. It then runs `opencode run --model "dock/$DOCK_MODEL" "$TASK"`. Dummy `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are set to silence auth prompts.
+The entrypoint writes `~/.config/opencode/opencode.json` with a `eval-containers` provider (`baseURL: $OPENAI_BASE_URL/v1`), allow-listed permissions for edit/bash/webfetch, `autoshare: false`, and both auto-update and model fetching disabled. It then runs `opencode run --model "eval-containers/$EVAL_MODEL" "$TASK"`. Dummy `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are set to silence auth prompts.
 
 ## Version
 
-Pinned to `1.4.3` at image build time. Override with `DOCK_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
+Pinned to `1.4.3` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
 
 ## Files
 

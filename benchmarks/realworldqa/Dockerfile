@@ -2,19 +2,19 @@
 # 765 tasks. Data: HuggingFace xai-org/RealworldQA
 # Agent sees question + photo. Prints final answer. Test compares to expected answer.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="realworldqa"
-LABEL dock.benchmark.description="RealWorldQA - real-world spatial understanding benchmark from xAI"
-LABEL dock.benchmark.tasks="765"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.modality="multimodal"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="17e7f75e092e47169732462ea3cdfebe911105dd"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/xai-org/RealworldQA"
-LABEL dock.benchmark.paper="https://x.ai/blog/grok-1.5v"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="17e7f75e092e47169732462ea3cdfebe911105dd"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="realworldqa"
+LABEL eval.benchmark.description="RealWorldQA - real-world spatial understanding benchmark from xAI"
+LABEL eval.benchmark.tasks="765"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.modality="multimodal"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="17e7f75e092e47169732462ea3cdfebe911105dd"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/xai-org/RealworldQA"
+LABEL eval.benchmark.paper="https://x.ai/blog/grok-1.5v"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="17e7f75e092e47169732462ea3cdfebe911105dd"
 
 # Single-JSONL task layout. One line per task. Image bytes are base64-encoded
 # inline; runtime entrypoint decodes only the requested task's image.
@@ -69,42 +69,42 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=realworldqa
+ENV EVAL_BENCHMARK=realworldqa
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/image_b64.txt ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/image_b64.txt ]; then
   python3 - <<'PY'
 import base64, os
-tid = os.environ['DOCK_TASK_ID']
+tid = os.environ['EVAL_TASK_ID']
 with open(f'/tasks/{tid}/image_b64.txt') as f:
     data = f.read()
 with open(f'/tasks/{tid}/image.png', 'wb') as f:
     f.write(base64.b64decode(data))
 PY
-  rm -f /tasks/$DOCK_TASK_ID/image_b64.txt
-  chmod 600 /tasks/$DOCK_TASK_ID/image.png
+  rm -f /tasks/$EVAL_TASK_ID/image_b64.txt
+  chmod 600 /tasks/$EVAL_TASK_ID/image.png
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
-  if [ -f /tasks/$DOCK_TASK_ID/image.png ]; then
-    cp /tasks/$DOCK_TASK_ID/image.png /app/image.png
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
+  if [ -f /tasks/$EVAL_TASK_ID/image.png ]; then
+    cp /tasks/$EVAL_TASK_ID/image.png /app/image.png
     IMAGE_LINE="
 
 Image: /app/image.png"
   else
     IMAGE_LINE=""
   fi
-  PROBLEM=$(cat /tasks/$DOCK_TASK_ID/problem.txt)
+  PROBLEM=$(cat /tasks/$EVAL_TASK_ID/problem.txt)
   export TASK="Look at the provided image and answer the following question about the real-world scene. Print only the final answer (a letter for multiple choice or a short phrase), nothing else.
 
 Question: ${PROBLEM}${IMAGE_LINE}"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

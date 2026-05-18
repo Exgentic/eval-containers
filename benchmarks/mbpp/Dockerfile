@@ -2,20 +2,20 @@
 # 500 tasks. Data: HuggingFace google-research-datasets/mbpp
 # Agent writes a Python function. Test runs it against assert-based test cases.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="mbpp"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="MBPP - mostly basic Python problems"
-LABEL dock.benchmark.tasks="500"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="4bb6404fdc6cacfda99d4ac4205087b89d32030c"
-LABEL dock.benchmark.url="https://github.com/google-research/google-research/tree/master/mbpp"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mbpp"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2108.07732"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="4bb6404fdc6cacfda99d4ac4205087b89d32030c"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mbpp"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="MBPP - mostly basic Python problems"
+LABEL eval.benchmark.tasks="500"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="4bb6404fdc6cacfda99d4ac4205087b89d32030c"
+LABEL eval.benchmark.url="https://github.com/google-research/google-research/tree/master/mbpp"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mbpp"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2108.07732"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="4bb6404fdc6cacfda99d4ac4205087b89d32030c"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
@@ -43,13 +43,13 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=mbpp
+ENV EVAL_BENCHMARK=mbpp
 
 # Test: run agent's code then execute assert-based test cases against it
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 SETUP=$(cat $TASK_DIR/setup.txt 2>/dev/null)
 TESTS=$(cat $TASK_DIR/tests.txt 2>/dev/null)
@@ -75,13 +75,13 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Write a Python function to solve the following problem. Print ONLY the complete Python code (function definition and any needed imports), nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

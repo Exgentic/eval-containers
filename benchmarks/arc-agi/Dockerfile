@@ -2,21 +2,21 @@
 # 120 tasks. Data: GitHub arcprize/ARC-AGI-2 evaluation set
 # Agent sees train examples and test input grids, prints predicted output grid as JSON.
 
-FROM quay.io/dock-eval/core/benchmark-base-github:latest
+FROM quay.io/eval-containers/core/benchmark-base-github:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="arc-agi"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="ARC-AGI-2 - Abstract grid reasoning tasks"
-LABEL dock.benchmark.tasks="120"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="f3283f727488ad98fe575ea6a5ac981e4a188e49"
-LABEL dock.benchmark.url="https://github.com/arcprize/ARC-AGI-2"
-LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/arc_agi_2"
-LABEL dock.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/arc"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/1911.01547"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="f3283f727488ad98fe575ea6a5ac981e4a188e49"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="arc-agi"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="ARC-AGI-2 - Abstract grid reasoning tasks"
+LABEL eval.benchmark.tasks="120"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="f3283f727488ad98fe575ea6a5ac981e4a188e49"
+LABEL eval.benchmark.url="https://github.com/arcprize/ARC-AGI-2"
+LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/arc_agi_2"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/arc"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1911.01547"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="f3283f727488ad98fe575ea6a5ac981e4a188e49"
 
 # Download all 120 evaluation tasks from pinned commit and write a single JSONL.
 RUN python3 <<'PYEOF'
@@ -73,23 +73,23 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=arc-agi
+ENV EVAL_BENCHMARK=arc-agi
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are given a series of training examples showing input and output grids. Each grid is a 2D array of integers (0-9). Study the pattern in the training examples, then predict the output grid for the test input.
 
 Print ONLY the output grid as a JSON array of arrays (e.g. [[1,2],[3,4]]). No explanation.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

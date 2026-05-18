@@ -2,22 +2,22 @@
 # 5500 tasks (500 test examples x 11 languages). Data: HuggingFace cambridgeltl/xcopa
 # Agent prints A or B. Test compares to expected choice.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="xcopa"
-LABEL dock.benchmark.description="XCOPA - cross-lingual causal commonsense reasoning across 11 languages"
-LABEL dock.benchmark.tasks="5500"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="042f78955ba48e6404616762fa6e05e839c3907a"
-LABEL dock.benchmark.url="https://huggingface.co/datasets/cambridgeltl/xcopa"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2005.00333"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="042f78955ba48e6404616762fa6e05e839c3907a"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="xcopa"
+LABEL eval.benchmark.description="XCOPA - cross-lingual causal commonsense reasoning across 11 languages"
+LABEL eval.benchmark.tasks="5500"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="042f78955ba48e6404616762fa6e05e839c3907a"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/cambridgeltl/xcopa"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2005.00333"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="042f78955ba48e6404616762fa6e05e839c3907a"
 
 # Write every task to a single JSONL file. One line per task. Agent never
 # sees this file (root-only). Runtime entrypoint materializes just the
-# requested task's fields into /tasks/$DOCK_TASK_ID/.
+# requested task's fields into /tasks/$EVAL_TASK_ID/.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 
@@ -52,22 +52,22 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=xcopa
+ENV EVAL_BENCHMARK=xcopa
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 # Runtime: materialize only the requested task's files from the JSONL.
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Choose the more plausible alternative. Print only the letter A or B, nothing else.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

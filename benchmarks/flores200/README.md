@@ -16,14 +16,14 @@ FLORES-200 - multilingual machine translation from English to 10 target language
 
 ## What the agent sees
 
-The agent receives a task of the form: "Translate the following English sentence into ${LANG_NAME}. Print only the translated sentence with no explanation, quotes, or additional text." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Translate the following English sentence into ${LANG_NAME}. Print only the translated sentence with no explanation, quotes, or additional text." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
-Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared against `/tasks/$DOCK_TASK_ID/answer.txt` by exact string match.
+Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared against `/tasks/$EVAL_TASK_ID/answer.txt` by exact string match.
 
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run flores200`
+- `compose.yaml` — compose file for `eval-containers run flores200`
 - `README.md` — this file

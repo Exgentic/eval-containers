@@ -6,17 +6,17 @@
 # is not publicly downloadable. Using the public sample split as a placeholder.
 # Replace with the full set once access is granted (set HF_TOKEN and data_revision).
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="frontiermath"
-LABEL dock.benchmark.description="FrontierMath - research-level math problems (Epoch AI)"
-LABEL dock.benchmark.tasks="10"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.url="https://epochai.org/frontiermath"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2411.04872"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT=""
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="frontiermath"
+LABEL eval.benchmark.description="FrontierMath - research-level math problems (Epoch AI)"
+LABEL eval.benchmark.tasks="10"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.url="https://epochai.org/frontiermath"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2411.04872"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 RUN pip install --no-cache-dir pyarrow==18.1.0 huggingface_hub==0.26.2
 
@@ -75,21 +75,21 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=frontiermath
+ENV EVAL_BENCHMARK=frontiermath
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Solve this research-level mathematics problem. Print only the final answer on the last line.
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$DOCK_TASK_ID/answer.txt)
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

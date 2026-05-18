@@ -15,13 +15,13 @@ Use this when all tasks share the same environment and only the instruction diff
 
 FROM python:3.12-slim
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="{name}"
-LABEL dock.benchmark.description="{Name} - short description"
-LABEL dock.benchmark.tasks="{N}"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="{sha}"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="{name}"
+LABEL eval.benchmark.description="{Name} - short description"
+LABEL eval.benchmark.tasks="{N}"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="{sha}"
 
 RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
 
@@ -45,11 +45,11 @@ RUN chmod -R 600 /tasks
 WORKDIR /app
 ENV BENCHMARK={name}
 
-COPY --from=quay.io/dock-eval/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
-COPY --from=quay.io/dock-eval/core/entrypoint:latest /dock-entrypoint.sh /dock-entrypoint.sh
-RUN chmod +x /dock-entrypoint.sh
+COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -59,7 +59,7 @@ if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
 $(cat /tasks/$TASK_ID/problem.txt)"
   export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
@@ -78,19 +78,19 @@ services:
       service: model
     env_file: ../../.env
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-{name}}/${DOCK_TASK_ID:-default}/model:/output:rw
+      - ../../output/${EVAL_BENCHMARK:-{name}}/${EVAL_TASK_ID:-default}/model:/output:rw
 
   eval:
     extends:
       file: ../../compose/services.yaml
       service: eval
-    image: ${DOCK_REGISTRY:-quay.io/dock-eval}/evals/{name}--${DOCK_AGENT:-claude-code}:${DOCK_AGENT_TAG:-latest}
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/{name}--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
     environment:
       - BENCHMARK={name}
-      - DOCK_TIMEOUT=${DOCK_TIMEOUT:-300}
+      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-300}
     volumes:
-      - ../../output/${DOCK_BENCHMARK:-{name}}/${DOCK_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${DOCK_BENCHMARK:-{name}}/${DOCK_TASK_ID:-default}/task:/output/task:rw
+      - ../../output/${EVAL_BENCHMARK:-{name}}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
+      - ../../output/${EVAL_BENCHMARK:-{name}}/${EVAL_TASK_ID:-default}/task:/output/task:rw
     deploy:
       resources:
         limits:

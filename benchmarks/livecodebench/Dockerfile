@@ -3,26 +3,26 @@
 # Data: HuggingFace livecodebench/code_generation_lite release_v5
 # Agent writes solution code. Test runs it against hidden test cases.
 
-FROM quay.io/dock-eval/core/benchmark-base-hf:latest
+FROM quay.io/eval-containers/core/benchmark-base-hf:latest
 
-LABEL dock.type="benchmark"
-LABEL dock.benchmark.name="livecodebench"
-LABEL dock.benchmark.released="true"
-LABEL dock.benchmark.description="LiveCodeBench - competitive programming from recent contests"
-LABEL dock.benchmark.tasks="880"
-LABEL dock.benchmark.env="shared-env"
-LABEL dock.benchmark.internet="false"
-LABEL dock.benchmark.data_revision="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
-LABEL dock.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
-LABEL dock.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"
-LABEL dock.benchmark.paper="https://arxiv.org/abs/2403.07974"
-ENV DOCK_BENCHMARK_VERSION_DEFAULT="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="livecodebench"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="LiveCodeBench - competitive programming from recent contests"
+LABEL eval.benchmark.tasks="880"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
+LABEL eval.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
+LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.07974"
+ENV EVAL_BENCHMARK_VERSION_DEFAULT="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Private test cases
 # are stored as a JSON array under the tests_json field; entrypoint decodes
-# them into /tasks/$DOCK_TASK_ID/tests/{k}.in and .out after materialization.
+# them into /tasks/$EVAL_TASK_ID/tests/{k}.in and .out after materialization.
 RUN python3 <<'PYEOF'
 import urllib.request, json, os, base64, zlib, pickle
 
@@ -71,13 +71,13 @@ RUN rm -f /tmp/*.jsonl
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
-ENV DOCK_BENCHMARK=livecodebench
+ENV EVAL_BENCHMARK=livecodebench
 
 # Test: compile agent's solution and run against test cases
 RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
-TASK_DIR="/tasks/$DOCK_TASK_ID"
+TASK_DIR="/tasks/$EVAL_TASK_ID"
 SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
 PASSED=0
 TOTAL=0
@@ -144,11 +144,11 @@ RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
-/dock-materialize-task
-if [ -n "$DOCK_TASK_ID" ] && [ -f /tasks/$DOCK_TASK_ID/tests_json.txt ]; then
+/eval-materialize-task
+if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/tests_json.txt ]; then
   python3 - <<'PY'
 import json, os
-tid = os.environ['DOCK_TASK_ID']
+tid = os.environ['EVAL_TASK_ID']
 d = f'/tasks/{tid}'
 tests = json.load(open(f'{d}/tests_json.txt'))
 os.makedirs(f'{d}/tests', exist_ok=True)
@@ -156,20 +156,20 @@ for k, t in enumerate(tests):
     open(f'{d}/tests/{k}.in', 'w').write(t['input'])
     open(f'{d}/tests/{k}.out', 'w').write(t['output'])
 PY
-  rm -f /tasks/$DOCK_TASK_ID/tests_json.txt
-  chmod -R 600 /tasks/$DOCK_TASK_ID/tests
+  rm -f /tasks/$EVAL_TASK_ID/tests_json.txt
+  chmod -R 600 /tasks/$EVAL_TASK_ID/tests
 fi
-if [ -n "$DOCK_TASK_ID" ] && [ -z "$TASK" ]; then
+if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   STARTER=""
-  [ -f "/tasks/$DOCK_TASK_ID/starter_code.txt" ] && STARTER="
+  [ -f "/tasks/$EVAL_TASK_ID/starter_code.txt" ] && STARTER="
 
 Starter code:
-$(cat /tasks/$DOCK_TASK_ID/starter_code.txt)"
+$(cat /tasks/$EVAL_TASK_ID/starter_code.txt)"
   export TASK="Solve this competitive programming problem. Print ONLY the complete source code (Python or C++), nothing else.$STARTER
 
-$(cat /tasks/$DOCK_TASK_ID/problem.txt)"
+$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /dock-entrypoint.sh
+exec /eval-entrypoint.sh
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]

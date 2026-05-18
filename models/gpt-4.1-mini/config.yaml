@@ -6,4 +6,4 @@ model_list:
       api_base: "os.environ/OPENAI_API_BASE"
 
 litellm_settings:
-  callbacks: ["dock_logger.dock_logger_instance"]
+  callbacks: ["eval_logger.eval_logger_instance"]

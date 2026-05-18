@@ -19,7 +19,7 @@ Aider Polyglot - multi-language code editing (Exercism)
 
 ## What the agent sees
 
-The agent receives a task of the form: "Edit the following $LANGUAGE code file(s) to solve the exercise described below. Modify ONLY the listed file(s) in the current directory. Do not create new files." The problem text is read from `/tasks/$DOCK_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Edit the following $LANGUAGE code file(s) to solve the exercise described below. Modify ONLY the listed file(s) in the current directory. Do not create new files." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
@@ -28,5 +28,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile.
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `compose.yaml` — compose file for `dock run aider-polyglot`
+- `compose.yaml` — compose file for `eval-containers run aider-polyglot`
 - `README.md` — this file
