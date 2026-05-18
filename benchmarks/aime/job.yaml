@@ -1,0 +1,137 @@
+# AIME — k8s mode (one Job, one Pod, three containers).
+#
+# Mirrors benchmarks/aime/compose.yaml exactly: same images, same env
+# contract, same dependency edges. compose's `service_healthy` ↔ k8s's
+# `shareProcessNamespace`-based reaper (runner kills the sidecars on
+# exit so the Pod can complete).
+#
+# All three containers live in `spec.containers` (not `initContainers`).
+# Reasons:
+#   - Works on any k8s version (no 1.28+ native-sidecar requirement)
+#   - Works with `podman kube play` for local smoke-testing (podman 5.x
+#     doesn't honor `restartPolicy: Always` on initContainers as native
+#     sidecars — it serializes them as classic init)
+# Trade-off: when the runner exits, otelcol/gateway are still running,
+# so the Pod wouldn't terminate. Solved by `shareProcessNamespace: true`
+# + the runner's exit hook killing both sidecars before exit.
+#
+# Hardcodes TASK_ID=0. To run a different task, copy and edit (or use
+# kustomize/helm). See README.md for sweep across all 90.
+#
+# Apply:
+#   kubectl create secret generic eval-secrets \
+#     --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
+#     --from-literal=OPENAI_API_BASE="$OPENAI_API_BASE"
+#   kubectl apply -f benchmarks/aime/job.yaml
+#   kubectl logs -l benchmark=aime,task=0 -f --max-log-requests=10
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: aime-task-0
+  labels:
+    benchmark: aime
+    agent: claude-code
+    task: "0"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  activeDeadlineSeconds: 900       # backstop: 15min wallclock per task
+  template:
+    metadata:
+      labels:
+        benchmark: aime
+        agent: claude-code
+        task: "0"
+    spec:
+      restartPolicy: Never
+      shareProcessNamespace: true   # runner can pkill sidecars on exit
+
+      containers:
+        - name: otelcol
+          image: quay.io/eval-containers/core/otel:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: health,    containerPort: 13133 }
+          volumeMounts:
+            - { name: output, mountPath: /output }
+
+        - name: gateway
+          image: quay.io/eval-containers/models/gpt-5.4--bifrost:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: gateway, containerPort: 4000 }
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_KEY }
+            - name: OPENAI_API_BASE
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
+            # Provider/model selection (parsed by gateways/bifrost's
+            # start script into PROVIDER + MODEL_NAME).
+            - { name: EVAL_MODEL, value: "openai/azure/gpt-5.4" }
+            # Bind to loopback only — Pod-internal traffic.
+            - { name: HOST, value: "127.0.0.1" }
+
+        - name: runner
+          image: quay.io/eval-containers/evals/aime--claude-code:latest
+          imagePullPolicy: IfNotPresent
+          # Wrap the image's entrypoint (/root/entrypoint.sh runs the
+          # benchmark wrapper that materializes the task, then exec's
+          # /usr/local/bin/run). On exit, scan /proc and SIGTERM the
+          # sidecars (gateway + otelcol) so the Pod can complete.
+          # `shareProcessNamespace` exposes their /proc entries; no
+          # `pkill`/procps needed in the runner image.
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              /root/entrypoint.sh
+              RC=$?
+              # Reap sidecars so the Pod can complete. Universal: SIGTERM
+              # every PID in the shared namespace except self ($$) and
+              # PID 1 (catatonit init). Works for any gateway flavor
+              # (bifrost, litellm+caddy, portkey+caddy) without
+              # enumerating processes by name.
+              self=$$
+              for p in /proc/[0-9]*; do
+                pid=${p##*/}
+                [ "$pid" = "$self" ] && continue
+                [ "$pid" = "1" ] && continue
+                [ -s "$p/cmdline" ] || continue   # skip kernel threads
+                kill -TERM "$pid" 2>/dev/null
+              done
+              sleep 1
+              exit $RC
+          env:
+            - name: BENCHMARK
+              value: aime
+            - name: AGENT
+              value: claude-code
+            - name: MODEL
+              value: gpt-5.4-bifrost
+            - name: TASK_ID
+              value: "0"
+            - name: TIMEOUT
+              value: "300"
+            # Sidecars are on the same Pod IP / loopback.
+            - name: ANTHROPIC_BASE_URL
+              value: http://localhost:4000/anthropic
+            - name: OPENAI_BASE_URL
+              value: http://localhost:4000/openai
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://localhost:4318
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "2",    memory: "2Gi" }
+          volumeMounts:
+            - { name: output, mountPath: /output }
+            - { name: tmp,    mountPath: /tmp }
+            - { name: logs,   mountPath: /logs }
+
+      volumes:
+        - { name: output, emptyDir: {} }
+        - { name: tmp,    emptyDir: { medium: Memory, sizeLimit: 1Gi } }
+        - { name: logs,   emptyDir: { medium: Memory, sizeLimit: 100Mi } }
