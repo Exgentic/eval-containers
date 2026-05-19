@@ -10,7 +10,11 @@ use std::path::Path;
 use std::process::Command;
 use testcontainers::GenericBuildableImage;
 use testcontainers::compose::DockerCompose;
+use testcontainers::core::WaitFor;
+use testcontainers::core::BuildImageOptions;
+use testcontainers::core::wait::ExitWaitStrategy;
 use testcontainers::runners::AsyncBuilder;
+use tokio::sync::OnceCell;
 
 fn read_json(path: &Path) -> Option<serde_json::Value> {
     let content = fs::read_to_string(path).ok()?;
@@ -25,14 +29,77 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 // Fixtures are in tests/replay/fixtures/{benchmark}-0-{agent}.trajectory.jsonl
 
 /// Helper: start a compose stack with the replay model serving a recorded fixture.
+///
+/// Two compose-level overrides are layered on top of the benchmark's
+/// `compose.yaml`:
+///
+/// 1. **Gateway image**: swap the real gateway image for `models/replay`,
+///    which serves recorded responses at the same protocol-prefixed paths.
+///    Mount the trajectory fixture into the container at `/data/trajectory.jsonl`.
+/// 2. **Output volume**: rebind the named `output` volume as a bind mount
+///    pointing at the host's `./output/` directory, so the runner's
+///    `result.json` ends up readable from the test process. Without this,
+///    the named volume's contents live inside Docker and the test can't
+///    see them.
+///
+/// `with_wait(false)` disables compose's default `--wait` (which would time
+/// out on the runner — runner is one-shot and exits, not "healthy"); we
+/// use `with_wait_for_service("runner", WaitFor::Exit(_))` to block until
+/// the runner finishes before we assert on `result.json`.
 async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> DockerCompose {
     let cwd = std::env::current_dir().unwrap();
 
-    // Write override that mounts the trajectory fixture into the model service
+    // Determine which benchmark/task_id we're running so we can pre-create
+    // the host output dir. The env tuple contains EVAL_TASK_ID and we can
+    // derive the benchmark from the compose file path.
+    let task_id = env
+        .iter()
+        .find(|(k, _)| *k == "EVAL_TASK_ID")
+        .map(|(_, v)| v.to_string())
+        .unwrap_or_else(|| "0".to_string());
+    let benchmark = Path::new(compose_file)
+        .parent()
+        .and_then(|p| p.file_name())
+        .map(|s| s.to_string_lossy().to_string())
+        .expect("could not infer benchmark from compose path");
+
+    // Make sure the host output directory exists before compose binds it,
+    // otherwise Docker creates it as root-owned and the in-container agent
+    // uid 1002 may not be able to write to it on some hosts.
+    //
+    // We bind the named `output` volume to `./output/{benchmark}/{task_id}/`
+    // on the host, so the runner's writes to `/output/task/result.json`
+    // (container path) land at `./output/{benchmark}/{task_id}/task/result.json`
+    // on the host (per compose/RULES.md rule 18 — results accumulate per
+    // (benchmark, task_id)). Clear it first so the assertion exercises
+    // *this* run, not a leftover from a previous one.
+    let host_output_root = cwd.join("output");
+    fs::create_dir_all(&host_output_root).expect("failed to create host output root");
+    let host_output = host_output_root.join(&benchmark).join(&task_id);
+    let _ = fs::remove_dir_all(&host_output);
+    fs::create_dir_all(&host_output).expect("failed to create host output dir");
+
+    // The per-benchmark compose.yaml now parameterizes the runner
+    // image via `${EVAL_AGENT:-claude-code}` per compose/RULES.md rule
+    // 9, so we just need to set EVAL_AGENT in the env (already done by
+    // the replay_test! macro). No image override required — compose
+    // interpolation picks the right `evals/<bench>--<agent>:latest`.
     let fixture_abs = cwd.join(fixture);
     let override_content = format!(
-        "services:\n  model:\n    volumes:\n      - {}:/data/trajectory.jsonl:ro\n",
-        fixture_abs.display()
+        "services:\n\
+         \x20 gateway:\n\
+         \x20   image: quay.io/eval-containers/models/replay:latest\n\
+         \x20   volumes:\n\
+         \x20     - {fixture_abs}:/data/trajectory.jsonl:ro\n\
+         volumes:\n\
+         \x20 output:\n\
+         \x20   driver: local\n\
+         \x20   driver_opts:\n\
+         \x20     type: none\n\
+         \x20     o: bind\n\
+         \x20     device: {host_output}\n",
+        fixture_abs = fixture_abs.display(),
+        host_output = host_output.display(),
     );
     let override_path =
         std::env::temp_dir().join(format!("eval-replay-{}.yaml", fixture.replace('/', "-")));
@@ -49,8 +116,29 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
         compose = compose.with_env(*key, *val);
     }
 
-    compose = compose.with_build(true);
-    compose.up().await.expect("compose up failed");
+    compose = compose
+        .with_build(true)
+        // The runner is one-shot — it exits when the eval completes.
+        // Compose's default --wait would time out waiting for it to be
+        // "healthy" / "running". Use per-service exit wait instead.
+        .with_wait(false)
+        .with_wait_for_service("runner", WaitFor::Exit(ExitWaitStrategy::new()));
+
+    // ExitWaitStrategy polls forever — if the agent hangs (e.g. replay
+    // model 404s for an unexpected route and the agent retry-loops),
+    // the test would run indefinitely. Cap the whole compose-up at
+    // 5 minutes per stack: more than enough for the longest legitimate
+    // replay run we have, much less than waiting for a hung agent.
+    let up_result = tokio::time::timeout(
+        std::time::Duration::from_secs(300),
+        compose.up(),
+    )
+    .await;
+    match up_result {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => panic!("compose up failed: {e:?}"),
+        Err(_) => panic!("compose up timed out after 5 min for {benchmark}/{task_id}"),
+    }
     compose
 }
 
@@ -117,48 +205,155 @@ async fn tc_build_context(descriptor: &str, tag: &str, ctx_dir: &str, dockerfile
         }
         image = image.with_file(path, name);
     }
+    // Forward HF_TOKEN if it's in the env. Currently only matters for
+    // `core/benchmark-base-hf`, whose `ARG HF_TOKEN` + `ENV HF_TOKEN`
+    // bridge bakes the token into the base image's env so per-benchmark
+    // Dockerfiles' `echo "$HF_TOKEN"` fallback can find it at build
+    // time. Forwarding it unconditionally for every core base is
+    // harmless (unrelated bases simply ignore an undeclared ARG).
+    let mut opts = BuildImageOptions::new();
+    if let Ok(tok) = std::env::var("HF_TOKEN") {
+        opts = opts.with_build_arg("HF_TOKEN", tok);
+    }
     let _built = image
-        .build_image()
+        .build_image_with(opts)
         .await
         .unwrap_or_else(|e| panic!("tc build {descriptor}:{tag}: {e:?}"));
+
+    // Verification + self-heal. testcontainers-rs's `GenericBuildableImage`
+    // claims success above, but in practice (especially on podman) the
+    // resulting image is sometimes not tagged with the descriptor we
+    // requested — subsequent `FROM {descriptor}:{tag}` in downstream
+    // builds then attempts a registry pull (failing on auth for
+    // `quay.io/eval-containers/...`). This was the root cause of plandex
+    // builds failing despite a passing bootstrap: `agent-base-rust` would
+    // appear built but `docker images quay.io/eval-containers/core/agent-base-rust:latest`
+    // came up empty.
+    //
+    // Verify with `docker images` and, if missing, run a plain `docker
+    // build` to land the image with the exact tag we need. The fallback
+    // is idempotent (BuildKit cache hits everything if testcontainers
+    // already laid down the layers) — typically completes in seconds.
+    let expected = format!("{descriptor}:{tag}");
+    let listed = std::process::Command::new("docker")
+        .args(["images", "-q", &expected])
+        .output();
+    let exists = matches!(listed, Ok(out) if !out.stdout.trim_ascii().is_empty());
+    if !exists {
+        eprintln!("[bootstrap] {expected} not tagged after tc build; falling back to docker CLI");
+        let mut cmd = std::process::Command::new("docker");
+        cmd.args(["build", "-t", &expected, "-f", dockerfile]);
+        if let Ok(tok) = std::env::var("HF_TOKEN") {
+            cmd.args(["--build-arg", &format!("HF_TOKEN={tok}")]);
+        }
+        cmd.arg(ctx_dir);
+        let status = cmd
+            .status()
+            .unwrap_or_else(|e| panic!("docker build fallback {expected}: {e}"));
+        if !status.success() {
+            panic!("docker build fallback {expected} exited with {status}");
+        }
+    }
 }
 
-async fn ensure_images(benchmark: &str, agent: &str) {
-    // Bootstrap core images the replay stack depends on. The build
-    // sweep's ImageGuard RAII deletes every image it built, including
-    // core — so after a sweep these may be missing. We rebuild them
-    // unconditionally; build cache makes it cheap when already current.
-    tc_build_context(
-        "quay.io/eval-containers/core/entrypoint",
-        "latest",
-        "core/entrypoint",
-        "core/entrypoint/Dockerfile",
-    )
-    .await;
-    tc_build_context(
-        "quay.io/eval-containers/core/test-exact-match",
-        "latest",
-        "core/test-exact-match",
-        "core/test-exact-match/Dockerfile",
-    )
-    .await;
-    tc_build_context(
-        "quay.io/eval-containers/core/litellm",
-        "latest",
-        "core/litellm",
-        "core/litellm/Dockerfile",
-    )
-    .await;
-    // Replay model (also a testcontainers-rs build per RULES.md 2).
-    tc_build_context(
-        "quay.io/eval-containers/models/replay",
-        "latest",
-        "models/replay",
-        "models/replay/Dockerfile",
-    )
-    .await;
+/// Bootstrap every core/gateway/model base image the replay stack
+/// might transitively need, in dependency order. Runs once across all
+/// parallel test threads via `OnceCell` — repeated calls await the
+/// in-flight bootstrap.
+///
+/// Why every base, not just the ones for (benchmark, agent)?
+///   - Mapping (benchmark → benchmark-base, agent → agent-base) is
+///     repository-specific and we'd duplicate the wiring here. Building
+///     the full base tier once is ~minutes (most layers cache after the
+///     first apt-get) and amortizes across the whole test sweep.
+///
+/// Why dependency tiers?
+///   - core/benchmark-base-* FROM core/entrypoint, so entrypoint must
+///     exist first. Same for models/gpt-5.4--bifrost which copies
+///     /opt/gateway from gateways/bifrost.
+static CORE_BASES_BOOTSTRAPPED: OnceCell<()> = OnceCell::const_new();
 
-    // Build eval image via the Eval Containers CLI under test
+async fn bootstrap_core_bases() {
+    CORE_BASES_BOOTSTRAPPED
+        .get_or_init(|| async {
+            // Load `.env` from cwd / parents so HF_TOKEN (and any other
+            // shared secrets) reach the in-process bootstrap builds and
+            // the cargo subprocess we shell out to. Mirrors what
+            // `src/main.rs` does for the CLI itself — single source of
+            // truth (`dotenvy`), no bespoke parsing.
+            let _ = dotenvy::dotenv();
+            // Tier 1 — leaf bases (no inter-eval-containers deps).
+            for (descriptor, ctx) in [
+                ("quay.io/eval-containers/core/entrypoint", "core/entrypoint"),
+                (
+                    "quay.io/eval-containers/core/test-exact-match",
+                    "core/test-exact-match",
+                ),
+                ("quay.io/eval-containers/core/litellm", "core/litellm"),
+                ("quay.io/eval-containers/core/llm-bridge", "core/llm-bridge"),
+                ("quay.io/eval-containers/core/otel", "core/otel"),
+                (
+                    "quay.io/eval-containers/core/runtime-bundle",
+                    "core/runtime-bundle",
+                ),
+                (
+                    "quay.io/eval-containers/core/agent-base-node",
+                    "core/agent-base-node",
+                ),
+                (
+                    "quay.io/eval-containers/core/agent-base-python",
+                    "core/agent-base-python",
+                ),
+                (
+                    "quay.io/eval-containers/core/agent-base-rust",
+                    "core/agent-base-rust",
+                ),
+                ("quay.io/eval-containers/gateways/bifrost", "gateways/bifrost"),
+                ("quay.io/eval-containers/models/replay", "models/replay"),
+            ] {
+                tc_build_context(descriptor, "latest", ctx, &format!("{ctx}/Dockerfile")).await;
+            }
+
+            // Tier 2 — bases that depend on tier 1.
+            for (descriptor, ctx) in [
+                (
+                    "quay.io/eval-containers/core/benchmark-base-hf",
+                    "core/benchmark-base-hf",
+                ),
+                (
+                    "quay.io/eval-containers/core/benchmark-base-github",
+                    "core/benchmark-base-github",
+                ),
+                (
+                    "quay.io/eval-containers/core/benchmark-base-external",
+                    "core/benchmark-base-external",
+                ),
+                (
+                    "quay.io/eval-containers/models/gpt-5.4--bifrost",
+                    "models/gpt-5.4--bifrost",
+                ),
+            ] {
+                tc_build_context(descriptor, "latest", ctx, &format!("{ctx}/Dockerfile")).await;
+            }
+        })
+        .await;
+}
+
+/// Build the eval image for a specific (benchmark, agent) pair.
+///
+/// Shells out to `cargo run -- build eval` — a legitimate CLI black-box
+/// test of the framework's own `build eval` subcommand. The docker
+/// invocations happen inside the CLI under test, not inside this file
+/// (RULES.md principle 2 — container tests go through the library).
+///
+/// `.env` loading and `HF_TOKEN` propagation live in the CLI itself
+/// (`src/main.rs` calls `dotenvy::dotenv()`, `src/build.rs` adds
+/// `--secret id=HF_TOKEN,env=HF_TOKEN` when the env has it). The test
+/// inherits this behavior for free by shelling out to the CLI — no
+/// test-specific env-loading code lives here.
+async fn ensure_images(benchmark: &str, agent: &str) {
+    bootstrap_core_bases().await;
+
     let status = Command::new("cargo")
         .args(["run", "--", "build", "eval", benchmark, "--agent", agent])
         .status()
@@ -171,8 +366,15 @@ async fn ensure_images(benchmark: &str, agent: &str) {
 
 /// Macro for replay tests. Each test follows the same pattern:
 /// build eval image, start compose with replay model, verify output contract.
+///
+/// Variants:
+///   - `replay_test!(name, compose, fixture, benchmark, agent)` — task_id "0"
+///   - `replay_test!(name, compose, fixture, benchmark, agent, task_id)` — explicit task
 macro_rules! replay_test {
     ($name:ident, $compose:expr, $fixture:expr, $benchmark:expr, $agent:expr) => {
+        replay_test!($name, $compose, $fixture, $benchmark, $agent, "0");
+    };
+    ($name:ident, $compose:expr, $fixture:expr, $benchmark:expr, $agent:expr, $task_id:expr) => {
         #[tokio::test]
         #[ignore]
         async fn $name() {
@@ -182,14 +384,32 @@ macro_rules! replay_test {
                 $compose,
                 $fixture,
                 &[
-                    ("EVAL_TASK_ID", "0"),
+                    // EVAL_BENCHMARK is consumed by compose/services.yaml's
+                    // runner env (`EVAL_BENCHMARK: ${EVAL_BENCHMARK:-aime}`)
+                    // and surfaces inside the container, where
+                    // /eval-entrypoint.sh writes it into task/result.json.
+                    // Without this set per test, the default "aime" leaks
+                    // into every test's result.json regardless of which
+                    // benchmark image actually ran.
+                    ("EVAL_BENCHMARK", $benchmark),
+                    ("EVAL_TASK_ID", $task_id),
                     ("EVAL_AGENT", $agent),
                     ("EVAL_MODEL", "replay"),
+                    // services.yaml's gateway service has OPENAI_API_KEY and
+                    // OPENAI_API_BASE marked required (`${VAR:?}`) so the real
+                    // gateway flavor fails fast if its upstream creds are
+                    // missing. The replay model doesn't authenticate against
+                    // any upstream — we override the gateway image entirely
+                    // (see replay_compose) — but compose still interpolates
+                    // these vars before applying overrides, so we must
+                    // satisfy the interpolation with dummy values.
+                    ("OPENAI_API_KEY", "sk-replay-test"),
+                    ("OPENAI_API_BASE", "https://replay.test"),
                 ],
             )
             .await;
 
-            assert_result_valid($benchmark, "0");
+            assert_result_valid($benchmark, $task_id);
         }
     };
 }
@@ -198,191 +418,2200 @@ macro_rules! replay_test {
 // Fixtures must be recorded before these tests can run.
 // See MATRIX.md for the full test matrix.
 
+// ── Replay tests (per MATRIX.md) ───────────────────────────────────────
+// One test per fixture in tests/replay/fixtures/. The agent in the
+// fixture name MUST match the protocol of the recorded responses:
+//   *-codex  : OpenAI Responses API  (response.object == "response")
+//   *-aider  : OpenAI Chat Completions  (response.choices[])
+// Anthropic-format fixtures don't exist in our corpus today — claude-code
+// cannot consume any of these recordings as-is. Until we add Responses↔
+// Anthropic translation in the replay model, claude-code tests are
+// pipeline-only ("does result.json get written?"), not real replay.
+// Empty fixtures (response={} from incomplete past runs) have been
+// removed — they only triggered REPLAY_EXHAUSTED and gave false PASS.
+
+// ── Replay tests (auto-generated from tests/replay/fixtures/) ──────────
+// One test per fixture. Format of fixture filename:
+//   <benchmark>-<task_id>-<agent>.trajectory.jsonl
+// The replay model translates the recorded response into the protocol
+// expected by the agent's SDK (see models/replay/server.py), so any
+// fixture can be served to any agent regardless of recorded format.
+
 replay_test!(
-    replay_aime_claude_code,
-    "benchmarks/aime/compose.yaml",
-    "tests/replay/fixtures/aime-0-claude-code.trajectory.jsonl",
-    "aime",
-    "claude-code"
+    replay_advbench_103_codex,
+    "benchmarks/advbench/compose.yaml",
+    "tests/replay/fixtures/advbench-103-codex.trajectory.jsonl",
+    "advbench",
+    "codex",
+    "103"
 );
 
 replay_test!(
-    replay_gpqa_codex,
+    replay_advbench_311_aider,
+    "benchmarks/advbench/compose.yaml",
+    "tests/replay/fixtures/advbench-311-aider.trajectory.jsonl",
+    "advbench",
+    "aider",
+    "311"
+);
+
+replay_test!(
+    replay_agentbench_119_bob,
+    "benchmarks/agentbench/compose.yaml",
+    "tests/replay/fixtures/agentbench-119-bob.trajectory.jsonl",
+    "agentbench",
+    "bob",
+    "119"
+);
+
+replay_test!(
+    replay_agentbench_179_cline,
+    "benchmarks/agentbench/compose.yaml",
+    "tests/replay/fixtures/agentbench-179-cline.trajectory.jsonl",
+    "agentbench",
+    "cline",
+    "179"
+);
+
+replay_test!(
+    replay_agentbench_239_continue_cli,
+    "benchmarks/agentbench/compose.yaml",
+    "tests/replay/fixtures/agentbench-239-continue-cli.trajectory.jsonl",
+    "agentbench",
+    "continue-cli",
+    "239"
+);
+
+replay_test!(
+    replay_agentbench_59_codex,
+    "benchmarks/agentbench/compose.yaml",
+    "tests/replay/fixtures/agentbench-59-codex.trajectory.jsonl",
+    "agentbench",
+    "codex",
+    "59"
+);
+
+replay_test!(
+    replay_agentcompany_104_copilot_cli,
+    "benchmarks/agentcompany/compose.yaml",
+    "tests/replay/fixtures/agentcompany-104-copilot-cli.trajectory.jsonl",
+    "agentcompany",
+    "copilot-cli",
+    "104"
+);
+
+replay_test!(
+    replay_agentcompany_139_crush,
+    "benchmarks/agentcompany/compose.yaml",
+    "tests/replay/fixtures/agentcompany-139-crush.trajectory.jsonl",
+    "agentcompany",
+    "crush",
+    "139"
+);
+
+replay_test!(
+    replay_agentcompany_34_codex,
+    "benchmarks/agentcompany/compose.yaml",
+    "tests/replay/fixtures/agentcompany-34-codex.trajectory.jsonl",
+    "agentcompany",
+    "codex",
+    "34"
+);
+
+replay_test!(
+    replay_agentdojo_51_goose,
+    "benchmarks/agentdojo/compose.yaml",
+    "tests/replay/fixtures/agentdojo-51-goose.trajectory.jsonl",
+    "agentdojo",
+    "goose",
+    "51"
+);
+
+replay_test!(
+    replay_agentharm_0_claude_code,
+    "benchmarks/agentharm/compose.yaml",
+    "tests/replay/fixtures/agentharm-0-claude-code.trajectory.jsonl",
+    "agentharm",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_agentharm_105_mini_swe_agent,
+    "benchmarks/agentharm/compose.yaml",
+    "tests/replay/fixtures/agentharm-105-mini-swe-agent.trajectory.jsonl",
+    "agentharm",
+    "mini-swe-agent",
+    "105"
+);
+
+replay_test!(
+    replay_agentharm_140_open_interpreter,
+    "benchmarks/agentharm/compose.yaml",
+    "tests/replay/fixtures/agentharm-140-open-interpreter.trajectory.jsonl",
+    "agentharm",
+    "open-interpreter",
+    "140"
+);
+
+replay_test!(
+    replay_ai2d_0_gemini_cli,
+    "benchmarks/ai2d/compose.yaml",
+    "tests/replay/fixtures/ai2d-0-gemini-cli.trajectory.jsonl",
+    "ai2d",
+    "gemini-cli",
+    "0"
+);
+
+replay_test!(
+    replay_ai2d_1852_openclaw,
+    "benchmarks/ai2d/compose.yaml",
+    "tests/replay/fixtures/ai2d-1852-openclaw.trajectory.jsonl",
+    "ai2d",
+    "openclaw",
+    "1852"
+);
+
+replay_test!(
+    replay_ai2d_2469_opencode,
+    "benchmarks/ai2d/compose.yaml",
+    "tests/replay/fixtures/ai2d-2469-opencode.trajectory.jsonl",
+    "ai2d",
+    "opencode",
+    "2469"
+);
+
+replay_test!(
+    replay_ai2d_617_codex,
+    "benchmarks/ai2d/compose.yaml",
+    "tests/replay/fixtures/ai2d-617-codex.trajectory.jsonl",
+    "ai2d",
+    "codex",
+    "617"
+);
+
+replay_test!(
+    replay_aider_polyglot_0_codex,
+    "benchmarks/aider-polyglot/compose.yaml",
+    "tests/replay/fixtures/aider-polyglot-0-codex.trajectory.jsonl",
+    "aider-polyglot",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_aider_polyglot_134_openhands,
+    "benchmarks/aider-polyglot/compose.yaml",
+    "tests/replay/fixtures/aider-polyglot-134-openhands.trajectory.jsonl",
+    "aider-polyglot",
+    "openhands",
+    "134"
+);
+
+replay_test!(
+    replay_aider_polyglot_44_codex,
+    "benchmarks/aider-polyglot/compose.yaml",
+    "tests/replay/fixtures/aider-polyglot-44-codex.trajectory.jsonl",
+    "aider-polyglot",
+    "codex",
+    "44"
+);
+
+replay_test!(
+    replay_aime_17_claude_code,
+    "benchmarks/aime/compose.yaml",
+    "tests/replay/fixtures/aime-17-claude-code.trajectory.jsonl",
+    "aime",
+    "claude-code",
+    "17"
+);
+
+replay_test!(
+    replay_aime_35_plandex,
+    "benchmarks/aime/compose.yaml",
+    "tests/replay/fixtures/aime-35-plandex.trajectory.jsonl",
+    "aime",
+    "plandex",
+    "35"
+);
+
+replay_test!(
+    replay_aime_45_gemini_cli,
+    "benchmarks/aime/compose.yaml",
+    "tests/replay/fixtures/aime-45-gemini-cli.trajectory.jsonl",
+    "aime",
+    "gemini-cli",
+    "45"
+);
+
+replay_test!(
+    replay_aime_53_qwen_code,
+    "benchmarks/aime/compose.yaml",
+    "tests/replay/fixtures/aime-53-qwen-code.trajectory.jsonl",
+    "aime",
+    "qwen-code",
+    "53"
+);
+
+replay_test!(
+    replay_alpaca_eval_482_ra_aid,
+    "benchmarks/alpaca-eval/compose.yaml",
+    "tests/replay/fixtures/alpaca-eval-482-ra-aid.trajectory.jsonl",
+    "alpaca-eval",
+    "ra-aid",
+    "482"
+);
+
+replay_test!(
+    replay_apps_2999_swe_agent,
+    "benchmarks/apps/compose.yaml",
+    "tests/replay/fixtures/apps-2999-swe-agent.trajectory.jsonl",
+    "apps",
+    "swe-agent",
+    "2999"
+);
+
+replay_test!(
+    replay_appworld_292_terminus_2,
+    "benchmarks/appworld/compose.yaml",
+    "tests/replay/fixtures/appworld-292-terminus-2.trajectory.jsonl",
+    "appworld",
+    "terminus-2",
+    "292"
+);
+
+replay_test!(
+    replay_appworld_584_claude_code,
+    "benchmarks/appworld/compose.yaml",
+    "tests/replay/fixtures/appworld-584-claude-code.trajectory.jsonl",
+    "appworld",
+    "claude-code",
+    "584"
+);
+
+replay_test!(
+    replay_arc_0_codex,
+    "benchmarks/arc/compose.yaml",
+    "tests/replay/fixtures/arc-0-codex.trajectory.jsonl",
+    "arc",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_arc_936_gemini_cli,
+    "benchmarks/arc/compose.yaml",
+    "tests/replay/fixtures/arc-936-gemini-cli.trajectory.jsonl",
+    "arc",
+    "gemini-cli",
+    "936"
+);
+
+replay_test!(
+    replay_arc_agi_0_codex,
+    "benchmarks/arc-agi/compose.yaml",
+    "tests/replay/fixtures/arc-agi-0-codex.trajectory.jsonl",
+    "arc-agi",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_arc_agi_23_codex,
+    "benchmarks/arc-agi/compose.yaml",
+    "tests/replay/fixtures/arc-agi-23-codex.trajectory.jsonl",
+    "arc-agi",
+    "codex",
+    "23"
+);
+
+replay_test!(
+    replay_arc_agi_71_aider,
+    "benchmarks/arc-agi/compose.yaml",
+    "tests/replay/fixtures/arc-agi-71-aider.trajectory.jsonl",
+    "arc-agi",
+    "aider",
+    "71"
+);
+
+replay_test!(
+    replay_arena_hard_299_bob,
+    "benchmarks/arena-hard/compose.yaml",
+    "tests/replay/fixtures/arena-hard-299-bob.trajectory.jsonl",
+    "arena-hard",
+    "bob",
+    "299"
+);
+
+replay_test!(
+    replay_assistantbench_0_claude_code,
+    "benchmarks/assistantbench/compose.yaml",
+    "tests/replay/fixtures/assistantbench-0-claude-code.trajectory.jsonl",
+    "assistantbench",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_assistantbench_12_cline,
+    "benchmarks/assistantbench/compose.yaml",
+    "tests/replay/fixtures/assistantbench-12-cline.trajectory.jsonl",
+    "assistantbench",
+    "cline",
+    "12"
+);
+
+replay_test!(
+    replay_assistantbench_19_continue_cli,
+    "benchmarks/assistantbench/compose.yaml",
+    "tests/replay/fixtures/assistantbench-19-continue-cli.trajectory.jsonl",
+    "assistantbench",
+    "continue-cli",
+    "19"
+);
+
+replay_test!(
+    replay_bbh_3906_copilot_cli,
+    "benchmarks/bbh/compose.yaml",
+    "tests/replay/fixtures/bbh-3906-copilot-cli.trajectory.jsonl",
+    "bbh",
+    "copilot-cli",
+    "3906"
+);
+
+replay_test!(
+    replay_bbh_5208_crush,
+    "benchmarks/bbh/compose.yaml",
+    "tests/replay/fixtures/bbh-5208-crush.trajectory.jsonl",
+    "bbh",
+    "crush",
+    "5208"
+);
+
+replay_test!(
+    replay_bfcl_0_gemini_cli,
+    "benchmarks/bfcl/compose.yaml",
+    "tests/replay/fixtures/bfcl-0-gemini-cli.trajectory.jsonl",
+    "bfcl",
+    "gemini-cli",
+    "0"
+);
+
+replay_test!(
+    replay_bfcl_1199_goose,
+    "benchmarks/bfcl/compose.yaml",
+    "tests/replay/fixtures/bfcl-1199-goose.trajectory.jsonl",
+    "bfcl",
+    "goose",
+    "1199"
+);
+
+replay_test!(
+    replay_bfcl_399_codex,
+    "benchmarks/bfcl/compose.yaml",
+    "tests/replay/fixtures/bfcl-399-codex.trajectory.jsonl",
+    "bfcl",
+    "codex",
+    "399"
+);
+
+replay_test!(
+    replay_bfcl_799_mini_swe_agent,
+    "benchmarks/bfcl/compose.yaml",
+    "tests/replay/fixtures/bfcl-799-mini-swe-agent.trajectory.jsonl",
+    "bfcl",
+    "mini-swe-agent",
+    "799"
+);
+
+replay_test!(
+    replay_bigcodebench_0_codex,
+    "benchmarks/bigcodebench/compose.yaml",
+    "tests/replay/fixtures/bigcodebench-0-codex.trajectory.jsonl",
+    "bigcodebench",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_bigcodebench_455_open_interpreter,
+    "benchmarks/bigcodebench/compose.yaml",
+    "tests/replay/fixtures/bigcodebench-455-open-interpreter.trajectory.jsonl",
+    "bigcodebench",
+    "open-interpreter",
+    "455"
+);
+
+replay_test!(
+    replay_bigcodebench_683_openclaw,
+    "benchmarks/bigcodebench/compose.yaml",
+    "tests/replay/fixtures/bigcodebench-683-openclaw.trajectory.jsonl",
+    "bigcodebench",
+    "openclaw",
+    "683"
+);
+
+replay_test!(
+    replay_browsecomp_506_opencode,
+    "benchmarks/browsecomp/compose.yaml",
+    "tests/replay/fixtures/browsecomp-506-opencode.trajectory.jsonl",
+    "browsecomp",
+    "opencode",
+    "506"
+);
+
+replay_test!(
+    replay_browsecomp_759_openhands,
+    "benchmarks/browsecomp/compose.yaml",
+    "tests/replay/fixtures/browsecomp-759-openhands.trajectory.jsonl",
+    "browsecomp",
+    "openhands",
+    "759"
+);
+
+replay_test!(
+    replay_chartqa_0_codex,
+    "benchmarks/chartqa/compose.yaml",
+    "tests/replay/fixtures/chartqa-0-codex.trajectory.jsonl",
+    "chartqa",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_chartqa_1499_plandex,
+    "benchmarks/chartqa/compose.yaml",
+    "tests/replay/fixtures/chartqa-1499-plandex.trajectory.jsonl",
+    "chartqa",
+    "plandex",
+    "1499"
+);
+
+replay_test!(
+    replay_chartqa_499_claude_code,
+    "benchmarks/chartqa/compose.yaml",
+    "tests/replay/fixtures/chartqa-499-claude-code.trajectory.jsonl",
+    "chartqa",
+    "claude-code",
+    "499"
+);
+
+replay_test!(
+    replay_chartqa_999_qwen_code,
+    "benchmarks/chartqa/compose.yaml",
+    "tests/replay/fixtures/chartqa-999-qwen-code.trajectory.jsonl",
+    "chartqa",
+    "qwen-code",
+    "999"
+);
+
+replay_test!(
+    replay_code_contests_32_gemini_cli,
+    "benchmarks/code-contests/compose.yaml",
+    "tests/replay/fixtures/code-contests-32-gemini-cli.trajectory.jsonl",
+    "code-contests",
+    "gemini-cli",
+    "32"
+);
+
+replay_test!(
+    replay_code_contests_65_ra_aid,
+    "benchmarks/code-contests/compose.yaml",
+    "tests/replay/fixtures/code-contests-65-ra-aid.trajectory.jsonl",
+    "code-contests",
+    "ra-aid",
+    "65"
+);
+
+replay_test!(
+    replay_code_contests_98_swe_agent,
+    "benchmarks/code-contests/compose.yaml",
+    "tests/replay/fixtures/code-contests-98-swe-agent.trajectory.jsonl",
+    "code-contests",
+    "swe-agent",
+    "98"
+);
+
+replay_test!(
+    replay_coderefine_0_codex,
+    "benchmarks/coderefine/compose.yaml",
+    "tests/replay/fixtures/coderefine-0-codex.trajectory.jsonl",
+    "coderefine",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_coderefine_1308_codex,
+    "benchmarks/coderefine/compose.yaml",
+    "tests/replay/fixtures/coderefine-1308-codex.trajectory.jsonl",
+    "coderefine",
+    "codex",
+    "1308"
+);
+
+replay_test!(
+    replay_coderefine_2617_terminus_2,
+    "benchmarks/coderefine/compose.yaml",
+    "tests/replay/fixtures/coderefine-2617-terminus-2.trajectory.jsonl",
+    "coderefine",
+    "terminus-2",
+    "2617"
+);
+
+replay_test!(
+    replay_coderefine_3926_claude_code,
+    "benchmarks/coderefine/compose.yaml",
+    "tests/replay/fixtures/coderefine-3926-claude-code.trajectory.jsonl",
+    "coderefine",
+    "claude-code",
+    "3926"
+);
+
+replay_test!(
+    replay_commonsenseqa_732_gemini_cli,
+    "benchmarks/commonsenseqa/compose.yaml",
+    "tests/replay/fixtures/commonsenseqa-732-gemini-cli.trajectory.jsonl",
+    "commonsenseqa",
+    "gemini-cli",
+    "732"
+);
+
+replay_test!(
+    replay_commonsenseqa_976_aider,
+    "benchmarks/commonsenseqa/compose.yaml",
+    "tests/replay/fixtures/commonsenseqa-976-aider.trajectory.jsonl",
+    "commonsenseqa",
+    "aider",
+    "976"
+);
+
+replay_test!(
+    replay_core_bench_26_bob,
+    "benchmarks/core-bench/compose.yaml",
+    "tests/replay/fixtures/core-bench-26-bob.trajectory.jsonl",
+    "core-bench",
+    "bob",
+    "26"
+);
+
+replay_test!(
+    replay_core_bench_35_cline,
+    "benchmarks/core-bench/compose.yaml",
+    "tests/replay/fixtures/core-bench-35-cline.trajectory.jsonl",
+    "core-bench",
+    "cline",
+    "35"
+);
+
+replay_test!(
+    replay_core_bench_8_codex,
+    "benchmarks/core-bench/compose.yaml",
+    "tests/replay/fixtures/core-bench-8-codex.trajectory.jsonl",
+    "core-bench",
+    "codex",
+    "8"
+);
+
+replay_test!(
+    replay_drop_5720_continue_cli,
+    "benchmarks/drop/compose.yaml",
+    "tests/replay/fixtures/drop-5720-continue-cli.trajectory.jsonl",
+    "drop",
+    "continue-cli",
+    "5720"
+);
+
+replay_test!(
+    replay_drop_7627_copilot_cli,
+    "benchmarks/drop/compose.yaml",
+    "tests/replay/fixtures/drop-7627-copilot-cli.trajectory.jsonl",
+    "drop",
+    "copilot-cli",
+    "7627"
+);
+
+replay_test!(
+    replay_gaia_0_crush,
+    "benchmarks/gaia/compose.yaml",
+    "tests/replay/fixtures/gaia-0-crush.trajectory.jsonl",
+    "gaia",
+    "crush",
+    "0"
+);
+
+replay_test!(
+    replay_gdpval_131_goose,
+    "benchmarks/gdpval/compose.yaml",
+    "tests/replay/fixtures/gdpval-131-goose.trajectory.jsonl",
+    "gdpval",
+    "goose",
+    "131"
+);
+
+replay_test!(
+    replay_gdpval_43_claude_code,
+    "benchmarks/gdpval/compose.yaml",
+    "tests/replay/fixtures/gdpval-43-claude-code.trajectory.jsonl",
+    "gdpval",
+    "claude-code",
+    "43"
+);
+
+replay_test!(
+    replay_gdpval_87_mini_swe_agent,
+    "benchmarks/gdpval/compose.yaml",
+    "tests/replay/fixtures/gdpval-87-mini-swe-agent.trajectory.jsonl",
+    "gdpval",
+    "mini-swe-agent",
+    "87"
+);
+
+replay_test!(
+    replay_global_mmlu_0_gemini_cli,
+    "benchmarks/global-mmlu/compose.yaml",
+    "tests/replay/fixtures/global-mmlu-0-gemini-cli.trajectory.jsonl",
+    "global-mmlu",
+    "gemini-cli",
+    "0"
+);
+
+replay_test!(
+    replay_global_mmlu_235905_open_interpreter,
+    "benchmarks/global-mmlu/compose.yaml",
+    "tests/replay/fixtures/global-mmlu-235905-open-interpreter.trajectory.jsonl",
+    "global-mmlu",
+    "open-interpreter",
+    "235905"
+);
+
+replay_test!(
+    replay_global_mmlu_353857_openclaw,
+    "benchmarks/global-mmlu/compose.yaml",
+    "tests/replay/fixtures/global-mmlu-353857-openclaw.trajectory.jsonl",
+    "global-mmlu",
+    "openclaw",
+    "353857"
+);
+
+replay_test!(
+    replay_gpqa_diamond_0_codex,
     "benchmarks/gpqa-diamond/compose.yaml",
     "tests/replay/fixtures/gpqa-diamond-0-codex.trajectory.jsonl",
     "gpqa-diamond",
-    "codex"
+    "codex",
+    "0"
 );
 
 replay_test!(
-    replay_simpleqa_goose,
-    "benchmarks/simpleqa/compose.yaml",
-    "tests/replay/fixtures/simpleqa-0-goose.trajectory.jsonl",
-    "simpleqa",
-    "goose"
+    replay_gpqa_diamond_118_opencode,
+    "benchmarks/gpqa-diamond/compose.yaml",
+    "tests/replay/fixtures/gpqa-diamond-118-opencode.trajectory.jsonl",
+    "gpqa-diamond",
+    "opencode",
+    "118"
 );
 
 replay_test!(
-    replay_math500_aider,
-    "benchmarks/math-500/compose.yaml",
-    "tests/replay/fixtures/math-500-0-aider.trajectory.jsonl",
-    "math-500",
-    "aider"
+    replay_gsm8k_0_codex,
+    "benchmarks/gsm8k/compose.yaml",
+    "tests/replay/fixtures/gsm8k-0-codex.trajectory.jsonl",
+    "gsm8k",
+    "codex",
+    "0"
 );
 
 replay_test!(
-    replay_mgsm_codex,
-    "benchmarks/mgsm/compose.yaml",
-    "tests/replay/fixtures/mgsm-0-codex.trajectory.jsonl",
-    "mgsm",
-    "codex"
+    replay_gsm8k_1054_openhands,
+    "benchmarks/gsm8k/compose.yaml",
+    "tests/replay/fixtures/gsm8k-1054-openhands.trajectory.jsonl",
+    "gsm8k",
+    "openhands",
+    "1054"
 );
 
 replay_test!(
-    replay_mmlu_openhands,
-    "benchmarks/mmlu-pro/compose.yaml",
-    "tests/replay/fixtures/mmlu-pro-0-openhands.trajectory.jsonl",
-    "mmlu-pro",
-    "openhands"
+    replay_gsm8k_263_codex,
+    "benchmarks/gsm8k/compose.yaml",
+    "tests/replay/fixtures/gsm8k-263-codex.trajectory.jsonl",
+    "gsm8k",
+    "codex",
+    "263"
 );
 
 replay_test!(
-    replay_hle_claude_code,
-    "benchmarks/hle/compose.yaml",
-    "tests/replay/fixtures/hle-0-claude-code.trajectory.jsonl",
-    "hle",
-    "claude-code"
+    replay_gsm8k_527_plandex,
+    "benchmarks/gsm8k/compose.yaml",
+    "tests/replay/fixtures/gsm8k-527-plandex.trajectory.jsonl",
+    "gsm8k",
+    "plandex",
+    "527"
 );
 
 replay_test!(
-    replay_mrcr_claude_code,
-    "benchmarks/mrcr/compose.yaml",
-    "tests/replay/fixtures/mrcr-0-claude-code.trajectory.jsonl",
-    "mrcr",
-    "claude-code"
+    replay_gsm8k_790_qwen_code,
+    "benchmarks/gsm8k/compose.yaml",
+    "tests/replay/fixtures/gsm8k-790-qwen-code.trajectory.jsonl",
+    "gsm8k",
+    "qwen-code",
+    "790"
 );
 
 replay_test!(
-    replay_humaneval_gemini,
-    "benchmarks/humaneval/compose.yaml",
-    "tests/replay/fixtures/humaneval-0-claude-code.trajectory.jsonl",
-    "humaneval",
-    "claude-code"
+    replay_harmbench_0_claude_code,
+    "benchmarks/harmbench/compose.yaml",
+    "tests/replay/fixtures/harmbench-0-claude-code.trajectory.jsonl",
+    "harmbench",
+    "claude-code",
+    "0"
 );
 
 replay_test!(
-    replay_mbpp_claude_code,
-    "benchmarks/mbpp/compose.yaml",
-    "tests/replay/fixtures/mbpp-0-claude-code.trajectory.jsonl",
-    "mbpp",
-    "claude-code"
+    replay_harmbench_239_ra_aid,
+    "benchmarks/harmbench/compose.yaml",
+    "tests/replay/fixtures/harmbench-239-ra-aid.trajectory.jsonl",
+    "harmbench",
+    "ra-aid",
+    "239"
 );
 
 replay_test!(
-    replay_livecodebench_codex,
-    "benchmarks/livecodebench/compose.yaml",
-    "tests/replay/fixtures/livecodebench-0-codex.trajectory.jsonl",
-    "livecodebench",
-    "codex"
-);
-
-replay_test!(
-    replay_usaco_codex,
-    "benchmarks/usaco/compose.yaml",
-    "tests/replay/fixtures/usaco-0-codex.trajectory.jsonl",
-    "usaco",
-    "codex"
-);
-
-replay_test!(
-    replay_ifeval_claude_code,
-    "benchmarks/ifeval/compose.yaml",
-    "tests/replay/fixtures/ifeval-0-claude-code.trajectory.jsonl",
-    "ifeval",
-    "claude-code"
-);
-
-replay_test!(
-    replay_browsecomp_codex,
-    "benchmarks/browsecomp/compose.yaml",
-    "tests/replay/fixtures/browsecomp-0-codex.trajectory.jsonl",
-    "browsecomp",
-    "codex"
-);
-
-replay_test!(
-    replay_healthbench_claude_code,
+    replay_healthbench_2999_swe_agent,
     "benchmarks/healthbench/compose.yaml",
-    "tests/replay/fixtures/healthbench-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/healthbench-2999-swe-agent.trajectory.jsonl",
     "healthbench",
-    "claude-code"
+    "swe-agent",
+    "2999"
 );
 
 replay_test!(
-    replay_kumo_codex,
+    replay_hellaswag_0_gemini_cli,
+    "benchmarks/hellaswag/compose.yaml",
+    "tests/replay/fixtures/hellaswag-0-gemini-cli.trajectory.jsonl",
+    "hellaswag",
+    "gemini-cli",
+    "0"
+);
+
+replay_test!(
+    replay_hellaswag_2008_codex,
+    "benchmarks/hellaswag/compose.yaml",
+    "tests/replay/fixtures/hellaswag-2008-codex.trajectory.jsonl",
+    "hellaswag",
+    "codex",
+    "2008"
+);
+
+replay_test!(
+    replay_hellaswag_4016_terminus_2,
+    "benchmarks/hellaswag/compose.yaml",
+    "tests/replay/fixtures/hellaswag-4016-terminus-2.trajectory.jsonl",
+    "hellaswag",
+    "terminus-2",
+    "4016"
+);
+
+replay_test!(
+    replay_hellaswag_6024_claude_code,
+    "benchmarks/hellaswag/compose.yaml",
+    "tests/replay/fixtures/hellaswag-6024-claude-code.trajectory.jsonl",
+    "hellaswag",
+    "claude-code",
+    "6024"
+);
+
+replay_test!(
+    replay_humaneval_0_codex,
+    "benchmarks/humaneval/compose.yaml",
+    "tests/replay/fixtures/humaneval-0-codex.trajectory.jsonl",
+    "humaneval",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_humaneval_32_codex,
+    "benchmarks/humaneval/compose.yaml",
+    "tests/replay/fixtures/humaneval-32-codex.trajectory.jsonl",
+    "humaneval",
+    "codex",
+    "32"
+);
+
+replay_test!(
+    replay_humaneval_65_gemini_cli,
+    "benchmarks/humaneval/compose.yaml",
+    "tests/replay/fixtures/humaneval-65-gemini-cli.trajectory.jsonl",
+    "humaneval",
+    "gemini-cli",
+    "65"
+);
+
+replay_test!(
+    replay_humaneval_97_aider,
+    "benchmarks/humaneval/compose.yaml",
+    "tests/replay/fixtures/humaneval-97-aider.trajectory.jsonl",
+    "humaneval",
+    "aider",
+    "97"
+);
+
+replay_test!(
+    replay_humanevalplus_0_claude_code,
+    "benchmarks/humanevalplus/compose.yaml",
+    "tests/replay/fixtures/humanevalplus-0-claude-code.trajectory.jsonl",
+    "humanevalplus",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_humanevalplus_32_gemini_cli,
+    "benchmarks/humanevalplus/compose.yaml",
+    "tests/replay/fixtures/humanevalplus-32-gemini-cli.trajectory.jsonl",
+    "humanevalplus",
+    "gemini-cli",
+    "32"
+);
+
+replay_test!(
+    replay_humanevalplus_97_bob,
+    "benchmarks/humanevalplus/compose.yaml",
+    "tests/replay/fixtures/humanevalplus-97-bob.trajectory.jsonl",
+    "humanevalplus",
+    "bob",
+    "97"
+);
+
+replay_test!(
+    replay_ifeval_108_codex,
+    "benchmarks/ifeval/compose.yaml",
+    "tests/replay/fixtures/ifeval-108-codex.trajectory.jsonl",
+    "ifeval",
+    "codex",
+    "108"
+);
+
+replay_test!(
+    replay_ifeval_216_cline,
+    "benchmarks/ifeval/compose.yaml",
+    "tests/replay/fixtures/ifeval-216-cline.trajectory.jsonl",
+    "ifeval",
+    "cline",
+    "216"
+);
+
+replay_test!(
+    replay_ifeval_324_continue_cli,
+    "benchmarks/ifeval/compose.yaml",
+    "tests/replay/fixtures/ifeval-324-continue-cli.trajectory.jsonl",
+    "ifeval",
+    "continue-cli",
+    "324"
+);
+
+replay_test!(
+    replay_kumo_0_codex,
     "benchmarks/kumo/compose.yaml",
     "tests/replay/fixtures/kumo-0-codex.trajectory.jsonl",
     "kumo",
-    "codex"
+    "codex",
+    "0"
 );
 
 replay_test!(
-    replay_gdpval_claude_code,
-    "benchmarks/gdpval/compose.yaml",
-    "tests/replay/fixtures/gdpval-0-claude-code.trajectory.jsonl",
-    "gdpval",
-    "claude-code"
+    replay_kumo_149_copilot_cli,
+    "benchmarks/kumo/compose.yaml",
+    "tests/replay/fixtures/kumo-149-copilot-cli.trajectory.jsonl",
+    "kumo",
+    "copilot-cli",
+    "149"
 );
 
 replay_test!(
-    replay_bfcl_codex,
-    "benchmarks/bfcl/compose.yaml",
-    "tests/replay/fixtures/bfcl-0-codex.trajectory.jsonl",
-    "bfcl",
-    "codex"
+    replay_kumo_49_codex,
+    "benchmarks/kumo/compose.yaml",
+    "tests/replay/fixtures/kumo-49-codex.trajectory.jsonl",
+    "kumo",
+    "codex",
+    "49"
 );
 
 replay_test!(
-    replay_appworld_claude_code,
-    "benchmarks/appworld/compose.yaml",
-    "tests/replay/fixtures/appworld-0-claude-code.trajectory.jsonl",
-    "appworld",
-    "claude-code"
+    replay_kumo_99_crush,
+    "benchmarks/kumo/compose.yaml",
+    "tests/replay/fixtures/kumo-99-crush.trajectory.jsonl",
+    "kumo",
+    "crush",
+    "99"
 );
 
 replay_test!(
-    replay_arcagi_claude_code,
-    "benchmarks/arc-agi/compose.yaml",
-    "tests/replay/fixtures/arc-agi-0-claude-code.trajectory.jsonl",
-    "arc-agi",
-    "claude-code"
+    replay_legalbench_0_claude_code,
+    "benchmarks/legalbench/compose.yaml",
+    "tests/replay/fixtures/legalbench-0-claude-code.trajectory.jsonl",
+    "legalbench",
+    "claude-code",
+    "0"
 );
 
 replay_test!(
-    replay_mmmu_claude_code,
+    replay_legalbench_11399_goose,
+    "benchmarks/legalbench/compose.yaml",
+    "tests/replay/fixtures/legalbench-11399-goose.trajectory.jsonl",
+    "legalbench",
+    "goose",
+    "11399"
+);
+
+replay_test!(
+    replay_legalbench_3799_gemini_cli,
+    "benchmarks/legalbench/compose.yaml",
+    "tests/replay/fixtures/legalbench-3799-gemini-cli.trajectory.jsonl",
+    "legalbench",
+    "gemini-cli",
+    "3799"
+);
+
+replay_test!(
+    replay_legalbench_7599_mini_swe_agent,
+    "benchmarks/legalbench/compose.yaml",
+    "tests/replay/fixtures/legalbench-7599-mini-swe-agent.trajectory.jsonl",
+    "legalbench",
+    "mini-swe-agent",
+    "7599"
+);
+
+replay_test!(
+    replay_livecodebench_0_codex,
+    "benchmarks/livecodebench/compose.yaml",
+    "tests/replay/fixtures/livecodebench-0-codex.trajectory.jsonl",
+    "livecodebench",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_livecodebench_175_codex,
+    "benchmarks/livecodebench/compose.yaml",
+    "tests/replay/fixtures/livecodebench-175-codex.trajectory.jsonl",
+    "livecodebench",
+    "codex",
+    "175"
+);
+
+replay_test!(
+    replay_livecodebench_527_open_interpreter,
+    "benchmarks/livecodebench/compose.yaml",
+    "tests/replay/fixtures/livecodebench-527-open-interpreter.trajectory.jsonl",
+    "livecodebench",
+    "open-interpreter",
+    "527"
+);
+
+replay_test!(
+    replay_longbench_1499_openclaw,
+    "benchmarks/longbench/compose.yaml",
+    "tests/replay/fixtures/longbench-1499-openclaw.trajectory.jsonl",
+    "longbench",
+    "openclaw",
+    "1499"
+);
+
+replay_test!(
+    replay_longbench_2249_opencode,
+    "benchmarks/longbench/compose.yaml",
+    "tests/replay/fixtures/longbench-2249-opencode.trajectory.jsonl",
+    "longbench",
+    "opencode",
+    "2249"
+);
+
+replay_test!(
+    replay_longbench_749_codex,
+    "benchmarks/longbench/compose.yaml",
+    "tests/replay/fixtures/longbench-749-codex.trajectory.jsonl",
+    "longbench",
+    "codex",
+    "749"
+);
+
+replay_test!(
+    replay_math_0_claude_code,
+    "benchmarks/math/compose.yaml",
+    "tests/replay/fixtures/math-0-claude-code.trajectory.jsonl",
+    "math",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_math_1999_openhands,
+    "benchmarks/math/compose.yaml",
+    "tests/replay/fixtures/math-1999-openhands.trajectory.jsonl",
+    "math",
+    "openhands",
+    "1999"
+);
+
+replay_test!(
+    replay_math_2999_plandex,
+    "benchmarks/math/compose.yaml",
+    "tests/replay/fixtures/math-2999-plandex.trajectory.jsonl",
+    "math",
+    "plandex",
+    "2999"
+);
+
+replay_test!(
+    replay_math_3999_qwen_code,
+    "benchmarks/math/compose.yaml",
+    "tests/replay/fixtures/math-3999-qwen-code.trajectory.jsonl",
+    "math",
+    "qwen-code",
+    "3999"
+);
+
+replay_test!(
+    replay_math_500_0_codex,
+    "benchmarks/math-500/compose.yaml",
+    "tests/replay/fixtures/math-500-0-codex.trajectory.jsonl",
+    "math-500",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_math_500_199_ra_aid,
+    "benchmarks/math-500/compose.yaml",
+    "tests/replay/fixtures/math-500-199-ra-aid.trajectory.jsonl",
+    "math-500",
+    "ra-aid",
+    "199"
+);
+
+replay_test!(
+    replay_math_500_299_swe_agent,
+    "benchmarks/math-500/compose.yaml",
+    "tests/replay/fixtures/math-500-299-swe-agent.trajectory.jsonl",
+    "math-500",
+    "swe-agent",
+    "299"
+);
+
+replay_test!(
+    replay_math_500_99_codex,
+    "benchmarks/math-500/compose.yaml",
+    "tests/replay/fixtures/math-500-99-codex.trajectory.jsonl",
+    "math-500",
+    "codex",
+    "99"
+);
+
+replay_test!(
+    replay_math_999_gemini_cli,
+    "benchmarks/math/compose.yaml",
+    "tests/replay/fixtures/math-999-gemini-cli.trajectory.jsonl",
+    "math",
+    "gemini-cli",
+    "999"
+);
+
+replay_test!(
+    replay_mathvista_199_codex,
+    "benchmarks/mathvista/compose.yaml",
+    "tests/replay/fixtures/mathvista-199-codex.trajectory.jsonl",
+    "mathvista",
+    "codex",
+    "199"
+);
+
+replay_test!(
+    replay_mathvista_599_terminus_2,
+    "benchmarks/mathvista/compose.yaml",
+    "tests/replay/fixtures/mathvista-599-terminus-2.trajectory.jsonl",
+    "mathvista",
+    "terminus-2",
+    "599"
+);
+
+replay_test!(
+    replay_mathvista_799_claude_code,
+    "benchmarks/mathvista/compose.yaml",
+    "tests/replay/fixtures/mathvista-799-claude-code.trajectory.jsonl",
+    "mathvista",
+    "claude-code",
+    "799"
+);
+
+replay_test!(
+    replay_mbpp_0_claude_code,
+    "benchmarks/mbpp/compose.yaml",
+    "tests/replay/fixtures/mbpp-0-claude-code.trajectory.jsonl",
+    "mbpp",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_mbpp_199_gemini_cli,
+    "benchmarks/mbpp/compose.yaml",
+    "tests/replay/fixtures/mbpp-199-gemini-cli.trajectory.jsonl",
+    "mbpp",
+    "gemini-cli",
+    "199"
+);
+
+replay_test!(
+    replay_mbpp_299_aider,
+    "benchmarks/mbpp/compose.yaml",
+    "tests/replay/fixtures/mbpp-299-aider.trajectory.jsonl",
+    "mbpp",
+    "aider",
+    "299"
+);
+
+replay_test!(
+    replay_mbpp_99_gemini_cli,
+    "benchmarks/mbpp/compose.yaml",
+    "tests/replay/fixtures/mbpp-99-gemini-cli.trajectory.jsonl",
+    "mbpp",
+    "gemini-cli",
+    "99"
+);
+
+replay_test!(
+    replay_mbppplus_150_bob,
+    "benchmarks/mbppplus/compose.yaml",
+    "tests/replay/fixtures/mbppplus-150-bob.trajectory.jsonl",
+    "mbppplus",
+    "bob",
+    "150"
+);
+
+replay_test!(
+    replay_mbppplus_226_cline,
+    "benchmarks/mbppplus/compose.yaml",
+    "tests/replay/fixtures/mbppplus-226-cline.trajectory.jsonl",
+    "mbppplus",
+    "cline",
+    "226"
+);
+
+replay_test!(
+    replay_medqa_1017_continue_cli,
+    "benchmarks/medqa/compose.yaml",
+    "tests/replay/fixtures/medqa-1017-continue-cli.trajectory.jsonl",
+    "medqa",
+    "continue-cli",
+    "1017"
+);
+
+replay_test!(
+    replay_medqa_508_copilot_cli,
+    "benchmarks/medqa/compose.yaml",
+    "tests/replay/fixtures/medqa-508-copilot-cli.trajectory.jsonl",
+    "medqa",
+    "copilot-cli",
+    "508"
+);
+
+replay_test!(
+    replay_medqa_763_crush,
+    "benchmarks/medqa/compose.yaml",
+    "tests/replay/fixtures/medqa-763-crush.trajectory.jsonl",
+    "medqa",
+    "crush",
+    "763"
+);
+
+replay_test!(
+    replay_mgsm_0_codex,
+    "benchmarks/mgsm/compose.yaml",
+    "tests/replay/fixtures/mgsm-0-codex.trajectory.jsonl",
+    "mgsm",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_mgsm_1099_goose,
+    "benchmarks/mgsm/compose.yaml",
+    "tests/replay/fixtures/mgsm-1099-goose.trajectory.jsonl",
+    "mgsm",
+    "goose",
+    "1099"
+);
+
+replay_test!(
+    replay_mgsm_1649_mini_swe_agent,
+    "benchmarks/mgsm/compose.yaml",
+    "tests/replay/fixtures/mgsm-1649-mini-swe-agent.trajectory.jsonl",
+    "mgsm",
+    "mini-swe-agent",
+    "1649"
+);
+
+replay_test!(
+    replay_mgsm_549_codex,
+    "benchmarks/mgsm/compose.yaml",
+    "tests/replay/fixtures/mgsm-549-codex.trajectory.jsonl",
+    "mgsm",
+    "codex",
+    "549"
+);
+
+replay_test!(
+    replay_mind2web_403_open_interpreter,
+    "benchmarks/mind2web/compose.yaml",
+    "tests/replay/fixtures/mind2web-403-open-interpreter.trajectory.jsonl",
+    "mind2web",
+    "open-interpreter",
+    "403"
+);
+
+replay_test!(
+    replay_mind2web_604_openclaw,
+    "benchmarks/mind2web/compose.yaml",
+    "tests/replay/fixtures/mind2web-604-openclaw.trajectory.jsonl",
+    "mind2web",
+    "openclaw",
+    "604"
+);
+
+replay_test!(
+    replay_minif2f_145_opencode,
+    "benchmarks/minif2f/compose.yaml",
+    "tests/replay/fixtures/minif2f-145-opencode.trajectory.jsonl",
+    "minif2f",
+    "opencode",
+    "145"
+);
+
+replay_test!(
+    replay_mmlu_11232_openhands,
+    "benchmarks/mmlu/compose.yaml",
+    "tests/replay/fixtures/mmlu-11232-openhands.trajectory.jsonl",
+    "mmlu",
+    "openhands",
+    "11232"
+);
+
+replay_test!(
+    replay_mmlu_2808_codex,
+    "benchmarks/mmlu/compose.yaml",
+    "tests/replay/fixtures/mmlu-2808-codex.trajectory.jsonl",
+    "mmlu",
+    "codex",
+    "2808"
+);
+
+replay_test!(
+    replay_mmlu_8424_plandex,
+    "benchmarks/mmlu/compose.yaml",
+    "tests/replay/fixtures/mmlu-8424-plandex.trajectory.jsonl",
+    "mmlu",
+    "plandex",
+    "8424"
+);
+
+replay_test!(
+    replay_mmlu_pro_0_claude_code,
+    "benchmarks/mmlu-pro/compose.yaml",
+    "tests/replay/fixtures/mmlu-pro-0-claude-code.trajectory.jsonl",
+    "mmlu-pro",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_mmlu_pro_2406_gemini_cli,
+    "benchmarks/mmlu-pro/compose.yaml",
+    "tests/replay/fixtures/mmlu-pro-2406-gemini-cli.trajectory.jsonl",
+    "mmlu-pro",
+    "gemini-cli",
+    "2406"
+);
+
+replay_test!(
+    replay_mmlu_pro_4812_qwen_code,
+    "benchmarks/mmlu-pro/compose.yaml",
+    "tests/replay/fixtures/mmlu-pro-4812-qwen-code.trajectory.jsonl",
+    "mmlu-pro",
+    "qwen-code",
+    "4812"
+);
+
+replay_test!(
+    replay_mmlu_pro_7218_ra_aid,
+    "benchmarks/mmlu-pro/compose.yaml",
+    "tests/replay/fixtures/mmlu-pro-7218-ra-aid.trajectory.jsonl",
+    "mmlu-pro",
+    "ra-aid",
+    "7218"
+);
+
+replay_test!(
+    replay_mmmu_0_codex,
     "benchmarks/mmmu/compose.yaml",
-    "tests/replay/fixtures/mmmu-0-claude-code.trajectory.jsonl",
+    "tests/replay/fixtures/mmmu-0-codex.trajectory.jsonl",
     "mmmu",
-    "claude-code"
+    "codex",
+    "0"
 );
 
 replay_test!(
-    replay_aider_polyglot_aider,
-    "benchmarks/aider-polyglot/compose.yaml",
-    "tests/replay/fixtures/aider-polyglot-0-aider.trajectory.jsonl",
-    "aider-polyglot",
-    "aider"
+    replay_mmmu_179_codex,
+    "benchmarks/mmmu/compose.yaml",
+    "tests/replay/fixtures/mmmu-179-codex.trajectory.jsonl",
+    "mmmu",
+    "codex",
+    "179"
 );
 
 replay_test!(
-    replay_gaia_goose,
-    "benchmarks/gaia/compose.yaml",
-    "tests/replay/fixtures/gaia-0-goose.trajectory.jsonl",
-    "gaia",
-    "goose"
+    replay_mmmu_359_swe_agent,
+    "benchmarks/mmmu/compose.yaml",
+    "tests/replay/fixtures/mmmu-359-swe-agent.trajectory.jsonl",
+    "mmmu",
+    "swe-agent",
+    "359"
 );
 
-// Per-task and sidecar benchmarks need special handling (build args, sidecars).
-// TODO: replay_swebench_bob, replay_compilebench_sweagent, replay_terminal_openhand
-// TODO: replay_webarena_sweagent, replay_osworld_claude_code
-// TODO: replay_tau_bench (uses bridge, not standard compose pattern)
+replay_test!(
+    replay_mmmu_539_terminus_2,
+    "benchmarks/mmmu/compose.yaml",
+    "tests/replay/fixtures/mmmu-539-terminus-2.trajectory.jsonl",
+    "mmmu",
+    "terminus-2",
+    "539"
+);
+
+replay_test!(
+    replay_mrcr_0_codex,
+    "benchmarks/mrcr/compose.yaml",
+    "tests/replay/fixtures/mrcr-0-codex.trajectory.jsonl",
+    "mrcr",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_mrcr_1439_claude_code,
+    "benchmarks/mrcr/compose.yaml",
+    "tests/replay/fixtures/mrcr-1439-claude-code.trajectory.jsonl",
+    "mrcr",
+    "claude-code",
+    "1439"
+);
+
+replay_test!(
+    replay_mrcr_479_claude_code,
+    "benchmarks/mrcr/compose.yaml",
+    "tests/replay/fixtures/mrcr-479-claude-code.trajectory.jsonl",
+    "mrcr",
+    "claude-code",
+    "479"
+);
+
+replay_test!(
+    replay_naturalquestions_1443_gemini_cli,
+    "benchmarks/naturalquestions/compose.yaml",
+    "tests/replay/fixtures/naturalquestions-1443-gemini-cli.trajectory.jsonl",
+    "naturalquestions",
+    "gemini-cli",
+    "1443"
+);
+
+replay_test!(
+    replay_naturalquestions_2165_aider,
+    "benchmarks/naturalquestions/compose.yaml",
+    "tests/replay/fixtures/naturalquestions-2165-aider.trajectory.jsonl",
+    "naturalquestions",
+    "aider",
+    "2165"
+);
+
+replay_test!(
+    replay_naturalquestions_721_gemini_cli,
+    "benchmarks/naturalquestions/compose.yaml",
+    "tests/replay/fixtures/naturalquestions-721-gemini-cli.trajectory.jsonl",
+    "naturalquestions",
+    "gemini-cli",
+    "721"
+);
+
+replay_test!(
+    replay_niah_0_codex,
+    "benchmarks/niah/compose.yaml",
+    "tests/replay/fixtures/niah-0-codex.trajectory.jsonl",
+    "niah",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_niah_12_codex,
+    "benchmarks/niah/compose.yaml",
+    "tests/replay/fixtures/niah-12-codex.trajectory.jsonl",
+    "niah",
+    "codex",
+    "12"
+);
+
+replay_test!(
+    replay_niah_24_bob,
+    "benchmarks/niah/compose.yaml",
+    "tests/replay/fixtures/niah-24-bob.trajectory.jsonl",
+    "niah",
+    "bob",
+    "24"
+);
+
+replay_test!(
+    replay_niah_37_cline,
+    "benchmarks/niah/compose.yaml",
+    "tests/replay/fixtures/niah-37-cline.trajectory.jsonl",
+    "niah",
+    "cline",
+    "37"
+);
+
+replay_test!(
+    replay_niah_49_continue_cli,
+    "benchmarks/niah/compose.yaml",
+    "tests/replay/fixtures/niah-49-continue-cli.trajectory.jsonl",
+    "niah",
+    "continue-cli",
+    "49"
+);
+
+replay_test!(
+    replay_ocrbench_0_codex,
+    "benchmarks/ocrbench/compose.yaml",
+    "tests/replay/fixtures/ocrbench-0-codex.trajectory.jsonl",
+    "ocrbench",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_ocrbench_399_copilot_cli,
+    "benchmarks/ocrbench/compose.yaml",
+    "tests/replay/fixtures/ocrbench-399-copilot-cli.trajectory.jsonl",
+    "ocrbench",
+    "copilot-cli",
+    "399"
+);
+
+replay_test!(
+    replay_ocrbench_599_crush,
+    "benchmarks/ocrbench/compose.yaml",
+    "tests/replay/fixtures/ocrbench-599-crush.trajectory.jsonl",
+    "ocrbench",
+    "crush",
+    "599"
+);
+
+replay_test!(
+    replay_olympiad_bench_0_claude_code,
+    "benchmarks/olympiad-bench/compose.yaml",
+    "tests/replay/fixtures/olympiad-bench-0-claude-code.trajectory.jsonl",
+    "olympiad-bench",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_olympiad_bench_181_gemini_cli,
+    "benchmarks/olympiad-bench/compose.yaml",
+    "tests/replay/fixtures/olympiad-bench-181-gemini-cli.trajectory.jsonl",
+    "olympiad-bench",
+    "gemini-cli",
+    "181"
+);
+
+replay_test!(
+    replay_olympiad_bench_363_goose,
+    "benchmarks/olympiad-bench/compose.yaml",
+    "tests/replay/fixtures/olympiad-bench-363-goose.trajectory.jsonl",
+    "olympiad-bench",
+    "goose",
+    "363"
+);
+
+replay_test!(
+    replay_olympiad_bench_545_mini_swe_agent,
+    "benchmarks/olympiad-bench/compose.yaml",
+    "tests/replay/fixtures/olympiad-bench-545-mini-swe-agent.trajectory.jsonl",
+    "olympiad-bench",
+    "mini-swe-agent",
+    "545"
+);
+
+replay_test!(
+    replay_openbookqa_0_codex,
+    "benchmarks/openbookqa/compose.yaml",
+    "tests/replay/fixtures/openbookqa-0-codex.trajectory.jsonl",
+    "openbookqa",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_openbookqa_199_open_interpreter,
+    "benchmarks/openbookqa/compose.yaml",
+    "tests/replay/fixtures/openbookqa-199-open-interpreter.trajectory.jsonl",
+    "openbookqa",
+    "open-interpreter",
+    "199"
+);
+
+replay_test!(
+    replay_openbookqa_299_openclaw,
+    "benchmarks/openbookqa/compose.yaml",
+    "tests/replay/fixtures/openbookqa-299-openclaw.trajectory.jsonl",
+    "openbookqa",
+    "openclaw",
+    "299"
+);
+
+replay_test!(
+    replay_openbookqa_399_opencode,
+    "benchmarks/openbookqa/compose.yaml",
+    "tests/replay/fixtures/openbookqa-399-opencode.trajectory.jsonl",
+    "openbookqa",
+    "opencode",
+    "399"
+);
+
+replay_test!(
+    replay_openbookqa_99_codex,
+    "benchmarks/openbookqa/compose.yaml",
+    "tests/replay/fixtures/openbookqa-99-codex.trajectory.jsonl",
+    "openbookqa",
+    "codex",
+    "99"
+);
+
+replay_test!(
+    replay_piqa_0_codex,
+    "benchmarks/piqa/compose.yaml",
+    "tests/replay/fixtures/piqa-0-codex.trajectory.jsonl",
+    "piqa",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_piqa_1102_openhands,
+    "benchmarks/piqa/compose.yaml",
+    "tests/replay/fixtures/piqa-1102-openhands.trajectory.jsonl",
+    "piqa",
+    "openhands",
+    "1102"
+);
+
+replay_test!(
+    replay_piqa_1469_plandex,
+    "benchmarks/piqa/compose.yaml",
+    "tests/replay/fixtures/piqa-1469-plandex.trajectory.jsonl",
+    "piqa",
+    "plandex",
+    "1469"
+);
+
+replay_test!(
+    replay_piqa_367_claude_code,
+    "benchmarks/piqa/compose.yaml",
+    "tests/replay/fixtures/piqa-367-claude-code.trajectory.jsonl",
+    "piqa",
+    "claude-code",
+    "367"
+);
+
+replay_test!(
+    replay_piqa_734_qwen_code,
+    "benchmarks/piqa/compose.yaml",
+    "tests/replay/fixtures/piqa-734-qwen-code.trajectory.jsonl",
+    "piqa",
+    "qwen-code",
+    "734"
+);
+
+replay_test!(
+    replay_pubmedqa_0_gemini_cli,
+    "benchmarks/pubmedqa/compose.yaml",
+    "tests/replay/fixtures/pubmedqa-0-gemini-cli.trajectory.jsonl",
+    "pubmedqa",
+    "gemini-cli",
+    "0"
+);
+
+replay_test!(
+    replay_pubmedqa_199_codex,
+    "benchmarks/pubmedqa/compose.yaml",
+    "tests/replay/fixtures/pubmedqa-199-codex.trajectory.jsonl",
+    "pubmedqa",
+    "codex",
+    "199"
+);
+
+replay_test!(
+    replay_pubmedqa_399_ra_aid,
+    "benchmarks/pubmedqa/compose.yaml",
+    "tests/replay/fixtures/pubmedqa-399-ra-aid.trajectory.jsonl",
+    "pubmedqa",
+    "ra-aid",
+    "399"
+);
+
+replay_test!(
+    replay_pubmedqa_599_swe_agent,
+    "benchmarks/pubmedqa/compose.yaml",
+    "tests/replay/fixtures/pubmedqa-599-swe-agent.trajectory.jsonl",
+    "pubmedqa",
+    "swe-agent",
+    "599"
+);
+
+replay_test!(
+    replay_ruler_0_codex,
+    "benchmarks/ruler/compose.yaml",
+    "tests/replay/fixtures/ruler-0-codex.trajectory.jsonl",
+    "ruler",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_ruler_119_codex,
+    "benchmarks/ruler/compose.yaml",
+    "tests/replay/fixtures/ruler-119-codex.trajectory.jsonl",
+    "ruler",
+    "codex",
+    "119"
+);
+
+replay_test!(
+    replay_ruler_159_terminus_2,
+    "benchmarks/ruler/compose.yaml",
+    "tests/replay/fixtures/ruler-159-terminus-2.trajectory.jsonl",
+    "ruler",
+    "terminus-2",
+    "159"
+);
+
+replay_test!(
+    replay_ruler_39_claude_code,
+    "benchmarks/ruler/compose.yaml",
+    "tests/replay/fixtures/ruler-39-claude-code.trajectory.jsonl",
+    "ruler",
+    "claude-code",
+    "39"
+);
+
+replay_test!(
+    replay_ruler_79_claude_code,
+    "benchmarks/ruler/compose.yaml",
+    "tests/replay/fixtures/ruler-79-claude-code.trajectory.jsonl",
+    "ruler",
+    "claude-code",
+    "79"
+);
+
+replay_test!(
+    replay_scibench_0_gemini_cli,
+    "benchmarks/scibench/compose.yaml",
+    "tests/replay/fixtures/scibench-0-gemini-cli.trajectory.jsonl",
+    "scibench",
+    "gemini-cli",
+    "0"
+);
+
+replay_test!(
+    replay_scibench_138_codex,
+    "benchmarks/scibench/compose.yaml",
+    "tests/replay/fixtures/scibench-138-codex.trajectory.jsonl",
+    "scibench",
+    "codex",
+    "138"
+);
+
+replay_test!(
+    replay_scibench_276_gemini_cli,
+    "benchmarks/scibench/compose.yaml",
+    "tests/replay/fixtures/scibench-276-gemini-cli.trajectory.jsonl",
+    "scibench",
+    "gemini-cli",
+    "276"
+);
+
+replay_test!(
+    replay_scibench_414_aider,
+    "benchmarks/scibench/compose.yaml",
+    "tests/replay/fixtures/scibench-414-aider.trajectory.jsonl",
+    "scibench",
+    "aider",
+    "414"
+);
+
+replay_test!(
+    replay_scicode_38_bob,
+    "benchmarks/scicode/compose.yaml",
+    "tests/replay/fixtures/scicode-38-bob.trajectory.jsonl",
+    "scicode",
+    "bob",
+    "38"
+);
+
+replay_test!(
+    replay_simpleqa_0_codex,
+    "benchmarks/simpleqa/compose.yaml",
+    "tests/replay/fixtures/simpleqa-0-codex.trajectory.jsonl",
+    "simpleqa",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_simpleqa_1730_cline,
+    "benchmarks/simpleqa/compose.yaml",
+    "tests/replay/fixtures/simpleqa-1730-cline.trajectory.jsonl",
+    "simpleqa",
+    "cline",
+    "1730"
+);
+
+replay_test!(
+    replay_simpleqa_2595_continue_cli,
+    "benchmarks/simpleqa/compose.yaml",
+    "tests/replay/fixtures/simpleqa-2595-continue-cli.trajectory.jsonl",
+    "simpleqa",
+    "continue-cli",
+    "2595"
+);
+
+replay_test!(
+    replay_simpleqa_865_codex,
+    "benchmarks/simpleqa/compose.yaml",
+    "tests/replay/fixtures/simpleqa-865-codex.trajectory.jsonl",
+    "simpleqa",
+    "codex",
+    "865"
+);
+
+replay_test!(
+    replay_swe_gym_1462_copilot_cli,
+    "benchmarks/swe-gym/compose.yaml",
+    "tests/replay/fixtures/swe-gym-1462-copilot-cli.trajectory.jsonl",
+    "swe-gym",
+    "copilot-cli",
+    "1462"
+);
+
+replay_test!(
+    replay_theoremqa_639_crush,
+    "benchmarks/theoremqa/compose.yaml",
+    "tests/replay/fixtures/theoremqa-639-crush.trajectory.jsonl",
+    "theoremqa",
+    "crush",
+    "639"
+);
+
+replay_test!(
+    replay_triviaqa_0_claude_code,
+    "benchmarks/triviaqa/compose.yaml",
+    "tests/replay/fixtures/triviaqa-0-claude-code.trajectory.jsonl",
+    "triviaqa",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_triviaqa_10765_goose,
+    "benchmarks/triviaqa/compose.yaml",
+    "tests/replay/fixtures/triviaqa-10765-goose.trajectory.jsonl",
+    "triviaqa",
+    "goose",
+    "10765"
+);
+
+replay_test!(
+    replay_triviaqa_3588_gemini_cli,
+    "benchmarks/triviaqa/compose.yaml",
+    "tests/replay/fixtures/triviaqa-3588-gemini-cli.trajectory.jsonl",
+    "triviaqa",
+    "gemini-cli",
+    "3588"
+);
+
+replay_test!(
+    replay_triviaqa_7177_mini_swe_agent,
+    "benchmarks/triviaqa/compose.yaml",
+    "tests/replay/fixtures/triviaqa-7177-mini-swe-agent.trajectory.jsonl",
+    "triviaqa",
+    "mini-swe-agent",
+    "7177"
+);
+
+replay_test!(
+    replay_truthfulqa_0_codex,
+    "benchmarks/truthfulqa/compose.yaml",
+    "tests/replay/fixtures/truthfulqa-0-codex.trajectory.jsonl",
+    "truthfulqa",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_truthfulqa_163_codex,
+    "benchmarks/truthfulqa/compose.yaml",
+    "tests/replay/fixtures/truthfulqa-163-codex.trajectory.jsonl",
+    "truthfulqa",
+    "codex",
+    "163"
+);
+
+replay_test!(
+    replay_truthfulqa_326_open_interpreter,
+    "benchmarks/truthfulqa/compose.yaml",
+    "tests/replay/fixtures/truthfulqa-326-open-interpreter.trajectory.jsonl",
+    "truthfulqa",
+    "open-interpreter",
+    "326"
+);
+
+replay_test!(
+    replay_truthfulqa_489_openclaw,
+    "benchmarks/truthfulqa/compose.yaml",
+    "tests/replay/fixtures/truthfulqa-489-openclaw.trajectory.jsonl",
+    "truthfulqa",
+    "openclaw",
+    "489"
+);
+
+replay_test!(
+    replay_truthfulqa_652_opencode,
+    "benchmarks/truthfulqa/compose.yaml",
+    "tests/replay/fixtures/truthfulqa-652-opencode.trajectory.jsonl",
+    "truthfulqa",
+    "opencode",
+    "652"
+);
+
+replay_test!(
+    replay_usaco_0_codex,
+    "benchmarks/usaco/compose.yaml",
+    "tests/replay/fixtures/usaco-0-codex.trajectory.jsonl",
+    "usaco",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_usaco_183_openhands,
+    "benchmarks/usaco/compose.yaml",
+    "tests/replay/fixtures/usaco-183-openhands.trajectory.jsonl",
+    "usaco",
+    "openhands",
+    "183"
+);
+
+replay_test!(
+    replay_usaco_61_claude_code,
+    "benchmarks/usaco/compose.yaml",
+    "tests/replay/fixtures/usaco-61-claude-code.trajectory.jsonl",
+    "usaco",
+    "claude-code",
+    "61"
+);
+
+replay_test!(
+    replay_webarena_0_gemini_cli,
+    "benchmarks/webarena/compose.yaml",
+    "tests/replay/fixtures/webarena-0-gemini-cli.trajectory.jsonl",
+    "webarena",
+    "gemini-cli",
+    "0"
+);
+
+replay_test!(
+    replay_webarena_162_codex,
+    "benchmarks/webarena/compose.yaml",
+    "tests/replay/fixtures/webarena-162-codex.trajectory.jsonl",
+    "webarena",
+    "codex",
+    "162"
+);
+
+replay_test!(
+    replay_webarena_486_plandex,
+    "benchmarks/webarena/compose.yaml",
+    "tests/replay/fixtures/webarena-486-plandex.trajectory.jsonl",
+    "webarena",
+    "plandex",
+    "486"
+);
+
+replay_test!(
+    replay_webarena_648_qwen_code,
+    "benchmarks/webarena/compose.yaml",
+    "tests/replay/fixtures/webarena-648-qwen-code.trajectory.jsonl",
+    "webarena",
+    "qwen-code",
+    "648"
+);
+
+replay_test!(
+    replay_winogrande_0_codex,
+    "benchmarks/winogrande/compose.yaml",
+    "tests/replay/fixtures/winogrande-0-codex.trajectory.jsonl",
+    "winogrande",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_winogrande_1012_ra_aid,
+    "benchmarks/winogrande/compose.yaml",
+    "tests/replay/fixtures/winogrande-1012-ra-aid.trajectory.jsonl",
+    "winogrande",
+    "ra-aid",
+    "1012"
+);
+
+replay_test!(
+    replay_winogrande_253_codex,
+    "benchmarks/winogrande/compose.yaml",
+    "tests/replay/fixtures/winogrande-253-codex.trajectory.jsonl",
+    "winogrande",
+    "codex",
+    "253"
+);
+
+replay_test!(
+    replay_winogrande_506_swe_agent,
+    "benchmarks/winogrande/compose.yaml",
+    "tests/replay/fixtures/winogrande-506-swe-agent.trajectory.jsonl",
+    "winogrande",
+    "swe-agent",
+    "506"
+);
+
+replay_test!(
+    replay_winogrande_759_terminus_2,
+    "benchmarks/winogrande/compose.yaml",
+    "tests/replay/fixtures/winogrande-759-terminus-2.trajectory.jsonl",
+    "winogrande",
+    "terminus-2",
+    "759"
+);
+
+replay_test!(
+    replay_wmdp_0_claude_code,
+    "benchmarks/wmdp/compose.yaml",
+    "tests/replay/fixtures/wmdp-0-claude-code.trajectory.jsonl",
+    "wmdp",
+    "claude-code",
+    "0"
+);
+
+replay_test!(
+    replay_wmdp_1466_claude_code,
+    "benchmarks/wmdp/compose.yaml",
+    "tests/replay/fixtures/wmdp-1466-claude-code.trajectory.jsonl",
+    "wmdp",
+    "claude-code",
+    "1466"
+);
+
+replay_test!(
+    replay_wmdp_2200_gemini_cli,
+    "benchmarks/wmdp/compose.yaml",
+    "tests/replay/fixtures/wmdp-2200-gemini-cli.trajectory.jsonl",
+    "wmdp",
+    "gemini-cli",
+    "2200"
+);
+
+replay_test!(
+    replay_wmdp_2933_aider,
+    "benchmarks/wmdp/compose.yaml",
+    "tests/replay/fixtures/wmdp-2933-aider.trajectory.jsonl",
+    "wmdp",
+    "aider",
+    "2933"
+);
+
+replay_test!(
+    replay_wmdp_733_gemini_cli,
+    "benchmarks/wmdp/compose.yaml",
+    "tests/replay/fixtures/wmdp-733-gemini-cli.trajectory.jsonl",
+    "wmdp",
+    "gemini-cli",
+    "733"
+);
+
+replay_test!(
+    replay_wmt_0_codex,
+    "benchmarks/wmt/compose.yaml",
+    "tests/replay/fixtures/wmt-0-codex.trajectory.jsonl",
+    "wmt",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_wmt_1919_codex,
+    "benchmarks/wmt/compose.yaml",
+    "tests/replay/fixtures/wmt-1919-codex.trajectory.jsonl",
+    "wmt",
+    "codex",
+    "1919"
+);
+
+replay_test!(
+    replay_wmt_3839_bob,
+    "benchmarks/wmt/compose.yaml",
+    "tests/replay/fixtures/wmt-3839-bob.trajectory.jsonl",
+    "wmt",
+    "bob",
+    "3839"
+);
+
+replay_test!(
+    replay_wmt_5759_cline,
+    "benchmarks/wmt/compose.yaml",
+    "tests/replay/fixtures/wmt-5759-cline.trajectory.jsonl",
+    "wmt",
+    "cline",
+    "5759"
+);
+
+replay_test!(
+    replay_wmt_7679_continue_cli,
+    "benchmarks/wmt/compose.yaml",
+    "tests/replay/fixtures/wmt-7679-continue-cli.trajectory.jsonl",
+    "wmt",
+    "continue-cli",
+    "7679"
+);
+
+replay_test!(
+    replay_writingbench_599_copilot_cli,
+    "benchmarks/writingbench/compose.yaml",
+    "tests/replay/fixtures/writingbench-599-copilot-cli.trajectory.jsonl",
+    "writingbench",
+    "copilot-cli",
+    "599"
+);
+
+replay_test!(
+    replay_xcopa_0_codex,
+    "benchmarks/xcopa/compose.yaml",
+    "tests/replay/fixtures/xcopa-0-codex.trajectory.jsonl",
+    "xcopa",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_xcopa_1099_claude_code,
+    "benchmarks/xcopa/compose.yaml",
+    "tests/replay/fixtures/xcopa-1099-claude-code.trajectory.jsonl",
+    "xcopa",
+    "claude-code",
+    "1099"
+);
+
+replay_test!(
+    replay_xcopa_2199_crush,
+    "benchmarks/xcopa/compose.yaml",
+    "tests/replay/fixtures/xcopa-2199-crush.trajectory.jsonl",
+    "xcopa",
+    "crush",
+    "2199"
+);
+
+replay_test!(
+    replay_xcopa_3299_goose,
+    "benchmarks/xcopa/compose.yaml",
+    "tests/replay/fixtures/xcopa-3299-goose.trajectory.jsonl",
+    "xcopa",
+    "goose",
+    "3299"
+);
+
+replay_test!(
+    replay_xnli_0_gemini_cli,
+    "benchmarks/xnli/compose.yaml",
+    "tests/replay/fixtures/xnli-0-gemini-cli.trajectory.jsonl",
+    "xnli",
+    "gemini-cli",
+    "0"
+);
+
+replay_test!(
+    replay_xnli_15029_codex,
+    "benchmarks/xnli/compose.yaml",
+    "tests/replay/fixtures/xnli-15029-codex.trajectory.jsonl",
+    "xnli",
+    "codex",
+    "15029"
+);
+
+replay_test!(
+    replay_xnli_30059_mini_swe_agent,
+    "benchmarks/xnli/compose.yaml",
+    "tests/replay/fixtures/xnli-30059-mini-swe-agent.trajectory.jsonl",
+    "xnli",
+    "mini-swe-agent",
+    "30059"
+);
+
+replay_test!(
+    replay_xnli_45089_open_interpreter,
+    "benchmarks/xnli/compose.yaml",
+    "tests/replay/fixtures/xnli-45089-open-interpreter.trajectory.jsonl",
+    "xnli",
+    "open-interpreter",
+    "45089"
+);
+
+replay_test!(
+    replay_xstory_cloze_0_codex,
+    "benchmarks/xstory-cloze/compose.yaml",
+    "tests/replay/fixtures/xstory-cloze-0-codex.trajectory.jsonl",
+    "xstory-cloze",
+    "codex",
+    "0"
+);
+
+replay_test!(
+    replay_xstory_cloze_3324_codex,
+    "benchmarks/xstory-cloze/compose.yaml",
+    "tests/replay/fixtures/xstory-cloze-3324-codex.trajectory.jsonl",
+    "xstory-cloze",
+    "codex",
+    "3324"
+);
+
+replay_test!(
+    replay_xstory_cloze_6648_openclaw,
+    "benchmarks/xstory-cloze/compose.yaml",
+    "tests/replay/fixtures/xstory-cloze-6648-openclaw.trajectory.jsonl",
+    "xstory-cloze",
+    "openclaw",
+    "6648"
+);
+
+replay_test!(
+    replay_xstory_cloze_9972_opencode,
+    "benchmarks/xstory-cloze/compose.yaml",
+    "tests/replay/fixtures/xstory-cloze-9972-opencode.trajectory.jsonl",
+    "xstory-cloze",
+    "opencode",
+    "9972"
+);
+

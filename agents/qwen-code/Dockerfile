@@ -21,7 +21,7 @@ set -euo pipefail
 mkdir -p "$HOME/.qwen"
 DM="${EVAL_MODEL:-default}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}/v1"
+export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export OPENAI_MODEL="$DM"
 cat > "$HOME/.qwen/settings.json" <<CONF
 {"modelProviders":{"openai":[{"id":"$DM","name":"$DM","baseUrl":"$OPENAI_BASE_URL","envKey":"OPENAI_API_KEY"}]},"security":{"auth":{"selectedType":"openai"}},"model":{"name":"$DM"}}

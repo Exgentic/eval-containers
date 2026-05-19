@@ -1,36 +1,8 @@
-# MLE-bench (OpenAI)
-# 75 Kaggle-style ML engineering tasks. Per-task images. Requires internet
-# (agent installs ML packages and may download pretrained weights at runtime).
-#
-# eval-containers run mle-bench --agent claude-code --task-id <competition-slug>
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-mle-bench}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/mle-bench-${EVAL_TASK_ID}--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/mle-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
-      - EVAL_BENCHMARK=mle-bench
-      - EVAL_TASK_ID=${EVAL_TASK_ID}
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-86400}
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-mle-bench}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-mle-bench}/${EVAL_TASK_ID:-default}/task:/output/task:rw
-    deploy:
-      resources:
-        limits:
-          cpus: "8"
-          memory: 32G
-
-networks:
-  internal:
-    internal: true
+      BENCHMARK: mle-bench

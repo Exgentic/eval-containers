@@ -10,6 +10,7 @@
 #   <PROVIDER>_API_KEY  read by the chosen provider plugin from container env.
 FROM quay.io/eval-containers/gateways/litellm:latest
 
+LABEL eval.type="model"
 LABEL gateway.kind="litellm"
 
 # litellm reads /opt/gateway/config.yaml (set by gateways/litellm's

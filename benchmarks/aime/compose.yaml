@@ -1,84 +1,8 @@
-# AIME — compose mode (multi-container).
-#
-# Three services (otelcol + gateway + runner) on a Pod-shaped topology:
-# the same five units as single mode, but the gateway and otelcol live
-# in their own containers / network namespaces. Runner reaches them
-# via service-name DNS (gateway:4000, otelcol:4318).
-#
-# Use compose mode when isolation matters — adversarial benchmarks,
-# the agent must not see API keys (not even via /proc/<gateway-pid>/environ).
-# Otherwise single mode is smaller and operationally simpler.
-#
-# Mirrors benchmarks/aime/job.yaml exactly: same images, same env
-# contract, same dependency edges. compose's `service_healthy` ↔ k8s's
-# `shareProcessNamespace` reaper.
-#
-# Apply:
-#   docker compose -f benchmarks/aime/compose.yaml up
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  otelcol:
-    # No healthcheck: upstream otelcol-contrib is distroless (no shell).
-    # Bifrost+litellm both retry OTel emission until otelcol is up —
-    # early misses just don't get traced.
-    image: quay.io/eval-containers/core/otel:latest
-    volumes:
-      - output:/output
-    networks:
-      - internal
-
-  gateway:
-    image: quay.io/eval-containers/models/gpt-5.4--bifrost:latest
-    environment:
-      EVAL_MODEL: openai/azure/gpt-5.4
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
-      OPENAI_API_BASE: ${OPENAI_API_BASE:?}
-      HOST: 0.0.0.0
-    healthcheck:
-      # /opt/gateway/health is baked by each gateway flavor and knows
-      # its own readiness endpoint (bifrost: /api/health, litellm:
-      # /health/liveness).
-      test: ["CMD", "/opt/gateway/health"]
-      interval: 2s
-      timeout: 2s
-      retries: 60
-      start_period: 5s
-    depends_on:
-      otelcol:
-        condition: service_started
-    networks:
-      - internal
-      - upstream      # only the gateway joins this — outbound to upstream LLM provider
-
   runner:
-    image: quay.io/eval-containers/evals/aime--claude-code:latest
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/aime--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: aime
-      AGENT: claude-code
-      MODEL: gpt-5.4-bifrost
-      TASK_ID: "0"
-      TIMEOUT: "300"
-      # Setting ANTHROPIC_BASE_URL signals "external gateway" to the
-      # eval image's run script, which loads process-compose-runner.yaml
-      # (agent + verifier + result only — no in-container otelcol/gateway).
-      ANTHROPIC_BASE_URL: http://gateway:4000/anthropic
-      OPENAI_BASE_URL: http://gateway:4000/openai
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
-    depends_on:
-      gateway:
-        condition: service_healthy
-    volumes:
-      - output:/output
-    networks:
-      - internal      # only — agent must not have direct internet
-    tmpfs:
-      - /tmp:size=1G
-      - /logs:size=100M
-
-networks:
-  internal:
-    internal: true    # otelcol+gateway+runner can talk to each other; cannot reach the internet
-  upstream: {}        # only the gateway joins this — outbound to upstream LLM
-
-volumes:
-  output:

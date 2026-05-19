@@ -1,0 +1,12 @@
+#!/bin/bash
+self=$$
+parent=$PPID
+for p in /proc/[0-9]*; do
+  pid=${p##*/}
+  [ "$pid" = "$self" ] && continue
+  [ "$pid" = "$parent" ] && continue
+  [ "$pid" = "1" ] && continue
+  [ -s "$p/cmdline" ] || continue
+  kill -TERM "$pid" 2>/dev/null
+done
+sleep 1

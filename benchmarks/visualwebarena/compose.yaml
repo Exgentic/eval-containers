@@ -1,39 +1,21 @@
-# VisualWebArena
-# 910 tasks, multimodal web agent. Sidecar websites + mitmproxy HAR capture.
-# No internet — agent interacts with sidecars via proxy only.
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-visualwebarena}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/visualwebarena--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/visualwebarena--${EVAL_AGENT:-claude-code}:latest
     environment:
-      - EVAL_BENCHMARK=visualwebarena
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-1800}
-      - HTTP_PROXY=http://proxy:8080
-      - HTTPS_PROXY=http://proxy:8080
-      - NO_PROXY=model,localhost,127.0.0.1
-      - no_proxy=model,localhost,127.0.0.1
-      - CLASSIFIEDS_URL=http://classifieds:80
-      - REDDIT_URL=http://reddit:80
-      - SHOPPING_URL=http://shopping:80
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-visualwebarena}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-visualwebarena}/${EVAL_TASK_ID:-default}/task:/output/task:rw
+      BENCHMARK: visualwebarena
+      TIMEOUT: "1800"
+      HTTP_PROXY: http://proxy:8080
+      HTTPS_PROXY: http://proxy:8080
+      NO_PROXY: gateway,otelcol,localhost,127.0.0.1
+      CLASSIFIEDS_URL: http://classifieds:80
+      REDDIT_URL: http://reddit:80
+      SHOPPING_URL: http://shopping:80
     depends_on:
       proxy:
         condition: service_started
-      model:
-        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -48,10 +30,10 @@ services:
       --listen-port 8080
       --set hardump=/output/network.har
     volumes:
-      - ../../output/${EVAL_BENCHMARK:-visualwebarena}/${EVAL_TASK_ID:-default}/agent:/output:rw
+      - output:/output
     networks:
       - internal
-      - default
+      - upstream
 
   classifieds:
     image: ghcr.io/web-arena-x/visualwebarena-classifieds:latest
@@ -64,7 +46,3 @@ services:
   shopping:
     image: ghcr.io/web-arena-x/visualwebarena-shopping:latest
     networks: [internal]
-
-networks:
-  internal:
-    internal: true
