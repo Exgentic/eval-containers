@@ -1,6 +1,16 @@
 # Adding a Benchmark
 
-Read `RULES.md` first. Then copy the templates below and fill in the blanks.
+Read `RULES.md` first. Every benchmark ships exactly four authored files plus the Dockerfile:
+
+| File | Purpose | Shape |
+|------|---------|-------|
+| `Dockerfile` | Build the benchmark base image (tasks + verifier) | Per-benchmark |
+| `container.Dockerfile` | Single-mode deployment artifact | 1 line — `FROM <registry>/evals/<name>--<agent>:<tag>` |
+| `compose.yaml` | Compose-mode deployment artifact | ~7 lines — `include:` shared base + benchmark overrides |
+| `job.yaml` | k8s-mode deployment artifact | ~85 lines for simple — self-contained Job manifest. Complex benchmarks append Deployments/Services in the same file |
+| `README.md` | Docs | At-a-glance table + agent contract + grading + run examples |
+
+The triple-mode trio (`container.Dockerfile`, `compose.yaml`, `job.yaml`) is uniform across simple benchmarks — copy `benchmarks/aime/` and substitute the name. Complex benchmarks (with bespoke services) only diverge in `job.yaml` (where they append Deployments/Services) and `compose.yaml` (where they add services after the `include:`). See `benchmarks/aime/` for the canonical reference and `benchmarks/_base/job.yaml` for the bare canonical Pod template.
 
 ## Shared-env Benchmark (one image, many tasks)
 
@@ -65,42 +75,30 @@ RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 ```
 
+### container.Dockerfile
+
+```dockerfile
+FROM quay.io/eval-containers/evals/{name}--claude-code:latest
+```
+
 ### compose.yaml
 
 ```yaml
-# {NAME}
-# {N} tasks, shared environment, no internet.
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-{name}}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/{name}--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/{name}--claude-code:latest
     environment:
-      - BENCHMARK={name}
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-300}
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-{name}}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-{name}}/${EVAL_TASK_ID:-default}/task:/output/task:rw
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-          memory: 8G
-
-networks:
-  internal:
-    internal: true
+      BENCHMARK: {name}
 ```
+
+### job.yaml
+
+Copy `benchmarks/_base/job.yaml` (the canonical reference) and substitute `aime` → `{name}` (or use `benchmarks/aime/job.yaml` as a starting point — same structure, all benchmark-specific fields already at the right indentation).
+
+For a simple shared-env benchmark the resulting `job.yaml` is ~85 lines, one `Job` resource. For complex benchmarks (bespoke services like a VM, browser, or database sidecar), append additional `Deployment` and `Service` resources after a `---` separator in the same file. See `benchmarks/osworld/job.yaml` (1 bespoke `Deployment`) or `benchmarks/webarena/job.yaml` (proxy + 6 site `Deployment`s) for examples.
 
 ## Blanks to fill
 
@@ -117,6 +115,39 @@ networks:
 | `{ANSWER_FIELD}` | `answer` | Column name for expected answer |
 | `{TASK_PROMPT}` | `Solve this problem. Print only the answer as a single integer.` | Instruction prepended to task |
 
+## Non-default canonical (different model or agent)
+
+If a benchmark's canonical isn't `gpt-5.4--bifrost` × `claude-code`, override:
+
+```yaml
+# compose.yaml — add gateway image + EVAL_MODEL overrides
+services:
+  gateway:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/<other-combo>:latest
+    environment:
+      EVAL_MODEL: <other-provider/other-model>
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/{name}--<other-agent>:latest
+    environment:
+      BENCHMARK: {name}
+```
+
+```yaml
+# job.yaml — override the gateway and runner image refs + env values inline.
+# Search for `gpt-5.4--bifrost` (gateway) and `evals/{name}--claude-code`
+# (runner) in the canonical job.yaml and substitute as needed.
+        - name: gateway
+          image: quay.io/eval-containers/models/<other-combo>:latest
+          env:
+            - { name: EVAL_MODEL, value: <other-provider/other-model> }
+        - name: runner
+          image: quay.io/eval-containers/evals/{name}--<other-agent>:latest
+          env:
+            - { name: MODEL, value: <friendly-label> }
+      - MODEL=<friendly-label>
+      - EVAL_MODEL=<other-provider/other-model>
+```
+
 ## Gotchas
 
 - HuggingFace API returns max 100 rows per request. Parquet download has no limit.
@@ -124,4 +155,4 @@ networks:
 - If the dataset is gated (needs token), use `huggingface_hub.snapshot_download` with `ARG HF_TOKEN` instead of parquet URL.
 - If tasks have attached files (PDFs, images), copy them to `/app/` in the entrypoint so the agent can read them. Never loosen `/tasks/` permissions.
 - For custom scoring (not exact match), replace the `test-exact-match` COPY with a custom `/tests/test.sh`.
-- For per-task benchmarks (like SWE-bench), see `benchmarks/swe-bench/Dockerfile` as example.
+- For per-task benchmarks (like SWE-bench), see `benchmarks/swe-bench/Dockerfile` — `EVAL_TASK_ID` is a build-time `ARG` and each image bakes one task.

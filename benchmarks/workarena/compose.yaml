@@ -1,41 +1,8 @@
-# WorkArena
-# Enterprise web workflows on a live ServiceNow instance. Internet required for
-# agent <-> instance traffic. SNOW_INSTANCE_* must be provided via .env.
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-workarena}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/workarena--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/workarena--${EVAL_AGENT:-claude-code}:latest
     environment:
-      - EVAL_BENCHMARK=workarena
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-1800}
-      - SNOW_INSTANCE_URL=${SNOW_INSTANCE_URL:-}
-      - SNOW_INSTANCE_UNAME=${SNOW_INSTANCE_UNAME:-}
-      - SNOW_INSTANCE_PWD=${SNOW_INSTANCE_PWD:-}
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-workarena}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-workarena}/${EVAL_TASK_ID:-default}/task:/output/task:rw
-    networks:
-      - internal
-      - external
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-          memory: 8G
-
-networks:
-  internal:
-    internal: true
-  external:
-    driver: bridge
+      BENCHMARK: workarena

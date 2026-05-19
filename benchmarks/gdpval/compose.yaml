@@ -1,39 +1,8 @@
-# GDPval
-# 220 tasks. Internet ENABLED — needs reference file download + LLM judge.
-#
-# eval-containers run gdpval --agent claude-code --task-id gdpval_001
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-gdpval}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/gdpval--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/gdpval--${EVAL_AGENT:-claude-code}:latest
     environment:
-      - EVAL_BENCHMARK=gdpval
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-1800}
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-gdpval}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-gdpval}/${EVAL_TASK_ID:-default}/task:/output/task:rw
-    networks:
-      - internal
-      - external
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-          memory: 8G
-
-networks:
-  internal:
-    internal: true
-  external:
-    driver: bridge
+      BENCHMARK: gdpval

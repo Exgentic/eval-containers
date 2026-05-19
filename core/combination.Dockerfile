@@ -85,7 +85,8 @@ COPY core/process-compose/process-compose.yaml         /etc/process-compose.yaml
 COPY core/process-compose/process-compose-runner.yaml  /etc/process-compose-runner.yaml
 COPY core/process-compose/run                          /usr/local/bin/run
 COPY core/process-compose/write-result                 /usr/local/bin/write-result
-COPY core/entrypoint/materialize-task                  /usr/local/bin/materialize-task
+COPY core/entrypoint/eval-materialize-task             /usr/local/bin/materialize-task
+COPY core/entrypoint/reap-sidecars                     /usr/local/bin/reap-sidecars
 
 # Tighten perms. /root and /opt/gateway are 0700 by default; explicit
 # chmod here pins the values for visibility.
@@ -96,6 +97,7 @@ RUN chmod 0700 /opt/gateway \
  && chmod +x /usr/local/bin/run \
               /usr/local/bin/write-result \
               /usr/local/bin/materialize-task \
+              /usr/local/bin/reap-sidecars \
  && chmod 0644 /etc/otelcol/config.yaml \
                 /etc/process-compose.yaml \
                 /etc/process-compose-runner.yaml

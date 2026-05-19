@@ -27,7 +27,7 @@ RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash
 set -euo pipefail
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-export OPENAI_API_BASE="${OPENAI_BASE_URL:-http://model:4000}/v1"
+export OPENAI_API_BASE="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export EXPERT_OPENAI_API_KEY="${OPENAI_API_KEY}"
 export EXPERT_OPENAI_API_BASE="${OPENAI_API_BASE}"
 exec ra-aid --cowboy-mode --provider openai-compatible --model "${EVAL_MODEL:-default}" \

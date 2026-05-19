@@ -1,39 +1,42 @@
-# TAU-bench (Tool-Agent-User Benchmark)
-# 165 tasks (115 retail + 50 airline), shared environment, no internet.
-#
-# Architecture (bridge mode):
-#   model: real LLM proxy for agent reasoning (logged)
-#   user-model: LLM proxy for user simulator (not logged, benchmark infrastructure)
-#   bridge: fake OpenAI API queuing requests between tau-bench and agent
-#   runner: runs tau-bench harness, calls bridge as its "agent LLM"
-#   eval: pass-through agent that polls bridge and forwards to model
-#
-# eval-containers run tau-bench --task-id 0
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  # Agent's model — logged, trajectory saved
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-tau-bench}/${EVAL_TASK_ID:-default}/model:/output:rw
+  # Agent runner — pass-through that polls bridge and forwards to gateway.
+  # Built locally (custom Dockerfile), not the pre-built eval image.
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/tau-bench--${EVAL_AGENT:-claude-code}:latest
+    build:
+      context: .
+    entrypoint: ["python3", "/app/agent.py"]
+    environment:
+      BENCHMARK: tau-bench
+      BRIDGE_URL: http://bridge:8000
+      OPENAI_BASE_URL: http://gateway:4000
+      OPENAI_API_KEY: sk-proxy
+    depends_on:
+      bridge:
+        condition: service_healthy
 
-  # User simulator's model — not logged, benchmark infrastructure
-  user-model:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/${EVAL_USER_MODEL:-${EVAL_MODEL:-claude-sonnet-4}}:latest
-    env_file: ../../.env
+  # Bespoke — second gateway for the user simulator's LLM (not logged).
+  user-gateway:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/gpt-5.4--bifrost:latest
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:?}
+      EVAL_MODEL: openai/azure/gpt-5.4
+      HOST: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "/opt/gateway/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
     networks:
       - internal
-      - default
-    healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health')"]
-      interval: 10s
-      timeout: 10s
-      retries: 60
-      start_period: 120s
+      - upstream
 
+  # Bespoke — fake OpenAI API queuing requests between harness and agent.
   bridge:
     build:
       context: ../../core/llm-bridge
@@ -46,54 +49,28 @@ services:
       retries: 10
       start_period: 5s
 
-  runner:
+  # Bespoke — tau-bench harness. Calls bridge as its "agent LLM".
+  harness:
     build:
       context: .
-    environment:
-      - EVAL_TASK_ID=${EVAL_TASK_ID:-0}
-      - BRIDGE_URL=http://bridge:8000/v1
-      - MODEL_URL=http://user-model:4000/v1
-      - OPENAI_API_KEY=sk-proxy
-      - MODEL_NAME=${MODEL_NAME:-gpt-4o}
     entrypoint: ["bash", "-c", "/eval-materialize-task && python3 /app/run_tau_bench.py"]
-    depends_on:
-      bridge:
-        condition: service_healthy
-      model:
-        condition: service_healthy
-      user-model:
-        condition: service_healthy
-    networks:
-      - internal
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: 4G
-
-  eval:
-    build:
-      context: .
     environment:
-      - BRIDGE_URL=http://bridge:8000
-      - OPENAI_BASE_URL=http://model:4000
-      - OPENAI_API_KEY=sk-proxy
-    entrypoint: ["python3", "/app/agent.py"]
+      EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
+      BRIDGE_URL: http://bridge:8000/v1
+      MODEL_URL: http://user-gateway:4000/v1
+      OPENAI_API_KEY: sk-proxy
+      MODEL_NAME: ${MODEL_NAME:-gpt-4o}
     depends_on:
       bridge:
         condition: service_healthy
-      model:
+      gateway:
+        condition: service_healthy
+      user-gateway:
         condition: service_healthy
     networks:
       - internal
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-tau-bench}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
     deploy:
       resources:
         limits:
           cpus: "2"
           memory: 4G
-
-networks:
-  internal:
-    internal: true
