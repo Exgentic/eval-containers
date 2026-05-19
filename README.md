@@ -14,11 +14,16 @@ Our goal is to deliver agent evaluations you can trust: fast to run, thin to shi
 
 ## Quick start
 
+> **Pre-release.** The `oci://quay.io/eval-containers/…` registry below is the
+> published-future shape — the artifacts aren't public yet. For now, clone the
+> repo and add `--local` to the CLI (see [Local development](#local-development))
+> or use `docker compose -f benchmarks/<name>/compose.yaml up` directly.
+
 ```bash
 # Set your API key
 echo "OPENAI_API_KEY=sk-..." > .env
 
-# Run one task — pure docker, no clone, no CLI
+# Run one task — pure docker, no clone, no CLI  (once registry is published)
 EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
   docker compose -f oci://quay.io/eval-containers/evaluate up --abort-on-container-exit
 
@@ -35,7 +40,7 @@ Requires Docker Compose ≥ 2.34 for `oci://` support. See [offline / older Dock
 Same thing, fewer keystrokes:
 
 ```bash
-eval-containers run --benchmark aime --task-id 0 --agent codex --model gpt-5.4
+eval-containers run aime --task-id 0 --agent codex --model gpt-5.4
 ```
 
 Every `EVAL_*` env var has a matching `--kebab-case` flag. Pick whichever you prefer.
@@ -72,7 +77,7 @@ eval-containers run aime --agent codex --task-id 42 --mode job
 #           | kubectl apply -f -
 ```
 
-Production users compose their own overlays on top (corp registry rewrites, NodeAffinity, NetworkPolicies, sidecar swaps, ...) by referencing the benchmark as a Kustomize resource. See [benchmarks/RULES.md](benchmarks/RULES.md) rule 99.
+Production users compose their own overlays on top (corp registry rewrites, NodeAffinity, NetworkPolicies, sidecar swaps, ...) by referencing the benchmark as a Kustomize resource — see the [Kustomize docs](https://kubectl.docs.kubernetes.io/guides/config_management/components/) for the composition primitives.
 
 The cluster needs an `eval-secrets` Secret with `OPENAI_API_KEY` and `OPENAI_API_BASE` keys.
 
@@ -151,7 +156,7 @@ docker save quay.io/eval-containers/evals/aime--codex:latest \
 If you have the repo cloned and want to iterate on a benchmark or agent without pushing to the registry:
 
 ```bash
-eval-containers run --benchmark aime --task-id 0 --agent codex --model gpt-5.4 --local
+eval-containers run aime --task-id 0 --agent codex --model gpt-5.4 --local
 ```
 
 `--local` points at `benchmarks/<name>/compose.yaml` on disk instead of `oci://...`.
