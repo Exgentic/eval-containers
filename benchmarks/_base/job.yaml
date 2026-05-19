@@ -49,7 +49,7 @@ spec:
           image: quay.io/eval-containers/evals/PLACEHOLDER--claude-code:latest
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-c"]
-          args: ["/root/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
+          args: ["/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
           env:
             - { name: BENCHMARK,                   value: PLACEHOLDER }
             - { name: AGENT,                       value: claude-code }
