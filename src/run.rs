@@ -1,14 +1,38 @@
-//! `dock run` — shell out to the right command for the chosen deployment mode
-//! and pass every axis through as a `EVAL_*` env var.
+//! `eval-containers run` — shell out to the right command for the chosen
+//! deployment mode and pass every axis through.
 //!
 //! Three modes (per benchmarks/RULES.md rule 24 — the triple-mode contract):
 //!
 //!   --mode compose    (default) → docker compose -f benchmarks/<x>/compose.yaml up
-//!   --mode container             → docker run -e EVAL_MODEL=... <eval-image>
-//!   --mode job                   → kubectl apply -f benchmarks/<x>/job.yaml
+//!   --mode container            → docker run -e EVAL_MODEL=... <eval-image>
+//!   --mode job                  → kubectl apply -k benchmarks/<x>/  (or temp Kustomize overlay)
 //!
-//! Maps: `dock run aime --task-id 0 --agent codex --model gpt-5.4 --mode container`
-//!   ->  `docker run -e EVAL_BENCHMARK=aime -e EVAL_TASK_ID=0 ... evals/aime--codex`
+//! Mapping flags → manifest, by mode:
+//!
+//!   - **compose / container** propagate every `--<flag>` through as an
+//!     `EVAL_*` environment variable on the spawned subprocess. Compose
+//!     interpolates `${EVAL_FOO:-default}` in compose.yaml; container
+//!     mode hands them in via `docker run -e`.
+//!   - **job** patches them into the manifest via a synthesized Kustomize
+//!     overlay (kubectl does NOT interpolate env vars into YAML). The
+//!     overlay rewrites images (via `images:` newName/newTag), patches
+//!     the runner container's `env` (AGENT, TASK_ID, MODEL, TIMEOUT, …),
+//!     patches the gateway container's `env` (EVAL_MODEL_MAX_BUDGET,
+//!     EVAL_LITELLM_VERSION, EVAL_MODEL), and renames the Job for
+//!     concurrent multi-task applies.
+//!
+//! Two orthogonal versioning axes (see RULES.md principle 9):
+//!
+//! - Container tag  → which image to pull (EVAL_*_TAG, flags --*-tag)
+//! - Internal ver.  → which upstream software runs inside (EVAL_*_VERSION,
+//!   flags --*-version)
+//!
+//! `--dry-run` short-circuits: compose dumps `docker compose config`,
+//! container prints the resolved `docker run` line, job forwards
+//! `--dry-run=server` to `kubectl apply` (exercises admission, no state).
+//!
+//! With `--local`, uses the in-repo `benchmarks/<name>/{compose.yaml,
+//! container.Dockerfile, kustomization.yaml}` instead of the registry artifact.
 //!
 //! Two orthogonal versioning axes (see RULES.md principle 9):
 //!
@@ -111,6 +135,20 @@ pub struct RunArgs {
     /// published registry artifact. For development.
     #[arg(long)]
     local: bool,
+
+    /// Render and print what would happen — don't actually deploy. For
+    /// `--mode job` this forwards `--dry-run=server` to `kubectl apply`,
+    /// which exercises admission webhooks without persisting state. For
+    /// `--mode compose` and `--mode container` this prints the resolved
+    /// docker invocation and stops.
+    #[arg(long)]
+    dry_run: bool,
+
+    /// Kubernetes namespace to target (maps to `kubectl -n <ns>`). Only
+    /// applies to `--mode job`. Defaults to the current kubectl
+    /// context's namespace.
+    #[arg(long, short = 'n')]
+    namespace: Option<String>,
 }
 
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
@@ -166,16 +204,16 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
 
     match args.mode {
-        Mode::Compose => run_compose(registry, &benchmark, &envs, args.local),
-        Mode::Container => run_container(registry, &benchmark, &args.agent, &envs, args.local),
-        Mode::Job => run_job(
+        Mode::Compose => run_compose(registry, &benchmark, &envs, args.local, args.dry_run),
+        Mode::Container => run_container(
             registry,
             &benchmark,
             &args.agent,
-            &args.task_id,
             &envs,
             args.local,
+            args.dry_run,
         ),
+        Mode::Job => run_job(registry, &benchmark, &args, &envs),
     }
 }
 
@@ -185,6 +223,7 @@ fn run_compose(
     benchmark: &str,
     envs: &[(&str, String)],
     local: bool,
+    dry_run: bool,
 ) -> Result<(), String> {
     let compose_ref = if local {
         format!("./benchmarks/{benchmark}/compose.yaml")
@@ -197,6 +236,24 @@ fn run_compose(
         .collect::<Vec<_>>()
         .join(" ");
     eprintln!("$ {env_str} docker compose -f {compose_ref} up --abort-on-container-exit");
+    if dry_run {
+        // For compose, dry-run means show the resolved manifest (which
+        // includes all `${EVAL_*:-default}` interpolations) and stop.
+        // `docker compose config` is the canonical render command.
+        eprintln!("(--dry-run: showing resolved compose config, not running)");
+        let mut cmd = Command::new("docker");
+        cmd.arg("compose").arg("-f").arg(&compose_ref).arg("config");
+        for (k, v) in envs {
+            cmd.env(k, v);
+        }
+        let status = cmd
+            .status()
+            .map_err(|e| format!("failed to run docker compose config: {e}"))?;
+        if !status.success() {
+            return Err(format!("docker compose config failed with {status}"));
+        }
+        return Ok(());
+    }
 
     let mut cmd = Command::new("docker");
     cmd.arg("compose").arg("-f").arg(&compose_ref);
@@ -224,6 +281,7 @@ fn run_container(
     agent: &Option<String>,
     envs: &[(&str, String)],
     local: bool,
+    dry_run: bool,
 ) -> Result<(), String> {
     let agent = agent
         .clone()
@@ -256,6 +314,10 @@ fn run_container(
         .collect::<Vec<_>>()
         .join(" ");
     eprintln!("$ docker run --rm {env_str} -v output:/output {image}");
+    if dry_run {
+        eprintln!("(--dry-run: stopping before docker run)");
+        return Ok(());
+    }
 
     let mut cmd = Command::new("docker");
     cmd.arg("run").arg("--rm");
@@ -287,10 +349,8 @@ fn run_container(
 fn run_job(
     registry: &str,
     benchmark: &str,
-    agent: &Option<String>,
-    task_id: &Option<String>,
+    args: &RunArgs,
     envs: &[(&str, String)],
-    _local: bool,
 ) -> Result<(), String> {
     let base_path = format!("./benchmarks/{benchmark}");
     if !std::path::Path::new(&format!("{base_path}/kustomization.yaml")).exists() {
@@ -299,11 +359,10 @@ fn run_job(
         ));
     }
 
-    // Canonical pairing — no overlay needed.
     let canonical_agent = "claude-code";
     let canonical_task = "0";
-    let want_agent = agent.as_deref().unwrap_or(canonical_agent);
-    let want_task = task_id.as_deref().unwrap_or(canonical_task);
+    let want_agent = args.agent.as_deref().unwrap_or(canonical_agent);
+    let want_task = args.task_id.as_deref().unwrap_or(canonical_task);
 
     let env_str = envs
         .iter()
@@ -311,13 +370,46 @@ fn run_job(
         .collect::<Vec<_>>()
         .join(" ");
 
-    if want_agent == canonical_agent && want_task == canonical_task {
-        eprintln!("$ {env_str} kubectl apply -k {base_path}");
+    // Build the kubectl-apply arg list once — used by both the canonical
+    // (`-k <base>`) and overlay (`-f -`) paths.
+    let mut apply_args: Vec<String> = vec!["apply".into()];
+    if args.dry_run {
+        apply_args.push("--dry-run=server".into());
+    }
+    if let Some(ns) = &args.namespace {
+        apply_args.push("-n".into());
+        apply_args.push(ns.clone());
+    }
+    let apply_cmd_str = apply_args.join(" ");
+
+    // Decide whether we need an overlay. Anything beyond canonical
+    // (claude-code, task 0, no overrides) forces overlay — kubectl
+    // does not interpolate env vars into manifests, so the only way
+    // to get user inputs into the resulting Job is via a Kustomize
+    // patch.
+    let needs_overlay = want_agent != canonical_agent
+        || want_task != canonical_task
+        || args.model.is_some()
+        || args.timeout.is_some()
+        || args.max_budget.is_some()
+        || args.model_tag.is_some()
+        || args.agent_tag.is_some()
+        || args.benchmark_tag.is_some()
+        || args.benchmark_version.is_some()
+        || args.agent_version.is_some()
+        || args.litellm_version.is_some();
+
+    if !needs_overlay {
+        eprintln!("$ {env_str} kubectl {apply_cmd_str} -k {base_path}");
         eprintln!(
             "(Note: cluster needs `eval-secrets` Secret with OPENAI_API_KEY+OPENAI_API_BASE.)"
         );
-        let status = Command::new("kubectl")
-            .args(["apply", "-k", &base_path])
+        let mut cmd = Command::new("kubectl");
+        for a in &apply_args {
+            cmd.arg(a);
+        }
+        cmd.args(["-k", &base_path]);
+        let status = cmd
             .status()
             .map_err(|e| format!("failed to run kubectl apply -k: {e}"))?;
         if !status.success() {
@@ -326,13 +418,23 @@ fn run_job(
         return Ok(());
     }
 
-    // Non-canonical pairing — write a temp Kustomize overlay that
-    // patches the image suffix + agent/task labels, then pipe
-    // `kubectl kustomize --load-restrictor=LoadRestrictionsNone` into
-    // `kubectl apply -f -`. We use the pipe (not `kubectl apply -k`)
-    // because `apply -k` doesn't expose `--load-restrictor`, which we
-    // need: the overlay's kustomize root is the temp dir, the base
-    // lives outside it (in the repo), so root-only loading rejects it.
+    // Overlay path. Synthesize a Kustomize root in a temp dir that:
+    //   - references the in-repo benchmark base as a resource
+    //   - patches images (combined runner + per-task variant +
+    //     gateway, with --*-tag honored)
+    //   - patches the runner container's env (agent/task/benchmark
+    //     plus any optional MODEL/TIMEOUT/*_VERSION)
+    //   - patches the gateway container's env (EVAL_MODEL_MAX_BUDGET,
+    //     EVAL_LITELLM_VERSION, EVAL_MODEL)
+    //   - renames the Job to `<bench>-task-<want_task>` so concurrent
+    //     tasks don't collide
+    //   - tags the Job with agent/task labels for kubectl get filtering
+    //
+    // Pipe `kubectl kustomize --load-restrictor=LoadRestrictionsNone`
+    // into `kubectl apply -f -`. We bypass `apply -k` because it
+    // doesn't expose `--load-restrictor`, which we need: the overlay's
+    // kustomize root is the temp dir, the base lives outside it (in
+    // the repo), so root-only loading rejects it.
     let abs_base = std::fs::canonicalize(&base_path)
         .map_err(|e| format!("canonicalize {base_path}: {e}"))?;
     // Canonicalize temp_dir too — on macOS `/tmp` symlinks to
@@ -350,66 +452,145 @@ fn run_job(
     let tmp_dir = std::fs::canonicalize(&raw_tmp)
         .map_err(|e| format!("canonicalize {raw_tmp:?}: {e}"))?;
 
-    // Image substitution patterns — covers both shared-env
-    // (evals/<bench>--<agent>) and per-task (evals/<bench>-<task>--<agent>)
-    // shapes. Kustomize is happy with multiple `images:` entries; if a
-    // newName already matches the base, it's a no-op.
-    let canonical_image_shared =
-        format!("{registry}/evals/{benchmark}--{canonical_agent}");
+    // ── images: block ──────────────────────────────────────────────
+    // Shared-env shape: evals/<bench>--<agent>
+    // Per-task shape:   evals/<bench>-<task>--<agent>
+    // Gateway:          models/gpt-5.4--bifrost (the default; if user
+    //                   needs a different gateway flavor they overlay
+    //                   on top of this).
+    //
+    // newTag is the COMBINED image tag (--agent-tag wins over
+    // --benchmark-tag if both set, since the combined image is
+    // produced per-agent by `build eval`). The gateway tag is
+    // controlled by --model-tag.
+    let canonical_image_shared = format!("{registry}/evals/{benchmark}--{canonical_agent}");
     let new_image_shared = format!("{registry}/evals/{benchmark}--{want_agent}");
     let canonical_image_pertask =
         format!("{registry}/evals/{benchmark}-{canonical_task}--{canonical_agent}");
-    let new_image_pertask =
-        format!("{registry}/evals/{benchmark}-{want_task}--{want_agent}");
+    let new_image_pertask = format!("{registry}/evals/{benchmark}-{want_task}--{want_agent}");
+    let canonical_gateway = format!("{registry}/models/gpt-5.4--bifrost");
 
-    // Compute the relative path from the overlay dir to the base.
-    // Walk up `tmp_dir`'s components to a common ancestor, then down to
-    // `abs_base`. Kustomize requires relative paths in `resources:`.
+    let combined_tag = args
+        .agent_tag
+        .as_ref()
+        .or(args.benchmark_tag.as_ref())
+        .cloned();
+
+    let mut images_block = String::new();
+    images_block.push_str(&format!("  - name: {canonical_image_shared}\n"));
+    images_block.push_str(&format!("    newName: {new_image_shared}\n"));
+    if let Some(t) = &combined_tag {
+        images_block.push_str(&format!("    newTag: \"{t}\"\n"));
+    }
+    images_block.push_str(&format!("  - name: {canonical_image_pertask}\n"));
+    images_block.push_str(&format!("    newName: {new_image_pertask}\n"));
+    if let Some(t) = &combined_tag {
+        images_block.push_str(&format!("    newTag: \"{t}\"\n"));
+    }
+    if let Some(t) = &args.model_tag {
+        images_block.push_str(&format!("  - name: {canonical_gateway}\n"));
+        images_block.push_str(&format!("    newTag: \"{t}\"\n"));
+    }
+
+    // ── runner env patches ─────────────────────────────────────────
+    // Kustomize strategic-merge keys env[] entries by `.name`, so
+    // we only need to list the keys we override. Defaults from
+    // _base/job.yaml stay intact for any key not listed here.
+    let mut runner_env_lines: Vec<String> = vec![
+        format!("                  - {{ name: AGENT,                 value: \"{want_agent}\" }}"),
+        format!("                  - {{ name: EVAL_AGENT,            value: \"{want_agent}\" }}"),
+        format!("                  - {{ name: TASK_ID,               value: \"{want_task}\" }}"),
+        format!("                  - {{ name: EVAL_TASK_ID,          value: \"{want_task}\" }}"),
+        format!("                  - {{ name: BENCHMARK,             value: \"{benchmark}\" }}"),
+        format!("                  - {{ name: EVAL_BENCHMARK,        value: \"{benchmark}\" }}"),
+    ];
+    if let Some(m) = &args.model {
+        runner_env_lines.push(format!(
+            "                  - {{ name: MODEL,                 value: \"{m}\" }}"
+        ));
+        runner_env_lines.push(format!(
+            "                  - {{ name: EVAL_MODEL,            value: \"{m}\" }}"
+        ));
+    }
+    if let Some(t) = args.timeout {
+        runner_env_lines.push(format!(
+            "                  - {{ name: TIMEOUT,               value: \"{t}\" }}"
+        ));
+        runner_env_lines.push(format!(
+            "                  - {{ name: EVAL_TIMEOUT,          value: \"{t}\" }}"
+        ));
+    }
+    if let Some(v) = &args.benchmark_version {
+        runner_env_lines.push(format!(
+            "                  - {{ name: EVAL_BENCHMARK_VERSION, value: \"{v}\" }}"
+        ));
+    }
+    if let Some(v) = &args.agent_version {
+        runner_env_lines.push(format!(
+            "                  - {{ name: EVAL_AGENT_VERSION,    value: \"{v}\" }}"
+        ));
+    }
+    let runner_env_block = runner_env_lines.join("\n");
+
+    // ── gateway env patches (conditional) ──────────────────────────
+    // Gateway hosts the litellm proxy. EVAL_MODEL_MAX_BUDGET +
+    // EVAL_LITELLM_VERSION + EVAL_MODEL apply here (NOT the runner's
+    // MODEL which is just a logging tag).
+    let mut gateway_env_lines: Vec<String> = Vec::new();
+    if let Some(b) = args.max_budget {
+        gateway_env_lines.push(format!(
+            "                  - {{ name: EVAL_MODEL_MAX_BUDGET, value: \"{b}\" }}"
+        ));
+    }
+    if let Some(v) = &args.litellm_version {
+        gateway_env_lines.push(format!(
+            "                  - {{ name: EVAL_LITELLM_VERSION,  value: \"{v}\" }}"
+        ));
+    }
+    if let Some(m) = &args.model {
+        gateway_env_lines.push(format!(
+            "                  - {{ name: EVAL_MODEL,            value: \"{m}\" }}"
+        ));
+    }
+    let gateway_patch = if gateway_env_lines.is_empty() {
+        String::new()
+    } else {
+        let gateway_env_block = gateway_env_lines.join("\n");
+        format!(
+            r#"  - target:
+      kind: Job
+    patch: |-
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: {benchmark}-task-{canonical_task}
+      spec:
+        template:
+          spec:
+            containers:
+              - name: gateway
+                env:
+{gateway_env_block}
+"#
+        )
+    };
+
     let rel_base = relative_path(&tmp_dir, &abs_base)
         .ok_or_else(|| format!("could not compute relative path {tmp_dir:?} -> {abs_base:?}"))?;
 
-    // Overlay does FOUR things:
-    //
-    // 1. `images:` — rewrite the runner's image from canonical
-    //    (<bench>--claude-code) to the requested (<bench>--<agent>).
-    //    Covers both shared-env (evals/<bench>--<agent>) and per-task
-    //    (evals/<bench>-<task>--<agent>) shapes.
-    //
-    // 2. `labels:` — add `agent: <want>` and `task: "<want>"` to the
-    //    Job's top-level metadata.labels (for visibility / kubectl get
-    //    filtering). `includeSelectors: false` so we don't mutate the
-    //    Job's pod-selector match labels.
-    //
-    // 3. Strategic-merge patch on the Job's pod template metadata.labels
-    //    so `kubectl get pods -l agent=<want>` works.
-    //
-    // 4. Strategic-merge patch on the runner container's env array.
-    //    Kustomize merges env[] entries by `.name`, so we only need to
-    //    list the keys we want to override. These drive the runner's
-    //    behavior — `AGENT`, `TASK_ID`, `BENCHMARK`, and the canonical
-    //    EVAL_* names that /eval-entrypoint.sh reads.
-    //
-    // We also rename the Job to `<bench>-task-<task>` so multiple tasks
-    // can be applied concurrently without name collision.
     let overlay_yaml = format!(
         r#"apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - {rel_base}
 images:
-  - name: {canonical_image_shared}
-    newName: {new_image_shared}
-  - name: {canonical_image_pertask}
-    newName: {new_image_pertask}
-labels:
+{images_block}labels:
   - pairs:
       agent: {want_agent}
       task: "{want_task}"
     includeSelectors: false
 patches:
-  # Rename the Job so multiple tasks can be applied concurrently
-  # without name collision. JSON-patch because strategic-merge can't
-  # change the matched resource's name.
+  # Rename the Job so multiple tasks can be applied concurrently.
   - target:
       kind: Job
       name: {benchmark}-task-{canonical_task}
@@ -417,8 +598,7 @@ patches:
       - op: replace
         path: /metadata/name
         value: {benchmark}-task-{want_task}
-  # Sync pod-template labels so `kubectl get pods -l agent=…` finds the
-  # right pod.
+  # Sync pod-template labels so `kubectl get pods -l agent=…` works.
   - target:
       kind: Job
     patch: |-
@@ -432,8 +612,7 @@ patches:
             labels:
               agent: {want_agent}
               task: "{want_task}"
-  # Override runner env vars. Strategic-merge keys env[] by `.name`,
-  # so only the keys listed here are touched.
+  # Override runner env vars.
   - target:
       kind: Job
     patch: |-
@@ -447,13 +626,8 @@ patches:
             containers:
               - name: runner
                 env:
-                  - {{ name: AGENT,           value: "{want_agent}" }}
-                  - {{ name: EVAL_AGENT,      value: "{want_agent}" }}
-                  - {{ name: TASK_ID,         value: "{want_task}" }}
-                  - {{ name: EVAL_TASK_ID,    value: "{want_task}" }}
-                  - {{ name: BENCHMARK,       value: "{benchmark}" }}
-                  - {{ name: EVAL_BENCHMARK,  value: "{benchmark}" }}
-"#,
+{runner_env_block}
+{gateway_patch}"#,
         rel_base = rel_base.display(),
     );
     let kustomization_path = tmp_dir.join("kustomization.yaml");
@@ -461,7 +635,7 @@ patches:
         .map_err(|e| format!("write overlay: {e}"))?;
 
     eprintln!(
-        "$ {env_str} kubectl kustomize --load-restrictor=LoadRestrictionsNone {} | kubectl apply -f -",
+        "$ {env_str} kubectl kustomize --load-restrictor=LoadRestrictionsNone {} | kubectl {apply_cmd_str} -f -",
         tmp_dir.display()
     );
     eprintln!(
@@ -469,7 +643,6 @@ patches:
         abs_base.display(),
     );
 
-    // kubectl kustomize ... | kubectl apply -f -
     use std::process::Stdio;
     let kustomize_out = Command::new("kubectl")
         .args(["kustomize", "--load-restrictor=LoadRestrictionsNone"])
@@ -482,8 +655,12 @@ patches:
             String::from_utf8_lossy(&kustomize_out.stderr)
         ));
     }
-    let mut apply = Command::new("kubectl")
-        .args(["apply", "-f", "-"])
+    let mut apply_cmd = Command::new("kubectl");
+    for a in &apply_args {
+        apply_cmd.arg(a);
+    }
+    apply_cmd.args(["-f", "-"]);
+    let mut apply = apply_cmd
         .stdin(Stdio::piped())
         .spawn()
         .map_err(|e| format!("failed to spawn kubectl apply: {e}"))?;
@@ -501,7 +678,7 @@ patches:
         .map_err(|e| format!("failed to wait on kubectl apply: {e}"))?;
 
     // Leave the overlay on disk so the user can re-apply / kubectl delete
-    // it with the same path. (No-op cleanup; OS tmp lifecycle handles it.)
+    // with the same path. OS tmp lifecycle handles cleanup.
     let _ = kustomization_path;
 
     if !status.success() {
