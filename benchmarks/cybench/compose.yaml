@@ -1,34 +1,8 @@
-# Cybench
-# Professional CTF cybersecurity benchmark. Per-task images.
-#
-# eval-containers run cybench --agent claude-code --task-id <category>/<task>
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-cybench}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/cybench-${EVAL_TASK_ID}--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/cybench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
-      - EVAL_BENCHMARK=cybench
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-3600}
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-cybench}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-cybench}/${EVAL_TASK_ID:-default}/task:/output/task:rw
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-          memory: 8G
-
-networks:
-  internal:
-    internal: true
+      BENCHMARK: cybench

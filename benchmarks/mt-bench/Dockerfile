@@ -119,7 +119,7 @@ if not response.strip():
     print('0.0')
     raise SystemExit
 
-OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'http://model:4000')
+OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'http://model:4000/v1')
 
 # MT-Bench single-answer grading prompt (from FastChat llm_judge)
 JUDGE_SYSTEM = (
@@ -145,7 +145,8 @@ payload = json.dumps({
 }).encode()
 
 req = urllib.request.Request(
-    f'{OPENAI_BASE_URL}/v1/chat/completions',
+    # OPENAI_BASE_URL already includes /v1 per agents/RULES.md.
+    f'{OPENAI_BASE_URL}/chat/completions',
     data=payload,
     headers={'Content-Type': 'application/json'},
 )

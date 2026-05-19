@@ -1,9 +1,5 @@
-# Exclude output directory (contains podman volume mounts with broken symlinks)
-output/
-# Exclude test artifacts
-tests/live/runs/
-tests/live/checkpoint.json
-# Exclude git and tool directories
-.git/
-.claude/
 target/
+output/
+.git/
+node_modules/
+*.swp

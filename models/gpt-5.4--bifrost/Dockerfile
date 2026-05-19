@@ -11,6 +11,7 @@
 # rule 3.
 FROM quay.io/eval-containers/gateways/bifrost:latest
 
+LABEL eval.type="model"
 LABEL gateway.kind="bifrost"
 
 # bifrost reads /opt/gateway/data/config.json (set by gateways/bifrost's
