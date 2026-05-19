@@ -35,7 +35,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 7. **Compose is the format.** Every evaluation MUST be expressible as a Docker Compose file. Simple benchmarks and complex multi-service benchmarks MUST use the same format.
 
-8. **Shared service definitions.** Compose files MUST extend model and eval base config from `compose/services.yaml`. Benchmark-specific config goes in the benchmark's own compose file.
+8. **Shared service definitions.** Per-benchmark `compose.yaml` files MUST pull the shared topology (`otelcol`, `gateway`, `runner`) from `compose/services.yaml` via `include:` (or `extends:` for a single service). Benchmark-specific overrides (the runner image and `BENCHMARK` env value) are the only things a benchmark compose file should declare.
 
 9. **Parameterized.** Compose files MUST be parameterized by `EVAL_TASK_ID`, `EVAL_AGENT`, `EVAL_MODEL`, and `EVAL_REGISTRY`. Defaults MUST be provided for all except `EVAL_TASK_ID`.
 

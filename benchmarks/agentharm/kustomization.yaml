@@ -1,0 +1,24 @@
+# Kustomize base for the agentharm benchmark.
+#
+# Canonical pairing is hardcoded in job.yaml (image, agent label, task label).
+# Overlay this base to change agent, task, image registry, resources, or
+# any other axis without touching job.yaml. Examples:
+#
+#   # Run canonical pairing as-is:
+#   kubectl apply -k benchmarks/agentharm/
+#
+#   # Custom registry + non-canonical agent (overlay in your own repo):
+#   # kustomization.yaml:
+#   #   resources:  [github.com/your-org/eval-containers/benchmarks/agentharm?ref=v1.0]
+#   #   images:     [{name: quay.io/eval-containers/evals/agentharm--claude-code,
+#   #                 newName: my-registry.corp/evals/agentharm--codex}]
+#
+# See benchmarks/RULES.md rule 99 for the full overlay convention.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - job.yaml
+labels:
+  - pairs:
+      eval.containers.io/benchmark: agentharm
+    includeSelectors: false
