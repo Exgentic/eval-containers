@@ -1,24 +1,23 @@
-# Kustomize base for the _base benchmark.
+# Shared Kustomize base for every benchmark's k8s Job.
 #
-# Canonical pairing is hardcoded in job.yaml (image, agent label, task label).
-# Overlay this base to change agent, task, image registry, resources, or
-# any other axis without touching job.yaml. Examples:
+# This file is NOT meant to be applied directly — `job.yaml` has
+# `PLACEHOLDER` values that fail k8s validation. Per-benchmark
+# overlays at `benchmarks/<x>/kustomization.yaml` extend this base
+# and patch in the real benchmark name + image:
 #
-#   # Run canonical pairing as-is:
-#   kubectl apply -k benchmarks/_base/
+#   resources: [../_base]
+#   images:    [{name: …/PLACEHOLDER--claude-code,
+#                newName: …/<bench>--claude-code}]
+#   patches:   [{rename Job to <bench>-task-0,
+#                set BENCHMARK env to <bench>,
+#                set benchmark labels to <bench>}]
 #
-#   # Custom registry + non-canonical agent (overlay in your own repo):
-#   # kustomization.yaml:
-#   #   resources:  [github.com/your-org/eval-containers/benchmarks/_base?ref=v1.0]
-#   #   images:     [{name: quay.io/eval-containers/evals/_base--claude-code,
-#   #                 newName: my-registry.corp/evals/_base--codex}]
+# Everything else (gateway URL, OTEL endpoint, API keys, TIMEOUT,
+# MODEL default, AGENT default, resources, volumes) is shared via
+# this base — change once here to update the whole fleet.
 #
-# See benchmarks/RULES.md rule 99 for the full overlay convention.
+# See benchmarks/RULES.md rule 99 for the overlay convention.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - job.yaml
-labels:
-  - pairs:
-      eval.containers.io/benchmark: _base
-    includeSelectors: false

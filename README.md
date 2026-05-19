@@ -40,6 +40,42 @@ eval-containers run --benchmark aime --task-id 0 --agent codex --model gpt-5.4
 
 Every `EVAL_*` env var has a matching `--kebab-case` flag. Pick whichever you prefer.
 
+## Deployment modes
+
+Same evaluation, three runtimes. Pick whichever matches your environment.
+
+```bash
+eval-containers run aime --task-id 0 --agent codex --mode compose      # default
+eval-containers run aime --task-id 0 --agent codex --mode container
+eval-containers run aime --task-id 0 --agent codex --mode job
+```
+
+| Mode | Wraps | Use it for |
+|---|---|---|
+| `compose` *(default)* | `docker compose -f benchmarks/<x>/compose.yaml up` | Local laptop, full stack with gateway + OTel sidecars, fastest iteration. |
+| `container` | `docker run -e EVAL_MODEL=... <eval-image>` | CI smoke tests, one-shot runs against an existing model proxy, minimal footprint. |
+| `job` | `kubectl apply -k benchmarks/<x>/` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
+
+### Kubernetes (`--mode job`)
+
+Each benchmark ships a [Kustomize](https://kustomize.io/) base — apply directly with `kubectl`, no CLI needed:
+
+```bash
+kubectl apply -k benchmarks/aime/                  # canonical pairing (claude-code, task 0)
+```
+
+For non-canonical agent/task, the CLI synthesizes an overlay:
+
+```bash
+eval-containers run aime --agent codex --task-id 42 --mode job
+# expands to: kubectl kustomize --load-restrictor=LoadRestrictionsNone /tmp/eval-job-overlay-… \
+#           | kubectl apply -f -
+```
+
+Production users compose their own overlays on top (corp registry rewrites, NodeAffinity, NetworkPolicies, sidecar swaps, ...) by referencing the benchmark as a Kustomize resource. See [benchmarks/RULES.md](benchmarks/RULES.md) rule 99.
+
+The cluster needs an `eval-secrets` Secret with `OPENAI_API_KEY` and `OPENAI_API_BASE` keys.
+
 ## Environment variables
 
 All Eval Containers env vars are prefixed `EVAL_` to avoid collision with CI systems, orchestrators, and user scripts.
