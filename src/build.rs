@@ -109,11 +109,10 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             };
             let eval_tag = format!("{registry}/evals/{eval_name}:{version}");
 
-            // Write embedded combination Dockerfile to a temp directory.
-            // The Dockerfile only uses COPY --from= (named images), never
-            // COPY from the build context, so the context can be empty.
-            // Using an empty temp dir avoids sending the entire repo as
-            // context (which is slow and breaks on broken symlinks in output/).
+            // Write embedded combination Dockerfile to a temp file. The
+            // Dockerfile uses both `COPY --from=` (named images) AND `COPY`
+            // from the build context (core/process-compose/*, core/entrypoint/*),
+            // so context MUST be the repo root.
             let tmp_dir =
                 std::env::temp_dir().join(format!("eval-combo-ctx-{}", std::process::id()));
             let _ = std::fs::create_dir_all(&tmp_dir);
@@ -134,7 +133,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             ];
             let result = docker_build(
                 &eval_tag,
-                tmp_dir.to_str().unwrap(),
+                ".",
                 Some(tmp_dockerfile.to_str().unwrap()),
                 &build_args,
             );
@@ -216,6 +215,20 @@ fn docker_build(
     // flakes. Most benchmark Dockerfiles have apt-get update without retry
     // loops, and podman's network to debian mirrors flakes under load.
     // Retrying the whole build is cheap (most layers are cached).
+    // Forward HF_TOKEN as a build-arg iff it's present in the env.
+    // Several benchmark Dockerfiles (gaia, hle, mmlu-pro, …) gate
+    // dataset downloads behind a HuggingFace token. Their `RUN`
+    // declares
+    //   RUN --mount=type=secret,id=HF_TOKEN \
+    //       HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && …
+    // The `--mount=type=secret` syntax is the production / CI path
+    // (BuildKit-enabled builders). For local dev we use the fallback:
+    // pass HF_TOKEN as `--build-arg`, which lands in `$HF_TOKEN` via
+    // `core/benchmark-base-hf`'s `ARG HF_TOKEN="" / ENV HF_TOKEN=$HF_TOKEN`.
+    // `--build-arg` works on every builder including podman's
+    // docker-compat (which rejects `--secret`).
+    let has_hf_token = std::env::var("HF_TOKEN").is_ok();
+
     let mut last_err = String::new();
     for attempt in 1..=3 {
         let mut cmd_retry = Command::new("docker");
@@ -226,6 +239,12 @@ fn docker_build(
         }
         for arg in build_args {
             cmd_retry.arg("--build-arg").arg(arg);
+        }
+        if has_hf_token {
+            // Forward the value via `--build-arg HF_TOKEN` (no `=`)
+            // which means "inherit from current env". Safer than
+            // interpolating the secret onto the command line.
+            cmd_retry.arg("--build-arg").arg("HF_TOKEN");
         }
         cmd_retry.arg(context);
         match cmd_retry.status() {

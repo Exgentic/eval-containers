@@ -1,0 +1,77 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: assistantbench-task-0
+  labels:
+    benchmark: assistantbench
+    agent: claude-code
+    task: "0"
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        benchmark: assistantbench
+        agent: claude-code
+        task: "0"
+    spec:
+      restartPolicy: Never
+      shareProcessNamespace: true
+      containers:
+        - name: otelcol
+          image: quay.io/eval-containers/core/otel:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: health,    containerPort: 13133 }
+          volumeMounts:
+            - { name: output, mountPath: /output }
+
+        - name: gateway
+          image: quay.io/eval-containers/models/gpt-5.4--bifrost:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: gateway, containerPort: 4000 }
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_KEY }
+            - name: OPENAI_API_BASE
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
+            - { name: EVAL_MODEL, value: openai/azure/gpt-5.4 }
+            - { name: HOST,       value: 127.0.0.1 }
+
+        - name: runner
+          image: quay.io/eval-containers/evals/assistantbench--claude-code:latest
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/bash", "-c"]
+          args: ["/root/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
+          env:
+            - { name: BENCHMARK,                   value: assistantbench }
+            - { name: AGENT,                       value: claude-code }
+            - { name: MODEL,                       value: gpt-5.4-bifrost }
+            - { name: TASK_ID,                     value: "0" }
+            - { name: TIMEOUT,                     value: "300" }
+            - { name: ANTHROPIC_BASE_URL,          value: http://localhost:4000/anthropic }
+            - { name: OPENAI_BASE_URL,             value: http://localhost:4000/openai/v1 }
+            - { name: GOOGLE_GEMINI_BASE_URL,      value: http://localhost:4000/genai }
+            - { name: ANTHROPIC_API_KEY,           value: sk-proxy }
+            - { name: OPENAI_API_KEY,              value: sk-proxy }
+            - { name: GEMINI_API_KEY,              value: sk-proxy }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://localhost:4318 }
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "2",    memory: "2Gi" }
+          volumeMounts:
+            - { name: output, mountPath: /output }
+            - { name: tmp,    mountPath: /tmp }
+            - { name: logs,   mountPath: /logs }
+
+      volumes:
+        - { name: output, emptyDir: {} }
+        - { name: tmp,    emptyDir: { medium: Memory, sizeLimit: 1Gi } }
+        - { name: logs,   emptyDir: { medium: Memory, sizeLimit: 100Mi } }

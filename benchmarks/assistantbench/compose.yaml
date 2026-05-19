@@ -1,37 +1,8 @@
-# AssistantBench
-# 33 validation tasks. Internet ENABLED — agent performs open-web research.
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-assistantbench}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/assistantbench--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/assistantbench--${EVAL_AGENT:-claude-code}:latest
     environment:
-      - EVAL_BENCHMARK=assistantbench
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-1800}
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-assistantbench}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-assistantbench}/${EVAL_TASK_ID:-default}/task:/output/task:rw
-    networks:
-      - internal
-      - external
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-          memory: 8G
-
-networks:
-  internal:
-    internal: true
-  external:
-    driver: bridge
+      BENCHMARK: assistantbench
