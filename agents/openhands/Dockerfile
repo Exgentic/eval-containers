@@ -14,11 +14,18 @@ ENV EVAL_AGENT=openhands
 # project (AI4Bharat), so `pip install openhands==X` resolves to a stub
 # (`from versions: 0.0.0`). Pin to 1.7.0, latest on openhands-ai as of
 # audit time (May 2026).
-RUN pip install --no-cache-dir openhands-ai==1.7.0
+#
+# `lmnr` (Laminar tracing, transitive dep of openhands-ai) pins
+# opentelemetry-semantic-conventions==0.60b1 at version 0.7.47, but
+# 0.7.51 (current) accepts a broader range and resolves against the
+# opentelemetry-instrumentation 0.6xb releases. Pin lmnr to 0.7.51
+# explicitly so pip's resolver doesn't get stuck backtracking through
+# every 0.7.4x release.
+RUN pip install --no-cache-dir openhands-ai==1.7.0 lmnr==0.7.51
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
-pip install --no-cache-dir openhands-ai==1.7.0
+pip install --no-cache-dir openhands-ai==1.7.0 lmnr==0.7.51
 I
 RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash
