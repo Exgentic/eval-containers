@@ -1,34 +1,30 @@
 # syntax=docker/dockerfile:1
-# Portkey gateway image with a small bifrost sidecar for /genai routes.
+# Portkey gateway image.
 #
-# Why bifrost: portkey's self-hosted gateway exposes only OpenAI-style
-# inbound paths (/v1/chat/completions, /v1/messages, /v1/responses).
-# gemini-cli sends Google-native /v1beta/models/.../generateContent
-# which portkey doesn't accept. Rather than leave one protocol off the
-# matrix, we bundle the ~50 MB bifrost binary and Caddy routes /genai/*
-# to it. Bifrost translates Google → OpenAI Chat and forwards to the
-# same upstream URL portkey uses.
+# Protocol coverage: /openai/* ONLY. Portkey self-hosted (v1.15.x) does
+# not translate Anthropic Messages or Google Gemini into the upstream's
+# OpenAI Chat protocol — so /anthropic/* and /genai/* return 501 from
+# the Caddy router rather than being silently faked. Agents that need
+# those protocols should pick a translating flavor (bifrost or litellm).
 #
 # Layout (uniform across gateway flavors):
-#   /opt/gateway/start             starts caddy + portkey + bifrost
-#   /opt/gateway/Caddyfile         per-route header injection + /genai → bifrost
+#   /opt/gateway/start             starts caddy + portkey
+#   /opt/gateway/Caddyfile         /openai → portkey; other protocols → 501
 #   /opt/gateway/portkey/          the portkey JS bundle (node runtime)
-#   /opt/gateway/bifrost/main      bifrost binary (translator for /genai)
-#   /opt/gateway/bifrost/config.json.template  rendered at startup
-#   /opt/gateway/data/             writable scratch (bifrost state)
 #
-# Honest size: ~265 MB (portkey base + bifrost binary).
+# Honest size: ~215 MB (portkey + node + caddy). No bundled translator.
 FROM --platform=linux/amd64 docker.io/portkeyai/gateway:latest AS portkey
-FROM --platform=linux/amd64 docker.io/maximhq/bifrost:latest AS bifrost
 
 FROM --platform=linux/amd64 node:20-alpine
 
 LABEL gateway.kind="portkey"
 LABEL gateway.portkey_version="v1.15.x"
-LABEL gateway.bifrost_version="v1.4.24"
-# All three protocols are wired: /openai and /anthropic via portkey's
-# native plugins, /genai via the embedded bifrost translator.
-LABEL gateway.translates_protocols="true"
+# This flavor only serves the OpenAI wire format — it does NOT cross-
+# translate from Anthropic Messages or Google Gemini. Compose/k8s
+# matrices that want full protocol coverage must use a translating
+# flavor (bifrost or litellm).
+LABEL gateway.translates_protocols="false"
+LABEL gateway.protocols="openai"
 
 RUN apk add --no-cache ca-certificates curl gettext
 
@@ -38,15 +34,11 @@ COPY --from=docker.io/library/caddy:2.8-alpine /usr/bin/caddy /usr/bin/caddy
 # Portkey JS app (upstream WORKDIRs at /app).
 COPY --from=portkey /app /opt/gateway/portkey
 
-# Bifrost binary (only used for /genai inbound).
-COPY --from=bifrost /app/main /opt/gateway/bifrost/main
-
 COPY start                  /opt/gateway/start
 COPY health                 /opt/gateway/health
 COPY Caddyfile              /opt/gateway/Caddyfile
-COPY bifrost-config.json    /opt/gateway/bifrost/config.json.template
-RUN chmod +x /opt/gateway/start /opt/gateway/health /opt/gateway/bifrost/main \
- && mkdir -p /opt/gateway/data /opt/gateway/bifrost/data
+RUN chmod +x /opt/gateway/start /opt/gateway/health \
+ && mkdir -p /opt/gateway/data
 
 EXPOSE 4000
 ENTRYPOINT ["/opt/gateway/start"]
