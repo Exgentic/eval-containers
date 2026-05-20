@@ -126,18 +126,27 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
 
     // ExitWaitStrategy polls forever — if the agent hangs (e.g. replay
     // model 404s for an unexpected route and the agent retry-loops),
-    // the test would run indefinitely. Cap the whole compose-up at
-    // 5 minutes per stack: more than enough for the longest legitimate
-    // replay run we have, much less than waiting for a hung agent.
+    // the test would run indefinitely. Cap the whole compose-up per stack:
+    // simple benchmarks (1 service + runner) finish well under 5 min;
+    // sidecar-heavy benchmarks (webarena = 7 web servers + proxy,
+    // osworld = QEMU VM boot, tau-bench = mock services) need 10–15 min
+    // cold-start before the runner can even begin work.
+    let timeout_secs = match benchmark.as_str() {
+        "webarena" | "visualwebarena" | "osworld" | "tau-bench" => 900,
+        _ => 300,
+    };
     let up_result = tokio::time::timeout(
-        std::time::Duration::from_secs(300),
+        std::time::Duration::from_secs(timeout_secs),
         compose.up(),
     )
     .await;
     match up_result {
         Ok(Ok(())) => {}
         Ok(Err(e)) => panic!("compose up failed: {e:?}"),
-        Err(_) => panic!("compose up timed out after 5 min for {benchmark}/{task_id}"),
+        Err(_) => panic!(
+            "compose up timed out after {} min for {benchmark}/{task_id}",
+            timeout_secs / 60
+        ),
     }
     compose
 }
@@ -219,41 +228,6 @@ async fn tc_build_context(descriptor: &str, tag: &str, ctx_dir: &str, dockerfile
         .build_image_with(opts)
         .await
         .unwrap_or_else(|e| panic!("tc build {descriptor}:{tag}: {e:?}"));
-
-    // Verification + self-heal. testcontainers-rs's `GenericBuildableImage`
-    // claims success above, but in practice (especially on podman) the
-    // resulting image is sometimes not tagged with the descriptor we
-    // requested — subsequent `FROM {descriptor}:{tag}` in downstream
-    // builds then attempts a registry pull (failing on auth for
-    // `quay.io/eval-containers/...`). This was the root cause of plandex
-    // builds failing despite a passing bootstrap: `agent-base-rust` would
-    // appear built but `docker images quay.io/eval-containers/core/agent-base-rust:latest`
-    // came up empty.
-    //
-    // Verify with `docker images` and, if missing, run a plain `docker
-    // build` to land the image with the exact tag we need. The fallback
-    // is idempotent (BuildKit cache hits everything if testcontainers
-    // already laid down the layers) — typically completes in seconds.
-    let expected = format!("{descriptor}:{tag}");
-    let listed = std::process::Command::new("docker")
-        .args(["images", "-q", &expected])
-        .output();
-    let exists = matches!(listed, Ok(out) if !out.stdout.trim_ascii().is_empty());
-    if !exists {
-        eprintln!("[bootstrap] {expected} not tagged after tc build; falling back to docker CLI");
-        let mut cmd = std::process::Command::new("docker");
-        cmd.args(["build", "-t", &expected, "-f", dockerfile]);
-        if let Ok(tok) = std::env::var("HF_TOKEN") {
-            cmd.args(["--build-arg", &format!("HF_TOKEN={tok}")]);
-        }
-        cmd.arg(ctx_dir);
-        let status = cmd
-            .status()
-            .unwrap_or_else(|e| panic!("docker build fallback {expected}: {e}"));
-        if !status.success() {
-            panic!("docker build fallback {expected} exited with {status}");
-        }
-    }
 }
 
 /// Bootstrap every core/gateway/model base image the replay stack
@@ -335,6 +309,7 @@ async fn bootstrap_core_bases() {
             ] {
                 tc_build_context(descriptor, "latest", ctx, &format!("{ctx}/Dockerfile")).await;
             }
+
         })
         .await;
 }
