@@ -22,7 +22,15 @@ RUN set -e; ok=0; \
     rm -rf /var/lib/apt/lists/*
 
 # uv — faster + more resilient to flaky networks than stock pip. Install
-# into /usr/local/bin so it's on PATH for every RUN layer downstream.
+# into /usr/local/bin so it's on PATH for every RUN layer downstream,
+# AND copy a duplicate to /opt/agent/uv so combination.Dockerfile's
+# `COPY --from=AGENT_IMAGE /opt/agent/ /opt/agent/` brings it into the
+# combined eval image too. (The /usr/local/bin copy stays for the
+# pip-shim path and any direct `RUN pip install ...` lines in agent
+# Dockerfiles; the /opt/agent copy is what subclass install.sh
+# scripts MUST use, because the eval image's combination layer
+# doesn't carry /usr/local/bin/uv.)
+#
 # uv via PyPI (more reliable than astral.sh's redirect chain to github).
 # Pin version for reproducibility. Retry loop for transient PyPI flake.
 # NB: this uses the REAL pip (before the shim below is installed) to
@@ -32,7 +40,8 @@ RUN set -e; ok=0; \
       if pip install --no-cache-dir --retries 5 --timeout 60 uv==0.5.14; then ok=1; break; fi; \
       echo "pip install uv attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \
-    [ "$ok" = 1 ] || { echo "pip install uv failed after 5 tries" >&2; exit 1; }
+    [ "$ok" = 1 ] || { echo "pip install uv failed after 5 tries" >&2; exit 1; }; \
+    mkdir -p /opt/agent && cp /usr/local/bin/uv /opt/agent/uv
 
 # pip shim: every subclass `pip install ...` call re-routes to `uv pip`
 # with a 5-shot retry loop. `UV_SYSTEM_PYTHON=1` targets the image's
