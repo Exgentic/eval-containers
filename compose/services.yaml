@@ -13,6 +13,12 @@ services:
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}
       EVAL_MODEL: ${EVAL_MODEL:-openai/azure/gpt-5.4}
       HOST: 0.0.0.0
+      # Both gateway flavors emit OTel: bifrost via its native `otel`
+      # plugin (collector_url derived from this in /opt/gateway/start),
+      # litellm via the `otel` callback in config.yaml.template (reads
+      # this env var directly). Spans land in /output/traces.jsonl via
+      # the otelcol sidecar's file exporter.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
     healthcheck:
       test: ["CMD", "/opt/gateway/health"]
       interval: 2s

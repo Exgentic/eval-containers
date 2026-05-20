@@ -37,8 +37,20 @@ if [ -f "$TEMPLATE" ]; then
   esac
   export PROVIDER MODEL_NAME
 
+  # Derive bifrost's full collector URL from the standard OTel base
+  # endpoint ($OTEL_EXPORTER_OTLP_ENDPOINT — same env var the litellm
+  # gateway, the agent runner, and every other OTel-aware component
+  # reads). Bifrost's plugin config wants the full /v1/traces path; we
+  # append it here so callers only need to set the base URL.
+  #
+  # Compose mode: OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4318
+  # K8s pod-with-sidecars: OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+  : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
+  OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
+  export OTEL_COLLECTOR_URL
+
   # Explicit var list so envsubst leaves bifrost's own $schema key alone.
-  envsubst '${PROVIDER} ${MODEL_NAME} ${OPENAI_API_BASE}' \
+  envsubst '${PROVIDER} ${MODEL_NAME} ${OPENAI_API_BASE} ${OTEL_COLLECTOR_URL}' \
     < "$TEMPLATE" > "$CONFIG"
 fi
 
