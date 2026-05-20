@@ -18,8 +18,11 @@ processors:
   batch: {}
 
 exporters:
+  # File exporter writes one JSON-encoded ExportTraceServiceRequest per
+  # line (newline-delimited, NDJSON). The .jsonl extension reflects that
+  # format — `jq -s . /output/traces.jsonl` to slurp into an array.
   file:
-    path: /output/traces.json
+    path: /output/traces.jsonl
 
 service:
   pipelines:
