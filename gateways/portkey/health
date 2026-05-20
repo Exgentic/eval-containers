@@ -1,7 +1,6 @@
 #!/bin/sh
-# Readiness probe: portkey + bifrost sidecar both up.
-# Portkey's root path returns "AI Gateway says hey!" when alive;
-# bifrost has /api/health on its sidecar port.
-set -eu
-curl -sf -m 1 http://127.0.0.1:"${PORT:-4000}"/ > /dev/null
-curl -sf -m 1 http://127.0.0.1:4002/api/health > /dev/null
+# Portkey readiness probe. Returns 0 when portkey is serving — root
+# path responds "AI Gateway says hey!" when alive. Caddy proxies /
+# through to portkey :8787 (handle {} fallback), so this works whether
+# the probe hits the external $PORT or the internal portkey port.
+exec curl -sf -m 1 http://127.0.0.1:"${PORT:-4000}"/ > /dev/null
