@@ -1,0 +1,8 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/agents-smoke--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: agents-smoke

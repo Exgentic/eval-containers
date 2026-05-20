@@ -65,6 +65,11 @@ async def main():
         sys.exit(1)
 
     model = os.environ.get("EVAL_MODEL", os.environ.get("MODEL", "openai/gpt-4o"))
+    # litellm needs a provider prefix on the model name (e.g.
+    # `openai/<name>`); EVAL_MODEL is just the bare model name in our
+    # framework, so add the openai/ prefix if it's missing.
+    if "/" not in model:
+        model = f"openai/{model}"
     api_base = os.environ.get("OPENAI_BASE_URL", "http://model:4000")
     api_key = os.environ.get("OPENAI_API_KEY", "sk-proxy")
     os.environ["OPENAI_API_KEY"] = api_key

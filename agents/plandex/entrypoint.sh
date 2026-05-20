@@ -21,16 +21,36 @@ export DATABASE_URL="postgres://plandex@127.0.0.1:5432/plandex?sslmode=disable"
 export GOENV=development
 export LOCAL_MODE=1
 export PLANDEX_BASE_DIR="$SERVER_DATA_DIR"
-export MIGRATIONS_DIR="/opt/plandex/migrations"
-export PATH="/opt/venv/bin:$PATH"
+export MIGRATIONS_DIR="/opt/agent/plandex/migrations"
+export PATH="/opt/agent/venv/bin:/opt/agent/bin:$PATH"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_API_BASE="${OPENAI_BASE_URL:-http://model:4000}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
+# plandex's CLI scans for built-in provider keys at startup regardless
+# of the selected model pack — populate every one or it blocks on
+# "Connect your X subscription?" prompts (no TTY in our env).
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
+export OPENROUTER_API_KEY="${OPENROUTER_API_KEY:-sk-proxy}"
+export DEEPSEEK_API_KEY="${DEEPSEEK_API_KEY:-sk-proxy}"
+export GOOGLE_API_KEY="${GOOGLE_API_KEY:-sk-proxy}"
+export GEMINI_API_KEY="${GEMINI_API_KEY:-sk-proxy}"
 
-plandex-server >"$PLANDEX_DATA_DIR/server.log" 2>&1 &
+# plandex-server's spawned `uvicorn litellm_proxy:app` uses its CWD as
+# the import root; stage the module here and cd in.
+export PYTHONPATH="/opt/agent/plandex:${PYTHONPATH:-}"
+cd /opt/agent/plandex
+plandex-server 2>&1 | tee "$PLANDEX_DATA_DIR/server.log" >&2 &
 PSP=$!
 trap 'kill $PSP 2>/dev/null || true' EXIT
-for _ in $(seq 1 60); do curl -sf "$PLANDEX_HOST/health" >/dev/null 2>&1 && break; sleep 1; done
+for _ in $(seq 1 90); do
+  curl -sf "$PLANDEX_HOST/health" >/dev/null 2>&1 && break
+  sleep 1
+done
+if ! curl -sf "$PLANDEX_HOST/health" >/dev/null 2>&1; then
+  echo "plandex-server failed to become healthy at $PLANDEX_HOST/health" >&2
+  cat "$PLANDEX_DATA_DIR/server.log" >&2 || true
+  exit 1
+fi
 
 HOME_DIR="${HOME:-/tmp}"
 AUTH_DIR="$HOME_DIR/.plandex-home-v2"
@@ -62,5 +82,15 @@ if [ ! -d .git ]; then
     git init -q; git config user.email agent@eval.local; git config user.name eval-agent
     git commit --allow-empty -qm "eval-containers: init" || true
 fi
+# Register a custom provider + model + model-pack pointing at our mock.
+# Docs: https://docs.plandex.ai/models/custom-models
+CMF="/tmp/plandex-custom-models.$$.json"
+sed "s|PLANDEX_BASE_URL_PLACEHOLDER|${OPENAI_BASE_URL}|" /opt/agent/custom-models.json > "$CMF"
+plandex models custom -f "$CMF" --save >/dev/null 2>&1 || true
+# Set the default pack BEFORE `plandex new` — otherwise `new --full`
+# spawns the claude-subscription prompt.
+plandex set-model default eval-mock-pack >/dev/null 2>&1 || true
 plandex new --full --name eval-task >/dev/null 2>&1 || true
-exec plandex tell --apply --auto-exec --auto-load-context --auto-update-context --commit "$TASK"
+plandex set-model eval-mock-pack >/dev/null 2>&1 || true
+# `plandex tell` opens /dev/tty; wrap in `script` for a fake-PTY.
+exec script -qec "plandex tell --apply --auto-exec --auto-load-context --auto-update-context --commit \"$TASK\"" /dev/null
