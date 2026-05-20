@@ -26,6 +26,10 @@ cat > ~/.openclaw/exec-approvals.json <<CONF
 {"version":1,"defaults":{"security":"full","ask":"off","askFallback":"full"},"agents":{"*":{"security":"full","ask":"off","askFallback":"full","allowlist":[{"pattern":"**"}]}}}
 CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-exec openclaw agent --local --message "$TASK" --output text
+# openclaw 2026.4.11 requires a session selector (one of --to /
+# --session-id / --agent). --session-id is the cheapest — picks an
+# ad-hoc session derived from the literal string. No real session
+# state is needed for non-interactive agent invocations.
+exec openclaw agent --local --session-id smoke --message "$TASK"
 E
 ENTRYPOINT ["/opt/agent/entrypoint.sh"]

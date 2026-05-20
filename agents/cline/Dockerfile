@@ -20,10 +20,9 @@ RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 set -euo pipefail
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-mkdir -p "${HOME:-/root}/.cline"
-cat > "${HOME:-/root}/.cline/config.json" <<CONF
-{"provider":"openai","apiKey":"${OPENAI_API_KEY}","baseUrl":"${OPENAI_BASE_URL}","model":"${EVAL_MODEL:-default}"}
-CONF
+# cline's auth state lives in $HOME/.cline/data/{globalState,secrets}.json
+# and is only recognised when written via `cline auth`.
+cline auth -p openai -k "$OPENAI_API_KEY" -m "${EVAL_MODEL:-default}" -b "$OPENAI_BASE_URL" >/dev/null 2>&1 || true
 exec cline -y "$TASK"
 E
 ENTRYPOINT ["/opt/agent/entrypoint.sh"]
