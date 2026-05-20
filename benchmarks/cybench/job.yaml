@@ -45,14 +45,18 @@ spec:
             - name: OPENAI_API_BASE
               valueFrom:
                 secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
-            - { name: EVAL_MODEL, value: openai/azure/gpt-5.4 }
-            - { name: HOST,       value: 127.0.0.1 }
+            - { name: EVAL_MODEL,                  value: openai/azure/gpt-5.4 }
+            - { name: HOST,                        value: 127.0.0.1 }
+            # Both gateway flavors emit OTel spans into otelcol — same env var
+            # for both. shareProcessNamespace + sidecar pod model puts otelcol
+            # on localhost.
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://localhost:4318 }
 
         - name: runner
           image: quay.io/eval-containers/evals/cybench-${EVAL_TASK_ID}--claude-code:latest
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-c"]
-          args: ["/root/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
+          args: ["/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
           env:
             - { name: BENCHMARK,                   value: cybench }
             - { name: AGENT,                       value: claude-code }

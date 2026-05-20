@@ -55,7 +55,12 @@ model_list:
   - { model_name: "gemini-pro",     litellm_params: *upstream }
 
 litellm_settings:
-  # OTel callback emits gen_ai.* semconv spans to OTEL_EXPORTER_OTLP_ENDPOINT.
-  # The collector (a sibling process or container) writes them to
-  # /output/trajectory.jsonl.
-  callbacks: ["otel"]
+  # Two callbacks:
+  # - "otel" emits gen_ai.* semconv spans to OTEL_EXPORTER_OTLP_ENDPOINT
+  #   for observability and the otelcol sidecar.
+  # - "eval_logger.eval_logger_instance" writes one
+  #   StandardLoggingPayload per request to /output/trajectory.jsonl —
+  #   this is the file `models/replay` consumes to replay a recorded run.
+  #   Loaded from /opt/gateway/eval_logger.py (PYTHONPATH set by the
+  #   gateways/litellm base image).
+  callbacks: ["otel", "eval_logger.eval_logger_instance"]

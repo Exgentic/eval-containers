@@ -52,13 +52,40 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # (/anthropic/*, /openai/*, /<protocol>/*) to litellm's native root
 # paths (/v1/messages, /v1/chat/completions, /v1/responses). Same
 # pattern for any non-bifrost gateway; the prefixes are extensible.
-COPY --from=docker.io/library/caddy:2.8-alpine /usr/bin/caddy /usr/bin/caddy
+#
+# Fetched from upstream releases instead of `COPY --from=docker.io/...`
+# so this image builds without a Docker Hub account (the anonymous
+# quota of 100 pulls/6h evaporates quickly during fleet builds).
+ARG CADDY_VERSION=2.8.4
+RUN set -eu; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+      amd64)  caddy_arch=amd64 ;; \
+      arm64)  caddy_arch=arm64 ;; \
+      *) echo "unsupported arch: $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 5 --retry-delay 5 \
+      "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${caddy_arch}.tar.gz" \
+      | tar -xz -C /usr/bin caddy; \
+    chmod +x /usr/bin/caddy
 
 COPY --from=builder /opt/gateway/venv /opt/gateway/venv
 COPY start    /opt/gateway/start
 COPY health   /opt/gateway/health
 COPY Caddyfile /opt/gateway/Caddyfile
+
+# eval_logger.py is the LiteLLM custom callback that writes
+# /output/trajectory.jsonl in StandardLoggingPayload format —
+# the input contract of `models/replay`. Without this callback the
+# gateway only emits OTel spans (no replay-consumable trajectory).
+COPY eval_logger.py /opt/gateway/eval_logger.py
+
 RUN chmod +x /opt/gateway/start /opt/gateway/health
+
+# Lets litellm `import eval_logger` from /opt/gateway when resolving
+# the `callbacks: [eval_logger.eval_logger_instance]` entry in the
+# model image's config.yaml.
+ENV PYTHONPATH=/opt/gateway
 
 ENV PYTHONDONTWRITEBYTECODE=1
 
