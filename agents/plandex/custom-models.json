@@ -1,0 +1,40 @@
+{
+  "$schema": "https://plandex.ai/schemas/models-input.schema.json",
+  "providers": [
+    {
+      "name": "eval-mock",
+      "baseUrl": "PLANDEX_BASE_URL_PLACEHOLDER",
+      "skipAuth": true
+    }
+  ],
+  "models": [
+    {
+      "modelId": "eval-mock-model",
+      "publisher": "Eval",
+      "description": "Eval Containers mock LLM",
+      "defaultMaxConvoTokens": 50000,
+      "maxTokens": 128000,
+      "maxOutputTokens": 8192,
+      "reservedOutputTokens": 8192,
+      "preferredOutputFormat": "xml",
+      "providers": [
+        {
+          "provider": "custom",
+          "customProvider": "eval-mock",
+          "modelName": "default"
+        }
+      ]
+    }
+  ],
+  "modelPacks": [
+    {
+      "name": "eval-mock-pack",
+      "description": "All roles routed to the eval-containers mock LLM",
+      "planner": "eval-mock-model",
+      "coder": "eval-mock-model",
+      "architect": "eval-mock-model",
+      "summarizer": "eval-mock-model",
+      "builder": "eval-mock-model"
+    }
+  ]
+}

@@ -16,14 +16,14 @@ RUN set -e; ok=0; \
     done; \
     [ "$ok" = 1 ] || { echo "apt install failed after 5 tries" >&2; exit 1; }; \
     rm -rf /var/lib/apt/lists/* && \
-    pip install --no-cache-dir harbor==0.6.4
+    uv pip install --system harbor==0.6.4 asciinema
 COPY run.py /opt/agent/run.py
 RUN chmod +x /opt/agent/run.py
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
 apt-get update && apt-get install -y --no-install-recommends tmux && rm -rf /var/lib/apt/lists/*
-pip install --no-cache-dir harbor==0.6.4
+/opt/agent/uv pip install --system harbor==0.6.4 asciinema
 I
 RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash

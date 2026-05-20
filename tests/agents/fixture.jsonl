@@ -1,0 +1,1 @@
+{"response": {"id": "smoke", "object": "chat.completion", "created": 0, "model": "mock", "choices": [{"index": 0, "message": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 0, "completion_tokens": 1, "total_tokens": 1}}}
