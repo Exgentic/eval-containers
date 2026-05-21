@@ -17,7 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
 git clone --depth 1 --branch v1.1.0 https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent 2>/dev/null || true
-/opt/agent/uv pip install --system -e /opt/swe-agent
+pip install --no-cache-dir -e /opt/swe-agent
 # SWE-agent's LocalDeployment assumes uid-0 root: it writes /root/state.json
 # + /root/.swe-agent-env and copies tool bundles into /root/tools. The eval
 # framework runs the agent as uid 1002, so open up /root at build time.

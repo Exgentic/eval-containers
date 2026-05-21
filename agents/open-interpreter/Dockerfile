@@ -15,7 +15,7 @@ RUN chmod +x /opt/agent/run_oi.py
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
-/opt/agent/uv pip install --system 'setuptools<81' open-interpreter==0.4.3
+pip install --no-cache-dir 'setuptools<81' open-interpreter==0.4.3
 I
 RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash

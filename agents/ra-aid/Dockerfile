@@ -21,7 +21,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
 apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
-/opt/agent/uv pip install --system 'langgraph<0.4' ra-aid==0.19.1
+pip install --no-cache-dir 'langgraph<0.4' ra-aid==0.19.1
 I
 RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash
