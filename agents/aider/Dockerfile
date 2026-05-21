@@ -13,7 +13,7 @@ RUN uv pip install --system aider-chat==0.86.2
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
-/opt/agent/uv pip install --system aider-chat==0.86.2
+pip install --no-cache-dir aider-chat==0.86.2
 I
 RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash

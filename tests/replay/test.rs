@@ -127,13 +127,17 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     // ExitWaitStrategy polls forever — if the agent hangs (e.g. replay
     // model 404s for an unexpected route and the agent retry-loops),
     // the test would run indefinitely. Cap the whole compose-up per stack:
-    // simple benchmarks (1 service + runner) finish well under 5 min;
-    // sidecar-heavy benchmarks (webarena = 7 web servers + proxy,
+    // most replay agents finish in seconds (fixtures stream out instantly),
+    // but a few retry-loop on REPLAY_EXHAUSTED (ra-aid, terminus-2's
+    // litellm error handler) — those ride out the full agent EVAL_TIMEOUT
+    // (300s, set by compose/services.yaml). Add 180s of slack after that
+    // for verifier + write-result so the runner exits cleanly inside the
+    // budget. Sidecar-heavy benchmarks (webarena = 7 web servers + proxy,
     // osworld = QEMU VM boot, tau-bench = mock services) need 10–15 min
     // cold-start before the runner can even begin work.
     let timeout_secs = match benchmark.as_str() {
         "webarena" | "visualwebarena" | "osworld" | "tau-bench" => 900,
-        _ => 300,
+        _ => 480,
     };
     let up_result = tokio::time::timeout(
         std::time::Duration::from_secs(timeout_secs),
