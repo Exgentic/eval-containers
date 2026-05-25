@@ -10,23 +10,14 @@ LABEL eval.agent.version="1.7.0"
 ENV EVAL_AGENT_VERSION_DEFAULT="1.7.0"
 ENV EVAL_AGENT=openhands
 # openhands-ai requires Python >=3.12; several benchmark bases ship 3.10
-# (aider-polyglot's ubuntu:22.04). Provision a self-contained venv via uv's
-# managed Python and run from it — works regardless of the base's system
-# Python. Single install.sh is the source of truth for both the agent image
-# and combo builds. We use the SDK package (openhands-ai) wrapped by
-# run_openhands.py as a one-shot CLI.
+# (aider-polyglot's ubuntu:22.04). Provision a self-contained venv via the
+# shared `/opt/agent/setup-uv-venv.sh` helper (core/agent-base-python). We
+# use the SDK package (openhands-ai) wrapped by run_openhands.py as a
+# one-shot CLI.
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
-# UV_PYTHON_INSTALL_DIR moves managed Python out of /root (mode 0700 in the
-# combo image, see core/combination.Dockerfile rationale) so uid 1002 can
-# traverse the venv's symlink chain back to the interpreter at runtime.
-export UV_PYTHON_INSTALL_DIR=/opt/uv-python
-command -v uv >/dev/null 2>&1 || pip install --no-cache-dir --quiet uv
-uv python install --quiet 3.12
-uv venv --quiet --python 3.12 /opt/openhands-venv
-uv pip install --quiet --python /opt/openhands-venv/bin/python openhands-ai==1.7.0 lmnr==0.7.51
-chmod -R a+rX /opt/uv-python /opt/openhands-venv
+/opt/agent/setup-uv-venv.sh /opt/openhands-venv openhands-ai==1.7.0 lmnr==0.7.51
 I
 RUN /opt/agent/install.sh
 # Late COPY: editing run_openhands.py here invalidates only the layers

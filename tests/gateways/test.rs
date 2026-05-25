@@ -104,41 +104,64 @@ static IMAGES_BUILT: OnceCell<()> = OnceCell::const_new();
 /// process. The `OnceCell` makes concurrent calls (cargo runs tests on
 /// many threads) safe — late callers await the in-flight build.
 async fn ensure_built() {
+    /// Run a tier's builds concurrently; await all before returning.
+    async fn build_tier(name: &str, specs: Vec<(String, String, String)>) {
+        let mut set = tokio::task::JoinSet::new();
+        for (descriptor, ctx, dockerfile) in specs {
+            set.spawn(async move {
+                tc_build_context(&descriptor, "latest", &ctx, &dockerfile).await;
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            res.unwrap_or_else(|e| panic!("{name}: build task panicked: {e:?}"));
+        }
+    }
+
     IMAGES_BUILT
         .get_or_init(|| async {
             let _ = dotenvy::dotenv();
-            // Tier 1: otelcol (sidecar for the OTel tests; harmless for
-            // the no-creds tests since we only build it).
-            tc_build_context(
-                "quay.io/eval-containers/core/otel",
-                "latest",
-                "core/otel",
-                "core/otel/Dockerfile",
+            // Tier 1: otelcol (sidecar for OTel tests).
+            build_tier(
+                "tier 1",
+                vec![(
+                    "quay.io/eval-containers/core/otel".into(),
+                    "core/otel".into(),
+                    "core/otel/Dockerfile".into(),
+                )],
             )
             .await;
-            // Tier 2: each gateway base — needs the entrypoint script,
-            // Caddyfile (where applicable), and Dockerfile context.
-            for flavor in FLAVORS {
-                tc_build_context(
-                    &format!("quay.io/eval-containers/gateways/{flavor}"),
-                    "latest",
-                    &format!("gateways/{flavor}"),
-                    &format!("gateways/{flavor}/Dockerfile"),
-                )
-                .await;
-            }
-            // Tier 3: each model image — thin FROM-gateway layer that
-            // adds the config template.
-            for flavor in FLAVORS {
-                let (name, tag) = gateway_image_ref(flavor);
-                tc_build_context(
-                    &name,
-                    &tag,
-                    &format!("models/gpt-5.4--{flavor}"),
-                    &format!("models/gpt-5.4--{flavor}/Dockerfile"),
-                )
-                .await;
-            }
+            // Tier 2: gateway bases (independent of each other; depend
+            // on nothing in this test surface's bootstrap).
+            build_tier(
+                "tier 2",
+                FLAVORS
+                    .iter()
+                    .map(|f| {
+                        (
+                            format!("quay.io/eval-containers/gateways/{f}"),
+                            format!("gateways/{f}"),
+                            format!("gateways/{f}/Dockerfile"),
+                        )
+                    })
+                    .collect(),
+            )
+            .await;
+            // Tier 3: model images — thin FROM-gateway layers.
+            build_tier(
+                "tier 3",
+                FLAVORS
+                    .iter()
+                    .map(|f| {
+                        let (name, _tag) = gateway_image_ref(f);
+                        (
+                            name,
+                            format!("models/gpt-5.4--{f}"),
+                            format!("models/gpt-5.4--{f}/Dockerfile"),
+                        )
+                    })
+                    .collect(),
+            )
+            .await;
         })
         .await;
 }
