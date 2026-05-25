@@ -58,7 +58,7 @@ use tokio::sync::OnceCell;
 
 #[path = "../common/mod.rs"]
 mod common;
-use common::tc_build_context;
+use common::build_tier;
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -104,62 +104,33 @@ static IMAGES_BUILT: OnceCell<()> = OnceCell::const_new();
 /// process. The `OnceCell` makes concurrent calls (cargo runs tests on
 /// many threads) safe — late callers await the in-flight build.
 async fn ensure_built() {
-    /// Run a tier's builds concurrently; await all before returning.
-    async fn build_tier(name: &str, specs: Vec<(String, String, String)>) {
-        let mut set = tokio::task::JoinSet::new();
-        for (descriptor, ctx, dockerfile) in specs {
-            set.spawn(async move {
-                tc_build_context(&descriptor, "latest", &ctx, &dockerfile).await;
-            });
-        }
-        while let Some(res) = set.join_next().await {
-            res.unwrap_or_else(|e| panic!("{name}: build task panicked: {e:?}"));
-        }
-    }
-
     IMAGES_BUILT
         .get_or_init(|| async {
             let _ = dotenvy::dotenv();
             // Tier 1: otelcol (sidecar for OTel tests).
             build_tier(
                 "tier 1",
-                vec![(
-                    "quay.io/eval-containers/core/otel".into(),
-                    "core/otel".into(),
-                    "core/otel/Dockerfile".into(),
-                )],
+                [("quay.io/eval-containers/core/otel", "core/otel")],
             )
             .await;
-            // Tier 2: gateway bases (independent of each other; depend
-            // on nothing in this test surface's bootstrap).
+            // Tier 2: gateway bases (independent of each other).
             build_tier(
                 "tier 2",
-                FLAVORS
-                    .iter()
-                    .map(|f| {
-                        (
-                            format!("quay.io/eval-containers/gateways/{f}"),
-                            format!("gateways/{f}"),
-                            format!("gateways/{f}/Dockerfile"),
-                        )
-                    })
-                    .collect(),
+                FLAVORS.iter().map(|f| {
+                    (
+                        format!("quay.io/eval-containers/gateways/{f}"),
+                        format!("gateways/{f}"),
+                    )
+                }),
             )
             .await;
             // Tier 3: model images — thin FROM-gateway layers.
             build_tier(
                 "tier 3",
-                FLAVORS
-                    .iter()
-                    .map(|f| {
-                        let (name, _tag) = gateway_image_ref(f);
-                        (
-                            name,
-                            format!("models/gpt-5.4--{f}"),
-                            format!("models/gpt-5.4--{f}/Dockerfile"),
-                        )
-                    })
-                    .collect(),
+                FLAVORS.iter().map(|f| {
+                    let (name, _tag) = gateway_image_ref(f);
+                    (name, format!("models/gpt-5.4--{f}"))
+                }),
             )
             .await;
         })
