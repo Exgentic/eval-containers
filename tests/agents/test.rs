@@ -54,13 +54,17 @@
 //! testcontainers — rule 6 doesn't allow shelling to docker build,
 //! and replay is a tiny ~50 MB image so the cost is negligible.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use testcontainers::core::{BuildImageOptions, ContainerPort, Mount, WaitFor};
-use testcontainers::runners::{AsyncBuilder, AsyncRunner};
-use testcontainers::{ContainerAsync, GenericBuildableImage, GenericImage, ImageExt};
+use testcontainers::core::{ContainerPort, Mount, WaitFor};
+use testcontainers::runners::AsyncRunner;
+use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::sync::OnceCell;
+
+#[path = "../common/mod.rs"]
+mod common;
+use common::tc_build_context;
 
 // ─── Configuration ───────────────────────────────────────────────────
 
@@ -112,29 +116,17 @@ const FIRST_CALL_TIMEOUT: Duration = Duration::from_secs(150);
 
 static MOCK_BUILT: OnceCell<()> = OnceCell::const_new();
 
-/// Build models/replay via testcontainers if it's not in the local
-/// store. Reuses the `tc_build_context` pattern from tests/replay.
+/// Build models/replay via testcontainers if it's not in the local store.
 async fn ensure_mock_built() {
     MOCK_BUILT
         .get_or_init(|| async {
-            let mut img = GenericBuildableImage::new("quay.io/eval-containers/models/replay", "latest")
-                .with_dockerfile("models/replay/Dockerfile");
-            for entry in std::fs::read_dir("models/replay").expect("models/replay missing") {
-                let entry = entry.expect("read_dir entry");
-                let path = entry.path();
-                if !path.is_file() {
-                    continue;
-                }
-                let name = path.file_name().unwrap().to_string_lossy().to_string();
-                if name == "Dockerfile" {
-                    continue;
-                }
-                img = img.with_file(path, name);
-            }
-            let _ = img
-                .build_image_with(BuildImageOptions::new())
-                .await
-                .unwrap_or_else(|e| panic!("build models/replay: {e:?}"));
+            tc_build_context(
+                "quay.io/eval-containers/models/replay",
+                "latest",
+                "models/replay",
+                "models/replay/Dockerfile",
+            )
+            .await;
         })
         .await;
 }
@@ -171,6 +163,7 @@ async fn start_agent(
     agent: &str,
     net: &str,
     mock_host: &str,
+    output_dir: &Path,
 ) -> ContainerAsync<GenericImage> {
     // We use the agents-smoke EVAL image (NOT the bare agent image): its
     // ENTRYPOINT is core/entrypoint/eval-entrypoint.sh which handles
@@ -183,6 +176,12 @@ async fn start_agent(
     // Env vars mirror what compose/services.yaml + benchmarks/agents-smoke
     // pass to the runner in production. eval-entrypoint reads them
     // and forwards through `su agent -c "..."`.
+    //
+    // `/output` is bind-mounted to the host tempdir so the panic path
+    // can read `agent/stdout.log` / `agent/stderr.log` directly from
+    // the host filesystem — eval-entrypoint redirects `su agent` output
+    // into those files inside the container, and the container is
+    // typically already stopped by the time the panic path runs.
     GenericImage::new(
         format!("quay.io/eval-containers/evals/agents-smoke--{agent}"),
         "latest".to_string(),
@@ -193,15 +192,16 @@ async fn start_agent(
     .with_wait_for(WaitFor::seconds(1))
     .with_platform("linux/amd64")
     .with_network(net)
+    .with_mount(Mount::bind_mount(
+        output_dir.to_str().expect("utf8 output dir"),
+        "/output",
+    ))
     .with_env_var("EVAL_BENCHMARK", "agents-smoke")
     .with_env_var("EVAL_AGENT", agent)
     .with_env_var("EVAL_TASK_ID", "0")
     .with_env_var("EVAL_MODEL", "mock")
     // Cap the agent's own runtime so a hung agent doesn't keep
-    // burning until the cargo timeout. Must be > FIRST_CALL_TIMEOUT
-    // so the container is still alive when the panic path tries to
-    // read /output/agent/stderr.log — if the agent exits first, the
-    // container exits, and read_in_container returns empty.
+    // burning until the cargo timeout.
     .with_env_var("EVAL_TIMEOUT", "180")
     // All three protocol URLs — each agent picks exactly one
     // (agents/RULES.md, "Protocol exclusivity"). Path prefixes per
@@ -262,24 +262,23 @@ async fn assert_agent_calls_llm(agent: &str) {
     let net = format!("agent-smoke-{agent}-{nanos}");
     let mock_host = format!("mock-{agent}-{nanos}");
 
+    // The agent writes its real stdout/stderr into /output/agent/*.log
+    // inside the container (eval-entrypoint redirects there). Bind-mount
+    // /output to a host tempdir so the panic path below can read the
+    // logs without depending on the container still being alive.
+    let output_dir = tempfile::tempdir().expect("create output tempdir");
     let replay = start_replay_mock(&net, &mock_host).await;
-    let _agent_c = start_agent(agent, &net, &mock_host).await;
+    let _agent_c = start_agent(agent, &net, &mock_host, output_dir.path()).await;
 
     let got = await_first_call(&replay, FIRST_CALL_TIMEOUT).await;
     if !got {
-        // Surface every log surface we can reach. The container's own
-        // stdout/stderr only show eval-entrypoint chatter — the actual
-        // agent output is at `/output/agent/{stdout,stderr}.log` because
-        // eval-entrypoint redirects `su agent -c '...'` into files. Read
-        // those out of the container so we don't need to manually
-        // `podman logs` an already-torn-down pod.
         let replay_err = replay.stderr_to_vec().await.unwrap_or_default();
         let container_out = _agent_c.stdout_to_vec().await.unwrap_or_default();
         let container_err = _agent_c.stderr_to_vec().await.unwrap_or_default();
         let agent_stdout =
-            read_in_container(&_agent_c, "/output/agent/stdout.log").await.unwrap_or_default();
+            std::fs::read(output_dir.path().join("agent/stdout.log")).unwrap_or_default();
         let agent_stderr =
-            read_in_container(&_agent_c, "/output/agent/stderr.log").await.unwrap_or_default();
+            std::fs::read(output_dir.path().join("agent/stderr.log")).unwrap_or_default();
         panic!(
             "{agent} did not make any LLM call within {:?}.\n\n\
              ─── replay stderr ───\n{}\n\
@@ -295,43 +294,6 @@ async fn assert_agent_calls_llm(agent: &str) {
             String::from_utf8_lossy(&agent_stderr),
         );
     }
-}
-
-/// Read a file from inside a (possibly stopped) container via `docker cp`.
-/// `exec cat` works only while the container is still running, but
-/// eval-entrypoint.sh exits as soon as the agent process exits — by the
-/// time the test's panic path runs, the container is usually stopped.
-/// `docker cp` reads from the layered filesystem and works on stopped
-/// containers too.
-async fn read_in_container(
-    c: &ContainerAsync<GenericImage>,
-    path: &str,
-) -> Option<Vec<u8>> {
-    let id = c.id().to_string();
-    let path = path.to_string();
-    tokio::task::spawn_blocking(move || {
-        let out = std::process::Command::new("docker")
-            .args(["cp", &format!("{id}:{path}"), "-"])
-            .output()
-            .ok()?;
-        if !out.status.success() {
-            return None;
-        }
-        // `docker cp <container>:<file> -` writes a tar stream to stdout.
-        // Untar in memory to recover the file's bytes.
-        let mut archive = tar::Archive::new(out.stdout.as_slice());
-        for entry in archive.entries().ok()? {
-            let mut entry = entry.ok()?;
-            let mut buf = Vec::new();
-            use std::io::Read;
-            entry.read_to_end(&mut buf).ok()?;
-            return Some(buf);
-        }
-        None
-    })
-    .await
-    .ok()
-    .flatten()
 }
 
 // ─── Per-agent test instantiation ───────────────────────────────────
