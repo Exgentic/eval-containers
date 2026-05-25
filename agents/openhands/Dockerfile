@@ -15,8 +15,6 @@ ENV EVAL_AGENT=openhands
 # Python. Single install.sh is the source of truth for both the agent image
 # and combo builds. We use the SDK package (openhands-ai) wrapped by
 # run_openhands.py as a one-shot CLI.
-COPY run_openhands.py /opt/agent/run_openhands.py
-RUN chmod +x /opt/agent/run_openhands.py
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
@@ -31,6 +29,10 @@ uv pip install --quiet --python /opt/openhands-venv/bin/python openhands-ai==1.7
 chmod -R a+rX /opt/uv-python /opt/openhands-venv
 I
 RUN /opt/agent/install.sh
+# Late COPY: editing run_openhands.py here invalidates only the layers
+# below, not the multi-minute venv install above.
+COPY run_openhands.py /opt/agent/run_openhands.py
+RUN chmod +x /opt/agent/run_openhands.py
 RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash
 set -euo pipefail

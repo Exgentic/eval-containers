@@ -14,6 +14,15 @@ import sys
 import tempfile
 
 
+def _env(*keys: str, default: str) -> str:
+    """First non-empty env var from `keys`, else `default`."""
+    for k in keys:
+        v = os.environ.get(k)
+        if v:
+            return v
+    return default
+
+
 def main() -> None:
     task = os.environ.get("TASK", "")
     if not task:
@@ -26,17 +35,11 @@ def main() -> None:
     # override above has to land first.
     from openhands.sdk import Agent, Conversation, LLM, Message, TextContent
 
-    model = os.environ.get(
-        "LLM_MODEL", os.environ.get("EVAL_MODEL", "openai/default")
-    )
+    model = _env("LLM_MODEL", "EVAL_MODEL", default="openai/default")
     if "/" not in model:
         model = f"openai/{model}"
-    api_key = os.environ.get(
-        "LLM_API_KEY", os.environ.get("OPENAI_API_KEY", "sk-proxy")
-    )
-    base_url = os.environ.get(
-        "LLM_BASE_URL", os.environ.get("OPENAI_BASE_URL", "http://model:4000")
-    )
+    api_key = _env("LLM_API_KEY", "OPENAI_API_KEY", default="sk-proxy")
+    base_url = _env("LLM_BASE_URL", "OPENAI_BASE_URL", default="http://model:4000")
 
     llm = LLM(model=model, api_key=api_key, base_url=base_url, usage_id="smoke")
     agent = Agent(llm=llm)
