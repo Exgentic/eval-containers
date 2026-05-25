@@ -13,8 +13,6 @@ ENV EVAL_AGENT=terminus-2
 # or 3.11 (appworld 3.11, ubuntu:22.04 3.10). Provision a self-contained
 # venv via uv's managed Python and run from it. Single install.sh is the
 # source of truth for both the agent image and combo builds.
-COPY run.py /opt/agent/run.py
-RUN chmod +x /opt/agent/run.py
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
@@ -30,6 +28,10 @@ uv pip install --quiet --python /opt/terminus2-venv/bin/python harbor==0.6.4 asc
 chmod -R a+rX /opt/uv-python /opt/terminus2-venv
 I
 RUN /opt/agent/install.sh
+# Late COPY: editing run.py here invalidates only the layers below,
+# not the multi-minute apt+venv install above.
+COPY run.py /opt/agent/run.py
+RUN chmod +x /opt/agent/run.py
 RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash
 set -euo pipefail

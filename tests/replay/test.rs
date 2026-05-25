@@ -313,7 +313,6 @@ async fn bootstrap_core_bases() {
             ] {
                 tc_build_context(descriptor, "latest", ctx, &format!("{ctx}/Dockerfile")).await;
             }
-
         })
         .await;
 }
