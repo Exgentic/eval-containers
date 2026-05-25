@@ -29,12 +29,16 @@
 
 	# Protocols portkey self-hosted cannot translate. Return 501 with a
 	# clear error body — never silently fall back to a bundled translator.
+	# `header Content-Type` on the matched handler so strict clients can
+	# parse the body without sniffing.
 	handle /anthropic/* {
+		header Content-Type application/json
 		respond `{"error":{"type":"not_implemented","message":"portkey gateway does not translate Anthropic Messages to the upstream OpenAI Chat protocol. Use the bifrost or litellm gateway flavor for /anthropic support."}}` 501 {
 			close
 		}
 	}
 	handle /genai/* {
+		header Content-Type application/json
 		respond `{"error":{"type":"not_implemented","message":"portkey gateway does not translate Google Gemini to the upstream OpenAI Chat protocol. Use the bifrost or litellm gateway flavor for /genai support."}}` 501 {
 			close
 		}
