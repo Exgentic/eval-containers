@@ -222,6 +222,24 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 static CORE_BASES_BOOTSTRAPPED: OnceCell<()> = OnceCell::const_new();
 
 async fn bootstrap_core_bases() {
+    /// Build each tier concurrently — within a tier, members are
+    /// independent. Across tiers we serialize (tier 2's bases `FROM`
+    /// tier 1).
+    async fn build_tier(name: &str, bases: &[(&str, &str)]) {
+        let mut set = tokio::task::JoinSet::new();
+        for (descriptor, ctx) in bases {
+            let descriptor = descriptor.to_string();
+            let ctx = ctx.to_string();
+            set.spawn(async move {
+                let dockerfile = format!("{ctx}/Dockerfile");
+                tc_build_context(&descriptor, "latest", &ctx, &dockerfile).await;
+            });
+        }
+        while let Some(res) = set.join_next().await {
+            res.unwrap_or_else(|e| panic!("{name}: build task panicked: {e:?}"));
+        }
+    }
+
     CORE_BASES_BOOTSTRAPPED
         .get_or_init(|| async {
             // Load `.env` from cwd / parents so HF_TOKEN (and any other
@@ -230,59 +248,36 @@ async fn bootstrap_core_bases() {
             // `src/main.rs` does for the CLI itself — single source of
             // truth (`dotenvy`), no bespoke parsing.
             let _ = dotenvy::dotenv();
-            // Tier 1 — leaf bases (no inter-eval-containers deps).
-            for (descriptor, ctx) in [
-                ("quay.io/eval-containers/core/entrypoint", "core/entrypoint"),
-                (
-                    "quay.io/eval-containers/core/test-exact-match",
-                    "core/test-exact-match",
-                ),
-                ("quay.io/eval-containers/core/litellm", "core/litellm"),
-                ("quay.io/eval-containers/core/llm-bridge", "core/llm-bridge"),
-                ("quay.io/eval-containers/core/otel", "core/otel"),
-                (
-                    "quay.io/eval-containers/core/runtime-bundle",
-                    "core/runtime-bundle",
-                ),
-                (
-                    "quay.io/eval-containers/core/agent-base-node",
-                    "core/agent-base-node",
-                ),
-                (
-                    "quay.io/eval-containers/core/agent-base-python",
-                    "core/agent-base-python",
-                ),
-                (
-                    "quay.io/eval-containers/core/agent-base-rust",
-                    "core/agent-base-rust",
-                ),
-                ("quay.io/eval-containers/gateways/bifrost", "gateways/bifrost"),
-                ("quay.io/eval-containers/models/replay", "models/replay"),
-            ] {
-                tc_build_context(descriptor, "latest", ctx, &format!("{ctx}/Dockerfile")).await;
-            }
-
-            // Tier 2 — bases that depend on tier 1.
-            for (descriptor, ctx) in [
-                (
-                    "quay.io/eval-containers/core/benchmark-base-hf",
-                    "core/benchmark-base-hf",
-                ),
-                (
-                    "quay.io/eval-containers/core/benchmark-base-github",
-                    "core/benchmark-base-github",
-                ),
-                (
-                    "quay.io/eval-containers/core/benchmark-base-external",
-                    "core/benchmark-base-external",
-                ),
-                (
-                    "quay.io/eval-containers/models/gpt-5.4--bifrost",
-                    "models/gpt-5.4--bifrost",
-                ),
-            ] {
-                tc_build_context(descriptor, "latest", ctx, &format!("{ctx}/Dockerfile")).await;
-            }
+            build_tier(
+                "tier 1",
+                // Leaf bases (no inter-eval-containers deps).
+                &[
+                    ("quay.io/eval-containers/core/entrypoint", "core/entrypoint"),
+                    ("quay.io/eval-containers/core/test-exact-match", "core/test-exact-match"),
+                    ("quay.io/eval-containers/core/litellm", "core/litellm"),
+                    ("quay.io/eval-containers/core/llm-bridge", "core/llm-bridge"),
+                    ("quay.io/eval-containers/core/otel", "core/otel"),
+                    ("quay.io/eval-containers/core/runtime-bundle", "core/runtime-bundle"),
+                    ("quay.io/eval-containers/core/agent-base-node", "core/agent-base-node"),
+                    ("quay.io/eval-containers/core/agent-base-python", "core/agent-base-python"),
+                    ("quay.io/eval-containers/core/agent-base-rust", "core/agent-base-rust"),
+                    ("quay.io/eval-containers/gateways/bifrost", "gateways/bifrost"),
+                    ("quay.io/eval-containers/models/replay", "models/replay"),
+                ],
+            )
+            .await;
+            build_tier(
+                "tier 2",
+                // Depend on tier 1 (benchmark-base-* FROM core/entrypoint;
+                // gpt-5.4--bifrost COPYs /opt/gateway from gateways/bifrost).
+                &[
+                    ("quay.io/eval-containers/core/benchmark-base-hf", "core/benchmark-base-hf"),
+                    ("quay.io/eval-containers/core/benchmark-base-github", "core/benchmark-base-github"),
+                    ("quay.io/eval-containers/core/benchmark-base-external", "core/benchmark-base-external"),
+                    ("quay.io/eval-containers/models/gpt-5.4--bifrost", "models/gpt-5.4--bifrost"),
+                ],
+            )
+            .await;
         })
         .await;
 }
