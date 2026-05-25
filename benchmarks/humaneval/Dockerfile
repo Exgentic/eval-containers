@@ -2,7 +2,8 @@
 # 164 tasks. Data: HuggingFace openai/openai_humaneval
 # Agent completes a Python function. Test runs it against unit tests.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="humaneval"

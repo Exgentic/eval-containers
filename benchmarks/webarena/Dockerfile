@@ -3,7 +3,8 @@
 # Multi-service with website sidecars + mitmproxy for HAR capture.
 # Evaluation via official webarena-verified package.
 
-FROM quay.io/eval-containers/core/benchmark-base-github:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-github:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="webarena"

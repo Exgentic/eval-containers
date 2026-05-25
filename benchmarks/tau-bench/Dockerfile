@@ -4,7 +4,8 @@
 # Evaluation is state-based (database + output checks), requires the TAU-bench runtime.
 # Externally graded: test writes -1.
 
-FROM quay.io/eval-containers/core/benchmark-base-external:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-external:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="tau-bench"

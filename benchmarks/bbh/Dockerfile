@@ -3,7 +3,9 @@
 # Data: github suzgunmirac/BIG-Bench-Hard
 # Agent prints answer to stdout. Test compares to expected target.
 
-FROM quay.io/eval-containers/core/benchmark-base-github:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core/benchmark-base-github:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="bbh"
@@ -59,7 +61,7 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=bbh
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

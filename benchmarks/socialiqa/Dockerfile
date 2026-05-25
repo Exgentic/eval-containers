@@ -6,7 +6,9 @@
 # Python loader script, which can't be parquet-converted by HF. We fetch the
 # original zip hosted by AI2 on Google Cloud Storage (same data).
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="socialiqa"
@@ -58,7 +60,7 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=socialiqa
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

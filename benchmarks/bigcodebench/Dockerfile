@@ -2,7 +2,8 @@
 # 1140 tasks. Data: HuggingFace bigcode/bigcodebench (v0.1.4)
 # Agent writes a complete Python function. Test runs upstream unittest harness.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="bigcodebench"

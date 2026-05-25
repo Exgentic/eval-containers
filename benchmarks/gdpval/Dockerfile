@@ -3,7 +3,8 @@
 # 220 tasks. Data: HuggingFace openai/gdpval
 # Professional knowledge work. Scoring: LLM-as-judge via model proxy.
 
-FROM quay.io/eval-containers/core/benchmark-base-external:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-external:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="gdpval"

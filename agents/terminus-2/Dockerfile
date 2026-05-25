@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # Terminus-2 agent image (Harbor Framework)
-FROM quay.io/eval-containers/core/agent-base-python:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/agent-base-python:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="terminus-2"
 LABEL eval.agent.description="Harbor Terminus-2 reference agent"

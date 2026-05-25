@@ -35,7 +35,8 @@ COPY --from=docker.io/maximhq/bifrost:latest /app/main /opt/gateway/main
 COPY start  /opt/gateway/start
 COPY health /opt/gateway/health
 RUN chmod +x /opt/gateway/start /opt/gateway/health /opt/gateway/main \
- && mkdir -p /opt/gateway/data
+ && mkdir -p /opt/gateway/data \
+ && chmod -R 777 /opt/gateway/data
 
 EXPOSE 4000
 ENTRYPOINT ["/opt/gateway/start"]

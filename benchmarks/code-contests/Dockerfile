@@ -2,7 +2,8 @@
 # 165 test tasks from Codeforces/AtCoder/etc. Data: HuggingFace deepmind/code_contests
 # Agent writes a solution. Test runs it against public + private + generated I/O tests.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="code-contests"

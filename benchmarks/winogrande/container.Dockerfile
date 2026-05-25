@@ -1,1 +1,2 @@
-FROM quay.io/eval-containers/evals/winogrande--claude-code:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/evals/winogrande--claude-code:latest

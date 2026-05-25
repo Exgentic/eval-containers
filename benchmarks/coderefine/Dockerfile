@@ -4,7 +4,9 @@
 # Test compares stdout to the reference fix (exact match; upstream follows the same
 # convention — all identifiers are normalized).
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="coderefine"
@@ -39,7 +41,7 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=coderefine
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

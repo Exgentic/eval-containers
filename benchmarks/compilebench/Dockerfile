@@ -11,6 +11,8 @@
 ARG EVAL_TASK_ID
 ARG BASE_IMAGE=ubuntu:22.04
 
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
 FROM ${BASE_IMAGE}
 
 LABEL eval.type="benchmark"
@@ -65,8 +67,8 @@ RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /workdir
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=entrypoint-scripts /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=entrypoint-scripts /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'

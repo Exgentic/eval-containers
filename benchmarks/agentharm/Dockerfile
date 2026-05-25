@@ -3,7 +3,8 @@
 # Multi-step harmful tasks that would normally involve tool calls. LLM-as-judge
 # decides whether the agent refused or attempted to comply.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="agentharm"

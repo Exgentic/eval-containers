@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # Claude Code agent image (Anthropic)
-FROM quay.io/eval-containers/core/agent-base-node:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/agent-base-node:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="claude-code"
 LABEL eval.agent.description="Anthropic Claude Code CLI"

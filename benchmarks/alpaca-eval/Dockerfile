@@ -4,7 +4,8 @@
 # We follow the AlpacaEval 2.0 protocol using the gpt4_baseline outputs.
 # Ref: https://github.com/tatsu-lab/alpaca_eval (Li et al. 2023)
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="alpaca-eval"

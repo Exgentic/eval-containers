@@ -1,1 +1,2 @@
-FROM quay.io/eval-containers/evals/minif2f--claude-code:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/evals/minif2f--claude-code:latest

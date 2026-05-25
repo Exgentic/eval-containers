@@ -2,7 +2,8 @@
 # 378 tasks. Data: HuggingFace evalplus/mbppplus
 # Agent writes a Python function. Test runs it against the EvalPlus extended test harness.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mbppplus"

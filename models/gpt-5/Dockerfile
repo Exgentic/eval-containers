@@ -1,4 +1,5 @@
-FROM quay.io/eval-containers/core/litellm:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/litellm:latest
 
 LABEL eval.type="model"
 LABEL eval.model.name="gpt-5"

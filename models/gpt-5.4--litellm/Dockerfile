@@ -8,7 +8,8 @@
 #                       Litellm parses the prefix natively to dispatch
 #                       to the right provider plugin.
 #   <PROVIDER>_API_KEY  read by the chosen provider plugin from container env.
-FROM quay.io/eval-containers/gateways/litellm:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/gateways/litellm:latest
 
 LABEL eval.type="model"
 LABEL gateway.kind="litellm"

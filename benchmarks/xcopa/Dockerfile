@@ -2,7 +2,9 @@
 # 5500 tasks (500 test examples x 11 languages). Data: HuggingFace cambridgeltl/xcopa
 # Agent prints A or B. Test compares to expected choice.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="xcopa"
@@ -54,7 +56,7 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=xcopa
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 # Runtime: materialize only the requested task's files from the JSONL.

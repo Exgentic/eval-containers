@@ -2,7 +2,8 @@
 # 541 tasks. Data: HuggingFace google/IFEval
 # Agent follows a prompt with verifiable constraints. Test checks instruction compliance.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="ifeval"

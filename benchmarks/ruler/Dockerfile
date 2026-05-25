@@ -4,7 +4,8 @@
 # common_words_extraction across a range of context lengths.
 # Ref: https://github.com/hsiehjackson/RULER (Hsieh et al. 2024, arXiv:2404.06654)
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="ruler"

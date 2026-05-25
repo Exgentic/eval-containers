@@ -2,7 +2,8 @@
 # 5000 tasks. Data: openai/healthbench via Azure blob
 # Agent responds to health conversations. Test uses LLM-as-judge with physician rubrics.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="healthbench"

@@ -18,6 +18,8 @@
 # and runs `docker build` to produce sbp/instance:${EVAL_TASK_ID}).
 
 ARG EVAL_TASK_ID
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
 FROM sbp/instance:${EVAL_TASK_ID}
 
 LABEL eval.type="benchmark"
@@ -101,7 +103,7 @@ GRADE
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=entrypoint-scripts /eval-entrypoint.sh /eval-entrypoint.sh
 RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
