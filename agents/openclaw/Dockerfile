@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # OpenClaw agent image
-FROM quay.io/eval-containers/core/agent-base-node:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/agent-base-node:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="openclaw"
 LABEL eval.agent.description="OpenClaw general-purpose AI agent"

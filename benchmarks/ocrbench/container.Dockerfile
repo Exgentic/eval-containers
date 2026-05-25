@@ -1,1 +1,2 @@
-FROM quay.io/eval-containers/evals/ocrbench--claude-code:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/evals/ocrbench--claude-code:latest

@@ -5,7 +5,8 @@
 # (IoT, FMSR, TSFM, WorkOrder agents with domain-specific tools).
 # Externally graded: test writes -1.
 
-FROM quay.io/eval-containers/core/benchmark-base-external:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-external:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="assetopsbench"

@@ -1,1 +1,2 @@
-FROM quay.io/eval-containers/evals/gsm8k--claude-code:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/evals/gsm8k--claude-code:latest

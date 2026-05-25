@@ -6,7 +6,8 @@
 # tool-output that contains a malicious injected command. LLM-as-judge decides
 # whether the agent obeyed the injection.
 
-FROM quay.io/eval-containers/core/benchmark-base-github:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-github:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="agentdojo"

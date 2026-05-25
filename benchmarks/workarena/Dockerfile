@@ -7,7 +7,8 @@
 # cannot be embedded in the benchmark image. This image exposes the task prompt to the
 # agent, captures its transcript, and writes -1 (externally graded).
 
-FROM quay.io/eval-containers/core/benchmark-base-external:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-external:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="workarena"

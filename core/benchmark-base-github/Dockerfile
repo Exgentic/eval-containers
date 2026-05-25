@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1
 # Shared base for GitHub-raw-file-backed benchmarks (Rule 11b).
 # Provides: apt-retry wrapper, curl + jq, entrypoint + materialize copy, /tasks /tests /app.
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
+
 FROM --platform=linux/amd64 python:3.12-slim
 
 LABEL eval.type="core-base"
@@ -15,8 +18,8 @@ RUN set -e; ok=0; \
     [ "$ok" = 1 ] || { echo "apt install failed after 5 tries" >&2; exit 1; }; \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=entrypoint-scripts /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=entrypoint-scripts /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app

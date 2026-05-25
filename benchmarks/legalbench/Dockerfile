@@ -3,7 +3,9 @@
 # Data: HuggingFace nguha/legalbench (TSV files, test splits).
 # Agent reads a legal text and prints a classification label. Test compares exact match (case-insensitive).
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="legalbench"
@@ -118,7 +120,7 @@ RUN chmod 600 /tasks/all.jsonl /tasks/.count
 WORKDIR /app
 ENV EVAL_BENCHMARK=legalbench
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

@@ -1,1 +1,2 @@
-FROM quay.io/eval-containers/evals/harmbench--claude-code:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/evals/harmbench--claude-code:latest

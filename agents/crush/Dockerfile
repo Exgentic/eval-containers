@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # Crush agent image (Charm)
-FROM quay.io/eval-containers/core/agent-base-rust:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/agent-base-rust:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="crush"
 LABEL eval.agent.description="Charm Crush terminal AI coding assistant"

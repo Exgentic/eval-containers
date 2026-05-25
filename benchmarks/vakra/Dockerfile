@@ -4,7 +4,8 @@
 # Full evaluation requires the VAKRA executable environment (8,000+ locally
 # hosted APIs, SQLite databases, document collections). Externally graded.
 
-FROM quay.io/eval-containers/core/benchmark-base-external:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-external:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="vakra"

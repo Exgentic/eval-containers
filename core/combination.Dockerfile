@@ -43,6 +43,7 @@
 ARG BENCHMARK_IMAGE
 ARG AGENT_IMAGE
 ARG AGENT_VERSION
+ARG REGISTRY=quay.io/eval-containers
 ARG MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--bifrost:latest
 ARG OTEL_IMAGE=quay.io/eval-containers/core/otel:latest
 ARG RUNTIME_BUNDLE_IMAGE=quay.io/eval-containers/core/runtime-bundle:latest

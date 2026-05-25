@@ -7,6 +7,9 @@
 # Plus: default /tests/test.sh writes reward=-1 so externally-graded
 # benchmarks start from a known-bad baseline that their real grader
 # overrides.
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
+
 FROM --platform=linux/amd64 python:3.12-slim
 
 LABEL eval.type="core-base"
@@ -41,9 +44,9 @@ RUN set -e; ok=0; \
     done; \
     [ "$ok" = 1 ] || { echo "uv pip install failed after 5 tries" >&2; exit 1; }
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
+COPY --from=entrypoint-scripts /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=entrypoint-scripts /eval-materialize-task /eval-materialize-task
+COPY --from=entrypoint-scripts /eval-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app && \

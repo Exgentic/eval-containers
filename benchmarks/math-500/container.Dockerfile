@@ -1,1 +1,2 @@
-FROM quay.io/eval-containers/evals/math-500--claude-code:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/evals/math-500--claude-code:latest

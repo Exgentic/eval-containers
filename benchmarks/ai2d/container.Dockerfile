@@ -1,1 +1,2 @@
-FROM quay.io/eval-containers/evals/ai2d--claude-code:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/evals/ai2d--claude-code:latest

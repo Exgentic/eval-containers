@@ -4,7 +4,8 @@
 # Full reproduction requires the upstream CodeOcean capsules (not distributed here),
 # so scoring is deferred to an external grader: reward = -1 per benchmarks/RULES.md rule 19.
 
-FROM quay.io/eval-containers/core/benchmark-base-external:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-external:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="core-bench"

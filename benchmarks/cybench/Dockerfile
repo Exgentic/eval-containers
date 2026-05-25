@@ -15,6 +15,9 @@
 ARG EVAL_TASK_ID
 
 # Stage 1: pull the task directory from upstream at a pinned commit.
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
+FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
 FROM alpine/git:2.47.2 AS upstream
 ARG EVAL_TASK_ID
 ARG CYBENCH_REF=d494f247d66439598d1413a309b756a82935ea14
@@ -89,11 +92,11 @@ RUN mkdir -p /app \
  && if [ -d /task/challenge ]; then cp -r /task/challenge/. /app/ ; fi
 
 # Scoring: exact-match on the flag the agent printed.
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=entrypoint-scripts /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=entrypoint-scripts /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'

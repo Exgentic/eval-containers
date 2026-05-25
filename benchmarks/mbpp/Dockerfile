@@ -2,7 +2,8 @@
 # 500 tasks. Data: HuggingFace google-research-datasets/mbpp
 # Agent writes a Python function. Test runs it against assert-based test cases.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+FROM ${REGISTRY}/core/benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mbpp"
