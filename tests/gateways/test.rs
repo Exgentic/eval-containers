@@ -51,10 +51,14 @@ use std::time::Duration;
 use reqwest::Client;
 use serde_json::{json, Value};
 use testcontainers::core::wait::HttpWaitStrategy;
-use testcontainers::core::{BuildImageOptions, ContainerPort, Mount, WaitFor};
-use testcontainers::runners::{AsyncBuilder, AsyncRunner};
-use testcontainers::{ContainerAsync, GenericBuildableImage, GenericImage, ImageExt};
+use testcontainers::core::{ContainerPort, Mount, WaitFor};
+use testcontainers::runners::AsyncRunner;
+use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::sync::OnceCell;
+
+#[path = "../common/mod.rs"]
+mod common;
+use common::tc_build_context;
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -87,34 +91,14 @@ fn gateway_image_ref(flavor: &str) -> (String, String) {
     )
 }
 
-// ─── Build bootstrap (matches tests/replay/test.rs pattern) ───────────
+// ─── Build bootstrap ─────────────────────────────────────────────────
 //
 // All container work goes through testcontainers per rule 6. Builds are
 // idempotent and cached by the layer store, so the second test in a
-// session pays only the inspect-cache cost.
+// session pays only the inspect-cache cost. Image build helper lives in
+// `tests/common/mod.rs` (shared with tests/agents and tests/replay).
 
 static IMAGES_BUILT: OnceCell<()> = OnceCell::const_new();
-
-async fn tc_build_context(descriptor: &str, tag: &str, ctx_dir: &str, dockerfile: &str) {
-    let mut image = GenericBuildableImage::new(descriptor, tag).with_dockerfile(dockerfile);
-    let ctx = Path::new(ctx_dir);
-    for entry in std::fs::read_dir(ctx).unwrap_or_else(|e| panic!("{ctx_dir}: {e}")) {
-        let entry = entry.expect("read_dir entry");
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
-        if path.to_string_lossy() == dockerfile {
-            continue;
-        }
-        image = image.with_file(path, name);
-    }
-    let _built = image
-        .build_image_with(BuildImageOptions::new())
-        .await
-        .unwrap_or_else(|e| panic!("tc build {descriptor}:{tag}: {e:?}"));
-}
 
 /// Build every image these tests transitively need, exactly once per
 /// process. The `OnceCell` makes concurrent calls (cargo runs tests on
