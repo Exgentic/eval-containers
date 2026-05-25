@@ -15,7 +15,7 @@ use tokio::sync::OnceCell;
 
 #[path = "../common/mod.rs"]
 mod common;
-use common::tc_build_context;
+use common::build_tier;
 
 fn read_json(path: &Path) -> Option<serde_json::Value> {
     let content = fs::read_to_string(path).ok()?;
@@ -47,7 +47,20 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 /// out on the runner — runner is one-shot and exits, not "healthy"); we
 /// use `with_wait_for_service("runner", WaitFor::Exit(_))` to block until
 /// the runner finishes before we assert on `result.json`.
-async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> DockerCompose {
+///
+/// Returned together: a `DockerCompose` plus the override `NamedTempFile`.
+/// Declaration order matters — `compose.down()` (called when the
+/// `DockerCompose` field is dropped) runs while the override file is
+/// still on disk; the file drops afterward.
+/// Held by the test only for its `Drop` order (compose down first, then
+/// override file). Neither field is read after construction.
+#[allow(dead_code)]
+struct ReplayHandle {
+    compose: DockerCompose,
+    _override: tempfile::NamedTempFile,
+}
+
+async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> ReplayHandle {
     let cwd = std::env::current_dir().unwrap();
 
     // Determine which benchmark/task_id we're running so we can pre-create
@@ -102,13 +115,21 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
         fixture_abs = fixture_abs.display(),
         host_output = host_output.display(),
     );
-    let override_path =
-        std::env::temp_dir().join(format!("eval-replay-{}.yaml", fixture.replace('/', "-")));
-    fs::write(&override_path, &override_content).expect("failed to write compose override");
+    // `NamedTempFile` auto-deletes on drop. Held by `ReplayHandle`
+    // alongside the `DockerCompose` so the file outlives compose.down().
+    let mut override_file = tempfile::Builder::new()
+        .prefix("eval-replay-")
+        .suffix(".yaml")
+        .tempfile()
+        .expect("create compose override tempfile");
+    use std::io::Write;
+    override_file
+        .write_all(override_content.as_bytes())
+        .expect("write compose override");
 
     let compose_abs = cwd.join(compose_file);
     let compose_str = compose_abs.to_str().unwrap().to_string();
-    let override_str = override_path.to_str().unwrap().to_string();
+    let override_str = override_file.path().to_str().unwrap().to_string();
 
     let mut compose =
         DockerCompose::with_local_client(&[compose_str.as_str(), override_str.as_str()]);
@@ -153,7 +174,10 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
             timeout_secs / 60
         ),
     }
-    compose
+    ReplayHandle {
+        compose,
+        _override: override_file,
+    }
 }
 
 /// Assert the standard output contract: result.json with required fields.
@@ -222,24 +246,8 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 static CORE_BASES_BOOTSTRAPPED: OnceCell<()> = OnceCell::const_new();
 
 async fn bootstrap_core_bases() {
-    /// Build each tier concurrently — within a tier, members are
-    /// independent. Across tiers we serialize (tier 2's bases `FROM`
-    /// tier 1).
-    async fn build_tier(name: &str, bases: &[(&str, &str)]) {
-        let mut set = tokio::task::JoinSet::new();
-        for (descriptor, ctx) in bases {
-            let descriptor = descriptor.to_string();
-            let ctx = ctx.to_string();
-            set.spawn(async move {
-                let dockerfile = format!("{ctx}/Dockerfile");
-                tc_build_context(&descriptor, "latest", &ctx, &dockerfile).await;
-            });
-        }
-        while let Some(res) = set.join_next().await {
-            res.unwrap_or_else(|e| panic!("{name}: build task panicked: {e:?}"));
-        }
-    }
-
+    // Builds within a tier are independent and run concurrently; tier
+    // boundaries serialize (tier 2's bases `FROM` tier 1).
     CORE_BASES_BOOTSTRAPPED
         .get_or_init(|| async {
             // Load `.env` from cwd / parents so HF_TOKEN (and any other
@@ -251,7 +259,7 @@ async fn bootstrap_core_bases() {
             build_tier(
                 "tier 1",
                 // Leaf bases (no inter-eval-containers deps).
-                &[
+                [
                     ("quay.io/eval-containers/core/entrypoint", "core/entrypoint"),
                     ("quay.io/eval-containers/core/test-exact-match", "core/test-exact-match"),
                     ("quay.io/eval-containers/core/litellm", "core/litellm"),
@@ -270,7 +278,7 @@ async fn bootstrap_core_bases() {
                 "tier 2",
                 // Depend on tier 1 (benchmark-base-* FROM core/entrypoint;
                 // gpt-5.4--bifrost COPYs /opt/gateway from gateways/bifrost).
-                &[
+                [
                     ("quay.io/eval-containers/core/benchmark-base-hf", "core/benchmark-base-hf"),
                     ("quay.io/eval-containers/core/benchmark-base-github", "core/benchmark-base-github"),
                     ("quay.io/eval-containers/core/benchmark-base-external", "core/benchmark-base-external"),
@@ -357,28 +365,13 @@ macro_rules! replay_test {
     };
 }
 
-// ── Replay tests per MATRIX.md ─────────────────────────────────────
-// Fixtures must be recorded before these tests can run.
-// See MATRIX.md for the full test matrix.
-
-// ── Replay tests (per MATRIX.md) ───────────────────────────────────────
-// One test per fixture in tests/replay/fixtures/. The agent in the
-// fixture name MUST match the protocol of the recorded responses:
-//   *-codex  : OpenAI Responses API  (response.object == "response")
-//   *-aider  : OpenAI Chat Completions  (response.choices[])
-// Anthropic-format fixtures don't exist in our corpus today — claude-code
-// cannot consume any of these recordings as-is. Until we add Responses↔
-// Anthropic translation in the replay model, claude-code tests are
-// pipeline-only ("does result.json get written?"), not real replay.
-// Empty fixtures (response={} from incomplete past runs) have been
-// removed — they only triggered REPLAY_EXHAUSTED and gave false PASS.
-
-// ── Replay tests (auto-generated from tests/replay/fixtures/) ──────────
-// One test per fixture. Format of fixture filename:
+// ── Replay tests ─────────────────────────────────────────────────────
+// One test per fixture in tests/replay/fixtures/. Fixture filename:
 //   <benchmark>-<task_id>-<agent>.trajectory.jsonl
-// The replay model translates the recorded response into the protocol
-// expected by the agent's SDK (see models/replay/server.py), so any
-// fixture can be served to any agent regardless of recorded format.
+// The replay model translates each recorded response into the protocol
+// the agent's SDK expects (see models/replay/server.py), so any fixture
+// can be served to any agent regardless of recorded format. See
+// tests/MATRIX.md for the full matrix.
 
 replay_test!(
     replay_advbench_103_codex,

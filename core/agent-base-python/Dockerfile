@@ -81,25 +81,8 @@ RUN mkdir -p /opt/agent && \
     printf '#!/bin/bash\nset -euo pipefail\n# Default skeleton: subclass agent Dockerfiles overwrite this.\n' > /opt/agent/install.sh && chmod +x /opt/agent/install.sh && \
     printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /opt/agent/entrypoint.sh && chmod +x /opt/agent/entrypoint.sh
 
-# Shared helper for agents whose upstream pins Python >=3.12 (currently
-# openhands-ai, harbor). Subclasses call it from their install.sh:
-#
-#   /opt/agent/setup-uv-venv.sh /opt/<name>-venv pkg1==X pkg2==Y
-#
-# UV_PYTHON_INSTALL_DIR lands the managed Python in /opt (not /root,
-# which the combo image hardens to 0700) so the agent uid 1002 can
-# traverse the venv's symlink chain at runtime. `chmod -R a+rX` is
-# defensive — uv defaults are usually agent-readable, but the combo
-# image sometimes runs umask 0077 during build.
-RUN cat > /opt/agent/setup-uv-venv.sh <<'HELPER' && chmod +x /opt/agent/setup-uv-venv.sh
-#!/bin/bash
-set -euo pipefail
-venv_path=$1
-shift
-export UV_PYTHON_INSTALL_DIR=/opt/uv-python
-command -v uv >/dev/null 2>&1 || pip install --no-cache-dir --quiet uv
-uv python install --quiet 3.12
-uv venv --quiet --python 3.12 "$venv_path"
-uv pip install --quiet --python "$venv_path/bin/python" "$@"
-chmod -R a+rX /opt/uv-python "$venv_path"
-HELPER
+# Shared helper for agents whose upstream pins a specific Python version
+# (currently openhands-ai, harbor). Lives as a separate file so shellcheck
+# can lint it and so callers see it in `grep`.
+COPY setup-uv-venv.sh /opt/agent/setup-uv-venv.sh
+RUN chmod +x /opt/agent/setup-uv-venv.sh
