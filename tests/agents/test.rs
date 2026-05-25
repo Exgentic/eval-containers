@@ -102,12 +102,10 @@ const AGENTS: &[&str] = &[
 ];
 
 /// How long to wait for the first LLM call before declaring the agent
-/// broken. Cold containers take 5–15s to start the agent process;
-/// most agents make their first LLM call within another 5–30s.
-/// 150s covers parallel-test resource contention (4 agents booting
-/// at once share the same host) with headroom for the slowest
-/// Python agents whose first import takes 20+ seconds (litellm,
-/// transformers, etc.).
+/// broken. Cold containers take 5–15s to start the agent process; most
+/// agents make their first LLM call within another 5–30s. The 150s
+/// budget is sized for the slowest Python agents (litellm/transformers
+/// imports run 20+s) under parallel cargo-test contention.
 const FIRST_CALL_TIMEOUT: Duration = Duration::from_secs(150);
 
 // ─── Mock LLM bootstrap ──────────────────────────────────────────────
@@ -195,24 +193,19 @@ async fn start_agent(
     .with_wait_for(WaitFor::seconds(1))
     .with_platform("linux/amd64")
     .with_network(net)
-    .with_env_var("BENCHMARK", "agents-smoke")
     .with_env_var("EVAL_BENCHMARK", "agents-smoke")
-    .with_env_var("AGENT", agent)
     .with_env_var("EVAL_AGENT", agent)
-    .with_env_var("TASK_ID", "0")
     .with_env_var("EVAL_TASK_ID", "0")
-    .with_env_var("MODEL", "mock")
     .with_env_var("EVAL_MODEL", "mock")
     // Cap the agent's own runtime so a hung agent doesn't keep
     // burning until the cargo timeout. Must be > FIRST_CALL_TIMEOUT
     // so the container is still alive when the panic path tries to
-    // read /output/agent/stderr.log via exec — if the agent exits
-    // first, the container exits, and the exec read returns empty.
+    // read /output/agent/stderr.log — if the agent exits first, the
+    // container exits, and read_in_container returns empty.
     .with_env_var("EVAL_TIMEOUT", "180")
-    .with_env_var("TIMEOUT", "180")
-    // All three protocol URLs — agents/RULES.md rule 5 says each
-    // agent picks exactly one. Path prefixes per the framework's
-    // protocol-namespaced gateway contract (rule 5 table).
+    // All three protocol URLs — each agent picks exactly one
+    // (agents/RULES.md, "Protocol exclusivity"). Path prefixes per
+    // the protocol-namespaced gateway contract.
     .with_env_var(
         "ANTHROPIC_BASE_URL",
         format!("http://{mock_host}:4000/anthropic"),
@@ -378,10 +371,9 @@ agent_smoke!(agent_swe_agent, "swe-agent");
 agent_smoke!(agent_terminus_2, "terminus-2");
 // bob, plandex — architecturally tied to IBM/self-hosted-server, see AGENTS const comment.
 
-// Static guard: AGENTS const must list everything tested by the macro
-// above. The check runs at compile time of this static lookup so a
-// drift between the two surfaces shows up as a fast `cargo build`
-// failure rather than a silently-skipped agent. Hardcoded length so
-// adding to AGENTS forces updating the macro section below it (and
-// vice versa via the count of `agent_smoke!` invocations).
+// Count sanity check: catches "added an agent to AGENTS but forgot the
+// macro invocation" (the assert trips when AGENTS grows past 18 without
+// also bumping this literal). It does NOT catch the reverse — an
+// agent_smoke! without an AGENTS entry just adds a test. The list above
+// is the documented roster; the macro invocations are the test surface.
 const _: () = assert!(AGENTS.len() == 18);
