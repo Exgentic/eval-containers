@@ -398,6 +398,14 @@ async fn portkey_anthropic_returns_501_not_implemented() {
         501,
         "portkey /anthropic must return 501 (cf. RULES.md rule 8: no silent translator fallback)"
     );
+    assert!(
+        resp.headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .map(|s| s.starts_with("application/json"))
+            .unwrap_or(false),
+        "501 body must be served as application/json so strict clients parse without sniffing"
+    );
     let body: Value = resp.json().await.expect("parse 501 body");
     assert_eq!(body["error"]["type"], "not_implemented");
     let msg = body["error"]["message"].as_str().unwrap_or("");

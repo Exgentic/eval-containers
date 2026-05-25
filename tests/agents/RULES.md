@@ -24,8 +24,9 @@ Parent: [../RULES.md](../RULES.md)
    made — this MUST work offline.
 
 4. **`#[ignore]` by default.** Each test starts two containers and
-   waits up to 90s for the first call. The full sweep is ~10 min;
-   that's release-verification territory, not per-PR.
+   waits up to `FIRST_CALL_TIMEOUT` for the first call (150s today).
+   The full sweep is ~10 min; that's release-verification territory,
+   not per-PR.
 
 ## What the mock does
 
@@ -37,16 +38,16 @@ Parent: [../RULES.md](../RULES.md)
    rule 5, each agent reads one of the three base-URL env vars).
 
 6. **Mock hostname is per-test.** The mock container's hostname is
-   `mock-{nanos}` (unique per test); the agent's base-URL envs all
-   point at that hostname via bridge-network DNS. Networks are
-   uniquely named so parallel test threads don't collide.
+   `mock-{agent}-{nanos}` (unique per test); the agent's base-URL
+   envs all point at that hostname via bridge-network DNS. Networks
+   are uniquely named so parallel test threads don't collide.
 
 ## What gets passed to the agent
 
 7. **TASK="Reply with exactly: OK"** — short, deterministic, doesn't
    trigger lengthy reasoning chains. Agents that try to inspect a
    repo first (aider, swe-agent) may need a few extra seconds to
-   bootstrap; the 90s timeout covers this.
+   bootstrap; the `FIRST_CALL_TIMEOUT` covers this.
 
 8. **All three base URLs set.** Each agent reads exactly one
    (agents/RULES.md rule 5), but we don't track per-agent which one,
