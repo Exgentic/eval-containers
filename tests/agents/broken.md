@@ -2,8 +2,8 @@
 
 This file documents agents that currently fail `tests/agents/test.rs`
 with a specific, citable upstream-CLI or design-level constraint. Per
-`tests/RULES.md` rule 11, listed agents are excluded from the macro
-in `test.rs` until their entry is removed.
+`tests/agents/RULES.md` rule 11, listed agents are excluded from the
+macro in `test.rs` until their entry is removed.
 
 Adding an agent here MUST cite the root cause + the smallest viable
 fix. Removing an agent here is the success condition — once the fix
