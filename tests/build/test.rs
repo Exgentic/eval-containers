@@ -697,7 +697,15 @@ async fn build_every_agent() {
     let total = contexts.len();
     let failures = run_build_sweep(
         "agent",
-        &["eval.type", "eval.agent.name", "eval.agent.version"],
+        // agents/RULES.md rule 14: every agent image MUST include
+        // eval.type, eval.agent.name, eval.agent.description,
+        // eval.agent.version.
+        &[
+            "eval.type",
+            "eval.agent.name",
+            "eval.agent.description",
+            "eval.agent.version",
+        ],
         "agents",
         |_| None,
     )
