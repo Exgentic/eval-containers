@@ -6,6 +6,7 @@ The trajectory format is LiteLLM's standard — Eval Containers only controls wh
 """
 import json
 import os
+import sys
 from litellm.integrations.custom_logger import CustomLogger
 
 
@@ -76,7 +77,7 @@ class EvalContainersLogger(CustomLogger):
                 json.dump(result, f)
 
         except Exception as e:
-            print(f"[eval_logger] error: {e}")
+            print(f"[eval_logger] error: {e}", file=sys.stderr)
 
 
 eval_logger_instance = EvalContainersLogger()
