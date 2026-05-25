@@ -28,11 +28,6 @@ tempfile = "3"
 # test build; testcontainers' internal reqwest also uses rustls so no
 # duplicated TLS stack.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-# Used by tests/agents/ to untar the `docker cp <container>:<path> -`
-# stream when surfacing /output/agent/{stdout,stderr}.log on test
-# failures. `docker cp` always emits a tar archive; this crate lets
-# us recover the underlying file without spawning a child tar.
-tar = "0.4"
 
 # Integration tests are organized into category subfolders under
 # `tests/<category>/`. Each RULES.md in that subfolder describes what
