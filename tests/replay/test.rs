@@ -8,13 +8,14 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
-use testcontainers::GenericBuildableImage;
 use testcontainers::compose::DockerCompose;
 use testcontainers::core::WaitFor;
-use testcontainers::core::BuildImageOptions;
 use testcontainers::core::wait::ExitWaitStrategy;
-use testcontainers::runners::AsyncBuilder;
 use tokio::sync::OnceCell;
+
+#[path = "../common/mod.rs"]
+mod common;
+use common::tc_build_context;
 
 fn read_json(path: &Path) -> Option<serde_json::Value> {
     let content = fs::read_to_string(path).ok()?;
@@ -199,40 +200,9 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 /// testing that Eval Containers's own `build eval` subcommand works end-to-end
 /// and the docker invocations happen inside the CLI under test, not
 /// inside this file.
-/// Build an image directly from a local context via testcontainers-rs
-/// `GenericBuildableImage`. This is the shared helper for bootstrapping
-/// core images and the replay model — every file under `ctx_dir` except
-/// the Dockerfile itself is added to the build context with `with_file`.
-async fn tc_build_context(descriptor: &str, tag: &str, ctx_dir: &str, dockerfile: &str) {
-    let mut image = GenericBuildableImage::new(descriptor, tag).with_dockerfile(dockerfile);
-    let ctx = std::path::Path::new(ctx_dir);
-    for entry in std::fs::read_dir(ctx).unwrap_or_else(|e| panic!("{ctx_dir}: {e}")) {
-        let entry = entry.expect("read_dir entry");
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        let name = path.file_name().unwrap().to_string_lossy().to_string();
-        if path.to_string_lossy() == dockerfile {
-            continue;
-        }
-        image = image.with_file(path, name);
-    }
-    // Forward HF_TOKEN if it's in the env. Currently only matters for
-    // `core/benchmark-base-hf`, whose `ARG HF_TOKEN` + `ENV HF_TOKEN`
-    // bridge bakes the token into the base image's env so per-benchmark
-    // Dockerfiles' `echo "$HF_TOKEN"` fallback can find it at build
-    // time. Forwarding it unconditionally for every core base is
-    // harmless (unrelated bases simply ignore an undeclared ARG).
-    let mut opts = BuildImageOptions::new();
-    if let Ok(tok) = std::env::var("HF_TOKEN") {
-        opts = opts.with_build_arg("HF_TOKEN", tok);
-    }
-    let _built = image
-        .build_image_with(opts)
-        .await
-        .unwrap_or_else(|e| panic!("tc build {descriptor}:{tag}: {e:?}"));
-}
+///
+/// Image build helper `tc_build_context` lives in `tests/common/mod.rs`
+/// (shared with tests/agents and tests/gateways).
 
 /// Bootstrap every core/gateway/model base image the replay stack
 /// might transitively need, in dependency order. Runs once across all
