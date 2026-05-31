@@ -25,7 +25,7 @@ if the evidence section is empty.
 | Task count | `<N>` |
 | Evaluation mode | exact-match / code-execution / LLM-judge / external |
 
-### Required Dockerfile labels (benchmarks/RULES.md 15, 21a, 21b)
+### Required Dockerfile labels (doctrine/benchmarks/RULES.md 15, 21a, 21b)
 
 - [ ] `LABEL eval.type="benchmark"`
 - [ ] `LABEL eval.benchmark.name="<name>"` (matches directory name)
@@ -43,7 +43,7 @@ if the evidence section is empty.
 
 - [ ] `ENV EVAL_BENCHMARK_VERSION_DEFAULT="<same as data_revision>"` declared after the LABEL block
 
-### Task data pattern (benchmarks/RULES.md 22)
+### Task data pattern (doctrine/benchmarks/RULES.md 22)
 
 - [ ] Uses the single-JSONL pattern: build time writes `/tasks/all.jsonl` (one JSON row per task) with `chmod 600`
 - [ ] Runtime `/entrypoint.sh` calls `/eval-materialize-task` (copied from `core/entrypoint`) instead of inlining its own python block
@@ -56,7 +56,7 @@ if the evidence section is empty.
 - [ ] `COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh` (or benchmark-specific test.sh with a justification)
 - [ ] `test.sh` reads `/logs/verifier/reward.txt` and writes an integer 0, 1, or fraction. Externally graded benchmarks MAY write `-1`.
 - [ ] `test.sh` does NOT leak `EXPECTED_ANSWER` back to the agent (it's unset during the agent phase by `eval-entrypoint.sh` and restored for test.sh)
-- [ ] **Every metric the benchmark reports lands in `task/result.json`**, with the primary metric named `reward` ([compose/RULES.md](../../compose/RULES.md) rule 16). Additional metrics (e.g. `exact_match`, `f1`, `bleu`, `partial_credit`, `tool_calls`) are named fields alongside `reward`. `test.sh` is the only writer; NO metric is left in stdout for downstream to parse.
+- [ ] **Every metric the benchmark reports lands in `task/result.json`**, with the primary metric named `reward` ([doctrine/compose/RULES.md](../../compose/RULES.md) rule 16). Additional metrics (e.g. `exact_match`, `f1`, `bleu`, `partial_credit`, `tool_calls`) are named fields alongside `reward`. `test.sh` is the only writer; NO metric is left in stdout for downstream to parse.
 - [ ] Paste the `task/result.json` from one real run here so a reviewer can see the exact field set:
 
 <details><summary>Sample <code>task/result.json</code></summary>
@@ -77,7 +77,7 @@ if the evidence section is empty.
 
 - [ ] `/entrypoint.sh` exports a TASK template that cites the problem from `/tasks/$EVAL_TASK_ID/problem.txt`
 - [ ] `/entrypoint.sh` sets `EXPECTED_ANSWER` from `/tasks/$EVAL_TASK_ID/answer.txt`
-- [ ] `/entrypoint.sh` ends with `exec /eval-entrypoint.sh` (no custom agent phase — the shared entrypoint is mandatory, see benchmarks/RULES.md 12)
+- [ ] `/entrypoint.sh` ends with `exec /eval-entrypoint.sh` (no custom agent phase — the shared entrypoint is mandatory, see doctrine/benchmarks/RULES.md 12)
 
 ### Compose (`compose.yaml`)
 
@@ -115,7 +115,7 @@ eval-containers run <name> --agent claude-code --model gpt-5.4 --task-id 0 --loc
   - D. Answer well-formed: <!-- green / yellow / red + note -->
   - E. Infrastructure hygiene: <!-- green / yellow / red + note -->
 
-### Released-to-CI checkbox (benchmarks/RULES.md 21a)
+### Released-to-CI checkbox (doctrine/benchmarks/RULES.md 21a)
 
 If you're setting `eval.benchmark.released="true"`, you MUST also:
 
@@ -135,4 +135,4 @@ it with aider yet" is a limitation. -->
 ### RULES.md changelog
 
 - [ ] No RULES.md changes needed
-- [ ] `benchmarks/RULES.md` updated with a changelog entry dated today
+- [ ] `doctrine/benchmarks/RULES.md` updated with a changelog entry dated today

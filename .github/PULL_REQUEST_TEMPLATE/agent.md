@@ -22,7 +22,7 @@ Reject the PR if any evidence section is empty.
 | Primary SDK | Anthropic / OpenAI / both / custom |
 | Paradigm | single-shot / multi-step / tool-heavy / file-editor / other |
 
-### Required Dockerfile labels (agents/RULES.md 14)
+### Required Dockerfile labels (doctrine/agents/RULES.md 14)
 
 - [ ] `LABEL eval.type="agent"`
 - [ ] `LABEL eval.agent.name="<name>"` (matches directory name)
@@ -38,7 +38,7 @@ Reject the PR if any evidence section is empty.
 ### Image layout
 
 - [ ] `/opt/agent/install.sh` installs the agent CLI exactly once. Used by the combination layer to re-install on top of a benchmark base without rebuilding the agent image from scratch.
-- [ ] `/opt/agent/entrypoint.sh` is the agent's command. Reads `TASK` env var (mandatory, per agents/RULES.md 2), calls the CLI with `--dangerously-skip-permissions` / `--print` / whatever the agent's non-interactive flag is, pipes the answer to stdout.
+- [ ] `/opt/agent/entrypoint.sh` is the agent's command. Reads `TASK` env var (mandatory, per doctrine/agents/RULES.md 2), calls the CLI with `--dangerously-skip-permissions` / `--print` / whatever the agent's non-interactive flag is, pipes the answer to stdout.
 - [ ] `/opt/agent/entrypoint.sh` routes LLM calls through `ANTHROPIC_BASE_URL` (for Anthropic SDK) or `OPENAI_BASE_URL` (for OpenAI SDK) — NOT a direct-to-provider URL. The eval container only talks to `http://model:4000`.
 - [ ] `ENTRYPOINT ["/opt/agent/entrypoint.sh"]` (the standalone agent image works out of the box)
 
@@ -108,4 +108,4 @@ have that route in models/*/config.yaml" is a real limitation.
 ### RULES.md changelog
 
 - [ ] No RULES.md changes needed
-- [ ] `agents/RULES.md` updated with a changelog entry dated today
+- [ ] `doctrine/agents/RULES.md` updated with a changelog entry dated today
