@@ -11,15 +11,21 @@ pub struct PruneArgs {
     /// Also remove all eval-containers.* labeled images (destructive)
     #[arg(long)]
     pub all: bool,
+    /// Print the docker commands without executing them.
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 pub fn execute(args: PruneArgs) -> Result<(), String> {
+    let dry = args.dry_run;
     // Always: prune build cache + dangling images
-    run(&["builder", "prune", "-af"])?;
-    run(&["image", "prune", "-f"])?;
+    run(&["builder", "prune", "-af"], dry)?;
+    run(&["image", "prune", "-f"], dry)?;
 
     if args.all {
         eprintln!("$ docker images --filter 'label=eval.type' -q | xargs -r docker rmi -f");
+        // Listing is read-only, so it runs even under --dry-run — to show
+        // exactly which images would be removed.
         let images = Command::new("docker")
             .args(["images", "--filter", "label=eval.type", "-q"])
             .output()
@@ -29,7 +35,12 @@ pub fn execute(args: PruneArgs) -> Result<(), String> {
             .lines()
             .filter(|s| !s.is_empty())
             .collect();
-        if !ids.is_empty() {
+        if dry {
+            eprintln!(
+                "(--dry-run: would remove {} eval-containers image(s))",
+                ids.len()
+            );
+        } else if !ids.is_empty() {
             let mut cmd = Command::new("docker");
             cmd.args(["rmi", "-f"]);
             cmd.args(&ids);
@@ -38,12 +49,15 @@ pub fn execute(args: PruneArgs) -> Result<(), String> {
     }
 
     // Show what's left
-    run(&["system", "df"])?;
+    run(&["system", "df"], dry)?;
     Ok(())
 }
 
-fn run(args: &[&str]) -> Result<(), String> {
+fn run(args: &[&str], dry_run: bool) -> Result<(), String> {
     eprintln!("$ docker {}", args.join(" "));
+    if dry_run {
+        return Ok(());
+    }
     let status = Command::new("docker")
         .args(args)
         .status()

@@ -149,6 +149,14 @@ pub struct RunArgs {
     /// context's namespace.
     #[arg(long, short = 'n')]
     namespace: Option<String>,
+
+    /// (`--mode job`) Compose a Kustomize component on top of the
+    /// synthesized Job — e.g. the OpenShift overlay under
+    /// `examples/deployments/openshift` (sets the anyuid SCC service
+    /// account). Points at a directory whose `kustomization.yaml` is
+    /// `kind: Component`; the CLI only references it under `components:`.
+    #[arg(long)]
+    overlay: Option<String>,
 }
 
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
@@ -201,6 +209,10 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(budget) = args.max_budget {
         envs.push(("EVAL_MODEL_MAX_BUDGET", budget.to_string()));
+    }
+
+    if args.overlay.is_some() && !matches!(args.mode, Mode::Job) {
+        return Err("--overlay applies only to `--mode job`".into());
     }
 
     match args.mode {
@@ -359,6 +371,23 @@ fn run_job(
         ));
     }
 
+    // Optional overlay component to compose on top of the Job — e.g. the
+    // OpenShift overlay (anyuid SCC service account) under
+    // examples/deployments/openshift. The CLI only references it under
+    // `components:`; the content is data the user owns (src/RULES.md
+    // principle 3).
+    let component_dir: Option<std::path::PathBuf> =
+        args.overlay.clone().map(std::path::PathBuf::from);
+    if let Some(dir) = &component_dir {
+        if !dir.join("kustomization.yaml").exists() {
+            return Err(format!(
+                "overlay component not found: {}/kustomization.yaml does not exist \
+                 (a platform overlay is a directory whose kustomization.yaml is `kind: Component`)",
+                dir.display()
+            ));
+        }
+    }
+
     let canonical_agent = "claude-code";
     let canonical_task = "0";
     let want_agent = args.agent.as_deref().unwrap_or(canonical_agent);
@@ -387,7 +416,8 @@ fn run_job(
     // does not interpolate env vars into manifests, so the only way
     // to get user inputs into the resulting Job is via a Kustomize
     // patch.
-    let needs_overlay = want_agent != canonical_agent
+    let needs_overlay = component_dir.is_some()
+        || want_agent != canonical_agent
         || want_task != canonical_task
         || args.model.is_some()
         || args.timeout.is_some()
@@ -578,12 +608,25 @@ fn run_job(
     let rel_base = relative_path(&tmp_dir, &abs_base)
         .ok_or_else(|| format!("could not compute relative path {tmp_dir:?} -> {abs_base:?}"))?;
 
+    // Compose the platform/overlay component (if any) via `components:`.
+    // Its path is relative to the temp overlay dir, like the base.
+    let components_block = match &component_dir {
+        Some(dir) => {
+            let abs = std::fs::canonicalize(dir)
+                .map_err(|e| format!("canonicalize {}: {e}", dir.display()))?;
+            let rel = relative_path(&tmp_dir, &abs)
+                .ok_or_else(|| format!("could not compute relative path {tmp_dir:?} -> {abs:?}"))?;
+            format!("components:\n  - {}\n", rel.display())
+        }
+        None => String::new(),
+    };
+
     let overlay_yaml = format!(
         r#"apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - {rel_base}
-images:
+{components_block}images:
 {images_block}labels:
   - pairs:
       agent: {want_agent}
@@ -639,7 +682,11 @@ patches:
         tmp_dir.display()
     );
     eprintln!(
-        "(overlay: agent={want_agent}, task={want_task}; base={})",
+        "(overlay: agent={want_agent}, task={want_task}{}; base={})",
+        match &component_dir {
+            Some(d) => format!(", component={}", d.display()),
+            None => String::new(),
+        },
         abs_base.display(),
     );
 
