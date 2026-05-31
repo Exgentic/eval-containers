@@ -34,7 +34,7 @@ Parent: [../RULES.md](../RULES.md)
    carries one OpenAI Chat-shaped response. The replay model
    canonicalizes it and re-emits as Anthropic Messages or Google
    Gemini if the inbound route demands. So the same fixture works
-   regardless of which protocol the agent uses (per agents/RULES.md
+   regardless of which protocol the agent uses (per doctrine/agents/RULES.md
    rule 5, each agent reads one of the three base-URL env vars).
 
 6. **Mock hostname is per-test.** The mock container's hostname is
@@ -50,7 +50,7 @@ Parent: [../RULES.md](../RULES.md)
    bootstrap; the `FIRST_CALL_TIMEOUT` covers this.
 
 8. **All three base URLs set.** Each agent reads exactly one
-   (agents/RULES.md rule 5), but we don't track per-agent which one,
+   (doctrine/agents/RULES.md rule 5), but we don't track per-agent which one,
    so all three are set to the mock. Bogus `sk-proxy` API keys —
    none reach upstream because the mock doesn't forward.
 
