@@ -748,6 +748,15 @@ const REGISTRY_PREFIX: &str = "quay.io/eval-containers/";
 fn in_repo_deps_from_dockerfile(path: &Path) -> Vec<String> {
     let text = fs::read_to_string(path).unwrap_or_default();
     let mut deps: Vec<String> = Vec::new();
+    let push_if_in_repo = |s: &str, deps: &mut Vec<String>| {
+        if s.starts_with(REGISTRY_PREFIX) {
+            // Normalize: strip :tag for comparison against bake contexts keys.
+            let bare = s.split(':').next().unwrap_or(s).to_string();
+            if !deps.contains(&bare) {
+                deps.push(bare);
+            }
+        }
+    };
     for raw in text.lines() {
         let line = raw.trim();
         // FROM [--platform=...] image[:tag] [AS stage]
@@ -758,17 +767,13 @@ fn in_repo_deps_from_dockerfile(path: &Path) -> Vec<String> {
                 tok = &rest[end..].trim_start();
             }
             let image = tok.split_whitespace().next().unwrap_or("");
-            if image.starts_with(REGISTRY_PREFIX) && !deps.contains(&image.to_string()) {
-                deps.push(image.to_string());
-            }
+            push_if_in_repo(image, &mut deps);
             continue;
         }
         // COPY --from=image[:tag] src dst
         if let Some(rest) = line.strip_prefix("COPY --from=") {
             let image = rest.split_whitespace().next().unwrap_or("");
-            if image.starts_with(REGISTRY_PREFIX) && !deps.contains(&image.to_string()) {
-                deps.push(image.to_string());
-            }
+            push_if_in_repo(image, &mut deps);
         }
     }
     deps
@@ -776,22 +781,26 @@ fn in_repo_deps_from_dockerfile(path: &Path) -> Vec<String> {
 
 fn in_repo_deps_from_bake(path: &Path) -> Vec<String> {
     let text = fs::read_to_string(path).unwrap_or_default();
-    // Extract the LHS of every `"<ref>" = "target:<name>"` line under a
-    // contexts block. The template is constrained enough that regex on
-    // each line is reliable; `${REGISTRY}` is replaced with the literal
-    // default for comparison.
+    // Extract the LHS of every `"<ref>" = "target:<name>"` line under
+    // a contexts block. Contexts keys MUST omit the tag (bake matches
+    // FROM image name without :tag), so for cross-checking against
+    // Dockerfile FROMs we normalize both sides by stripping :tag.
     let mut deps: Vec<String> = Vec::new();
     for raw in text.lines() {
         let line = raw.trim();
         if !line.contains("\" = \"target:") {
             continue;
         }
-        // `"${REGISTRY}/core/entrypoint:latest" = "target:entrypoint"`
         let Some(start) = line.find('"') else { continue };
         let after = &line[start + 1..];
         let Some(end) = after.find('"') else { continue };
         let lhs = &after[..end];
-        let resolved = lhs.replace("${REGISTRY}", "quay.io/eval-containers");
+        let resolved = lhs
+            .replace("${REGISTRY}", "quay.io/eval-containers")
+            .split(':')
+            .next()
+            .unwrap_or("")
+            .to_string();
         if !deps.contains(&resolved) {
             deps.push(resolved);
         }

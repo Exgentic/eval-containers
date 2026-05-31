@@ -1,8 +1,19 @@
-use clap::{Args, Subcommand};
-use std::io::Write;
-use std::process::Command;
+//! Build orchestration via `docker buildx bake`.
+//!
+//! The build graph lives in `docker-bake.hcl` files next to each
+//! artifact's Dockerfile (RULES.md principle 15). This file is a thin
+//! translator from the framework's CLI flags into a bake invocation:
+//! gather all artifact bake files, set bake variables from CLI flags,
+//! shell to `docker buildx bake <target> --load`.
+//!
+//! Per-task benchmark variants (swe-bench's 1000+ tasks) remain
+//! imperative — they aren't enumerated in bake per BAKE.md. The
+//! `--task-id` path falls through to a plain `docker build` with
+//! `--build-arg EVAL_TASK_ID=<id>`.
 
-const COMBINATION_DOCKERFILE: &str = include_str!("../core/combination.Dockerfile");
+use clap::{Args, Subcommand};
+use std::path::Path;
+use std::process::Command;
 
 #[derive(Args)]
 pub struct BuildArgs {
@@ -12,25 +23,19 @@ pub struct BuildArgs {
 
 #[derive(Subcommand)]
 pub enum BuildTarget {
-    /// Build an agent image
-    /// Docker: docker build -t {registry}/agents/{name}:{version} ./agents/{name}
-    Agent {
-        name: String,
-        #[arg(long, default_value = "latest")]
-        version: String,
-    },
-    /// Build a benchmark base image
-    /// Docker: docker build --build-arg TASK_ID={task_id} -t {registry}/benchmarks/{benchmark} ./benchmarks/{benchmark}
+    /// Build an agent image via bake: docker buildx bake agent-<name>
+    Agent { name: String },
+    /// Build a benchmark base image. With --task-id, falls through to
+    /// `docker build --build-arg EVAL_TASK_ID=<id>` (per-task variants
+    /// are not enumerated in bake; see BAKE.md).
     Bench {
         benchmark: String,
         #[arg(long)]
         task_id: Option<String>,
     },
-    /// Build a model image
-    /// Docker: docker build -t {registry}/models/{name} ./models/{name}
+    /// Build a model image via bake: docker buildx bake model-<name>
     Model { name: String },
-    /// Build a combined eval image (benchmark + agent)
-    /// Docker: docker build --build-arg BENCHMARK_IMAGE=... --build-arg AGENT_IMAGE=... -t {registry}/evals/{benchmark}--{agent}:{version}
+    /// Build a combined eval image: docker buildx bake eval --set ...
     Eval {
         benchmark: String,
         #[arg(long)]
@@ -39,9 +44,10 @@ pub enum BuildTarget {
         task_id: Option<String>,
         #[arg(long, default_value = "latest")]
         version: String,
+        #[arg(long, default_value = "gpt-5.4--bifrost")]
+        model: String,
     },
-    /// Publish a benchmark's compose file to the registry as an OCI artifact
-    /// Docker: docker compose -f benchmarks/{benchmark}/compose.yaml publish {registry}/compose/{benchmark}:latest
+    /// Publish a benchmark's compose file as an OCI artifact.
     Compose {
         /// Benchmark name, or "all" to publish all benchmarks
         benchmark: String,
@@ -50,95 +56,49 @@ pub enum BuildTarget {
 
 pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     match args.target {
-        BuildTarget::Agent { name, version } => {
-            let tag = format!("{registry}/agents/{name}:{version}");
-            let context = format!("./agents/{name}");
-            docker_build(&tag, &context, None, &[])
-        }
+        BuildTarget::Agent { name } => bake(registry, &format!("agent-{name}"), &[]),
         BuildTarget::Bench { benchmark, task_id } => {
-            let mut build_args = vec![];
-            let tag = if let Some(ref tid) = task_id {
-                build_args.push(format!("EVAL_TASK_ID={tid}"));
-                format!("{registry}/benchmarks/{benchmark}-{tid}:latest")
+            if let Some(tid) = task_id {
+                // Per-task variant — outside bake's static graph.
+                docker_build(
+                    &format!("{registry}/benchmarks/{benchmark}-{tid}:latest"),
+                    &format!("./benchmarks/{benchmark}"),
+                    None,
+                    &[format!("EVAL_TASK_ID={tid}")],
+                )
             } else {
-                format!("{registry}/benchmarks/{benchmark}:latest")
-            };
-            let context = format!("./benchmarks/{benchmark}");
-            docker_build(&tag, &context, None, &build_args)
+                bake(registry, &format!("benchmark-{benchmark}"), &[])
+            }
         }
         BuildTarget::Model { name } => {
-            let tag = format!("{registry}/models/{name}:latest");
-            let context = format!("./models/{name}");
-            docker_build(&tag, &context, None, &[])
+            let target = format!("model-{}", name.replace('.', "_"));
+            bake(registry, &target, &[])
         }
         BuildTarget::Eval {
             benchmark,
             agent,
             task_id,
             version,
+            model,
         } => {
             let bench_tag = if let Some(ref tid) = task_id {
                 format!("{registry}/benchmarks/{benchmark}-{tid}:latest")
             } else {
                 format!("{registry}/benchmarks/{benchmark}:latest")
             };
-            let agent_tag = format!("{registry}/agents/{agent}:{version}");
-
-            // Auto-build bench image if missing
-            if !image_exists(&bench_tag) {
-                eprintln!("bench image not found, building {bench_tag}...");
-                let mut bench_build_args = vec![];
-                if let Some(ref tid) = task_id {
-                    bench_build_args.push(format!("EVAL_TASK_ID={tid}"));
-                }
-                let context = format!("./benchmarks/{benchmark}");
-                docker_build(&bench_tag, &context, None, &bench_build_args)?;
-            }
-
-            // Auto-build agent image if missing
-            if !image_exists(&agent_tag) {
-                eprintln!("agent image not found, building {agent_tag}...");
-                let context = format!("./agents/{agent}");
-                docker_build(&agent_tag, &context, None, &[])?;
-            }
-
-            let eval_name = if let Some(ref tid) = task_id {
-                format!("{benchmark}-{tid}--{agent}")
-            } else {
-                format!("{benchmark}--{agent}")
-            };
-            let eval_tag = format!("{registry}/evals/{eval_name}:{version}");
-
-            // Write embedded combination Dockerfile to a temp file. The
-            // Dockerfile uses both `COPY --from=` (named images) AND `COPY`
-            // from the build context (core/process-compose/*, core/entrypoint/*),
-            // so context MUST be the repo root.
-            let tmp_dir =
-                std::env::temp_dir().join(format!("eval-combo-ctx-{}", std::process::id()));
-            let _ = std::fs::create_dir_all(&tmp_dir);
-            let tmp_dockerfile = tmp_dir.join("Dockerfile");
-            std::fs::File::create(&tmp_dockerfile)
-                .and_then(|mut f| f.write_all(COMBINATION_DOCKERFILE.as_bytes()))
-                .map_err(|e| format!("failed to write temp Dockerfile: {e}"))?;
-
-            // Read the agent image's eval.agent.version label so we can
-            // propagate it into the combined image as EVAL_AGENT_VERSION_DEFAULT
-            // (RULES.md principle 9 — version-override axis).
-            let agent_version =
-                docker_label(&agent_tag, "eval.agent.version").unwrap_or_else(|_| String::new());
-            let build_args = vec![
-                format!("BENCHMARK_IMAGE={bench_tag}"),
-                format!("AGENT_IMAGE={agent_tag}"),
-                format!("AGENT_VERSION={agent_version}"),
+            let agent_tag = format!("{registry}/agents/{agent}:latest");
+            let model_tag = format!("{registry}/models/{model}:latest");
+            let bake_env = vec![
+                ("EVAL_BENCHMARK", benchmark.clone()),
+                ("EVAL_AGENT", agent.clone()),
+                ("EVAL_AGENT_VERSION", version.clone()),
             ];
-            let result = docker_build(
-                &eval_tag,
-                ".",
-                Some(tmp_dockerfile.to_str().unwrap()),
-                &build_args,
-            );
-            let _ = std::fs::remove_file(&tmp_dockerfile);
-            result
+            let overrides = vec![
+                format!("eval.args.BENCHMARK_IMAGE={bench_tag}"),
+                format!("eval.args.AGENT_IMAGE={agent_tag}"),
+                format!("eval.args.MODEL_IMAGE={model_tag}"),
+            ];
+            bake_with_env(registry, "eval", &overrides, &bake_env)
         }
         BuildTarget::Compose { benchmark } => {
             if benchmark == "all" {
@@ -163,6 +123,65 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     }
 }
 
+fn bake(registry: &str, target: &str, overrides: &[String]) -> Result<(), String> {
+    bake_with_env(registry, target, overrides, &[])
+}
+
+fn bake_with_env(
+    registry: &str,
+    target: &str,
+    overrides: &[String],
+    env: &[(&str, String)],
+) -> Result<(), String> {
+    let bake_files = collect_bake_files();
+    let mut cmd = Command::new("docker");
+    cmd.args(["buildx", "bake"]);
+    for f in &bake_files {
+        cmd.args(["-f", f]);
+    }
+    for o in overrides {
+        cmd.args(["--set", o]);
+    }
+    cmd.arg("--load");
+    cmd.arg(target);
+
+    cmd.env("REGISTRY", registry);
+    if let Ok(t) = std::env::var("HF_TOKEN") {
+        cmd.env("HF_TOKEN", t);
+    }
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+
+    eprintln!("$ docker buildx bake [-f ... × {}] {target}", bake_files.len());
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to run docker buildx bake: {e}"))?;
+    if !status.success() {
+        return Err(format!("docker buildx bake failed with {status}"));
+    }
+    Ok(())
+}
+
+/// Walk every artifact directory and the combination template, returning
+/// the path of each `docker-bake.hcl` to merge. Order doesn't matter —
+/// bake merges by target name.
+fn collect_bake_files() -> Vec<String> {
+    let mut files = vec!["core/combination.docker-bake.hcl".to_string()];
+    for category in ["core", "agents", "benchmarks", "models", "gateways"] {
+        let Ok(entries) = std::fs::read_dir(category) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path().join("docker-bake.hcl");
+            if p.exists() {
+                files.push(p.to_string_lossy().to_string());
+            }
+        }
+    }
+    files
+}
+
 fn docker_compose_publish(compose_file: &str, tag: &str) -> Result<(), String> {
     eprintln!("$ docker compose -f {compose_file} publish {tag}");
     let status = Command::new("docker")
@@ -175,34 +194,8 @@ fn docker_compose_publish(compose_file: &str, tag: &str) -> Result<(), String> {
     Ok(())
 }
 
-fn image_exists(tag: &str) -> bool {
-    Command::new("docker")
-        .args(["image", "inspect", tag])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-/// Read a single label from a local Docker image. Used by `build eval`
-/// to propagate the agent's pinned version into the combined image as a
-/// build-arg (RULES.md principle 9).
-fn docker_label(tag: &str, label: &str) -> Result<String, String> {
-    let format = format!("{{{{ index .Config.Labels \"{label}\" }}}}");
-    let out = Command::new("docker")
-        .args(["image", "inspect", "--format", &format, tag])
-        .output()
-        .map_err(|e| format!("failed to run docker image inspect: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "docker image inspect {tag} failed: {}",
-            String::from_utf8_lossy(&out.stderr)
-        ));
-    }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
+/// Escape hatch for per-task benchmark variants — bake doesn't
+/// enumerate 1000+ task IDs per BAKE.md, so this path stays imperative.
 fn docker_build(
     tag: &str,
     context: &str,
@@ -210,61 +203,31 @@ fn docker_build(
     build_args: &[String],
 ) -> Result<(), String> {
     eprintln!("$ docker build -t {tag} {context}");
-
-    // Retry builds up to 3 times to survive transient podman / apt network
-    // flakes. Most benchmark Dockerfiles have apt-get update without retry
-    // loops, and podman's network to debian mirrors flakes under load.
-    // Retrying the whole build is cheap (most layers are cached).
-    // Forward HF_TOKEN as a build-arg iff it's present in the env.
-    // Several benchmark Dockerfiles (gaia, hle, mmlu-pro, …) gate
-    // dataset downloads behind a HuggingFace token. Their `RUN`
-    // declares
-    //   RUN --mount=type=secret,id=HF_TOKEN \
-    //       HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && …
-    // The `--mount=type=secret` syntax is the production / CI path
-    // (BuildKit-enabled builders). For local dev we use the fallback:
-    // pass HF_TOKEN as `--build-arg`, which lands in `$HF_TOKEN` via
-    // `core/benchmark-base-hf`'s `ARG HF_TOKEN="" / ENV HF_TOKEN=$HF_TOKEN`.
-    // `--build-arg` works on every builder including podman's
-    // docker-compat (which rejects `--secret`).
-    let has_hf_token = std::env::var("HF_TOKEN").is_ok();
+    let mut cmd = Command::new("docker");
+    cmd.arg("build").arg("-t").arg(tag);
+    if let Some(df) = dockerfile {
+        cmd.arg("-f").arg(df);
+    }
+    for arg in build_args {
+        cmd.arg("--build-arg").arg(arg);
+    }
+    if std::env::var("HF_TOKEN").is_ok() {
+        cmd.arg("--build-arg").arg("HF_TOKEN");
+    }
+    cmd.arg(context);
 
     let mut last_err = String::new();
     for attempt in 1..=3 {
-        let mut cmd_retry = Command::new("docker");
-        cmd_retry.arg("build");
-        cmd_retry.arg("-t").arg(tag);
-        if let Some(df) = dockerfile {
-            cmd_retry.arg("-f").arg(df);
+        let status = cmd
+            .status()
+            .map_err(|e| format!("failed to run docker: {e}"))?;
+        if status.success() {
+            let _ = Path::new(""); // suppress unused-import warning
+            return Ok(());
         }
-        for arg in build_args {
-            cmd_retry.arg("--build-arg").arg(arg);
-        }
-        if has_hf_token {
-            // Forward the value via `--build-arg HF_TOKEN` (no `=`)
-            // which means "inherit from current env". Safer than
-            // interpolating the secret onto the command line.
-            cmd_retry.arg("--build-arg").arg("HF_TOKEN");
-        }
-        cmd_retry.arg(context);
-        match cmd_retry.status() {
-            Ok(s) if s.success() => return Ok(()),
-            Ok(s) => {
-                last_err = format!("docker build failed with {s}");
-                if attempt < 3 {
-                    eprintln!(
-                        "build attempt {attempt} failed; retrying in {}s",
-                        attempt * 10
-                    );
-                    std::thread::sleep(std::time::Duration::from_secs(attempt as u64 * 10));
-                }
-            }
-            Err(e) => {
-                last_err = format!("failed to run docker: {e}");
-                if attempt < 3 {
-                    std::thread::sleep(std::time::Duration::from_secs(attempt as u64 * 10));
-                }
-            }
+        last_err = format!("docker build failed with {status}");
+        if attempt < 3 {
+            eprintln!("retry {attempt}/3 after build failure");
         }
     }
     Err(last_err)
