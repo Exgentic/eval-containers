@@ -257,22 +257,36 @@ async fn assert_agent_calls_llm(agent: &str) {
 
     // The agent writes its real stdout/stderr into /output/agent/*.log
     // inside the container (eval-entrypoint redirects there). Bind-mount
-    // /output to a host tempdir so the panic path below can read the
-    // logs without depending on the container still being alive.
+    // /output to a host dir so the panic path below can read the logs
+    // without depending on the container still being alive.
     //
-    // chmod 0777 because the agent inside the container runs as uid 1002;
-    // the host tempdir is owned by the test process's uid. Without the
-    // chmod, rootless podman's userns mapping bites and the container's
-    // mkdir /output/agent fails with Permission denied.
-    let output_dir = tempfile::tempdir().expect("create output tempdir");
+    // The dir MUST live under the project root (./output/agent-smoke/...)
+    // — `/tmp` isn't shared into rootless podman's VM on macOS, so
+    // testcontainers-driven bind mounts to /tmp paths surface inside
+    // the container with non-writable VM-defaulted perms.
+    let host_root = std::env::current_dir()
+        .expect("cwd")
+        .join("output/agent-smoke")
+        .join(format!("{agent}-{nanos}"));
+    std::fs::create_dir_all(&host_root).expect("create host output dir");
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(
-            output_dir.path(),
+            &host_root,
             std::fs::Permissions::from_mode(0o777),
         )
-        .expect("chmod 0777 on output tempdir");
+        .expect("chmod 0777 on output dir");
+    }
+    let output_dir = ScopedDir(host_root);
+    struct ScopedDir(std::path::PathBuf);
+    impl Drop for ScopedDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    impl ScopedDir {
+        fn path(&self) -> &std::path::Path { &self.0 }
     }
     let replay = start_replay_mock(&net, &mock_host).await;
     let _agent_c = start_agent(agent, &net, &mock_host, output_dir.path()).await;
