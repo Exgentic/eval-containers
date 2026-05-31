@@ -84,8 +84,10 @@ pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
                 (None, None) => String::new(),
             };
             let reference = format!("{registry}/evals/*{filter}*");
+            let fmt = "{{.Repository}}:{{.Tag}}";
+            eprintln!("$ docker images --format '{fmt}' {reference}");
             let output = Command::new("docker")
-                .args(["images", "--format", "{{.Repository}}:{{.Tag}}", &reference])
+                .args(["images", "--format", fmt, &reference])
                 .output()
                 .map_err(|e| format!("failed to run docker: {e}"))?;
             print!("{}", String::from_utf8_lossy(&output.stdout));
@@ -96,8 +98,10 @@ pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
 
 fn get_images(registry: &str, category: &str) -> Result<Vec<String>, String> {
     let reference = format!("{registry}/{category}/*");
+    let fmt = "{{.Repository}}:{{.Tag}}";
+    eprintln!("$ docker images --format '{fmt}' {reference}");
     let output = Command::new("docker")
-        .args(["images", "--format", "{{.Repository}}:{{.Tag}}", &reference])
+        .args(["images", "--format", fmt, &reference])
         .output()
         .map_err(|e| format!("failed to run docker: {e}"))?;
 

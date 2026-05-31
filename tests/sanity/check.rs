@@ -453,3 +453,40 @@ fn every_agent_has_readme() {
     }
     eprintln!("✓ all agents have README.md");
 }
+
+#[test]
+fn example_openshift_overlay_is_valid_component() {
+    // The documented OpenShift overlay is consumed via `run --overlay`; if
+    // it's deleted or mangled, that path silently stops working. This gate
+    // keeps the example honest (it's prose-adjacent data, so it can rot).
+    let dir = Path::new("examples/deployments/openshift");
+    let kustomization = dir.join("kustomization.yaml");
+    let text = fs::read_to_string(&kustomization).unwrap_or_else(|_| {
+        panic!(
+            "missing {} — the OpenShift overlay documented for `run --overlay` must exist",
+            kustomization.display()
+        )
+    });
+    // A Kustomize *component* (pulled in via `components:`), not a
+    // standalone Kustomization.
+    assert!(
+        text.contains("kind: Component"),
+        "{} must be `kind: Component`",
+        kustomization.display()
+    );
+    // Sets the service account OpenShift needs, and ships the SA it names.
+    assert!(
+        text.contains("serviceAccountName"),
+        "{} must patch the Job's serviceAccountName",
+        kustomization.display()
+    );
+    assert!(
+        dir.join("service-account.yaml").is_file(),
+        "examples/deployments/openshift/service-account.yaml must exist (referenced by the component)"
+    );
+    assert!(
+        dir.join("README.md").is_file(),
+        "examples/deployments/openshift/README.md (the build-and-run walkthrough) must exist"
+    );
+    eprintln!("✓ examples/deployments/openshift is a valid overlay component");
+}
