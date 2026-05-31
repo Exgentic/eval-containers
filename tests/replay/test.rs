@@ -15,7 +15,6 @@ use tokio::sync::OnceCell;
 
 #[path = "../common/mod.rs"]
 mod common;
-use common::build_tier;
 
 fn read_json(path: &Path) -> Option<serde_json::Value> {
     let content = fs::read_to_string(path).ok()?;
@@ -211,107 +210,35 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
     );
 }
 
-/// Build all required images before running replay test.
-/// In CI, nothing is pre-built — tests must be self-contained.
-///
-/// The replay model is built through testcontainers-rs to satisfy
-/// tests/RULES.md principle 2 (container tests MUST go through the
-/// library). The eval image is built by shelling out to `cargo run --
-/// build eval`, which is a legitimate CLI black-box test — we're
-/// testing that Eval Containers's own `build eval` subcommand works end-to-end
-/// and the docker invocations happen inside the CLI under test, not
-/// inside this file.
-///
-/// Image build helper `tc_build_context` lives in `tests/common/mod.rs`
-/// (shared with tests/agents and tests/gateways).
-
-/// Bootstrap every core/gateway/model base image the replay stack
-/// might transitively need, in dependency order. Runs once across all
-/// parallel test threads via `OnceCell` — repeated calls await the
-/// in-flight bootstrap.
-///
-/// Why every base, not just the ones for (benchmark, agent)?
-///   - Mapping (benchmark → benchmark-base, agent → agent-base) is
-///     repository-specific and we'd duplicate the wiring here. Building
-///     the full base tier once is ~minutes (most layers cache after the
-///     first apt-get) and amortizes across the whole test sweep.
-///
-/// Why dependency tiers?
-///   - core/benchmark-base-* FROM core/entrypoint, so entrypoint must
-///     exist first. Same for models/gpt-5.4--bifrost which copies
-///     /opt/gateway from gateways/bifrost.
+/// Build every core/gateway/model base image the replay stack
+/// transitively needs. Runs once per process via `OnceCell`; parallel
+/// callers await the in-flight bake. Bake itself handles dep ordering
+/// (entrypoint before benchmark-base-hf, bifrost before
+/// gpt-5.4--bifrost, etc.) via the `contexts` blocks in each artifact's
+/// `docker-bake.hcl` (RULES.md principle 15).
 static CORE_BASES_BOOTSTRAPPED: OnceCell<()> = OnceCell::const_new();
 
 async fn bootstrap_core_bases() {
-    // Builds within a tier are independent and run concurrently; tier
-    // boundaries serialize (tier 2's bases `FROM` tier 1).
     CORE_BASES_BOOTSTRAPPED
         .get_or_init(|| async {
-            // Load `.env` from cwd / parents so HF_TOKEN (and any other
-            // shared secrets) reach the in-process bootstrap builds and
-            // the cargo subprocess we shell out to. Mirrors what
-            // `src/main.rs` does for the CLI itself — single source of
-            // truth (`dotenvy`), no bespoke parsing.
             let _ = dotenvy::dotenv();
-            build_tier(
-                "tier 1",
-                // Leaf bases (no inter-eval-containers deps).
-                [
-                    ("quay.io/eval-containers/core/entrypoint", "core/entrypoint"),
-                    (
-                        "quay.io/eval-containers/core/test-exact-match",
-                        "core/test-exact-match",
-                    ),
-                    ("quay.io/eval-containers/core/litellm", "core/litellm"),
-                    ("quay.io/eval-containers/core/llm-bridge", "core/llm-bridge"),
-                    ("quay.io/eval-containers/core/otel", "core/otel"),
-                    (
-                        "quay.io/eval-containers/core/runtime-bundle",
-                        "core/runtime-bundle",
-                    ),
-                    (
-                        "quay.io/eval-containers/core/agent-base-node",
-                        "core/agent-base-node",
-                    ),
-                    (
-                        "quay.io/eval-containers/core/agent-base-python",
-                        "core/agent-base-python",
-                    ),
-                    (
-                        "quay.io/eval-containers/core/agent-base-rust",
-                        "core/agent-base-rust",
-                    ),
-                    (
-                        "quay.io/eval-containers/gateways/bifrost",
-                        "gateways/bifrost",
-                    ),
-                    ("quay.io/eval-containers/models/replay", "models/replay"),
-                ],
-            )
-            .await;
-            build_tier(
-                "tier 2",
-                // Depend on tier 1 (benchmark-base-* FROM core/entrypoint;
-                // gpt-5.4--bifrost COPYs /opt/gateway from gateways/bifrost).
-                [
-                    (
-                        "quay.io/eval-containers/core/benchmark-base-hf",
-                        "core/benchmark-base-hf",
-                    ),
-                    (
-                        "quay.io/eval-containers/core/benchmark-base-github",
-                        "core/benchmark-base-github",
-                    ),
-                    (
-                        "quay.io/eval-containers/core/benchmark-base-external",
-                        "core/benchmark-base-external",
-                    ),
-                    (
-                        "quay.io/eval-containers/models/gpt-5.4--bifrost",
-                        "models/gpt-5.4--bifrost",
-                    ),
-                ],
-            )
+            common::bake_targets(&[
+                "entrypoint",
+                "test-exact-match",
+                "litellm",
+                "llm-bridge",
+                "otel",
+                "runtime-bundle",
+                "agent-base-node",
+                "agent-base-python",
+                "agent-base-rust",
+                "bifrost",
+                "model-replay",
+                "benchmark-base-hf",
+                "benchmark-base-github",
+                "benchmark-base-external",
+                "model-gpt-5_4--bifrost",
+            ])
             .await;
         })
         .await;
