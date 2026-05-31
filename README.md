@@ -4,6 +4,8 @@ AI agent evaluations in containers. 100 benchmarks, 20 agents — ready to deplo
 
 Our goal is to deliver agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
 
+> **Working in this repo (human or AI agent)?** It is governed by [`AGENTS.md`](AGENTS.md) and the [`doctrine/`](doctrine/) directory — its **rules** (what a result must be) and **skills** (how to produce it). Read the doctrine for the area you touch before changing it.
+
 ## Why Eval Containers
 
 |                     | Cloud-native | Framework-free | Full interchangeability (agent × model × benchmark) | Speed audit | Size audit | Reliability audit | Native model tracing |
@@ -227,13 +229,13 @@ All work is governed by RULES documents. See [CONTRIBUTING.md](CONTRIBUTING.md) 
 | Rules | Scope |
 |-------|-------|
 | [RULES.md](RULES.md) | Core principles |
-| [benchmarks/RULES.md](benchmarks/RULES.md) | Building benchmarks |
-| [agents/RULES.md](agents/RULES.md) | Building agents |
-| [models/RULES.md](models/RULES.md) | Building models |
-| [src/RULES.md](src/RULES.md) | CLI |
-| [compose/RULES.md](compose/RULES.md) | Naming, compose, output, registry |
+| [doctrine/benchmarks/RULES.md](doctrine/benchmarks/RULES.md) | Building benchmarks |
+| [doctrine/agents/RULES.md](doctrine/agents/RULES.md) | Building agents |
+| [doctrine/models/RULES.md](doctrine/models/RULES.md) | Building models |
+| [doctrine/src/RULES.md](doctrine/src/RULES.md) | CLI |
+| [doctrine/compose/RULES.md](doctrine/compose/RULES.md) | Naming, compose, output, registry |
 
 ## Setup
 
 - [tests/LOCAL.md](tests/LOCAL.md) — local dev loop (Docker Desktop, Podman, Rosetta)
-- [RELEASE.md](RELEASE.md) — how CI builds and publishes the fleet
+- [doctrine/delivery/release/SKILL.md](doctrine/delivery/release/SKILL.md) — how CI builds and publishes the fleet
