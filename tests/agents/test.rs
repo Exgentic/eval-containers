@@ -64,7 +64,6 @@ use tokio::sync::OnceCell;
 
 #[path = "../common/mod.rs"]
 mod common;
-use common::tc_build_context;
 
 // ─── Configuration ───────────────────────────────────────────────────
 
@@ -116,17 +115,11 @@ const FIRST_CALL_TIMEOUT: Duration = Duration::from_secs(150);
 
 static MOCK_BUILT: OnceCell<()> = OnceCell::const_new();
 
-/// Build models/replay via testcontainers if it's not in the local store.
+/// Build models/replay via bake if it's not in the local store.
 async fn ensure_mock_built() {
     MOCK_BUILT
         .get_or_init(|| async {
-            tc_build_context(
-                "quay.io/eval-containers/models/replay",
-                "latest",
-                "models/replay",
-                "models/replay/Dockerfile",
-            )
-            .await;
+            common::bake_target("model-replay").await;
         })
         .await;
 }
@@ -264,9 +257,28 @@ async fn assert_agent_calls_llm(agent: &str) {
 
     // The agent writes its real stdout/stderr into /output/agent/*.log
     // inside the container (eval-entrypoint redirects there). Bind-mount
-    // /output to a host tempdir so the panic path below can read the
-    // logs without depending on the container still being alive.
-    let output_dir = tempfile::tempdir().expect("create output tempdir");
+    // /output to a host dir so the panic path below can read the logs
+    // without depending on the container still being alive.
+    //
+    // The dir MUST live under the project root (./output/agent-smoke/...)
+    // — `/tmp` isn't shared into rootless podman's VM on macOS, so
+    // testcontainers-driven bind mounts to /tmp paths surface inside
+    // the container with non-writable VM-defaulted perms.
+    let host_root = std::env::current_dir()
+        .expect("cwd")
+        .join("output/agent-smoke")
+        .join(format!("{agent}-{nanos}"));
+    std::fs::create_dir_all(&host_root).expect("create host output dir");
+    let output_dir = ScopedDir(host_root);
+    struct ScopedDir(std::path::PathBuf);
+    impl Drop for ScopedDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    impl ScopedDir {
+        fn path(&self) -> &std::path::Path { &self.0 }
+    }
     let replay = start_replay_mock(&net, &mock_host).await;
     let _agent_c = start_agent(agent, &net, &mock_host, output_dir.path()).await;
 
