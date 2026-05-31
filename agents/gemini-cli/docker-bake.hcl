@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "agent-gemini-cli" {
   context = "agents/gemini-cli"
   contexts = {

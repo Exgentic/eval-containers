@@ -1,4 +1,3 @@
-variable "REGISTRY"             { default = "quay.io/eval-containers" }
 variable "EVAL_BENCHMARK"       {}
 variable "EVAL_AGENT"           {}
 variable "EVAL_AGENT_VERSION"   { default = "latest" }
