@@ -76,24 +76,64 @@ const REQUIRED_AGENT_LABELS: &[&str] = &[
 ];
 
 const REQUIRED_COMPOSE_MARKERS: &[&str] = &[
-    "services:",
-    "  model:",
-    "  eval:",
-    "networks:",
+    "include:",
     "compose/services.yaml",
+    "services:",
+    "  runner:",
+    "BENCHMARK:",
 ];
+
+// Rule 24 (triple-mode contract): every benchmark ships container.Dockerfile,
+// compose.yaml, and job.yaml — one per deployment surface.
+const REQUIRED_TRIPLE_MODE_FILES: &[&str] = &["container.Dockerfile", "compose.yaml", "job.yaml"];
+
+// Rule 29: each benchmark's job.yaml MUST inline the canonical otelcol +
+// gateway + runner topology. Catch drift by spot-checking critical markers
+// — exact-byte comparison would be too brittle (resource limits and env
+// values differ per benchmark by design), but these markers identify the
+// load-bearing wiring that shouldn't drift silently.
+fn job_canonical_markers(name: &str) -> Vec<String> {
+    vec![
+        // The three canonical containers must be named exactly.
+        "- name: otelcol".to_string(),
+        "- name: gateway".to_string(),
+        "- name: runner".to_string(),
+        // Sidecar-reaping invariant: shared pid namespace + reap helper.
+        "shareProcessNamespace: true".to_string(),
+        "/usr/local/bin/reap-sidecars".to_string(),
+        // Canonical otelcol image — no benchmark should override this.
+        "quay.io/eval-containers/core/otel:latest".to_string(),
+        // Runner image must reference this benchmark (rule 4 in compose/RULES.md).
+        // The pattern is `evals/<benchmark>--<agent>:<tag>` for shared-env or
+        // `evals/<benchmark>-<task>--<agent>:<tag>` for per-task — the trailing
+        // hyphen accepts both; agent + tag are checked separately below.
+        format!("evals/{name}-"),
+        // Canonical agent + tag suffix.
+        "claude-code:latest".to_string(),
+        // Sidecar wiring URLs (Pod loopback in k8s).
+        "http://localhost:4000/anthropic".to_string(),
+        "http://localhost:4000/openai".to_string(),
+        "http://localhost:4318".to_string(),
+        // Upstream credentials come from the eval-secrets Secret.
+        "name: eval-secrets".to_string(),
+    ]
+}
 
 fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
     let mut issues = Vec::new();
     let dockerfile = dir.join("Dockerfile");
     let compose = dir.join("compose.yaml");
+    let job = dir.join("job.yaml");
 
     if !dockerfile.is_file() {
         issues.push(format!("{name}: no Dockerfile"));
         return issues;
     }
-    if !compose.is_file() {
-        issues.push(format!("{name}: no compose.yaml"));
+
+    for file in REQUIRED_TRIPLE_MODE_FILES {
+        if !dir.join(file).is_file() {
+            issues.push(format!("{name}: no {file} (rule 24 triple-mode contract)"));
+        }
     }
 
     for label in REQUIRED_BENCHMARK_LABELS {
@@ -106,6 +146,17 @@ fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
         for marker in REQUIRED_COMPOSE_MARKERS {
             if !contains_line(&compose, marker) {
                 issues.push(format!("{name}: compose missing `{marker}`"));
+            }
+        }
+    }
+
+    if job.is_file() {
+        let text = fs::read_to_string(&job).unwrap_or_default();
+        for marker in job_canonical_markers(name) {
+            if !text.contains(&marker) {
+                issues.push(format!(
+                    "{name}: job.yaml drift — missing `{marker}` (rule 29 canonical)"
+                ));
             }
         }
     }

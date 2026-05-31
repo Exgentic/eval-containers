@@ -43,6 +43,13 @@ fn compose_config_every_benchmark() {
             .args(["compose", "-f"])
             .arg(file)
             .arg("config")
+            // services.yaml uses ${OPENAI_API_KEY:?} (required vars), and
+            // per-task benchmarks use ${EVAL_TASK_ID:?} in the runner image.
+            // Provide dummy values so `compose config` can interpolate without
+            // contacting upstream — we're testing YAML parse, not auth.
+            .env("OPENAI_API_KEY", "test-key")
+            .env("OPENAI_API_BASE", "https://example.com")
+            .env("EVAL_TASK_ID", "test-task")
             .output()
             .expect("failed to run docker compose config");
         if !output.status.success() {

@@ -1,0 +1,42 @@
+#!/bin/sh
+# Start the litellm proxy with a Caddy path-rewriter in front. Caddy
+# listens on $PORT (default 4000); litellm listens on 127.0.0.1:4001.
+# The Caddyfile maps /anthropic/* and /openai/* prefixes to litellm's
+# native root paths.
+#
+# Renders /opt/gateway/config.yaml from config.yaml.template (if present)
+# so EVAL_MODEL=<provider>/<model> becomes the model field; api_key
+# and api_base stay as native `os.environ/VAR` references that litellm
+# resolves at request time.
+#
+# Env contract:
+#   EVAL_MODEL        <provider>/<model> for the routing target.
+#                     litellm uses the prefix to pick the provider plugin.
+#   PORT, HOST        external bind address (default 4000, 127.0.0.1).
+#                     Caddy listens here; litellm is internal.
+#
+# Upstream auth flows through whatever env vars the chosen provider's
+# SDK reads (OPENAI_API_KEY, ANTHROPIC_API_KEY, AWS_*, GOOGLE_*, etc.).
+# litellm reads them via `os.environ/VAR` references in model_list.
+# The framework does NOT introduce a `EVAL_API_*` umbrella alias.
+
+set -eu
+
+TEMPLATE=/opt/gateway/config.yaml.template
+CONFIG=/opt/gateway/config.yaml
+
+if [ -f "$TEMPLATE" ]; then
+  : "${EVAL_MODEL:?EVAL_MODEL must be set to <provider>/<model>}"
+  envsubst '${EVAL_MODEL}' < "$TEMPLATE" > "$CONFIG"
+fi
+
+# Caddy in background — listens on $PORT, forwards to litellm:4001.
+# Litellm-min runs as root in our image, so Caddy doesn't need
+# a non-default config dir.
+caddy run --config /opt/gateway/Caddyfile --adapter caddyfile &
+
+# Litellm bound to loopback only; the world reaches it via Caddy.
+exec /opt/gateway/venv/bin/litellm \
+  --config "$CONFIG" \
+  --port 4001 \
+  --host 127.0.0.1

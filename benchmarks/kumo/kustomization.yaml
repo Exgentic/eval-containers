@@ -1,0 +1,51 @@
+# Kustomize overlay for the kumo benchmark.
+#
+# Extends benchmarks/_base/job.yaml — only the per-benchmark axes
+# (image, BENCHMARK env, Job name, benchmark labels) are patched here.
+# All other env vars + resources + volumes live in _base.
+#
+#   # Canonical run (claude-code, task 0):
+#   kubectl apply -k benchmarks/kumo/
+#
+#   # Non-canonical (agent / task / model): use the run.rs overlay
+#   # generator on top of this kustomization.
+#
+# See benchmarks/RULES.md rule 99 for the full overlay convention.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../_base
+images:
+  - name: quay.io/eval-containers/evals/PLACEHOLDER--claude-code
+    newName: quay.io/eval-containers/evals/kumo--claude-code
+labels:
+  - pairs:
+      eval.containers.io/benchmark: kumo
+    includeSelectors: false
+patches:
+  - target:
+      kind: Job
+      name: task-0
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: kumo-task-0
+  - target:
+      kind: Job
+    patch: |-
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: task-0
+        labels:
+          benchmark: kumo
+      spec:
+        template:
+          metadata:
+            labels:
+              benchmark: kumo
+          spec:
+            containers:
+              - name: runner
+                env:
+                  - { name: BENCHMARK, value: kumo }
