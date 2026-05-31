@@ -1,0 +1,9 @@
+variable "REGISTRY" { default = "quay.io/eval-containers" }
+
+target "benchmark-visualwebarena" {
+  context = "benchmarks/visualwebarena"
+  contexts = {
+    "${REGISTRY}/core/benchmark-base-external:latest" = "target:benchmark-base-external"
+  }
+  tags = ["${REGISTRY}/benchmarks/visualwebarena:latest"]
+}

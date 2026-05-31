@@ -1,0 +1,9 @@
+variable "REGISTRY" { default = "quay.io/eval-containers" }
+
+target "benchmark-assetopsbench" {
+  context = "benchmarks/assetopsbench"
+  contexts = {
+    "${REGISTRY}/core/benchmark-base-external:latest" = "target:benchmark-base-external"
+  }
+  tags = ["${REGISTRY}/benchmarks/assetopsbench:latest"]
+}
