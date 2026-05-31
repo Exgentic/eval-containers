@@ -1,0 +1,41 @@
+# Path-prefix shim: framework's /<protocol>/* → litellm's native paths.
+#
+# Litellm has built-in routers for all three protocols, each going
+# through model_list (so an inbound model name routes to ${EVAL_MODEL}
+# on the configured upstream provider):
+#
+#   /v1/messages                          → anthropic_messages router
+#   /v1/chat/completions, /v1/responses   → openai router
+#   /v1beta/models/{m}:generateContent    → google_genai router
+#   (also :streamGenerateContent)
+#
+# Caddy strips the leading /anthropic, /openai, /genai segment so
+# litellm sees its own native path. One block for all three.
+#
+# NOTE: do NOT rewrite /genai/* to /gemini/* — /gemini/* is litellm's
+# pass_through-to-Google-AI-Studio endpoint (needs a real GEMINI_API_KEY
+# and forwards to api.googleapis.com, not the configured upstream).
+# /v1beta/* is the model_list-routed translator we want.
+
+{
+	admin off
+	log {
+		output discard
+	}
+}
+
+:4000 {
+	handle_path /anthropic/* {
+		reverse_proxy 127.0.0.1:4001
+	}
+	handle_path /openai/* {
+		reverse_proxy 127.0.0.1:4001
+	}
+	handle_path /genai/* {
+		reverse_proxy 127.0.0.1:4001
+	}
+	# Health, admin, and anything else: pass through unchanged.
+	handle {
+		reverse_proxy 127.0.0.1:4001
+	}
+}

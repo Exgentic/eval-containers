@@ -1,32 +1,8 @@
-# SciCode (scientific research coding benchmark)
-# 65 tasks, shared environment, no internet.
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-scicode}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/scicode--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/scicode--${EVAL_AGENT:-claude-code}:latest
     environment:
-      - EVAL_BENCHMARK=scicode
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-900}
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-scicode}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-scicode}/${EVAL_TASK_ID:-default}/task:/output/task:rw
-    deploy:
-      resources:
-        limits:
-          cpus: "4"
-          memory: 8G
-
-networks:
-  internal:
-    internal: true
+      BENCHMARK: scicode

@@ -1,0 +1,6 @@
+#!/bin/sh
+# Portkey readiness probe. Returns 0 when portkey is serving — root
+# path responds "AI Gateway says hey!" when alive. Caddy proxies /
+# through to portkey :8787 (handle {} fallback), so this works whether
+# the probe hits the external $PORT or the internal portkey port.
+exec curl -sf -m 1 http://127.0.0.1:"${PORT:-4000}"/ > /dev/null

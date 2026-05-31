@@ -1,54 +1,83 @@
-# Shared service definitions for Eval Containers benchmarks.
-# Benchmark compose files use `extends` to inherit these.
-#
-# Note: volume mounts are NOT defined here because `extends` resolves
-# relative paths from this file's location, not the benchmark's.
-# Each benchmark compose file defines its own output volume.
-
 services:
-  model:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/${EVAL_MODEL:-claude-sonnet-4}:latest
-    environment:
-      # Hard cap on model spend per run. The litellm entrypoint reads
-      # this env var and rewrites the max_budget field in config.yaml
-      # before starting the proxy. When spend crosses the cap, litellm
-      # returns BudgetExceededError and the agent's next request fails.
-      # Default $1; override via `eval-containers run --max-budget <N>` or the
-      # EVAL_MODEL_MAX_BUDGET env var. See compose/RULES.md rule 10.
-      - EVAL_MODEL_MAX_BUDGET=${EVAL_MODEL_MAX_BUDGET:-1}
+  otelcol:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/core/otel:latest
+    volumes:
+      - output:/output
     networks:
       - internal
-      - default
-    healthcheck:
-      # /health exercises every configured model alias with a real
-      # upstream call and times out. /health/liveness signals only
-      # "uvicorn is accepting traffic" — the right gate for compose.
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveness')"]
-      interval: 10s
-      timeout: 10s
-      retries: 60
-      start_period: 120s
 
-  eval:
+  gateway:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/${EVAL_GATEWAY_IMAGE:-gpt-5.4--bifrost}:latest
     environment:
-      - ANTHROPIC_BASE_URL=http://model:4000
-      - OPENAI_BASE_URL=http://model:4000
-      # Dummy API keys for SDK client initialization. The agent talks
-      # to the proxy at model:4000 which holds the real keys. The
-      # agent never sees real credentials (env_file removed from eval).
-      - ANTHROPIC_API_KEY=sk-proxy
-      - OPENAI_API_KEY=sk-proxy
-      # Non-secret config vars the agent needs (previously from env_file)
-      - EVAL_MODEL=${EVAL_MODEL:-claude-sonnet-4}
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-300}
-      - TASK=${TASK:-}
-      - EVAL_TASK_ID=${EVAL_TASK_ID:-}
-      - EXPECTED_ANSWER=${EXPECTED_ANSWER:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:?}
+      EVAL_MODEL: ${EVAL_MODEL:-openai/azure/gpt-5.4}
+      HOST: 0.0.0.0
+      # Both gateway flavors emit OTel: bifrost via its native `otel`
+      # plugin (collector_url derived from this in /opt/gateway/start),
+      # litellm via the `otel` callback in config.yaml.template (reads
+      # this env var directly). Spans land in /output/traces.jsonl via
+      # the otelcol sidecar's file exporter.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
+    healthcheck:
+      test: ["CMD", "/opt/gateway/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
     depends_on:
-      model:
+      otelcol:
+        condition: service_started
+    networks:
+      - internal
+      - upstream
+
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/${EVAL_BENCHMARK:-aime}--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      # Pass framework axes through as both EVAL_* (canonical — what
+      # /eval-entrypoint.sh and per-benchmark /entrypoint.sh read) and
+      # bare names (legacy — what process-compose.yaml + write-result
+      # read internally). Until those internals migrate to EVAL_*,
+      # we set both so the run is consistent regardless of which path
+      # produces result.json.
+      EVAL_BENCHMARK: ${EVAL_BENCHMARK:-aime}
+      EVAL_AGENT: ${EVAL_AGENT:-claude-code}
+      EVAL_MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
+      EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-300}
+      BENCHMARK: ${EVAL_BENCHMARK:-aime}
+      AGENT: ${EVAL_AGENT:-claude-code}
+      MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
+      TASK_ID: ${EVAL_TASK_ID:-0}
+      TIMEOUT: ${EVAL_TIMEOUT:-300}
+      ANTHROPIC_BASE_URL: http://gateway:4000/anthropic
+      OPENAI_BASE_URL: http://gateway:4000/openai/v1
+      GOOGLE_GEMINI_BASE_URL: http://gateway:4000/genai
+      GEMINI_API_KEY: sk-proxy
+      OPENAI_API_KEY: sk-proxy
+      ANTHROPIC_API_KEY: sk-proxy
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
+    depends_on:
+      gateway:
         condition: service_healthy
+    volumes:
+      - output:/output
     networks:
       - internal
     tmpfs:
-      - /logs:size=100M
       - /tmp:size=1G
+      - /logs:size=100M
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+networks:
+  internal:
+    internal: true
+  upstream: {}
+
+volumes:
+  output:

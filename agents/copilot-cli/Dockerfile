@@ -18,7 +18,7 @@ I
 RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
 #!/bin/bash
 set -euo pipefail
-export COPILOT_PROVIDER_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}/v1"
+export COPILOT_PROVIDER_BASE_URL="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export COPILOT_PROVIDER_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export COPILOT_OFFLINE=true
 export COPILOT_MODEL="${COPILOT_MODEL:-default}"

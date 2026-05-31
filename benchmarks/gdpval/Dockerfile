@@ -102,18 +102,32 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 /eval-materialize-task
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  # Download reference files to /app for the agent
+  # Download reference files to /app for the agent. On a sandboxed
+  # network (compose `internal: true`, restricted k8s NetworkPolicy,
+  # replay tests) DNS resolution itself blocks indefinitely —
+  # `socket.setdefaulttimeout()` doesn't reliably interrupt
+  # `getaddrinfo`. Wrap the whole download phase in a shell-level
+  # `timeout 60` so the OS guarantees we proceed to the agent even if
+  # every URL hangs at DNS. Reference files are graceful-degradation
+  # input; agents can produce a result without them.
   if [ -f /tasks/$EVAL_TASK_ID/reference_urls_json.txt ]; then
-    python3 -c "
-import json, urllib.request
+    timeout 60 python3 -c "
+import json, socket, urllib.request
+socket.setdefaulttimeout(15)
 urls = json.load(open('/tasks/$EVAL_TASK_ID/reference_urls_json.txt'))
 if isinstance(urls, list):
     for url in urls:
         name = url.split('/')[-1].split('?')[0]
-        urllib.request.urlretrieve(url, f'/app/{name}')
+        try:
+            urllib.request.urlretrieve(url, f'/app/{name}')
+        except Exception:
+            pass
 elif isinstance(urls, dict):
     for name, url in urls.items():
-        urllib.request.urlretrieve(url, f'/app/{name}')
+        try:
+            urllib.request.urlretrieve(url, f'/app/{name}')
+        except Exception:
+            pass
 " 2>/dev/null || true
   fi
 fi

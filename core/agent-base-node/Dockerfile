@@ -10,7 +10,13 @@
 FROM --platform=linux/amd64 ubuntu:24.04
 LABEL eval.type="core-base"
 LABEL eval.base.runtime="node"
-ARG NODE_VERSION=22.11.0
+# Bumped 22.11.0 → 22.20.0 (latest LTS Node 22 release):
+#   - openclaw explicitly requires Node ≥22.14
+#   - newer node flags (e.g. --disable-sigusr1) used by some agent
+#     CLIs require >= 22.14
+#   - stays on Node 22 LTS so we don't break any agent expecting LTS
+#     behaviour (Node 23 is current but not LTS)
+ARG NODE_VERSION=22.20.0
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
       if apt-get update --fix-missing && apt-get install -y --no-install-recommends \

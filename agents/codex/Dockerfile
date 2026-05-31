@@ -23,7 +23,7 @@ model = "${CODEX_MODEL:-default}"
 model_provider = "eval-containers"
 [model_providers.eval-containers]
 name = "Eval Containers LiteLLM Proxy"
-base_url = "${OPENAI_BASE_URL:-http://model:4000}/v1"
+base_url = "${OPENAI_BASE_URL:-http://model:4000/v1}"
 env_key = "OPENAI_API_KEY"
 CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"

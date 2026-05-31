@@ -45,6 +45,12 @@ enum Commands {
 }
 
 fn main() {
+    // Load `.env` from cwd (walking up parents) before parsing args so
+    // `clap`'s `#[arg(env = ...)]` defaults can pick up values from it
+    // and child processes (docker build, docker compose) inherit them.
+    // Best-effort — missing or unreadable `.env` is fine.
+    let _ = dotenvy::dotenv();
+
     let cli = Cli::parse();
 
     let result = match cli.command {
