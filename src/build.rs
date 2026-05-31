@@ -12,7 +12,7 @@
 //! `--build-arg EVAL_TASK_ID=<id>`.
 
 use clap::{Args, Subcommand};
-use eval_containers::bake::artifact_bake_files;
+use eval_containers::bake;
 use std::process::Command;
 
 #[derive(Args)]
@@ -136,18 +136,10 @@ fn bake_with_env(
     overrides: &[String],
     env: &[(&str, String)],
 ) -> Result<(), String> {
-    let bake_files = artifact_bake_files();
+    let override_refs: Vec<&str> = overrides.iter().map(String::as_str).collect();
+    let args = bake::base_args(&[target], &override_refs);
     let mut cmd = Command::new("docker");
-    cmd.args(["buildx", "bake"]);
-    for f in &bake_files {
-        cmd.args(["-f", f.to_str().expect("utf8 bake path")]);
-    }
-    for o in overrides {
-        cmd.args(["--set", o]);
-    }
-    cmd.arg("--load");
-    cmd.arg(target);
-
+    cmd.args(&args);
     cmd.env("REGISTRY", registry);
     if let Ok(t) = std::env::var("HF_TOKEN") {
         cmd.env("HF_TOKEN", t);
@@ -155,8 +147,7 @@ fn bake_with_env(
     for (k, v) in env {
         cmd.env(k, v);
     }
-
-    eprintln!("$ docker buildx bake [-f ... × {}] {target}", bake_files.len());
+    eprintln!("$ docker buildx bake [-f ...] {target}");
     let status = cmd
         .status()
         .map_err(|e| format!("failed to run docker buildx bake: {e}"))?;
