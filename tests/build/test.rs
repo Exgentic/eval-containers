@@ -808,25 +808,10 @@ fn in_repo_deps_from_bake(path: &Path) -> Vec<String> {
     deps
 }
 
-fn artifact_dirs_with_dockerfile() -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    for category in ["core", "agents", "benchmarks", "models", "gateways"] {
-        let Ok(entries) = fs::read_dir(category) else { continue };
-        for e in entries.flatten() {
-            let p = e.path();
-            if p.is_dir() && p.join("Dockerfile").exists() {
-                out.push(p);
-            }
-        }
-    }
-    out.sort();
-    out
-}
-
 #[test]
 fn dockerfile_bake_alignment() {
     let mut failures: Vec<String> = Vec::new();
-    for dir in artifact_dirs_with_dockerfile() {
+    for dir in eval_containers::bake::artifact_dirs_with_dockerfile() {
         let dockerfile = dir.join("Dockerfile");
         let bake = dir.join("docker-bake.hcl");
 
@@ -854,24 +839,35 @@ fn dockerfile_bake_alignment() {
         }
 
         // Principle 15.g (Minimal): forbid inherits, group blocks,
-        // dockerfile-inline, and multi-target files.
+        // dockerfile-inline, and multi-target files. Match line-anchored
+        // HCL syntax — a bare `bake_text.contains("group ")` would also
+        // trip on the word "group" inside a comment.
         let bake_text = fs::read_to_string(&bake).unwrap_or_default();
-        for forbidden in ["inherits", "dockerfile-inline"] {
-            if bake_text.contains(forbidden) {
+        let mut target_count = 0;
+        for raw in bake_text.lines() {
+            let line = raw.trim_start();
+            if line.starts_with("inherits ") || line.starts_with("inherits=") {
                 failures.push(format!(
-                    "{}: bake file uses forbidden `{}` (RULES.md principle 15.g)",
+                    "{}: bake file uses forbidden `inherits` (RULES.md principle 15.g)",
                     dir.display(),
-                    forbidden,
                 ));
             }
+            if line.starts_with("dockerfile-inline ") || line.starts_with("dockerfile-inline=") {
+                failures.push(format!(
+                    "{}: bake file uses forbidden `dockerfile-inline` (RULES.md principle 15.g)",
+                    dir.display(),
+                ));
+            }
+            if line.starts_with("group \"") {
+                failures.push(format!(
+                    "{}: bake file declares a `group` block (RULES.md principle 15.g)",
+                    dir.display(),
+                ));
+            }
+            if line.starts_with("target \"") {
+                target_count += 1;
+            }
         }
-        if bake_text.contains("group \"") || bake_text.contains("group ") {
-            failures.push(format!(
-                "{}: bake file declares a `group` block (RULES.md principle 15.g)",
-                dir.display(),
-            ));
-        }
-        let target_count = bake_text.matches("target \"").count();
         if target_count != 1 {
             failures.push(format!(
                 "{}: bake file declares {} targets; principle 15.g requires exactly 1",
