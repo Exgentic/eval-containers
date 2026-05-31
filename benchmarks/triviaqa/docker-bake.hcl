@@ -3,5 +3,5 @@ target "benchmark-triviaqa" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
   }
-  tags = ["${REGISTRY}/benchmarks/triviaqa:latest"]
+  tags = ["${REGISTRY}/benchmarks/triviaqa:${TAG}"]
 }

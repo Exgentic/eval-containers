@@ -7,5 +7,5 @@ target "benchmark-frontiermath" {
     "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
   }
   args = { HF_TOKEN = HF_TOKEN }
-  tags = ["${REGISTRY}/benchmarks/frontiermath:latest"]
+  tags = ["${REGISTRY}/benchmarks/frontiermath:${TAG}"]
 }

@@ -4,5 +4,5 @@ target "benchmark-mmmu" {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
     "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
   }
-  tags = ["${REGISTRY}/benchmarks/mmmu:latest"]
+  tags = ["${REGISTRY}/benchmarks/mmmu:${TAG}"]
 }

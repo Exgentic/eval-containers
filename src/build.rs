@@ -42,8 +42,11 @@ pub enum BuildTarget {
         agent: String,
         #[arg(long)]
         task_id: Option<String>,
-        #[arg(long, default_value = "latest")]
-        version: String,
+        /// Upstream agent CLI version baked as `EVAL_AGENT_VERSION_DEFAULT`
+        /// inside the eval image (RULES.md principle 9 — internal version
+        /// axis). Distinct from the image `TAG` (set via `TAG` env var).
+        #[arg(long, default_value = "")]
+        agent_version: String,
         #[arg(long, default_value = "gpt-5.4--bifrost")]
         model: String,
     },
@@ -77,20 +80,21 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             benchmark,
             agent,
             task_id,
-            version,
+            agent_version,
             model,
         } => {
+            let tag = std::env::var("TAG").unwrap_or_else(|_| "latest".to_string());
             let bench_tag = if let Some(ref tid) = task_id {
-                format!("{registry}/benchmarks/{benchmark}-{tid}:latest")
+                format!("{registry}/benchmarks/{benchmark}-{tid}:{tag}")
             } else {
-                format!("{registry}/benchmarks/{benchmark}:latest")
+                format!("{registry}/benchmarks/{benchmark}:{tag}")
             };
-            let agent_tag = format!("{registry}/agents/{agent}:latest");
-            let model_tag = format!("{registry}/models/{model}:latest");
+            let agent_tag = format!("{registry}/agents/{agent}:{tag}");
+            let model_tag = format!("{registry}/models/{model}:{tag}");
             let bake_env = vec![
                 ("EVAL_BENCHMARK", benchmark.clone()),
                 ("EVAL_AGENT", agent.clone()),
-                ("EVAL_AGENT_VERSION", version.clone()),
+                ("EVAL_AGENT_VERSION", agent_version.clone()),
             ];
             let overrides = vec![
                 format!("eval.args.BENCHMARK_IMAGE={bench_tag}"),

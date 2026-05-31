@@ -867,13 +867,16 @@ fn dockerfile_bake_alignment() {
             if line.starts_with("target \"") {
                 target_count += 1;
             }
-            // Principle 15.b: REGISTRY is fleet-wide; per-artifact files
-            // MUST NOT redeclare it.
-            if line.starts_with("variable \"REGISTRY\"") {
-                failures.push(format!(
-                    "{}: bake file redeclares `REGISTRY` (RULES.md principle 15.b — REGISTRY lives only in ./docker-bake.hcl)",
-                    dir.display(),
-                ));
+            // Principle 15.b: REGISTRY and TAG are fleet-wide;
+            // per-artifact files MUST NOT redeclare them.
+            for fleetwide in ["REGISTRY", "TAG"] {
+                if line.starts_with(&format!("variable \"{fleetwide}\"")) {
+                    failures.push(format!(
+                        "{}: bake file redeclares `{}` (RULES.md principle 15.b — fleet-wide variables live only in ./docker-bake.hcl)",
+                        dir.display(),
+                        fleetwide,
+                    ));
+                }
             }
         }
         if target_count != 1 {

@@ -7,5 +7,5 @@ target "benchmark-hle" {
     "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
   }
   args = { HF_TOKEN = HF_TOKEN }
-  tags = ["${REGISTRY}/benchmarks/hle:latest"]
+  tags = ["${REGISTRY}/benchmarks/hle:${TAG}"]
 }

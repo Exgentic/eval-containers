@@ -4,5 +4,5 @@ target "benchmark-truthfulqa" {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
     "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
   }
-  tags = ["${REGISTRY}/benchmarks/truthfulqa:latest"]
+  tags = ["${REGISTRY}/benchmarks/truthfulqa:${TAG}"]
 }

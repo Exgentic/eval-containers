@@ -3,5 +3,5 @@ target "benchmark-compilebench" {
   contexts = {
     "${REGISTRY}/core/entrypoint" = "target:entrypoint"
   }
-  tags = ["${REGISTRY}/benchmarks/compilebench:latest"]
+  tags = ["${REGISTRY}/benchmarks/compilebench:${TAG}"]
 }
