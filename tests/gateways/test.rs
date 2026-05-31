@@ -49,7 +49,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use reqwest::Client;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use testcontainers::core::wait::HttpWaitStrategy;
 use testcontainers::core::{ContainerPort, Mount, WaitFor};
 use testcontainers::runners::AsyncRunner;
@@ -344,8 +344,8 @@ fn static_portkey_health_does_not_probe_removed_sidecar() {
     // health probe still pointed at 127.0.0.1:4002. That makes the
     // gateway perpetually unhealthy with no obvious symptom — the kind
     // of bug a test should catch the next time someone refactors.
-    let health = std::fs::read_to_string("gateways/portkey/health")
-        .expect("read gateways/portkey/health");
+    let health =
+        std::fs::read_to_string("gateways/portkey/health").expect("read gateways/portkey/health");
     assert!(
         !health.contains(":4002"),
         "gateways/portkey/health still probes :4002 (bifrost sidecar port) — sidecar was removed, update the probe"
@@ -459,7 +459,9 @@ async fn assert_openai_200(flavor: &str) {
     let c = start_with_real_creds(flavor).await;
     let port = gateway_port(&c).await;
     let resp = http()
-        .post(format!("http://127.0.0.1:{port}/openai/v1/chat/completions"))
+        .post(format!(
+            "http://127.0.0.1:{port}/openai/v1/chat/completions"
+        ))
         .json(&body_openai())
         .send()
         .await
@@ -600,10 +602,7 @@ const GEN_AI_REQUIRED_ATTRS: &[&str] = &[
 async fn start_pod_with_otel(
     flavor: &str,
     host_output: &Path,
-) -> (
-    ContainerAsync<GenericImage>,
-    ContainerAsync<GenericImage>,
-) {
+) -> (ContainerAsync<GenericImage>, ContainerAsync<GenericImage>) {
     ensure_built().await;
     let (key, base) = upstream_creds();
 
@@ -713,7 +712,9 @@ async fn assert_gen_ai_attrs(flavor: &str) {
     let (_otel, gw) = start_pod_with_otel(flavor, tmp.path()).await;
     let port = gateway_port(&gw).await;
     let resp = http()
-        .post(format!("http://127.0.0.1:{port}/openai/v1/chat/completions"))
+        .post(format!(
+            "http://127.0.0.1:{port}/openai/v1/chat/completions"
+        ))
         .json(&body_openai())
         .send()
         .await
@@ -754,7 +755,9 @@ async fn otel_litellm_writes_trajectory_jsonl_and_result_json() {
     let (_otel, gw) = start_pod_with_otel("litellm", tmp.path()).await;
     let port = gateway_port(&gw).await;
     let resp = http()
-        .post(format!("http://127.0.0.1:{port}/openai/v1/chat/completions"))
+        .post(format!(
+            "http://127.0.0.1:{port}/openai/v1/chat/completions"
+        ))
         .json(&body_openai())
         .send()
         .await
@@ -809,7 +812,9 @@ async fn otel_portkey_openai_emits_no_gateway_spans() {
     let (_otel, gw) = start_pod_with_otel("portkey", tmp.path()).await;
     let port = gateway_port(&gw).await;
     let resp = http()
-        .post(format!("http://127.0.0.1:{port}/openai/v1/chat/completions"))
+        .post(format!(
+            "http://127.0.0.1:{port}/openai/v1/chat/completions"
+        ))
         .json(&body_openai())
         .send()
         .await
