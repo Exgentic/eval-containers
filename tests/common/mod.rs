@@ -30,6 +30,13 @@ pub async fn bake_targets(targets: &[&str]) {
         cmd.args(["-f", f.to_str().expect("utf8 bake path")]);
     }
     cmd.arg("--load");
+    // Tests run testcontainers with `.with_platform("linux/amd64")` so
+    // the framework's images must match. On Apple Silicon, buildx's
+    // docker-container driver defaults to the host arch (arm64), which
+    // makes podman return 404 on `.with_platform("linux/amd64")` and
+    // testcontainers fall through to a pull-from-quay that 401s. Pin
+    // amd64 here so every test-driven build matches the runtime probe.
+    cmd.args(["--set", "*.platform=linux/amd64"]);
     for t in targets {
         cmd.arg(t);
     }
