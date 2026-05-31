@@ -886,6 +886,28 @@ fn dockerfile_bake_alignment() {
                 target_count,
             ));
         }
+
+        // Principle 15.h (Variable hygiene): every `variable "X"`
+        // declared in this file MUST be referenced (as `X` or `${X}`)
+        // somewhere else in the same file. Dead declarations rot fast.
+        for raw in bake_text.lines() {
+            let line = raw.trim_start();
+            let Some(rest) = line.strip_prefix("variable \"") else { continue };
+            let Some(end) = rest.find('"') else { continue };
+            let name = &rest[..end];
+            // Strip the declaration line from the search corpus.
+            let used_elsewhere = bake_text
+                .lines()
+                .filter(|l| !l.trim_start().starts_with(&format!("variable \"{name}\"")))
+                .any(|l| l.contains(&format!("${{{name}}}")) || l.contains(&format!(" {name} ")) || l.contains(&format!(" {name},")) || l.contains(&format!(" {name}\n")) || l.trim().ends_with(&format!("= {name}")));
+            if !used_elsewhere {
+                failures.push(format!(
+                    "{}: bake variable `{}` declared but never referenced (RULES.md principle 15.h)",
+                    dir.display(),
+                    name,
+                ));
+            }
+        }
     }
     assert!(
         failures.is_empty(),
