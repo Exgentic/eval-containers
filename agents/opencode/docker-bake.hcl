@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "agent-opencode" {
   context = "agents/opencode"
   contexts = {

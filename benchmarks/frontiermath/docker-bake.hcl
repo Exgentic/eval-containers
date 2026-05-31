@@ -1,4 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
 variable "HF_TOKEN" { default = "" }
 
 target "benchmark-frontiermath" {

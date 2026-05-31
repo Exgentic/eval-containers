@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-alpaca-eval" {
   context = "benchmarks/alpaca-eval"
   contexts = {

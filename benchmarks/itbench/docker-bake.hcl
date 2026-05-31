@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-itbench" {
   context = "benchmarks/itbench"
   contexts = {
