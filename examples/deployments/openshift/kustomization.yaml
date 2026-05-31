@@ -1,0 +1,21 @@
+# Example OpenShift overlay — copy and adapt the names/namespace to your
+# cluster. Compose it onto an eval Job with the eval-containers CLI:
+#
+#   eval-containers run <bench> --agent <agent> --mode job \
+#     --overlay examples/deployments/openshift --registry <internal-registry>
+#
+# It ships the one thing OpenShift needs that vanilla Kubernetes doesn't: a
+# service account bound to the `anyuid` SCC, so the eval containers run as
+# the UIDs their images expect (the default restricted SCC assigns a random
+# UID and breaks them). See README.md for the one-time SCC grant.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources:
+  - service-account.yaml
+patches:
+  - target:
+      kind: Job
+    patch: |-
+      - op: add
+        path: /spec/template/spec/serviceAccountName
+        value: anyuid-sa
