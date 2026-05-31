@@ -29,7 +29,7 @@ pub async fn bake_target(target: &str) {
 /// podman 404s the amd64 probe — pin `*.platform=linux/amd64` here so
 /// every test-driven build matches the runtime probe.
 pub async fn bake_targets(targets: &[&str]) {
-    let args = bake::base_args(targets, &["*.platform=linux/amd64"]);
+    let args = bake::base_args(targets, &["*.platform=linux/amd64"], None);
     let mut cmd = Command::new("docker");
     cmd.args(&args);
     if let Ok(t) = std::env::var("HF_TOKEN") {
@@ -45,4 +45,3 @@ pub async fn bake_targets(targets: &[&str]) {
         targets
     );
 }
-
