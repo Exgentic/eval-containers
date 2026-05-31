@@ -1,0 +1,56 @@
+#!/bin/sh
+# Start Caddy (:4000) + Portkey (:8787).
+#
+# Routes (set in Caddyfile):
+#   /openai/*                    → portkey  (x-portkey-config model rewrite)
+#   /anthropic/*  /genai/*       → 501 Not Implemented
+#                                  (portkey self-hosted doesn't translate
+#                                  these into upstream OpenAI Chat —
+#                                  failing loud is honest)
+#
+# Env contract:
+#   EVAL_MODEL        <provider>/<model> for the routing target.
+#
+# Upstream auth flows through whatever env var the chosen provider's
+# SDK reads (OPENAI_API_KEY + OPENAI_API_BASE for OpenAI-compatible
+# endpoints). Portkey receives the key + base via x-portkey-config and
+# x-portkey-custom-host headers. The framework does NOT introduce a
+# `EVAL_API_*` umbrella alias.
+
+set -eu
+
+: "${EVAL_MODEL:?EVAL_MODEL must be set to <provider>/<model>}"
+
+case "$EVAL_MODEL" in
+  */*)
+    MODEL_NAME=${EVAL_MODEL#*/}
+    ;;
+  *)
+    echo "EVAL_MODEL must be of form <provider>/<model> (got: $EVAL_MODEL)" >&2
+    exit 2
+    ;;
+esac
+
+# Portkey wants custom-host with /v1 suffix; it appends /chat/completions, etc.
+case "${OPENAI_API_BASE:-}" in
+  */v1|*/v1/) CUSTOM_HOST="${OPENAI_API_BASE%/}" ;;
+  ?*)         CUSTOM_HOST="${OPENAI_API_BASE%/}/v1" ;;
+  *)          CUSTOM_HOST="" ;;
+esac
+
+# x-portkey-config: full routing config (provider + api_key +
+# override_params.model). Portkey requires one of {provider+api_key,
+# strategy+targets, cache, retry} at the top level — the first form is
+# simplest. override_params rewrites whatever model the agent sends
+# to the configured upstream model.
+PORTKEY_CONFIG=$(printf '{"provider":"openai","api_key":"%s","override_params":{"model":"%s"}}' \
+  "${OPENAI_API_KEY:-}" "$MODEL_NAME")
+
+export MODEL_NAME CUSTOM_HOST PORTKEY_CONFIG
+
+# Caddy on $PORT (default 4000).
+caddy run --config /opt/gateway/Caddyfile --adapter caddyfile &
+
+# Portkey bound to 127.0.0.1:8787 (foreground; container PID 1).
+cd /opt/gateway/portkey
+exec node build/start-server.js

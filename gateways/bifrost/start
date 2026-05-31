@@ -1,0 +1,62 @@
+#!/bin/sh
+# Start the bifrost gateway. Renders config.json from config.json.template,
+# parsing EVAL_MODEL=<provider>/<model> for the provider name and the
+# upstream model name to route to.
+#
+# Env contract:
+#   EVAL_MODEL        <provider>/<model> for the routing target.
+#   PORT, HOST        bind address (default 4000, 127.0.0.1).
+#   LOG_LEVEL         bifrost log level (default info).
+#
+# Upstream auth is whatever env vars the chosen provider's SDK reads —
+# OPENAI_API_KEY (+ OPENAI_API_BASE) for OpenAI-compatible endpoints,
+# ANTHROPIC_API_KEY for Anthropic direct, AWS_ACCESS_KEY_ID + AWS_SECRET
+# for Bedrock, GOOGLE_APPLICATION_CREDENTIALS for Vertex, etc. The
+# gateway and its config template read these by their native names; the
+# framework does NOT introduce an umbrella `EVAL_API_*` alias (see
+# gateways/RULES.md rule 3).
+
+set -eu
+
+TEMPLATE=/opt/gateway/data/config.json.template
+CONFIG=/opt/gateway/data/config.json
+
+if [ -f "$TEMPLATE" ]; then
+  : "${EVAL_MODEL:?EVAL_MODEL must be set to <provider>/<model>}"
+
+  # Split EVAL_MODEL=<provider>/<rest> on the FIRST slash only.
+  case "$EVAL_MODEL" in
+    */*)
+      PROVIDER=${EVAL_MODEL%%/*}
+      MODEL_NAME=${EVAL_MODEL#*/}
+      ;;
+    *)
+      echo "EVAL_MODEL must be of form <provider>/<model> (got: $EVAL_MODEL)" >&2
+      exit 2
+      ;;
+  esac
+  export PROVIDER MODEL_NAME
+
+  # Derive bifrost's full collector URL from the standard OTel base
+  # endpoint ($OTEL_EXPORTER_OTLP_ENDPOINT — same env var the litellm
+  # gateway, the agent runner, and every other OTel-aware component
+  # reads). Bifrost's plugin config wants the full /v1/traces path; we
+  # append it here so callers only need to set the base URL.
+  #
+  # Compose mode: OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4318
+  # K8s pod-with-sidecars: OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+  : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
+  OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
+  export OTEL_COLLECTOR_URL
+
+  # Explicit var list so envsubst leaves bifrost's own $schema key alone.
+  envsubst '${PROVIDER} ${MODEL_NAME} ${OPENAI_API_BASE} ${OTEL_COLLECTOR_URL}' \
+    < "$TEMPLATE" > "$CONFIG"
+fi
+
+exec /opt/gateway/main \
+  -app-dir /opt/gateway/data \
+  -port "${PORT:-4000}" \
+  -host "${HOST:-127.0.0.1}" \
+  -log-level "${LOG_LEVEL:-info}" \
+  -log-style json

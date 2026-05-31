@@ -1,0 +1,92 @@
+# Eval orchestration. Five processes:
+#   otelcol → gateway → agent → verifier → result.
+#
+# Compose / k8s mode applies process-compose-runner.yaml as an overlay
+# (process-compose merges multiple -f configs); the overlay sets
+# `disabled: true` on otelcol+gateway, leaving agent+verifier+result
+# active. Single source for the agent/verifier/result definitions.
+#
+# URL contract (resolved by /usr/local/bin/run BEFORE process-compose
+# starts, so plain $VAR refs in commands work uniformly):
+#   ANTHROPIC_BASE_URL  default http://127.0.0.1:4000/anthropic
+#   OPENAI_BASE_URL     default http://127.0.0.1:4000/openai
+#
+# Mirrored per-benchmark in benchmarks/<name>/compose.yaml (compose mode)
+# and benchmarks/<name>/job.yaml (k8s mode) — same five units, same
+# dependency edges. processes:→services:/containers:, command:→image:,
+# readiness_probe:→healthcheck:, 127.0.0.1→service-name DNS / Pod loopback.
+
+version: "0.5"
+
+processes:
+  otelcol:
+    command: /usr/local/bin/otelcol --config=/etc/otelcol/config.yaml
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        scheme: http
+        port: 13133
+        path: /
+      initial_delay_seconds: 0
+      period_seconds: 1
+      timeout_seconds: 1
+      failure_threshold: 30
+    availability:
+      restart: "no"
+    log_location: /output/model/otelcol.log
+
+  gateway:
+    command: /opt/gateway/start
+    readiness_probe:
+      # Each gateway image bakes its own /opt/gateway/health that knows
+      # the right path (bifrost: /api/health; litellm: /health/liveness).
+      # exec keeps process-compose.yaml gateway-agnostic.
+      exec:
+        command: /opt/gateway/health
+      initial_delay_seconds: 3
+      period_seconds: 1
+      timeout_seconds: 2
+      failure_threshold: 60
+    depends_on:
+      otelcol:
+        condition: process_healthy
+    availability:
+      restart: "no"
+    log_location: /output/model/gateway.log
+
+  agent:
+    # Stdout/stderr write directly to /output/agent/{stdout,stderr}.log
+    # via shell redirection rather than process-compose's `log_location`,
+    # which wraps lines in a {level,process,replica,message} JSON envelope
+    # that breaks verifiers reading raw stdout.
+    command: timeout $TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$TASK" TASK_ID="$TASK_ID" MODEL="$MODEL" TIMEOUT="$TIMEOUT" OPENAI_BASE_URL="$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /opt/agent/entrypoint.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
+    depends_on:
+      gateway:
+        condition: process_healthy
+    availability:
+      restart: "no"
+
+  verifier:
+    command: bash /root/tests/test.sh
+    depends_on:
+      agent:
+        condition: process_completed
+    availability:
+      restart: "no"
+    log_location: /output/task/verifier.log
+
+  result:
+    command: /usr/local/bin/write-result
+    depends_on:
+      verifier:
+        condition: process_completed
+    availability:
+      restart: "no"
+      # When the result writer finishes, process-compose exits — so the
+      # whole container exits cleanly. Without this, otelcol+gateway
+      # (long-running daemons) would keep the container alive forever
+      # in single-image mode. In compose/k8s modes the gateway+otelcol
+      # are disabled via the overlay file, so this still terminates
+      # correctly there.
+      exit_on_end: true
+    log_location: /output/task/result-writer.log

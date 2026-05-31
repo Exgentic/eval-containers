@@ -90,7 +90,7 @@ if not agent.strip():
     print('0.0')
     raise SystemExit
 
-OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'http://model:4000')
+OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'http://model:4000/v1')
 
 JUDGE_SYSTEM = (
     'Please act as an impartial judge and evaluate the quality of the responses '
@@ -130,7 +130,8 @@ def call_judge(user_content):
         'temperature': 0,
     }).encode()
     req = urllib.request.Request(
-        f'{OPENAI_BASE_URL}/v1/chat/completions',
+        # OPENAI_BASE_URL already includes /v1 per agents/RULES.md.
+        f'{OPENAI_BASE_URL}/chat/completions',
         data=payload,
         headers={'Content-Type': 'application/json'},
     )

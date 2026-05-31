@@ -81,7 +81,7 @@ agent_response = sys.argv[2]
 prompt = open(f'{task_dir}/problem.txt').read()
 rubrics = json.load(open(f'{task_dir}/rubrics_json.txt'))
 
-OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'http://model:4000')
+OPENAI_BASE_URL = os.environ.get('OPENAI_BASE_URL', 'http://model:4000/v1')
 
 GRADING_TEMPLATE = """You are a medical evaluation judge. You will be given a health-related conversation and a specific rubric criterion. Your job is to determine whether the assistant's response meets the criterion.
 
@@ -123,7 +123,8 @@ def call_judge(conversation, response, criterion):
     }).encode()
 
     req = urllib.request.Request(
-        f'{OPENAI_BASE_URL}/v1/chat/completions',
+        # OPENAI_BASE_URL already includes /v1 per agents/RULES.md.
+        f'{OPENAI_BASE_URL}/chat/completions',
         data=payload,
         headers={'Content-Type': 'application/json'}
     )

@@ -9,7 +9,7 @@ LABEL eval.agent.url="https://github.com/Aider-AI/aider"
 LABEL eval.agent.version="0.86.2"
 ENV EVAL_AGENT_VERSION_DEFAULT="0.86.2"
 ENV EVAL_AGENT=aider
-RUN pip install --no-cache-dir aider-chat==0.86.2
+RUN uv pip install --system aider-chat==0.86.2
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
