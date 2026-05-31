@@ -852,6 +852,33 @@ fn dockerfile_bake_alignment() {
                 bake_deps,
             ));
         }
+
+        // Principle 15.g (Minimal): forbid inherits, group blocks,
+        // dockerfile-inline, and multi-target files.
+        let bake_text = fs::read_to_string(&bake).unwrap_or_default();
+        for forbidden in ["inherits", "dockerfile-inline"] {
+            if bake_text.contains(forbidden) {
+                failures.push(format!(
+                    "{}: bake file uses forbidden `{}` (RULES.md principle 15.g)",
+                    dir.display(),
+                    forbidden,
+                ));
+            }
+        }
+        if bake_text.contains("group \"") || bake_text.contains("group ") {
+            failures.push(format!(
+                "{}: bake file declares a `group` block (RULES.md principle 15.g)",
+                dir.display(),
+            ));
+        }
+        let target_count = bake_text.matches("target \"").count();
+        if target_count != 1 {
+            failures.push(format!(
+                "{}: bake file declares {} targets; principle 15.g requires exactly 1",
+                dir.display(),
+                target_count,
+            ));
+        }
     }
     assert!(
         failures.is_empty(),

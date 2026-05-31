@@ -87,7 +87,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
     f. **No build logic in bake files.** Targets, contexts, args, tags — that's it. Computed values from external sources, conditional builds, dynamic target generation are out of scope. Build logic lives in the Dockerfile.
 
-    The convention guide — minimal templates per artifact type, composition patterns, and conciseness rules — lives in [`BAKE.md`](BAKE.md). Mechanical enforcement (every artifact has a valid bake file whose `contexts` match the Dockerfile's `FROM` lines) is `tests/build/test.rs::dockerfile_bake_alignment`.
+    g. **Minimal.** Every line MUST serve sub-rules a–f. No `inherits` chains. No `group` blocks. No `dockerfile-inline`. No multi-target files. No comments restating this rule or citing it. No unused variables. No `args` declared but not consumed by the Dockerfile. The framework's existing principle 8 (Clean code) applies to bake files like any other code; this sub-rule pins the specific patterns that drift.
+
+    The convention guide — minimal templates per artifact type, composition patterns, and the full conciseness catalog — lives in [`BAKE.md`](BAKE.md). Mechanical enforcement (every artifact has a valid bake file whose `contexts` match the Dockerfile's `FROM` lines) is `tests/build/test.rs::dockerfile_bake_alignment`.
 
 ## Rules Process
 
@@ -223,3 +225,4 @@ not as issues. The issue tracker is for tracked work only.
 | 2026-04-16 | Rewrote the rules graph to reflect the tests/ subfolder restructure (sanity/build/replay/upstream/live/fleet/cli each with its own RULES.md), added PR templates as contribution entry points, and clarified the contribution-vs-release duality: same rules, different walkers. |
 | 2026-04-16 | Added model PR template (`.github/PULL_REQUEST_TEMPLATE/model.md`) and seven issue templates covering the repo's seven tracked issue types: rule-code drift, rule change RFC, bug, new-benchmark/agent/model requests, known-broken entry. New "Issue vocabulary" section in RULES.md documents the taxonomy. |
 | 2026-05-31 | Added principle 15 (Build graph is data) — every artifact MUST ship a `docker-bake.hcl` next to its Dockerfile. Renumbered Rules Process principles 15-21 → 16-22. Convention guide added at [BAKE.md](BAKE.md); mechanical enforcement deferred to `tests/build/test.rs::dockerfile_bake_alignment`. |
+| 2026-05-31 | Added principle 15.g (Minimal) — bake files MUST follow the conciseness conventions in [BAKE.md](BAKE.md). Promotes the "no inherits chains, no group blocks, no dockerfile-inline, no multi-target files, no unused variables, no unconsumed args" rules from convention into normative principle. |
