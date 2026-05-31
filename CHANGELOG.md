@@ -38,7 +38,7 @@ addition; the patch on a bug fix that doesn't change the rule surface.
 - **`.gitleaks.toml`** — scoped allowlist for `user_api_key_hash` and
   `prompt_cache_key` inside `tests/fixtures/*.trajectory.jsonl`
   (observability IDs, not credentials).
-- **`RELEASE-READINESS.md`** — per-release verdict document.
+- **`doctrine/delivery/release/references/readiness.md`** — per-release verdict document.
 
 ### Changed
 
