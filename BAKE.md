@@ -207,6 +207,12 @@ These conventions are normative per [RULES.md](RULES.md) principle 15.g
    `target`. Per-artifact files only declare what's scoped to them
    (secrets like `HF_TOKEN`) — `REGISTRY` and `TAG` are at root.
 
+   Per principle 15.h, a `variable` MUST exist for one of: a per-build
+   override, a build-time secret, or an orchestration-composed reference.
+   Target name, context directory, and dep graph shape MUST be hardcoded —
+   they're artifact identity, not configuration. Dead variables fail
+   the lint.
+
 5. **No comments restating the rule.** This file is the rule. Per-artifact
    bake files don't need a header explaining what bake is or citing
    principle 15 — the file's existence is the citation.
