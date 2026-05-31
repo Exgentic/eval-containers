@@ -3,5 +3,5 @@ target "model-gpt-5_4--portkey" {
   contexts = {
     "${REGISTRY}/gateways/portkey" = "target:portkey"
   }
-  tags = ["${REGISTRY}/models/gpt-5.4--portkey:latest"]
+  tags = ["${REGISTRY}/models/gpt-5.4--portkey:${TAG}"]
 }

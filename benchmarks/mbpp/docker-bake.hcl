@@ -3,5 +3,5 @@ target "benchmark-mbpp" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
   }
-  tags = ["${REGISTRY}/benchmarks/mbpp:latest"]
+  tags = ["${REGISTRY}/benchmarks/mbpp:${TAG}"]
 }

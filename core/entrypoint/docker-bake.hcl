@@ -1,4 +1,4 @@
 target "entrypoint" {
   context = "core/entrypoint"
-  tags = ["${REGISTRY}/core/entrypoint:latest"]
+  tags = ["${REGISTRY}/core/entrypoint:${TAG}"]
 }

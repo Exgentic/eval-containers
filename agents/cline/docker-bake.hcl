@@ -3,5 +3,5 @@ target "agent-cline" {
   contexts = {
     "${REGISTRY}/core/agent-base-node" = "target:agent-base-node"
   }
-  tags = ["${REGISTRY}/agents/cline:latest"]
+  tags = ["${REGISTRY}/agents/cline:${TAG}"]
 }

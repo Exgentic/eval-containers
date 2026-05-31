@@ -3,5 +3,5 @@ target "benchmark-visualwebarena" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-external" = "target:benchmark-base-external"
   }
-  tags = ["${REGISTRY}/benchmarks/visualwebarena:latest"]
+  tags = ["${REGISTRY}/benchmarks/visualwebarena:${TAG}"]
 }

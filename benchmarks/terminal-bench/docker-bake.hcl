@@ -3,5 +3,5 @@ target "benchmark-terminal-bench" {
   contexts = {
     "${REGISTRY}/core/entrypoint" = "target:entrypoint"
   }
-  tags = ["${REGISTRY}/benchmarks/terminal-bench:latest"]
+  tags = ["${REGISTRY}/benchmarks/terminal-bench:${TAG}"]
 }

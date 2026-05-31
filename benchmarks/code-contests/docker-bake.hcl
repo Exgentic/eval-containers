@@ -3,5 +3,5 @@ target "benchmark-code-contests" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
   }
-  tags = ["${REGISTRY}/benchmarks/code-contests:latest"]
+  tags = ["${REGISTRY}/benchmarks/code-contests:${TAG}"]
 }

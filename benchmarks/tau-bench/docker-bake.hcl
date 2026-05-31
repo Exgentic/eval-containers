@@ -3,5 +3,5 @@ target "benchmark-tau-bench" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-external" = "target:benchmark-base-external"
   }
-  tags = ["${REGISTRY}/benchmarks/tau-bench:latest"]
+  tags = ["${REGISTRY}/benchmarks/tau-bench:${TAG}"]
 }

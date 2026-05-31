@@ -3,5 +3,5 @@ target "benchmark-agentcompany" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-external" = "target:benchmark-base-external"
   }
-  tags = ["${REGISTRY}/benchmarks/agentcompany:latest"]
+  tags = ["${REGISTRY}/benchmarks/agentcompany:${TAG}"]
 }

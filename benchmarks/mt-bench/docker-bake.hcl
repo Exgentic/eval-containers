@@ -3,5 +3,5 @@ target "benchmark-mt-bench" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-github" = "target:benchmark-base-github"
   }
-  tags = ["${REGISTRY}/benchmarks/mt-bench:latest"]
+  tags = ["${REGISTRY}/benchmarks/mt-bench:${TAG}"]
 }

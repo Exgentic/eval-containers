@@ -3,5 +3,5 @@ target "agent-openclaw" {
   contexts = {
     "${REGISTRY}/core/agent-base-node" = "target:agent-base-node"
   }
-  tags = ["${REGISTRY}/agents/openclaw:latest"]
+  tags = ["${REGISTRY}/agents/openclaw:${TAG}"]
 }

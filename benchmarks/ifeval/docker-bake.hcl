@@ -3,5 +3,5 @@ target "benchmark-ifeval" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
   }
-  tags = ["${REGISTRY}/benchmarks/ifeval:latest"]
+  tags = ["${REGISTRY}/benchmarks/ifeval:${TAG}"]
 }
