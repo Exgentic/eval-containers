@@ -79,7 +79,33 @@ eval-containers run aime --agent codex --task-id 42 --mode job
 
 Production users compose their own overlays on top (corp registry rewrites, NodeAffinity, NetworkPolicies, sidecar swaps, ...) by referencing the benchmark as a Kustomize resource — see the [Kustomize docs](https://kubectl.docs.kubernetes.io/guides/config_management/components/) for the composition primitives.
 
+The CLI can pull such an overlay in for you with `--overlay <dir>` — it's added under `components:` on the synthesized Job, so the eval-axis patches (agent/model/task) and your platform patches merge. A ready-to-adapt OpenShift overlay (sets the `anyuid` service account) ships under [`examples/deployments/openshift`](examples/deployments/openshift) — see its README for the full build-and-run-on-OpenShift walkthrough:
+
+```bash
+eval-containers run aime --agent codex --mode job \
+  --overlay examples/deployments/openshift \
+  --registry image-registry.openshift-image-registry.svc:5000/<namespace>
+```
+
+The overlay is a directory whose `kustomization.yaml` is `kind: Component` — data you own; the CLI never encodes platform specifics itself.
+
 The cluster needs an `eval-secrets` Secret with `OPENAI_API_KEY` and `OPENAI_API_BASE` keys.
+
+### Building in a cluster (`--builder`)
+
+No local Docker? Build the images inside the cluster with buildx's Kubernetes driver — same bake graph, no extra tooling. Create the builder once (after `oc login`, or with `kubectl` pointed at the cluster):
+
+```bash
+docker buildx create --driver kubernetes --name oc --use
+```
+
+Then pass `--builder` to any build — it builds in-cluster and pushes to the registry (`--builder` implies `--push`, since a remote builder can't load into local Docker):
+
+```bash
+eval-containers build eval aime --agent codex --builder oc
+```
+
+`--dry-run` on any build prints the exact `docker buildx bake …` command without running it; if the builder doesn't exist, the CLI fails with the one-line `docker buildx create` to run.
 
 ## Environment variables
 
