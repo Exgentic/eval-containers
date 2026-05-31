@@ -50,6 +50,8 @@ The **procedure** for executing each process — exact commands, order, gates �
    - Removing a built image via `docker rmi -f` (library auto-cleans containers, not images).
    Both carve-outs MUST be called out in the test file's doc comment with a reference to this rule.
 
+6c. **Builds go through `docker buildx bake`.** Per top-level RULES.md principle 15, the framework's build graph lives in `docker-bake.hcl` files. Tests that need to materialize an image MUST shell to `docker buildx bake <target> --load` (via the helper in `tests/common/mod.rs`) rather than using testcontainers-rs's `GenericBuildableImage`. This keeps tests, the CLI, and any out-of-process consumer (OC in-cluster builds, bakah) on the same canonical build invocation. RUN/START/STOP of containers still goes through testcontainers-rs per rule 6 — only BUILD is exempt.
+
 7. **No API keys in contribution verification.** The `replay` model is the only LLM backend in contribution-verification tests. Any test that reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider credential MUST be gated behind `#[ignore]` and live under `tests/live/`, NOT in any continuous-verification category.
 
 8. **Fail loud over fail silent.** Test code MUST NOT use `|| true`, `2>/dev/null`, or any other error swallowing. Known failures are documented in explicit `known-broken.md` / `broken.json` manifests per category; undocumented failures panic the run.
