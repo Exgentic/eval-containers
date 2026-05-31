@@ -887,6 +887,47 @@ fn dockerfile_bake_alignment() {
             ));
         }
 
+        // Principle 15.a + 15.c (structural conformance): target name,
+        // context dir, and tag MUST follow the documented convention.
+        // Derive expectations from the directory path.
+        let cat = dir
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let art = dir.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let expected_target = match cat {
+            // Leaf core + gateways: bare name. Other categories: <cat>-<name>.
+            "core" | "gateways" => art.to_string(),
+            "agents" => format!("agent-{art}"),
+            "benchmarks" => format!("benchmark-{art}"),
+            "models" => format!("model-{}", art.replace('.', "_")),
+            _ => String::new(),
+        };
+        if !expected_target.is_empty()
+            && !bake_text.contains(&format!("target \"{expected_target}\""))
+        {
+            failures.push(format!(
+                "{}: bake target name does not match `{expected_target}` (RULES.md principle 15.a)",
+                dir.display(),
+            ));
+        }
+        let expected_context = format!("context = \"{cat}/{art}\"");
+        let expected_context_padded = format!("context  = \"{cat}/{art}\""); // alignment-padded variant
+        if !bake_text.contains(&expected_context) && !bake_text.contains(&expected_context_padded) {
+            failures.push(format!(
+                "{}: bake `context` does not match `{cat}/{art}` (RULES.md principle 15.a)",
+                dir.display(),
+            ));
+        }
+        let expected_tag = format!("\"${{REGISTRY}}/{cat}/{art}:${{TAG}}\"");
+        if !bake_text.contains(&expected_tag) {
+            failures.push(format!(
+                "{}: bake `tags` does not match `${{REGISTRY}}/{cat}/{art}:${{TAG}}` (RULES.md principle 15.c)",
+                dir.display(),
+            ));
+        }
+
         // Principle 15.h (Variable hygiene): every `variable "X"`
         // declared in this file MUST be referenced (as `X` or `${X}`)
         // somewhere else in the same file. Dead declarations rot fast.
