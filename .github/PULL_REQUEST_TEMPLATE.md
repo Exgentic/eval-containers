@@ -13,6 +13,8 @@ PR with `gh pr create --template ...`)
 For PRs that modify existing code, fill in the sections below.
 -->
 
+> This repo is governed by [`AGENTS.md`](../AGENTS.md) and [`doctrine/`](../doctrine/). Check your change against the rules for the area you touched; for a release, follow [`doctrine/verification/verify/SKILL.md`](../doctrine/verification/verify/SKILL.md).
+
 ## Summary
 
 <!-- One paragraph: what changed and why -->

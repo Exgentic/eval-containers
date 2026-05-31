@@ -7,6 +7,8 @@
 
 This document defines how contributions to Eval Containers are made. A contribution is either an issue or a PR that solves an issue. Nothing else. Filing a good issue is a contribution — you are credited as a contributor on the PR that resolves it.
 
+The standards and procedures a contribution must follow live in [`doctrine/`](doctrine/) — see [`AGENTS.md`](AGENTS.md) for the map. **Rules** govern outcomes; **skills** govern how, e.g. [`add-benchmark`](doctrine/benchmarks/add-benchmark/SKILL.md), [`add-agent`](doctrine/agents/add-agent/SKILL.md), and [`release`](doctrine/delivery/release/SKILL.md).
+
 ## Terminology
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
@@ -40,11 +42,11 @@ Skipping any step is not acceptable.
 | Document | Location | Scope |
 |----------|----------|-------|
 | [Process](RULES.md) | `RULES.md` | How rules work |
-| [Benchmarks](benchmarks/RULES.md) | `benchmarks/RULES.md` | Building benchmark images |
-| [Agents](agents/RULES.md) | `agents/RULES.md` | Building agent images |
-| [Models](models/RULES.md) | `models/RULES.md` | Building model images |
-| [CLI](src/RULES.md) | `src/RULES.md` | CLI design principles |
-| [Repository](compose/RULES.md) | `compose/RULES.md` | Naming, compose, output, registry |
+| [Benchmarks](doctrine/benchmarks/RULES.md) | `doctrine/benchmarks/RULES.md` | Building benchmark images |
+| [Agents](doctrine/agents/RULES.md) | `doctrine/agents/RULES.md` | Building agent images |
+| [Models](doctrine/models/RULES.md) | `doctrine/models/RULES.md` | Building model images |
+| [CLI](doctrine/src/RULES.md) | `doctrine/src/RULES.md` | CLI design principles |
+| [Repository](doctrine/compose/RULES.md) | `doctrine/compose/RULES.md` | Naming, compose, output, registry |
 
 ## Changelog
 
