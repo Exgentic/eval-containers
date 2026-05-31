@@ -43,7 +43,14 @@ Same thing, fewer keystrokes:
 eval-containers run aime --task-id 0 --agent codex --model gpt-5.4
 ```
 
-Every `EVAL_*` env var has a matching `--kebab-case` flag. Pick whichever you prefer.
+→ runs the plain Docker command (the same one shown in Quick start above):
+
+```bash
+EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
+  docker compose -f oci://quay.io/eval-containers/evaluate up --abort-on-container-exit
+```
+
+That's the whole idea: every `eval-containers` command is a reminder of a plain `docker`/`kubectl` command — run any of them with `--dry-run` to print the exact command without executing. Every `EVAL_*` env var has a matching `--kebab-case` flag. Pick whichever you prefer.
 
 ## Deployment modes
 
@@ -87,6 +94,13 @@ eval-containers run aime --agent codex --mode job \
   --registry image-registry.openshift-image-registry.svc:5000/<namespace>
 ```
 
+→ runs (synthesizes the overlay in a temp dir, then applies it):
+
+```bash
+kubectl kustomize --load-restrictor=LoadRestrictionsNone /tmp/eval-job-overlay-aime-codex-0-… \
+  | kubectl apply -f -
+```
+
 The overlay is a directory whose `kustomization.yaml` is `kind: Component` — data you own; the CLI never encodes platform specifics itself.
 
 The cluster needs an `eval-secrets` Secret with `OPENAI_API_KEY` and `OPENAI_API_BASE` keys.
@@ -105,7 +119,19 @@ Then pass `--builder` to any build — it builds in-cluster and pushes to the re
 eval-containers build eval aime --agent codex --builder oc
 ```
 
-`--dry-run` on any build prints the exact `docker buildx bake …` command without running it; if the builder doesn't exist, the CLI fails with the one-line `docker buildx create` to run.
+→ runs the same bake graph on the in-cluster builder (one `-f` per artifact bake file, abbreviated to `…`):
+
+```bash
+REGISTRY=quay.io/eval-containers docker buildx bake \
+  -f docker-bake.hcl -f core/combination.docker-bake.hcl -f … \
+  --builder oc --push \
+  --set eval.args.BENCHMARK_IMAGE=quay.io/eval-containers/benchmarks/aime:latest \
+  --set eval.args.AGENT_IMAGE=quay.io/eval-containers/agents/codex:latest \
+  --set eval.args.MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--bifrost:latest \
+  eval
+```
+
+`--dry-run` on any build prints this exact command without running it; if the builder doesn't exist, the CLI fails with the one-line `docker buildx create` to run.
 
 ## Environment variables
 
@@ -183,6 +209,13 @@ If you have the repo cloned and want to iterate on a benchmark or agent without 
 
 ```bash
 eval-containers run aime --task-id 0 --agent codex --model gpt-5.4 --local
+```
+
+→ runs:
+
+```bash
+EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
+  docker compose -f ./benchmarks/aime/compose.yaml up --abort-on-container-exit
 ```
 
 `--local` points at `benchmarks/<name>/compose.yaml` on disk instead of `oci://...`.
