@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-gpqa-diamond" {
   context = "benchmarks/gpqa-diamond"
   contexts = {

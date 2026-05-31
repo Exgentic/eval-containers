@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "agent-copilot-cli" {
   context = "agents/copilot-cli"
   contexts = {

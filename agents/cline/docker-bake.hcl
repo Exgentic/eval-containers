@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "agent-cline" {
   context = "agents/cline"
   contexts = {

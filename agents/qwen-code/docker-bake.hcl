@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "agent-qwen-code" {
   context = "agents/qwen-code"
   contexts = {

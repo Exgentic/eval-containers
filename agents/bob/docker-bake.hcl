@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "agent-bob" {
   context = "agents/bob"
   contexts = {

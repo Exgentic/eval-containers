@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-osworld" {
   context = "benchmarks/osworld"
   contexts = {

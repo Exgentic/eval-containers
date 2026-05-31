@@ -15,10 +15,16 @@ pub const ARTIFACT_CATEGORIES: &[&str] = &["core", "agents", "benchmarks", "mode
 /// Path to the parameterized eval combination template.
 pub const COMBINATION_BAKE_FILE: &str = "core/combination.docker-bake.hcl";
 
-/// Every `docker-bake.hcl` in the fleet, plus the combination template
-/// seed. Order doesn't matter — bake merges by target name.
+/// Path to the root bake file. Declares fleet-wide variables (`REGISTRY`)
+/// that per-artifact files reference via `${REGISTRY}/...` without
+/// redeclaring (principle 11 — reuse over repetition).
+pub const ROOT_BAKE_FILE: &str = "docker-bake.hcl";
+
+/// Every `docker-bake.hcl` in the fleet, plus the root and combination
+/// seeds. Order doesn't matter — bake merges by target name.
 pub fn artifact_bake_files() -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = vec![COMBINATION_BAKE_FILE.into()];
+    let mut files: Vec<PathBuf> =
+        vec![ROOT_BAKE_FILE.into(), COMBINATION_BAKE_FILE.into()];
     for category in ARTIFACT_CATEGORIES {
         let Ok(entries) = std::fs::read_dir(category) else {
             continue;

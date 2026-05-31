@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "model-gpt-4_1-mini" {
   context = "models/gpt-4.1-mini"
   contexts = {
