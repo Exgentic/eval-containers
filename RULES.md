@@ -77,7 +77,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
     a. **One file per artifact, declaring a single target.** Target name is `<category>-<name>` (e.g. `agent-openhands`, `benchmark-aime`, `model-gpt-5_4--bifrost`); leaf `core/` images use their bare directory name (`agent-base-python`, `benchmark-base-hf`). One target per file.
 
-    b. **`REGISTRY` is a variable**, defaulting to `quay.io/eval-containers`. Every image reference (tag and context) MUST go through `${REGISTRY}/...` — no hardcoded registries in bake files.
+    b. **`REGISTRY` is a fleet-wide variable** declared once at the repo root (`./docker-bake.hcl`), defaulting to `quay.io/eval-containers`. Per-artifact files MUST reference `${REGISTRY}/...` in every image reference (tag and context) — no hardcoded registries, no per-artifact redeclaration.
 
     c. **Tag matches the framework's existing convention**: `${REGISTRY}/<category>/<name>:<version>`. For agents and models, `version` is a variable so the version can be overridden at build time without editing the file.
 
@@ -226,3 +226,4 @@ not as issues. The issue tracker is for tracked work only.
 | 2026-04-16 | Added model PR template (`.github/PULL_REQUEST_TEMPLATE/model.md`) and seven issue templates covering the repo's seven tracked issue types: rule-code drift, rule change RFC, bug, new-benchmark/agent/model requests, known-broken entry. New "Issue vocabulary" section in RULES.md documents the taxonomy. |
 | 2026-05-31 | Added principle 15 (Build graph is data) — every artifact MUST ship a `docker-bake.hcl` next to its Dockerfile. Renumbered Rules Process principles 15-21 → 16-22. Convention guide added at [BAKE.md](BAKE.md); mechanical enforcement deferred to `tests/build/test.rs::dockerfile_bake_alignment`. |
 | 2026-05-31 | Added principle 15.g (Minimal) — bake files MUST follow the conciseness conventions in [BAKE.md](BAKE.md). Promotes the "no inherits chains, no group blocks, no dockerfile-inline, no multi-target files, no unused variables, no unconsumed args" rules from convention into normative principle. |
+| 2026-05-31 | Tightened principle 15.b — `REGISTRY` is declared once at the root `./docker-bake.hcl`; per-artifact files reference `${REGISTRY}/...` without redeclaring (principle 11 reuse-over-repetition applied to bake variables). |

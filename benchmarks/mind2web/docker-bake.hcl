@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-mind2web" {
   context = "benchmarks/mind2web"
   contexts = {

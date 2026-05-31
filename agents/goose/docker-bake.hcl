@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "agent-goose" {
   context = "agents/goose"
   contexts = {

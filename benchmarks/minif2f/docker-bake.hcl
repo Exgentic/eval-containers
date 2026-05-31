@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-minif2f" {
   context = "benchmarks/minif2f"
   contexts = {

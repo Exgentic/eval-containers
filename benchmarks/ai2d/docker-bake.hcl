@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-ai2d" {
   context = "benchmarks/ai2d"
   contexts = {

@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-math-500" {
   context = "benchmarks/math-500"
   contexts = {

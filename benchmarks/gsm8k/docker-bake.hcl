@@ -1,5 +1,3 @@
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "benchmark-gsm8k" {
   context = "benchmarks/gsm8k"
   contexts = {

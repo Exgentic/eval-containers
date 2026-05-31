@@ -7,29 +7,35 @@ How to write the bake files required by [`RULES.md`](RULES.md) principle 15.
 This is a convention guide, not a tutorial on bake itself — for that, see
 [Docker Bake documentation](https://docs.docker.com/build/bake/).
 
-The goal: every `docker-bake.hcl` in the tree is **standalone**, **concise**,
-and follows a uniform template so contributors don't reinvent the structure
-per artifact.
+The goal: every `docker-bake.hcl` in the tree is **concise** and follows a
+uniform template so contributors don't reinvent the structure per artifact.
+Fleet-wide variables (`REGISTRY`) live in the root `./docker-bake.hcl`;
+per-artifact files don't redeclare what's already declared upstream
+(principle 11 — reuse over repetition).
 
 ## The minimal template
 
 Every bake file follows this shape:
 
 ```hcl
-variable "REGISTRY" { default = "quay.io/eval-containers" }
-
 target "<category>-<name>" {
   context  = "<category>/<name>"
   contexts = {
-    "${REGISTRY}/<dep-category>/<dep-name>:<tag>" = "target:<dep-target-name>"
+    "${REGISTRY}/<dep-category>/<dep-name>" = "target:<dep-target-name>"
     # ... one entry per in-repo FROM / COPY --from=
   }
   args = { HF_TOKEN = HF_TOKEN }   # only if the Dockerfile takes it
-  tags = ["${REGISTRY}/<category>/<name>:<version>"]
+  tags = ["${REGISTRY}/<category>/<name>:latest"]
 }
 ```
 
-That's the entire surface. Most files come in under 10 lines.
+That's the entire surface — leaf files come in at 4 lines.
+
+`REGISTRY` is **declared once at the repo root** (`./docker-bake.hcl`)
+and referenced via `${REGISTRY}/...` from every per-artifact file
+without redeclaring (principle 11 — reuse over repetition). Per-artifact
+variables (e.g. `HF_TOKEN` for HF-data benchmarks) stay in the artifact's
+own file where they're consumed.
 
 ## Per-artifact templates
 
@@ -41,7 +47,6 @@ block needed:
 
 ```hcl
 # core/agent-base-python/docker-bake.hcl
-variable "REGISTRY" { default = "quay.io/eval-containers" }
 
 target "agent-base-python" {
   context = "core/agent-base-python"
@@ -55,7 +60,6 @@ For images like `core/benchmark-base-hf` that `FROM` another in-repo image:
 
 ```hcl
 # core/benchmark-base-hf/docker-bake.hcl
-variable "REGISTRY" { default = "quay.io/eval-containers" }
 variable "HF_TOKEN" { default = "" }
 
 target "benchmark-base-hf" {
@@ -70,7 +74,6 @@ target "benchmark-base-hf" {
 
 ```hcl
 # gateways/bifrost/docker-bake.hcl
-variable "REGISTRY" { default = "quay.io/eval-containers" }
 
 target "bifrost" {
   context = "gateways/bifrost"
@@ -85,7 +88,6 @@ editing the file:
 
 ```hcl
 # agents/openhands/docker-bake.hcl
-variable "REGISTRY"          { default = "quay.io/eval-containers" }
 variable "OPENHANDS_VERSION" { default = "1.7.0" }
 
 target "agent-openhands" {
@@ -99,7 +101,6 @@ target "agent-openhands" {
 
 ```hcl
 # benchmarks/aime/docker-bake.hcl
-variable "REGISTRY" { default = "quay.io/eval-containers" }
 variable "HF_TOKEN" { default = "" }
 
 target "benchmark-aime" {
@@ -117,7 +118,6 @@ target "benchmark-aime" {
 
 ```hcl
 # models/gpt-5.4--bifrost/docker-bake.hcl
-variable "REGISTRY" { default = "quay.io/eval-containers" }
 
 target "model-gpt-5_4--bifrost" {
   context  = "models/gpt-5.4--bifrost"
@@ -135,7 +135,6 @@ plus `--set` overrides.
 
 ```hcl
 # core/combination.docker-bake.hcl
-variable "REGISTRY"             { default = "quay.io/eval-containers" }
 variable "EVAL_BENCHMARK"       {}   # required
 variable "EVAL_AGENT"           {}   # required
 variable "EVAL_AGENT_VERSION"   { default = "latest" }
@@ -185,7 +184,9 @@ docker buildx bake \
 Bake merges all the `-f` files into one graph. Listing 10 files is
 tedious in practice — the framework's CLI (`eval-containers build eval
 <bench> --agent <agent>`) and the OC build script wrap this composition.
-The bake files themselves stay standalone.
+The root `./docker-bake.hcl` (declaring `REGISTRY`) is always included
+in those wrappers; ad-hoc users invoking `docker buildx bake` from the
+repo root pick it up via auto-discovery.
 
 ## Conventions for conciseness
 
@@ -203,7 +204,8 @@ These conventions are normative per [RULES.md](RULES.md) principle 15.g
    pattern. Always name the target you want.
 
 4. **Variables go at the top.** `variable` declarations come before the
-   `target`. Order: `REGISTRY`, then secrets (`HF_TOKEN`), then versions.
+   `target`. Per-artifact files only declare what's scoped to them
+   (secrets like `HF_TOKEN`, version pins) — `REGISTRY` is at root.
 
 5. **No comments restating the rule.** This file is the rule. Per-artifact
    bake files don't need a header explaining what bake is or citing
