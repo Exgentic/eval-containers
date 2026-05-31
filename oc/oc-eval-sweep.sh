@@ -1,172 +1,132 @@
 #!/usr/bin/env bash
-# oc-eval-sweep.sh — deterministic coverage sweep across benchmarks/agents on OC.
+# oc-eval-sweep.sh — launch a coverage sweep (benchmark × agent × task) on OC.
+#
+# Builds each distinct benchmark×agent eval image once, up front (fail fast),
+# then submits one labelled, run-only k8s Job per experiment. The cluster is the
+# record — track/collect with oc-eval-sweep-status.sh / -fetch.sh (by sweep-id).
+#
+# --benchmark / --agent pin an axis of the grid; --skip-build assumes the eval
+# images are already built and pushed.
 #
 # Usage:
-#   ./oc/oc-eval-sweep.sh --n 4 --model gpt-5.4--bifrost [--dry-run]
+#   ./oc/oc-eval-sweep.sh --n 4 --model gpt-5.4--bifrost \
+#       [--benchmark aime] [--agent codex] [--max-parallel 8] [--skip-build] [--dry-run]
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-N=""
-MODEL=""
-EVAL_MODEL=""
-NAMESPACE="exgentic-ns"
-PVC="exgentic-cos-pvc"
-PERSIST=false
-REBUILD=false
-DRY_RUN=false
+N=""; MODEL=""; EVAL_MODEL=""; NAMESPACE="exgentic-ns"; REGISTRY=""; BUILDER=""
+ONLY_BENCH=""; ONLY_AGENT=""; PVC="exgentic-cos-pvc"
+PERSIST=false; REBUILD=false; SKIP_BUILD=false; DRY_RUN=false; MAX_PARALLEL=8
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --n)           N="$2";          shift 2 ;;
-    --model)       MODEL="$2";      shift 2 ;;
-    --eval-model)  EVAL_MODEL="$2"; shift 2 ;;
-    --namespace)   NAMESPACE="$2";  shift 2 ;;
-    --pvc)         PVC="$2";        shift 2 ;;
-    --persist)     PERSIST=true;    shift ;;
-    --rebuild)     REBUILD=true;    shift ;;
-    --dry-run)     DRY_RUN=true;    shift ;;
-    --repo-dir)    REPO_DIR="$2";   shift 2 ;;
+    --n)            N="$2";            shift 2 ;;
+    --model)        MODEL="$2";        shift 2 ;;
+    --eval-model)   EVAL_MODEL="$2";   shift 2 ;;
+    --benchmark)    ONLY_BENCH="$2";   shift 2 ;;
+    --agent)        ONLY_AGENT="$2";   shift 2 ;;
+    --namespace)    NAMESPACE="$2";    shift 2 ;;
+    --registry)     REGISTRY="$2";     shift 2 ;;
+    --builder)      BUILDER="$2";      shift 2 ;;
+    --pvc)          PVC="$2";          shift 2 ;;
+    --persist)      PERSIST=true;      shift ;;
+    --rebuild)      REBUILD=true;      shift ;;
+    --skip-build)   SKIP_BUILD=true;   shift ;;
+    --dry-run)      DRY_RUN=true;      shift ;;
+    --max-parallel) MAX_PARALLEL="$2"; shift 2 ;;
+    --repo-dir)     REPO_DIR="$2";     shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
 
-[[ -z "$N"     ]] && { echo "error: --n is required" >&2; exit 1; }
-[[ -z "$MODEL" ]] && { echo "error: --model is required" >&2; exit 1; }
-[[ "$N" -gt 0  ]] 2>/dev/null || { echo "error: --n must be a positive integer" >&2; exit 1; }
+[[ -n "$N"     ]] || { echo "error: --n is required" >&2; exit 1; }
+[[ -n "$MODEL" ]] || { echo "error: --model is required" >&2; exit 1; }
+[[ "$N" -gt 0 ]] 2>/dev/null            || { echo "error: --n must be a positive integer" >&2; exit 1; }
+[[ "$MAX_PARALLEL" -gt 0 ]] 2>/dev/null || { echo "error: --max-parallel must be a positive integer" >&2; exit 1; }
 
 log() { echo "[oc-eval-sweep] $*"; }
+OC_RUN="$REPO_DIR/oc/oc-eval-run.sh"
 
-# ── Reader pod helpers ─────────────────────────────────────────────────────────
-to_image_name() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr '.' '-' | sed 's/--/-/g'; }
+# Sweep set: --benchmark/--agent pin an axis; else discover everything with a
+# Dockerfile (oc-eval-run.sh deploys from the shared benchmarks/_base, so any
+# buildable benchmark works). Globs sort alphabetically → deterministic.
+if [[ -n "$ONLY_BENCH" ]]; then
+  [[ -f "$REPO_DIR/benchmarks/$ONLY_BENCH/Dockerfile" ]] || { echo "error: benchmarks/$ONLY_BENCH has no Dockerfile" >&2; exit 1; }
+  BENCHMARKS=("$ONLY_BENCH")
+else
+  BENCHMARKS=(); for d in "$REPO_DIR"/benchmarks/*/; do [[ -f "${d}Dockerfile" ]] && BENCHMARKS+=("$(basename "$d")"); done
+fi
+if [[ -n "$ONLY_AGENT" ]]; then
+  [[ -f "$REPO_DIR/agents/$ONLY_AGENT/Dockerfile" ]] || { echo "error: agents/$ONLY_AGENT has no Dockerfile" >&2; exit 1; }
+  AGENTS=("$ONLY_AGENT")
+else
+  AGENTS=(); for d in "$REPO_DIR"/agents/*/; do [[ -f "${d}Dockerfile" ]] && AGENTS+=("$(basename "$d")"); done
+fi
+B=${#BENCHMARKS[@]}; A=${#AGENTS[@]}
+[[ $B -gt 0 ]] || { echo "error: no benchmarks found" >&2; exit 1; }
+[[ $A -gt 0 ]] || { echo "error: no agents found" >&2; exit 1; }
 
-ensure_reader_pod() {
-  local state
-  state=$(oc get pod eval-reader -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
-  if [[ "$state" != "Running" ]]; then
-    [[ "$state" != "NotFound" ]] && oc delete pod eval-reader -n "$NAMESPACE" --ignore-not-found &>/dev/null
-    log "Starting eval-reader pod..."
-    oc apply -f "$REPO_DIR/oc/eval-reader-pod.yaml" -n "$NAMESPACE" &>/dev/null
-    for i in $(seq 1 30); do
-      state=$(oc get pod eval-reader -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-      [[ "$state" == "Running" ]] && break
-      sleep 2
-    done
-    [[ "$state" != "Running" ]] && { log "error: eval-reader pod failed to start"; exit 1; }
-    log "eval-reader pod ready."
-  fi
-}
-
-result_exists() {
-  local bench="$1" task_id="$2" agent="$3"
-  local img_model img_bench job_name subpath
-  img_model="$(to_image_name "$MODEL")"
-  img_bench="$(to_image_name "$bench")"
-  job_name="${img_bench}-task-${task_id}"
-  subpath="runs/${bench}/${agent}/${img_model}/${task_id}/${job_name}/task/result.json"
-  oc exec eval-reader -n "$NAMESPACE" -- test -f "/data/${subpath}" 2>/dev/null
-}
-
-# ── TODO: discover from filesystem ────────────────────────────────────────────
-BENCHMARKS=(aime arc)
-AGENTS=(codex claude-code)
-
-NUM_BENCHMARKS=${#BENCHMARKS[@]}
-NUM_AGENTS=${#AGENTS[@]}
-
-log "Benchmarks (${NUM_BENCHMARKS}): ${BENCHMARKS[*]}"
-log "Agents     (${NUM_AGENTS}): ${AGENTS[*]}"
-log "Generating $N experiments..."
-
-# ── Generate assignment triples ────────────────────────────────────────────────
-# Experiment i: benchmark = i % B, task_id = i / B, agent = i % A
-declare -a EXPERIMENTS=()
-for (( i=0; i<N; i++ )); do
-  bench="${BENCHMARKS[$(( i % NUM_BENCHMARKS ))]}"
-  task_id=$(( i / NUM_BENCHMARKS ))
-  agent="${AGENTS[$(( i % NUM_AGENTS ))]}"
-  EXPERIMENTS+=("${bench}|${task_id}|${agent}")
-done
-
-# ── Write manifest ─────────────────────────────────────────────────────────────
-SWEEPS_DIR="$REPO_DIR/sweeps"
-mkdir -p "$SWEEPS_DIR"
 SWEEP_ID="$(date -u +%Y%m%dT%H%M%S)--n${N}--${MODEL}"
-MANIFEST="$SWEEPS_DIR/${SWEEP_ID}.json"
+LOG_DIR="$REPO_DIR/sweeps/${SWEEP_ID}"; mkdir -p "$LOG_DIR"
 
-{
-  echo "{"
-  echo "  \"sweep_id\": \"${SWEEP_ID}\","
-  echo "  \"n\": ${N},"
-  echo "  \"model\": \"${MODEL}\","
-  echo "  \"eval_model\": \"${EVAL_MODEL}\","
-  echo "  \"namespace\": \"${NAMESPACE}\","
-  echo "  \"experiments\": ["
-  for (( i=0; i<N; i++ )); do
-    IFS='|' read -r bench task_id agent <<< "${EXPERIMENTS[$i]}"
-    comma=","
-    [[ $i -eq $((N-1)) ]] && comma=""
-    echo "    {\"benchmark\": \"${bench}\", \"task_id\": ${task_id}, \"agent\": \"${agent}\"}${comma}"
-  done
-  echo "  ]"
-  echo "}"
-} > "$MANIFEST"
-
-log "Manifest written: $MANIFEST"
-
-# ── Print plan ─────────────────────────────────────────────────────────────────
-printf "\n  %4s  %-20s  %5s  %s\n" "IDX" "BENCHMARK" "TASK" "AGENT"
+# Enumerate the full benchmark × agent × task product (bench fastest, then
+# agent, then task — covers the grid, no diagonal coupling). Collect the
+# experiments and the distinct (benchmark, agent) pairs to build.
+log "Sweep $SWEEP_ID — $B benchmarks × $A agents, $N experiments"
+printf "\n  %4s  %-20s  %5s  %s\n" IDX BENCHMARK TASK AGENT
+EXPERIMENTS=(); PAIRS=()
 for (( i=0; i<N; i++ )); do
-  IFS='|' read -r bench task_id agent <<< "${EXPERIMENTS[$i]}"
-  printf "  %4d  %-20s  %5s  %s\n" "$i" "$bench" "$task_id" "$agent"
+  bench="${BENCHMARKS[$(( i % B ))]}"
+  agent="${AGENTS[$(( (i / B) % A ))]}"
+  task=$(( i / (B * A) ))
+  printf "  %4d  %-20s  %5s  %s\n" "$i" "$bench" "$task" "$agent"
+  EXPERIMENTS+=("${bench}|${task}|${agent}")
+  PAIRS+=("${bench}|${agent}")
 done
 echo ""
+$DRY_RUN && { log "--dry-run: nothing built or submitted."; exit 0; }
 
-if $DRY_RUN; then
-  log "--dry-run: skipping job submission."
-  exit 0
+COMMON=(--model "$MODEL" --namespace "$NAMESPACE" --repo-dir "$REPO_DIR")
+[[ -n "$EVAL_MODEL" ]] && COMMON+=(--eval-model "$EVAL_MODEL")
+[[ -n "$REGISTRY"   ]] && COMMON+=(--registry "$REGISTRY")
+[[ -n "$BUILDER"    ]] && COMMON+=(--builder "$BUILDER")
+
+# ── Build once, up front: each distinct benchmark×agent image; fail fast ──────
+if $SKIP_BUILD; then
+  log "--skip-build: assuming eval images are already pushed."
+else
+  # ${REB[@]+...} so an empty array is not "unbound" under `set -u` on bash 3.2 (macOS).
+  REB=(); $REBUILD && REB=(--rebuild)
+  for pair in $(printf '%s\n' "${PAIRS[@]}" | sort -u); do
+    bench="${pair%|*}"; agent="${pair#*|}"
+    log "build ${bench} × ${agent}"
+    bash "$OC_RUN" --benchmark "$bench" --agent "$agent" "${COMMON[@]}" ${REB[@]+"${REB[@]}"} --no-run \
+      || { echo "error: build failed for ${bench} × ${agent}; aborting before submitting jobs" >&2; exit 1; }
+  done
+  log "All images built."
 fi
 
-# ── Ensure reader pod is available for result checks ─────────────────────────
-ensure_reader_pod
-
-# ── Launch all jobs in parallel (fire and forget) ─────────────────────────────
-log "=== Launching $N jobs in parallel ==="
-
-PASSTHROUGH_FLAGS=(--namespace "$NAMESPACE" --repo-dir "$REPO_DIR" --sweep-id "$SWEEP_ID")
-[[ -n "$EVAL_MODEL" ]] && PASSTHROUGH_FLAGS+=(--eval-model "$EVAL_MODEL")
-$PERSIST               && PASSTHROUGH_FLAGS+=(--persist --pvc "$PVC")
-$REBUILD               && PASSTHROUGH_FLAGS+=(--rebuild)
-
-OC_RUN="$REPO_DIR/oc/oc-eval-run.sh"
-SWEEP_LOG_DIR="$SWEEPS_DIR/${SWEEP_ID}"
-mkdir -p "$SWEEP_LOG_DIR"
-
-for (( i=0; i<N; i++ )); do
-  IFS='|' read -r bench task_id agent <<< "${EXPERIMENTS[$i]}"
-  label="${bench}-${task_id}-${agent}"
-  logfile="$SWEEP_LOG_DIR/${label}.log"
-
-  CMD="bash $OC_RUN --benchmark $bench --task-id $task_id --agent $agent --model $MODEL --fire-and-forget ${PASSTHROUGH_FLAGS[*]}"
-
-  if result_exists "$bench" "$task_id" "$agent"; then
-    msg="Skipping [$i]: $label (result already exists)"
-    log "$msg"
-    echo "# $msg" > "$logfile"
-    continue
+# ── Run: one labelled, run-only Job per experiment, capped at --max-parallel ──
+RUN=(--sweep-id "$SWEEP_ID" --fire-and-forget --no-build)
+$PERSIST && RUN+=(--persist --pvc "$PVC")
+log "Submitting $N jobs (max $MAX_PARALLEL parallel) ..."
+for exp in "${EXPERIMENTS[@]}"; do
+  IFS='|' read -r bench task agent <<< "$exp"
+  # Resume: skip if this experiment's Job already succeeded (labels are the record).
+  if [[ "$(oc get jobs -n "$NAMESPACE" -l "benchmark=${bench},agent=${agent},task=${task}" \
+            -o jsonpath='{.items[*].status.succeeded}' 2>/dev/null)" == *1* ]]; then
+    log "skip   ${bench}/${task}/${agent} (already succeeded)"; continue
   fi
-
-  log "Launching [$i]: $label  →  $logfile"
-  { echo "# $CMD"; bash "$OC_RUN" \
-      --benchmark "$bench" \
-      --task-id   "$task_id" \
-      --agent     "$agent" \
-      --model     "$MODEL" \
-      --fire-and-forget \
-      "${PASSTHROUGH_FLAGS[@]}"; } &>"$logfile" &
+  while (( $(jobs -rp | wc -l) >= MAX_PARALLEL )); do sleep 1; done
+  log "launch ${bench}/${task}/${agent}"
+  bash "$OC_RUN" --benchmark "$bench" --task-id "$task" --agent "$agent" \
+    "${COMMON[@]}" "${RUN[@]}" &>"$LOG_DIR/${bench}-${task}-${agent}.log" &
 done
+wait
 
-echo ""
-log "=== All $N jobs launched. Sweep exiting. ==="
-log "Check status : ./oc/oc-eval-sweep-status.sh --sweep-id ${SWEEP_ID}"
-log "Clean up     : oc delete jobs -n ${NAMESPACE} -l sweep-id=${SWEEP_ID}"
+log "Submitted. Track by sweep-id:"
+log "  status : ./oc/oc-eval-sweep-status.sh --sweep-id ${SWEEP_ID}"
+log "  fetch  : ./oc/oc-eval-sweep-fetch.sh  --sweep-id ${SWEEP_ID}"
+log "  logs   : oc logs -n ${NAMESPACE} -l sweep-id=${SWEEP_ID} --all-containers --prefix"
+log "  clean  : oc delete jobs -n ${NAMESPACE} -l sweep-id=${SWEEP_ID}"

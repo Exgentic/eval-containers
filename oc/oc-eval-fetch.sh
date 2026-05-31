@@ -56,7 +56,7 @@ to_image_name() {
 }
 
 IMG_MODEL="$(to_image_name "$MODEL")"
-JOB_NAME="$(to_image_name "$BENCHMARK")-task-${TASK_ID}"
+JOB_NAME="$(to_image_name "$BENCHMARK")-$(to_image_name "$AGENT")-task-${TASK_ID}"
 SUBPATH="runs/${BENCHMARK}/${AGENT}/${IMG_MODEL}/${TASK_ID}/${JOB_NAME}"
 
 LOCAL_OUTPUT="${OUTPUT_DIR:-$REPO_DIR/output/${BENCHMARK}/${TASK_ID}}"

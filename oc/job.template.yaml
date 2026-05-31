@@ -1,0 +1,126 @@
+# oc/job.template.yaml — the eval Job, rendered per run with `envsubst`.
+#
+# This is the ONE deploy mechanism for the oc/ tooling. oc-eval-run.sh fills in
+# the ${...} fields below and pipes the result straight to `oc apply`:
+#
+#   envsubst '<the names below>' < oc/job.template.yaml | oc apply -n <ns> -f -
+#
+# The placeholders are the only per-run-dynamic values; the pod shape — the
+# otelcol + gateway sidecars, the runner command, resources, secret refs — is
+# static and lives here in the open: one committed manifest, greppable and
+# diffable, instead of YAML generated inside a shell heredoc.
+#
+# envsubst is restricted to exactly the names listed under "Substituted fields",
+# so the runner command's own shell variables ($?, $rc, $result) pass through
+# untouched.
+#
+# What is deliberately NOT here: static *platform* composition. The anyuid-sa
+# ServiceAccount and the output PVC (oc/eval-output-pvc.yaml) are provisioned
+# out of band — this template only carries the per-run Job and references them
+# by name. Kustomize is for that static composition; envsubst is for the
+# dynamic per-run values.
+#
+# Substituted fields (set by oc-eval-run.sh):
+#   JOB_NAME EVAL_IMAGE GATEWAY_IMAGE OTEL_IMAGE
+#   BENCHMARK AGENT TASK_ID MODEL EVAL_MODEL HEALTH_PATH
+#   SWEEP_ID_LABEL OUTPUT_VOLUME OUTPUT_SUBPATH
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${JOB_NAME}
+  labels:
+    benchmark: ${BENCHMARK}
+    agent: ${AGENT}
+    task: "${TASK_ID}"
+    model: "${MODEL}"
+    ${SWEEP_ID_LABEL}
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  activeDeadlineSeconds: 900
+  template:
+    metadata:
+      labels:
+        benchmark: ${BENCHMARK}
+        agent: ${AGENT}
+        task: "${TASK_ID}"
+        model: "${MODEL}"
+        ${SWEEP_ID_LABEL}
+    spec:
+      restartPolicy: Never
+      shareProcessNamespace: true
+      serviceAccountName: anyuid-sa
+      containers:
+        - name: otelcol
+          image: ${OTEL_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+            - { name: health,    containerPort: 13133 }
+          volumeMounts:
+            - { name: output, mountPath: /output, subPath: "${OUTPUT_SUBPATH}" }
+
+        - name: gateway
+          image: ${GATEWAY_IMAGE}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: gateway, containerPort: 4000 }
+          env:
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_KEY }
+            - name: OPENAI_API_BASE
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
+            - { name: EVAL_MODEL,                  value: "${EVAL_MODEL}" }
+            - { name: HOST,                        value: 127.0.0.1 }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://localhost:4318 }
+
+        - name: runner
+          image: ${EVAL_IMAGE}
+          imagePullPolicy: IfNotPresent
+          # k8s starts sidecars in parallel with no depends_on, so wait for the
+          # gateway, run the eval, surface result.json, then reap the sidecars
+          # (shareProcessNamespace) so the Job completes.
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              while ! curl -sf http://localhost:4000${HEALTH_PATH} 2>/dev/null | grep -q ok; do
+                echo 'waiting for gateway...'; sleep 2
+              done
+              echo 'gateway ready'
+              /entrypoint.sh 2>&1
+              rc=$?
+              result=$(cat /output/task/result.json 2>/dev/null)
+              if [ -n "$result" ]; then
+                echo "$result"; kill -TERM -1 2>/dev/null; exit 0
+              else
+                echo 'error: no result.json produced' >&2; kill -TERM -1 2>/dev/null; exit $rc
+              fi
+          env:
+            - { name: BENCHMARK,                   value: "${BENCHMARK}" }
+            - { name: AGENT,                       value: "${AGENT}" }
+            - { name: MODEL,                       value: "${MODEL}" }
+            - { name: TASK_ID,                     value: "${TASK_ID}" }
+            - { name: TIMEOUT,                     value: "300" }
+            - { name: ANTHROPIC_BASE_URL,          value: http://127.0.0.1:4000/anthropic }
+            - { name: OPENAI_BASE_URL,             value: http://127.0.0.1:4000/openai/v1 }
+            - { name: GOOGLE_GEMINI_BASE_URL,      value: http://127.0.0.1:4000/genai }
+            - { name: ANTHROPIC_API_KEY,           value: sk-proxy }
+            - { name: OPENAI_API_KEY,              value: sk-proxy }
+            - { name: GEMINI_API_KEY,              value: sk-proxy }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://localhost:4318 }
+          resources:
+            requests: { cpu: "500m", memory: "512Mi" }
+            limits:   { cpu: "2",    memory: "2Gi" }
+          volumeMounts:
+            - { name: output, mountPath: /output, subPath: "${OUTPUT_SUBPATH}" }
+            - { name: tmp,    mountPath: /tmp }
+            - { name: logs,   mountPath: /logs }
+
+      volumes:
+        - name: output
+          ${OUTPUT_VOLUME}
+        - { name: tmp,  emptyDir: { medium: Memory, sizeLimit: 1Gi } }
+        - { name: logs, emptyDir: { medium: Memory, sizeLimit: 100Mi } }

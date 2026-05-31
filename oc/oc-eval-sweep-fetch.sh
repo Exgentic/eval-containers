@@ -1,18 +1,17 @@
 #!/usr/bin/env bash
-# oc-eval-sweep-fetch.sh — download results for all completed experiments in a sweep.
+# oc-eval-sweep-fetch.sh — fetch results for the completed Jobs in a sweep.
+#
+# Reads the benchmark/agent/task/model straight off the succeeded Jobs' labels
+# (the cluster is the record) and delegates each download to oc-eval-fetch.sh.
 #
 # Usage:
-#   ./oc/oc-eval-sweep-fetch.sh --sweep-id 20260528T120000--n4--gpt-5.4--bifrost
+#   ./oc/oc-eval-sweep-fetch.sh --sweep-id <id>
 #   ./oc/oc-eval-sweep-fetch.sh --latest
 
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SWEEP_ID=""
-LATEST=false
-NAMESPACE=""
-PVC="eval-output-pvc"
-
+SWEEP_ID=""; LATEST=false; NAMESPACE="exgentic-ns"; PVC="eval-output-pvc"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --sweep-id)  SWEEP_ID="$2";  shift 2 ;;
@@ -26,68 +25,25 @@ done
 
 log() { echo "[oc-eval-sweep-fetch] $*"; }
 
-SWEEPS_DIR="$REPO_DIR/sweeps"
-
-# ── Resolve manifest ───────────────────────────────────────────────────────────
 if $LATEST; then
-  MANIFEST=$(ls -t "$SWEEPS_DIR"/*.json 2>/dev/null | head -1)
-  [[ -z "$MANIFEST" ]] && { echo "error: no sweep manifests found in $SWEEPS_DIR" >&2; exit 1; }
-  SWEEP_ID="$(basename "$MANIFEST" .json)"
-  log "Using latest sweep: $SWEEP_ID"
-elif [[ -n "$SWEEP_ID" ]]; then
-  MANIFEST="$SWEEPS_DIR/${SWEEP_ID}.json"
-else
-  echo "error: --sweep-id or --latest is required" >&2; exit 1
+  SWEEP_ID=$(oc get jobs -n "$NAMESPACE" -l sweep-id \
+    --sort-by=.metadata.creationTimestamp \
+    -o jsonpath='{.items[-1:].metadata.labels.sweep-id}')
 fi
+[[ -n "$SWEEP_ID" ]] || { echo "error: --sweep-id or --latest is required (no labelled sweep jobs found)" >&2; exit 1; }
 
-[[ -f "$MANIFEST" ]] || { echo "error: manifest not found: $MANIFEST" >&2; exit 1; }
+log "Fetching completed jobs for sweep ${SWEEP_ID}"
 
-manifest_ns=$(grep '"namespace"' "$MANIFEST" | sed 's/.*: *"\(.*\)".*/\1/')
-manifest_model=$(grep '"model"' "$MANIFEST" | sed 's/.*: *"\(.*\)".*/\1/')
-NS="${NAMESPACE:-$manifest_ns}"
-NS="${NS:-exgentic-ns}"
-MODEL="$manifest_model"
+# One "benchmark agent task model" line per succeeded Job, read from labels.
+oc get jobs -n "$NAMESPACE" -l "sweep-id=${SWEEP_ID}" \
+  -o jsonpath='{range .items[?(@.status.succeeded==1)]}{.metadata.labels.benchmark} {.metadata.labels.agent} {.metadata.labels.task} {.metadata.labels.model}{"\n"}{end}' \
+| while read -r bench agent task model; do
+    [[ -z "${bench:-}" ]] && continue
+    log "fetch ${bench}/${task}/${agent}"
+    bash "$REPO_DIR/oc/oc-eval-fetch.sh" \
+      --benchmark "$bench" --agent "$agent" --model "$model" --task-id "$task" \
+      --namespace "$NAMESPACE" --pvc "$PVC" --repo-dir "$REPO_DIR" \
+      || log "WARN: fetch failed for ${bench}/${task}/${agent}"
+  done
 
-log "Sweep:     $SWEEP_ID"
-log "Namespace: $NS"
-log "Model:     $MODEL"
-echo ""
-
-OC_FETCH="$REPO_DIR/oc/oc-eval-fetch.sh"
-to_image_name() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr '.' '-' | sed 's/--/-/g'; }
-
-FETCHED=0
-SKIPPED=0
-
-# ── Fetch each completed experiment ───────────────────────────────────────────
-while IFS= read -r line; do
-  bench=$(echo "$line"  | sed 's/.*"benchmark": *"\([^"]*\)".*/\1/')
-  task=$(echo "$line"   | sed 's/.*"task_id": *\([0-9]*\).*/\1/')
-  agent=$(echo "$line"  | sed 's/.*"agent": *"\([^"]*\)".*/\1/')
-
-  to_image_name() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr '.' '-' | sed 's/--/-/g'; }
-  img_bench="$(to_image_name "$bench")"
-  job_name="${img_bench}-task-${task}"
-
-  status=$(oc get job "$job_name" -n "$NS" \
-    -o jsonpath='{.status.conditions[*].type}' 2>/dev/null || echo "NotFound")
-
-  if [[ "$status" == *"Complete"* ]]; then
-    log "Fetching: $bench / task=$task / $agent"
-    bash "$OC_FETCH" \
-      --benchmark "$bench" \
-      --agent     "$agent" \
-      --model     "$MODEL" \
-      --task-id   "$task" \
-      --namespace "$NS" \
-      --pvc       "$PVC" \
-      --repo-dir  "$REPO_DIR"
-    (( FETCHED++ )) || true
-  else
-    log "Skipping ($status): $bench / task=$task / $agent"
-    (( SKIPPED++ )) || true
-  fi
-done < <(grep '"benchmark"' "$MANIFEST")
-
-echo ""
-log "=== Done: $FETCHED fetched, $SKIPPED skipped ==="
+log "done"

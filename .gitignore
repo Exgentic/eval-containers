@@ -27,5 +27,8 @@ tests/live/report.md
 tests/live/report-*.md
 tests/live/fleet-report.md
 
+# OpenShift sweep manifests + per-experiment launch logs (local run state)
+/sweeps/
+
 # Claude Code local session state
 .claude/
