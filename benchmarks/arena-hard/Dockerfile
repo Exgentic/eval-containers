@@ -5,7 +5,8 @@
 # Ref: https://github.com/lmarena/arena-hard-auto (Li et al. 2024)
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/benchmark-base-hf:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="arena-hard"

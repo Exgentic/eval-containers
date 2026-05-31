@@ -16,8 +16,9 @@ ARG EVAL_TASK_ID
 
 # Stage 1: pull the task directory from upstream at a pinned commit.
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
-FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint-scripts
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM alpine/git:2.47.2 AS upstream
 ARG EVAL_TASK_ID
 ARG CYBENCH_REF=d494f247d66439598d1413a309b756a82935ea14

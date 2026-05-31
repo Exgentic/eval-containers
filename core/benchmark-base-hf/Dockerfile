@@ -11,7 +11,8 @@
 # Pin amd64 so runtime arch matches what agents' COPYd binaries expect
 # (see core/agent-base-node Dockerfile for the full rationale).
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint-scripts
 
 FROM --platform=linux/amd64 python:3.12-slim
 

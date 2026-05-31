@@ -12,7 +12,8 @@ ARG EVAL_TASK_ID
 ARG BASE_IMAGE=ubuntu:22.04
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint-scripts
 FROM ${BASE_IMAGE}
 
 LABEL eval.type="benchmark"

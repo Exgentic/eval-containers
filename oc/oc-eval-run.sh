@@ -46,6 +46,8 @@ REBUILD=false
 NO_RUN=false
 DRY_RUN=false
 PERSIST=false
+FIRE_AND_FORGET=false
+SWEEP_ID=""
 PERSIST_PVC="exgentic-cos-pvc"
 BENCHMARK=""
 AGENT=""
@@ -67,8 +69,10 @@ while [[ $# -gt 0 ]]; do
     --rebuild)     REBUILD=true;     shift ;;
     --no-run)      NO_RUN=true;      shift ;;
     --dry-run)     DRY_RUN=true;     shift ;;
-    --persist)     PERSIST=true;     shift ;;
-    --pvc)         PERSIST_PVC="$2"; shift 2 ;;
+    --persist)          PERSIST=true;          shift ;;
+    --pvc)              PERSIST_PVC="$2";      shift 2 ;;
+    --fire-and-forget)  FIRE_AND_FORGET=true;  shift ;;
+    --sweep-id)         SWEEP_ID="$2";         shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -114,17 +118,17 @@ IMG_EVAL="${IMG_BENCHMARK}-${IMG_AGENT}"
 # Read benchmark base type from its Dockerfile
 BENCH_BASE=$(grep "benchmark-base" "$REPO_DIR/benchmarks/$BENCHMARK/Dockerfile" \
   | grep "^FROM" | head -1 \
-  | sed 's/.*benchmark-base-//' | sed 's/:.*//')
+  | sed 's/.*benchmark-base-//' | sed 's/:.*//' | sed 's/\${REGISTRY_SUFFIX}//')
 [[ -z "$BENCH_BASE" ]] && { echo "error: cannot determine benchmark base for $BENCHMARK" >&2; exit 1; }
 
 # Read agent base type from its Dockerfile
 AGENT_BASE=$(grep "^FROM" "$REPO_DIR/agents/$AGENT/Dockerfile" \
-  | head -1 | sed 's/.*core\///' | sed 's/:.*//')
+  | head -1 | sed 's/.*core[^a-z]*//' | sed 's/:.*//' | sed 's/\${REGISTRY_SUFFIX}//')
 
 # Read model gateway from its Dockerfile
 MODEL_GATEWAY=$(grep "^FROM" "$REPO_DIR/models/$MODEL/Dockerfile" \
   | grep "gateways\|litellm" | head -1 \
-  | sed 's/.*gateways\///' | sed 's/.*core\///' | sed 's/:.*//')
+  | sed 's/.*gateways[^a-z]*//' | sed 's/.*core[^a-z]*//' | sed 's/:.*//' | sed 's/\${REGISTRY_SUFFIX}//')
 
 # Read agent version from its Dockerfile
 AGENT_VERSION=$(grep "EVAL_AGENT_VERSION_DEFAULT" "$REPO_DIR/agents/$AGENT/Dockerfile" \
@@ -143,72 +147,71 @@ add_build() {
   local name="$1" context="$2" dockerfile="$3"
   shift 3
   local args=""
-  for a in "$@"; do args="$args --build-arg $a"; done
+  for a in "$@"; do args="$args $a"; done
   BUILD_PLAN+=("$name|$context|$dockerfile|$args")
 }
 
-# Core images (always needed)
-add_build "entrypoint"      "core/entrypoint"      "Dockerfile" "REGISTRY=$SRC_REGISTRY"
-add_build "otel"            "core/otel"            "Dockerfile" "REGISTRY=$SRC_REGISTRY"
-add_build "runtime-bundle"  "core/runtime-bundle"  "Dockerfile" "REGISTRY=$SRC_REGISTRY"
+# On OC, imagestream names can't contain '/' so we use REGISTRY_SUFFIX=-
+# which makes FROM ${REGISTRY}/core-X resolve to the flat internal imagestream.
+# Default in Dockerfiles is REGISTRY_SUFFIX=/ for external/quay.io use.
+RS="REGISTRY_SUFFIX=-"
+
+# Core images (always needed) — named with core- prefix to match REGISTRY_SUFFIX=-
+add_build "core-entrypoint"      "core/entrypoint"      "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
+add_build "core-otel"            "core/otel"            "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
+add_build "core-runtime-bundle"  "core/runtime-bundle"  "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
 
 # Agent base
 case "$AGENT_BASE" in
-  agent-base-node)   add_build "agent-base-node"   "core/agent-base-node"   "Dockerfile" "REGISTRY=$SRC_REGISTRY" ;;
-  agent-base-python) add_build "agent-base-python" "core/agent-base-python" "Dockerfile" "REGISTRY=$SRC_REGISTRY" ;;
-  agent-base-rust)   add_build "agent-base-rust"   "core/agent-base-rust"   "Dockerfile" "REGISTRY=$SRC_REGISTRY" ;;
+  agent-base-node)   add_build "core-agent-base-node"   "core/agent-base-node"   "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS" ;;
+  agent-base-python) add_build "core-agent-base-python" "core/agent-base-python" "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS" ;;
+  agent-base-rust)   add_build "core-agent-base-rust"   "core/agent-base-rust"   "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS" ;;
   *) echo "error: unknown agent base: $AGENT_BASE" >&2; exit 1 ;;
 esac
 
-# Benchmark base (entrypoint must already be built above)
+# Benchmark base
 case "$BENCH_BASE" in
-  hf)       add_build "benchmark-base-hf"       "core/benchmark-base-hf"       "Dockerfile" "REGISTRY=$SRC_REGISTRY" ;;
-  github)   add_build "benchmark-base-github"   "core/benchmark-base-github"   "Dockerfile" "REGISTRY=$SRC_REGISTRY" ;;
-  external) add_build "benchmark-base-external" "core/benchmark-base-external" "Dockerfile" "REGISTRY=$SRC_REGISTRY" ;;
+  hf)       add_build "core-benchmark-base-hf"       "core/benchmark-base-hf"       "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS" ;;
+  github)   add_build "core-benchmark-base-github"   "core/benchmark-base-github"   "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS" ;;
+  external) add_build "core-benchmark-base-external" "core/benchmark-base-external" "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS" ;;
   *) echo "error: unknown benchmark base: $BENCH_BASE" >&2; exit 1 ;;
 esac
 
-# test-exact-match (needed by most benchmarks)
-add_build "test-exact-match" "core/test-exact-match" "Dockerfile" "REGISTRY=$SRC_REGISTRY"
+# test-exact-match
+add_build "core-test-exact-match" "core/test-exact-match" "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
 
-# Model gateway
+# Model gateway — named with gateways- prefix
 case "$MODEL_GATEWAY" in
   bifrost)
-    add_build "bifrost"     "gateways/bifrost"     "Dockerfile" "REGISTRY=$SRC_REGISTRY"
-    add_build "$IMG_MODEL"  "models/$MODEL"        "Dockerfile" "REGISTRY=$SRC_REGISTRY"
+    add_build "gateways-bifrost"  "gateways/bifrost"  "Dockerfile" "REGISTRY=$SRC_REGISTRY" "REGISTRY_SUFFIX=-"
+    add_build "$IMG_MODEL"        "models/$MODEL"     "Dockerfile" "REGISTRY=$SRC_REGISTRY" "REGISTRY_SUFFIX=-"
     ;;
   litellm)
-    add_build "litellm"     "gateways/litellm"     "Dockerfile" "REGISTRY=$SRC_REGISTRY"
-    add_build "$IMG_MODEL"  "models/$MODEL"        "Dockerfile" "REGISTRY=$SRC_REGISTRY"
+    add_build "gateways-litellm"  "gateways/litellm"  "Dockerfile" "REGISTRY=$SRC_REGISTRY" "REGISTRY_SUFFIX=-"
+    add_build "$IMG_MODEL"        "models/$MODEL"     "Dockerfile" "REGISTRY=$SRC_REGISTRY" "REGISTRY_SUFFIX=-"
     ;;
   portkey)
-    add_build "portkey"     "gateways/portkey"     "Dockerfile" "REGISTRY=$SRC_REGISTRY"
-    add_build "$IMG_MODEL"  "models/$MODEL"        "Dockerfile" "REGISTRY=$SRC_REGISTRY"
-    ;;
-  litellm)
-    # Models that directly FROM core/litellm (gpt-4.1-mini, gpt-5, etc.)
-    add_build "litellm"    "core/litellm"   "Dockerfile" "REGISTRY=$SRC_REGISTRY"
-    add_build "$IMG_MODEL" "models/$MODEL"  "Dockerfile" "REGISTRY=$SRC_REGISTRY"
+    add_build "gateways-portkey"  "gateways/portkey"  "Dockerfile" "REGISTRY=$SRC_REGISTRY" "REGISTRY_SUFFIX=-"
+    add_build "$IMG_MODEL"        "models/$MODEL"     "Dockerfile" "REGISTRY=$SRC_REGISTRY" "REGISTRY_SUFFIX=-"
     ;;
   *)
-    # Fallback: model directly FROMs a core image (litellm-based models)
-    add_build "litellm"    "core/litellm"   "Dockerfile" "REGISTRY=$SRC_REGISTRY"
-    add_build "$IMG_MODEL" "models/$MODEL"  "Dockerfile" "REGISTRY=$SRC_REGISTRY"
+    add_build "core-litellm"  "core/litellm"  "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
+    add_build "$IMG_MODEL"    "models/$MODEL" "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
     ;;
 esac
 
 # Benchmark image
-add_build "$IMG_BENCHMARK" "benchmarks/$BENCHMARK" "Dockerfile" "REGISTRY=$SRC_REGISTRY"
+add_build "$IMG_BENCHMARK" "benchmarks/$BENCHMARK" "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
 
 # Agent image
-add_build "$IMG_AGENT" "agents/$AGENT" "Dockerfile" "REGISTRY=$SRC_REGISTRY"
+add_build "$IMG_AGENT" "agents/$AGENT" "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
 
 # Combined eval image (benchmark + agent + model + otel + runtime-bundle)
 BENCH_IMG="$REGISTRY/$IMG_BENCHMARK:latest"
 AGENT_IMG="$REGISTRY/$IMG_AGENT:latest"
 MODEL_IMG="$REGISTRY/$IMG_MODEL:latest"
-OTEL_IMG="$REGISTRY/otel:latest"
-RUNTIME_IMG="$REGISTRY/runtime-bundle:latest"
+OTEL_IMG="$REGISTRY/core-otel:latest"
+RUNTIME_IMG="$REGISTRY/core-runtime-bundle:latest"
 
 add_build "$IMG_EVAL" "." "core/combination.Dockerfile" \
   "REGISTRY=$SRC_REGISTRY" \
@@ -244,21 +247,20 @@ build_image() {
   # Combination image is large, needs more storage
   [[ "$name" == *"-"* && "$context" == "." ]] && ephemeral_storage="20Gi"
 
-  # Build the --build-arg flags for the oc start-build approach.
-  # We use a here-doc BuildConfig so we can pass multiple build args cleanly.
+  # Convert "KEY=VALUE KEY2=VALUE2 ..." into YAML buildArgs entries.
   local build_args_yaml=""
-  for arg in $buildargs; do
-    local key="${arg#--build-arg }"
-    local k="${key%%=*}"
-    local v="${key#*=}"
+  for kv in $buildargs; do
+    local k="${kv%%=*}"
+    local v="${kv#*=}"
     build_args_yaml="${build_args_yaml}        - name: ${k}
           value: \"${v}\"
 "
   done
 
-  # Apply BuildConfig
+  # Apply BuildConfig (use create-or-replace to handle resources without apply annotation)
   if ! $DRY_RUN; then
-    oc apply -n "$NAMESPACE" -f - <<EOF
+    local bc_yaml
+    bc_yaml=$(cat <<EOF
 apiVersion: build.openshift.io/v1
 kind: BuildConfig
 metadata:
@@ -284,6 +286,9 @@ ${build_args_yaml}
       kind: ImageStreamTag
       name: ${name}:latest
 EOF
+)
+    echo "$bc_yaml" | oc apply -n "$NAMESPACE" -f - 2>/dev/null \
+      || echo "$bc_yaml" | oc replace -n "$NAMESPACE" -f -
   else
     echo "[dry-run] oc apply BuildConfig for $name"
   fi
@@ -314,12 +319,10 @@ EOF
 
 # ── Phase 1: Build all images ─────────────────────────────────────────────────
 log "=== Phase 1: Building images ==="
-
 for entry in "${BUILD_PLAN[@]}"; do
   IFS='|' read -r name context dockerfile buildargs <<< "$entry"
   build_image "$name" "$context" "$dockerfile" "$buildargs"
 done
-
 log "All images ready."
 
 $NO_RUN && { log "--no-run set, stopping before job submission."; exit 0; }
@@ -404,6 +407,9 @@ PERSISTEOF
       kind: Job"
 fi
 
+SWEEP_ID_LABEL=""
+[[ -n "$SWEEP_ID" ]] && SWEEP_ID_LABEL="sweep-id: \"${SWEEP_ID}\""
+
 cat > "$TMPDIR_OVERLAY/kustomization.yaml" <<EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -439,6 +445,7 @@ patches:
           benchmark: ${BENCHMARK}
           agent: ${AGENT}
           task: "${TASK_ID}"
+          ${SWEEP_ID_LABEL}
       spec:
         template:
           metadata:
@@ -446,6 +453,7 @@ patches:
               benchmark: ${BENCHMARK}
               agent: ${AGENT}
               task: "${TASK_ID}"
+              ${SWEEP_ID_LABEL}
           spec:
             containers:
               - name: runner
@@ -475,6 +483,8 @@ fi
 # Apply
 log "Applying job $JOB_NAME ..."
 run oc apply -k "$TMPDIR_OVERLAY/" -n "$NAMESPACE"
+
+$FIRE_AND_FORGET && { log "Job submitted: $JOB_NAME"; exit 0; }
 
 # ── Phase 3: Stream logs ───────────────────────────────────────────────────────
 log "=== Phase 3: Waiting for pod ==="

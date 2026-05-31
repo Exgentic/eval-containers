@@ -10,7 +10,8 @@
 # for Vertex, etc.). No framework umbrella alias — see gateways/RULES.md
 # rule 3.
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/gateways/bifrost:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/gateways${REGISTRY_SUFFIX}bifrost:latest
 
 LABEL eval.type="model"
 LABEL gateway.kind="bifrost"

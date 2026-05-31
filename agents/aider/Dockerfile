@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # Aider agent image (AI pair programming tool)
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/agent-base-python:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="aider"
 LABEL eval.agent.description="Aider AI pair programming tool"

@@ -9,7 +9,8 @@
 #                       to the right provider plugin.
 #   <PROVIDER>_API_KEY  read by the chosen provider plugin from container env.
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/gateways/litellm:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/gateways${REGISTRY_SUFFIX}litellm:latest
 
 LABEL eval.type="model"
 LABEL gateway.kind="litellm"

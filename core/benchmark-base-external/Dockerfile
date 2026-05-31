@@ -8,7 +8,8 @@
 # benchmarks start from a known-bad baseline that their real grader
 # overrides.
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint-scripts
 
 FROM --platform=linux/amd64 python:3.12-slim
 

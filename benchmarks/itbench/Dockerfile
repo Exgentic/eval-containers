@@ -14,7 +14,8 @@
 # verifiers from the upstream eval.py into test.sh.
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/benchmark-base-external:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="itbench"

@@ -3,7 +3,8 @@
 # Agent writes a complete Python function. Test runs upstream unittest harness.
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/benchmark-base-hf:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="bigcodebench"

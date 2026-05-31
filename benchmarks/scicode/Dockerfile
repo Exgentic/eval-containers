@@ -4,7 +4,8 @@
 # Agent writes Python code for each sub-step. Test asserts output equals loaded targets.
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/benchmark-base-hf:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="scicode"

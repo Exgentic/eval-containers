@@ -17,7 +17,8 @@
 
 ARG EVAL_TASK_ID
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint-scripts
 FROM swelancer_x86:latest
 
 LABEL eval.type="benchmark"

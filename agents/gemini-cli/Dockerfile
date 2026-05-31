@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # Gemini CLI agent image (Google)
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/agent-base-node:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="gemini-cli"
 LABEL eval.agent.description="Google Gemini CLI"

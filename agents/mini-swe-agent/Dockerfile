@@ -1,7 +1,8 @@
 # syntax=docker/dockerfile:1
 # mini-swe-agent — lightweight AI coding agent
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/agent-base-python:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="mini-swe-agent"
 LABEL eval.agent.description="Mini-SWE-agent: lightweight AI coding agent for software engineering"

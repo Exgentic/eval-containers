@@ -3,7 +3,8 @@
 # in self-hosted), so the agent's wire format MUST match the upstream
 # provider's wire format.
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/gateways/portkey:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/gateways${REGISTRY_SUFFIX}portkey:latest
 
 LABEL eval.type="model"
 LABEL gateway.kind="portkey"

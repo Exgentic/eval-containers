@@ -3,7 +3,8 @@
 # Agent writes a solution. Test runs it against public + private + generated I/O tests.
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/benchmark-base-hf:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="code-contests"

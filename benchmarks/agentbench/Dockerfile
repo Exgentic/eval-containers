@@ -6,8 +6,9 @@
 # Agent prints the answer to stdout. Test compares stdout to expected label.
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core/benchmark-base-github:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="agentbench"

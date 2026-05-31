@@ -5,8 +5,9 @@
 # convention — all identifiers are normalized).
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core/benchmark-base-hf:latest
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="coderefine"

@@ -4,7 +4,8 @@
 # Agent edits starter code files. Test runs language-specific test suite.
 
 ARG REGISTRY=quay.io/eval-containers
-FROM ${REGISTRY}/core/entrypoint:latest AS entrypoint-scripts
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint-scripts
 FROM ubuntu:22.04
 
 LABEL eval.type="benchmark"
