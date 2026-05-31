@@ -39,6 +39,32 @@ pub fn artifact_bake_files() -> Vec<PathBuf> {
     files
 }
 
+/// Construct the `docker buildx bake` argument list for the given
+/// targets and `--set` overrides. Bake files come from
+/// [`artifact_bake_files`]; `--load` is appended so the result lands in
+/// the local image store.
+///
+/// Both consumers (`src/build.rs` for the CLI, `tests/common/mod.rs`
+/// for test bootstraps) need this shape; sync vs. async `Command` and
+/// per-consumer env passthrough prevent a single Command-builder helper,
+/// but the arg list itself is identical.
+pub fn base_args(targets: &[&str], overrides: &[&str]) -> Vec<String> {
+    let mut args: Vec<String> = vec!["buildx".into(), "bake".into()];
+    for f in artifact_bake_files() {
+        args.push("-f".into());
+        args.push(f.to_string_lossy().into_owned());
+    }
+    args.push("--load".into());
+    for o in overrides {
+        args.push("--set".into());
+        args.push((*o).to_string());
+    }
+    for t in targets {
+        args.push((*t).to_string());
+    }
+    args
+}
+
 /// Every artifact directory (a subdirectory of one of the five
 /// categories) that contains a `Dockerfile`. Sorted for stable test
 /// failure output.
