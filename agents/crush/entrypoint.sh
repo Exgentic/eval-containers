@@ -3,7 +3,7 @@ set -euo pipefail
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 mkdir -p "$XDG_CONFIG_HOME/crush"
 DM="${EVAL_MODEL:-default}"
-DB="${OPENAI_BASE_URL:-http://model:4000}/v1"
+DB="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 cat > "$XDG_CONFIG_HOME/crush/crush.json" <<CONF
 {

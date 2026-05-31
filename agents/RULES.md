@@ -25,9 +25,17 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### LLM Access
 
-5. **Proxy only.** All LLM calls MUST route through the model service proxy at `OPENAI_BASE_URL` or `ANTHROPIC_BASE_URL`. The agent MUST NOT call LLM providers directly.
+5. **One protocol, one URL.** Each agent uses exactly one LLM protocol (Anthropic / OpenAI / Google) and reads exactly one base-URL env var. The framework sets each var to the gateway's protocol-namespaced endpoint, matching the SDK's conventional base-URL shape:
 
-6. **No embedded credentials.** The agent image MUST NOT contain API keys. If the agent's SDK requires a key variable to be set, the entrypoint SHOULD provide a dummy value.
+    | Protocol | Env var the agent reads | Framework sets it to |
+    |---|---|---|
+    | Anthropic | `ANTHROPIC_BASE_URL` | `http://gateway:4000/anthropic` (bare host — Anthropic SDK appends `/v1/messages`) |
+    | OpenAI | `OPENAI_BASE_URL` | `http://gateway:4000/openai/v1` (with `/v1` — OpenAI SDK appends `/chat/completions`) |
+    | Google | `GOOGLE_GEMINI_BASE_URL` | `http://gateway:4000/genai` (bare host — Gemini SDK appends `/v1beta/models/{m}:generateContent`) |
+
+    Each value matches what the upstream provider's official SDK uses as `base_url` by default. The agent MUST pass the env var through to its SDK unmodified — no manual `/v1` appending or path manipulation. The agent MUST NOT call LLM providers directly.
+
+6. **No embedded credentials.** The agent image MUST NOT contain real API keys. The framework sets placeholder values (`ANTHROPIC_API_KEY=sk-proxy`, `OPENAI_API_KEY=sk-proxy`, `GEMINI_API_KEY=sk-proxy`) so SDKs boot; the gateway holds the real upstream credentials. If the agent's SDK requires a key variable not in this list, the entrypoint SHOULD set it to `sk-proxy` directly.
 
 ### Constraints
 
@@ -59,6 +67,8 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 17. **Replay test.** Every agent MUST participate in at least one end-to-end replay test with a recorded fixture. This verifies the agent runs correctly against real model responses without API keys.
 
+18. **Smoke test.** Every agent MUST pass `tests/agents/test.rs` — boot from the `evals/agents-smoke--<name>` carrier and make at least one LLM call to the protocol-namespaced gateway endpoint within `FIRST_CALL_TIMEOUT` seconds. The smoke test runs with a `models/replay` mock LLM, so no upstream credentials are needed. An agent that cannot satisfy this contract (because its design hardcodes a vendor backend, requires interactive setup, or runs a self-hosted multi-process stack) MUST be listed in `tests/agents/broken.md` with the root cause + smallest viable fix. Removing an agent from `broken.md` is the success condition.
+
 ## References
 
 - [Process](../RULES.md)
@@ -70,3 +80,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 |------|--------|
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Split rule 12 into rule 12 (reproducible by default via pinned `ARG <NAME>_VERSION`) and new rule 13 (runtime override via `EVAL_AGENT_VERSION`, writes resolved version to `/output/agent/version.json`). Added `eval.agent.version` to required labels (rule 14). Renumbered rules 14–17. |
+| 2026-05-21 | Added rule 18 (smoke test) — agents must pass `tests/agents/test.rs` or be documented in `tests/agents/broken.md`. |

@@ -1,0 +1,51 @@
+# Path-prefix shim for portkey. Portkey self-hosted only handles the
+# OpenAI wire format — Anthropic Messages and Google Gemini are NOT
+# cross-translated. Those return 501 Not Implemented with a clear
+# error body so framework users see the gap loud instead of silently
+# falling back to a bundled translator (cf. rule 8: fail loud).
+#
+# Routes:
+#   /openai/*                → portkey :8787  (model rewrite via x-portkey-config)
+#   /anthropic/*  /genai/*   → 501 Not Implemented
+
+{
+	admin off
+	log {
+		output discard
+	}
+}
+
+:4000 {
+	handle_path /openai/* {
+		reverse_proxy 127.0.0.1:8787 {
+			# Full portkey routing config: provider + upstream api_key
+			# + override_params.model = ${MODEL_NAME}. Rewrites the
+			# agent's chosen model to the configured upstream model —
+			# matches bifrost governance + litellm model_list aliasing.
+			header_up x-portkey-config      "{env.PORTKEY_CONFIG}"
+			header_up x-portkey-custom-host "{env.CUSTOM_HOST}"
+		}
+	}
+
+	# Protocols portkey self-hosted cannot translate. Return 501 with a
+	# clear error body — never silently fall back to a bundled translator.
+	# `header Content-Type` on the matched handler so strict clients can
+	# parse the body without sniffing.
+	handle /anthropic/* {
+		header Content-Type application/json
+		respond `{"error":{"type":"not_implemented","message":"portkey gateway does not translate Anthropic Messages to the upstream OpenAI Chat protocol. Use the bifrost or litellm gateway flavor for /anthropic support."}}` 501 {
+			close
+		}
+	}
+	handle /genai/* {
+		header Content-Type application/json
+		respond `{"error":{"type":"not_implemented","message":"portkey gateway does not translate Google Gemini to the upstream OpenAI Chat protocol. Use the bifrost or litellm gateway flavor for /genai support."}}` 501 {
+			close
+		}
+	}
+
+	# Health/admin pass through to portkey.
+	handle {
+		reverse_proxy 127.0.0.1:8787
+	}
+}

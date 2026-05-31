@@ -1,48 +1,22 @@
-# OSWorld
-# 369 tasks. Desktop VM sidecar + agent.
-# The desktop sidecar runs a QEMU Ubuntu VM with apps.
-# Agent interacts via HTTP screenshot/action API.
-#
-# PREREQUISITE: Download VM disk image (11GB) before running:
-#   huggingface-cli download xlangai/ubuntu_osworld Ubuntu.qcow2.zip --local-dir .
-#   unzip Ubuntu.qcow2.zip
-#
-# Then run:
-#   EVAL_TASK_ID=0 docker compose -f benchmarks/osworld/compose.yaml up
+include:
+  - path: ../../compose/services.yaml
 
 services:
-  model:
-    extends:
-      file: ../../compose/services.yaml
-      service: model
-    env_file: ../../.env
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-osworld}/${EVAL_TASK_ID:-default}/model:/output:rw
-
-  eval:
-    extends:
-      file: ../../compose/services.yaml
-      service: eval
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/osworld--${EVAL_AGENT:-claude-code}:${EVAL_AGENT_TAG:-latest}
+  runner:
+    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/osworld--${EVAL_AGENT:-claude-code}:latest
     environment:
-      - EVAL_BENCHMARK=osworld
-      - EVAL_TIMEOUT=${EVAL_TIMEOUT:-1800}
-      - DESKTOP_URL=http://desktop:5000
-    volumes:
-      - ../../output/${EVAL_BENCHMARK:-osworld}/${EVAL_TASK_ID:-default}/agent:/output/agent:rw
-      - ../../output/${EVAL_BENCHMARK:-osworld}/${EVAL_TASK_ID:-default}/task:/output/task:rw
+      BENCHMARK: osworld
+      TIMEOUT: "1800"
+      DESKTOP_URL: http://desktop:5000
     depends_on:
       desktop:
         condition: service_started
-      model:
-        condition: service_healthy
     deploy:
       resources:
         limits:
           cpus: "4"
           memory: 8G
 
-  # Desktop VM sidecar — QEMU Ubuntu with apps, screenshot API on port 5000
   desktop:
     image: happysixd/osworld-docker
     volumes:
@@ -54,7 +28,3 @@ services:
         limits:
           cpus: "4"
           memory: 8G
-
-networks:
-  internal:
-    internal: true

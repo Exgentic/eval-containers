@@ -37,7 +37,10 @@ set -euo pipefail
 export GOOSE_PROVIDER="openai"
 export GOOSE_MODEL="${EVAL_MODEL:?EVAL_MODEL must be set}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-export OPENAI_HOST="${OPENAI_BASE_URL:-http://model:4000}"
+# Goose appends /v1/chat/completions to OPENAI_HOST, but rule 5
+# delivers OPENAI_BASE_URL with /v1 baked in. Strip the suffix so we
+# don't end up posting to /openai/v1/v1/chat/completions.
+H="${OPENAI_BASE_URL:-http://model:4000}"; export OPENAI_HOST="${H%/v1}"
 export GOOSE_TELEMETRY_OFF=true
 exec goose run -t "$TASK" --no-session -q
 E

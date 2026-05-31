@@ -624,11 +624,23 @@ fn benchmark_missing_version_default(t: &str, _dir: &str) -> bool {
 fn agent_missing_version_default(t: &str, _dir: &str) -> bool {
     is_agent(t) && !t.contains("ENV EVAL_AGENT_VERSION_DEFAULT=")
 }
+// Gateway-flavor model images (LABEL gateway.kind=…) are thin wrappers
+// over gateways/{bifrost,litellm,portkey}; they don't ship litellm
+// themselves, so the EVAL_LITELLM_VERSION axis doesn't apply.
+fn is_gateway_flavor_model(t: &str) -> bool {
+    t.contains("LABEL gateway.kind=")
+}
 fn model_missing_litellm_version_label(t: &str, dir: &str) -> bool {
-    is_model(t) && !is_replay_model(t, dir) && !t.contains("LABEL eval.model.litellm_version=")
+    is_model(t)
+        && !is_replay_model(t, dir)
+        && !is_gateway_flavor_model(t)
+        && !t.contains("LABEL eval.model.litellm_version=")
 }
 fn model_missing_litellm_version_default(t: &str, dir: &str) -> bool {
-    is_model(t) && !is_replay_model(t, dir) && !t.contains("ENV EVAL_LITELLM_VERSION_DEFAULT=")
+    is_model(t)
+        && !is_replay_model(t, dir)
+        && !is_gateway_flavor_model(t)
+        && !t.contains("ENV EVAL_LITELLM_VERSION_DEFAULT=")
 }
 
 // ─── Rule catalog (data, not code) ─────────────────────────────────
