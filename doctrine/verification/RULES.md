@@ -29,7 +29,7 @@ Testing exists to answer two separate questions, triggered at different points i
    - MUST include the upstream reachability check
    - MAY take hours; runs rarely
 
-The **procedure** for executing each process — exact commands, order, gates — lives in [VERIFY.md](VERIFY.md). The procedure cites rule IDs from this file and its siblings; it does not restate them.
+The **procedure** for executing each process — exact commands, order, gates — lives in [VERIFY.md](verify/SKILL.md). The procedure cites rule IDs from this file and its siblings; it does not restate them.
 
 ## Test category organization
 
@@ -82,52 +82,32 @@ The **procedure** for executing each process — exact commands, order, gates �
 
    A rule stated only aspirationally is a comment, not a rule. If it matters, write the check.
 
-## Directory structure
+## Layout
 
-```
-tests/
-├── RULES.md              # this document — cross-cutting strategy
-├── VERIFY.md             # procedure doc: how to execute each process
-│
-├── sanity/               # fast mechanical gates, always run on cargo test
-│   ├── RULES.md
-│   └── *.rs              # check, compose parse, dockerfile/trajectory rule catalogs
-│
-├── build/                # benchmark + agent + model build sweep
-│   ├── RULES.md
-│   ├── test.rs
-│   └── known-broken.md
-│
-├── replay/               # recorded-trajectory sweep (continuous)
-│   ├── RULES.md
-│   ├── test.rs
-│   └── fixtures/
-│       ├── *.trajectory.jsonl
-│       ├── broken.json
-│       └── provenance.json
-│
-├── upstream/             # network reachability probe (release only)
-│   ├── RULES.md
-│   └── test.rs
-│
-├── live/                 # live-inference sweep (release only — API keys required)
-│   ├── RULES.md
-│   ├── test.rs
-│   └── known-broken.md
-│
-├── fleet/                # aggregator that renders the final report
-│   ├── RULES.md
-│   ├── test.rs
-│   └── report.md
-│
-└── cli/                  # CLI unit tests (parser, command construction, etc.)
-    └── RULES.md
-```
+The verification **strategy** (this file) and the **procedures** (the `verify`
+and `audit-*` skills) live in `doctrine/verification/`. Each test **category**
+keeps its rules beside the Rust that enforces them, under `tests/<category>/`:
+
+- [sanity](../../tests/sanity/RULES.md) — fast mechanical gates
+- [build](../../tests/build/RULES.md) — build sweep
+- [replay](../../tests/replay/RULES.md) — recorded-trajectory sweep
+- [upstream](../../tests/upstream/RULES.md) — network reachability
+- [live](../../tests/live/RULES.md) — live-inference sweep
+- [fleet](../../tests/fleet/RULES.md) — aggregator and report
+- [cli](../../tests/cli/RULES.md) — CLI unit tests
+- [containers](../../tests/containers/RULES.md) — container runtime tests
+- [gateways](../../tests/gateways/RULES.md) — gateway tests
+- [agents](../../tests/agents/RULES.md) — agent test rules
+
+A category's `RULES.md` is the markdown half of a catalog whose entries pair
+one-to-one with the `const RULES: &[Rule]` arrays in its sibling `*.rs`; the
+two MUST NOT drift. That pairing is why per-category rules stay beside their
+tests rather than moving into `doctrine/`.
 
 ## References
 
 - [Top-level process rules](../RULES.md)
-- [VERIFY.md](VERIFY.md) — procedures that execute these rules
+- [the verify skill](verify/SKILL.md) — the procedure that executes these rules
 - [testcontainers-rs](https://github.com/testcontainers/testcontainers-rs)
 
 ## Changelog

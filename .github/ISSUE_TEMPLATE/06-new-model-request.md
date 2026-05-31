@@ -32,7 +32,7 @@ fastest, largest-context, specific-domain? Be specific. -->
 ## Fit with existing rules
 
 - [ ] API key can be loaded from `.env` via `<PROVIDER>_API_KEY`
-      (no hardcoded keys in image config — [models/RULES.md](../../models/RULES.md) rule 5)
+      (no hardcoded keys in image config — [doctrine/models/RULES.md](../../models/RULES.md) rule 5)
 - [ ] LiteLLM already supports this provider in the current pinned
       version (`core/litellm` → `main-v<X>-stable`)
 - [ ] Cost tracking populates `response_cost` on the endpoint paths
