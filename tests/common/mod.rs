@@ -9,7 +9,7 @@
 //! depend on and call `bake_targets`.
 #![allow(dead_code)]
 
-use eval_containers::bake::artifact_bake_files;
+use eval_containers::bake;
 use tokio::process::Command;
 
 /// Build a single bake target — the target's transitive deps are
@@ -22,24 +22,16 @@ pub async fn bake_target(target: &str) {
 /// Build one or more bake targets in a single bake invocation. Bake
 /// runs the build graph in parallel where it can, serialized only by
 /// the dep edges declared in each target's `contexts`.
+///
+/// Tests run testcontainers with `.with_platform("linux/amd64")` so
+/// the framework's images must match. On Apple Silicon, buildx's
+/// docker-container driver defaults to the host arch (arm64) and
+/// podman 404s the amd64 probe — pin `*.platform=linux/amd64` here so
+/// every test-driven build matches the runtime probe.
 pub async fn bake_targets(targets: &[&str]) {
-    let files = artifact_bake_files();
+    let args = bake::base_args(targets, &["*.platform=linux/amd64"]);
     let mut cmd = Command::new("docker");
-    cmd.args(["buildx", "bake"]);
-    for f in &files {
-        cmd.args(["-f", f.to_str().expect("utf8 bake path")]);
-    }
-    cmd.arg("--load");
-    // Tests run testcontainers with `.with_platform("linux/amd64")` so
-    // the framework's images must match. On Apple Silicon, buildx's
-    // docker-container driver defaults to the host arch (arm64), which
-    // makes podman return 404 on `.with_platform("linux/amd64")` and
-    // testcontainers fall through to a pull-from-quay that 401s. Pin
-    // amd64 here so every test-driven build matches the runtime probe.
-    cmd.args(["--set", "*.platform=linux/amd64"]);
-    for t in targets {
-        cmd.arg(t);
-    }
+    cmd.args(&args);
     if let Ok(t) = std::env::var("HF_TOKEN") {
         cmd.env("HF_TOKEN", t);
     }
