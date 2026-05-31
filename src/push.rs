@@ -5,6 +5,9 @@ use std::process::Command;
 pub struct PushArgs {
     #[command(subcommand)]
     pub target: PushTarget,
+    /// Print the docker push command without executing it.
+    #[arg(long, global = true)]
+    pub dry_run: bool,
 }
 
 #[derive(Subcommand)]
@@ -40,6 +43,7 @@ pub enum PushTarget {
 }
 
 pub fn execute(registry: &str, args: PushArgs) -> Result<(), String> {
+    let dry_run = args.dry_run;
     let tag = match args.target {
         PushTarget::Agent { name, version } => {
             format!("{registry}/agents/{name}:{version}")
@@ -69,11 +73,14 @@ pub fn execute(registry: &str, args: PushArgs) -> Result<(), String> {
         }
     };
 
-    docker_push(&tag)
+    docker_push(&tag, dry_run)
 }
 
-fn docker_push(tag: &str) -> Result<(), String> {
+fn docker_push(tag: &str, dry_run: bool) -> Result<(), String> {
     eprintln!("$ docker push {tag}");
+    if dry_run {
+        return Ok(());
+    }
     let status = Command::new("docker")
         .args(["push", tag])
         .status()
