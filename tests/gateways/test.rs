@@ -58,7 +58,6 @@ use tokio::sync::OnceCell;
 
 #[path = "../common/mod.rs"]
 mod common;
-use common::build_tier;
 
 // ─── Constants ───────────────────────────────────────────────────────
 
@@ -93,46 +92,27 @@ fn gateway_image_ref(flavor: &str) -> (String, String) {
 
 // ─── Build bootstrap ─────────────────────────────────────────────────
 //
-// All container work goes through testcontainers per rule 6. Builds are
-// idempotent and cached by the layer store, so the second test in a
-// session pays only the inspect-cache cost. Image build helper lives in
-// `tests/common/mod.rs` (shared with tests/agents and tests/replay).
+// Per tests/RULES.md rule 6c, image builds shell to `docker buildx bake`
+// (the framework's canonical build path) via `tests/common/mod.rs`.
+// RUN/START/STOP still go through testcontainers-rs per rule 6.
 
 static IMAGES_BUILT: OnceCell<()> = OnceCell::const_new();
 
 /// Build every image these tests transitively need, exactly once per
-/// process. The `OnceCell` makes concurrent calls (cargo runs tests on
-/// many threads) safe — late callers await the in-flight build.
+/// process. Bake handles dep ordering via each artifact's `contexts`
+/// (otelcol is a leaf; gateway/{flavor} is a leaf; model-gpt-5_4--{flavor}
+/// depends on the matching gateway target).
 async fn ensure_built() {
     IMAGES_BUILT
         .get_or_init(|| async {
             let _ = dotenvy::dotenv();
-            // Tier 1: otelcol (sidecar for OTel tests).
-            build_tier(
-                "tier 1",
-                [("quay.io/eval-containers/core/otel", "core/otel")],
-            )
-            .await;
-            // Tier 2: gateway bases (independent of each other).
-            build_tier(
-                "tier 2",
-                FLAVORS.iter().map(|f| {
-                    (
-                        format!("quay.io/eval-containers/gateways/{f}"),
-                        format!("gateways/{f}"),
-                    )
-                }),
-            )
-            .await;
-            // Tier 3: model images — thin FROM-gateway layers.
-            build_tier(
-                "tier 3",
-                FLAVORS.iter().map(|f| {
-                    let (name, _tag) = gateway_image_ref(f);
-                    (name, format!("models/gpt-5.4--{f}"))
-                }),
-            )
-            .await;
+            let mut targets: Vec<String> = vec!["otel".to_string()];
+            for f in FLAVORS {
+                targets.push(f.to_string());
+                targets.push(format!("model-gpt-5_4--{f}"));
+            }
+            let refs: Vec<&str> = targets.iter().map(String::as_str).collect();
+            common::bake_targets(&refs).await;
         })
         .await;
 }
