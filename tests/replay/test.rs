@@ -161,11 +161,8 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
         "webarena" | "visualwebarena" | "osworld" | "tau-bench" => 900,
         _ => 480,
     };
-    let up_result = tokio::time::timeout(
-        std::time::Duration::from_secs(timeout_secs),
-        compose.up(),
-    )
-    .await;
+    let up_result =
+        tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), compose.up()).await;
     match up_result {
         Ok(Ok(())) => {}
         Ok(Err(e)) => panic!("compose up failed: {e:?}"),
@@ -261,15 +258,33 @@ async fn bootstrap_core_bases() {
                 // Leaf bases (no inter-eval-containers deps).
                 [
                     ("quay.io/eval-containers/core/entrypoint", "core/entrypoint"),
-                    ("quay.io/eval-containers/core/test-exact-match", "core/test-exact-match"),
+                    (
+                        "quay.io/eval-containers/core/test-exact-match",
+                        "core/test-exact-match",
+                    ),
                     ("quay.io/eval-containers/core/litellm", "core/litellm"),
                     ("quay.io/eval-containers/core/llm-bridge", "core/llm-bridge"),
                     ("quay.io/eval-containers/core/otel", "core/otel"),
-                    ("quay.io/eval-containers/core/runtime-bundle", "core/runtime-bundle"),
-                    ("quay.io/eval-containers/core/agent-base-node", "core/agent-base-node"),
-                    ("quay.io/eval-containers/core/agent-base-python", "core/agent-base-python"),
-                    ("quay.io/eval-containers/core/agent-base-rust", "core/agent-base-rust"),
-                    ("quay.io/eval-containers/gateways/bifrost", "gateways/bifrost"),
+                    (
+                        "quay.io/eval-containers/core/runtime-bundle",
+                        "core/runtime-bundle",
+                    ),
+                    (
+                        "quay.io/eval-containers/core/agent-base-node",
+                        "core/agent-base-node",
+                    ),
+                    (
+                        "quay.io/eval-containers/core/agent-base-python",
+                        "core/agent-base-python",
+                    ),
+                    (
+                        "quay.io/eval-containers/core/agent-base-rust",
+                        "core/agent-base-rust",
+                    ),
+                    (
+                        "quay.io/eval-containers/gateways/bifrost",
+                        "gateways/bifrost",
+                    ),
                     ("quay.io/eval-containers/models/replay", "models/replay"),
                 ],
             )
@@ -279,10 +294,22 @@ async fn bootstrap_core_bases() {
                 // Depend on tier 1 (benchmark-base-* FROM core/entrypoint;
                 // gpt-5.4--bifrost COPYs /opt/gateway from gateways/bifrost).
                 [
-                    ("quay.io/eval-containers/core/benchmark-base-hf", "core/benchmark-base-hf"),
-                    ("quay.io/eval-containers/core/benchmark-base-github", "core/benchmark-base-github"),
-                    ("quay.io/eval-containers/core/benchmark-base-external", "core/benchmark-base-external"),
-                    ("quay.io/eval-containers/models/gpt-5.4--bifrost", "models/gpt-5.4--bifrost"),
+                    (
+                        "quay.io/eval-containers/core/benchmark-base-hf",
+                        "core/benchmark-base-hf",
+                    ),
+                    (
+                        "quay.io/eval-containers/core/benchmark-base-github",
+                        "core/benchmark-base-github",
+                    ),
+                    (
+                        "quay.io/eval-containers/core/benchmark-base-external",
+                        "core/benchmark-base-external",
+                    ),
+                    (
+                        "quay.io/eval-containers/models/gpt-5.4--bifrost",
+                        "models/gpt-5.4--bifrost",
+                    ),
                 ],
             )
             .await;
@@ -2550,4 +2577,3 @@ replay_test!(
     "opencode",
     "9972"
 );
-
