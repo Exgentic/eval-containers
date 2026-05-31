@@ -269,15 +269,6 @@ async fn assert_agent_calls_llm(agent: &str) {
         .join("output/agent-smoke")
         .join(format!("{agent}-{nanos}"));
     std::fs::create_dir_all(&host_root).expect("create host output dir");
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(
-            &host_root,
-            std::fs::Permissions::from_mode(0o777),
-        )
-        .expect("chmod 0777 on output dir");
-    }
     let output_dir = ScopedDir(host_root);
     struct ScopedDir(std::path::PathBuf);
     impl Drop for ScopedDir {
