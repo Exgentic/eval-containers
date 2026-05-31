@@ -733,3 +733,121 @@ async fn build_replay_model() {
         "replay model missing eval.model.name=replay"
     );
 }
+
+// ─── Dockerfile ↔ bake alignment lint (RULES.md principle 15) ───────
+//
+// Static check: every artifact under core/, agents/, benchmarks/,
+// models/, gateways/ MUST have a docker-bake.hcl next to its Dockerfile
+// AND its bake `contexts` MUST list every in-repo image referenced via
+// `FROM` or `COPY --from=` in the Dockerfile. Drift fails fast.
+//
+// No docker calls; runs in milliseconds on plain `cargo test`.
+
+const REGISTRY_PREFIX: &str = "quay.io/eval-containers/";
+
+fn in_repo_deps_from_dockerfile(path: &Path) -> Vec<String> {
+    let text = fs::read_to_string(path).unwrap_or_default();
+    let mut deps: Vec<String> = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        // FROM [--platform=...] image[:tag] [AS stage]
+        if let Some(rest) = line.strip_prefix("FROM ") {
+            let mut tok = rest;
+            while let Some(stripped) = tok.strip_prefix("--") {
+                let end = stripped.find(' ').map(|i| i + 2).unwrap_or(rest.len());
+                tok = &rest[end..].trim_start();
+            }
+            let image = tok.split_whitespace().next().unwrap_or("");
+            if image.starts_with(REGISTRY_PREFIX) && !deps.contains(&image.to_string()) {
+                deps.push(image.to_string());
+            }
+            continue;
+        }
+        // COPY --from=image[:tag] src dst
+        if let Some(rest) = line.strip_prefix("COPY --from=") {
+            let image = rest.split_whitespace().next().unwrap_or("");
+            if image.starts_with(REGISTRY_PREFIX) && !deps.contains(&image.to_string()) {
+                deps.push(image.to_string());
+            }
+        }
+    }
+    deps
+}
+
+fn in_repo_deps_from_bake(path: &Path) -> Vec<String> {
+    let text = fs::read_to_string(path).unwrap_or_default();
+    // Extract the LHS of every `"<ref>" = "target:<name>"` line under a
+    // contexts block. The template is constrained enough that regex on
+    // each line is reliable; `${REGISTRY}` is replaced with the literal
+    // default for comparison.
+    let mut deps: Vec<String> = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if !line.contains("\" = \"target:") {
+            continue;
+        }
+        // `"${REGISTRY}/core/entrypoint:latest" = "target:entrypoint"`
+        let Some(start) = line.find('"') else { continue };
+        let after = &line[start + 1..];
+        let Some(end) = after.find('"') else { continue };
+        let lhs = &after[..end];
+        let resolved = lhs.replace("${REGISTRY}", "quay.io/eval-containers");
+        if !deps.contains(&resolved) {
+            deps.push(resolved);
+        }
+    }
+    deps
+}
+
+fn artifact_dirs_with_dockerfile() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for category in ["core", "agents", "benchmarks", "models", "gateways"] {
+        let Ok(entries) = fs::read_dir(category) else { continue };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() && p.join("Dockerfile").exists() {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    out
+}
+
+#[test]
+fn dockerfile_bake_alignment() {
+    let mut failures: Vec<String> = Vec::new();
+    for dir in artifact_dirs_with_dockerfile() {
+        let dockerfile = dir.join("Dockerfile");
+        let bake = dir.join("docker-bake.hcl");
+
+        if !bake.exists() {
+            failures.push(format!(
+                "{}: missing docker-bake.hcl (RULES.md principle 15)",
+                dir.display()
+            ));
+            continue;
+        }
+
+        let mut dockerfile_deps = in_repo_deps_from_dockerfile(&dockerfile);
+        let mut bake_deps = in_repo_deps_from_bake(&bake);
+        dockerfile_deps.sort();
+        bake_deps.sort();
+        if dockerfile_deps != bake_deps {
+            failures.push(format!(
+                "{}: Dockerfile ↔ docker-bake.hcl drift\n  \
+                 Dockerfile in-repo deps: {:?}\n  \
+                 docker-bake.hcl contexts: {:?}",
+                dir.display(),
+                dockerfile_deps,
+                bake_deps,
+            ));
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} artifact(s) violate RULES.md principle 15:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
