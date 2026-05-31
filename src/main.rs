@@ -1,4 +1,5 @@
 mod build;
+mod gen_bake;
 mod images;
 mod inspect;
 mod list;
@@ -42,6 +43,8 @@ enum Commands {
     Run(run::RunArgs),
     /// Aggregate and report results
     Report(report::ReportArgs),
+    /// Scaffold a docker-bake.hcl for an artifact (RULES.md principle 15)
+    GenBake(gen_bake::GenBakeArgs),
 }
 
 fn main() {
@@ -62,6 +65,7 @@ fn main() {
         Commands::Prune(args) => prune::execute(args),
         Commands::Run(args) => run::execute(&cli.registry, args),
         Commands::Report(args) => report::execute(args),
+        Commands::GenBake(args) => gen_bake::execute(args),
     };
 
     if let Err(e) = result {
