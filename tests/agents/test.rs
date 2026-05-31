@@ -64,7 +64,6 @@ use tokio::sync::OnceCell;
 
 #[path = "../common/mod.rs"]
 mod common;
-use common::tc_build_context;
 
 // ─── Configuration ───────────────────────────────────────────────────
 
@@ -116,17 +115,11 @@ const FIRST_CALL_TIMEOUT: Duration = Duration::from_secs(150);
 
 static MOCK_BUILT: OnceCell<()> = OnceCell::const_new();
 
-/// Build models/replay via testcontainers if it's not in the local store.
+/// Build models/replay via bake if it's not in the local store.
 async fn ensure_mock_built() {
     MOCK_BUILT
         .get_or_init(|| async {
-            tc_build_context(
-                "quay.io/eval-containers/models/replay",
-                "latest",
-                "models/replay",
-                "models/replay/Dockerfile",
-            )
-            .await;
+            common::bake_target("model-replay").await;
         })
         .await;
 }
