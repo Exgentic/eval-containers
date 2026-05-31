@@ -733,3 +733,227 @@ async fn build_replay_model() {
         "replay model missing eval.model.name=replay"
     );
 }
+
+// ─── Dockerfile ↔ bake alignment lint (RULES.md principle 15) ───────
+//
+// Static check: every artifact under core/, agents/, benchmarks/,
+// models/, gateways/ MUST have a docker-bake.hcl next to its Dockerfile
+// AND its bake `contexts` MUST list every in-repo image referenced via
+// `FROM` or `COPY --from=` in the Dockerfile. Drift fails fast.
+//
+// No docker calls; runs in milliseconds on plain `cargo test`.
+
+const REGISTRY_PREFIX: &str = "quay.io/eval-containers/";
+
+fn in_repo_deps_from_dockerfile(path: &Path) -> Vec<String> {
+    let text = fs::read_to_string(path).unwrap_or_default();
+    let mut deps: Vec<String> = Vec::new();
+    let push_if_in_repo = |s: &str, deps: &mut Vec<String>| {
+        if s.starts_with(REGISTRY_PREFIX) {
+            // Normalize: strip :tag for comparison against bake contexts keys.
+            let bare = s.split(':').next().unwrap_or(s).to_string();
+            if !deps.contains(&bare) {
+                deps.push(bare);
+            }
+        }
+    };
+    for raw in text.lines() {
+        let line = raw.trim();
+        // FROM [--platform=...] image[:tag] [AS stage]
+        if let Some(rest) = line.strip_prefix("FROM ") {
+            let mut tok = rest;
+            while let Some(stripped) = tok.strip_prefix("--") {
+                let end = stripped.find(' ').map(|i| i + 2).unwrap_or(rest.len());
+                tok = &rest[end..].trim_start();
+            }
+            let image = tok.split_whitespace().next().unwrap_or("");
+            push_if_in_repo(image, &mut deps);
+            continue;
+        }
+        // COPY --from=image[:tag] src dst
+        if let Some(rest) = line.strip_prefix("COPY --from=") {
+            let image = rest.split_whitespace().next().unwrap_or("");
+            push_if_in_repo(image, &mut deps);
+        }
+    }
+    deps
+}
+
+fn in_repo_deps_from_bake(path: &Path) -> Vec<String> {
+    let text = fs::read_to_string(path).unwrap_or_default();
+    // Extract the LHS of every `"<ref>" = "target:<name>"` line under
+    // a contexts block. Contexts keys MUST omit the tag (bake matches
+    // FROM image name without :tag), so for cross-checking against
+    // Dockerfile FROMs we normalize both sides by stripping :tag.
+    let mut deps: Vec<String> = Vec::new();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if !line.contains("\" = \"target:") {
+            continue;
+        }
+        let Some(start) = line.find('"') else { continue };
+        let after = &line[start + 1..];
+        let Some(end) = after.find('"') else { continue };
+        let lhs = &after[..end];
+        let resolved = lhs
+            .replace("${REGISTRY}", "quay.io/eval-containers")
+            .split(':')
+            .next()
+            .unwrap_or("")
+            .to_string();
+        if !deps.contains(&resolved) {
+            deps.push(resolved);
+        }
+    }
+    deps
+}
+
+#[test]
+fn dockerfile_bake_alignment() {
+    let mut failures: Vec<String> = Vec::new();
+    for dir in eval_containers::bake::artifact_dirs_with_dockerfile() {
+        let dockerfile = dir.join("Dockerfile");
+        let bake = dir.join("docker-bake.hcl");
+
+        if !bake.exists() {
+            failures.push(format!(
+                "{}: missing docker-bake.hcl (RULES.md principle 15)",
+                dir.display()
+            ));
+            continue;
+        }
+
+        let mut dockerfile_deps = in_repo_deps_from_dockerfile(&dockerfile);
+        let mut bake_deps = in_repo_deps_from_bake(&bake);
+        dockerfile_deps.sort();
+        bake_deps.sort();
+        if dockerfile_deps != bake_deps {
+            failures.push(format!(
+                "{}: Dockerfile ↔ docker-bake.hcl drift\n  \
+                 Dockerfile in-repo deps: {:?}\n  \
+                 docker-bake.hcl contexts: {:?}",
+                dir.display(),
+                dockerfile_deps,
+                bake_deps,
+            ));
+        }
+
+        // Principle 15.g (Minimal): forbid inherits, group blocks,
+        // dockerfile-inline, and multi-target files. Match line-anchored
+        // HCL syntax — a bare `bake_text.contains("group ")` would also
+        // trip on the word "group" inside a comment.
+        let bake_text = fs::read_to_string(&bake).unwrap_or_default();
+        let mut target_count = 0;
+        for raw in bake_text.lines() {
+            let line = raw.trim_start();
+            if line.starts_with("inherits ") || line.starts_with("inherits=") {
+                failures.push(format!(
+                    "{}: bake file uses forbidden `inherits` (RULES.md principle 15.g)",
+                    dir.display(),
+                ));
+            }
+            if line.starts_with("dockerfile-inline ") || line.starts_with("dockerfile-inline=") {
+                failures.push(format!(
+                    "{}: bake file uses forbidden `dockerfile-inline` (RULES.md principle 15.g)",
+                    dir.display(),
+                ));
+            }
+            if line.starts_with("group \"") {
+                failures.push(format!(
+                    "{}: bake file declares a `group` block (RULES.md principle 15.g)",
+                    dir.display(),
+                ));
+            }
+            if line.starts_with("target \"") {
+                target_count += 1;
+            }
+            // Principle 15.b: REGISTRY and TAG are fleet-wide;
+            // per-artifact files MUST NOT redeclare them.
+            for fleetwide in ["REGISTRY", "TAG"] {
+                if line.starts_with(&format!("variable \"{fleetwide}\"")) {
+                    failures.push(format!(
+                        "{}: bake file redeclares `{}` (RULES.md principle 15.b — fleet-wide variables live only in ./docker-bake.hcl)",
+                        dir.display(),
+                        fleetwide,
+                    ));
+                }
+            }
+        }
+        if target_count != 1 {
+            failures.push(format!(
+                "{}: bake file declares {} targets; principle 15.g requires exactly 1",
+                dir.display(),
+                target_count,
+            ));
+        }
+
+        // Principle 15.a + 15.c (structural conformance): target name,
+        // context dir, and tag MUST follow the documented convention.
+        // Derive expectations from the directory path.
+        let cat = dir
+            .parent()
+            .and_then(|p| p.file_name())
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        let art = dir.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        let expected_target = match cat {
+            // Leaf core + gateways: bare name. Other categories: <cat>-<name>.
+            "core" | "gateways" => art.to_string(),
+            "agents" => format!("agent-{art}"),
+            "benchmarks" => format!("benchmark-{art}"),
+            "models" => format!("model-{}", art.replace('.', "_")),
+            _ => String::new(),
+        };
+        if !expected_target.is_empty()
+            && !bake_text.contains(&format!("target \"{expected_target}\""))
+        {
+            failures.push(format!(
+                "{}: bake target name does not match `{expected_target}` (RULES.md principle 15.a)",
+                dir.display(),
+            ));
+        }
+        let expected_context = format!("context = \"{cat}/{art}\"");
+        let expected_context_padded = format!("context  = \"{cat}/{art}\""); // alignment-padded variant
+        if !bake_text.contains(&expected_context) && !bake_text.contains(&expected_context_padded) {
+            failures.push(format!(
+                "{}: bake `context` does not match `{cat}/{art}` (RULES.md principle 15.a)",
+                dir.display(),
+            ));
+        }
+        let expected_tag = format!("\"${{REGISTRY}}/{cat}/{art}:${{TAG}}\"");
+        if !bake_text.contains(&expected_tag) {
+            failures.push(format!(
+                "{}: bake `tags` does not match `${{REGISTRY}}/{cat}/{art}:${{TAG}}` (RULES.md principle 15.c)",
+                dir.display(),
+            ));
+        }
+
+        // Principle 15.h (Variable hygiene): every `variable "X"`
+        // declared in this file MUST be referenced (as `X` or `${X}`)
+        // somewhere else in the same file. Dead declarations rot fast.
+        for raw in bake_text.lines() {
+            let line = raw.trim_start();
+            let Some(rest) = line.strip_prefix("variable \"") else { continue };
+            let Some(end) = rest.find('"') else { continue };
+            let name = &rest[..end];
+            // Strip the declaration line from the search corpus.
+            let used_elsewhere = bake_text
+                .lines()
+                .filter(|l| !l.trim_start().starts_with(&format!("variable \"{name}\"")))
+                .any(|l| l.contains(&format!("${{{name}}}")) || l.contains(&format!(" {name} ")) || l.contains(&format!(" {name},")) || l.contains(&format!(" {name}\n")) || l.trim().ends_with(&format!("= {name}")));
+            if !used_elsewhere {
+                failures.push(format!(
+                    "{}: bake variable `{}` declared but never referenced (RULES.md principle 15.h)",
+                    dir.display(),
+                    name,
+                ));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "{} artifact(s) violate RULES.md principle 15:\n{}",
+        failures.len(),
+        failures.join("\n")
+    );
+}
