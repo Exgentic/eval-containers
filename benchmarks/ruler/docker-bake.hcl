@@ -3,5 +3,5 @@ target "benchmark-ruler" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
   }
-  tags = ["${REGISTRY}/benchmarks/ruler:latest"]
+  tags = ["${REGISTRY}/benchmarks/ruler:${TAG}"]
 }

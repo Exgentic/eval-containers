@@ -4,5 +4,5 @@ target "benchmark-cybench" {
     "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
     "${REGISTRY}/core/entrypoint" = "target:entrypoint"
   }
-  tags = ["${REGISTRY}/benchmarks/cybench:latest"]
+  tags = ["${REGISTRY}/benchmarks/cybench:${TAG}"]
 }

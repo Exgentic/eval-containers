@@ -3,5 +3,5 @@ target "benchmark-mrcr" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
   }
-  tags = ["${REGISTRY}/benchmarks/mrcr:latest"]
+  tags = ["${REGISTRY}/benchmarks/mrcr:${TAG}"]
 }

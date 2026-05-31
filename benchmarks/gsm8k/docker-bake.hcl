@@ -4,5 +4,5 @@ target "benchmark-gsm8k" {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
     "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
   }
-  tags = ["${REGISTRY}/benchmarks/gsm8k:latest"]
+  tags = ["${REGISTRY}/benchmarks/gsm8k:${TAG}"]
 }

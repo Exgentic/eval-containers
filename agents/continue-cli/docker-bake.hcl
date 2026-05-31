@@ -3,5 +3,5 @@ target "agent-continue-cli" {
   contexts = {
     "${REGISTRY}/core/agent-base-node" = "target:agent-base-node"
   }
-  tags = ["${REGISTRY}/agents/continue-cli:latest"]
+  tags = ["${REGISTRY}/agents/continue-cli:${TAG}"]
 }

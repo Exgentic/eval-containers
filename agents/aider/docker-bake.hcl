@@ -3,5 +3,5 @@ target "agent-aider" {
   contexts = {
     "${REGISTRY}/core/agent-base-python" = "target:agent-base-python"
   }
-  tags = ["${REGISTRY}/agents/aider:latest"]
+  tags = ["${REGISTRY}/agents/aider:${TAG}"]
 }

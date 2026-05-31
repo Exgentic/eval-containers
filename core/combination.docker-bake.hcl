@@ -1,11 +1,11 @@
-variable "EVAL_BENCHMARK"       {}
-variable "EVAL_AGENT"           {}
-variable "EVAL_AGENT_VERSION"   { default = "latest" }
-variable "BENCHMARK_IMAGE"      {}
-variable "AGENT_IMAGE"          {}
-variable "MODEL_IMAGE"          {}
-variable "OTEL_IMAGE"           { default = "quay.io/eval-containers/core/otel:latest" }
-variable "RUNTIME_BUNDLE_IMAGE" { default = "quay.io/eval-containers/core/runtime-bundle:latest" }
+variable "EVAL_BENCHMARK"     {}
+variable "EVAL_AGENT"         {}
+variable "EVAL_AGENT_VERSION" { default = "" }
+variable "BENCHMARK_IMAGE"    {}
+variable "AGENT_IMAGE"        {}
+variable "MODEL_IMAGE"        {}
+variable "OTEL_IMAGE"         { default = "${REGISTRY}/core/otel:${TAG}" }
+variable "RUNTIME_BUNDLE_IMAGE" { default = "${REGISTRY}/core/runtime-bundle:${TAG}" }
 
 target "eval" {
   context    = "."
@@ -18,5 +18,5 @@ target "eval" {
     OTEL_IMAGE           = OTEL_IMAGE
     RUNTIME_BUNDLE_IMAGE = RUNTIME_BUNDLE_IMAGE
   }
-  tags = ["${REGISTRY}/evals/${EVAL_BENCHMARK}--${EVAL_AGENT}:${EVAL_AGENT_VERSION}"]
+  tags = ["${REGISTRY}/evals/${EVAL_BENCHMARK}--${EVAL_AGENT}:${TAG}"]
 }

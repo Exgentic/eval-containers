@@ -3,5 +3,5 @@ target "agent-goose" {
   contexts = {
     "${REGISTRY}/core/agent-base-rust" = "target:agent-base-rust"
   }
-  tags = ["${REGISTRY}/agents/goose:latest"]
+  tags = ["${REGISTRY}/agents/goose:${TAG}"]
 }

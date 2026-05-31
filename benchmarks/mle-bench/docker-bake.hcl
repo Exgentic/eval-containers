@@ -3,5 +3,5 @@ target "benchmark-mle-bench" {
   contexts = {
     "${REGISTRY}/core/entrypoint" = "target:entrypoint"
   }
-  tags = ["${REGISTRY}/benchmarks/mle-bench:latest"]
+  tags = ["${REGISTRY}/benchmarks/mle-bench:${TAG}"]
 }
