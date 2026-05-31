@@ -7,5 +7,5 @@ target "benchmark-flores200" {
     "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
   }
   args = { HF_TOKEN = HF_TOKEN }
-  tags = ["${REGISTRY}/benchmarks/flores200:latest"]
+  tags = ["${REGISTRY}/benchmarks/flores200:${TAG}"]
 }

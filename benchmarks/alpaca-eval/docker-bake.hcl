@@ -3,5 +3,5 @@ target "benchmark-alpaca-eval" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
   }
-  tags = ["${REGISTRY}/benchmarks/alpaca-eval:latest"]
+  tags = ["${REGISTRY}/benchmarks/alpaca-eval:${TAG}"]
 }

@@ -3,5 +3,5 @@ target "benchmark-browsecomp" {
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
   }
-  tags = ["${REGISTRY}/benchmarks/browsecomp:latest"]
+  tags = ["${REGISTRY}/benchmarks/browsecomp:${TAG}"]
 }

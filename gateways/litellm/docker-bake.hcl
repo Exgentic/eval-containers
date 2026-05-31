@@ -1,4 +1,4 @@
 target "litellm" {
   context = "gateways/litellm"
-  tags = ["${REGISTRY}/gateways/litellm:latest"]
+  tags = ["${REGISTRY}/gateways/litellm:${TAG}"]
 }

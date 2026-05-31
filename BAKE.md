@@ -25,7 +25,7 @@ target "<category>-<name>" {
     # ... one entry per in-repo FROM / COPY --from=
   }
   args = { HF_TOKEN = HF_TOKEN }   # only if the Dockerfile takes it
-  tags = ["${REGISTRY}/<category>/<name>:latest"]
+  tags = ["${REGISTRY}/<category>/<name>:${TAG}"]
 }
 ```
 
@@ -50,7 +50,7 @@ block needed:
 
 target "agent-base-python" {
   context = "core/agent-base-python"
-  tags    = ["${REGISTRY}/core/agent-base-python:latest"]
+  tags    = ["${REGISTRY}/core/agent-base-python:${TAG}"]
 }
 ```
 
@@ -64,9 +64,9 @@ variable "HF_TOKEN" { default = "" }
 
 target "benchmark-base-hf" {
   context  = "core/benchmark-base-hf"
-  contexts = { "${REGISTRY}/core/entrypoint:latest" = "target:entrypoint" }
+  contexts = { "${REGISTRY}/core/entrypoint:${TAG}" = "target:entrypoint" }
   args     = { HF_TOKEN = HF_TOKEN }
-  tags     = ["${REGISTRY}/core/benchmark-base-hf:latest"]
+  tags     = ["${REGISTRY}/core/benchmark-base-hf:${TAG}"]
 }
 ```
 
@@ -77,25 +77,25 @@ target "benchmark-base-hf" {
 
 target "bifrost" {
   context = "gateways/bifrost"
-  tags    = ["${REGISTRY}/gateways/bifrost:latest"]
+  tags    = ["${REGISTRY}/gateways/bifrost:${TAG}"]
 }
 ```
 
 ### Agent
 
-Pinned upstream version is a variable so it can be overridden without
-editing the file:
-
 ```hcl
 # agents/openhands/docker-bake.hcl
-variable "OPENHANDS_VERSION" { default = "1.7.0" }
-
 target "agent-openhands" {
   context  = "agents/openhands"
-  contexts = { "${REGISTRY}/core/agent-base-python:latest" = "target:agent-base-python" }
-  tags     = ["${REGISTRY}/agents/openhands:${OPENHANDS_VERSION}"]
+  contexts = { "${REGISTRY}/core/agent-base-python" = "target:agent-base-python" }
+  tags     = ["${REGISTRY}/agents/openhands:${TAG}"]
 }
 ```
+
+Per-agent upstream versions live in the agent's `Dockerfile` as
+`ENV EVAL_AGENT_VERSION_DEFAULT="x.y.z"` (principle 9 — internal
+version axis) — not in the bake tag. The image tag is the framework's
+container version, set fleet-wide via `${TAG}`.
 
 ### Benchmark
 
@@ -106,11 +106,11 @@ variable "HF_TOKEN" { default = "" }
 target "benchmark-aime" {
   context  = "benchmarks/aime"
   contexts = {
-    "${REGISTRY}/core/benchmark-base-hf:latest" = "target:benchmark-base-hf"
-    "${REGISTRY}/core/test-exact-match:latest"  = "target:test-exact-match"
+    "${REGISTRY}/core/benchmark-base-hf:${TAG}" = "target:benchmark-base-hf"
+    "${REGISTRY}/core/test-exact-match:${TAG}"  = "target:test-exact-match"
   }
   args = { HF_TOKEN = HF_TOKEN }
-  tags = ["${REGISTRY}/benchmarks/aime:latest"]
+  tags = ["${REGISTRY}/benchmarks/aime:${TAG}"]
 }
 ```
 
@@ -121,8 +121,8 @@ target "benchmark-aime" {
 
 target "model-gpt-5_4--bifrost" {
   context  = "models/gpt-5.4--bifrost"
-  contexts = { "${REGISTRY}/gateways/bifrost:latest" = "target:bifrost" }
-  tags     = ["${REGISTRY}/models/gpt-5.4--bifrost:latest"]
+  contexts = { "${REGISTRY}/gateways/bifrost:${TAG}" = "target:bifrost" }
+  tags     = ["${REGISTRY}/models/gpt-5.4--bifrost:${TAG}"]
 }
 ```
 
@@ -135,14 +135,14 @@ plus `--set` overrides.
 
 ```hcl
 # core/combination.docker-bake.hcl
-variable "EVAL_BENCHMARK"       {}   # required
-variable "EVAL_AGENT"           {}   # required
-variable "EVAL_AGENT_VERSION"   { default = "latest" }
-variable "BENCHMARK_IMAGE"      {}   # required image ref
-variable "AGENT_IMAGE"          {}   # required image ref
-variable "MODEL_IMAGE"          {}   # required image ref
-variable "OTEL_IMAGE"           { default = "quay.io/eval-containers/core/otel:latest" }
-variable "RUNTIME_BUNDLE_IMAGE" { default = "quay.io/eval-containers/core/runtime-bundle:latest" }
+variable "EVAL_BENCHMARK"     {}   # required
+variable "EVAL_AGENT"         {}   # required
+variable "EVAL_AGENT_VERSION" { default = "" }  # upstream CLI version baked as build-arg
+variable "BENCHMARK_IMAGE"    {}   # required image ref
+variable "AGENT_IMAGE"        {}
+variable "MODEL_IMAGE"        {}
+variable "OTEL_IMAGE"         { default = "${REGISTRY}/core/otel:${TAG}" }
+variable "RUNTIME_BUNDLE_IMAGE" { default = "${REGISTRY}/core/runtime-bundle:${TAG}" }
 
 target "eval" {
   context    = "."
@@ -155,7 +155,7 @@ target "eval" {
     OTEL_IMAGE           = OTEL_IMAGE
     RUNTIME_BUNDLE_IMAGE = RUNTIME_BUNDLE_IMAGE
   }
-  tags = ["${REGISTRY}/evals/${EVAL_BENCHMARK}--${EVAL_AGENT}:${EVAL_AGENT_VERSION}"]
+  tags = ["${REGISTRY}/evals/${EVAL_BENCHMARK}--${EVAL_AGENT}:${TAG}"]
 }
 ```
 
@@ -176,7 +176,7 @@ docker buildx bake \
   -f agents/openhands/docker-bake.hcl \
   -f core/combination.docker-bake.hcl \
   --set "eval.args.BENCHMARK_IMAGE=quay.io/eval-containers/benchmarks/aime:latest" \
-  --set "eval.args.AGENT_IMAGE=quay.io/eval-containers/agents/openhands:1.7.0" \
+  --set "eval.args.AGENT_IMAGE=quay.io/eval-containers/agents/openhands:latest" \
   --set "eval.args.MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--bifrost:latest" \
   --load   eval
 ```
@@ -205,7 +205,7 @@ These conventions are normative per [RULES.md](RULES.md) principle 15.g
 
 4. **Variables go at the top.** `variable` declarations come before the
    `target`. Per-artifact files only declare what's scoped to them
-   (secrets like `HF_TOKEN`, version pins) — `REGISTRY` is at root.
+   (secrets like `HF_TOKEN`) — `REGISTRY` and `TAG` are at root.
 
 5. **No comments restating the rule.** This file is the rule. Per-artifact
    bake files don't need a header explaining what bake is or citing

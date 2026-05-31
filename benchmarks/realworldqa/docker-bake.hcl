@@ -7,5 +7,5 @@ target "benchmark-realworldqa" {
     "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
   }
   args = { HF_TOKEN = HF_TOKEN }
-  tags = ["${REGISTRY}/benchmarks/realworldqa:latest"]
+  tags = ["${REGISTRY}/benchmarks/realworldqa:${TAG}"]
 }

@@ -3,5 +3,5 @@ target "agent-openhands" {
   contexts = {
     "${REGISTRY}/core/agent-base-python" = "target:agent-base-python"
   }
-  tags = ["${REGISTRY}/agents/openhands:latest"]
+  tags = ["${REGISTRY}/agents/openhands:${TAG}"]
 }

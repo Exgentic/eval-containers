@@ -3,5 +3,5 @@ target "agent-swe-agent" {
   contexts = {
     "${REGISTRY}/core/agent-base-python" = "target:agent-base-python"
   }
-  tags = ["${REGISTRY}/agents/swe-agent:latest"]
+  tags = ["${REGISTRY}/agents/swe-agent:${TAG}"]
 }

@@ -3,5 +3,5 @@ target "model-claude-opus-4" {
   contexts = {
     "${REGISTRY}/core/litellm" = "target:litellm"
   }
-  tags = ["${REGISTRY}/models/claude-opus-4:latest"]
+  tags = ["${REGISTRY}/models/claude-opus-4:${TAG}"]
 }

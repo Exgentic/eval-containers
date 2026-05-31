@@ -6,5 +6,5 @@ target "benchmark-gdpval" {
     "${REGISTRY}/core/benchmark-base-external" = "target:benchmark-base-external"
   }
   args = { HF_TOKEN = HF_TOKEN }
-  tags = ["${REGISTRY}/benchmarks/gdpval:latest"]
+  tags = ["${REGISTRY}/benchmarks/gdpval:${TAG}"]
 }

@@ -3,5 +3,5 @@ target "benchmark-swe-lancer" {
   contexts = {
     "${REGISTRY}/core/entrypoint" = "target:entrypoint"
   }
-  tags = ["${REGISTRY}/benchmarks/swe-lancer:latest"]
+  tags = ["${REGISTRY}/benchmarks/swe-lancer:${TAG}"]
 }
