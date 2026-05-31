@@ -259,7 +259,21 @@ async fn assert_agent_calls_llm(agent: &str) {
     // inside the container (eval-entrypoint redirects there). Bind-mount
     // /output to a host tempdir so the panic path below can read the
     // logs without depending on the container still being alive.
+    //
+    // chmod 0777 because the agent inside the container runs as uid 1002;
+    // the host tempdir is owned by the test process's uid. Without the
+    // chmod, rootless podman's userns mapping bites and the container's
+    // mkdir /output/agent fails with Permission denied.
     let output_dir = tempfile::tempdir().expect("create output tempdir");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(
+            output_dir.path(),
+            std::fs::Permissions::from_mode(0o777),
+        )
+        .expect("chmod 0777 on output tempdir");
+    }
     let replay = start_replay_mock(&net, &mock_host).await;
     let _agent_c = start_agent(agent, &net, &mock_host, output_dir.path()).await;
 
