@@ -38,9 +38,21 @@ REG=image-registry.openshift-image-registry.svc:5000/$NS
 eval-containers build eval aime --agent codex --builder oc --registry $REG
 ```
 
+→ the `eval-containers build` line runs the same bake graph on the cluster
+(one `-f` per artifact bake file, abbreviated to `…`):
+
+```bash
+REGISTRY=$REG docker buildx bake \
+  -f docker-bake.hcl -f core/combination.docker-bake.hcl -f … \
+  --builder oc --push \
+  --set eval.args.BENCHMARK_IMAGE=$REG/benchmarks/aime:latest \
+  --set eval.args.AGENT_IMAGE=$REG/agents/codex:latest \
+  --set eval.args.MODEL_IMAGE=$REG/models/gpt-5.4--bifrost:latest \
+  eval
+```
+
 `--builder` implies `--push` (a remote builder can't load into local
-Docker). `--dry-run` prints the `docker buildx bake` command instead of
-running it.
+Docker); `--dry-run` prints this command instead of running it.
 
 ## 2. Run an eval as a Job
 
@@ -48,6 +60,13 @@ running it.
 eval-containers run aime --agent codex --task-id 0 --mode job -n $NS \
   --overlay examples/deployments/openshift \
   --registry $REG
+```
+
+→ runs (synthesizes the merged overlay in a temp dir, then applies it):
+
+```bash
+kubectl kustomize --load-restrictor=LoadRestrictionsNone /tmp/eval-job-overlay-aime-codex-0-… \
+  | kubectl apply -n $NS -f -
 ```
 
 `--overlay` composes this directory onto the Job under `components:`, so the
