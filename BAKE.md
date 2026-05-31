@@ -189,6 +189,9 @@ The bake files themselves stay standalone.
 
 ## Conventions for conciseness
 
+These conventions are normative per [RULES.md](RULES.md) principle 15.g
+(Minimal). The lint trips on each violation.
+
 1. **One target per file.** A bake file owns its artifact's target and
    nothing else. No grouping targets across artifacts.
 
