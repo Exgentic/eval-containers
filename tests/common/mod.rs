@@ -9,7 +9,7 @@
 //! depend on and call `bake_targets`.
 #![allow(dead_code)]
 
-use std::path::PathBuf;
+use eval_containers::bake::artifact_bake_files;
 use tokio::process::Command;
 
 /// Build a single bake target — the target's transitive deps are
@@ -23,7 +23,7 @@ pub async fn bake_target(target: &str) {
 /// runs the build graph in parallel where it can, serialized only by
 /// the dep edges declared in each target's `contexts`.
 pub async fn bake_targets(targets: &[&str]) {
-    let files = collect_bake_files();
+    let files = artifact_bake_files();
     let mut cmd = Command::new("docker");
     cmd.args(["buildx", "bake"]);
     for f in &files {
@@ -54,21 +54,3 @@ pub async fn bake_targets(targets: &[&str]) {
     );
 }
 
-/// Walk every artifact directory and the combination template,
-/// returning each `docker-bake.hcl` path. Bake merges by target name
-/// so order doesn't matter.
-fn collect_bake_files() -> Vec<PathBuf> {
-    let mut files: Vec<PathBuf> = vec!["core/combination.docker-bake.hcl".into()];
-    for category in ["core", "agents", "benchmarks", "models", "gateways"] {
-        let Ok(entries) = std::fs::read_dir(category) else {
-            continue;
-        };
-        for entry in entries.flatten() {
-            let p = entry.path().join("docker-bake.hcl");
-            if p.exists() {
-                files.push(p);
-            }
-        }
-    }
-    files
-}
