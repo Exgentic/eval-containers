@@ -1,0 +1,54 @@
+//! Bake artifact discovery — single source of truth for "which
+//! docker-bake.hcl files compose the fleet's build graph." Used by
+//! `src/build.rs` (the CLI), `tests/common/mod.rs` (test bootstraps),
+//! and `tests/build/test.rs` (the principle-15 lint). Per RULES.md
+//! principle 11 (Reuse over repetition): one home for the category
+//! list, the seed file, and the walker.
+
+use std::path::PathBuf;
+
+/// The five artifact categories whose subdirectories ship Dockerfiles
+/// and `docker-bake.hcl` files per RULES.md principle 15. Adding a
+/// sixth category is the only place this constant changes.
+pub const ARTIFACT_CATEGORIES: &[&str] = &["core", "agents", "benchmarks", "models", "gateways"];
+
+/// Path to the parameterized eval combination template.
+pub const COMBINATION_BAKE_FILE: &str = "core/combination.docker-bake.hcl";
+
+/// Every `docker-bake.hcl` in the fleet, plus the combination template
+/// seed. Order doesn't matter — bake merges by target name.
+pub fn artifact_bake_files() -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = vec![COMBINATION_BAKE_FILE.into()];
+    for category in ARTIFACT_CATEGORIES {
+        let Ok(entries) = std::fs::read_dir(category) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path().join("docker-bake.hcl");
+            if p.exists() {
+                files.push(p);
+            }
+        }
+    }
+    files
+}
+
+/// Every artifact directory (a subdirectory of one of the five
+/// categories) that contains a `Dockerfile`. Sorted for stable test
+/// failure output.
+pub fn artifact_dirs_with_dockerfile() -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for category in ARTIFACT_CATEGORIES {
+        let Ok(entries) = std::fs::read_dir(category) else {
+            continue;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() && p.join("Dockerfile").exists() {
+                out.push(p);
+            }
+        }
+    }
+    out.sort();
+    out
+}
