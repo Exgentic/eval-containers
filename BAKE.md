@@ -13,6 +13,24 @@ Fleet-wide variables (`REGISTRY`) live in the root `./docker-bake.hcl`;
 per-artifact files don't redeclare what's already declared upstream
 (principle 11 — reuse over repetition).
 
+## Generator
+
+For new artifacts, scaffold the bake file via the CLI instead of
+hand-writing or copy-pasting:
+
+```bash
+eval-containers gen-bake agents/foo
+# wrote agents/foo/docker-bake.hcl
+```
+
+The generator parses the artifact's `Dockerfile` (FROM + COPY --from=),
+emits the bake file in the canonical shape, and exits. Re-running on
+an existing file requires `--force`. The output passes the lint by
+construction — see `tests/build/test.rs::dockerfile_bake_alignment`.
+
+Use the templates below to read existing files; use the generator
+to write new ones.
+
 ## The minimal template
 
 Every bake file follows this shape:
