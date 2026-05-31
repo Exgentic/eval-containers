@@ -435,8 +435,8 @@ fn run_job(
     // doesn't expose `--load-restrictor`, which we need: the overlay's
     // kustomize root is the temp dir, the base lives outside it (in
     // the repo), so root-only loading rejects it.
-    let abs_base = std::fs::canonicalize(&base_path)
-        .map_err(|e| format!("canonicalize {base_path}: {e}"))?;
+    let abs_base =
+        std::fs::canonicalize(&base_path).map_err(|e| format!("canonicalize {base_path}: {e}"))?;
     // Canonicalize temp_dir too — on macOS `/tmp` symlinks to
     // `/private/tmp`, and kustomize's relative-path math chokes on the
     // mismatch if we leave it un-resolved.
@@ -449,8 +449,8 @@ fn run_job(
     ));
     std::fs::create_dir_all(&raw_tmp)
         .map_err(|e| format!("create overlay dir {raw_tmp:?}: {e}"))?;
-    let tmp_dir = std::fs::canonicalize(&raw_tmp)
-        .map_err(|e| format!("canonicalize {raw_tmp:?}: {e}"))?;
+    let tmp_dir =
+        std::fs::canonicalize(&raw_tmp).map_err(|e| format!("canonicalize {raw_tmp:?}: {e}"))?;
 
     // ── images: block ──────────────────────────────────────────────
     // Shared-env shape: evals/<bench>--<agent>

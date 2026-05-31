@@ -85,11 +85,7 @@ const REQUIRED_COMPOSE_MARKERS: &[&str] = &[
 
 // Rule 24 (triple-mode contract): every benchmark ships container.Dockerfile,
 // compose.yaml, and job.yaml — one per deployment surface.
-const REQUIRED_TRIPLE_MODE_FILES: &[&str] = &[
-    "container.Dockerfile",
-    "compose.yaml",
-    "job.yaml",
-];
+const REQUIRED_TRIPLE_MODE_FILES: &[&str] = &["container.Dockerfile", "compose.yaml", "job.yaml"];
 
 // Rule 29: each benchmark's job.yaml MUST inline the canonical otelcol +
 // gateway + runner topology. Catch drift by spot-checking critical markers
@@ -158,7 +154,9 @@ fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
         let text = fs::read_to_string(&job).unwrap_or_default();
         for marker in job_canonical_markers(name) {
             if !text.contains(&marker) {
-                issues.push(format!("{name}: job.yaml drift — missing `{marker}` (rule 29 canonical)"));
+                issues.push(format!(
+                    "{name}: job.yaml drift — missing `{marker}` (rule 29 canonical)"
+                ));
             }
         }
     }
