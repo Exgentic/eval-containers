@@ -559,6 +559,7 @@ fn run_job(
         format!(
             r#"  - target:
       kind: Job
+      name: {benchmark}-task-{canonical_task}
     patch: |-
       apiVersion: batch/v1
       kind: Job
@@ -590,31 +591,15 @@ images:
       task: "{want_task}"
     includeSelectors: false
 patches:
-  # Rename the Job so multiple tasks can be applied concurrently.
-  - target:
-      kind: Job
-      name: {benchmark}-task-{canonical_task}
-    patch: |-
-      - op: replace
-        path: /metadata/name
-        value: {benchmark}-task-{want_task}
-  # Sync pod-template labels so `kubectl get pods -l agent=…` works.
-  - target:
-      kind: Job
-    patch: |-
-      apiVersion: batch/v1
-      kind: Job
-      metadata:
-        name: {benchmark}-task-{canonical_task}
-      spec:
-        template:
-          metadata:
-            labels:
-              agent: {want_agent}
-              task: "{want_task}"
+  # Every patch below targets the canonical Job BY NAME. Some benchmarks
+  # (e.g. tau-bench) ship a bespoke second Job — a user-sim harness — in
+  # the same manifest. An unscoped `kind: Job` target strategic-merges the
+  # runner/gateway container into that Job too, producing an imageless
+  # container that fails admission. Name-scoping confines us to the eval Job.
   # Override runner env vars.
   - target:
       kind: Job
+      name: {benchmark}-task-{canonical_task}
     patch: |-
       apiVersion: batch/v1
       kind: Job
@@ -627,7 +612,31 @@ patches:
               - name: runner
                 env:
 {runner_env_block}
-{gateway_patch}"#,
+  # Sync pod-template labels so `kubectl get pods -l agent=…` works.
+  - target:
+      kind: Job
+      name: {benchmark}-task-{canonical_task}
+    patch: |-
+      apiVersion: batch/v1
+      kind: Job
+      metadata:
+        name: {benchmark}-task-{canonical_task}
+      spec:
+        template:
+          metadata:
+            labels:
+              agent: {want_agent}
+              task: "{want_task}"
+{gateway_patch}  # Rename the Job LAST — the name-scoped patches above must match the
+  # canonical name before the rename changes it. Lets concurrent tasks coexist.
+  - target:
+      kind: Job
+      name: {benchmark}-task-{canonical_task}
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: {benchmark}-task-{want_task}
+"#,
         rel_base = rel_base.display(),
     );
     let kustomization_path = tmp_dir.join("kustomization.yaml");
