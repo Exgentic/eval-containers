@@ -83,36 +83,36 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
     |------|------|----------|------------|
     | `container.Dockerfile` | **single** | 1 container, 5 processes inside (process-compose orchestrates) | `docker build -f benchmarks/<x>/container.Dockerfile -t <tag> . && docker run <tag>` |
     | `compose.yaml` | **compose** | 3 services on a compose network (otelcol + gateway + runner) | `docker compose -f benchmarks/<x>/compose.yaml up` |
-    | `job.yaml` | **k8s** | Self-contained multi-doc manifest: 1 `Job` + 1 Pod + 3 containers (`shareProcessNamespace` for sidecar reaping; isolation via credentials — see 24d), plus any bespoke `Deployment`s and `Service`s the benchmark needs | `kubectl apply -f benchmarks/<x>/job.yaml` |
+    | `values.yaml` | **k8s** | A Helm values file over the shared chart `benchmarks/_chart` — renders 1 `Job` + 1 Pod + 3 containers (`shareProcessNamespace` for sidecar reaping; isolation via credentials — see 24d), plus any bespoke `Deployment`s/`Service`s the benchmark composes | `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml \| kubectl apply -f -` |
 
     Single mode is the simplest surface (one `docker run`, no orchestrator); compose and k8s split the pipeline across containers so the agent process cannot see upstream credentials (rule 8). Benchmarks that ship only one or two surfaces are incomplete.
 
 24a. **Universal eval-image recipe.** `core/combination.Dockerfile` is the single source of truth for the eval-image build. Per-benchmark `container.Dockerfile` files MUST be a single-line registry pin of the form `FROM <registry>/evals/<benchmark>--<agent>:<tag>` — nothing more. The canonical build args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`, `MODEL_IMAGE`) MUST be recorded in the benchmark's `README.md` so CI can rebuild the eval image by invoking `core/combination.Dockerfile` with those args. Declaring inert `ARG` lines that the `FROM` does not consume is forbidden — they look load-bearing but aren't, and they drift. Duplicating the combination Dockerfile body across benchmarks is forbidden — there is exactly one eval-image recipe in the repo.
 
-24b. **Compose uses shared base; k8s inlines for clarity.** The two surfaces use different sharing primitives because their tooling differs:
+24b. **Both surfaces share one base; benchmarks override only what differs.**
     - `compose/services.yaml` — shared compose services (`otelcol`, `gateway`, `runner`); per-benchmark `compose.yaml` pulls it in via `include:` and overrides the benchmark-specific bits.
-    - `benchmarks/_base/job.yaml` — the **canonical k8s reference** (otelcol + gateway + runner Pod template). Per-benchmark `job.yaml` files are **standalone, self-contained** k8s manifests: each inlines the canonical Pod spec and appends any bespoke `Deployment`s/`Service`s. A CI test (rule 29) asserts the canonical container blocks across all `job.yaml` files match `benchmarks/_base/job.yaml`, catching drift.
+    - `benchmarks/_chart/` — the shared Helm chart: the otelcol + gateway + runner Job, defined **once**. Per-benchmark `values.yaml` pins the benchmark and overrides only what differs. The ~97 standard benchmarks are a single line (`benchmark: <name>`); the few with bespoke topology add their sidecars/`Deployment`s/`Service`s through the chart's composition hooks (`initContainers`, `runnerArgs`, `runnerExtraEnv`, `extraManifests`, …).
 
-    Compose's `include:` saves duplication for the 96 simple benchmarks; k8s's standalone shape keeps complex benchmarks (which add bespoke `Deployment`s/`Service`s) readable in one file. Both keep `service_healthy` ↔ `shareProcessNamespace` reaper, service-name DNS ↔ Pod loopback, and identical env contract in lockstep — changes to either base MUST be reflected in the other in the same commit.
+    Both surfaces keep `service_healthy` ↔ `shareProcessNamespace` reaper, service-name DNS ↔ Pod loopback, and an identical env contract in lockstep — changes to the compose base or the chart MUST be reflected in the other in the same commit.
 
 24c. **Task parameterization in deployment artifacts.** Rule 1 makes `EVAL_TASK_ID` the only required runtime input for shared-env benchmarks; the deployment artifacts MUST honor this:
-    - **Shared-env**: `compose.yaml` MUST read the task id from the shell environment as `TASK_ID: ${TASK_ID:-0}` (default 0, override via `TASK_ID=42 docker compose up`). Hardcoding a literal task id in `compose.yaml` is forbidden. `job.yaml` ships as a hardcoded template for task 0; multi-task sweeps use kustomize overlays or `sed` substitution — Dock does not ship a parameterized k8s manifest, and that limitation MUST be called out in the benchmark's README.
+    - **Shared-env**: `compose.yaml` MUST read the task id from the shell environment as `TASK_ID: ${TASK_ID:-0}` (default 0, override via `TASK_ID=42 docker compose up`). Hardcoding a literal task id in `compose.yaml` is forbidden. The k8s surface parameterizes the task through Helm — `helm template … --set task=42` (default 0); a benchmark's `values.yaml` MUST NOT hardcode a task id.
     - **Per-task**: `EVAL_TASK_ID` is a build-time `ARG` in `container.Dockerfile`; each image bakes exactly one task. The compose and k8s artifacts inherit the baked-in task — they do not parameterize.
 
 24d. **Network isolation across surfaces.** Rule 9 (no agent internet by default) MUST be enforced in every shipped surface, by the mechanism native to that surface:
     - `compose.yaml`: agent's network is `internal: true`; the gateway is the only service joined to a separate `upstream` network.
     - `container.Dockerfile` (single mode): `iptables -m owner --uid-owner` rules on the agent UID, applied at container start.
-    - `job.yaml`: containers in a Pod share the network stack, so a per-container egress firewall is not possible; rule 9 is achieved indirectly via rule 8 (the runner container has no API credentials, so even if it reached `api.openai.com` directly the call would fail auth). A `NetworkPolicy` MAY be added for defense in depth.
+    - **k8s** (the rendered chart): containers in a Pod share the network stack, so a per-container egress firewall is not possible; rule 9 is achieved indirectly via rule 8 (the runner container has no API credentials, so even if it reached `api.openai.com` directly the call would fail auth). A `NetworkPolicy` MAY be added for defense in depth.
 
     Benchmarks that explicitly require agent internet MUST declare `eval.benchmark.internet=true` AND remove the relevant isolation primitive in every surface that ships. Asymmetry (e.g., compose blocks but k8s allows) is forbidden.
 
-24e. **Resource limit parity.** Rule 10 (resource limits) MUST be expressed in both `compose.yaml` (`deploy.resources.limits` on the runner) and `job.yaml` (`resources.limits` on the runner container). The values MUST match modulo k8s unit syntax (`"2"` ↔ `2`, `"2Gi"` ↔ `2147483648`). GPU benchmarks declare via `deploy.resources.reservations.devices[].driver: nvidia` in compose and `resources.limits["nvidia.com/gpu"]` in k8s.
+24e. **Resource limit parity.** Rule 10 (resource limits) MUST be expressed in both `compose.yaml` (`deploy.resources.limits` on the runner) and the k8s surface (`resources.limits` on the runner — the chart default, which a benchmark overrides via `values.yaml`'s `resources:`). The values MUST match modulo k8s unit syntax (`"2"` ↔ `2`, `"2Gi"` ↔ `2147483648`). GPU benchmarks declare via `deploy.resources.reservations.devices[].driver: nvidia` in compose and `resources.limits["nvidia.com/gpu"]` in k8s.
 
 25. **Use the surface's natural sharing approach.**
     - **compose** has native sharing (`include:`/`extends:`). Per-benchmark `compose.yaml` MUST pull `compose/services.yaml` in via `include:` and only declare overrides. Inlining a service/healthcheck/network/volume that already exists in `compose/services.yaml` is forbidden.
-    - **k8s** YAML has no native include. Per-benchmark `job.yaml` inlines the canonical otelcol+gateway+runner Pod from `benchmarks/_base/job.yaml`, plus any bespoke `Deployment`s/`Service`s. The canonical sections MUST byte-match the reference (modulo benchmark name, image, env values, and resource limits) — drift is caught by the CI test in rule 29.
+    - **k8s** uses Helm. The shared Pod lives once in the chart's template (`benchmarks/_chart/templates/`); per-benchmark `values.yaml` MUST only pin the benchmark and override what differs (via the chart's composition hooks). Re-declaring the otelcol/gateway/runner Pod inside a benchmark is forbidden — there is exactly one k8s Pod definition in the repo.
 
-    Effect: when the canonical Pod shape evolves, compose changes 1 file; k8s changes the reference plus mechanical sed across the 100 `job.yaml` files (CI fails until they re-converge).
+    Effect: when the canonical Pod shape evolves, compose changes 1 file and k8s changes 1 file (the chart) — every benchmark re-renders from it, so there is nothing to drift.
 
 ### Testing
 
@@ -122,14 +122,14 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 28. **Replay test.** Every benchmark MUST have at least one end-to-end test using the replay model with a recorded fixture. This test MUST verify that `result.json` is produced with the correct schema.
 
-29. **Triple-mode existence + canonical-drift test.** A CI test MUST walk every directory in `benchmarks/` and assert:
-    (a) `container.Dockerfile`, `compose.yaml`, and `job.yaml` all exist;
+29. **Triple-mode existence + render test.** A CI test MUST walk every directory in `benchmarks/` and assert:
+    (a) `container.Dockerfile`, `compose.yaml`, and `values.yaml` all exist;
     (b) `container.Dockerfile` is a single-line `FROM` (rule 24a);
     (c) `docker compose -f compose.yaml config` succeeds (rule 27);
-    (d) `job.yaml` validates against k8s schema (kubeconform or equivalent);
-    (e) each `job.yaml`'s `otelcol`, `gateway`, and `runner` container blocks match the canonical blocks in `benchmarks/_base/job.yaml` modulo the benchmark-specific fields (benchmark name in metadata/labels, runner image, `BENCHMARK`/`MODEL`/`TIMEOUT` env values, and resource limits) — drift caught here;
+    (d) `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml` renders and its output validates against the k8s schema (kubeconform or equivalent);
+    (e) `values.yaml` pins the benchmark (`benchmark: <name>`), so the chart renders `evals/<name>--<agent>` and labels the Job from it;
     (f) the env contract (`EVAL_MODEL`, `EVAL_TASK_ID`, upstream creds) is identical across all three surfaces.
-    Benchmarks failing any sub-test cannot be merged.
+    Benchmarks failing any sub-test cannot be merged. There is no per-benchmark drift check — one chart cannot drift from itself.
 
 ## References
 
@@ -146,3 +146,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-30 | Reframed rules 1, 8, 9, 24 to support dual artifact shapes (single-image + compose). Rule 1 now accepts `docker run` OR `docker compose up`. Rules 8 and 9 reframe credential and network isolation in terms of the agent process (achievable via separate container OR UID separation). Rule 24 keeps compose as source of truth and adds the per-(benchmark, agent) Dockerfile as the deployable artifact for collapsible benchmarks. |
 | 2026-05-18 | Rule 24 rewritten as the triple-mode contract: every benchmark ships `container.Dockerfile` (single) + `compose.yaml` (compose) + `job.yaml` (k8s). Rule 24a forbids duplicating the universal `core/combination.Dockerfile` body per benchmark — per-benchmark Dockerfiles only pin build args. Rule 24b requires `compose.yaml` and `job.yaml` to stay in lockstep. Pre-rename `single.yaml` is gone (it was a one-container k8s adapter for single mode — but single mode's contract is the Dockerfile, not a YAML); `k8s.yaml` renamed to `job.yaml`. |
 | 2026-05-18 | Tightening pass before the 90-benchmark sweep. Rule 24a corrected: `container.Dockerfile` MUST be a single-line registry pin; inert `ARG` lines that the `FROM` doesn't consume are forbidden (they looked load-bearing but drifted). New rule 24c codifies task parameterization — shared-env `compose.yaml` MUST use `${TASK_ID:-0}`, `job.yaml` ships as a task-0 template; per-task benchmarks bake `EVAL_TASK_ID` via build ARG. New rule 24d makes network-isolation enforcement explicit per surface and honest about k8s achieving rule 9 via credential isolation (rule 8) rather than network policy. New rule 24e requires resource limits to be declared identically in both `compose.yaml` and `job.yaml`. Rule 25 strengthened to forbid inlining definitions that already exist in `compose/services.yaml`. New rule 29 mandates a triple-mode CI gate that walks `benchmarks/` and asserts artifact existence + parse + env-contract symmetry. |
+| 2026-06-01 | k8s surface moved from per-benchmark Kustomize to one shared **Helm chart** (`benchmarks/_chart`) + a per-benchmark `values.yaml`. Rule 24's k8s artifact is `values.yaml` (was `job.yaml`); 24b/25 replace the `benchmarks/_base/job.yaml` inline-and-drift model with "the Pod is defined once in the chart; `values.yaml` pins the benchmark and overrides only what differs"; 24c parameterizes the task via `helm --set task=`; 24e/24d retargeted at the chart. Rule 29 drops the canonical-drift sub-test (one chart can't drift) — it now renders each `values.yaml` via `helm template` and kubeconform-validates. `eval-containers run --mode job` and `--overlay` drive Helm; the OpenShift overlay is `deploy/values-openshift.yaml`. Deleted `benchmarks/_base` + 114 per-benchmark kustomize files (net −5.4k lines). |
