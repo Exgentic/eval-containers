@@ -76,11 +76,13 @@ while IFS= read -r line; do
   img_bench="$(to_image_name "$bench")"
   job_name="${img_bench}-task-${task}"
 
-  # ── Derive status from log file first, then OC ────────────────────────────
+  # ── Skip plan-only experiments (never submitted) ──────────────────────────
   if [[ ! -f "$logfile" ]]; then
-    status="Pending"
-    (( PENDING++ )) || true
-  elif grep -q "result already exists" "$logfile" 2>/dev/null; then
+    continue
+  fi
+
+  # ── Derive status from log file first, then OC ────────────────────────────
+  if grep -q "result already exists" "$logfile" 2>/dev/null; then
     status="Skipped"
     (( SKIPPED++ )) || true
   elif grep -q "error:\|Error\|FAILED\|build error" "$logfile" 2>/dev/null && ! grep -q "Job submitted" "$logfile" 2>/dev/null; then

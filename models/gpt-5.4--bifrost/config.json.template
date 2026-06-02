@@ -40,7 +40,7 @@
       "name": "otel",
       "config": {
         "service_name": "dock-gateway",
-        "collector_url": "http://otelcol:4318/v1/traces",
+        "collector_url": "${OTEL_COLLECTOR_URL}/v1/traces",
         "trace_type": "genai_extension",
         "protocol": "http"
       }

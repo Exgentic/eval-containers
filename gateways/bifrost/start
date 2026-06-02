@@ -36,9 +36,12 @@ if [ -f "$TEMPLATE" ]; then
       ;;
   esac
   export PROVIDER MODEL_NAME
+  # Default OTel collector to localhost (sidecar in same pod network namespace).
+  OTEL_COLLECTOR_URL="${OTEL_COLLECTOR_URL:-http://localhost:4318}"
+  export OTEL_COLLECTOR_URL
 
   # Explicit var list so envsubst leaves bifrost's own $schema key alone.
-  envsubst '${PROVIDER} ${MODEL_NAME} ${OPENAI_API_BASE}' \
+  envsubst '${PROVIDER} ${MODEL_NAME} ${OPENAI_API_BASE} ${OTEL_COLLECTOR_URL}' \
     < "$TEMPLATE" > "$CONFIG"
 fi
 
