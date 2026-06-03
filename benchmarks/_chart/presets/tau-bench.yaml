@@ -1,4 +1,3 @@
-benchmark: tau-bench
 activeDeadlineSeconds: 2100
 timeout: '1800'
 runnerArgs: python3 /app/agent.py; rc=$?; /usr/local/bin/reap-sidecars; exit $rc

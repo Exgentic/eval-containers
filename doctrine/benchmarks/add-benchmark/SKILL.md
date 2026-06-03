@@ -37,11 +37,13 @@ answer, and any attached files from `EVAL_TASK_ID` alone
 
 1. **Create the benchmark directory.** Make `benchmarks/<name>/` and copy
    [`assets/TEMPLATE.md`](assets/TEMPLATE.md) as your scaffold. Every benchmark
-   ships exactly five authored files: `Dockerfile` (builds the base image with
-   tasks + verifier), the triple-mode trio `container.Dockerfile` +
-   `compose.yaml` + `values.yaml`, and `README.md`. *Why:* the directory is the
-   unit a CI test walks; missing any of the trio makes the benchmark incomplete
-   (`doctrine/benchmarks/RULES.md:24`, `doctrine/benchmarks/RULES.md:29`).
+   ships four authored files: `Dockerfile` (builds the base image with
+   tasks + verifier), the per-benchmark deploy files `container.Dockerfile` +
+   `compose.yaml`, and `README.md`. The k8s surface is the shared chart selected
+   with `--set benchmark=<name>` — author a `benchmarks/_chart/presets/<name>.yaml`
+   only if the benchmark needs bespoke topology. *Why:* the directory is the
+   unit a CI test walks; missing `container.Dockerfile` or `compose.yaml` makes
+   the benchmark incomplete (`doctrine/benchmarks/RULES.md:24`, `doctrine/benchmarks/RULES.md:29`).
 
 2. **Write the `Dockerfile` to materialize tasks as flat files.** Fetch the
    dataset and write each task as `/tasks/<id>/problem.txt` + `answer.txt`
@@ -117,11 +119,10 @@ answer, and any attached files from `EVAL_TASK_ID` alone
    `eval.benchmark.released="true"` yet — that label is earned at the release
    gate (step 11).
 
-9. **Author the three deployment surfaces with one shared env contract.** Every
-   benchmark ships exactly three artifacts, and they MUST share the same env
-   contract (`EVAL_MODEL`, `EVAL_TASK_ID`, upstream credentials) and produce
-   byte-equivalent `task/result.json` for the same inputs
-   (`doctrine/benchmarks/RULES.md:24`):
+9. **Author the three deployment surfaces with one shared env contract.** The
+   surfaces MUST share the same env contract (`EVAL_MODEL`, `EVAL_TASK_ID`,
+   upstream credentials) and produce byte-equivalent `task/result.json` for the
+   same inputs (`doctrine/benchmarks/RULES.md:24`):
    - `container.Dockerfile` (**single**) — a *single-line* registry pin
      `FROM <registry>/evals/<name>--<agent>:<tag>`, nothing more. Record the
      canonical build args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`,
@@ -132,27 +133,28 @@ answer, and any attached files from `EVAL_TASK_ID` alone
      `include:` and only declare overrides; do NOT inline a service, network, or
      volume that already exists there
      (`doctrine/benchmarks/RULES.md:24b`, `doctrine/benchmarks/RULES.md:25`).
-   - `values.yaml` (**k8s**) — a Helm values file over the shared chart
-     `benchmarks/_chart`. For a standard benchmark this is a single line
-     (`benchmark: <name>`); benchmarks with bespoke topology add their
-     sidecars/`Deployment`s/`Service`s through the chart's composition hooks
+   - **k8s** — the shared chart `benchmarks/_chart`, selected with
+     `--set benchmark=<name>`. A standard benchmark needs nothing here. One with
+     bespoke topology adds `benchmarks/_chart/presets/<name>.yaml` to compose its
+     sidecars/`Deployment`s/`Service`s through the chart's hooks
      (`initContainers`, `runnerArgs`, `runnerExtraEnv`, `extraManifests`, …) —
      do NOT redeclare the otelcol/gateway/runner Pod
      (`doctrine/benchmarks/RULES.md:24b`, `doctrine/benchmarks/RULES.md:25`).
 
    For a simple shared-env benchmark, copy `benchmarks/aime/` and substitute the
-   name. Changes to the compose base (`compose/services.yaml`) or the chart
-   (`benchmarks/_chart`) MUST be reflected in the other in the same commit.
+   name (no preset needed). Changes to the compose base (`compose/services.yaml`)
+   or the chart (`benchmarks/_chart`) MUST be reflected in the other in the same
+   commit.
 
 10. **Parameterize the task and enforce limits/isolation in every surface.**
     - Task: shared-env `compose.yaml` MUST read `TASK_ID: ${TASK_ID:-0}` (never
       hardcode a literal); the k8s task comes from `helm --set task=` (default
-      0), so `values.yaml` MUST NOT hardcode a task. Per-task benchmarks bake
+      0), so a preset MUST NOT hardcode a task. Per-task benchmarks bake
       `EVAL_TASK_ID` via build `ARG` and the artifacts inherit it
       (`doctrine/benchmarks/RULES.md:24c`).
     - Resource limits: declare CPU and memory in BOTH `compose.yaml`
       (`deploy.resources.limits` on the runner) and the k8s runner — the chart
-      default, overridden per benchmark via `values.yaml`'s `resources:` —
+      default, overridden per benchmark via its preset's `resources:` —
       matching modulo k8s unit syntax
       (`doctrine/benchmarks/RULES.md:10`, `doctrine/benchmarks/RULES.md:24e`).
     - Network: enforce no-agent-internet per surface — `internal: true` in
@@ -167,8 +169,9 @@ answer, and any attached files from `EVAL_TASK_ID` alone
     (`doctrine/benchmarks/RULES.md:27`), and at least one end-to-end replay test
     with a recorded fixture that verifies `result.json` schema
     (`doctrine/benchmarks/RULES.md:28`). The triple-mode CI gate
-    (`doctrine/benchmarks/RULES.md:29`) checks all three artifacts exist, parse,
-    and share one env contract. Once the benchmark is proven end-to-end against
+    (`doctrine/benchmarks/RULES.md:29`) checks the per-benchmark files exist and
+    parse, the chart renders for the benchmark, and all surfaces share one env
+    contract. Once the benchmark is proven end-to-end against
     at least one agent with a replay fixture at
     `tests/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`, add
     `LABEL eval.benchmark.released="true"` (`doctrine/benchmarks/RULES.md:21a`).
@@ -183,7 +186,7 @@ answer, and any attached files from `EVAL_TASK_ID` alone
 ## References
 
 - [`assets/TEMPLATE.md`](assets/TEMPLATE.md) — copyable scaffold with the
-  Dockerfile, the triple-mode trio, the blanks-to-fill table, and gotchas.
+  Dockerfile, the per-benchmark deploy files, the blanks-to-fill table, and gotchas.
 - `doctrine/benchmarks/RULES.md` — the outcomes every benchmark MUST satisfy.
 - `benchmarks/aime/` — canonical simple shared-env reference.
 - `benchmarks/_chart/` — the shared k8s Helm chart (the canonical Pod, once).

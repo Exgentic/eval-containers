@@ -1,7 +1,8 @@
-# Defaults for the shared eval Job. A benchmark's values.yaml sets `benchmark`
-# (required) and overrides only what differs; the per-run axes (agent, task,
-# model, …) come from `--set` (or the eval-containers CLI). envsubst is gone:
-# Helm fills these and gets the types right (task stays a quoted string).
+# Defaults for the shared eval Job. The benchmark is selected with
+# `--set benchmark=<x>` (required); a benchmark with bespoke topology overrides
+# what differs via an optional `presets/<x>.yaml` in this chart. The per-run axes
+# (agent, task, model, …) come from `--set` (or the eval-containers CLI). envsubst
+# is gone: Helm fills these and gets the types right (task stays a quoted string).
 
 # ── Per-run axes (overridden at deploy via --set / the eval-containers CLI) ──
 agent: claude-code

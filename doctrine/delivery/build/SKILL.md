@@ -302,7 +302,7 @@ Dockerfile's `FROM` lines — lives in the build-test catalog
 - **Build orchestration** (which artifacts to build for a given combo):
   `src/build.rs` and the CLI.
 - **Compose runtime topology**: each benchmark's `compose.yaml`.
-- **K8s runtime topology**: the shared Helm chart `benchmarks/_chart` + each benchmark's `values.yaml`.
+- **K8s runtime topology**: the shared Helm chart `benchmarks/_chart`, selected with `--set benchmark=<x>` + an optional `presets/<x>.yaml` for bespoke topology.
 - **Per-task variant builds** (swe-bench's 1000+ tasks): the CLI's
   `--task-id` flow; not enumerated in bake.
 - **In-cluster OC builds**: a translator that reads bake files and emits
