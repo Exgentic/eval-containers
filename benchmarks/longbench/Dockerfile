@@ -4,7 +4,9 @@
 # subset (14 tasks) for simplicity.
 # Ref: https://huggingface.co/datasets/THUDM/LongBench (arXiv:2308.14508)
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="longbench"

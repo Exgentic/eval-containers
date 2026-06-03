@@ -8,6 +8,9 @@
 ARG EVAL_TASK_ID
 
 # Stage 1: fetch the task directory from upstream at a pinned commit.
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM alpine/git:2.47.2 AS upstream
 ARG EVAL_TASK_ID
 ARG TBENCH_REF=1a6ffa9674b571da0ed040c470cb40c4d85f9b9b
@@ -68,7 +71,7 @@ fi
 TEST
 RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

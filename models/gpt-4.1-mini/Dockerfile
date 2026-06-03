@@ -1,4 +1,6 @@
-FROM quay.io/eval-containers/core/litellm:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}litellm:latest
 
 LABEL eval.type="model"
 LABEL eval.model.name="gpt-4.1-mini"
