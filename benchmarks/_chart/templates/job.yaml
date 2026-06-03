@@ -19,12 +19,15 @@ spec:
       {{- with $v.serviceAccountName }}
       serviceAccountName: {{ . }}
       {{- end }}
-      {{- with $v.initContainers }}
+      # otelcol + gateway are native sidecars (restartPolicy: Always), so k8s
+      # starts them in order and holds the runner behind both — compose's graph:
+      # otelcol started, then gateway healthy (its startupProbe), then runner.
       initContainers:
+        {{- with $v.initContainers }}
         {{- toYaml . | nindent 8 }}
-      {{- end }}
-      containers:
+        {{- end }}
         - name: otelcol
+          restartPolicy: Always
           image: {{ $v.registry }}/core/otel:latest
           imagePullPolicy: IfNotPresent
           ports:
@@ -35,10 +38,15 @@ spec:
             - { name: output, mountPath: /output }
 
         - name: gateway
+          restartPolicy: Always
           image: {{ $v.registry }}/models/{{ $v.gatewayImage }}:{{ $v.gatewayTag }}
           imagePullPolicy: IfNotPresent
           ports:
             - { name: gateway, containerPort: 4000 }
+          startupProbe:
+            exec: { command: ["/opt/gateway/health"] }
+            periodSeconds: 2
+            failureThreshold: 60
           env:
             - name: OPENAI_API_KEY
               valueFrom:
@@ -60,6 +68,7 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
 
+      containers:
         - name: runner
           image: {{ $v.registry }}/evals/{{ $v.benchmark }}--{{ $v.agent }}:{{ $v.runnerTag }}
           imagePullPolicy: IfNotPresent
