@@ -123,6 +123,15 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
     links to. A capability a user can invoke but cannot find documented is a
     defect in the docs, not an undocumented feature.
 
+15. **No overload — progressive disclosure.** A page MUST lead with what the
+    typical reader needs and defer the rare, advanced, or exhaustive to later
+    sections or linked reference pages. A reader on the common path MUST be able
+    to finish the task without wading through edge cases, caveats, or full option
+    tables. This is the counterweight to rule 14: sufficiency requires every fact
+    to be *reachable*; this rule requires it not be *in the reader's way*.
+    Exhaustive detail belongs in reference pages; guides and concepts show the
+    shortest path and link the rest.
+
 ## References
 
 - [Process](../RULES.md) — top-level doctrine and core principles
@@ -136,3 +145,4 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 |------|--------|
 | 2026-06-03 | Initial version. Establishes `docs/` as the human-facing site distinct from `doctrine/`: doctrine governs, docs explain (1–3); Diátaxis structure with concepts/guides/reference and a root index (4–6); concise/minimal/clean prose carrying the project's simplicity + clean-code bars, reproducible real commands, runnable examples, hype-free prose, one-home-per-concern (7–11); docs ship with the change, pointers over snapshots (12–13). |
 | 2026-06-03 | Added principle 14 (Sufficient coverage): every fact an end user needs MUST be reachable from `docs/`; user-facing knowledge MUST NOT live only in source/commits/heads. Paired with the PR templates' new docs gate so docs grow with each change. |
+| 2026-06-03 | Added principle 15 (No overload — progressive disclosure): lead with the common path, defer rare/advanced/exhaustive detail to later sections or reference pages. Counterweight to rule 14 (reachable, not in the way). |
