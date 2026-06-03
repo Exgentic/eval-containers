@@ -37,6 +37,15 @@ One URL for every evaluation. Benchmark, agent, model, and task are all `EVAL_*`
 
 Requires Docker Compose ≥ 2.34 for `oci://` support. See [offline / older Docker](#offline--older-docker) below for alternatives.
 
+## Install the CLI
+
+Pre-release — not published yet, so build from source ([Rust](https://rustup.rs)):
+
+```bash
+git clone https://github.com/Exgentic/eval-containers
+cargo install --path eval-containers
+```
+
 ## Or use the `eval-containers` CLI
 
 Same thing, fewer keystrokes:
