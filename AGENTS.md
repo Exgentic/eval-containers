@@ -26,6 +26,7 @@ active rule must not merge.
 - [`doctrine/benchmarks/RULES.md`](doctrine/benchmarks/RULES.md) · [`doctrine/agents/RULES.md`](doctrine/agents/RULES.md) · [`doctrine/models/RULES.md`](doctrine/models/RULES.md)
 - [`doctrine/compose/RULES.md`](doctrine/compose/RULES.md) · [`doctrine/gateways/RULES.md`](doctrine/gateways/RULES.md) · [`doctrine/src/RULES.md`](doctrine/src/RULES.md)
 - [`doctrine/verification/RULES.md`](doctrine/verification/RULES.md) — testing strategy; per-category rules live beside their tests in `tests/<category>/RULES.md` (paired with the enforcing Rust) and are indexed from the strategy.
+- [`doctrine/docs/RULES.md`](doctrine/docs/RULES.md) — the human-facing `docs/` site: doctrine governs, docs explain.
 
 **Skills — the *how***
 - Add a component — [`benchmarks/add-benchmark`](doctrine/benchmarks/add-benchmark/SKILL.md) · [`agents/add-agent`](doctrine/agents/add-agent/SKILL.md)
