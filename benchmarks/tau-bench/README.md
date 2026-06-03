@@ -26,4 +26,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile. Reward is hard-coded t
 
 - `Dockerfile` — builds the benchmark image
 - `compose.yaml` — compose file for `eval-containers run tau-bench`
+- `benchmarks/_chart/presets/tau-bench.yaml` — this benchmark's bespoke k8s topology (sidecars/Deployments/Services), overlaid on the shared chart when rendered with `--set benchmark=tau-bench`
 - `README.md` — this file
