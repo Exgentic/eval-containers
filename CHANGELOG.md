@@ -42,6 +42,14 @@ addition; the patch on a bug fix that doesn't change the rule surface.
 
 ### Changed
 
+- **The k8s `job` mode is now a self-contained Helm chart.** A benchmark
+  is selected with `--set benchmark=<x>` instead of
+  `-f benchmarks/<x>/values.yaml`; the 4 benchmarks with bespoke topology
+  (`osworld`, `tau-bench`, `visualwebarena`, `webarena`) moved into the
+  chart as `benchmarks/_chart/presets/<x>.yaml` (loaded via `.Files.Get`),
+  and the 98 one-line `values.yaml` files were deleted. The chart now
+  renders with no external file, so it can be packaged and published to an
+  OCI registry. Renders byte-identical to the prior `-f values.yaml` form.
 - **Agent Dockerfiles: 1957 → 585 lines (70% reduction)** across all
   20 agents via the Rule 11 refactor onto shared bases.
 - **91 of 100 benchmarks** refactored to extend `core/benchmark-base-*`.
