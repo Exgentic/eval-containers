@@ -4,7 +4,9 @@
 # Scoring: LLM-as-judge single-answer grading on a 1-10 scale.
 # Ref: https://arxiv.org/abs/2306.05685
 
-FROM quay.io/eval-containers/core/benchmark-base-github:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mt-bench"

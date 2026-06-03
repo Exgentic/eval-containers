@@ -4,7 +4,9 @@
 # request hidden in a synthetic multi-turn conversation.
 # Scoring: difflib.SequenceMatcher ratio with required prefix check.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mrcr"

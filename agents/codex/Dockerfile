@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 # Codex CLI agent image (OpenAI)
-FROM quay.io/eval-containers/core/agent-base-node:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="codex"
 LABEL eval.agent.description="OpenAI Codex CLI"
