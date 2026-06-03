@@ -115,6 +115,14 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
     snapshot. If a snapshot is unavoidable, it MUST name its source and the
     command to regenerate it.
 
+14. **Sufficient coverage.** Everything an end user needs to know to install,
+    run, deploy, or extend the system MUST be reachable from `docs/`. User-facing
+    knowledge MUST NOT live only in source code, commit messages, issue threads,
+    or a contributor's memory: if using a capability requires knowing a fact,
+    that fact MUST have a home in `docs/` — or in a `doctrine/` page that `docs/`
+    links to. A capability a user can invoke but cannot find documented is a
+    defect in the docs, not an undocumented feature.
+
 ## References
 
 - [Process](../RULES.md) — top-level doctrine and core principles
@@ -127,3 +135,4 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 | Date | Change |
 |------|--------|
 | 2026-06-03 | Initial version. Establishes `docs/` as the human-facing site distinct from `doctrine/`: doctrine governs, docs explain (1–3); Diátaxis structure with concepts/guides/reference and a root index (4–6); concise/minimal/clean prose carrying the project's simplicity + clean-code bars, reproducible real commands, runnable examples, hype-free prose, one-home-per-concern (7–11); docs ship with the change, pointers over snapshots (12–13). |
+| 2026-06-03 | Added principle 14 (Sufficient coverage): every fact an end user needs MUST be reachable from `docs/`; user-facing knowledge MUST NOT live only in source/commits/heads. Paired with the PR templates' new docs gate so docs grow with each change. |
