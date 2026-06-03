@@ -81,19 +81,20 @@ eval-containers run aime --task-id 0 --agent codex --mode job
 
 ### Kubernetes (`--mode job`)
 
-Every benchmark renders from one shared [Helm](https://helm.sh/) chart (`benchmarks/_chart`) — select it with `--set benchmark=<x>` and apply, no CLI needed. A benchmark with bespoke topology (extra Deployments/sidecars) adds a `presets/<x>.yaml` inside the chart; standard ones need nothing:
+Every benchmark renders from one shared [Helm](https://helm.sh/) chart — select it with `--set benchmark=<x>` and apply. The chart is self-contained: each benchmark's bespoke topology ships inside it as a `presets/<x>.yaml` (standard ones need nothing), so it pulls straight from the registry — **no clone**:
 
 ```bash
-helm template aime benchmarks/_chart --set benchmark=aime \
-  --set agent=claude-code,task=0 | kubectl apply -f -
+# From the published chart (see Pre-release note above) — no clone needed:
+helm template aime oci://quay.io/eval-containers/charts/eval --version 0.1.0 \
+  --set benchmark=aime --set agent=claude-code --set task=0 | kubectl apply -f -
 ```
 
-The CLI does exactly that, mapping every axis to a `--set`:
+Working in a clone, render the local chart instead — which is what the CLI builds today, mapping every axis to a `--set`:
 
 ```bash
 eval-containers run aime --agent codex --task-id 42 --mode job
-# → helm template aime-codex-task-42 benchmarks/_chart --set benchmark=aime \
-#       --set registry=…,agent=codex,task=42 | kubectl apply -f -
+# → helm template aime-codex-task-42 ./benchmarks/_chart --set benchmark=aime \
+#       --set registry=… --set agent=codex --set task=42 | kubectl apply -f -
 ```
 
 Platform specifics (corp registry, NodeAffinity, NetworkPolicies, a different service account, ...) are a Helm **values file you own**, layered on with `--overlay` (an extra `helm -f`), so the eval axes and your platform settings merge. A ready-to-adapt OpenShift overlay (sets the `anyuid` service account) ships as [`deploy/values-openshift.yaml`](deploy/values-openshift.yaml):
