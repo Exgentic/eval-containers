@@ -24,6 +24,9 @@
 # Kaggle's spaceship-titanic is a free, public "Getting Started" competition.
 
 ARG EVAL_TASK_ID
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM mlebench-env:latest
 
 LABEL eval.type="benchmark"
@@ -113,8 +116,8 @@ GRADE
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'

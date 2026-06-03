@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 # SWE-agent (Princeton) — full agent
-FROM quay.io/eval-containers/core/agent-base-python:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="swe-agent"
 LABEL eval.agent.description="Princeton SWE-agent: Agent-Computer Interface for software engineering"

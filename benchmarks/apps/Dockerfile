@@ -2,7 +2,9 @@
 # 5000 test tasks. Data: HuggingFace codeparrot/apps
 # Agent writes a Python solution. Test runs it against JSON-encoded I/O test cases.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="apps"

@@ -13,7 +13,9 @@
 # prometheus, loki, opa, test app) and wire scenario-specific ground-truth
 # verifiers from the upstream eval.py into test.sh.
 
-FROM quay.io/eval-containers/core/benchmark-base-external:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="itbench"

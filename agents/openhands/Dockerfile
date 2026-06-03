@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 # OpenHands agent image (All-Hands-AI)
-FROM quay.io/eval-containers/core/agent-base-python:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="openhands"
 LABEL eval.agent.description="OpenHands open-source AI software engineer"
