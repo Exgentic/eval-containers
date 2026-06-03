@@ -35,14 +35,14 @@ sets the `anyuid-sa` service account. Layer it with `--overlay` and point
 eval-containers run aime --agent codex --mode job \
   --overlay deploy/values-openshift.yaml \
   --registry image-registry.openshift-image-registry.svc:5000/<namespace>
-# → helm template … -f benchmarks/aime/values.yaml -f deploy/values-openshift.yaml … | oc apply -f -
+# → helm template … --set benchmark=aime -f deploy/values-openshift.yaml … | oc apply -f -
 ```
 
 Plain Helm equivalent (no CLI):
 
 ```bash
 helm template aime benchmarks/_chart \
-  -f benchmarks/aime/values.yaml \
+  --set benchmark=aime \
   -f deploy/values-openshift.yaml \
   --set agent=codex,task=0,registry=image-registry.openshift-image-registry.svc:5000/<namespace> \
   | oc apply -f -
