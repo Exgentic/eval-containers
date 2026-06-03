@@ -11,7 +11,11 @@
 # dataset lookup below reverses the transform so we fetch the right row.
 
 ARG EVAL_TASK_ID
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 FROM docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="swe-bench"
@@ -113,7 +117,7 @@ GRADE
 # Lock test infrastructure from agent (root-only read + execute)
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
 RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

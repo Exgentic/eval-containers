@@ -16,7 +16,11 @@
 #       Expensify at the right commit for EVAL_TASK_ID.
 
 ARG EVAL_TASK_ID
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 FROM swelancer_x86:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="swe-lancer"
@@ -63,7 +67,7 @@ fi
 TEST
 RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
 RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

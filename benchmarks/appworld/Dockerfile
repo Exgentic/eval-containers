@@ -4,7 +4,11 @@
 # Evaluation is state-based (database checks), requires the AppWorld runtime.
 # Externally graded: test writes -1.
 
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 FROM ghcr.io/stonybrooknlp/appworld:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="appworld"
@@ -54,8 +58,8 @@ echo -1 > /logs/verifier/reward.txt
 TEST
 RUN chmod +x /tests/test.sh
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'

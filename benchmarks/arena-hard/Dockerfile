@@ -4,7 +4,9 @@
 # LLM-as-judge, with both orderings considered to reduce position bias.
 # Ref: https://github.com/lmarena/arena-hard-auto (Li et al. 2024)
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="arena-hard"

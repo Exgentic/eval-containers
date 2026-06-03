@@ -3,7 +3,11 @@
 # Data: https://github.com/Aider-AI/polyglot-benchmark
 # Agent edits starter code files. Test runs language-specific test suite.
 
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 FROM ubuntu:22.04
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="aider-polyglot"
@@ -178,8 +182,8 @@ fi
 TEST
 RUN chmod +x /tests/test.sh
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 # --- Entrypoint: materialize task metadata, then copy starter files to /app ---

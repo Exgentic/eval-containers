@@ -8,6 +8,8 @@
 ARG EVAL_TASK_ID
 
 # Stage 1: fetch the task directory from upstream at a pinned commit.
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 FROM alpine/git:2.47.2 AS upstream
 ARG EVAL_TASK_ID
 ARG TBENCH_REF=1a6ffa9674b571da0ed040c470cb40c4d85f9b9b
@@ -20,6 +22,8 @@ RUN git clone https://github.com/laude-institute/terminal-bench.git /tb \
 # Stage 2: layer the task on top of the upstream shared base (a public image,
 # anonymously pullable).
 FROM ghcr.io/laude-institute/t-bench/python-3-13:20250620
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="terminal-bench"
@@ -68,7 +72,7 @@ fi
 TEST
 RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
 RUN chmod +x /eval-entrypoint.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

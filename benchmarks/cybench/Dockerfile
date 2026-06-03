@@ -15,6 +15,8 @@
 ARG EVAL_TASK_ID
 
 # Stage 1: pull the task directory from upstream at a pinned commit.
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 FROM alpine/git:2.47.2 AS upstream
 ARG EVAL_TASK_ID
 ARG CYBENCH_REF=d494f247d66439598d1413a309b756a82935ea14
@@ -33,6 +35,8 @@ RUN set -e; ok=0; \
 # Stage 2: assemble the running image. Ubuntu base gives us the standard CTF
 # toolchain (python, binutils, curl) without pulling a private per-task image.
 FROM ubuntu:24.04
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="cybench"
@@ -89,11 +93,11 @@ RUN mkdir -p /app \
  && if [ -d /task/challenge ]; then cp -r /task/challenge/. /app/ ; fi
 
 # Scoring: exact-match on the flag the agent printed.
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'

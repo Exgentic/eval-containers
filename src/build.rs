@@ -12,6 +12,17 @@
 //! principle 11). A remote builder can't `--load` into local Docker, so
 //! `--builder` implies `--push` to the registry.
 //!
+//! `--builder oc` is a special value: it builds ONE artifact on an
+//! OpenShift cluster via a binary `BuildConfig` (`oc start-build`, buildah
+//! under the platform's `builder` SCC) — the no-admin path for clusters
+//! where in-cluster BuildKit is blocked by PodSecurity. Dependencies
+//! resolve from the internal registry via the parameterized
+//! `${REGISTRY}/...${REGISTRY_SUFFIX}` FROMs (the build passes
+//! `REGISTRY`/`REGISTRY_SUFFIX` build args). This command builds a single
+//! artifact; dependency-ORDERED cold-graph builds are a thin loop over it
+//! that lives in `examples/openshift/` (src/RULES.md principle 3 — no
+//! graph ordering inside the CLI).
+//!
 //! Per-task benchmark variants (swe-bench's 1000+ tasks) remain
 //! imperative — they aren't enumerated in bake per BAKE.md. The
 //! `--task-id` path falls through to a plain `docker build` with
@@ -19,7 +30,8 @@
 
 use clap::{Args, Subcommand};
 use eval_containers::bake;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 #[derive(Args)]
 pub struct BuildArgs {
@@ -27,10 +39,11 @@ pub struct BuildArgs {
     pub target: BuildTarget,
 
     /// Build with a named buildx builder instead of the default local
-    /// Docker. To build in-cluster, create the builder once (after
-    /// `oc login`): `docker buildx create --driver kubernetes --name oc
-    /// --use`, then pass `--builder oc`. Implies `--push` — a remote
-    /// builder can't load into the local Docker image store.
+    /// Docker (implies `--push` — a remote builder can't load locally).
+    /// The special value `oc` builds the artifact on an OpenShift cluster
+    /// via a binary `BuildConfig` (`oc start-build`, buildah) — the
+    /// no-admin path when in-cluster BuildKit is blocked by PodSecurity;
+    /// see `examples/openshift/` for the dependency-ordered fleet loop.
     #[arg(long, global = true)]
     pub builder: Option<String>,
 
@@ -78,6 +91,14 @@ pub enum BuildTarget {
 pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     let builder = args.builder.as_deref();
     let dry_run = args.dry_run;
+
+    // `--builder oc` is the OpenShift BuildConfig backend (not a buildx
+    // builder): build one artifact in-cluster with `oc start-build`. Routed
+    // before the buildx path so we don't `buildx inspect` a builder named
+    // "oc". Cold-graph ordering lives in examples/openshift (principle 3).
+    if builder == Some("oc") {
+        return oc_execute(args.target, dry_run);
+    }
 
     // A named builder must exist before bake can use it. Fail early with
     // the exact creation command rather than letting buildx error opaquely
@@ -314,4 +335,189 @@ fn docker_build(
         }
     }
     Err(last_err)
+}
+
+// ─── OpenShift BuildConfig backend (`--builder oc`) ──────────────────────────
+//
+// Builds a SINGLE artifact in-cluster via a binary Docker-strategy
+// `BuildConfig`: buildah runs under the platform's `builder` SCC, so no
+// admin and no privileged pod is needed (unlike in-cluster BuildKit, which
+// baseline PodSecurity blocks). Dependencies are pulled from the internal
+// registry through the parameterized `${REGISTRY}/...${REGISTRY_SUFFIX}`
+// FROMs; we pass `REGISTRY`/`REGISTRY_SUFFIX` (and, for `eval`, the base
+// image refs) as build args baked into the BuildConfig — binary builds
+// ignore `oc start-build --build-arg`, so they must live in the spec.
+
+/// Map a directory name to its OpenShift imagestream name: lowercase,
+/// dots and `--` collapse to a single `-` (e.g. `gpt-5.4--bifrost` →
+/// `gpt-5-4-bifrost`), matching the internal-registry naming.
+fn flatten_name(name: &str) -> String {
+    name.to_lowercase().replace('.', "-").replace("--", "-")
+}
+
+/// Capture stdout of an `oc` command, trimmed.
+fn oc_capture(args: &[&str]) -> Result<String, String> {
+    let out = Command::new("oc")
+        .args(args)
+        .output()
+        .map_err(|e| format!("failed to run oc {}: {e}", args.join(" ")))?;
+    if !out.status.success() {
+        return Err(format!(
+            "oc {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+fn oc_execute(target: BuildTarget, dry_run: bool) -> Result<(), String> {
+    // Internal registry prefix: <registry-host>/<current-namespace>.
+    let ir = if dry_run {
+        "$(oc registry info)/$(oc project -q)".to_string()
+    } else {
+        format!(
+            "{}/{}",
+            oc_capture(&["registry", "info"])?,
+            oc_capture(&["project", "-q"])?
+        )
+    };
+    let reg_args = || vec![format!("REGISTRY={ir}"), "REGISTRY_SUFFIX=-".to_string()];
+
+    let (imagestream, context, dockerfile, build_args) = match target {
+        BuildTarget::Agent { name } => (
+            name.clone(),
+            format!("agents/{name}"),
+            "Dockerfile".to_string(),
+            reg_args(),
+        ),
+        BuildTarget::Bench { benchmark, task_id } => {
+            if task_id.is_some() {
+                return Err(
+                    "--builder oc does not support --task-id; per-task variants \
+                            use plain `docker build` (BAKE.md)"
+                        .into(),
+                );
+            }
+            (
+                benchmark.clone(),
+                format!("benchmarks/{benchmark}"),
+                "Dockerfile".to_string(),
+                reg_args(),
+            )
+        }
+        BuildTarget::Model { name } => (
+            flatten_name(&name),
+            format!("models/{name}"),
+            "Dockerfile".to_string(),
+            reg_args(),
+        ),
+        BuildTarget::Eval {
+            benchmark,
+            agent,
+            task_id,
+            agent_version,
+            model,
+        } => {
+            if task_id.is_some() {
+                return Err("--builder oc does not support --task-id".into());
+            }
+            // The combination image takes its bases as build args (it has no
+            // `${REGISTRY}` FROM); point them at the internal imagestreams.
+            let build_args = vec![
+                format!("BENCHMARK_IMAGE={ir}/{benchmark}:latest"),
+                format!("AGENT_IMAGE={ir}/{agent}:latest"),
+                format!("MODEL_IMAGE={ir}/{}:latest", flatten_name(&model)),
+                format!("OTEL_IMAGE={ir}/core-otel:latest"),
+                format!("RUNTIME_BUNDLE_IMAGE={ir}/core-runtime-bundle:latest"),
+                format!("AGENT_VERSION={agent_version}"),
+            ];
+            (
+                format!("{benchmark}-{agent}"),
+                ".".to_string(),
+                "core/combination.Dockerfile".to_string(),
+                build_args,
+            )
+        }
+        BuildTarget::Compose { .. } => {
+            return Err("--builder oc does not apply to `build compose`".into());
+        }
+    };
+
+    oc_build(&imagestream, &context, &dockerfile, &build_args, dry_run)
+}
+
+/// Apply a binary Docker-strategy BuildConfig (build args baked in) and
+/// run it from a local context. Both steps are plain `oc` invocations and
+/// are printed for copy-paste reproducibility (src/RULES.md principle 2).
+fn oc_build(
+    imagestream: &str,
+    context: &str,
+    dockerfile: &str,
+    build_args: &[String],
+    dry_run: bool,
+) -> Result<(), String> {
+    let mut args_yaml = String::new();
+    for kv in build_args {
+        let (k, v) = kv.split_once('=').unwrap_or((kv.as_str(), ""));
+        args_yaml.push_str(&format!("        - {{ name: {k}, value: \"{v}\" }}\n"));
+    }
+    let bc = format!(
+        "apiVersion: build.openshift.io/v1\n\
+         kind: BuildConfig\n\
+         metadata:\n  name: {imagestream}-bc\n\
+         spec:\n\
+         \x20 source:\n    type: Binary\n    binary: {{}}\n\
+         \x20 strategy:\n    type: Docker\n    dockerStrategy:\n      dockerfilePath: {dockerfile}\n      buildArgs:\n{args_yaml}\
+         \x20 output:\n    to:\n      kind: ImageStreamTag\n      name: {imagestream}:latest\n"
+    );
+
+    eprintln!("$ oc create imagestream {imagestream} 2>/dev/null || true");
+    eprintln!("$ oc apply -f - <<'EOF'\n{bc}EOF");
+    eprintln!("$ oc start-build {imagestream}-bc --from-dir {context} --follow");
+    if dry_run {
+        return Ok(());
+    }
+
+    // Output imagestream (idempotent — ignore "already exists").
+    let _ = Command::new("oc")
+        .args(["create", "imagestream", imagestream])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    // BuildConfig via stdin.
+    let mut child = Command::new("oc")
+        .args(["apply", "-f", "-"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to run oc apply: {e}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or("failed to open oc apply stdin")?
+        .write_all(bc.as_bytes())
+        .map_err(|e| format!("failed to write BuildConfig: {e}"))?;
+    if !child
+        .wait()
+        .map_err(|e| format!("oc apply wait failed: {e}"))?
+        .success()
+    {
+        return Err("oc apply BuildConfig failed".into());
+    }
+
+    let status = Command::new("oc")
+        .args([
+            "start-build",
+            &format!("{imagestream}-bc"),
+            "--from-dir",
+            context,
+            "--follow",
+        ])
+        .status()
+        .map_err(|e| format!("failed to run oc start-build: {e}"))?;
+    if !status.success() {
+        return Err(format!("oc start-build failed with {status}"));
+    }
+    Ok(())
 }
