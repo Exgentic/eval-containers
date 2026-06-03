@@ -111,7 +111,8 @@ spec:
             {{- end }}
 
       volumes:
-        - { name: output, emptyDir: {} }
+        - name: output
+          {{- $v.outputVolume | default (dict "emptyDir" dict) | toYaml | nindent 10 }}
         - { name: tmp,    emptyDir: { medium: Memory, sizeLimit: 1Gi } }
         - { name: logs,   emptyDir: { medium: Memory, sizeLimit: 100Mi } }
         {{- with $v.extraVolumes }}
