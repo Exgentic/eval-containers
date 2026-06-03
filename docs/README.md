@@ -30,6 +30,7 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 - [Run your first eval](guides/run-your-first-eval.md)
 - [Deploy on Kubernetes](guides/deploy-on-kubernetes.md)
 - [Deploy on OpenShift](guides/deploy-on-openshift.md)
+- [Deploy on a local cluster (kind)](guides/deploy-on-kind.md)
 - [Add a benchmark](guides/add-a-benchmark.md)
 - [Add an agent](guides/add-an-agent.md)
 - [Add a model](guides/add-a-model.md)
