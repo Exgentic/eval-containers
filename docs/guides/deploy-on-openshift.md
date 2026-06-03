@@ -50,12 +50,20 @@ helm template aime benchmarks/_chart \
 
 ## 4. Build in the cluster (optional)
 
-After `oc login`, create the in-cluster buildx builder and build/push:
+If you can't build locally and push (no reachable registry route, or in-cluster
+BuildKit blocked by baseline PodSecurity), build on the cluster with the
+OpenShift `BuildConfig` backend — `oc start-build` (buildah under the platform's
+`builder` SCC), needing no admin and no privileged pod:
 
 ```bash
-docker buildx create --driver kubernetes --name oc --use
-eval-containers build eval aime --agent codex --builder oc
+oc login …
+eval-containers build bench aime --builder oc   # one artifact, on the cluster
 ```
+
+`--builder oc` reads the artifact's build spec from `docker buildx bake --print`
+and submits a binary `BuildConfig`. It builds a **single** artifact; for a full
+benchmark × agent eval in dependency order (and the one-time core-base
+bootstrap), see [`examples/openshift/`](../../examples/openshift/).
 
 ## Caveat
 
