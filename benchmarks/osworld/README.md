@@ -26,4 +26,5 @@ Custom `/tests/test.sh` defined inline in the Dockerfile. Reward is hard-coded t
 
 - `Dockerfile` — builds the benchmark image
 - `compose.yaml` — compose file for `eval-containers run osworld`
+- `benchmarks/_chart/presets/osworld.yaml` — this benchmark's bespoke k8s topology (sidecars/Deployments/Services), overlaid on the shared chart when rendered with `--set benchmark=osworld`
 - `README.md` — this file
