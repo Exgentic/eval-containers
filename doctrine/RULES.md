@@ -13,85 +13,85 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## Core Principles
 
-1. **The image is the product.** Everything Eval Containers produces is a Docker image or Compose file. Images are immutable, versioned, portable. If you can `docker pull` and `docker compose up`, you can run any evaluation.
+1. **The image is the product.** Everything Eval Containers produces MUST be a Docker image or Compose file, immutable, versioned, and portable.
 
-2. **Standalone artifacts.** Every published image and Compose file MUST work without Eval Containers installed. If the Eval Containers repository is deleted, every artifact MUST still work.
+2. **Standalone artifacts.** Every published image and Compose file MUST work without Eval Containers installed, even if the repository is deleted.
 
-3. **Compose is the format.** Every evaluation MUST be expressible as a Docker Compose file. One format for simple and complex benchmarks alike.
+3. **Compose is the format.** Every evaluation MUST be expressible as a Docker Compose file.
 
-4. **Three independent axes.** An evaluation is one benchmark + one agent + one model. Each MUST be swappable without affecting the others.
+4. **Three independent axes.** An evaluation is one benchmark, one agent, and one model, each of which MUST be swappable without affecting the others.
 
-5. **Independent observation.** All LLM calls MUST be logged by the model service, independent of the agent. The agent MUST NOT know the proxy exists. The agent MUST NOT be able to tamper with the trajectory.
+5. **Independent observation.** All LLM calls MUST be logged by the model service independent of the agent; the agent MUST NOT know the proxy exists and MUST NOT be able to tamper with the trajectory.
 
-6. **No framework lock-in.** Eval Containers MUST NOT require its own runtime, daemon, or installation to execute evaluations. Everything runs with plain Docker.
+6. **No framework lock-in.** Eval Containers MUST NOT require its own runtime, daemon, or installation to execute evaluations.
 
-7. **Simplicity.** Prefer the simplest mechanism that works. File permissions over separate containers. Shell scripts over frameworks. Flat files over databases. If it can be a one-liner, it should be.
+7. **Simplicity.** The simplest mechanism that works MUST be preferred.
 
-8. **Clean code.** All code MUST be the most simple, minimal, clean, and easy to maintain implementation that serves its goals. No dead code, no premature abstractions, no unnecessary dependencies. This is not a suggestion.
+8. **Clean code.** All code MUST be the simplest, minimal, clean implementation that serves its goals, with no dead code, premature abstractions, or unnecessary dependencies.
 
-9. **Pin by default, control via two orthogonal knobs.** Every benchmark, agent, and model image MUST ship with a reproducible default that runs with no environment variables set. Every image MUST expose two independent version controls:
+9. **Pin by default, control via two orthogonal knobs.** Every benchmark, agent, and model image MUST ship a reproducible default that runs with no environment variables set, and MUST expose two independent version controls:
 
-   - **Container version** (the Eval Containers-authored wiring) is selected by the **image tag**, set via `EVAL_BENCHMARK_TAG`, `EVAL_AGENT_TAG`, `EVAL_MODEL_TAG`. This is Docker's native versioning mechanism — different tag, different pull, different bits.
+   - **Container version** (the Eval Containers-authored wiring) is selected by the image tag, set via `EVAL_BENCHMARK_TAG`, `EVAL_AGENT_TAG`, `EVAL_MODEL_TAG`.
 
-   - **Internal version** (the upstream software baked or installed inside) is selected at runtime via `EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_LITELLM_VERSION`. The entrypoint MUST read these env vars, install or activate the requested version, and write the resolved version to the run output directory so every run record is self-describing.
+   - **Internal version** (the upstream software inside) is selected at runtime via `EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_LITELLM_VERSION`; the entrypoint MUST read these, activate the requested version, and write the resolved version to the run output directory.
 
-   Both axes are orthogonal: tag controls which container to pull, env var controls what runs inside it. Concrete implementation rules live in `doctrine/benchmarks/RULES.md`, `doctrine/agents/RULES.md`, and `doctrine/models/RULES.md`.
+   Implementation rules live in `doctrine/benchmarks/RULES.md`, `doctrine/agents/RULES.md`, and `doctrine/models/RULES.md`.
 
-10. **Image hygiene.** Eval Containers ships ~100+ images. Image thinness is not optional — it's what makes `docker pull` fast and the fleet build affordable. Every Dockerfile MUST follow these rules, and reviewers MUST enforce them:
+10. **Image hygiene.** Every Dockerfile MUST follow these rules, and reviewers MUST enforce them:
 
-    a. **Slim bases.** Prefer `python:3.12-slim` over `python:3.12`. Prefer `debian:12-slim` or `ubuntu:24.04` over their full variants. Avoid `alpine` for Python workloads (musl wheels missing). `FROM scratch` only for static binaries.
+    a. **Slim bases.** Slim base images MUST be preferred over their full variants, `alpine` MUST be avoided for Python workloads, and `FROM scratch` MUST be used only for static binaries.
 
-    b. **Clean up in the same layer.** `apt-get install` MUST be followed by `rm -rf /var/lib/apt/lists/*` in the same `RUN`. `pip install` MUST use `--no-cache-dir`. Cleanup in a separate `RUN` does nothing — the prior layer still holds the files.
+    b. **Clean up in the same layer.** `apt-get install` MUST be followed by `rm -rf /var/lib/apt/lists/*` in the same `RUN`, and `pip install` MUST use `--no-cache-dir`.
 
-    c. **No caches or secrets in layers.** Never `COPY` a `~/.cache`, `~/.npm`, `~/.cargo`, credentials, or any build cache directory into a final image. Use `--mount=type=secret` when auth is needed at build time.
+    c. **No caches or secrets in layers.** A cache directory, credential, or build cache MUST NOT be copied into a final image; `--mount=type=secret` MUST be used when build-time auth is needed.
 
-    d. **Simple and impactful, not clever.** Do the obvious cleanups. Do NOT rewrite Dockerfiles into multi-stage contortions to save 20 MB. The rule of thumb: if a one-line diff saves ≥100 MB, do it; if it saves less but hurts readability, don't. Maintainability wins over byte-golfing.
+    d. **Simple and impactful, not clever.** Maintainability MUST win over byte-golfing.
 
-    e. **No required rebuild on `docker history`.** A reviewer MUST be able to read the Dockerfile top-to-bottom and see why each layer exists. Reordering layers for optimal cache hits is fine; obscuring them for layer count is not.
+    e. **Readable layers.** A reviewer MUST be able to read the Dockerfile top-to-bottom and see why each layer exists.
 
-11. **Reuse over repetition.** Any infrastructure concern shared by more than two images MUST be factored into a shared base image or helper, not inlined. If a Dockerfile contains ten lines of apt-retry boilerplate, network-flake defense, runtime staging, or label setup that another Dockerfile also contains, that ten lines belongs in `core/<something>-base`. Consequences:
+11. **Reuse over repetition.** Any infrastructure concern shared by more than two images MUST be factored into a shared base image or helper, not inlined.
 
-    a. **Agent base images.** Every agent image MUST extend `core/agent-base-<runtime>` (node, python, go, universal) for its runtime. The base provides: apt-retry wrapper, runtime install with arch detection, `/opt/agent/` staging scaffold, standard `install.sh` skeleton that the combination image calls.
+    a. **Agent base images.** Every agent image MUST extend `core/agent-base-<runtime>` for its runtime.
 
-    b. **Benchmark base images.** Every benchmark image MUST extend `core/benchmark-base-<pattern>` (hf-dataset, github-raw, per-task-upstream, external-graded). The base provides: Python + pyarrow + datasets, the shared label/ENV scaffold, copies of `/eval-entrypoint.sh` and `/eval-materialize-task`, a standard `entrypoint.sh` template, and a default `test.sh` for the matching grader.
+    b. **Benchmark base images.** Every benchmark image MUST extend `core/benchmark-base-<pattern>`.
 
-    c. **One home per concern.** A retry loop for apt, a tarball-size check, an arch detection `case` statement — each MUST appear in exactly one Dockerfile (the base). If you find yourself copy-pasting defensive code from another Dockerfile, you are violating this rule; the correct fix is to move that code to the base and have both callers inherit.
+    c. **One home per concern.** Each piece of shared defensive code MUST appear in exactly one Dockerfile, the base.
 
-    d. **Rule precedence.** Reuse wins over "keep files self-contained". A 108-line agent Dockerfile that duplicates the base is worse than a 15-line one that extends it, even if the 108-line version is readable on its own. The 10-line base + 15-line subclass is readable too, and it's readable across 20 agents instead of 1.
+    d. **Rule precedence.** Reuse MUST win over keeping files self-contained.
 
-    e. **No drift between inlined copies.** If a fix has to be applied (e.g. "use linux-arm64 on Apple Silicon"), applying it once in the base MUST propagate to every subclass on the next rebuild. Fleets that require N copies of a fix are a code smell.
+    e. **No drift between inlined copies.** A fix applied once in the base MUST propagate to every subclass on the next rebuild.
 
-12. **Env var namespace.** All Eval Containers-controlled environment variables MUST be prefixed with `EVAL_`. This includes axis selection (`EVAL_BENCHMARK`, `EVAL_AGENT`, `EVAL_MODEL`), versioning (`EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_MODEL_VERSION`), runtime config (`EVAL_TASK_ID`, `EVAL_TIMEOUT`), and infrastructure (`EVAL_REGISTRY`). No Eval Containers env var MAY be unprefixed. Upstream env vars (`OPENAI_API_KEY`, `HF_TOKEN`, etc.) are untouched. Prefixing prevents collision with CI, Airflow, Celery, and other orchestrators that use unprefixed names like `TASK_ID`, `AGENT`, and `MODEL`.
+12. **Env var namespace.** Every Eval Containers-controlled environment variable MUST be prefixed with `EVAL_`, and no Eval Containers env var MAY be unprefixed; upstream env vars are untouched.
 
-13. **Self-contained repository.** The repository MUST be the sole source of information about itself — every rule, convention, process, assumption, and verification procedure MUST be documented inside the tree. No essential information MAY live only in a tool-specific directory (`.claude/`, `.cursor/`, `.vscode/`), in a single contributor's head, in a chat log, or in an external wiki. A reader who clones the repo on a clean machine MUST be able to build, test, verify, and release it using only the files in the tree. Tool-specific folders (`.claude/` etc.) MAY exist, but MUST contain only convenience wrappers that delegate to the canonical docs — never original, load-bearing content.
+13. **Self-contained repository.** The repository MUST be the sole source of information about itself, with every rule, convention, process, assumption, and verification procedure documented inside the tree; a reader who clones it on a clean machine MUST be able to build, test, verify, and release it using only the files in the tree, and tool-specific folders MUST contain only convenience wrappers that delegate to the canonical docs.
 
-14. **Verification is normative.** Every change MUST pass the mechanical gates, and every release MUST also pass the procedural audits defined in [doctrine/verification/verify/SKILL.md](verification/verify/SKILL.md). VERIFY.md is the complete release checklist: 46 numbered steps across Preflight, Sanity, Build, Replay, End-to-end, Upstream, Security, Audit, Docs, CI, Fleet, Release, and Post phases, each with its executor (`cargo test`, external tool, or human/sub-agent checklist) and artifact.
+14. **Verification is normative.** Every change MUST pass the mechanical gates and every release MUST also pass the procedural audits defined in [doctrine/verification/verify/SKILL.md](verification/verify/SKILL.md).
 
-    - **Mechanical gates** (steps 4–10, 11–16, 18–22, 30, 31, 35) MUST run from plain `cargo test` with no bash glue. Every gate is a data-driven rule catalog — a `const RULES: &[Rule]` array whose IDs match the entries in its companion procedural markdown. The two MUST NOT drift.
+    - **Mechanical gates** MUST run from plain `cargo test` with no bash glue, each as a data-driven `const RULES: &[Rule]` catalog whose IDs match its companion procedural markdown, and the two MUST NOT drift.
 
-    - **Procedural audits** (steps 23–27) MUST be walkable by any reader — human, sub-agent, or script — using only the canonical checklists ([doctrine/verification/audit-dockerfile/references/checklist.md](verification/audit-dockerfile/references/checklist.md), [doctrine/verification/audit-trajectory/references/checklist.md](verification/audit-trajectory/references/checklist.md), [doctrine/verification/audit-fleet/references/checklist.md](verification/audit-fleet/references/checklist.md)). Checklists MUST NOT name a specific tool, agent, or runtime. A human with an editor and an AI assistant reading the same file MUST execute the same procedure.
+    - **Procedural audits** MUST be walkable by any reader using only the canonical checklists ([doctrine/verification/audit-dockerfile/references/checklist.md](verification/audit-dockerfile/references/checklist.md), [doctrine/verification/audit-trajectory/references/checklist.md](verification/audit-trajectory/references/checklist.md), [doctrine/verification/audit-fleet/references/checklist.md](verification/audit-fleet/references/checklist.md)), which MUST NOT name a specific tool, agent, or runtime.
 
-    - **The fleet report** ([tests/fleet/report.md](../tests/fleet/report.md), generated by `cargo test --test fleet -- --ignored`) is the single artifact that certifies a commit as release-ready. It has two sections — auto-generated (mechanical) and manual (procedural) — and a verdict of red, yellow, or green. No release MAY ship with a red verdict.
+    - **The fleet report** ([tests/fleet/report.md](../tests/fleet/report.md)) is the single artifact certifying a commit as release-ready; no release MAY ship with a red verdict.
 
-15. **Build graph is data.** Every artifact under `core/`, `agents/`, `benchmarks/`, `models/`, and `gateways/` MUST ship a `docker-bake.hcl` file next to its `Dockerfile`. The bake file is the machine-readable declaration of the artifact's build dependencies — what makes the fleet's build graph an artifact in the tree rather than knowledge trapped in one consumer. Concrete shape:
+15. **Build graph is data.** Every artifact under `core/`, `agents/`, `benchmarks/`, `models/`, and `gateways/` MUST ship a `docker-bake.hcl` file next to its `Dockerfile` declaring its build dependencies.
 
-    a. **One file per artifact, declaring a single target.** Target name is `<category>-<name>` (e.g. `agent-openhands`, `benchmark-aime`, `model-gpt-5_4--bifrost`); leaf `core/` images use their bare directory name (`agent-base-python`, `benchmark-base-hf`). One target per file.
+    a. **One file per artifact, declaring a single target.** The target name MUST be `<category>-<name>`, or the bare directory name for leaf `core/` images, with one target per file.
 
-    b. **`REGISTRY` and `TAG` are fleet-wide variables** declared once at the repo root (`./docker-bake.hcl`), defaulting to `quay.io/eval-containers` and `latest` respectively. Per-artifact files MUST reference `${REGISTRY}/...:${TAG}` in every image reference (tag and context) — no hardcoded registries, no hardcoded tags, no per-artifact redeclaration.
+    b. **`REGISTRY` and `TAG` are fleet-wide variables** declared once at the repo root (`./docker-bake.hcl`); per-artifact files MUST reference `${REGISTRY}/...:${TAG}` in every image reference without hardcoding or redeclaring them.
 
-    c. **Tag matches the framework's existing convention**: `${REGISTRY}/<category>/<name>:${TAG}`. CI/release pipelines override `TAG` at the build step; the default `latest` covers the common dev case. Per-artifact variant tags are out of scope for bake — use `--set "<target>.tags=..."` if you really need one.
+    c. **Tag matches the framework's convention** `${REGISTRY}/<category>/<name>:${TAG}`; per-artifact variant tags are out of scope.
 
-    d. **Every in-repo `FROM` (and `COPY --from=`) MUST appear in the target's `contexts`**, mapping the full image reference (`${REGISTRY}/...:tag`) to the dep's bake target (`target:<name>`). This is what makes the graph explicit and consumable by every build tool (`docker buildx`, `bakah`, `oc start-build` translators, tests).
+    d. **Every in-repo `FROM` and `COPY --from=` MUST appear in the target's `contexts`**, mapping the full image reference to the dep's bake target.
 
-    e. **Build-time secrets go through `args` with empty defaults** (e.g. `args = { HF_TOKEN = HF_TOKEN }`). Artifacts that don't need a given secret pay no ceremony for declaring it absent.
+    e. **Build-time secrets go through `args` with empty defaults.**
 
-    f. **No build logic in bake files.** Targets, contexts, args, tags — that's it. Computed values from external sources, conditional builds, dynamic target generation are out of scope. Build logic lives in the Dockerfile.
+    f. **No build logic in bake files**; only targets, contexts, args, and tags are permitted.
 
-    g. **Minimal.** Every line MUST serve sub-rules a–f. No `inherits` chains. No `group` blocks. No `dockerfile-inline`. No multi-target files. No comments restating this rule or citing it. No unused variables. No `args` declared but not consumed by the Dockerfile. The framework's existing principle 8 (Clean code) applies to bake files like any other code; this sub-rule pins the specific patterns that drift.
+    g. **Minimal.** Every line MUST serve sub-rules a–f, with no `inherits` chains, `group` blocks, `dockerfile-inline`, multi-target files, restating comments, unused variables, or args not consumed by the Dockerfile.
 
-    h. **Variable hygiene.** A `variable` declaration MUST exist for exactly one of: a **per-build override** (the value legitimately varies per invocation — `REGISTRY`, `TAG`), a **build-time secret** (the value MUST NOT live in the file as a literal — `HF_TOKEN`), or an **orchestration-composed reference** (the value is computed by the CLI / wrapper before invoking bake — `BENCHMARK_IMAGE`, `AGENT_IMAGE`, `MODEL_IMAGE` in the combination template). Values that ARE the artifact — target name, context directory, the structural shape of the `FROM` graph, the suffix `:${TAG}` itself — MUST be hardcoded. A `variable` is configuration, not a hiding place for artifact identity. Fleet-wide variables (15.b) live at root; artifact-scoped variables stay in their artifact's file. Every `variable` MUST be referenced — dead declarations fail the lint.
+    h. **Variable hygiene.** A `variable` MUST exist only for a per-build override, a build-time secret, or an orchestration-composed reference; artifact identity MUST be hardcoded, and every `variable` MUST be referenced.
 
-    The convention guide — minimal templates per artifact type, composition patterns, and the full conciseness catalog — lives in [`doctrine/delivery/build/SKILL.md`](delivery/build/SKILL.md). Mechanical enforcement (every artifact has a valid bake file whose `contexts` match the Dockerfile's `FROM` lines) is `tests/build/test.rs::dockerfile_bake_alignment`.
+    The convention guide lives in [`doctrine/delivery/build/SKILL.md`](delivery/build/SKILL.md). Mechanical enforcement is `tests/build/test.rs::dockerfile_bake_alignment`.
 
 ## Process
 
@@ -152,3 +152,4 @@ not as issues. The issue tracker is for tracked work only.
 | 2026-05-31 | Tightened principle 15.b — `REGISTRY` and `TAG` are fleet-wide, declared once at the root `./docker-bake.hcl`; per-artifact files reference `${REGISTRY}/...:${TAG}` without redeclaring (principle 11 reuse-over-repetition applied to bake variables). Per-artifact tag overrides via `--set` if genuinely needed. |
 | 2026-05-31 | Added principle 15.h (Variable hygiene) — every bake `variable` exists for a documented reason (per-build override, build-time secret, or orchestration-composed reference); artifact identity stays hardcoded; dead variables fail the lint. Codifies the implicit pattern that drove the REGISTRY / TAG hoists. |
 | 2026-05-31 | Centralized governance under `doctrine/`: this file keeps the project principles (1–15); the Rules Process principles moved to `meta/rules/RULES.md`, the rules graph to `AGENTS.md`, and the procedures (verify/release/audits/build) became skills under `doctrine/`. Supersedes the former “rules live next to the code” principle with centralized governance. |
+| 2026-06-03 | Tightened to meta principles 11-14 (concise, example-free, <=80-word abstract); no requirements renumbered or removed. |
