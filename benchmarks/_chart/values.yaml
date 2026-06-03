@@ -29,6 +29,10 @@ runnerArgs: "/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"
 resources:
   requests: { cpu: "500m", memory: "512Mi" }
   limits:   { cpu: "2",    memory: "2Gi" }
+# The /output volume source. Empty → an ephemeral emptyDir (results die with
+# the pod). Set one source key to persist them — e.g. a hostPath (kind) or a
+# PVC (a cluster):  --set outputVolume.hostPath.path=/eval-output
+outputVolume: {}
 
 # ── Platform composition (layered via -f, e.g. deploy/values-openshift.yaml) ─
 serviceAccountName: ""   # OpenShift sets anyuid-sa

@@ -72,3 +72,8 @@ eval-containers build eval aime --agent codex --builder k8s   # --builder implie
 
 OpenShift needs an SCC-aware service account; a ready overlay ships in the repo.
 See [Deploy on OpenShift](deploy-on-openshift.md).
+
+## Local cluster
+
+No cluster handy? Run the same `job` mode on a local kind cluster. See
+[Deploy on a local cluster (kind)](deploy-on-kind.md).
