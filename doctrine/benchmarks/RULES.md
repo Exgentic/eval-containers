@@ -15,65 +15,65 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Self-Contained
 
-1. **Standalone.** The image MUST contain all task data, test logic, and entrypoints. Either `docker run` (single-image benchmarks) or `docker compose up` (multi-service benchmarks) MUST work without Dock installed and without internet. For shared-env benchmarks, `EVAL_TASK_ID` is the only required runtime input. For per-task benchmarks, `EVAL_TASK_ID` is a build-time argument — each image contains exactly one task.
+1. **Standalone.** The image MUST contain all task data, test logic, and entrypoints, and `docker run` or `docker compose up` MUST work without Dock installed and without internet; `EVAL_TASK_ID` is the only required runtime input for shared-env benchmarks and a build-time argument for per-task benchmarks.
 
-2. **Single input.** The image MUST resolve to the task content, expected answer, and any attached files from `EVAL_TASK_ID` alone — whether provided at build time (per-task) or runtime (shared-env).
+2. **Single input.** The image MUST resolve the task content, expected answer, and attached files from `EVAL_TASK_ID` alone.
 
-3. **Reproducible by default.** The exact dataset version MUST be pinned at build time as a default in the Dockerfile (`ARG DATA_REVISION=<sha>` or equivalent) and recorded in `eval.benchmark.data_revision`. The image MUST produce identical task content on every build when no env vars are set.
+3. **Reproducible by default.** The exact dataset version MUST be pinned at build time as a default in the Dockerfile and recorded in `eval.benchmark.data_revision`, and the image MUST produce identical task content on every build when no env vars are set.
 
-4. **Runtime version override.** The entrypoint MUST read `EVAL_BENCHMARK_VERSION` and, when set, fetch and materialize that dataset revision into `/tasks/` in place of the default. It MUST write the resolved revision to `/output/task/version.json` before the agent runs. When `EVAL_BENCHMARK_VERSION` is unset, the build-time default applies unchanged. `EVAL_BENCHMARK_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
+4. **Runtime version override.** The entrypoint MUST read `EVAL_BENCHMARK_VERSION` and, when set, materialize that dataset revision into `/tasks/` in place of the default and write the resolved revision to `/output/task/version.json` before the agent runs.
 
 ### Isolation
 
-5. **Least privilege.** The agent MUST have access only to what it needs to perform the task — nothing more. Evaluation code, grading logic, expected answers, rubrics, and test infrastructure MUST be inaccessible to the agent. The agent MUST NOT be able to read or modify anything used by the test phase.
+5. **Least privilege.** The agent MUST have access only to what the task needs, and evaluation code, grading logic, expected answers, rubrics, and test infrastructure MUST be inaccessible to it.
 
-6. **Simplest isolation.** Use the simplest mechanism that achieves the required isolation. File permissions over separate containers. User separation over network policies. Complexity is the enemy of security.
+6. **Simplest isolation.** The simplest mechanism that achieves the required isolation MUST be used.
 
-7. **Minimal agent environment.** Only `TASK`, `EVAL_TASK_ID`, `OPENAI_BASE_URL`, and `ANTHROPIC_BASE_URL` SHOULD reach the agent process. Benchmark internals MUST NOT leak.
+7. **Minimal agent environment.** Only `TASK`, `EVAL_TASK_ID`, `OPENAI_BASE_URL`, and `ANTHROPIC_BASE_URL` SHOULD reach the agent process, and benchmark internals MUST NOT leak.
 
-8. **No agent access to credentials.** The agent process MUST NOT have access to LLM credentials. In compose-mode benchmarks, credentials live in the separate model service. In single-image benchmarks, credentials live in a 0600 file owned by a proxy UID inaccessible to the agent UID. Both implementations MUST achieve the same property: the agent process cannot read the API key.
+8. **No agent access to credentials.** The agent process MUST NOT be able to read LLM credentials.
 
-9. **No agent internet by default.** The agent MUST NOT have outbound internet access unless the benchmark explicitly requires it. In compose-mode benchmarks, this is enforced by `internal: true` on the agent's network. In single-image benchmarks, by `iptables -m owner --uid-owner` rules on the agent UID. Both implementations MUST achieve the same property: the agent has no path to the open internet by default.
+9. **No agent internet by default.** The agent MUST NOT have outbound internet access unless the benchmark explicitly requires it.
 
 10. **Resource limits.** Every benchmark MUST specify CPU and memory limits in its compose file.
 
-11. **Docker-native security.** Isolation MUST use standard Docker features only (networks, capabilities, read-only filesystem, tmpfs, resource limits). Dock MUST NOT invent security abstractions. If Docker can't enforce it, Dock doesn't promise it.
+11. **Docker-native security.** Isolation MUST use standard Docker features only, and Dock MUST NOT invent security abstractions.
 
 ### Execution
 
-12. **Three-phase flow.** Execution MUST follow: agent runs → test runs → result is written. The shared `dock-entrypoint.sh` handles this. Benchmarks MUST NOT bypass it.
+12. **Three-phase flow.** Execution MUST follow agent runs, then test runs, then result is written, via the shared `dock-entrypoint.sh`, which benchmarks MUST NOT bypass.
 
-13. **Agent as non-root.** The agent MUST run as an unprivileged user. The test phase MAY run as root.
+13. **Agent as non-root.** The agent MUST run as an unprivileged user; the test phase MAY run as root.
 
-14. **Timeout.** Agent execution MUST be bounded by `EVAL_TIMEOUT`. The entrypoint enforces this.
+14. **Timeout.** Agent execution MUST be bounded by `EVAL_TIMEOUT`.
 
 ### Task Format
 
-15. **Stable task IDs.** For shared-env benchmarks, tasks MUST be addressable by sequential integers (`0`, `1`, `2`, ...) with the original upstream identifier stored in `id.txt`. For per-task benchmarks, the upstream identifier is the task ID. Per-task benchmarks SHOULD publish a `tasks.txt` file (one ID per line) so integers can be mapped to original IDs.
+15. **Stable task IDs.** Shared-env benchmark tasks MUST be addressable by sequential integers with the original upstream identifier stored in `id.txt`; per-task benchmarks use the upstream identifier as the task ID and SHOULD publish a `tasks.txt` mapping.
 
-16. **Flat files.** Task data SHOULD be stored as plain files (`problem.txt`, `answer.txt`). No databases, no archive formats.
+16. **Flat files.** Task data SHOULD be stored as plain files, with no databases or archive formats.
 
-17. **Agent-visible files.** If the agent needs attached files (documents, images), they MUST be placed in a location the agent can read (e.g., `/app/`). The benchmark MUST NOT give the agent read access to the full task store.
+17. **Agent-visible files.** Attached files the agent needs MUST be placed in a location the agent can read, and the benchmark MUST NOT give the agent read access to the full task store.
 
 ### Scoring
 
-18. **Reward contract.** The test script MUST write a reward to `/logs/verifier/reward.txt`. The value MUST be a float in `[0.0, 1.0]`, or `-1` for externally graded benchmarks.
+18. **Reward contract.** The test script MUST write a reward to `/logs/verifier/reward.txt` as a float in `[0.0, 1.0]`, or `-1` for externally graded benchmarks.
 
-19. **Simplest correct scorer.** Benchmarks SHOULD use the simplest scoring method that produces correct results. Exact match when possible, code execution for programming, LLM-as-judge only when nothing simpler works.
+19. **Simplest correct scorer.** Benchmarks SHOULD use the simplest scoring method that produces correct results.
 
-20. **External grading.** If scoring requires an outside service, the benchmark MUST still collect the agent's output. It MUST write `-1` as the reward. It MUST NOT approximate the external grader.
+20. **External grading.** A benchmark whose scoring requires an outside service MUST still collect the agent's output, MUST write `-1` as the reward, and MUST NOT approximate the external grader.
 
 ### Image
 
-21. **Labels.** Every benchmark image MUST include labels: `eval.type`, `eval.benchmark.name`, `eval.benchmark.description`, `eval.benchmark.tasks`, `eval.benchmark.env`, `eval.benchmark.internet`. Benchmarks that have graduated to the release gate MUST also carry `eval.benchmark.released="true"` (see principle 21a).
+21. **Labels.** Every benchmark image MUST include labels `eval.type`, `eval.benchmark.name`, `eval.benchmark.description`, `eval.benchmark.tasks`, `eval.benchmark.env`, and `eval.benchmark.internet`, and released benchmarks MUST also carry `eval.benchmark.released="true"` (see principle 21a).
 
-21a. **Release readiness gate.** A benchmark is **released** when it has been proven end-to-end against at least one agent with a recorded replay fixture under `tests/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`. Released benchmarks MUST carry `LABEL eval.benchmark.released="true"`. Unreleased benchmarks MAY exist in `benchmarks/` (the source tree is the full catalog of what Dock COULD support), but MUST NOT carry the label until a fixture lands and they pass the replay sweep. `doctrine/verification/audit-fleet/references/checklist.md` question 3 (replay coverage) checks this label, not the directory count — the filesystem can hold 96 benchmarks while only a subset are released.
+21a. **Release readiness gate.** A benchmark is released once proven end-to-end against at least one agent with a recorded replay fixture under `tests/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`, and only then MUST it carry `LABEL eval.benchmark.released="true"`; `doctrine/verification/audit-fleet/references/checklist.md` question 3 checks this label, not the directory count.
 
-21b. **Upstream base tracking.** Benchmarks whose `FROM` line points at a third-party registry not under Dock's control (e.g. `ghcr.io/andyzorigin/*`, `ghcr.io/openai/*`) MUST declare `LABEL eval.benchmark.upstream_base="<full image ref>"` recording the exact upstream reference. This makes the external dependency visible to audit tools and to anyone reading the image metadata. Benchmarks that build from a Dock-controlled or fully in-repo base (e.g. `FROM python:3.12-slim`) do NOT need this label. `doctrine/verification/audit-fleet/references/checklist.md` question 6 (stale upstream images) walks every `upstream_base` label and reports yellow if any still points at `:latest` — such bases are legal but flagged as known supply-chain debt until mirrored or pinned by digest.
+21b. **Upstream base tracking.** A benchmark whose `FROM` points at a third-party registry not under Dock's control MUST declare `LABEL eval.benchmark.upstream_base="<full image ref>"` recording the exact upstream reference; `doctrine/verification/audit-fleet/references/checklist.md` question 6 walks every `upstream_base` label and reports yellow if any still points at `:latest`.
 
-22. **Shared components.** Benchmarks SHOULD use shared core images (`dock-entrypoint.sh`, `test-exact-match`) when applicable. Benchmarks MUST NOT reimplement shared logic.
+22. **Shared components.** Benchmarks SHOULD use shared core images when applicable and MUST NOT reimplement shared logic.
 
-23. **No agent tooling.** Benchmark images MUST NOT include agent-specific tools (browsers, automation libraries, SDKs). The agent's `install.sh` installs what it needs. The benchmark provides the environment, not the tools.
+23. **No agent tooling.** Benchmark images MUST NOT include agent-specific tools; the agent's `install.sh` installs what it needs.
 
 ### Three Deployment Surfaces
 
@@ -85,51 +85,36 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
     | `compose.yaml` | **compose** | 3 services on a compose network (otelcol + gateway + runner) | `docker compose -f benchmarks/<x>/compose.yaml up` |
     | `values.yaml` | **k8s** | A Helm values file over the shared chart `benchmarks/_chart` — renders 1 `Job` + 1 Pod + 3 containers (`shareProcessNamespace` for sidecar reaping; isolation via credentials — see 24d), plus any bespoke `Deployment`s/`Service`s the benchmark composes | `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml \| kubectl apply -f -` |
 
-    Single mode is the simplest surface (one `docker run`, no orchestrator); compose and k8s split the pipeline across containers so the agent process cannot see upstream credentials (rule 8). Benchmarks that ship only one or two surfaces are incomplete.
+    A benchmark that ships only one or two surfaces is incomplete.
 
-24a. **Universal eval-image recipe.** `core/combination.Dockerfile` is the single source of truth for the eval-image build. Per-benchmark `container.Dockerfile` files MUST be a single-line registry pin of the form `FROM <registry>/evals/<benchmark>--<agent>:<tag>` — nothing more. The canonical build args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`, `MODEL_IMAGE`) MUST be recorded in the benchmark's `README.md` so CI can rebuild the eval image by invoking `core/combination.Dockerfile` with those args. Declaring inert `ARG` lines that the `FROM` does not consume is forbidden — they look load-bearing but aren't, and they drift. Duplicating the combination Dockerfile body across benchmarks is forbidden — there is exactly one eval-image recipe in the repo.
+24a. **Universal eval-image recipe.** `core/combination.Dockerfile` is the single source of truth for the eval-image build; each per-benchmark `container.Dockerfile` MUST be a single-line `FROM <registry>/evals/<benchmark>--<agent>:<tag>`, the canonical build args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`, `MODEL_IMAGE`) MUST be recorded in the benchmark's `README.md`, inert `ARG` lines the `FROM` does not consume are forbidden, and duplicating the combination Dockerfile body is forbidden.
 
-24b. **Both surfaces share one base; benchmarks override only what differs.**
-    - `compose/services.yaml` — shared compose services (`otelcol`, `gateway`, `runner`); per-benchmark `compose.yaml` pulls it in via `include:` and overrides the benchmark-specific bits.
-    - `benchmarks/_chart/` — the shared Helm chart: the otelcol + gateway + runner Job, defined **once**. Per-benchmark `values.yaml` pins the benchmark and overrides only what differs. The ~97 standard benchmarks are a single line (`benchmark: <name>`); the few with bespoke topology add their sidecars/`Deployment`s/`Service`s through the chart's composition hooks (`initContainers`, `runnerArgs`, `runnerExtraEnv`, `extraManifests`, …).
+24b. **Both surfaces share one base; benchmarks override only what differs.** `compose/services.yaml` holds the shared compose services, pulled into each per-benchmark `compose.yaml` via `include:`; `benchmarks/_chart/` defines the shared Helm Job once, and each per-benchmark `values.yaml` pins the benchmark and overrides only what differs through the chart's composition hooks. A change to the compose base or the chart MUST be reflected in the other in the same commit.
 
-    Both surfaces keep `service_healthy` ↔ `shareProcessNamespace` reaper, service-name DNS ↔ Pod loopback, and an identical env contract in lockstep — changes to the compose base or the chart MUST be reflected in the other in the same commit.
+24c. **Task parameterization in deployment artifacts.** Shared-env `compose.yaml` MUST read the task id as `TASK_ID: ${TASK_ID:-0}` and MUST NOT hardcode it, the k8s surface MUST parameterize the task via `helm … --set task=` and `values.yaml` MUST NOT hardcode it, and per-task benchmarks bake `EVAL_TASK_ID` as a build-time `ARG`.
 
-24c. **Task parameterization in deployment artifacts.** Rule 1 makes `EVAL_TASK_ID` the only required runtime input for shared-env benchmarks; the deployment artifacts MUST honor this:
-    - **Shared-env**: `compose.yaml` MUST read the task id from the shell environment as `TASK_ID: ${TASK_ID:-0}` (default 0, override via `TASK_ID=42 docker compose up`). Hardcoding a literal task id in `compose.yaml` is forbidden. The k8s surface parameterizes the task through Helm — `helm template … --set task=42` (default 0); a benchmark's `values.yaml` MUST NOT hardcode a task id.
-    - **Per-task**: `EVAL_TASK_ID` is a build-time `ARG` in `container.Dockerfile`; each image bakes exactly one task. The compose and k8s artifacts inherit the baked-in task — they do not parameterize.
+24d. **Network isolation across surfaces.** Rule 9 MUST be enforced in every shipped surface by its native mechanism: `internal: true` on the agent's network in `compose.yaml`, `iptables -m owner --uid-owner` rules in single mode, and credential isolation (rule 8) in k8s; a benchmark requiring agent internet MUST declare `eval.benchmark.internet=true` and remove the isolation primitive in every shipped surface, and asymmetry is forbidden.
 
-24d. **Network isolation across surfaces.** Rule 9 (no agent internet by default) MUST be enforced in every shipped surface, by the mechanism native to that surface:
-    - `compose.yaml`: agent's network is `internal: true`; the gateway is the only service joined to a separate `upstream` network.
-    - `container.Dockerfile` (single mode): `iptables -m owner --uid-owner` rules on the agent UID, applied at container start.
-    - **k8s** (the rendered chart): containers in a Pod share the network stack, so a per-container egress firewall is not possible; rule 9 is achieved indirectly via rule 8 (the runner container has no API credentials, so even if it reached `api.openai.com` directly the call would fail auth). A `NetworkPolicy` MAY be added for defense in depth.
+24e. **Resource limit parity.** Rule 10's limits MUST be expressed in both `compose.yaml` (`deploy.resources.limits`) and the k8s surface (`resources.limits`), and the values MUST match modulo k8s unit syntax.
 
-    Benchmarks that explicitly require agent internet MUST declare `eval.benchmark.internet=true` AND remove the relevant isolation primitive in every surface that ships. Asymmetry (e.g., compose blocks but k8s allows) is forbidden.
-
-24e. **Resource limit parity.** Rule 10 (resource limits) MUST be expressed in both `compose.yaml` (`deploy.resources.limits` on the runner) and the k8s surface (`resources.limits` on the runner — the chart default, which a benchmark overrides via `values.yaml`'s `resources:`). The values MUST match modulo k8s unit syntax (`"2"` ↔ `2`, `"2Gi"` ↔ `2147483648`). GPU benchmarks declare via `deploy.resources.reservations.devices[].driver: nvidia` in compose and `resources.limits["nvidia.com/gpu"]` in k8s.
-
-25. **Use the surface's natural sharing approach.**
-    - **compose** has native sharing (`include:`/`extends:`). Per-benchmark `compose.yaml` MUST pull `compose/services.yaml` in via `include:` and only declare overrides. Inlining a service/healthcheck/network/volume that already exists in `compose/services.yaml` is forbidden.
-    - **k8s** uses Helm. The shared Pod lives once in the chart's template (`benchmarks/_chart/templates/`); per-benchmark `values.yaml` MUST only pin the benchmark and override what differs (via the chart's composition hooks). Re-declaring the otelcol/gateway/runner Pod inside a benchmark is forbidden — there is exactly one k8s Pod definition in the repo.
-
-    Effect: when the canonical Pod shape evolves, compose changes 1 file and k8s changes 1 file (the chart) — every benchmark re-renders from it, so there is nothing to drift.
+25. **Use the surface's natural sharing approach.** Per-benchmark `compose.yaml` MUST pull `compose/services.yaml` in via `include:` and only declare overrides, with inlining a definition that already exists there forbidden; per-benchmark `values.yaml` MUST only pin the benchmark and override what differs, with re-declaring the shared Pod forbidden.
 
 ### Testing
 
-26. **Build test.** Every benchmark image MUST have a build test that verifies the Dockerfile builds and produces correct `dock.*` labels.
+26. **Build test.** Every benchmark image MUST have a build test verifying the Dockerfile builds and produces correct `dock.*` labels.
 
-27. **Compose test.** Every benchmark MUST have a compose validation test that verifies `docker compose config` succeeds.
+27. **Compose test.** Every benchmark MUST have a compose validation test verifying `docker compose config` succeeds.
 
-28. **Replay test.** Every benchmark MUST have at least one end-to-end test using the replay model with a recorded fixture. This test MUST verify that `result.json` is produced with the correct schema.
+28. **Replay test.** Every benchmark MUST have at least one end-to-end test using the replay model with a recorded fixture, verifying `result.json` is produced with the correct schema.
 
 29. **Triple-mode existence + render test.** A CI test MUST walk every directory in `benchmarks/` and assert:
     (a) `container.Dockerfile`, `compose.yaml`, and `values.yaml` all exist;
     (b) `container.Dockerfile` is a single-line `FROM` (rule 24a);
     (c) `docker compose -f compose.yaml config` succeeds (rule 27);
-    (d) `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml` renders and its output validates against the k8s schema (kubeconform or equivalent);
-    (e) `values.yaml` pins the benchmark (`benchmark: <name>`), so the chart renders `evals/<name>--<agent>` and labels the Job from it;
-    (f) the env contract (`EVAL_MODEL`, `EVAL_TASK_ID`, upstream creds) is identical across all three surfaces.
-    Benchmarks failing any sub-test cannot be merged. There is no per-benchmark drift check — one chart cannot drift from itself.
+    (d) `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml` renders and validates against the k8s schema;
+    (e) `values.yaml` pins the benchmark, so the chart renders `evals/<name>--<agent>` and labels the Job from it;
+    (f) the env contract is identical across all three surfaces.
+    A benchmark failing any sub-test MUST NOT be merged.
 
 ## References
 
@@ -147,3 +132,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-05-18 | Rule 24 rewritten as the triple-mode contract: every benchmark ships `container.Dockerfile` (single) + `compose.yaml` (compose) + `job.yaml` (k8s). Rule 24a forbids duplicating the universal `core/combination.Dockerfile` body per benchmark — per-benchmark Dockerfiles only pin build args. Rule 24b requires `compose.yaml` and `job.yaml` to stay in lockstep. Pre-rename `single.yaml` is gone (it was a one-container k8s adapter for single mode — but single mode's contract is the Dockerfile, not a YAML); `k8s.yaml` renamed to `job.yaml`. |
 | 2026-05-18 | Tightening pass before the 90-benchmark sweep. Rule 24a corrected: `container.Dockerfile` MUST be a single-line registry pin; inert `ARG` lines that the `FROM` doesn't consume are forbidden (they looked load-bearing but drifted). New rule 24c codifies task parameterization — shared-env `compose.yaml` MUST use `${TASK_ID:-0}`, `job.yaml` ships as a task-0 template; per-task benchmarks bake `EVAL_TASK_ID` via build ARG. New rule 24d makes network-isolation enforcement explicit per surface and honest about k8s achieving rule 9 via credential isolation (rule 8) rather than network policy. New rule 24e requires resource limits to be declared identically in both `compose.yaml` and `job.yaml`. Rule 25 strengthened to forbid inlining definitions that already exist in `compose/services.yaml`. New rule 29 mandates a triple-mode CI gate that walks `benchmarks/` and asserts artifact existence + parse + env-contract symmetry. |
 | 2026-06-01 | k8s surface moved from per-benchmark Kustomize to one shared **Helm chart** (`benchmarks/_chart`) + a per-benchmark `values.yaml`. Rule 24's k8s artifact is `values.yaml` (was `job.yaml`); 24b/25 replace the `benchmarks/_base/job.yaml` inline-and-drift model with "the Pod is defined once in the chart; `values.yaml` pins the benchmark and overrides only what differs"; 24c parameterizes the task via `helm --set task=`; 24e/24d retargeted at the chart. Rule 29 drops the canonical-drift sub-test (one chart can't drift) — it now renders each `values.yaml` via `helm template` and kubeconform-validates. `eval-containers run --mode job` and `--overlay` drive Helm; the OpenShift overlay is `deploy/values-openshift.yaml`. Deleted `benchmarks/_base` + 114 per-benchmark kustomize files (net −5.4k lines). |
+| 2026-06-03 | Tightened to meta principles 11-14 (concise, example-free, <=80-word abstract); no requirements renumbered or removed. |

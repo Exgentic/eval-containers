@@ -5,7 +5,7 @@
 
 ## Abstract
 
-The `eval-containers` CLI is a **reminder of the simplest standard way to run an eval** — not a layer over it. Every command is a mnemonic for a plain `docker` / `kubectl` / `oc` invocation you could type yourself; running `eval-containers <X>` MUST be reducible to, and able to print, that exact command. It is a thin Rust wrapper around the standard container, Kubernetes, and OpenShift tools — Docker (including `docker buildx bake` and `docker compose`), `kubectl` with Kustomize, and `oc` — and it exists to save keystrokes, not to add abstractions. If a task cannot be expressed as a standard-tool command, it does not belong in the CLI. This document defines the design principles for the CLI.
+The `eval-containers` CLI is a reminder of the simplest standard way to run an eval, not a layer over it. Every command is a mnemonic for a plain `docker`, `kubectl`, or `oc` invocation, and running it MUST be reducible to, and able to print, that exact command. It is a thin Rust wrapper around the standard container, Kubernetes, and OpenShift tools that exists to save keystrokes, not add abstractions. This document defines the design principles for the CLI.
 
 ## Terminology
 
@@ -27,45 +27,45 @@ The CLI shells out only to this fixed set of standard, user-installable tools. "
 | `kubectl` (+ `helm template`) | `run --mode job` — Helm renders the shared chart, `kubectl apply -f -` submits it |
 | `oc` | applying manifests on OpenShift (`helm template … \| oc apply -f -`); the `kubectl` superset for OpenShift login and registry routing |
 
-Each tool MUST be a standard release the user can install and invoke themselves — no forks, no wrappers. Adding a tool to this list is a rule change and MUST be recorded in the changelog; the CLI MUST NOT reach for any tool outside it.
+Each tool MUST be a standard release the user can install and invoke themselves, adding a tool to this list MUST be recorded in the changelog, and the CLI MUST NOT reach for any tool outside it.
 
 ### Philosophy
 
-1. **Optional.** The CLI MUST be optional. Everything it does MUST be reproducible by running the underlying tools (§Underlying tools) by hand. The CLI is a shortcut, not a dependency.
+1. **Optional.** The CLI MUST be optional, and everything it does MUST be reproducible by running the underlying tools (§Underlying tools) by hand.
 
-2. **Transparent.** Every command that drives containers or clusters MUST map to one or more underlying-tool commands (§Underlying tools) — never to behavior with no hand-runnable equivalent. (`report` and `gen-bake` are local utilities that only read or write the repo's own files and outputs; they map to no container tool, but MUST stay equally transparent and reproducible by hand — `find`/`jq`, or a text editor.) The CLI SHOULD print the underlying command(s) it runs; commands that change state or reach outward (`build`, `run`, `push`, `prune`) MUST support `--dry-run`, which prints those commands without executing them. The user MUST be able to reproduce the result by running those commands themselves — running the CLI is a way to discover the command it stands for, never to hide it.
+2. **Transparent.** Every command that drives containers or clusters MUST map to one or more underlying-tool commands (§Underlying tools), the CLI SHOULD print the command(s) it runs, and state-changing or outward-reaching commands (`build`, `run`, `push`, `prune`) MUST support `--dry-run` that prints those commands without executing them.
 
-3. **No magic.** The CLI MUST NOT introduce abstractions beyond what the underlying tools provide. No custom runtimes, no hidden state, no daemons, no orchestration that lives in the CLI. Where a build or deployment spans a *dependency* graph of artifacts, that graph MUST be expressed as data the tool executes — a `docker-bake.hcl` (top-level RULES.md principle 15) run by buildx, or a Kustomize overlay run by `kubectl`/`oc` — never as ordering logic re-derived inside the CLI. If the tools can't do it, Eval Containers doesn't promise it.
+3. **No magic.** The CLI MUST NOT introduce abstractions beyond what the underlying tools provide, and any artifact dependency graph MUST be expressed as data the tool executes rather than ordering logic re-derived inside the CLI.
 
 ### Implementation
 
-4. **Rust.** The CLI is written in Rust. It MUST be a single static binary with no runtime dependencies beyond the tools it shells out to: Docker for the default surfaces, and `kubectl`/`oc` only for the Kubernetes and OpenShift surfaces.
+4. **Rust.** The CLI MUST be a single static Rust binary with no runtime dependencies beyond the tools it shells out to.
 
-5. **Shell out.** The CLI MUST invoke the underlying tools (§Underlying tools) as subprocesses. It MUST NOT reimplement their functionality. It MUST NOT use their client libraries (e.g. the Docker or Kubernetes Go clients) when a shell command suffices.
+5. **Shell out.** The CLI MUST invoke the underlying tools (§Underlying tools) as subprocesses, MUST NOT reimplement their functionality, and MUST NOT use their client libraries when a shell command suffices.
 
-6. **Simplest implementation.** Each command SHOULD be the shortest path to calling the right underlying tool with the right arguments. Prefer string formatting over abstractions.
+6. **Simplest implementation.** Each command SHOULD be the shortest path to calling the right underlying tool with the right arguments.
 
 ### Behavior
 
-7. **Auto-build.** When running an evaluation, the CLI SHOULD build any missing images (eval, model, agent) before starting. It MUST NOT rebuild images that already exist locally.
+7. **Auto-build.** When running an evaluation, the CLI SHOULD build any missing images before starting and MUST NOT rebuild images that already exist locally.
 
-8. **Registry-aware.** The CLI MUST use `EVAL_REGISTRY` for all image paths. The same commands MUST work against any OCI-compliant registry, including `localhost:5000` and the OpenShift internal registry (`image-registry.openshift-image-registry.svc:5000`).
+8. **Registry-aware.** The CLI MUST use `EVAL_REGISTRY` for all image paths, and the same commands MUST work against any OCI-compliant registry.
 
-9. **Local-first.** The CLI SHOULD prefer locally cached images. It MUST support `--local` for development against local compose files.
+9. **Local-first.** The CLI SHOULD prefer locally cached images and MUST support `--local` for development against local compose files.
 
-10. **Env var ↔ CLI flag parity.** Every `EVAL_*` environment variable documented in the README or used by any `oci://` compose artifact MUST have a matching `--kebab-case` CLI flag derived by stripping `EVAL_` and lowercasing: `EVAL_BENCHMARK` → `--benchmark`, `EVAL_AGENT_VERSION` → `--agent-version`, `EVAL_TASK_ID` → `--task-id`, `EVAL_TIMEOUT` → `--timeout`, `EVAL_LITELLM_VERSION` → `--litellm-version`, and so on. No exceptions: if it's an env var the user can set, it MUST have a flag form. Positional shortcuts (e.g. `eval-containers run aime` accepting `aime` as the benchmark) are allowed but MUST NOT replace the corresponding `--flag`; both forms MUST work. When both a CLI flag and an env var are set, the CLI flag MUST override the env var. The CLI's sole job in `eval-containers run` is to translate every flag into its corresponding `EVAL_*` env var and shell out to the standard command for the selected `--mode` — the exact `docker compose … up`, `docker run …`, or `helm template … \| kubectl apply -f -` the README documents.
+10. **Env var ↔ CLI flag parity.** Every `EVAL_*` environment variable documented in the README or used by any `oci://` compose artifact MUST have a matching `--kebab-case` flag derived by stripping `EVAL_` and lowercasing, a positional shortcut MUST NOT replace its flag form, a set CLI flag MUST override the env var, and `eval-containers run` MUST translate every flag into its `EVAL_*` env var and shell out to the standard command for the selected `--mode`.
 
 ### Commands
 
-11. **Build.** `eval-containers build agent|bench|model|eval` — each MUST map to a single `docker buildx bake <target>` invocation, which executes the artifact's build graph declared in its `docker-bake.hcl` (top-level RULES.md principle 15). Per-task variants (`--task-id`), which sit outside the static bake graph, fall through to a single `docker build`. Building in a cluster is **not** a separate code path: it is the same `docker buildx bake` pointed at an in-cluster builder (`docker buildx create --driver kubernetes`). The CLI exposes this as `build --builder <name>` — a passthrough of buildx's own `--builder` that implies `--push` (a remote builder can't load into local Docker); a missing builder fails with the one-time `docker buildx create` command to run. The CLI MUST NOT re-derive the build graph for any platform — the bake file is the only build-graph artifact (principle 3).
+11. **Build.** `eval-containers build agent|bench|model|eval` MUST map each target to a single `docker buildx bake <target>` invocation, per-task variants (`--task-id`) MUST fall through to a single `docker build`, in-cluster builds MUST use the same `docker buildx bake` against an in-cluster builder exposed as `build --builder <name>` implying `--push`, and the CLI MUST NOT re-derive the build graph for any platform.
 
-12. **Run.** `eval-containers run {benchmark} --agent {name} --task-id {id}` — maps to the standard command for the chosen `--mode`: `docker compose up` (compose, the default), `docker run` (container), or `helm template <chart> -f <benchmark values> --set … \| kubectl apply -f -` (job). MUST accept both the container-tag axis (`--benchmark-tag`, `--agent-tag`, `--model-tag`) and the internal-version axis (`--benchmark-version`, `--agent-version`, `--litellm-version`), plus `--model`, `--timeout`, `--local`. Cluster- and platform-specific settings for `job` mode (e.g. the service account an OpenShift cluster requires) MUST be supplied as a composable Helm values file via `--overlay <file>` — not encoded per-platform inside the CLI (principle 3); the reference OpenShift overlay is `deploy/values-openshift.yaml`.
+12. **Run.** `eval-containers run {benchmark} --agent {name} --task-id {id}` MUST map to the standard command for the chosen `--mode` (`docker compose up`, `docker run`, or `helm template … \| kubectl apply -f -`), MUST accept both the container-tag and internal-version axes plus `--model`, `--timeout`, and `--local`, and MUST supply platform-specific `job`-mode settings as a composable Helm values file via `--overlay <file>` rather than per-platform CLI code.
 
-13. **Report.** `eval-containers report ./output/` — MUST walk the output directory, read `result.json` files, and aggregate. MUST support `--format csv|json`.
+13. **Report.** `eval-containers report ./output/` MUST walk the output directory, read `result.json` files, aggregate them, and support `--format csv|json`.
 
-14. **List.** `eval-containers list benchmarks|agents|models` — MUST read Docker image labels. No separate database or index.
+14. **List.** `eval-containers list benchmarks|agents|models` MUST read Docker image labels, with no separate database or index.
 
-15. **Push.** `eval-containers push agent|bench|model|eval` — MUST map to `docker push`.
+15. **Push.** `eval-containers push agent|bench|model|eval` MUST map to `docker push`.
 
 ## References
 
@@ -86,3 +86,4 @@ Each tool MUST be a standard release the user can install and invoke themselves 
 | 2026-05-31 | Principle 11 (Build): exposed in-cluster builds as `build --builder <name>` — a passthrough of buildx's `--builder` that implies `--push`; a missing builder fails with the `docker buildx create --driver kubernetes` command to run. |
 | 2026-05-31 | Principle 2 refined: scoped "maps to a tool command" to container/cluster-driving commands and carved out `report`/`gen-bake` as local file utilities; scoped the `--dry-run` requirement to state-changing/outward commands (`build`, `run`, `push`, `prune`). |
 | 2026-06-01 | `run --mode job` moved from synthesizing a Kustomize overlay to `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml --set … \| kubectl apply -f -`. `--overlay` now takes a Helm values file (e.g. `deploy/values-openshift.yaml`), not a Kustomize component directory. |
+| 2026-06-03 | Tightened to meta principles 11-14 (concise, example-free, <=80-word abstract); no requirements renumbered or removed. |
