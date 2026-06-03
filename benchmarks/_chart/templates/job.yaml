@@ -1,13 +1,14 @@
+{{- $v := include "eval.values" . | fromYaml -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ .Values.benchmark }}-{{ .Values.agent }}-task-{{ .Values.task }}
+  name: {{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}
   labels:
     {{- include "eval.labels" . | nindent 4 }}
 spec:
   backoffLimit: 0
   ttlSecondsAfterFinished: 3600
-  activeDeadlineSeconds: {{ .Values.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ $v.activeDeadlineSeconds }}
   template:
     metadata:
       labels:
@@ -15,16 +16,16 @@ spec:
     spec:
       restartPolicy: Never
       shareProcessNamespace: true
-      {{- with .Values.serviceAccountName }}
+      {{- with $v.serviceAccountName }}
       serviceAccountName: {{ . }}
       {{- end }}
-      {{- with .Values.initContainers }}
+      {{- with $v.initContainers }}
       initContainers:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       containers:
         - name: otelcol
-          image: {{ .Values.registry }}/core/otel:latest
+          image: {{ $v.registry }}/core/otel:latest
           imagePullPolicy: IfNotPresent
           ports:
             - { name: otlp-grpc, containerPort: 4317 }
@@ -34,7 +35,7 @@ spec:
             - { name: output, mountPath: /output }
 
         - name: gateway
-          image: {{ .Values.registry }}/models/{{ .Values.gatewayImage }}:{{ .Values.gatewayTag }}
+          image: {{ $v.registry }}/models/{{ $v.gatewayImage }}:{{ $v.gatewayTag }}
           imagePullPolicy: IfNotPresent
           ports:
             - { name: gateway, containerPort: 4000 }
@@ -45,44 +46,44 @@ spec:
             - name: OPENAI_API_BASE
               valueFrom:
                 secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
-            - { name: EVAL_MODEL,                  value: {{ .Values.evalModel | quote }} }
+            - { name: EVAL_MODEL,                  value: {{ $v.evalModel | quote }} }
             - { name: HOST,                        value: "127.0.0.1" }
             # shareProcessNamespace + sidecar pod model puts otelcol on localhost.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://localhost:4318" }
-            {{- with .Values.maxBudget }}
+            {{- with $v.maxBudget }}
             - { name: EVAL_MODEL_MAX_BUDGET, value: {{ . | quote }} }
             {{- end }}
-            {{- with .Values.litellmVersion }}
+            {{- with $v.litellmVersion }}
             - { name: EVAL_LITELLM_VERSION, value: {{ . | quote }} }
             {{- end }}
-            {{- with .Values.gatewayExtraEnv }}
+            {{- with $v.gatewayExtraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
 
         - name: runner
-          image: {{ .Values.registry }}/evals/{{ .Values.benchmark }}--{{ .Values.agent }}:{{ .Values.runnerTag }}
+          image: {{ $v.registry }}/evals/{{ $v.benchmark }}--{{ $v.agent }}:{{ $v.runnerTag }}
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-c"]
           # $? / $rc are the container's shell — Helm leaves them untouched
           # (they're not {{`{{ }}`}} actions). A few benchmarks override the
           # command (e.g. tau-bench runs python3 /app/agent.py).
-          args: [{{ .Values.runnerArgs | quote }}]
+          args: [{{ $v.runnerArgs | quote }}]
           env:
             # Framework axes in BOTH namespaces, mirroring compose/services.yaml:
             # EVAL_* is canonical (read by /eval-entrypoint.sh + per-benchmark
             # /entrypoint.sh — incl. the task materialization that sets $TASK);
             # the bare names are the process-compose legacy path. Set both so the
             # run works regardless of which entrypoint the eval image uses.
-            - { name: EVAL_BENCHMARK,              value: {{ .Values.benchmark | quote }} }
-            - { name: EVAL_AGENT,                  value: {{ .Values.agent | quote }} }
-            - { name: EVAL_MODEL,                  value: {{ .Values.model | quote }} }
-            - { name: EVAL_TASK_ID,                value: {{ .Values.task | quote }} }
-            - { name: EVAL_TIMEOUT,                value: {{ .Values.timeout | quote }} }
-            - { name: BENCHMARK,                   value: {{ .Values.benchmark | quote }} }
-            - { name: AGENT,                       value: {{ .Values.agent | quote }} }
-            - { name: MODEL,                       value: {{ .Values.model | quote }} }
-            - { name: TASK_ID,                     value: {{ .Values.task | quote }} }
-            - { name: TIMEOUT,                     value: {{ .Values.timeout | quote }} }
+            - { name: EVAL_BENCHMARK,              value: {{ $v.benchmark | quote }} }
+            - { name: EVAL_AGENT,                  value: {{ $v.agent | quote }} }
+            - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
+            - { name: EVAL_TASK_ID,                value: {{ $v.task | quote }} }
+            - { name: EVAL_TIMEOUT,                value: {{ $v.timeout | quote }} }
+            - { name: BENCHMARK,                   value: {{ $v.benchmark | quote }} }
+            - { name: AGENT,                       value: {{ $v.agent | quote }} }
+            - { name: MODEL,                       value: {{ $v.model | quote }} }
+            - { name: TASK_ID,                     value: {{ $v.task | quote }} }
+            - { name: TIMEOUT,                     value: {{ $v.timeout | quote }} }
             - { name: ANTHROPIC_BASE_URL,          value: "http://localhost:4000/anthropic" }
             - { name: OPENAI_BASE_URL,             value: "http://localhost:4000/openai/v1" }
             - { name: GOOGLE_GEMINI_BASE_URL,      value: "http://localhost:4000/genai" }
@@ -90,22 +91,22 @@ spec:
             - { name: OPENAI_API_KEY,              value: "sk-proxy" }
             - { name: GEMINI_API_KEY,              value: "sk-proxy" }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://localhost:4318" }
-            {{- with .Values.benchmarkVersion }}
+            {{- with $v.benchmarkVersion }}
             - { name: EVAL_BENCHMARK_VERSION, value: {{ . | quote }} }
             {{- end }}
-            {{- with .Values.agentVersion }}
+            {{- with $v.agentVersion }}
             - { name: EVAL_AGENT_VERSION, value: {{ . | quote }} }
             {{- end }}
-            {{- with .Values.runnerExtraEnv }}
+            {{- with $v.runnerExtraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           resources:
-            {{- toYaml .Values.resources | nindent 12 }}
+            {{- toYaml $v.resources | nindent 12 }}
           volumeMounts:
             - { name: output, mountPath: /output }
             - { name: tmp,    mountPath: /tmp }
             - { name: logs,   mountPath: /logs }
-            {{- with .Values.runnerExtraVolumeMounts }}
+            {{- with $v.runnerExtraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
 
@@ -113,10 +114,10 @@ spec:
         - { name: output, emptyDir: {} }
         - { name: tmp,    emptyDir: { medium: Memory, sizeLimit: 1Gi } }
         - { name: logs,   emptyDir: { medium: Memory, sizeLimit: 100Mi } }
-        {{- with .Values.extraVolumes }}
+        {{- with $v.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-{{- range .Values.extraManifests }}
+{{- range $v.extraManifests }}
 ---
 {{ toYaml . }}
 {{- end }}
