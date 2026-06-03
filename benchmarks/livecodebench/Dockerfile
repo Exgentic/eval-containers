@@ -3,7 +3,9 @@
 # Data: HuggingFace livecodebench/code_generation_lite release_v5
 # Agent writes solution code. Test runs it against hidden test cases.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="livecodebench"

@@ -3,7 +3,10 @@
 # ~2000 tasks (simple/multiple/parallel categories). Data: HuggingFace gorilla-llm
 # Agent outputs function call(s). Test compares to ground truth.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="bfcl"
@@ -59,7 +62,7 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=bfcl
 
 # Test: exact match on agent stdout (simplified — full BFCL uses AST comparison)
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

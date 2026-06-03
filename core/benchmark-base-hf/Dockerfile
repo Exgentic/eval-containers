@@ -10,6 +10,9 @@
 #   - /tasks /tests /app scaffolding
 # Pin amd64 so runtime arch matches what agents' COPYd binaries expect
 # (see core/agent-base-node Dockerfile for the full rationale).
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM --platform=linux/amd64 python:3.12-slim
 
 LABEL eval.type="core-base"
@@ -53,9 +56,9 @@ RUN set -e; ok=0; \
 # sitecustomize.py is picked up automatically by the `site` module at every
 # `python3` startup if it lives on sys.path. site-packages is the canonical
 # location. Tests this by running `python3 -c 'import sys; print(sys.modules["sitecustomize"])'`.
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-materialize-task /eval-materialize-task
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
+COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
+COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
+COPY --from=entrypoint /eval-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app
