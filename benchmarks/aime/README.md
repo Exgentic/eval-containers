@@ -33,7 +33,7 @@ Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared a
 - `Dockerfile` — builds the benchmark base image (tasks data + verifier).
 - `container.Dockerfile` — single-mode deployment artifact (1-line registry pin).
 - `compose.yaml` — compose-mode deployment artifact (`include:` shared base + aime overrides).
-- `values.yaml` — k8s-mode deployment artifact (Helm values over the shared `benchmarks/_chart`).
+- k8s — the shared chart `benchmarks/_chart`, selected with `--set benchmark=aime` (no per-benchmark file; aime has no bespoke topology).
 - `README.md` — this file.
 
 ## Running — three deployment surfaces
@@ -42,7 +42,7 @@ Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared a
 |------|------|------------|
 | **single** | `container.Dockerfile` | `docker run -e OPENAI_API_KEY=… -e OPENAI_API_BASE=… <image>` |
 | **compose** | `compose.yaml` | `docker compose -f benchmarks/aime/compose.yaml up` |
-| **k8s** | `values.yaml` | `helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml \| kubectl apply -f -` (needs `eval-secrets`) |
+| **k8s** | shared chart | `helm template aime benchmarks/_chart --set benchmark=aime \| kubectl apply -f -` (needs `eval-secrets`) |
 
 ```bash
 # Single mode — just docker run
@@ -60,7 +60,7 @@ OPENAI_API_KEY=… OPENAI_API_BASE=… \
 kubectl create secret generic eval-secrets \
   --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
   --from-literal=OPENAI_API_BASE="$OPENAI_API_BASE"
-helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml | kubectl apply -f -
+helm template aime benchmarks/_chart --set benchmark=aime | kubectl apply -f -
 ```
 
 ## Different task
@@ -74,7 +74,7 @@ TASK_ID=42 docker compose -f benchmarks/aime/compose.yaml up
 For k8s, the task is a Helm value:
 
 ```bash
-helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml --set task=42 | kubectl apply -f -
+helm template aime benchmarks/_chart --set benchmark=aime --set task=42 | kubectl apply -f -
 ```
 
 ## Build args

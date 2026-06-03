@@ -1,4 +1,3 @@
-benchmark: webarena
 activeDeadlineSeconds: 2100
 timeout: '1800'
 resources:

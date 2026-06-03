@@ -9,10 +9,12 @@ replacement — follow the skill and the rules it links.
    (what a finished benchmark must be).
 2. **Follow the skill** — [`doctrine/benchmarks/add-benchmark/SKILL.md`](../../doctrine/benchmarks/add-benchmark/SKILL.md)
    (the step-by-step procedure, with a template).
-3. **Ship the three deploy artifacts** — every benchmark needs all of
-   `container.Dockerfile`, `compose.yaml`, and `values.yaml`
-   (the triple-mode invariant; see [Triple-mode](../concepts/triple-mode.md)).
-   `tests/sanity/check.rs` enforces it.
+3. **Ship the deploy artifacts** — every benchmark needs `container.Dockerfile`
+   and `compose.yaml` (the single-container and compose surfaces;
+   `tests/sanity/check.rs` enforces it). The k8s surface is the shared chart
+   selected with `--set benchmark=<x>` — add a `benchmarks/_chart/presets/<x>.yaml`
+   only if the benchmark needs bespoke topology. See
+   [Triple-mode](../concepts/triple-mode.md).
 4. **Open the PR** using the
    [benchmark PR template](../../.github/PULL_REQUEST_TEMPLATE/benchmark.md),
    which lists every required label, env var, and evidence step.
