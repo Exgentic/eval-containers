@@ -24,7 +24,7 @@ spec:
       {{- end }}
       containers:
         - name: otelcol
-          image: {{ .Values.registry }}/core/otel:latest
+          image: {{ .Values.registry }}/core{{ .Values.registrySuffix }}otel:latest
           imagePullPolicy: IfNotPresent
           ports:
             - { name: otlp-grpc, containerPort: 4317 }
@@ -34,7 +34,7 @@ spec:
             - { name: output, mountPath: /output }
 
         - name: gateway
-          image: {{ .Values.registry }}/models/{{ .Values.gatewayImage }}:{{ .Values.gatewayTag }}
+          image: {{ .Values.registry }}/models{{ .Values.registrySuffix }}{{ .Values.gatewayImage }}:{{ .Values.gatewayTag }}
           imagePullPolicy: IfNotPresent
           ports:
             - { name: gateway, containerPort: 4000 }
@@ -60,7 +60,7 @@ spec:
             {{- end }}
 
         - name: runner
-          image: {{ .Values.registry }}/evals/{{ .Values.benchmark }}--{{ .Values.agent }}:{{ .Values.runnerTag }}
+          image: {{ .Values.registry }}/evals{{ .Values.registrySuffix }}{{ .Values.benchmark }}--{{ .Values.agent }}:{{ .Values.runnerTag }}
           imagePullPolicy: IfNotPresent
           command: ["/bin/bash", "-c"]
           # $? / $rc are the container's shell — Helm leaves them untouched
