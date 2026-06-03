@@ -21,7 +21,7 @@ kubectl create secret generic eval-secrets \
 Plain Helm — no CLI required:
 
 ```bash
-helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml \
+helm template aime benchmarks/_chart --set benchmark=aime \
   --set agent=claude-code,task=0 | kubectl apply -f -
 ```
 
@@ -52,7 +52,7 @@ service account — go in a Helm **values file you own**, layered on as an extra
 eval-containers run aime --agent codex --mode job \
   --overlay my-cluster-values.yaml \
   --registry my-registry.example.com/evals
-# → helm template … -f benchmarks/aime/values.yaml -f my-cluster-values.yaml … | kubectl apply -f -
+# → helm template … --set benchmark=aime -f my-cluster-values.yaml … | kubectl apply -f -
 ```
 
 The eval axes and your platform settings merge; you never fork the chart. The

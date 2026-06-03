@@ -22,7 +22,7 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 - [Overview](concepts/overview.md) — the model: images as the product, three axes
 - [Triple-mode](concepts/triple-mode.md) — the same eval as container / compose / k8s job
 - [Isolation & gateways](concepts/isolation-and-gateways.md) — how trajectories stay honest
-- [The Helm chart](concepts/the-helm-chart.md) — one chart, one `values.yaml` per benchmark
+- [The Helm chart](concepts/the-helm-chart.md) — one chart, `--set benchmark=<x>` to select; optional per-benchmark preset
 
 ## Guides — *how to do a task*
 

@@ -3,15 +3,16 @@
 *Reference · for operators · derives from [`benchmarks/_chart/values.yaml`](../../benchmarks/_chart/values.yaml). That file is authoritative — these are its fields with defaults at the time of writing.*
 
 The shared chart `benchmarks/_chart` renders the otelcol + gateway + runner Job.
-A benchmark's `values.yaml` sets `benchmark` (required) and overrides only what
-differs; per-run axes arrive via `--set` (or the CLI). See
+The benchmark is named via `--set benchmark=<x>` (required); a benchmark with
+bespoke topology overrides what differs through an optional `presets/<x>.yaml`
+in the chart. Per-run axes arrive via `--set` (or the CLI). See
 [The Helm chart](../concepts/the-helm-chart.md).
 
 ## Required
 
 | Field | Meaning |
 |---|---|
-| `benchmark` | Benchmark name. The only field most `values.yaml` files set. |
+| `benchmark` | Benchmark name, set via `--set benchmark=<x>`. Selects the optional `presets/<x>.yaml` overlay. |
 
 ## Per-run axes — *set at deploy via `--set` / the CLI*
 

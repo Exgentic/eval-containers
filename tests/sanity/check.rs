@@ -83,19 +83,18 @@ const REQUIRED_COMPOSE_MARKERS: &[&str] = &[
     "BENCHMARK:",
 ];
 
-// Rule 24 (triple-mode contract): every benchmark ships container.Dockerfile,
-// compose.yaml, and values.yaml — one per deployment surface. The k8s surface
-// renders from the shared Helm chart (benchmarks/_chart) + the benchmark's
-// values.yaml; there is no per-benchmark job.yaml to drift (rule 29 retired —
-// one chart can't drift from itself).
-const REQUIRED_TRIPLE_MODE_FILES: &[&str] =
-    &["container.Dockerfile", "compose.yaml", "values.yaml"];
+// Rule 24 (triple-mode contract): every benchmark ships container.Dockerfile
+// and compose.yaml — the single-container and compose surfaces. The k8s surface
+// is the shared Helm chart (benchmarks/_chart), selected with `--set
+// benchmark=<name>`; a benchmark with bespoke topology adds an optional
+// `benchmarks/_chart/presets/<name>.yaml` (no per-benchmark file required, so it
+// is not part of the triple-mode contract).
+const REQUIRED_TRIPLE_MODE_FILES: &[&str] = &["container.Dockerfile", "compose.yaml"];
 
 fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
     let mut issues = Vec::new();
     let dockerfile = dir.join("Dockerfile");
     let compose = dir.join("compose.yaml");
-    let values = dir.join("values.yaml");
 
     if !dockerfile.is_file() {
         issues.push(format!("{name}: no Dockerfile"));
@@ -122,15 +121,6 @@ fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
         }
     }
 
-    if values.is_file() {
-        // The k8s values must pin this benchmark — the chart renders
-        // evals/<name>--<agent> and labels the Job from it.
-        if !contains_line(&values, &format!("benchmark: {name}")) {
-            issues.push(format!(
-                "{name}: values.yaml must set `benchmark: {name}` (Helm chart pin)"
-            ));
-        }
-    }
     issues
 }
 
