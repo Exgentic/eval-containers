@@ -54,7 +54,9 @@ for img in core/otel:latest models/gpt-5.4--bifrost:latest evals/aime--claude-co
 done
 ```
 
-(Build images you don't have with `eval-containers build eval aime --agent claude-code`.)
+(No image? Build it with `podman build -f core/combination.Dockerfile` — the
+buildx-based `eval-containers build eval` currently fails locally on a BuildKit
+`COPY --from=${ARG}` limitation.)
 
 ## 3. Secret and run
 
