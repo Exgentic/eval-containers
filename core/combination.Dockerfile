@@ -47,22 +47,28 @@ ARG MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--bifrost:latest
 ARG OTEL_IMAGE=quay.io/eval-containers/core/otel:latest
 ARG RUNTIME_BUNDLE_IMAGE=quay.io/eval-containers/core/runtime-bundle:latest
 
+# Named stages for the build-arg base images: buildx forbids variable
+# expansion in `COPY --from=` ("variable expansion is not supported for
+# --from"), so pin each base to a stage here — `FROM` *does* allow the
+# `${ARG}` (declared in the global scope above) — and the layers below copy
+# from the stage name. buildah accepts either form; this builds on both.
+FROM ${AGENT_IMAGE}          AS agent
+FROM ${MODEL_IMAGE}          AS model
+FROM ${OTEL_IMAGE}           AS otel
+FROM ${RUNTIME_BUNDLE_IMAGE} AS runtime-bundle
+
 FROM ${BENCHMARK_IMAGE}
 
-ARG AGENT_IMAGE
 ARG AGENT_VERSION
-ARG MODEL_IMAGE
-ARG OTEL_IMAGE
-ARG RUNTIME_BUNDLE_IMAGE
 
 # ─── Agent layer ─────────────────────────────────────────────────────
-COPY --from=${AGENT_IMAGE} /opt/agent/install.sh /tmp/agent-install.sh
-COPY --from=${AGENT_IMAGE} /opt/agent/ /opt/agent/
+COPY --from=agent /opt/agent/install.sh /tmp/agent-install.sh
+COPY --from=agent /opt/agent/ /opt/agent/
 ENV AGENT_VERSION_DEFAULT=${AGENT_VERSION}
 RUN bash /tmp/agent-install.sh && rm /tmp/agent-install.sh
 
 # ─── Gateway layer (uniform /opt/gateway/ contract) ──────────────────
-COPY --from=${MODEL_IMAGE} /opt/gateway /opt/gateway
+COPY --from=model /opt/gateway /opt/gateway
 # The gateway's start script uses envsubst to render its config template
 # at runtime. envsubst is part of `gettext-base` on Debian and `gettext`
 # on Alpine — the gateway flavor's own image always has it, but the
@@ -73,12 +79,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends gettext-base cu
  && rm -rf /var/lib/apt/lists/*
 
 # ─── OTel collector layer ────────────────────────────────────────────
-COPY --from=${OTEL_IMAGE} /otelcol-contrib              /usr/local/bin/otelcol
-COPY --from=${OTEL_IMAGE} /etc/otelcol/config.yaml      /etc/otelcol/config.yaml
+COPY --from=otel /otelcol-contrib              /usr/local/bin/otelcol
+COPY --from=otel /etc/otelcol/config.yaml      /etc/otelcol/config.yaml
 
 # ─── Runtime bundle (gosu + process-compose) ─────────────────────────
-COPY --from=${RUNTIME_BUNDLE_IMAGE} /bundle/bin/gosu             /usr/local/bin/gosu
-COPY --from=${RUNTIME_BUNDLE_IMAGE} /bundle/bin/process-compose  /usr/local/bin/process-compose
+COPY --from=runtime-bundle /bundle/bin/gosu             /usr/local/bin/gosu
+COPY --from=runtime-bundle /bundle/bin/process-compose  /usr/local/bin/process-compose
 
 # ─── Framework scripts and orchestration ─────────────────────────────
 COPY core/process-compose/process-compose.yaml         /etc/process-compose.yaml
