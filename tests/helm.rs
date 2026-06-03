@@ -1,6 +1,7 @@
-//! Rule 29(d): every benchmark's `values.yaml` MUST render through the shared
-//! Helm chart (`benchmarks/_chart`) and the output MUST validate against the
-//! k8s schema. `helm` is the deploy tool, so it's a required CI dependency;
+//! Rule 29(d): every benchmark MUST render through the shared Helm chart
+//! (`benchmarks/_chart`, selected with `--set benchmark=<x>`) and the output
+//! MUST validate against the k8s schema. `helm` is the deploy tool, so it's a
+//! required CI dependency;
 //! `kubeconform` is used as the schema validator when present (the render
 //! itself is the floor when it isn't).
 //!
