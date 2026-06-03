@@ -7,10 +7,10 @@ Read `RULES.md` first. Every benchmark ships exactly four authored files plus th
 | `Dockerfile` | Build the benchmark base image (tasks + verifier) | Per-benchmark |
 | `container.Dockerfile` | Single-mode deployment artifact | 1 line — `FROM <registry>/evals/<name>--<agent>:<tag>` |
 | `compose.yaml` | Compose-mode deployment artifact | ~7 lines — `include:` shared base + benchmark overrides |
-| `job.yaml` | k8s-mode deployment artifact | ~85 lines for simple — self-contained Job manifest. Complex benchmarks append Deployments/Services in the same file |
+| `values.yaml` | k8s-mode deployment artifact | 1 line for simple (`benchmark: <name>`) — a Helm values file over the shared chart `benchmarks/_chart`. Complex benchmarks add sidecars/Deployments/Services via the chart's composition hooks |
 | `README.md` | Docs | At-a-glance table + agent contract + grading + run examples |
 
-The triple-mode trio (`container.Dockerfile`, `compose.yaml`, `job.yaml`) is uniform across simple benchmarks — copy `benchmarks/aime/` and substitute the name. Complex benchmarks (with bespoke services) only diverge in `job.yaml` (where they append Deployments/Services) and `compose.yaml` (where they add services after the `include:`). See `benchmarks/aime/` for the canonical reference and `benchmarks/_base/job.yaml` for the bare canonical Pod template.
+The triple-mode trio (`container.Dockerfile`, `compose.yaml`, `values.yaml`) is uniform across simple benchmarks — copy `benchmarks/aime/` and substitute the name. Complex benchmarks (with bespoke services) only diverge in `values.yaml` (where they add Deployments/Services via the chart's `extraManifests` and other hooks) and `compose.yaml` (where they add services after the `include:`). See `benchmarks/aime/` for the canonical reference and `benchmarks/_chart/` for the shared k8s chart.
 
 ## Shared-env Benchmark (one image, many tasks)
 
@@ -94,11 +94,20 @@ services:
       BENCHMARK: {name}
 ```
 
-### job.yaml
+### values.yaml
 
-Copy `benchmarks/_base/job.yaml` (the canonical reference) and substitute `aime` → `{name}` (or use `benchmarks/aime/job.yaml` as a starting point — same structure, all benchmark-specific fields already at the right indentation).
+For a simple shared-env benchmark this is a single line — the shared chart
+(`benchmarks/_chart`) renders the otelcol+gateway+runner Job from it:
 
-For a simple shared-env benchmark the resulting `job.yaml` is ~85 lines, one `Job` resource. For complex benchmarks (bespoke services like a VM, browser, or database sidecar), append additional `Deployment` and `Service` resources after a `---` separator in the same file. See `benchmarks/osworld/job.yaml` (1 bespoke `Deployment`) or `benchmarks/webarena/job.yaml` (proxy + 6 site `Deployment`s) for examples.
+```yaml
+benchmark: {name}
+```
+
+For complex benchmarks (bespoke services like a VM, browser, or database
+sidecar), set the chart's composition hooks in `values.yaml` — `initContainers`,
+`runnerExtraEnv`, `runnerArgs`, and `extraManifests` (full `Deployment`/`Service`
+docs). See `benchmarks/osworld/values.yaml` (a desktop `Deployment`/`Service`) or
+`benchmarks/webarena/values.yaml` (proxy + 6 site `Deployment`s) for examples.
 
 ## Blanks to fill
 
@@ -133,19 +142,12 @@ services:
 ```
 
 ```yaml
-# job.yaml — override the gateway and runner image refs + env values inline.
-# Search for `gpt-5.4--bifrost` (gateway) and `evals/{name}--claude-code`
-# (runner) in the canonical job.yaml and substitute as needed.
-        - name: gateway
-          image: quay.io/eval-containers/models/<other-combo>:latest
-          env:
-            - { name: EVAL_MODEL, value: <other-provider/other-model> }
-        - name: runner
-          image: quay.io/eval-containers/evals/{name}--<other-agent>:latest
-          env:
-            - { name: MODEL, value: <friendly-label> }
-      - MODEL=<friendly-label>
-      - EVAL_MODEL=<other-provider/other-model>
+# values.yaml — set the non-default axes as chart values (no manifest editing):
+benchmark: {name}
+agent: <other-agent>          # → runner image evals/{name}--<other-agent>
+gatewayImage: <other-combo>   # → gateway image models/<other-combo>
+evalModel: <other-provider/other-model>
+model: <friendly-label>
 ```
 
 ## Gotchas

@@ -1,0 +1,160 @@
+benchmark: tau-bench
+activeDeadlineSeconds: 2100
+timeout: '1800'
+runnerArgs: python3 /app/agent.py; rc=$?; /usr/local/bin/reap-sidecars; exit $rc
+runnerExtraEnv:
+- name: BRIDGE_URL
+  value: http://bridge:8000
+initContainers:
+- name: wait-for-bridge
+  image: busybox:1.36
+  command:
+  - sh
+  - -c
+  - until nc -z bridge 8000; do echo waiting for bridge; sleep 2; done
+extraManifests:
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: bridge
+    labels:
+      benchmark: tau-bench
+      app: bridge
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: bridge
+    template:
+      metadata:
+        labels:
+          benchmark: tau-bench
+          app: bridge
+      spec:
+        containers:
+        - name: bridge
+          image: quay.io/eval-containers/benchmarks/tau-bench-bridge:latest
+          ports:
+          - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 2
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: bridge
+    labels:
+      benchmark: tau-bench
+  spec:
+    selector:
+      app: bridge
+    ports:
+    - port: 8000
+      targetPort: 8000
+- apiVersion: apps/v1
+  kind: Deployment
+  metadata:
+    name: user-gateway
+    labels:
+      benchmark: tau-bench
+      app: user-gateway
+  spec:
+    replicas: 1
+    selector:
+      matchLabels:
+        app: user-gateway
+    template:
+      metadata:
+        labels:
+          benchmark: tau-bench
+          app: user-gateway
+      spec:
+        containers:
+        - name: user-gateway
+          image: quay.io/eval-containers/models/gpt-5.4--bifrost:latest
+          ports:
+          - containerPort: 4000
+          env:
+          - name: OPENAI_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: eval-secrets
+                key: OPENAI_API_KEY
+          - name: OPENAI_API_BASE
+            valueFrom:
+              secretKeyRef:
+                name: eval-secrets
+                key: OPENAI_API_BASE
+          - name: EVAL_MODEL
+            value: openai/azure/gpt-5.4
+          - name: HOST
+            value: 0.0.0.0
+          readinessProbe:
+            exec:
+              command:
+              - /opt/gateway/health
+            periodSeconds: 2
+- apiVersion: v1
+  kind: Service
+  metadata:
+    name: user-gateway
+    labels:
+      benchmark: tau-bench
+  spec:
+    selector:
+      app: user-gateway
+    ports:
+    - port: 4000
+      targetPort: 4000
+- apiVersion: batch/v1
+  kind: Job
+  metadata:
+    name: tau-bench-harness
+    labels:
+      benchmark: tau-bench
+      app: harness
+  spec:
+    backoffLimit: 0
+    ttlSecondsAfterFinished: 3600
+    template:
+      metadata:
+        labels:
+          benchmark: tau-bench
+          app: harness
+      spec:
+        restartPolicy: Never
+        initContainers:
+        - name: wait-for-deps
+          image: busybox:1.36
+          command:
+          - sh
+          - -c
+          - until nc -z bridge 8000 && nc -z user-gateway 4000; do sleep 2; done
+        containers:
+        - name: harness
+          image: quay.io/eval-containers/evals/tau-bench--claude-code:latest
+          command:
+          - bash
+          - -c
+          args:
+          - /eval-materialize-task && python3 /app/run_tau_bench.py
+          env:
+          - name: EVAL_TASK_ID
+            value: '0'
+          - name: BRIDGE_URL
+            value: http://bridge:8000/v1
+          - name: MODEL_URL
+            value: http://user-gateway:4000/v1
+          - name: OPENAI_API_KEY
+            value: sk-proxy
+          - name: MODEL_NAME
+            value: gpt-4o
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: '2'
+              memory: 4Gi
