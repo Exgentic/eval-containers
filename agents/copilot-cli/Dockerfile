@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 # GitHub Copilot CLI agent image
-FROM quay.io/eval-containers/core/agent-base-node:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="copilot-cli"
 LABEL eval.agent.description="GitHub Copilot CLI"

@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 # RA.Aid agent image
-FROM quay.io/eval-containers/core/agent-base-python:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="ra-aid"
 LABEL eval.agent.description="RA.Aid — autonomous research-first coding agent"
