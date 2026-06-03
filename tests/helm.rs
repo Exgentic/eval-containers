@@ -35,7 +35,7 @@ fn benchmark_dirs() -> Vec<(String, PathBuf)> {
 }
 
 #[test]
-fn every_values_renders_and_validates() {
+fn every_benchmark_renders_and_validates() {
     if Command::new("helm").arg("version").output().is_err() {
         panic!("helm not found — required by doctrine/benchmarks/RULES.md rule 29(d)");
     }
@@ -43,14 +43,17 @@ fn every_values_renders_and_validates() {
 
     let dirs = benchmark_dirs();
     let mut issues: Vec<String> = Vec::new();
-    for (name, dir) in &dirs {
-        let values = dir.join("values.yaml");
-        if !values.is_file() {
-            continue; // structural_validation (check.rs) already flags this
-        }
+    for (name, _dir) in &dirs {
+        // The benchmark is named via --set; its bespoke topology (if any) lives
+        // in the chart at presets/<name>.yaml — no per-benchmark file is passed.
         let out = match Command::new("helm")
-            .args(["template", name, "benchmarks/_chart", "-f"])
-            .arg(&values)
+            .args([
+                "template",
+                name,
+                "benchmarks/_chart",
+                "--set",
+                &format!("benchmark={name}"),
+            ])
             .output()
         {
             Ok(o) => o,

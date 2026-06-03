@@ -77,14 +77,14 @@ eval-containers run aime --task-id 0 --agent codex --mode job
 |---|---|---|
 | `compose` *(default)* | `docker compose -f benchmarks/<x>/compose.yaml up` | Local laptop, full stack with gateway + OTel sidecars, fastest iteration. |
 | `container` | `docker run -e EVAL_MODEL=... <eval-image>` | CI smoke tests, one-shot runs against an existing model proxy, minimal footprint. |
-| `job` | `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml \| kubectl apply -f -` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
+| `job` | `helm template benchmarks/_chart --set benchmark=<x> \| kubectl apply -f -` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
 
 ### Kubernetes (`--mode job`)
 
-Every benchmark is a small [Helm](https://helm.sh/) `values.yaml` over one shared chart (`benchmarks/_chart`) — render it and apply, no CLI needed:
+Every benchmark renders from one shared [Helm](https://helm.sh/) chart (`benchmarks/_chart`) — select it with `--set benchmark=<x>` and apply, no CLI needed. A benchmark with bespoke topology (extra Deployments/sidecars) adds a `presets/<x>.yaml` inside the chart; standard ones need nothing:
 
 ```bash
-helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml \
+helm template aime benchmarks/_chart --set benchmark=aime \
   --set agent=claude-code,task=0 | kubectl apply -f -
 ```
 
@@ -92,7 +92,7 @@ The CLI does exactly that, mapping every axis to a `--set`:
 
 ```bash
 eval-containers run aime --agent codex --task-id 42 --mode job
-# → helm template aime-codex-task-42 benchmarks/_chart -f benchmarks/aime/values.yaml \
+# → helm template aime-codex-task-42 benchmarks/_chart --set benchmark=aime \
 #       --set registry=…,agent=codex,task=42 | kubectl apply -f -
 ```
 
@@ -102,7 +102,7 @@ Platform specifics (corp registry, NodeAffinity, NetworkPolicies, a different se
 eval-containers run aime --agent codex --mode job \
   --overlay deploy/values-openshift.yaml \
   --registry image-registry.openshift-image-registry.svc:5000/<namespace>
-# → helm template … -f benchmarks/aime/values.yaml -f deploy/values-openshift.yaml … | kubectl apply -f -
+# → helm template … --set benchmark=aime -f deploy/values-openshift.yaml … | kubectl apply -f -
 ```
 
 On OpenShift, create the service account once and use `oc` in place of `kubectl`:
