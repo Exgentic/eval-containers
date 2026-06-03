@@ -113,3 +113,41 @@ fn every_benchmark_renders_and_validates() {
         }
     );
 }
+
+/// Issues #18 and #21: the k8s Job had no `depends_on`, so the runner raced the
+/// ~24s gateway bootstrap (#18) and the gateway emitted OTLP before otelcol was
+/// up (#21). otelcol and gateway are now native sidecars (`restartPolicy:
+/// Always`); k8s holds the runner until each `startupProbe` passes, mirroring
+/// compose's dependency graph — runner waits for a healthy gateway, which the
+/// gateway's own `/opt/gateway/health` probe enforces, and otelcol is ordered
+/// before the gateway so the collector is up first. Asserted for the default
+/// path (aime) and a benchmark with extra initContainers (tau-bench).
+#[test]
+fn runner_gates_on_gateway_readiness() {
+    if Command::new("helm").arg("version").output().is_err() {
+        panic!("helm not found — required by doctrine/benchmarks/RULES.md rule 29(d)");
+    }
+    for name in ["aime", "tau-bench"] {
+        let out = Command::new("helm")
+            .args([
+                "template",
+                name,
+                "benchmarks/_chart",
+                "--set",
+                &format!("benchmark={name}"),
+            ])
+            .output()
+            .expect("helm template");
+        let render = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            render.contains("/opt/gateway/health"),
+            "{name}: gateway sidecar is missing the startupProbe health gate (#18)"
+        );
+        let otelcol = render.find("name: otelcol");
+        let gateway = render.find("name: gateway");
+        assert!(
+            matches!((otelcol, gateway), (Some(o), Some(g)) if o < g),
+            "{name}: otelcol must be a sidecar ordered before the gateway (#21)"
+        );
+    }
+}
