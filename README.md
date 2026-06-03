@@ -233,6 +233,12 @@ All work is governed by RULES documents. See [CONTRIBUTING.md](CONTRIBUTING.md) 
 | [doctrine/src/RULES.md](doctrine/src/RULES.md) | CLI |
 | [doctrine/compose/RULES.md](doctrine/compose/RULES.md) | Naming, compose, output, registry |
 
+## Documentation
+
+Full human-facing docs — concepts, guides, and reference — live in
+[`docs/`](docs/README.md). Start with [Install](docs/guides/install.md) and
+[Run your first eval](docs/guides/run-your-first-eval.md).
+
 ## Setup
 
 - [tests/LOCAL.md](tests/LOCAL.md) — local dev loop (Docker Desktop, Podman, Rosetta)
