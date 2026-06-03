@@ -7,6 +7,12 @@
 agent: claude-code
 task: "0"
 registry: quay.io/eval-containers
+# Separator between an image's category and name. "/" keeps the nested refs
+# (registry/core/otel). A flattened internal registry (e.g. an OpenShift
+# imagestream) sets "-" so each image collapses to registry/core-otel — set it
+# once in a platform overlay (deploy/values-openshift.yaml). Mirrors the
+# REGISTRY_SUFFIX build-arg on the Dockerfiles (PR #23).
+registrySuffix: "/"
 # The gateway is a fixed proxy image; `evalModel` is the upstream it proxies to
 # (CLI --model sets evalModel + model). `model` is the runner's logging tag.
 gatewayImage: gpt-5.4--bifrost
