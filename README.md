@@ -68,42 +68,40 @@ eval-containers run aime --task-id 0 --agent codex --mode job
 |---|---|---|
 | `compose` *(default)* | `docker compose -f benchmarks/<x>/compose.yaml up` | Local laptop, full stack with gateway + OTel sidecars, fastest iteration. |
 | `container` | `docker run -e EVAL_MODEL=... <eval-image>` | CI smoke tests, one-shot runs against an existing model proxy, minimal footprint. |
-| `job` | `kubectl apply -k benchmarks/<x>/` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
+| `job` | `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml \| kubectl apply -f -` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
 
 ### Kubernetes (`--mode job`)
 
-Each benchmark ships a [Kustomize](https://kustomize.io/) base — apply directly with `kubectl`, no CLI needed:
+Every benchmark is a small [Helm](https://helm.sh/) `values.yaml` over one shared chart (`benchmarks/_chart`) — render it and apply, no CLI needed:
 
 ```bash
-kubectl apply -k benchmarks/aime/                  # canonical pairing (claude-code, task 0)
+helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml \
+  --set agent=claude-code,task=0 | kubectl apply -f -
 ```
 
-For non-canonical agent/task, the CLI synthesizes an overlay:
+The CLI does exactly that, mapping every axis to a `--set`:
 
 ```bash
 eval-containers run aime --agent codex --task-id 42 --mode job
-# expands to: kubectl kustomize --load-restrictor=LoadRestrictionsNone /tmp/eval-job-overlay-… \
-#           | kubectl apply -f -
+# → helm template aime-codex-task-42 benchmarks/_chart -f benchmarks/aime/values.yaml \
+#       --set registry=…,agent=codex,task=42 | kubectl apply -f -
 ```
 
-Production users compose their own overlays on top (corp registry rewrites, NodeAffinity, NetworkPolicies, sidecar swaps, ...) by referencing the benchmark as a Kustomize resource — see the [Kustomize docs](https://kubectl.docs.kubernetes.io/guides/config_management/components/) for the composition primitives.
-
-The CLI can pull such an overlay in for you with `--overlay <dir>` — it's added under `components:` on the synthesized Job, so the eval-axis patches (agent/model/task) and your platform patches merge. A ready-to-adapt OpenShift overlay (sets the `anyuid` service account) ships under [`examples/deployments/openshift`](examples/deployments/openshift) — see its README for the full build-and-run-on-OpenShift walkthrough:
+Platform specifics (corp registry, NodeAffinity, NetworkPolicies, a different service account, ...) are a Helm **values file you own**, layered on with `--overlay` (an extra `helm -f`), so the eval axes and your platform settings merge. A ready-to-adapt OpenShift overlay (sets the `anyuid` service account) ships as [`deploy/values-openshift.yaml`](deploy/values-openshift.yaml):
 
 ```bash
 eval-containers run aime --agent codex --mode job \
-  --overlay examples/deployments/openshift \
+  --overlay deploy/values-openshift.yaml \
   --registry image-registry.openshift-image-registry.svc:5000/<namespace>
+# → helm template … -f benchmarks/aime/values.yaml -f deploy/values-openshift.yaml … | kubectl apply -f -
 ```
 
-→ runs (synthesizes the overlay in a temp dir, then applies it):
+On OpenShift, create the service account once and use `oc` in place of `kubectl`:
 
 ```bash
-kubectl kustomize --load-restrictor=LoadRestrictionsNone /tmp/eval-job-overlay-aime-codex-0-… \
-  | kubectl apply -f -
+oc apply -f deploy/openshift-service-account.yaml
+oc adm policy add-scc-to-user anyuid -z anyuid-sa
 ```
-
-The overlay is a directory whose `kustomization.yaml` is `kind: Component` — data you own; the CLI never encodes platform specifics itself.
 
 The cluster needs an `eval-secrets` Secret with `OPENAI_API_KEY` and `OPENAI_API_BASE` keys.
 
