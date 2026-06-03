@@ -12,6 +12,19 @@
 //! principle 11). A remote builder can't `--load` into local Docker, so
 //! `--builder` implies `--push` to the registry.
 //!
+//! `--builder oc` is a special value: it builds ONE artifact on an
+//! OpenShift cluster via a binary `BuildConfig` (`oc start-build`, buildah
+//! under the platform's `builder` SCC) — the no-admin path for clusters
+//! where in-cluster BuildKit is blocked by PodSecurity. It reads the
+//! artifact's resolved build spec (context, dockerfile, eval base-image
+//! args) from `docker buildx bake --print` — bake stays the single source
+//! of truth — and adds only the OpenShift translation: single-segment
+//! imagestream names plus `REGISTRY`/`REGISTRY_SUFFIX` build args so the
+//! parameterized `${REGISTRY}/...${REGISTRY_SUFFIX}` FROMs resolve to the
+//! internal registry. One artifact; dependency-ORDERED cold-graph builds
+//! are a thin loop over it in `examples/openshift/` (principle 3 — no graph
+//! ordering inside the CLI).
+//!
 //! Per-task benchmark variants (swe-bench's 1000+ tasks) remain
 //! imperative — they aren't enumerated in bake per BAKE.md. The
 //! `--task-id` path falls through to a plain `docker build` with
@@ -19,7 +32,8 @@
 
 use clap::{Args, Subcommand};
 use eval_containers::bake;
-use std::process::Command;
+use std::io::Write;
+use std::process::{Command, Stdio};
 
 #[derive(Args)]
 pub struct BuildArgs {
@@ -27,10 +41,11 @@ pub struct BuildArgs {
     pub target: BuildTarget,
 
     /// Build with a named buildx builder instead of the default local
-    /// Docker. To build in-cluster, create the builder once (after
-    /// `oc login`): `docker buildx create --driver kubernetes --name oc
-    /// --use`, then pass `--builder oc`. Implies `--push` — a remote
-    /// builder can't load into the local Docker image store.
+    /// Docker (implies `--push` — a remote builder can't load locally).
+    /// The special value `oc` builds the artifact on an OpenShift cluster
+    /// via a binary `BuildConfig` (`oc start-build`, buildah) — the
+    /// no-admin path when in-cluster BuildKit is blocked by PodSecurity;
+    /// see `examples/openshift/` for the dependency-ordered fleet loop.
     #[arg(long, global = true)]
     pub builder: Option<String>,
 
@@ -78,6 +93,14 @@ pub enum BuildTarget {
 pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     let builder = args.builder.as_deref();
     let dry_run = args.dry_run;
+
+    // `--builder oc` is the OpenShift BuildConfig backend (not a buildx
+    // builder): build one artifact in-cluster with `oc start-build`. Routed
+    // before the buildx path so we don't `buildx inspect` a builder named
+    // "oc". Cold-graph ordering lives in examples/openshift (principle 3).
+    if builder == Some("oc") {
+        return oc_execute(args.target, dry_run);
+    }
 
     // A named builder must exist before bake can use it. Fail early with
     // the exact creation command rather than letting buildx error opaquely
@@ -314,4 +337,289 @@ fn docker_build(
         }
     }
     Err(last_err)
+}
+
+// ─── OpenShift BuildConfig backend (`--builder oc`) ──────────────────────────
+//
+// Builds a SINGLE artifact in-cluster via a binary Docker-strategy
+// `BuildConfig`: buildah runs under the platform's `builder` SCC, so no
+// admin and no privileged pod is needed (unlike in-cluster BuildKit, which
+// baseline PodSecurity blocks).
+//
+// The build spec — `context`, `dockerfile`, and the eval combination's base
+// image args — is NOT hardcoded here: it is read from `docker buildx bake
+// --print <target>`, so the bake file stays the single source of truth
+// (src/RULES.md principle 3 / top-level principle 15). This backend adds
+// only the OpenShift-specific bits: it flattens nested image paths to the
+// single-segment imagestream names OpenShift requires (`core/otel` →
+// `core-otel`, `benchmarks/aime` → `aime`) and passes
+// `REGISTRY`/`REGISTRY_SUFFIX` so the parameterized `${REGISTRY}` FROMs
+// resolve to the internal registry (binary builds ignore
+// `oc start-build --build-arg`, so they live in the BuildConfig spec).
+
+/// One target as emitted by `docker buildx bake --print`.
+#[derive(serde::Deserialize)]
+struct BakeTargetSpec {
+    context: Option<String>,
+    dockerfile: Option<String>,
+    tags: Option<Vec<String>>,
+    args: Option<std::collections::BTreeMap<String, String>>,
+}
+#[derive(serde::Deserialize)]
+struct BakePrint {
+    target: std::collections::BTreeMap<String, BakeTargetSpec>,
+}
+
+/// Nested image repo path → OpenShift imagestream name (single segment).
+/// `core`/`gateways` keep their prefix (`core/otel` → `core-otel`); the
+/// per-eval categories drop it (`benchmarks/aime` → `aime`,
+/// `evals/aime--codex` → `aime-codex`); dots and `--` collapse to `-`.
+fn flatten_imagestream(repo: &str) -> String {
+    let (cat, rest) = repo.split_once('/').unwrap_or(("", repo));
+    let name = rest.to_lowercase().replace('.', "-").replace("--", "-");
+    match cat {
+        "core" | "gateways" => format!("{cat}-{name}"),
+        _ => name,
+    }
+}
+
+/// Split a full image ref into (repo-path, tag), stripping the registry.
+fn split_ref<'a>(full: &'a str, registry: &str) -> (&'a str, &'a str) {
+    let no_reg = full.strip_prefix(&format!("{registry}/")).unwrap_or(full);
+    no_reg.rsplit_once(':').unwrap_or((no_reg, "latest"))
+}
+
+/// Flatten the repo path inside a full image ref, keeping registry + tag.
+fn flatten_ref(full: &str, registry: &str) -> String {
+    let (repo, tag) = split_ref(full, registry);
+    format!("{registry}/{}:{}", flatten_imagestream(repo), tag)
+}
+
+/// Capture stdout of an `oc` command, trimmed.
+fn oc_capture(args: &[&str]) -> Result<String, String> {
+    let out = Command::new("oc")
+        .args(args)
+        .output()
+        .map_err(|e| format!("failed to run oc {}: {e}", args.join(" ")))?;
+    if !out.status.success() {
+        return Err(format!(
+            "oc {} failed: {}",
+            args.join(" "),
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Read a target's resolved build spec from `docker buildx bake --print`.
+/// The bake file is the source of truth — this backend never re-derives the
+/// graph, only translates bake's output into a BuildConfig.
+fn bake_print(
+    bake_target: &str,
+    overrides: &[String],
+    registry: &str,
+    env: &[(&str, String)],
+) -> Result<BakeTargetSpec, String> {
+    let mut args: Vec<String> = vec!["buildx".into(), "bake".into()];
+    for f in bake::artifact_bake_files() {
+        args.push("-f".into());
+        args.push(f.to_string_lossy().into_owned());
+    }
+    args.push("--print".into());
+    for o in overrides {
+        args.push("--set".into());
+        args.push(o.clone());
+    }
+    args.push(bake_target.to_string());
+
+    let mut cmd = Command::new("docker");
+    cmd.args(&args).env("REGISTRY", registry);
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let out = cmd
+        .output()
+        .map_err(|e| format!("failed to run docker buildx bake --print: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "docker buildx bake --print failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    let parsed: BakePrint = serde_json::from_slice(&out.stdout)
+        .map_err(|e| format!("failed to parse bake --print JSON: {e}"))?;
+    parsed
+        .target
+        .into_iter()
+        .find(|(name, _)| name == bake_target)
+        .map(|(_, spec)| spec)
+        .ok_or_else(|| format!("bake --print has no target '{bake_target}'"))
+}
+
+fn oc_execute(target: BuildTarget, dry_run: bool) -> Result<(), String> {
+    // Internal registry prefix: <registry-host>/<current-namespace>.
+    let ir = if dry_run {
+        "image-registry.openshift-image-registry.svc:5000/NAMESPACE".to_string()
+    } else {
+        format!(
+            "{}/{}",
+            oc_capture(&["registry", "info"])?,
+            oc_capture(&["project", "-q"])?
+        )
+    };
+
+    // Map the CLI target to its bake target + the same bake vars/overrides
+    // the buildx path uses (combo parameterization, not graph knowledge).
+    let (bake_target, overrides, env): (String, Vec<String>, Vec<(&str, String)>) = match target {
+        BuildTarget::Agent { name } => (format!("agent-{name}"), vec![], vec![]),
+        BuildTarget::Bench { benchmark, task_id } => {
+            if task_id.is_some() {
+                return Err(
+                    "--builder oc does not support --task-id; per-task variants \
+                            use plain `docker build` (BAKE.md)"
+                        .into(),
+                );
+            }
+            (format!("benchmark-{benchmark}"), vec![], vec![])
+        }
+        BuildTarget::Model { name } => {
+            (format!("model-{}", name.replace('.', "_")), vec![], vec![])
+        }
+        BuildTarget::Eval {
+            benchmark,
+            agent,
+            task_id,
+            agent_version,
+            model,
+        } => {
+            if task_id.is_some() {
+                return Err("--builder oc does not support --task-id".into());
+            }
+            // Select the combo (bake requires these at call time); OTEL/runtime
+            // bases come from the combination target's own bake defaults.
+            let overrides = vec![
+                format!("eval.args.BENCHMARK_IMAGE={ir}/benchmarks/{benchmark}:latest"),
+                format!("eval.args.AGENT_IMAGE={ir}/agents/{agent}:latest"),
+                format!("eval.args.MODEL_IMAGE={ir}/models/{model}:latest"),
+            ];
+            let env = vec![
+                ("EVAL_BENCHMARK", benchmark),
+                ("EVAL_AGENT", agent),
+                ("EVAL_AGENT_VERSION", agent_version),
+            ];
+            ("eval".to_string(), overrides, env)
+        }
+        BuildTarget::Compose { .. } => {
+            return Err("--builder oc does not apply to `build compose`".into());
+        }
+    };
+
+    // Read the resolved build spec from bake (the single source of truth).
+    let spec = bake_print(&bake_target, &overrides, &ir, &env)?;
+    let tag = spec
+        .tags
+        .as_ref()
+        .and_then(|t| t.first())
+        .ok_or_else(|| format!("bake target '{bake_target}' has no tags"))?;
+    let (repo, _) = split_ref(tag, &ir);
+    let imagestream = flatten_imagestream(repo);
+    let context = spec.context.clone().unwrap_or_else(|| ".".into());
+    let dockerfile = spec
+        .dockerfile
+        .clone()
+        .unwrap_or_else(|| "Dockerfile".into());
+
+    // Build args: REGISTRY/SUFFIX for the parameterized FROMs, plus the
+    // target's own args from bake (image refs flattened to imagestream names).
+    let mut build_args = vec![format!("REGISTRY={ir}"), "REGISTRY_SUFFIX=-".to_string()];
+    if let Some(args) = spec.args {
+        for (k, v) in args {
+            if v.is_empty() {
+                continue;
+            }
+            let v = if v.starts_with(&format!("{ir}/")) {
+                flatten_ref(&v, &ir)
+            } else {
+                v
+            };
+            build_args.push(format!("{k}={v}"));
+        }
+    }
+
+    oc_build(&imagestream, &context, &dockerfile, &build_args, dry_run)
+}
+
+/// Apply a binary Docker-strategy BuildConfig (build args baked in) and
+/// run it from a local context. Both steps are plain `oc` invocations and
+/// are printed for copy-paste reproducibility (src/RULES.md principle 2).
+fn oc_build(
+    imagestream: &str,
+    context: &str,
+    dockerfile: &str,
+    build_args: &[String],
+    dry_run: bool,
+) -> Result<(), String> {
+    let mut args_yaml = String::new();
+    for kv in build_args {
+        let (k, v) = kv.split_once('=').unwrap_or((kv.as_str(), ""));
+        args_yaml.push_str(&format!("        - {{ name: {k}, value: \"{v}\" }}\n"));
+    }
+    let bc = format!(
+        "apiVersion: build.openshift.io/v1\n\
+         kind: BuildConfig\n\
+         metadata:\n  name: {imagestream}-bc\n\
+         spec:\n\
+         \x20 source:\n    type: Binary\n    binary: {{}}\n\
+         \x20 strategy:\n    type: Docker\n    dockerStrategy:\n      dockerfilePath: {dockerfile}\n      buildArgs:\n{args_yaml}\
+         \x20 output:\n    to:\n      kind: ImageStreamTag\n      name: {imagestream}:latest\n"
+    );
+
+    eprintln!("$ oc create imagestream {imagestream} 2>/dev/null || true");
+    eprintln!("$ oc apply -f - <<'EOF'\n{bc}EOF");
+    eprintln!("$ oc start-build {imagestream}-bc --from-dir {context} --follow");
+    if dry_run {
+        return Ok(());
+    }
+
+    // Output imagestream (idempotent — ignore "already exists").
+    let _ = Command::new("oc")
+        .args(["create", "imagestream", imagestream])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+
+    // BuildConfig via stdin.
+    let mut child = Command::new("oc")
+        .args(["apply", "-f", "-"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("failed to run oc apply: {e}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or("failed to open oc apply stdin")?
+        .write_all(bc.as_bytes())
+        .map_err(|e| format!("failed to write BuildConfig: {e}"))?;
+    if !child
+        .wait()
+        .map_err(|e| format!("oc apply wait failed: {e}"))?
+        .success()
+    {
+        return Err("oc apply BuildConfig failed".into());
+    }
+
+    let status = Command::new("oc")
+        .args([
+            "start-build",
+            &format!("{imagestream}-bc"),
+            "--from-dir",
+            context,
+            "--follow",
+        ])
+        .status()
+        .map_err(|e| format!("failed to run oc start-build: {e}"))?;
+    if !status.success() {
+        return Err(format!("oc start-build failed with {status}"));
+    }
+    Ok(())
 }
