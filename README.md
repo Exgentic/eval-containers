@@ -86,7 +86,7 @@ Every benchmark renders from one shared [Helm](https://helm.sh/) chart — selec
 ```bash
 # From the published chart (see Pre-release note above) — no clone needed:
 helm template aime oci://quay.io/eval-containers/charts/eval --version 0.1.0 \
-  --set benchmark=aime --set agent=claude-code,task=0 | kubectl apply -f -
+  --set benchmark=aime --set agent=claude-code --set task=0 | kubectl apply -f -
 ```
 
 Working in a clone, render the local chart instead — which is what the CLI builds today, mapping every axis to a `--set`:
@@ -94,7 +94,7 @@ Working in a clone, render the local chart instead — which is what the CLI bui
 ```bash
 eval-containers run aime --agent codex --task-id 42 --mode job
 # → helm template aime-codex-task-42 ./benchmarks/_chart --set benchmark=aime \
-#       --set registry=…,agent=codex,task=42 | kubectl apply -f -
+#       --set registry=… --set agent=codex --set task=42 | kubectl apply -f -
 ```
 
 Platform specifics (corp registry, NodeAffinity, NetworkPolicies, a different service account, ...) are a Helm **values file you own**, layered on with `--overlay` (an extra `helm -f`), so the eval axes and your platform settings merge. A ready-to-adapt OpenShift overlay (sets the `anyuid` service account) ships as [`deploy/values-openshift.yaml`](deploy/values-openshift.yaml):
