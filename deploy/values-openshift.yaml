@@ -1,0 +1,6 @@
+# deploy/values-openshift.yaml — static platform composition for OpenShift.
+# Layer at deploy time:  helm template … -f deploy/values-openshift.yaml | oc apply -f -
+# Provisions nothing itself; assumes the namespace has an `anyuid-sa`
+# ServiceAccount bound to the anyuid SCC (run-as-image-UID), which the eval
+# pods require. Vanilla k8s leaves serviceAccountName empty.
+serviceAccountName: anyuid-sa

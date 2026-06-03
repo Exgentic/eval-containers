@@ -84,46 +84,18 @@ const REQUIRED_COMPOSE_MARKERS: &[&str] = &[
 ];
 
 // Rule 24 (triple-mode contract): every benchmark ships container.Dockerfile,
-// compose.yaml, and job.yaml — one per deployment surface.
-const REQUIRED_TRIPLE_MODE_FILES: &[&str] = &["container.Dockerfile", "compose.yaml", "job.yaml"];
-
-// Rule 29: each benchmark's job.yaml MUST inline the canonical otelcol +
-// gateway + runner topology. Catch drift by spot-checking critical markers
-// — exact-byte comparison would be too brittle (resource limits and env
-// values differ per benchmark by design), but these markers identify the
-// load-bearing wiring that shouldn't drift silently.
-fn job_canonical_markers(name: &str) -> Vec<String> {
-    vec![
-        // The three canonical containers must be named exactly.
-        "- name: otelcol".to_string(),
-        "- name: gateway".to_string(),
-        "- name: runner".to_string(),
-        // Sidecar-reaping invariant: shared pid namespace + reap helper.
-        "shareProcessNamespace: true".to_string(),
-        "/usr/local/bin/reap-sidecars".to_string(),
-        // Canonical otelcol image — no benchmark should override this.
-        "quay.io/eval-containers/core/otel:latest".to_string(),
-        // Runner image must reference this benchmark (rule 4 in compose/RULES.md).
-        // The pattern is `evals/<benchmark>--<agent>:<tag>` for shared-env or
-        // `evals/<benchmark>-<task>--<agent>:<tag>` for per-task — the trailing
-        // hyphen accepts both; agent + tag are checked separately below.
-        format!("evals/{name}-"),
-        // Canonical agent + tag suffix.
-        "claude-code:latest".to_string(),
-        // Sidecar wiring URLs (Pod loopback in k8s).
-        "http://localhost:4000/anthropic".to_string(),
-        "http://localhost:4000/openai".to_string(),
-        "http://localhost:4318".to_string(),
-        // Upstream credentials come from the eval-secrets Secret.
-        "name: eval-secrets".to_string(),
-    ]
-}
+// compose.yaml, and values.yaml — one per deployment surface. The k8s surface
+// renders from the shared Helm chart (benchmarks/_chart) + the benchmark's
+// values.yaml; there is no per-benchmark job.yaml to drift (rule 29 retired —
+// one chart can't drift from itself).
+const REQUIRED_TRIPLE_MODE_FILES: &[&str] =
+    &["container.Dockerfile", "compose.yaml", "values.yaml"];
 
 fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
     let mut issues = Vec::new();
     let dockerfile = dir.join("Dockerfile");
     let compose = dir.join("compose.yaml");
-    let job = dir.join("job.yaml");
+    let values = dir.join("values.yaml");
 
     if !dockerfile.is_file() {
         issues.push(format!("{name}: no Dockerfile"));
@@ -150,14 +122,13 @@ fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
         }
     }
 
-    if job.is_file() {
-        let text = fs::read_to_string(&job).unwrap_or_default();
-        for marker in job_canonical_markers(name) {
-            if !text.contains(&marker) {
-                issues.push(format!(
-                    "{name}: job.yaml drift — missing `{marker}` (rule 29 canonical)"
-                ));
-            }
+    if values.is_file() {
+        // The k8s values must pin this benchmark — the chart renders
+        // evals/<name>--<agent> and labels the Job from it.
+        if !contains_line(&values, &format!("benchmark: {name}")) {
+            issues.push(format!(
+                "{name}: values.yaml must set `benchmark: {name}` (Helm chart pin)"
+            ));
         }
     }
     issues
@@ -455,38 +426,27 @@ fn every_agent_has_readme() {
 }
 
 #[test]
-fn example_openshift_overlay_is_valid_component() {
-    // The documented OpenShift overlay is consumed via `run --overlay`; if
-    // it's deleted or mangled, that path silently stops working. This gate
-    // keeps the example honest (it's prose-adjacent data, so it can rot).
-    let dir = Path::new("examples/deployments/openshift");
-    let kustomization = dir.join("kustomization.yaml");
-    let text = fs::read_to_string(&kustomization).unwrap_or_else(|_| {
+fn openshift_values_overlay_is_present() {
+    // The OpenShift platform overlay is consumed via `run --overlay` (layered
+    // onto the chart as an extra `-f`); if it's deleted or mangled, that path
+    // silently stops working. This gate keeps it honest.
+    let values = Path::new("deploy/values-openshift.yaml");
+    let text = fs::read_to_string(values).unwrap_or_else(|_| {
         panic!(
-            "missing {} — the OpenShift overlay documented for `run --overlay` must exist",
-            kustomization.display()
+            "missing {} — the OpenShift values overlay for `run --overlay` must exist",
+            values.display()
         )
     });
-    // A Kustomize *component* (pulled in via `components:`), not a
-    // standalone Kustomization.
+    // It sets the anyuid service account OpenShift needs.
     assert!(
-        text.contains("kind: Component"),
-        "{} must be `kind: Component`",
-        kustomization.display()
+        text.contains("serviceAccountName: anyuid-sa"),
+        "{} must set serviceAccountName: anyuid-sa",
+        values.display()
     );
-    // Sets the service account OpenShift needs, and ships the SA it names.
+    // And the ServiceAccount it names ships so users can apply it once.
     assert!(
-        text.contains("serviceAccountName"),
-        "{} must patch the Job's serviceAccountName",
-        kustomization.display()
+        Path::new("deploy/openshift-service-account.yaml").is_file(),
+        "deploy/openshift-service-account.yaml must exist (the anyuid-sa ServiceAccount)"
     );
-    assert!(
-        dir.join("service-account.yaml").is_file(),
-        "examples/deployments/openshift/service-account.yaml must exist (referenced by the component)"
-    );
-    assert!(
-        dir.join("README.md").is_file(),
-        "examples/deployments/openshift/README.md (the build-and-run walkthrough) must exist"
-    );
-    eprintln!("✓ examples/deployments/openshift is a valid overlay component");
+    eprintln!("✓ deploy/values-openshift.yaml is present and sets anyuid-sa");
 }

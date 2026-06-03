@@ -5,7 +5,7 @@
 //!
 //!   --mode compose    (default) → docker compose -f benchmarks/<x>/compose.yaml up
 //!   --mode container            → docker run -e EVAL_MODEL=... <eval-image>
-//!   --mode job                  → kubectl apply -k benchmarks/<x>/  (or temp Kustomize overlay)
+//!   --mode job                  → helm template benchmarks/_chart -f benchmarks/<x>/values.yaml | kubectl apply -f -
 //!
 //! Mapping flags → manifest, by mode:
 //!
@@ -13,13 +13,12 @@
 //!     `EVAL_*` environment variable on the spawned subprocess. Compose
 //!     interpolates `${EVAL_FOO:-default}` in compose.yaml; container
 //!     mode hands them in via `docker run -e`.
-//!   - **job** patches them into the manifest via a synthesized Kustomize
-//!     overlay (kubectl does NOT interpolate env vars into YAML). The
-//!     overlay rewrites images (via `images:` newName/newTag), patches
-//!     the runner container's `env` (AGENT, TASK_ID, MODEL, TIMEOUT, …),
-//!     patches the gateway container's `env` (EVAL_MODEL_MAX_BUDGET,
-//!     EVAL_LITELLM_VERSION, EVAL_MODEL), and renames the Job for
-//!     concurrent multi-task applies.
+//!   - **job** renders the shared Helm chart (`benchmarks/_chart`) with the
+//!     benchmark's `values.yaml` plus a `--set` for each axis (agent/task/
+//!     model/tags/versions), then `helm template … | kubectl apply -f -`.
+//!     Helm interpolates the values (kubectl can't), keeps numeric fields
+//!     like `task` quoted, and the Job name carries the agent + task so
+//!     concurrent applies don't collide.
 //!
 //! Two orthogonal versioning axes (see RULES.md principle 9):
 //!
@@ -32,7 +31,7 @@
 //! `--dry-run=server` to `kubectl apply` (exercises admission, no state).
 //!
 //! With `--local`, uses the in-repo `benchmarks/<name>/{compose.yaml,
-//! container.Dockerfile, kustomization.yaml}` instead of the registry artifact.
+//! container.Dockerfile, values.yaml}` instead of the registry artifact.
 //!
 //! Two orthogonal versioning axes (see RULES.md principle 9):
 //!
@@ -41,7 +40,7 @@
 //!   flags --*-version)
 //!
 //! With `--local`, uses the in-repo `benchmarks/<name>/{compose.yaml,
-//! container.Dockerfile, job.yaml}` instead of the registry artifact.
+//! container.Dockerfile, values.yaml}` instead of the registry artifact.
 
 use clap::{Args, ValueEnum};
 use std::process::Command;
@@ -150,11 +149,9 @@ pub struct RunArgs {
     #[arg(long, short = 'n')]
     namespace: Option<String>,
 
-    /// (`--mode job`) Compose a Kustomize component on top of the
-    /// synthesized Job — e.g. the OpenShift overlay under
-    /// `examples/deployments/openshift` (sets the anyuid SCC service
-    /// account). Points at a directory whose `kustomization.yaml` is
-    /// `kind: Component`; the CLI only references it under `components:`.
+    /// (`--mode job`) Layer a platform Helm values file on top of the
+    /// benchmark's values — e.g. `deploy/values-openshift.yaml`, which sets
+    /// the anyuid SCC service account. Passed to helm as an extra `-f`.
     #[arg(long)]
     overlay: Option<String>,
 }
@@ -347,60 +344,101 @@ fn run_container(
     Ok(())
 }
 
-/// `--mode job` → `kubectl apply -k benchmarks/<x>/` (or temp Kustomize overlay)
+/// `--mode job` → `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml … | kubectl apply -f -`
 ///
-/// Each benchmark ships a Kustomize base (`benchmarks/<x>/kustomization.yaml`
-/// + `job.yaml`) that pairs the benchmark with its canonical agent. To
-/// run a non-canonical agent or non-default task id, we synthesize a tiny
-/// Kustomize overlay in a temp dir that patches `images:`/`labels:` and
-/// `kubectl apply -k` it. Production users compose their own overlays
-/// (corp registry rewrites, NodeAffinity, NetworkPolicies, etc.) by
-/// referencing this base as a resource — see `benchmarks/RULES.md` rule 99.
+/// The shared chart (`benchmarks/_chart`) renders the otelcol+gateway+runner
+/// Job from the benchmark's `values.yaml`; the per-run axes (agent/task/model/
+/// tags/versions) come in via `--set`. Platform composition (e.g. the OpenShift
+/// anyuid SCC) layers in as an extra `-f <values>` via `--overlay`. Helm fills
+/// the values, keeps numeric fields (task) quoted, and leaves the runner
+/// command's `$?`/`$rc` untouched — no kustomize overlay to synthesize.
+/// See doctrine/benchmarks/RULES.md.
 ///
 /// Cluster `eval-secrets` Secret still provides upstream credentials.
 fn run_job(
     registry: &str,
     benchmark: &str,
     args: &RunArgs,
-    envs: &[(&str, String)],
+    _envs: &[(&str, String)],
 ) -> Result<(), String> {
-    let base_path = format!("./benchmarks/{benchmark}");
-    if !std::path::Path::new(&format!("{base_path}/kustomization.yaml")).exists() {
+    let values = format!("./benchmarks/{benchmark}/values.yaml");
+    if !std::path::Path::new(&values).exists() {
         return Err(format!(
-            "missing benchmarks/{benchmark}/kustomization.yaml; run from repo root"
+            "missing benchmarks/{benchmark}/values.yaml; run from repo root"
         ));
     }
-
-    // Optional overlay component to compose on top of the Job — e.g. the
-    // OpenShift overlay (anyuid SCC service account) under
-    // examples/deployments/openshift. The CLI only references it under
-    // `components:`; the content is data the user owns (src/RULES.md
-    // principle 3).
-    let component_dir: Option<std::path::PathBuf> =
-        args.overlay.clone().map(std::path::PathBuf::from);
-    if let Some(dir) = &component_dir {
-        if !dir.join("kustomization.yaml").exists() {
-            return Err(format!(
-                "overlay component not found: {}/kustomization.yaml does not exist \
-                 (a platform overlay is a directory whose kustomization.yaml is `kind: Component`)",
-                dir.display()
-            ));
-        }
+    let chart = "./benchmarks/_chart";
+    if !std::path::Path::new(chart).exists() {
+        return Err("missing benchmarks/_chart; run from repo root".into());
     }
 
-    let canonical_agent = "claude-code";
-    let canonical_task = "0";
-    let want_agent = args.agent.as_deref().unwrap_or(canonical_agent);
-    let want_task = args.task_id.as_deref().unwrap_or(canonical_task);
+    let agent = args.agent.as_deref().unwrap_or("claude-code");
+    let task = args.task_id.as_deref().unwrap_or("0");
 
-    let env_str = envs
-        .iter()
-        .map(|(k, v)| format!("{k}={v}"))
-        .collect::<Vec<_>>()
-        .join(" ");
+    // helm template <release> <chart> -f <benchmark values> [-f <overlay values>] --set …
+    let release = format!("{benchmark}-{agent}-task-{task}");
+    let mut helm: Vec<String> = vec![
+        "template".into(),
+        release,
+        chart.into(),
+        "-f".into(),
+        values.clone(),
+    ];
 
-    // Build the kubectl-apply arg list once — used by both the canonical
-    // (`-k <base>`) and overlay (`-f -`) paths.
+    // Platform composition: --overlay now points at a Helm values file (e.g.
+    // deploy/values-openshift.yaml), layered on top of the benchmark's values.
+    if let Some(ov) = &args.overlay {
+        if !std::path::Path::new(ov).exists() {
+            return Err(format!(
+                "overlay values file not found: {ov} (a platform overlay is now a \
+                 Helm values file, e.g. deploy/values-openshift.yaml)"
+            ));
+        }
+        helm.push("-f".into());
+        helm.push(ov.clone());
+    }
+
+    // Per-run axes → --set (one each, so values containing commas are safe).
+    // --model maps to EVAL_MODEL (the upstream the fixed gateway proxies to)
+    // plus the runner's MODEL logging tag — matching the prior behavior.
+    let mut sets: Vec<String> = vec![
+        format!("registry={registry}"),
+        format!("agent={agent}"),
+        format!("task={task}"),
+    ];
+    if let Some(m) = &args.model {
+        sets.push(format!("evalModel={m}"));
+        sets.push(format!("model={m}"));
+    }
+    if let Some(t) = args.timeout {
+        sets.push(format!("timeout={t}"));
+    }
+    if let Some(t) = &args.model_tag {
+        sets.push(format!("gatewayTag={t}"));
+    }
+    // The combined runner image is produced per-agent, so --agent-tag wins over
+    // --benchmark-tag when both are set.
+    if let Some(t) = args.agent_tag.as_ref().or(args.benchmark_tag.as_ref()) {
+        sets.push(format!("runnerTag={t}"));
+    }
+    if let Some(v) = &args.benchmark_version {
+        sets.push(format!("benchmarkVersion={v}"));
+    }
+    if let Some(v) = &args.agent_version {
+        sets.push(format!("agentVersion={v}"));
+    }
+    if let Some(v) = &args.litellm_version {
+        sets.push(format!("litellmVersion={v}"));
+    }
+    if let Some(b) = args.max_budget {
+        sets.push(format!("maxBudget={b}"));
+    }
+    for s in &sets {
+        helm.push("--set".into());
+        helm.push(s.clone());
+    }
+
+    // kubectl apply [-n ns] [--dry-run=server] -f -
     let mut apply_args: Vec<String> = vec!["apply".into()];
     if args.dry_run {
         apply_args.push("--dry-run=server".into());
@@ -409,299 +447,26 @@ fn run_job(
         apply_args.push("-n".into());
         apply_args.push(ns.clone());
     }
-    let apply_cmd_str = apply_args.join(" ");
-
-    // Decide whether we need an overlay. Anything beyond canonical
-    // (claude-code, task 0, no overrides) forces overlay — kubectl
-    // does not interpolate env vars into manifests, so the only way
-    // to get user inputs into the resulting Job is via a Kustomize
-    // patch.
-    let needs_overlay = component_dir.is_some()
-        || want_agent != canonical_agent
-        || want_task != canonical_task
-        || args.model.is_some()
-        || args.timeout.is_some()
-        || args.max_budget.is_some()
-        || args.model_tag.is_some()
-        || args.agent_tag.is_some()
-        || args.benchmark_tag.is_some()
-        || args.benchmark_version.is_some()
-        || args.agent_version.is_some()
-        || args.litellm_version.is_some();
-
-    if !needs_overlay {
-        eprintln!("$ {env_str} kubectl {apply_cmd_str} -k {base_path}");
-        eprintln!(
-            "(Note: cluster needs `eval-secrets` Secret with OPENAI_API_KEY+OPENAI_API_BASE.)"
-        );
-        let mut cmd = Command::new("kubectl");
-        for a in &apply_args {
-            cmd.arg(a);
-        }
-        cmd.args(["-k", &base_path]);
-        let status = cmd
-            .status()
-            .map_err(|e| format!("failed to run kubectl apply -k: {e}"))?;
-        if !status.success() {
-            return Err(format!("kubectl apply -k failed with {status}"));
-        }
-        return Ok(());
-    }
-
-    // Overlay path. Synthesize a Kustomize root in a temp dir that:
-    //   - references the in-repo benchmark base as a resource
-    //   - patches images (combined runner + per-task variant +
-    //     gateway, with --*-tag honored)
-    //   - patches the runner container's env (agent/task/benchmark
-    //     plus any optional MODEL/TIMEOUT/*_VERSION)
-    //   - patches the gateway container's env (EVAL_MODEL_MAX_BUDGET,
-    //     EVAL_LITELLM_VERSION, EVAL_MODEL)
-    //   - renames the Job to `<bench>-task-<want_task>` so concurrent
-    //     tasks don't collide
-    //   - tags the Job with agent/task labels for kubectl get filtering
-    //
-    // Pipe `kubectl kustomize --load-restrictor=LoadRestrictionsNone`
-    // into `kubectl apply -f -`. We bypass `apply -k` because it
-    // doesn't expose `--load-restrictor`, which we need: the overlay's
-    // kustomize root is the temp dir, the base lives outside it (in
-    // the repo), so root-only loading rejects it.
-    let abs_base =
-        std::fs::canonicalize(&base_path).map_err(|e| format!("canonicalize {base_path}: {e}"))?;
-    // Canonicalize temp_dir too — on macOS `/tmp` symlinks to
-    // `/private/tmp`, and kustomize's relative-path math chokes on the
-    // mismatch if we leave it un-resolved.
-    let raw_tmp = std::env::temp_dir().join(format!(
-        "eval-job-overlay-{}-{}-{}-{}",
-        benchmark,
-        want_agent,
-        want_task,
-        std::process::id()
-    ));
-    std::fs::create_dir_all(&raw_tmp)
-        .map_err(|e| format!("create overlay dir {raw_tmp:?}: {e}"))?;
-    let tmp_dir =
-        std::fs::canonicalize(&raw_tmp).map_err(|e| format!("canonicalize {raw_tmp:?}: {e}"))?;
-
-    // ── images: block ──────────────────────────────────────────────
-    // Shared-env shape: evals/<bench>--<agent>
-    // Per-task shape:   evals/<bench>-<task>--<agent>
-    // Gateway:          models/gpt-5.4--bifrost (the default; if user
-    //                   needs a different gateway flavor they overlay
-    //                   on top of this).
-    //
-    // newTag is the COMBINED image tag (--agent-tag wins over
-    // --benchmark-tag if both set, since the combined image is
-    // produced per-agent by `build eval`). The gateway tag is
-    // controlled by --model-tag.
-    let canonical_image_shared = format!("{registry}/evals/{benchmark}--{canonical_agent}");
-    let new_image_shared = format!("{registry}/evals/{benchmark}--{want_agent}");
-    let canonical_image_pertask =
-        format!("{registry}/evals/{benchmark}-{canonical_task}--{canonical_agent}");
-    let new_image_pertask = format!("{registry}/evals/{benchmark}-{want_task}--{want_agent}");
-    let canonical_gateway = format!("{registry}/models/gpt-5.4--bifrost");
-
-    let combined_tag = args
-        .agent_tag
-        .as_ref()
-        .or(args.benchmark_tag.as_ref())
-        .cloned();
-
-    let mut images_block = String::new();
-    images_block.push_str(&format!("  - name: {canonical_image_shared}\n"));
-    images_block.push_str(&format!("    newName: {new_image_shared}\n"));
-    if let Some(t) = &combined_tag {
-        images_block.push_str(&format!("    newTag: \"{t}\"\n"));
-    }
-    images_block.push_str(&format!("  - name: {canonical_image_pertask}\n"));
-    images_block.push_str(&format!("    newName: {new_image_pertask}\n"));
-    if let Some(t) = &combined_tag {
-        images_block.push_str(&format!("    newTag: \"{t}\"\n"));
-    }
-    if let Some(t) = &args.model_tag {
-        images_block.push_str(&format!("  - name: {canonical_gateway}\n"));
-        images_block.push_str(&format!("    newTag: \"{t}\"\n"));
-    }
-
-    // ── runner env patches ─────────────────────────────────────────
-    // Kustomize strategic-merge keys env[] entries by `.name`, so
-    // we only need to list the keys we override. Defaults from
-    // _base/job.yaml stay intact for any key not listed here.
-    let mut runner_env_lines: Vec<String> = vec![
-        format!("                  - {{ name: AGENT,                 value: \"{want_agent}\" }}"),
-        format!("                  - {{ name: EVAL_AGENT,            value: \"{want_agent}\" }}"),
-        format!("                  - {{ name: TASK_ID,               value: \"{want_task}\" }}"),
-        format!("                  - {{ name: EVAL_TASK_ID,          value: \"{want_task}\" }}"),
-        format!("                  - {{ name: BENCHMARK,             value: \"{benchmark}\" }}"),
-        format!("                  - {{ name: EVAL_BENCHMARK,        value: \"{benchmark}\" }}"),
-    ];
-    if let Some(m) = &args.model {
-        runner_env_lines.push(format!(
-            "                  - {{ name: MODEL,                 value: \"{m}\" }}"
-        ));
-        runner_env_lines.push(format!(
-            "                  - {{ name: EVAL_MODEL,            value: \"{m}\" }}"
-        ));
-    }
-    if let Some(t) = args.timeout {
-        runner_env_lines.push(format!(
-            "                  - {{ name: TIMEOUT,               value: \"{t}\" }}"
-        ));
-        runner_env_lines.push(format!(
-            "                  - {{ name: EVAL_TIMEOUT,          value: \"{t}\" }}"
-        ));
-    }
-    if let Some(v) = &args.benchmark_version {
-        runner_env_lines.push(format!(
-            "                  - {{ name: EVAL_BENCHMARK_VERSION, value: \"{v}\" }}"
-        ));
-    }
-    if let Some(v) = &args.agent_version {
-        runner_env_lines.push(format!(
-            "                  - {{ name: EVAL_AGENT_VERSION,    value: \"{v}\" }}"
-        ));
-    }
-    let runner_env_block = runner_env_lines.join("\n");
-
-    // ── gateway env patches (conditional) ──────────────────────────
-    // Gateway hosts the litellm proxy. EVAL_MODEL_MAX_BUDGET +
-    // EVAL_LITELLM_VERSION + EVAL_MODEL apply here (NOT the runner's
-    // MODEL which is just a logging tag).
-    let mut gateway_env_lines: Vec<String> = Vec::new();
-    if let Some(b) = args.max_budget {
-        gateway_env_lines.push(format!(
-            "                  - {{ name: EVAL_MODEL_MAX_BUDGET, value: \"{b}\" }}"
-        ));
-    }
-    if let Some(v) = &args.litellm_version {
-        gateway_env_lines.push(format!(
-            "                  - {{ name: EVAL_LITELLM_VERSION,  value: \"{v}\" }}"
-        ));
-    }
-    if let Some(m) = &args.model {
-        gateway_env_lines.push(format!(
-            "                  - {{ name: EVAL_MODEL,            value: \"{m}\" }}"
-        ));
-    }
-    let gateway_patch = if gateway_env_lines.is_empty() {
-        String::new()
-    } else {
-        let gateway_env_block = gateway_env_lines.join("\n");
-        format!(
-            r#"  - target:
-      kind: Job
-    patch: |-
-      apiVersion: batch/v1
-      kind: Job
-      metadata:
-        name: {benchmark}-task-{canonical_task}
-      spec:
-        template:
-          spec:
-            containers:
-              - name: gateway
-                env:
-{gateway_env_block}
-"#
-        )
-    };
-
-    let rel_base = relative_path(&tmp_dir, &abs_base)
-        .ok_or_else(|| format!("could not compute relative path {tmp_dir:?} -> {abs_base:?}"))?;
-
-    // Compose the platform/overlay component (if any) via `components:`.
-    // Its path is relative to the temp overlay dir, like the base.
-    let components_block = match &component_dir {
-        Some(dir) => {
-            let abs = std::fs::canonicalize(dir)
-                .map_err(|e| format!("canonicalize {}: {e}", dir.display()))?;
-            let rel = relative_path(&tmp_dir, &abs)
-                .ok_or_else(|| format!("could not compute relative path {tmp_dir:?} -> {abs:?}"))?;
-            format!("components:\n  - {}\n", rel.display())
-        }
-        None => String::new(),
-    };
-
-    let overlay_yaml = format!(
-        r#"apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
-resources:
-  - {rel_base}
-{components_block}images:
-{images_block}labels:
-  - pairs:
-      agent: {want_agent}
-      task: "{want_task}"
-    includeSelectors: false
-patches:
-  # Rename the Job so multiple tasks can be applied concurrently.
-  - target:
-      kind: Job
-      name: {benchmark}-task-{canonical_task}
-    patch: |-
-      - op: replace
-        path: /metadata/name
-        value: {benchmark}-task-{want_task}
-  # Sync pod-template labels so `kubectl get pods -l agent=…` works.
-  - target:
-      kind: Job
-    patch: |-
-      apiVersion: batch/v1
-      kind: Job
-      metadata:
-        name: {benchmark}-task-{canonical_task}
-      spec:
-        template:
-          metadata:
-            labels:
-              agent: {want_agent}
-              task: "{want_task}"
-  # Override runner env vars.
-  - target:
-      kind: Job
-    patch: |-
-      apiVersion: batch/v1
-      kind: Job
-      metadata:
-        name: {benchmark}-task-{canonical_task}
-      spec:
-        template:
-          spec:
-            containers:
-              - name: runner
-                env:
-{runner_env_block}
-{gateway_patch}"#,
-        rel_base = rel_base.display(),
-    );
-    let kustomization_path = tmp_dir.join("kustomization.yaml");
-    std::fs::write(&kustomization_path, &overlay_yaml)
-        .map_err(|e| format!("write overlay: {e}"))?;
 
     eprintln!(
-        "$ {env_str} kubectl kustomize --load-restrictor=LoadRestrictionsNone {} | kubectl {apply_cmd_str} -f -",
-        tmp_dir.display()
+        "$ helm {} | kubectl {} -f -",
+        helm.join(" "),
+        apply_args.join(" ")
     );
-    eprintln!(
-        "(overlay: agent={want_agent}, task={want_task}{}; base={})",
-        match &component_dir {
-            Some(d) => format!(", component={}", d.display()),
-            None => String::new(),
-        },
-        abs_base.display(),
-    );
+    eprintln!("(Note: cluster needs `eval-secrets` Secret with OPENAI_API_KEY+OPENAI_API_BASE.)");
+
+    let helm_out = Command::new("helm")
+        .args(&helm)
+        .output()
+        .map_err(|e| format!("failed to run helm template (is helm installed?): {e}"))?;
+    if !helm_out.status.success() {
+        return Err(format!(
+            "helm template failed: {}",
+            String::from_utf8_lossy(&helm_out.stderr)
+        ));
+    }
 
     use std::process::Stdio;
-    let kustomize_out = Command::new("kubectl")
-        .args(["kustomize", "--load-restrictor=LoadRestrictionsNone"])
-        .arg(&tmp_dir)
-        .output()
-        .map_err(|e| format!("failed to run kubectl kustomize: {e}"))?;
-    if !kustomize_out.status.success() {
-        return Err(format!(
-            "kubectl kustomize failed: {}",
-            String::from_utf8_lossy(&kustomize_out.stderr)
-        ));
-    }
     let mut apply_cmd = Command::new("kubectl");
     for a in &apply_args {
         apply_cmd.arg(a);
@@ -717,41 +482,14 @@ patches:
             .stdin
             .as_mut()
             .unwrap()
-            .write_all(&kustomize_out.stdout)
+            .write_all(&helm_out.stdout)
             .map_err(|e| format!("failed to pipe manifest to kubectl apply: {e}"))?;
     }
     let status = apply
         .wait()
         .map_err(|e| format!("failed to wait on kubectl apply: {e}"))?;
-
-    // Leave the overlay on disk so the user can re-apply / kubectl delete
-    // with the same path. OS tmp lifecycle handles cleanup.
-    let _ = kustomization_path;
-
     if !status.success() {
         return Err(format!("kubectl apply failed with {status}"));
     }
     Ok(())
-}
-
-/// Compute the relative path FROM `from` (a directory) TO `to`. Both
-/// must be absolute, canonicalized paths. Returns `None` if either has
-/// no usable parent walk. Used to produce kustomize-friendly
-/// `resources: [../..]` references from temp overlay dirs to in-repo bases.
-fn relative_path(from: &std::path::Path, to: &std::path::Path) -> Option<std::path::PathBuf> {
-    let from_components: Vec<_> = from.components().collect();
-    let to_components: Vec<_> = to.components().collect();
-    let common = from_components
-        .iter()
-        .zip(to_components.iter())
-        .take_while(|(a, b)| a == b)
-        .count();
-    let mut result = std::path::PathBuf::new();
-    for _ in 0..(from_components.len() - common) {
-        result.push("..");
-    }
-    for c in &to_components[common..] {
-        result.push(c.as_os_str());
-    }
-    Some(result)
 }

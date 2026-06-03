@@ -39,7 +39,7 @@ answer, and any attached files from `EVAL_TASK_ID` alone
    [`assets/TEMPLATE.md`](assets/TEMPLATE.md) as your scaffold. Every benchmark
    ships exactly five authored files: `Dockerfile` (builds the base image with
    tasks + verifier), the triple-mode trio `container.Dockerfile` +
-   `compose.yaml` + `job.yaml`, and `README.md`. *Why:* the directory is the
+   `compose.yaml` + `values.yaml`, and `README.md`. *Why:* the directory is the
    unit a CI test walks; missing any of the trio makes the benchmark incomplete
    (`doctrine/benchmarks/RULES.md:24`, `doctrine/benchmarks/RULES.md:29`).
 
@@ -132,25 +132,28 @@ answer, and any attached files from `EVAL_TASK_ID` alone
      `include:` and only declare overrides; do NOT inline a service, network, or
      volume that already exists there
      (`doctrine/benchmarks/RULES.md:24b`, `doctrine/benchmarks/RULES.md:25`).
-   - `job.yaml` (**k8s**) — a standalone, self-contained manifest that inlines
-     the canonical otelcol+gateway+runner Pod from `benchmarks/_base/job.yaml`
-     (the reference) and appends any bespoke `Deployment`s/`Service`s. Keep the
-     canonical blocks byte-matching the reference; CI catches drift
+   - `values.yaml` (**k8s**) — a Helm values file over the shared chart
+     `benchmarks/_chart`. For a standard benchmark this is a single line
+     (`benchmark: <name>`); benchmarks with bespoke topology add their
+     sidecars/`Deployment`s/`Service`s through the chart's composition hooks
+     (`initContainers`, `runnerArgs`, `runnerExtraEnv`, `extraManifests`, …) —
+     do NOT redeclare the otelcol/gateway/runner Pod
      (`doctrine/benchmarks/RULES.md:24b`, `doctrine/benchmarks/RULES.md:25`).
 
    For a simple shared-env benchmark, copy `benchmarks/aime/` and substitute the
-   name. Changes to either base (`compose/services.yaml` or
-   `benchmarks/_base/job.yaml`) MUST be reflected in the other in the same commit.
+   name. Changes to the compose base (`compose/services.yaml`) or the chart
+   (`benchmarks/_chart`) MUST be reflected in the other in the same commit.
 
 10. **Parameterize the task and enforce limits/isolation in every surface.**
     - Task: shared-env `compose.yaml` MUST read `TASK_ID: ${TASK_ID:-0}` (never
-      hardcode a literal); `job.yaml` ships as a hardcoded task-0 template and
-      that limitation MUST be called out in the README. Per-task benchmarks bake
+      hardcode a literal); the k8s task comes from `helm --set task=` (default
+      0), so `values.yaml` MUST NOT hardcode a task. Per-task benchmarks bake
       `EVAL_TASK_ID` via build `ARG` and the artifacts inherit it
       (`doctrine/benchmarks/RULES.md:24c`).
     - Resource limits: declare CPU and memory in BOTH `compose.yaml`
-      (`deploy.resources.limits` on the runner) and `job.yaml`
-      (`resources.limits`), matching modulo k8s unit syntax
+      (`deploy.resources.limits` on the runner) and the k8s runner — the chart
+      default, overridden per benchmark via `values.yaml`'s `resources:` —
+      matching modulo k8s unit syntax
       (`doctrine/benchmarks/RULES.md:10`, `doctrine/benchmarks/RULES.md:24e`).
     - Network: enforce no-agent-internet per surface — `internal: true` in
       compose, `iptables --uid-owner` in single mode, credential isolation
@@ -183,4 +186,4 @@ answer, and any attached files from `EVAL_TASK_ID` alone
   Dockerfile, the triple-mode trio, the blanks-to-fill table, and gotchas.
 - `doctrine/benchmarks/RULES.md` — the outcomes every benchmark MUST satisfy.
 - `benchmarks/aime/` — canonical simple shared-env reference.
-- `benchmarks/_base/job.yaml` — canonical k8s Pod template.
+- `benchmarks/_chart/` — the shared k8s Helm chart (the canonical Pod, once).

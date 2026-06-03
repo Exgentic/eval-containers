@@ -33,7 +33,7 @@ Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared a
 - `Dockerfile` — builds the benchmark base image (tasks data + verifier).
 - `container.Dockerfile` — single-mode deployment artifact (1-line registry pin).
 - `compose.yaml` — compose-mode deployment artifact (`include:` shared base + aime overrides).
-- `job.yaml` — k8s-mode deployment artifact (self-contained Job manifest).
+- `values.yaml` — k8s-mode deployment artifact (Helm values over the shared `benchmarks/_chart`).
 - `README.md` — this file.
 
 ## Running — three deployment surfaces
@@ -42,7 +42,7 @@ Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared a
 |------|------|------------|
 | **single** | `container.Dockerfile` | `docker run -e OPENAI_API_KEY=… -e OPENAI_API_BASE=… <image>` |
 | **compose** | `compose.yaml` | `docker compose -f benchmarks/aime/compose.yaml up` |
-| **k8s** | `job.yaml` | `kubectl apply -f benchmarks/aime/job.yaml` (needs `eval-secrets`) |
+| **k8s** | `values.yaml` | `helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml \| kubectl apply -f -` (needs `eval-secrets`) |
 
 ```bash
 # Single mode — just docker run
@@ -60,7 +60,7 @@ OPENAI_API_KEY=… OPENAI_API_BASE=… \
 kubectl create secret generic eval-secrets \
   --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
   --from-literal=OPENAI_API_BASE="$OPENAI_API_BASE"
-kubectl apply -f benchmarks/aime/job.yaml
+helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml | kubectl apply -f -
 ```
 
 ## Different task
@@ -71,7 +71,11 @@ Per rule 24c, `compose.yaml` parameterizes task via `${TASK_ID:-0}`:
 TASK_ID=42 docker compose -f benchmarks/aime/compose.yaml up
 ```
 
-For k8s, `job.yaml` ships as a task-0 template. For sweeps, copy + edit, or `envsubst < job.yaml | kubectl apply -f -`.
+For k8s, the task is a Helm value:
+
+```bash
+helm template aime benchmarks/_chart -f benchmarks/aime/values.yaml --set task=42 | kubectl apply -f -
+```
 
 ## Build args
 
