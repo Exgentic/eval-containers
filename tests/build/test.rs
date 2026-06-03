@@ -749,9 +749,18 @@ fn in_repo_deps_from_dockerfile(path: &Path) -> Vec<String> {
     let text = fs::read_to_string(path).unwrap_or_default();
     let mut deps: Vec<String> = Vec::new();
     let push_if_in_repo = |s: &str, deps: &mut Vec<String>| {
+        // Dockerfile FROMs are parameterized as `${REGISTRY}/<cat>${REGISTRY_SUFFIX}<name>`
+        // so a single `oc start-build --build-arg REGISTRY=…` builds in-cluster
+        // (src/RULES.md principle 11). Resolve with the build-arg DEFAULTS —
+        // which are exactly `quay.io/eval-containers` / `/` — so the result is
+        // identical to the old hardcoded ref and matches the bake `contexts`
+        // (which resolve `${REGISTRY}` the same way in `in_repo_deps_from_bake`).
+        let s = s
+            .replace("${REGISTRY}", "quay.io/eval-containers")
+            .replace("${REGISTRY_SUFFIX}", "/");
         if s.starts_with(REGISTRY_PREFIX) {
             // Normalize: strip :tag for comparison against bake contexts keys.
-            let bare = s.split(':').next().unwrap_or(s).to_string();
+            let bare = s.split(':').next().unwrap_or(&s).to_string();
             if !deps.contains(&bare) {
                 deps.push(bare);
             }
@@ -791,7 +800,9 @@ fn in_repo_deps_from_bake(path: &Path) -> Vec<String> {
         if !line.contains("\" = \"target:") {
             continue;
         }
-        let Some(start) = line.find('"') else { continue };
+        let Some(start) = line.find('"') else {
+            continue;
+        };
         let after = &line[start + 1..];
         let Some(end) = after.find('"') else { continue };
         let lhs = &after[..end];
@@ -933,14 +944,22 @@ fn dockerfile_bake_alignment() {
         // somewhere else in the same file. Dead declarations rot fast.
         for raw in bake_text.lines() {
             let line = raw.trim_start();
-            let Some(rest) = line.strip_prefix("variable \"") else { continue };
+            let Some(rest) = line.strip_prefix("variable \"") else {
+                continue;
+            };
             let Some(end) = rest.find('"') else { continue };
             let name = &rest[..end];
             // Strip the declaration line from the search corpus.
             let used_elsewhere = bake_text
                 .lines()
                 .filter(|l| !l.trim_start().starts_with(&format!("variable \"{name}\"")))
-                .any(|l| l.contains(&format!("${{{name}}}")) || l.contains(&format!(" {name} ")) || l.contains(&format!(" {name},")) || l.contains(&format!(" {name}\n")) || l.trim().ends_with(&format!("= {name}")));
+                .any(|l| {
+                    l.contains(&format!("${{{name}}}"))
+                        || l.contains(&format!(" {name} "))
+                        || l.contains(&format!(" {name},"))
+                        || l.contains(&format!(" {name}\n"))
+                        || l.trim().ends_with(&format!("= {name}"))
+                });
             if !used_elsewhere {
                 failures.push(format!(
                     "{}: bake variable `{}` declared but never referenced (RULES.md principle 15.h)",

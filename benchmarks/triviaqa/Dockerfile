@@ -2,7 +2,9 @@
 # 17944 tasks. Data: HuggingFace mandarjoshi/trivia_qa (rc.nocontext/validation)
 # Agent prints answer to stdout. Test matches against any normalized alias.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="triviaqa"
