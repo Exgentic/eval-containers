@@ -168,6 +168,11 @@ have drifted from the code, ships a broken promise.
 
 28. **README Quick Start from a clean clone** — fresh clone, follow the README
     verbatim. Pass = runs end-to-end without edits.
+28a. **`docs/` sufficient and compliant** — every user-visible change in this
+    release is reachable from `docs/` (no user-facing knowledge left only in
+    source/commits/heads) and the affected pages comply with
+    [`doctrine/docs/RULES.md`](../../docs/RULES.md). Pass = no gap a user could
+    hit, links resolve.
 29. **RULES still match the repo** — run the `audit-rules-drift` skill against
     recent commits. Pass = no drift (or drift documented).
 30. **Every benchmark has a README:** `cargo test --test check benchmark_readmes`.

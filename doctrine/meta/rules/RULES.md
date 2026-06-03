@@ -67,6 +67,18 @@ grouping the rules and skills for one area.
     silently removed or renumbered; it **MUST** be deprecated in place with a
     replacement reference where one applies.
 
+11. **Concise.** Each requirement **MUST** use the fewest words that stay
+    unambiguous.
+
+12. **Atomic.** Each numbered requirement **MUST** be a single sentence stating
+    one prescription with one keyword.
+
+13. **Example-free.** A requirement **MUST NOT** contain examples; illustration
+    belongs in a skill or in `docs/`.
+
+14. **Bounded abstract.** An Abstract **MUST** be one paragraph of at most 80
+    words.
+
 ## References
 
 - RFC 2119, RFC 8174 (BCP 14).
@@ -78,3 +90,4 @@ grouping the rules and skills for one area.
 | Date       | Change                                                                  |
 |------------|-------------------------------------------------------------------------|
 | 2026-05-31 | Initial version. Centralizes the former distributed rules graph under `doctrine/`, adds the rule/skill split, and replaces the "rules live next to the code" principle. |
+| 2026-06-03 | Added principles 11–14 (Concise, Atomic, Example-free, Bounded abstract) to cap rule length and verbosity. Pre-existing principles 1–10 and sibling `RULES.md` files predate these and need a follow-up tightening pass. |
