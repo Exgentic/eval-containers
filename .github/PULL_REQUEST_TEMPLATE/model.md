@@ -120,3 +120,9 @@ benchmarks" is a limitation. Be specific. -->
 
 - [ ] No RULES.md changes needed
 - [ ] `doctrine/models/RULES.md` updated with a changelog entry dated today
+
+### Docs ([doctrine/docs/RULES.md](../../doctrine/docs/RULES.md))
+
+- [ ] User-facing knowledge this change adds or alters is reachable from `docs/` — nothing a user needs lives only in source/commits/heads (rule 14, sufficiency)
+- [ ] Affected `docs/` pages updated in this PR (rule 12) and compliant with the docs rules
+- [ ] No docs changes needed (purely internal change)
