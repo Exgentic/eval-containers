@@ -45,7 +45,7 @@ Full field list: [Chart values reference](../reference/chart-values.md).
 
 ```bash
 helm template aime benchmarks/_chart --set benchmark=aime \
-  --set agent=claude-code,task=0 | kubectl apply -f -
+  --set agent=claude-code --set task=0 | kubectl apply -f -
 ```
 
 The `eval-containers run … --mode job` command builds exactly this, mapping each
