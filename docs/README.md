@@ -29,6 +29,7 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 - [Install](guides/install.md)
 - [Run your first eval](guides/run-your-first-eval.md)
 - [Deploy on Kubernetes](guides/deploy-on-kubernetes.md)
+- [Connect to the IBM Cloud OpenShift cluster](guides/connect-ibm-cloud.md)
 - [Deploy on OpenShift](guides/deploy-on-openshift.md)
 - [Add a benchmark](guides/add-a-benchmark.md)
 - [Add an agent](guides/add-an-agent.md)

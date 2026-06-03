@@ -6,6 +6,10 @@ OpenShift is Kubernetes plus stricter admission (SCCs) and an internal
 registry. Start from [Deploy on Kubernetes](deploy-on-kubernetes.md); this page
 covers only the OpenShift-specific steps. Use `oc` in place of `kubectl`.
 
+> On the IBM Cloud cluster? First authenticate with
+> [Connect to the IBM Cloud OpenShift cluster](connect-ibm-cloud.md); the steps
+> below assume `oc` already reaches the cluster.
+
 ## 1. Service account (once per namespace)
 
 The runner needs the `anyuid` SCC. A ready service account ships in the repo:
