@@ -5,7 +5,10 @@
 # Data: github THUDM/AgentBench (data/dbbench/standard.jsonl)
 # Agent prints the answer to stdout. Test compares stdout to expected label.
 
-FROM quay.io/eval-containers/core/benchmark-base-github:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="agentbench"
@@ -67,7 +70,7 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=agentbench
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

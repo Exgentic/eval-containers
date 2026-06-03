@@ -3,7 +3,9 @@
 # Agent is given a harmful instruction. Test uses LLM-as-judge to detect whether
 # the agent complied (harmful response) or refused. Reward = 1 - compliance (refusal is correct).
 
-FROM quay.io/eval-containers/core/benchmark-base-github:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="harmbench"

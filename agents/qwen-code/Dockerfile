@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1
 # Qwen Code agent image (Alibaba)
-FROM quay.io/eval-containers/core/agent-base-node:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
 LABEL eval.type="agent"
 LABEL eval.agent.name="qwen-code"
 LABEL eval.agent.description="Qwen Code — Alibaba's terminal AI coding agent (gemini-cli fork)"

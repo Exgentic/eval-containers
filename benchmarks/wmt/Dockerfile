@@ -2,7 +2,10 @@
 # ~9600 tasks (~960 usable segments x 10 language pairs, en->X). Data: HuggingFace google/wmt24pp
 # Agent prints translation to stdout. Test compares to expected reference translation.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="wmt"
@@ -62,7 +65,7 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=wmt
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
+COPY --from=test-exact-match /test.sh /tests/test.sh
 RUN chmod +x /tests/test.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

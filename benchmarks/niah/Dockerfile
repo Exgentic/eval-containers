@@ -4,7 +4,9 @@
 # Tasks cover a grid of (context_length, depth_percent).
 # Scoring: substring match of the needle answer.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="niah"

@@ -2,7 +2,9 @@
 # 1266 tasks. Data: OpenAI public blob (encrypted, decrypted at build time)
 # Agent browses the web and prints answer to stdout.
 
-FROM quay.io/eval-containers/core/benchmark-base-hf:latest
+ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="browsecomp"
