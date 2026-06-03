@@ -13,7 +13,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ## Two verification processes
 
-Testing exists to answer two separate questions, triggered at different points in the lifecycle. Never conflate them.
+Testing answers two separate questions, triggered at different lifecycle points, which MUST NOT be conflated.
 
 1. **Contribution verification** — triggered on every PR. MUST pass before merging to main.
    - MUST run offline
@@ -33,54 +33,44 @@ The **procedure** for executing each process — exact commands, order, gates �
 
 ## Test category organization
 
-3. **One subfolder per test category.** Every test lives under `tests/<category>/` with a local `RULES.md`, one or more `*.rs` integration test files, and any category-local data (fixtures, known-broken manifests, reports). The Cargo integration-test target is registered via `[[test]]` in `Cargo.toml` so `cargo test --test <name>` keeps working.
+3. **One subfolder per test category.** Every test MUST live under `tests/<category>/` with a local `RULES.md`, one or more `*.rs` integration test files, and any category-local data, registered via `[[test]]` in `Cargo.toml`.
 
-4. **Subfolder rules are local.** A rule that applies only to build tests lives in `tests/build/RULES.md`. A rule that applies across every test category lives here.
+4. **Subfolder rules are local.** A rule applying only to one test category MUST live in that category's `RULES.md`, and a rule applying across every category MUST live here.
 
-5. **No parallel audit files.** If a rule is mechanically checkable, it lives in Rust test code. If it can only be walked, it lives as a procedural rule in the appropriate `RULES.md` with a walked-audit instruction. There are NO standalone checklist `.md` files that duplicate rule text. The old `DOCKERFILE.md` / `TRAJECTORY.md` / `FLEET.md` pattern is deprecated; their content is absorbed into the relevant subfolder's `RULES.md` and its Rust rule catalog.
+5. **No parallel audit files.** A mechanically checkable rule MUST live in Rust test code and a walkable-only rule MUST live as a procedural rule with a walked-audit instruction, and there MUST be no standalone checklist `.md` files that duplicate rule text.
 
 ## Runtime rules
 
-6. **Container runtime tests MUST use testcontainers-rs.** Tests that BUILD, RUN, START, STOP, or otherwise materialize a container MUST go through [testcontainers-rs](https://rust.testcontainers.org/). Raw `Command::new("docker").arg("build"|"run"|"up"|...)` is forbidden for any operation that creates, starts, or removes a container or image. The library handles build-context assembly, daemon connection, lifecycle, and `Drop` cleanup.
+6. **Container runtime tests MUST use testcontainers-rs.** Any test that builds, runs, starts, stops, or otherwise materializes a container MUST go through [testcontainers-rs](https://rust.testcontainers.org/), and raw `docker` commands that create, start, or remove a container or image are forbidden.
 
-6a. **Static validation is exempt.** Tests that only READ files — Dockerfile text, compose YAML, trajectory JSON — and never build, run, or materialize a container are NOT container runtime tests. They are linters. They MAY use any tool. `docker compose config` (YAML parse), `docker manifest inspect` (metadata-only pull check), and `curl -I` (HTTP HEAD) are all static validation.
+6a. **Static validation is exempt.** A test that only reads files and never materializes a container is a linter, not a container runtime test, and MAY use any tool.
 
-6b. **Testcontainers-rs API gaps.** Two narrow carve-outs are permitted where testcontainers-rs 0.27 has no first-class API:
-   - Reading labels off a built image via `docker image inspect` (container-level metadata only in the library).
-   - Removing a built image via `docker rmi -f` (library auto-cleans containers, not images).
-   Both carve-outs MUST be called out in the test file's doc comment with a reference to this rule.
+6b. **Testcontainers-rs API gaps.** Reading labels via `docker image inspect` and removing a built image via `docker rmi -f` are permitted carve-outs, each of which MUST be called out in the test file's doc comment with a reference to this rule.
 
-6c. **Builds go through `docker buildx bake`.** Per top-level RULES.md principle 15, the framework's build graph lives in `docker-bake.hcl` files. Tests that need to materialize an image MUST shell to `docker buildx bake <target> --load` (via the helper in `tests/common/mod.rs`) rather than using testcontainers-rs's `GenericBuildableImage`. This keeps tests, the CLI, and any out-of-process consumer (OC in-cluster builds, bakah) on the same canonical build invocation. RUN/START/STOP of containers still goes through testcontainers-rs per rule 6 — only BUILD is exempt.
+6c. **Builds go through `docker buildx bake`.** Per top-level RULES.md principle 15, a test that materializes an image MUST shell to `docker buildx bake <target> --load` via the helper in `tests/common/mod.rs` rather than testcontainers-rs's `GenericBuildableImage`, while container RUN/START/STOP still goes through testcontainers-rs per rule 6.
 
-7. **No API keys in contribution verification.** The `replay` model is the only LLM backend in contribution-verification tests. Any test that reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider credential MUST be gated behind `#[ignore]` and live under `tests/live/`, NOT in any continuous-verification category.
+7. **No API keys in contribution verification.** The `replay` model MUST be the only LLM backend in contribution-verification tests, and any test reading a provider credential MUST be gated behind `#[ignore]` and live under `tests/live/`.
 
-8. **Fail loud over fail silent.** Test code MUST NOT use `|| true`, `2>/dev/null`, or any other error swallowing. Known failures are documented in explicit `known-broken.md` / `broken.json` manifests per category; undocumented failures panic the run.
+8. **Fail loud over fail silent.** Test code MUST NOT swallow errors, and known failures MUST be documented in per-category `known-broken.md` / `broken.json` manifests while undocumented failures panic the run.
 
 ## Fixture lifecycle
 
-9. **Fixtures are immutable ground truth.** Recorded trajectories under `tests/replay/fixtures/` are PRODUCED by release verification's live sweep and feed contribution verification's replay sweep. Contributors MUST NOT hand-edit fixtures.
+9. **Fixtures are immutable ground truth.** Contributors MUST NOT hand-edit the recorded trajectories under `tests/replay/fixtures/`.
 
-10. **Every fixture has a provenance record.** Filename convention `{benchmark}-{task-id}-{agent}.trajectory.jsonl`. A sibling `tests/replay/fixtures/provenance.json` records the model, timestamp, and release tag under which each fixture was captured.
+10. **Every fixture has a provenance record.** Each fixture MUST follow the filename convention `{benchmark}-{task-id}-{agent}.trajectory.jsonl`, and `tests/replay/fixtures/provenance.json` MUST record the model, timestamp, and release tag under which it was captured.
 
-11. **Broken fixtures are documented, not deleted.** `tests/replay/fixtures/broken.json` marks fixtures whose recorded run is known-bad (refusals, wrong answers, content filter hits, max-tokens truncation). Mechanical findings on these are reported but do NOT fail the continuous tests — they are re-recorded in the next release verification cycle.
+11. **Broken fixtures are documented, not deleted.** A known-bad recorded run MUST be marked in `tests/replay/fixtures/broken.json`, and mechanical findings on it MUST NOT fail the continuous tests.
 
 ## Known-broken manifests
 
-12. **Every test category that can have expected failures ships a known-broken manifest.**
-   - `tests/build/known-broken.md` — platform/upstream build failures (qemu segfaults, gated datasets).
+12. **Every test category that can have expected failures ships a known-broken manifest.** Each category's test probe MUST compare actual failures to its manifest, treating any excess failure as red and failures within the manifest as yellow.
+   - `tests/build/known-broken.md` — platform/upstream build failures.
    - `tests/replay/fixtures/broken.json` — broken recorded trajectories.
-   - `tests/live/known-broken.md` — benchmarks that cannot run live (require secrets the release runner lacks).
-
-   The test probe for each category MUST compare actual failures to its manifest. Any excess failure is red; failures within the manifest are yellow, not red.
+   - `tests/live/known-broken.md` — benchmarks that cannot run live.
 
 ## Rule precedence
 
-13. **Mechanical > procedural > aspirational.** If the same rule can be enforced three ways, prefer the most automated one:
-   - **Mechanical**: a Rust rule in a `test.rs` catalog. Runs on every `cargo test`. Preferred.
-   - **Procedural**: a walked audit. Documented in `RULES.md` with a step-by-step audit procedure. Runs in release verification only.
-   - **Aspirational**: prose in `RULES.md` with no mechanical check and no walked audit. Carries no weight. Discouraged.
-
-   A rule stated only aspirationally is a comment, not a rule. If it matters, write the check.
+13. **Mechanical > procedural > aspirational.** A rule enforceable more than one way MUST be enforced by the most automated one available — a mechanical Rust catalog rule over a procedural walked audit over aspirational prose.
 
 ## Layout
 
@@ -118,3 +108,4 @@ tests rather than moving into `doctrine/`.
 | 2026-04-13 | Replace mock model with replay model |
 | 2026-04-15 | Narrow rule 2 to runtime tests; add carve-out 2a for static validation |
 | 2026-04-15 | Rewrite as testing strategy. Two verification processes; subfolder organization; known-broken manifests; fixture provenance; mechanical > procedural > aspirational precedence. |
+| 2026-06-03 | Tightened to meta principles 11-14 (concise, example-free, <=80-word abstract); no requirements renumbered or removed. |
