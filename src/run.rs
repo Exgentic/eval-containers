@@ -5,7 +5,7 @@
 //!
 //!   --mode compose    (default) → docker compose -f benchmarks/<x>/compose.yaml up
 //!   --mode container            → docker run -e EVAL_MODEL=... <eval-image>
-//!   --mode job                  → helm template benchmarks/_chart -f benchmarks/<x>/values.yaml | kubectl apply -f -
+//!   --mode job                  → helm template benchmarks/_chart --set benchmark=<x> | kubectl apply -f -
 //!
 //! Mapping flags → manifest, by mode:
 //!
@@ -13,9 +13,10 @@
 //!     `EVAL_*` environment variable on the spawned subprocess. Compose
 //!     interpolates `${EVAL_FOO:-default}` in compose.yaml; container
 //!     mode hands them in via `docker run -e`.
-//!   - **job** renders the shared Helm chart (`benchmarks/_chart`) with the
-//!     benchmark's `values.yaml` plus a `--set` for each axis (agent/task/
-//!     model/tags/versions), then `helm template … | kubectl apply -f -`.
+//!   - **job** renders the shared Helm chart (`benchmarks/_chart`) with a
+//!     `--set` for each axis (benchmark/agent/task/model/tags/versions),
+//!     then `helm template … | kubectl apply -f -`. A benchmark's bespoke
+//!     topology, if any, lives in the chart at `presets/<x>.yaml`.
 //!     Helm interpolates the values (kubectl can't), keeps numeric fields
 //!     like `task` quoted, and the Job name carries the agent + task so
 //!     concurrent applies don't collide.
@@ -31,7 +32,7 @@
 //! `--dry-run=server` to `kubectl apply` (exercises admission, no state).
 //!
 //! With `--local`, uses the in-repo `benchmarks/<name>/{compose.yaml,
-//! container.Dockerfile, values.yaml}` instead of the registry artifact.
+//! container.Dockerfile}` and the local chart instead of the registry artifact.
 //!
 //! Two orthogonal versioning axes (see RULES.md principle 9):
 //!
@@ -40,7 +41,7 @@
 //!   flags --*-version)
 //!
 //! With `--local`, uses the in-repo `benchmarks/<name>/{compose.yaml,
-//! container.Dockerfile, values.yaml}` instead of the registry artifact.
+//! container.Dockerfile}` and the local chart instead of the registry artifact.
 
 use clap::{Args, ValueEnum};
 use std::process::Command;
@@ -150,7 +151,7 @@ pub struct RunArgs {
     namespace: Option<String>,
 
     /// (`--mode job`) Layer a platform Helm values file on top of the
-    /// benchmark's values — e.g. `deploy/values-openshift.yaml`, which sets
+    /// chart values — e.g. `deploy/values-openshift.yaml`, which sets
     /// the anyuid SCC service account. Passed to helm as an extra `-f`.
     #[arg(long)]
     overlay: Option<String>,
@@ -344,11 +345,12 @@ fn run_container(
     Ok(())
 }
 
-/// `--mode job` → `helm template benchmarks/_chart -f benchmarks/<x>/values.yaml … | kubectl apply -f -`
+/// `--mode job` → `helm template benchmarks/_chart --set benchmark=<x> … | kubectl apply -f -`
 ///
 /// The shared chart (`benchmarks/_chart`) renders the otelcol+gateway+runner
-/// Job from the benchmark's `values.yaml`; the per-run axes (agent/task/model/
-/// tags/versions) come in via `--set`. Platform composition (e.g. the OpenShift
+/// Job; the axes (benchmark/agent/task/model/tags/versions) come in via `--set`,
+/// and a benchmark's bespoke topology (if any) from the chart's
+/// `presets/<x>.yaml`. Platform composition (e.g. the OpenShift
 /// anyuid SCC) layers in as an extra `-f <values>` via `--overlay`. Helm fills
 /// the values, keeps numeric fields (task) quoted, and leaves the runner
 /// command's `$?`/`$rc` untouched — no kustomize overlay to synthesize.
@@ -361,12 +363,6 @@ fn run_job(
     args: &RunArgs,
     _envs: &[(&str, String)],
 ) -> Result<(), String> {
-    let values = format!("./benchmarks/{benchmark}/values.yaml");
-    if !std::path::Path::new(&values).exists() {
-        return Err(format!(
-            "missing benchmarks/{benchmark}/values.yaml; run from repo root"
-        ));
-    }
     let chart = "./benchmarks/_chart";
     if !std::path::Path::new(chart).exists() {
         return Err("missing benchmarks/_chart; run from repo root".into());
@@ -375,18 +371,14 @@ fn run_job(
     let agent = args.agent.as_deref().unwrap_or("claude-code");
     let task = args.task_id.as_deref().unwrap_or("0");
 
-    // helm template <release> <chart> -f <benchmark values> [-f <overlay values>] --set …
+    // helm template <release> <chart> [-f <overlay values>] --set benchmark=… --set …
+    // The benchmark is named via --set; its bespoke topology (if any) lives in
+    // the chart at presets/<benchmark>.yaml, so no per-benchmark file is passed.
     let release = format!("{benchmark}-{agent}-task-{task}");
-    let mut helm: Vec<String> = vec![
-        "template".into(),
-        release,
-        chart.into(),
-        "-f".into(),
-        values.clone(),
-    ];
+    let mut helm: Vec<String> = vec!["template".into(), release, chart.into()];
 
-    // Platform composition: --overlay now points at a Helm values file (e.g.
-    // deploy/values-openshift.yaml), layered on top of the benchmark's values.
+    // Platform composition: --overlay points at a Helm values file (e.g.
+    // deploy/values-openshift.yaml), layered on top of the chart values.
     if let Some(ov) = &args.overlay {
         if !std::path::Path::new(ov).exists() {
             return Err(format!(
@@ -402,6 +394,7 @@ fn run_job(
     // --model maps to EVAL_MODEL (the upstream the fixed gateway proxies to)
     // plus the runner's MODEL logging tag — matching the prior behavior.
     let mut sets: Vec<String> = vec![
+        format!("benchmark={benchmark}"),
         format!("registry={registry}"),
         format!("agent={agent}"),
         format!("task={task}"),
