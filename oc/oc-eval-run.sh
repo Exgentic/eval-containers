@@ -43,12 +43,13 @@ NAMESPACE="exgentic-ns"
 TASK_ID="0"
 EVAL_MODEL=""
 REBUILD=false
+RERUN=false
 NO_RUN=false
 DRY_RUN=false
 PERSIST=false
 FIRE_AND_FORGET=false
 SWEEP_ID=""
-PERSIST_PVC="exgentic-cos-pvc"
+PERSIST_PVC="eval-output-pvc"
 BENCHMARK=""
 AGENT=""
 MODEL=""
@@ -67,6 +68,7 @@ while [[ $# -gt 0 ]]; do
     --registry)    REGISTRY="$2";    shift 2 ;;
     --repo-dir)    REPO_DIR="$2";    shift 2 ;;
     --rebuild)     REBUILD=true;     shift ;;
+    --rerun)       RERUN=true;       shift ;;
     --no-run)      NO_RUN=true;      shift ;;
     --dry-run)     DRY_RUN=true;     shift ;;
     --persist)          PERSIST=true;          shift ;;
@@ -90,13 +92,25 @@ done
 log()  { echo "[oc-eval-run] $*"; }
 run()  { if $DRY_RUN; then echo "[dry-run] $*"; else "$@"; fi; }
 
-# Convert a directory name to a valid OC image stream name.
-# Rules: lowercase, dots→dashes, double-dash→single-dash, no leading/trailing dash.
 to_image_name() {
   echo "$1" | tr '[:upper:]' '[:lower:]' | tr '.' '-' | sed 's/--/-/g'
 }
 
-echo "starting"
+log "Starting: benchmark=$BENCHMARK agent=$AGENT model=$MODEL task=$TASK_ID"
+
+# ── Result-exists check (skip if already done, unless --rerun) ───────────────
+if ! $RERUN && $PERSIST; then
+  IMG_MODEL_CHECK="$(to_image_name "$MODEL")"
+  IMG_BENCH_CHECK="$(to_image_name "$BENCHMARK")"
+  JOB_NAME_CHECK="${IMG_BENCH_CHECK}-task-${TASK_ID}"
+  RESULT_PATH="runs/${BENCHMARK}/${AGENT}/${IMG_MODEL_CHECK}/${TASK_ID}/${JOB_NAME_CHECK}/task/result.json"
+  log "Checking for existing result: /data/${RESULT_PATH}"
+  if oc exec eval-reader -n "$NAMESPACE" -- test -f "/data/${RESULT_PATH}" 2>/dev/null; then
+    log "Result already exists — skipping. Use --rerun to force."
+    exit 0
+  fi
+  log "No existing result found — proceeding."
+fi
 
 # ── Registry auto-detection ──────────────────────────────────────────────────
 if [[ -z "$REGISTRY" ]]; then
@@ -231,12 +245,13 @@ imagestream_has_tag() {
 build_image() {
   local name="$1" context="$2" dockerfile="$3" buildargs="$4"
 
+  log "Checking image $name..."
   if ! $REBUILD && imagestream_has_tag "$name"; then
-    log "Skipping $name (already exists — use --rebuild to force)"
+    log "  $name: exists, skipping"
     return 0
   fi
 
-  log "Building $name from $context/$dockerfile ..."
+  log "  $name: missing (or --rebuild set) — building from $context/$dockerfile ..."
 
   # Create ImageStream if needed
   run oc create imagestream "$name" -n "$NAMESPACE" --lookup-local=false 2>/dev/null || true
@@ -296,26 +311,60 @@ EOF
   # Trigger build from the context directory
   local abs_context="$REPO_DIR/$context"
   log "Starting build for $name (context: $abs_context) ..."
-  local build_name
   if ! $DRY_RUN; then
-    build_name=$(oc start-build "$bc_name" --from-dir="$abs_context" -n "$NAMESPACE" -o name 2>&1 | tail -1)
-    log "Build started: $build_name"
-    log "Waiting for build to complete ..."
-    oc logs -f "$build_name" -n "$NAMESPACE" 2>&1 | tail -5 || true
-    # Wait for completion
-    oc wait "$build_name" -n "$NAMESPACE" \
-      --for=condition=Complete \
-      --timeout=30m 2>/dev/null || {
-        log "Build may have failed. Check: oc logs -f $build_name -n $NAMESPACE"
-        oc get "$build_name" -n "$NAMESPACE" -o jsonpath='{.status.phase}' || true
-        echo ""
-        return 1
-      }
-    log "Build complete: $name"
+    # Delete old builds so lastVersion resets and the new build is always bc-1.
+    oc delete builds -l "buildconfig=$bc_name" -n "$NAMESPACE" &>/dev/null || true
+
+    # Run --wait in background to keep the connection alive (prevents OC cancelling the build).
+    oc start-build "$bc_name" --from-dir="$abs_context" -n "$NAMESPACE" --wait &>/dev/null &
+    local bg_pid=$!
+
+    # Poll the build we just triggered (always bc-1 after the delete above).
+    local build_ref="${bc_name}-1"
+    log "Waiting for build $build_ref ..."
+    local phase=""
+    for i in $(seq 1 180); do
+      phase=$(oc get build "$build_ref" -n "$NAMESPACE" \
+        -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+      case "$phase" in
+        Complete)
+          log "Build complete: $name ($build_ref)"
+          wait "$bg_pid" 2>/dev/null || true
+          return 0 ;;
+        Failed|Error)
+          log "ERROR: build $build_ref failed (phase: $phase)"
+          wait "$bg_pid" 2>/dev/null || true
+          return 1 ;;
+        Cancelled)
+          log "ERROR: build $build_ref was cancelled"
+          wait "$bg_pid" 2>/dev/null || true
+          return 1 ;;
+      esac
+      sleep 10
+    done
+    log "ERROR: build $name timed out after 30 min (last phase: $phase)"
+    wait "$bg_pid" 2>/dev/null || true
+    return 1
   else
     echo "[dry-run] oc start-build ${bc_name} --from-dir=$abs_context"
   fi
 }
+
+# ── GC: clean up stale build ConfigMaps before building ──────────────────────
+# Each OC build creates *-ca and *-sys-config ConfigMaps that are never cleaned
+# up, filling the namespace quota (limit: 50). Purge them before every build phase.
+if ! $DRY_RUN; then
+  STALE_CMS=$(oc get configmaps -n "$NAMESPACE" --no-headers 2>/dev/null \
+    | awk '{print $1}' | grep -E "\-bc\-[0-9]+\-" || true)
+  if [[ -n "$STALE_CMS" ]]; then
+    COUNT=$(echo "$STALE_CMS" | wc -l | tr -d ' ')
+    log "GC: deleting $COUNT stale build ConfigMaps..."
+    echo "$STALE_CMS" | xargs oc delete configmap -n "$NAMESPACE" 2>/dev/null || true
+    log "GC: done ($(oc get configmaps -n "$NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ') configmaps remaining)"
+  else
+    log "GC: no stale build ConfigMaps found"
+  fi
+fi
 
 # ── Phase 1: Build all images ─────────────────────────────────────────────────
 log "=== Phase 1: Building images ==="
@@ -339,9 +388,9 @@ cp -r "$REPO_DIR/benchmarks/_base" "$TMPDIR_OVERLAY/_base"
 
 # Default EVAL_MODEL: derive from model dir name if not provided
 if [[ -z "$EVAL_MODEL" ]]; then
-  # e.g. gpt-5.4--bifrost -> openai/gpt-5.4 (best-effort default)
+  # e.g. gpt-5.4--bifrost -> azure/gpt-5.4 (bifrost routes via azure endpoint)
   BASE_MODEL=$(echo "$MODEL" | sed 's/--bifrost//;s/--litellm//;s/--portkey//')
-  EVAL_MODEL="openai/${BASE_MODEL}"
+  EVAL_MODEL="azure/${BASE_MODEL}"
   log "No --eval-model given, defaulting to: $EVAL_MODEL"
 fi
 

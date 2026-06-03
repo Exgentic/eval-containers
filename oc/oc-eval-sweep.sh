@@ -2,7 +2,15 @@
 # oc-eval-sweep.sh — deterministic coverage sweep across benchmarks/agents on OC.
 #
 # Usage:
-#   ./oc/oc-eval-sweep.sh --n 4 --model gpt-5.4--bifrost [--dry-run]
+#   ./oc/oc-eval-sweep.sh --tasks-per-benchmark 5 --n 4 --model gpt-5.4--bifrost [--dry-run]
+#
+# Responsibilities (sweep only):
+#   - Generate deterministic experiment list
+#   - Pre-flight checks: OC login, reader pod
+#   - Create a log file per experiment
+#   - Fire off oc-eval-run.sh in background for each experiment
+#
+# Per-experiment logic (result check, image build, job submit) is all in oc-eval-run.sh.
 
 set -euo pipefail
 
@@ -41,35 +49,34 @@ done
 
 log() { echo "[oc-eval-sweep] $*"; }
 
-# ── Reader pod helpers ─────────────────────────────────────────────────────────
-to_image_name() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr '.' '-' | sed 's/--/-/g'; }
+# ── Pre-flight: OC login check ────────────────────────────────────────────────
+log "Checking OC login..."
+if ! oc whoami &>/dev/null; then
+  log "ERROR: not logged in to OpenShift (oc whoami failed). Run: oc login ..."
+  exit 1
+fi
+log "OC login OK ($(oc whoami))"
 
-ensure_reader_pod() {
-  local state
-  state=$(oc get pod eval-reader -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
-  if [[ "$state" != "Running" ]]; then
-    [[ "$state" != "NotFound" ]] && oc delete pod eval-reader -n "$NAMESPACE" --ignore-not-found &>/dev/null
-    log "Starting eval-reader pod..."
-    oc apply -f "$REPO_DIR/oc/eval-reader-pod.yaml" -n "$NAMESPACE" &>/dev/null
-    for i in $(seq 1 30); do
-      state=$(oc get pod eval-reader -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
-      [[ "$state" == "Running" ]] && break
-      sleep 2
-    done
-    [[ "$state" != "Running" ]] && { log "error: eval-reader pod failed to start"; exit 1; }
-    log "eval-reader pod ready."
+# ── Pre-flight: reader pod ─────────────────────────────────────────────────────
+log "Checking eval-reader pod..."
+READER_STATE=$(oc get pod eval-reader -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+if [[ "$READER_STATE" != "Running" ]]; then
+  [[ "$READER_STATE" != "NotFound" ]] && oc delete pod eval-reader -n "$NAMESPACE" --ignore-not-found &>/dev/null
+  log "eval-reader not running (state: $READER_STATE) — starting..."
+  oc apply -f "$REPO_DIR/oc/eval-reader-pod.yaml" -n "$NAMESPACE" &>/dev/null
+  for i in $(seq 1 30); do
+    READER_STATE=$(oc get pod eval-reader -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
+    [[ "$READER_STATE" == "Running" ]] && break
+    sleep 2
+  done
+  if [[ "$READER_STATE" != "Running" ]]; then
+    log "ERROR: eval-reader pod failed to start (state: $READER_STATE)"
+    exit 1
   fi
-}
-
-result_exists() {
-  local bench="$1" task_id="$2" agent="$3"
-  local img_model img_bench job_name subpath
-  img_model="$(to_image_name "$MODEL")"
-  img_bench="$(to_image_name "$bench")"
-  job_name="${img_bench}-task-${task_id}"
-  subpath="runs/${bench}/${agent}/${img_model}/${task_id}/${job_name}/task/result.json"
-  oc exec eval-reader -n "$NAMESPACE" -- test -f "/data/${subpath}" 2>/dev/null
-}
+  log "eval-reader pod started OK"
+else
+  log "eval-reader pod OK (Running)"
+fi
 
 # ── Load benchmark and agent lists ────────────────────────────────────────────
 BENCHMARKS_FILE="$REPO_DIR/oc/benchmarks.txt"
@@ -166,9 +173,6 @@ if $DRY_RUN; then
   exit 0
 fi
 
-# ── Ensure reader pod is available for result checks ─────────────────────────
-ensure_reader_pod
-
 # ── Launch all jobs in parallel (fire and forget) ─────────────────────────────
 log "=== Launching $N jobs in parallel ==="
 
@@ -176,6 +180,7 @@ PASSTHROUGH_FLAGS=(--namespace "$NAMESPACE" --repo-dir "$REPO_DIR" --sweep-id "$
 [[ -n "$EVAL_MODEL" ]] && PASSTHROUGH_FLAGS+=(--eval-model "$EVAL_MODEL")
 $PERSIST               && PASSTHROUGH_FLAGS+=(--persist --pvc "$PVC")
 $REBUILD               && PASSTHROUGH_FLAGS+=(--rebuild)
+$RERUN                 && PASSTHROUGH_FLAGS+=(--rerun)
 
 OC_RUN="$REPO_DIR/oc/oc-eval-run.sh"
 SWEEP_LOG_DIR="$SWEEPS_DIR/${SWEEP_ID}"
@@ -186,23 +191,17 @@ for (( i=0; i<N; i++ )); do
   label="${bench}-${task_id}-${agent}"
   logfile="$SWEEP_LOG_DIR/${label}.log"
 
-  CMD="bash $OC_RUN --benchmark $bench --task-id $task_id --agent $agent --model $MODEL --fire-and-forget ${PASSTHROUGH_FLAGS[*]}"
-
-  if ! $RERUN && result_exists "$bench" "$task_id" "$agent"; then
-    msg="Skipping [$i]: $label (result already exists)"
-    log "$msg"
-    echo "# $msg" > "$logfile"
-    continue
-  fi
-
   log "Launching [$i]: $label  →  $logfile"
-  { echo "# $CMD"; bash "$OC_RUN" \
+  {
+    echo "# [oc-eval-sweep] launched: $label at $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    bash "$OC_RUN" \
       --benchmark "$bench" \
       --task-id   "$task_id" \
       --agent     "$agent" \
       --model     "$MODEL" \
       --fire-and-forget \
-      "${PASSTHROUGH_FLAGS[@]}"; } &>"$logfile" &
+      "${PASSTHROUGH_FLAGS[@]}"
+  } &>"$logfile" &
 done
 
 echo ""

@@ -29,7 +29,7 @@
         "cel_expression": "true",
         "scope": "global",
         "targets": [
-          { "provider": "${PROVIDER}", "model": "${MODEL_NAME}", "weight": 1.0 }
+          { "provider": "openai", "model": "${EVAL_MODEL}", "weight": 1.0 }
         ]
       }
     ]

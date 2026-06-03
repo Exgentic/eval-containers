@@ -41,8 +41,8 @@ fi
 [[ -f "$MANIFEST" ]] || { echo "error: manifest not found: $MANIFEST" >&2; exit 1; }
 
 # ── Read manifest fields ───────────────────────────────────────────────────────
-# TODO: replace with proper JSON parsing (jq) once available
 manifest_ns=$(grep '"namespace"' "$MANIFEST" | sed 's/.*: *"\(.*\)".*/\1/')
+manifest_model=$(grep '"model"' "$MANIFEST" | head -1 | sed 's/.*: *"\(.*\)".*/\1/')
 NS="${NAMESPACE:-$manifest_ns}"
 NS="${NS:-exgentic-ns}"
 
@@ -54,8 +54,8 @@ log "Logs:      $SWEEP_LOG_DIR"
 echo ""
 
 # ── Query each experiment ──────────────────────────────────────────────────────
-printf "  %-20s  %5s  %-15s  %-20s  %s\n" "BENCHMARK" "TASK" "AGENT" "STATUS" "LOG"
-printf "  %-20s  %5s  %-15s  %-20s  %s\n" "--------------------" "-----" "---------------" "--------------------" "---"
+printf "  %-20s  %5s  %-15s  %-12s  %-8s  %-8s  %s\n" "BENCHMARK" "TASK" "AGENT" "JOB STATUS" "EVAL" "TRACES" "NOTE"
+printf "  %-20s  %5s  %-15s  %-12s  %-8s  %-8s  %s\n" "--------------------" "-----" "---------------" "------------" "--------" "--------" "----"
 
 TOTAL=0
 PENDING=0
@@ -74,56 +74,93 @@ while IFS= read -r line; do
   label="${bench}-${task}-${agent}"
   logfile="$SWEEP_LOG_DIR/${label}.log"
   img_bench="$(to_image_name "$bench")"
+  img_model="$(to_image_name "$manifest_model")"
   job_name="${img_bench}-task-${task}"
+  result_path="/data/runs/${bench}/${agent}/${img_model}/${task}/${job_name}"
 
   # ── Skip plan-only experiments (never submitted) ──────────────────────────
   if [[ ! -f "$logfile" ]]; then
     continue
   fi
 
-  # ── Derive status from log file first, then OC ────────────────────────────
+  eval_result="-"
+  traces_status="-"
+  note=""
+
+  # ── Derive job status from log file first, then OC ────────────────────────
   if grep -q "result already exists" "$logfile" 2>/dev/null; then
     status="Skipped"
     (( SKIPPED++ )) || true
   elif grep -q "error:\|Error\|FAILED\|build error" "$logfile" 2>/dev/null && ! grep -q "Job submitted" "$logfile" 2>/dev/null; then
     status="BuildFailed"
+    note=$(grep -i "error" "$logfile" 2>/dev/null | tail -1 | sed 's/\[oc-eval-run\] //')
     (( FAILED++ )) || true
   elif ! grep -q "Job submitted" "$logfile" 2>/dev/null; then
     status="Building"
     (( RUNNING++ )) || true
   else
-    # Job was submitted — check OC pod status
-    pod_waiting=$(oc get pods -n "$NS" -l "job-name=$job_name" \
-      -o jsonpath='{.items[0].status.containerStatuses[*].state.waiting.reason}' \
-      2>/dev/null || echo "")
-    pod_phase=$(oc get pods -n "$NS" -l "job-name=$job_name" \
-      -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+    # Check PVC first — if result.json exists, the job is done regardless of OC state
+    has_result=$(oc exec eval-reader -n "$NS" -- \
+      test -f "${result_path}/task/result.json" 2>/dev/null && echo "yes" || echo "no")
 
-    if [[ "$pod_waiting" == *"ImagePullBackOff"* || "$pod_waiting" == *"ErrImagePull"* ]]; then
-      status="ImagePullBackOff"
-      (( FAILED++ )) || true
-    elif [[ "$pod_waiting" == *"CrashLoopBackOff"* ]]; then
-      status="CrashLoopBackOff"
-      (( FAILED++ )) || true
-    elif [[ "$pod_phase" == "Succeeded" ]]; then
-      status="Complete"
-      (( COMPLETE++ )) || true
-    elif [[ "$pod_phase" == "Failed" ]]; then
-      status="Failed"
-      (( FAILED++ )) || true
-    elif [[ "$pod_phase" == "Running" ]]; then
-      status="Running"
-      (( RUNNING++ )) || true
-    elif [[ "$pod_phase" == "Pending" ]]; then
-      status="Pending"
-      (( PENDING++ )) || true
+    if [[ "$has_result" == "yes" ]]; then
+      status="Complete"; (( COMPLETE++ )) || true
     else
-      status="Submitted"
-      (( RUNNING++ )) || true
+      # Job still in flight — check pod state
+      pod_waiting=$(oc get pods -n "$NS" -l "job-name=$job_name" \
+        -o jsonpath='{.items[0].status.containerStatuses[*].state.waiting.reason}' \
+        2>/dev/null || echo "")
+      pod_phase=$(oc get pods -n "$NS" -l "job-name=$job_name" \
+        -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "")
+
+      if [[ "$pod_waiting" == *"ImagePullBackOff"* || "$pod_waiting" == *"ErrImagePull"* ]]; then
+        status="ImgPullErr"; (( FAILED++ )) || true
+      elif [[ "$pod_waiting" == *"CrashLoopBackOff"* ]]; then
+        status="CrashLoop";  (( FAILED++ )) || true
+      elif [[ "$pod_phase" == "Failed" ]]; then
+        status="PodFailed";  (( FAILED++ )) || true
+      elif [[ "$pod_phase" == "Running" ]]; then
+        status="Running";    (( RUNNING++ )) || true
+      elif [[ "$pod_phase" == "Pending" ]]; then
+        status="Pending";    (( PENDING++ )) || true
+      else
+        status="Submitted";  (( RUNNING++ )) || true
+      fi
+    fi
+
+    # ── Check PVC for result + traces (ground truth) ──────────────────────
+    result_json=$(oc exec eval-reader -n "$NS" -- \
+      cat "${result_path}/task/result.json" 2>/dev/null || echo "")
+
+    if [[ -n "$result_json" ]]; then
+      passed=$(echo "$result_json" | grep -o '"passed":[^,}]*' | sed 's/.*://' | tr -d ' "')
+      reward=$(echo "$result_json" | grep -o '"reward":[^,}]*' | sed 's/.*://' | tr -d ' "')
+      [[ "$passed" == "true" ]] && eval_result="PASS($reward)" || eval_result="FAIL($reward)"
+    fi
+
+    # Check traces: exists + has at least one successful LLM span (status.code=1 + gen_ai)
+    traces_raw=$(oc exec eval-reader -n "$NS" -- \
+      cat "${result_path}/traces.json" 2>/dev/null || echo "")
+    if [[ -z "$traces_raw" ]]; then
+      traces_status="EMPTY"
+      [[ -z "$result_json" ]] && note="no result + no traces"
+    elif echo "$traces_raw" | grep -q '"gen_ai'; then
+      traces_status="OK"
+    else
+      traces_status="no LLM"
+    fi
+
+    # If no traces or no result — grab first error line from agent stderr
+    if [[ "$traces_status" != "OK" || -z "$result_json" ]]; then
+      stderr_hint=$(oc exec eval-reader -n "$NS" -- \
+        cat "${result_path}/agent/stderr.log" 2>/dev/null \
+        | grep -i "error\|fatal\|exception\|bad option" | head -1 || echo "")
+      [[ -n "$stderr_hint" ]] && note="${stderr_hint:0:60}"
     fi
   fi
 
-  printf "  %-20s  %5s  %-15s  %-20s  %s\n" "$bench" "$task" "$agent" "$status" "$logfile"
+  printf "  %-20s  %5s  %-15s  %-12s  %-8s  %-8s  %s\n" \
+    "$bench" "$task" "$agent" "$status" "$eval_result" "$traces_status" "$note"
   (( TOTAL++ )) || true
 done < <(grep '"benchmark"' "$MANIFEST")
 
