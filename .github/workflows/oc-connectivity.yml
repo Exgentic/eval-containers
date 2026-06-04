@@ -1,0 +1,25 @@
+name: OC Connectivity
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  oc-whoami:
+    name: OpenShift login check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Install oc CLI
+        uses: redhat-actions/openshift-tools-installer@v1
+        with:
+          oc: latest
+
+      - name: Login to OpenShift
+        run: oc login "${{ secrets.OC_SERVER }}" --token="${{ secrets.OC_TOKEN }}" --insecure-skip-tls-verify
+
+      - name: Verify connectivity
+        run: oc whoami
