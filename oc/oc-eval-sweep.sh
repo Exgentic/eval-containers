@@ -98,8 +98,8 @@ else
   log "Agents loaded from $AGENTS_FILE (to refresh: bash oc/discover-agents.sh > oc/agents.txt)"
 fi
 
-mapfile -t BENCHMARKS < "$BENCHMARKS_FILE"
-mapfile -t AGENTS < "$AGENTS_FILE"
+mapfile -t BENCHMARKS < <(grep -v '^\s*#' "$BENCHMARKS_FILE" | grep -v '^\s*$')
+mapfile -t AGENTS    < <(grep -v '^\s*#' "$AGENTS_FILE"     | grep -v '^\s*$')
 
 NUM_BENCHMARKS=${#BENCHMARKS[@]}
 NUM_AGENTS=${#AGENTS[@]}

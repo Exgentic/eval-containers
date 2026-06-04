@@ -171,7 +171,7 @@ add_build() {
 RS="REGISTRY_SUFFIX=-"
 
 # Core images (always needed) — named with core- prefix to match REGISTRY_SUFFIX=-
-add_build "core-entrypoint"      "core/entrypoint"      "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
+add_build "core-entrypoint"      "core"      "entrypoint/Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
 add_build "core-otel"            "core/otel"            "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
 add_build "core-runtime-bundle"  "core/runtime-bundle"  "Dockerfile" "REGISTRY=$SRC_REGISTRY" "$RS"
 
@@ -227,7 +227,7 @@ MODEL_IMG="$REGISTRY/$IMG_MODEL:latest"
 OTEL_IMG="$REGISTRY/core-otel:latest"
 RUNTIME_IMG="$REGISTRY/core-runtime-bundle:latest"
 
-add_build "$IMG_EVAL" "." "core/combination.Dockerfile" \
+add_build "$IMG_EVAL" "core" "combination.Dockerfile" \
   "REGISTRY=$SRC_REGISTRY" \
   "BENCHMARK_IMAGE=$BENCH_IMG" \
   "AGENT_IMAGE=$AGENT_IMG" \
@@ -259,8 +259,8 @@ build_image() {
   # Generate BuildConfig YAML and apply it
   local bc_name="${name}-bc"
   local ephemeral_storage="4Gi"
-  # Combination image is large, needs more storage
-  [[ "$name" == *"-"* && "$context" == "." ]] && ephemeral_storage="20Gi"
+  # Combination image is large, needs more storage (context moved from "." to "core")
+  [[ "$dockerfile" == "combination.Dockerfile" ]] && ephemeral_storage="10Gi"
 
   # Convert "KEY=VALUE KEY2=VALUE2 ..." into YAML buildArgs entries.
   local build_args_yaml=""
@@ -312,15 +312,44 @@ EOF
   local abs_context="$REPO_DIR/$context"
   log "Starting build for $name (context: $abs_context) ..."
   if ! $DRY_RUN; then
-    # Delete old builds so lastVersion resets and the new build is always bc-1.
+    local lock_dir="/tmp/oc-build-${name}.lock"
+
+    # Acquire mutex via atomic mkdir -- portable on macOS and Linux.
+    # NOTE: on Linux, prefer flock(1) which is available via util-linux:
+    #   flock -x "$lock_dir.lock" bash -c '...'
+    # On macOS, flock is not available, so we spin on mkdir instead.
+    local waited=0
+    while ! mkdir "$lock_dir" 2>/dev/null; do
+      (( waited++ )) || true
+      if (( waited == 1 )); then
+        log "  $name: waiting for build lock (another job is building) ..."
+      fi
+      sleep 5
+    done
+    # Release the lock dir when this function returns, regardless of exit path.
+    # We capture lock_dir in the trap string now (at set time) to avoid scope issues.
+    trap "rmdir '$lock_dir' 2>/dev/null || true" RETURN
+
+    # Re-check after acquiring the lock: a concurrent job may have built this
+    # image while we were waiting.
+    if ! $REBUILD && imagestream_has_tag "$name"; then
+      log "  $name: exists (built by concurrent job), skipping"
+      return 0
+    fi
+
+    # Only the lock owner deletes stale builds and triggers a new one.
     oc delete builds -l "buildconfig=$bc_name" -n "$NAMESPACE" &>/dev/null || true
+
+    # After delete, lastVersion resets to 0, so the next build is always bc-1.
+    local pre_version
+    pre_version=$(oc get bc "$bc_name" -n "$NAMESPACE" \
+      -o jsonpath='{.status.lastVersion}' 2>/dev/null || echo "0")
+    local build_ref="${bc_name}-$(( pre_version + 1 ))"
 
     # Run --wait in background to keep the connection alive (prevents OC cancelling the build).
     oc start-build "$bc_name" --from-dir="$abs_context" -n "$NAMESPACE" --wait &>/dev/null &
     local bg_pid=$!
 
-    # Poll the build we just triggered (always bc-1 after the delete above).
-    local build_ref="${bc_name}-1"
     log "Waiting for build $build_ref ..."
     local phase=""
     for i in $(seq 1 180); do
@@ -442,15 +471,10 @@ if $PERSIST; then
     name: output
     mountPath: /output
     subPath: ${OUTPUT_SUBPATH}
-- op: add
-  path: /spec/template/spec/initContainers
-  value:
-    - name: mkdir-output
-      image: busybox:latest
-      command: ["sh", "-c", "mkdir -p /mnt/${OUTPUT_SUBPATH}"]
-      volumeMounts:
-        - { name: output, mountPath: /mnt }
 PERSISTEOF
+  # Pre-create the output directory via eval-reader (avoids a busybox init container
+  # and Docker Hub rate limits on the worker nodes).
+  oc exec eval-reader -n "$NAMESPACE" -- mkdir -p "/data/${OUTPUT_SUBPATH}" 2>/dev/null || true
   PERSIST_PATCH_ENTRY="  - path: persist-patch.yaml
     target:
       kind: Job"
@@ -553,18 +577,6 @@ done
 [[ -z "$POD" ]] && { log "error: pod never appeared for job $JOB_NAME"; exit 1; }
 log "Pod: $POD"
 
-# If --persist, wait for the mkdir-output initContainer to finish first
-if $PERSIST; then
-  log "Waiting for mkdir-output initContainer ..."
-  for i in $(seq 1 60); do
-    INIT_STATE=$(oc get "$POD" -n "$NAMESPACE" \
-      -o jsonpath='{.status.initContainerStatuses[0].state}' 2>/dev/null || true)
-    INIT_DONE=$(oc get "$POD" -n "$NAMESPACE" \
-      -o jsonpath='{.status.initContainerStatuses[0].state.terminated.reason}' 2>/dev/null || true)
-    [[ "$INIT_DONE" == "Completed" ]] && break
-    sleep 2
-  done
-fi
 
 # Wait for runner container to be running
 log "Waiting for runner container to start ..."

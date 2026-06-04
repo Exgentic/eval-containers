@@ -1,4 +1,4 @@
-aider
+# aider: excluded — install.sh re-runs pip install at combination build time, exceeding OC's 5min build timeout. Fix: use PYTHONPATH into pre-built /opt/agent venv instead.
 bob
 claude-code
 cline

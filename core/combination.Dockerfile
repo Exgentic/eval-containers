@@ -82,12 +82,12 @@ COPY --from=${RUNTIME_BUNDLE_IMAGE} /bundle/bin/gosu             /usr/local/bin/
 COPY --from=${RUNTIME_BUNDLE_IMAGE} /bundle/bin/process-compose  /usr/local/bin/process-compose
 
 # ─── Framework scripts and orchestration ─────────────────────────────
-COPY core/process-compose/process-compose.yaml         /etc/process-compose.yaml
-COPY core/process-compose/process-compose-runner.yaml  /etc/process-compose-runner.yaml
-COPY core/process-compose/run                          /usr/local/bin/run
-COPY core/process-compose/write-result                 /usr/local/bin/write-result
-COPY core/entrypoint/eval-materialize-task             /usr/local/bin/materialize-task
-COPY core/entrypoint/reap-sidecars                     /usr/local/bin/reap-sidecars
+COPY scripts/process-compose.yaml         /etc/process-compose.yaml
+COPY scripts/process-compose-runner.yaml  /etc/process-compose-runner.yaml
+COPY scripts/run                          /usr/local/bin/run
+COPY scripts/write-result                 /usr/local/bin/write-result
+COPY scripts/eval-materialize-task        /usr/local/bin/materialize-task
+COPY scripts/reap-sidecars                /usr/local/bin/reap-sidecars
 
 # Tighten perms. /root and /opt/gateway are 0700 by default; explicit
 # chmod here pins the values for visibility.
