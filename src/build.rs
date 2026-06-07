@@ -571,6 +571,7 @@ fn oc_build(
          spec:\n\
          \x20 source:\n    type: Binary\n    binary: {{}}\n\
          \x20 strategy:\n    type: Docker\n    dockerStrategy:\n      dockerfilePath: {dockerfile}\n      buildArgs:\n{args_yaml}\
+         \x20 resources:\n    requests: {{ ephemeral-storage: \"20Gi\" }}\n    limits: {{ ephemeral-storage: \"20Gi\" }}\n\
          \x20 output:\n    to:\n      kind: ImageStreamTag\n      name: {imagestream}:latest\n"
     );
 
