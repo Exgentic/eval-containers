@@ -67,7 +67,7 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=ifeval
 
 # Custom test: verify instruction following using official IFEval logic
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 TASK_DIR="/tasks/$EVAL_TASK_ID"
@@ -81,7 +81,7 @@ fi
 # Run the verifier
 python3 /tests/verify.py "$TASK_DIR" "$RESPONSE" > /logs/verifier/reward.txt 2>/logs/verifier/error.log
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 # Python verifier that uses the official IFEval instruction checks
 RUN cat > /tests/verify.py <<'PYEOF'
@@ -131,7 +131,8 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$EVAL_TASK_ID/prompt.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

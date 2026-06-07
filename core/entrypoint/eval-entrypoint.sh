@@ -88,7 +88,7 @@ su agent -s /bin/bash -c "
   export OPENAI_API_KEY='${OPENAI_API_KEY:-}'
   export ANTHROPIC_BASE_URL='${ANTHROPIC_BASE_URL:-}'
   export ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY:-}'
-  timeout ${EVAL_TIMEOUT:-300} /opt/agent/entrypoint.sh
+  timeout ${EVAL_TIMEOUT:-300} /agent/run.sh
 " > /output/agent/stdout.log 2> /output/agent/stderr.log || true
 AGENT_EXIT=$?
 ENDED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -99,7 +99,7 @@ printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%d}' \
 
 # Phase 2: Verify (as root, with answer restored)
 export EXPECTED_ANSWER="$SAVED_EXPECTED_ANSWER"
-bash /tests/test.sh || true
+bash /grade.sh || true
 
 # Phase 3: Write task result
 REWARD=$(cat /logs/verifier/reward.txt 2>/dev/null || echo 0)

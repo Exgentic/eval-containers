@@ -121,8 +121,8 @@ RUN chmod 600 /tasks/all.jsonl /tasks/.count
 WORKDIR /app
 ENV EVAL_BENCHMARK=legalbench
 
-COPY --from=test-exact-match /test.sh /tests/test.sh
-RUN chmod +x /tests/test.sh
+COPY --from=test-exact-match /test.sh /grade.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -133,7 +133,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
   export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

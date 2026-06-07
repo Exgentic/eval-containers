@@ -19,7 +19,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 pip install --no-cache-dir 'setuptools<81' open-interpreter==0.4.3
 I
-RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
+RUN mkdir -p /agent && cat > /agent/run.sh <<'E' && chmod +x /agent/run.sh
 #!/bin/bash
 set -euo pipefail
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
@@ -27,4 +27,4 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_API_BASE="${OPENAI_BASE_URL}"
 exec python3 /opt/agent/run_oi.py "$TASK"
 E
-ENTRYPOINT ["/opt/agent/entrypoint.sh"]
+ENTRYPOINT ["/agent/run.sh"]

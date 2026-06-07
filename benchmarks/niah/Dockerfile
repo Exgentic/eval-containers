@@ -86,7 +86,7 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=niah
 
 # Custom test: case-insensitive substring match of the needle answer
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 python3 <<'GRADE'
@@ -101,7 +101,7 @@ reward = 1.0 if answer.lower() in response.lower() else 0.0
 open('/logs/verifier/reward.txt', 'w').write(f'{reward:.6f}\n')
 GRADE
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -113,7 +113,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Read the long context in /app/context.txt carefully. Then answer the question in /app/question.txt based solely on information found in the context. Print only the answer, nothing else."
   export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

@@ -98,12 +98,12 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=mt-bench
 
 # Custom test: LLM-as-judge single-answer grading (1-10 scale, normalized to [0,1])
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 python3 /tests/grade.py > /logs/verifier/reward.txt 2>/logs/verifier/error.log
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /tests/grade.py <<'GRADE'
 import os, json, re, urllib.request
@@ -179,7 +179,8 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]
