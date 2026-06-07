@@ -8,8 +8,8 @@ variable "OTEL_IMAGE"         { default = "${REGISTRY}/core/otel:${TAG}" }
 variable "RUNTIME_BUNDLE_IMAGE" { default = "${REGISTRY}/core/runtime-bundle:${TAG}" }
 
 target "eval" {
-  context    = "."
-  dockerfile = "core/combination.Dockerfile"
+  context    = "core"
+  dockerfile = "combination.Dockerfile"
   args = {
     BENCHMARK_IMAGE      = BENCHMARK_IMAGE
     AGENT_IMAGE          = AGENT_IMAGE
