@@ -4,7 +4,7 @@
 #   - apt-retry wrapper
 #   - uv for pyarrow
 #   - sitecustomize.py — urllib retries for subclass heredocs
-# Plus: default /tests/test.sh writes reward=-1 so externally-graded
+# Plus: default /grade.sh writes reward=-1 so externally-graded
 # benchmarks start from a known-bad baseline that their real grader
 # overrides.
 ARG REGISTRY=quay.io/eval-containers
