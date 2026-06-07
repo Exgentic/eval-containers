@@ -27,11 +27,11 @@ RUN /opt/agent/install.sh
 # not the multi-minute apt+venv install above.
 COPY run.py /opt/agent/run.py
 RUN chmod +x /opt/agent/run.py
-RUN mkdir -p /agent && cat > /agent/run.sh <<'E' && chmod +x /agent/run.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 exec /opt/terminus2-venv/bin/python /opt/agent/run.py
 E
-ENTRYPOINT ["/agent/run.sh"]
+ENTRYPOINT ["/run.sh"]

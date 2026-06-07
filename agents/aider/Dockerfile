@@ -17,7 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 pip install --no-cache-dir aider-chat==0.86.2
 I
-RUN mkdir -p /agent && cat > /agent/run.sh <<'E' && chmod +x /agent/run.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
@@ -25,4 +25,4 @@ exec aider --yes-always --no-git --no-auto-commits --no-stream \
   --openai-api-base "${OPENAI_BASE_URL:-http://model:4000}" \
   --model "openai/${EVAL_MODEL:-default}" --message "$TASK"
 E
-ENTRYPOINT ["/agent/run.sh"]
+ENTRYPOINT ["/run.sh"]

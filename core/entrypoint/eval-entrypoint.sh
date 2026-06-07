@@ -88,7 +88,7 @@ su agent -s /bin/bash -c "
   export OPENAI_API_KEY='${OPENAI_API_KEY:-}'
   export ANTHROPIC_BASE_URL='${ANTHROPIC_BASE_URL:-}'
   export ANTHROPIC_API_KEY='${ANTHROPIC_API_KEY:-}'
-  timeout ${EVAL_TIMEOUT:-300} /agent/run.sh
+  timeout ${EVAL_TIMEOUT:-300} /run.sh
 " > /output/agent/stdout.log 2> /output/agent/stderr.log || true
 AGENT_EXIT=$?
 ENDED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)

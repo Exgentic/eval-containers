@@ -17,7 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 for b in node npm npx copilot; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
-RUN mkdir -p /agent && cat > /agent/run.sh <<'E' && chmod +x /agent/run.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export COPILOT_PROVIDER_BASE_URL="${OPENAI_BASE_URL:-http://model:4000/v1}"
@@ -26,4 +26,4 @@ export COPILOT_OFFLINE=true
 export COPILOT_MODEL="${COPILOT_MODEL:-default}"
 echo "$TASK" | exec copilot --yolo
 E
-ENTRYPOINT ["/agent/run.sh"]
+ENTRYPOINT ["/run.sh"]

@@ -17,7 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 for b in node npm npx cn; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
-RUN mkdir -p /agent && cat > /agent/run.sh <<'E' && chmod +x /agent/run.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
@@ -38,4 +38,4 @@ models:
 CONF
 exec cn -p "$TASK"
 E
-ENTRYPOINT ["/agent/run.sh"]
+ENTRYPOINT ["/run.sh"]
