@@ -62,8 +62,8 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=gaia
 
 # Test: exact match on agent stdout
-COPY --from=test-exact-match /test.sh /tests/test.sh
-RUN chmod +x /tests/test.sh
+COPY --from=test-exact-match /test.sh /grade.sh
+RUN chmod +x /grade.sh
 
 # Shared entrypoint (agent → test → results)
 
@@ -95,7 +95,8 @@ $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
     cp "$f" /app/
   done
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

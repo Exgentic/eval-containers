@@ -20,7 +20,7 @@ The agent receives a task of the form: "You are fixing a freelance software engi
 
 ## How it's graded
 
-Custom `/tests/test.sh` defined inline in the Dockerfile. Grading runs inside the per-task image after the agent exits.
+Custom `/grade.sh` defined inline in the Dockerfile. Grading runs inside the per-task image after the agent exits.
 
 
 ## Per-task build

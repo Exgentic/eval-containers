@@ -59,7 +59,7 @@ processes:
     # via shell redirection rather than process-compose's `log_location`,
     # which wraps lines in a {level,process,replica,message} JSON envelope
     # that breaks verifiers reading raw stdout.
-    command: timeout $TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$TASK" TASK_ID="$TASK_ID" MODEL="$MODEL" TIMEOUT="$TIMEOUT" OPENAI_BASE_URL="$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /opt/agent/entrypoint.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
+    command: timeout $TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$TASK" TASK_ID="$TASK_ID" MODEL="$MODEL" TIMEOUT="$TIMEOUT" OPENAI_BASE_URL="$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /agent/run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
     depends_on:
       gateway:
         condition: process_healthy
@@ -67,7 +67,7 @@ processes:
       restart: "no"
 
   verifier:
-    command: bash /root/tests/test.sh
+    command: bash /grade.sh
     depends_on:
       agent:
         condition: process_completed

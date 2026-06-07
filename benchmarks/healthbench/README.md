@@ -23,7 +23,7 @@ The agent receives a task of the form: "You are a helpful health assistant. Resp
 
 ## How it's graded
 
-Custom `/tests/test.sh` defined inline in the Dockerfile.
+Custom `/grade.sh` defined inline in the Dockerfile.
 
 ## Files
 

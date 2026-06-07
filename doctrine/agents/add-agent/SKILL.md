@@ -23,7 +23,7 @@ below tell you how to use it and why each piece exists.
 1. **Create the agent directory and copy the template.** Make `agents/<name>/`
    and copy [`assets/TEMPLATE.md`](assets/TEMPLATE.md) as your scaffold. The
    Dockerfile must emit the two required scripts at fixed paths:
-   `/opt/agent/install.sh` and `/opt/agent/entrypoint.sh`. *Why:* every agent
+   `/opt/agent/install.sh` and `/agent/run.sh`. *Why:* every agent
    MUST provide exactly these two scripts — install sets up the runtime,
    entrypoint runs the agent (`doctrine/agents/RULES.md:1`). For the simplest
    possible example see `agents/raw/Dockerfile`; for one needing proxy config

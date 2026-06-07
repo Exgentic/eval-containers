@@ -53,7 +53,7 @@ if the evidence section is empty.
 
 ### Grading (`tests/test.sh`)
 
-- [ ] `COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh` (or benchmark-specific test.sh with a justification)
+- [ ] `COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /grade.sh` (or benchmark-specific test.sh with a justification)
 - [ ] `test.sh` reads `/logs/verifier/reward.txt` and writes an integer 0, 1, or fraction. Externally graded benchmarks MAY write `-1`.
 - [ ] `test.sh` does NOT leak `EXPECTED_ANSWER` back to the agent (it's unset during the agent phase by `eval-entrypoint.sh` and restored for test.sh)
 - [ ] **Every metric the benchmark reports lands in `task/result.json`**, with the primary metric named `reward` ([doctrine/compose/RULES.md](../../compose/RULES.md) rule 16). Additional metrics (e.g. `exact_match`, `f1`, `bleu`, `partial_credit`, `tool_calls`) are named fields alongside `reward`. `test.sh` is the only writer; NO metric is left in stdout for downstream to parse.

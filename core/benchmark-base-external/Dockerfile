@@ -50,6 +50,6 @@ COPY --from=entrypoint /eval-sitecustomize.py /usr/local/lib/python3.12/site-pac
 RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app && \
-    printf '#!/bin/bash\nmkdir -p /logs/verifier\necho -1 > /logs/verifier/reward.txt\n' > /tests/test.sh && \
-    chmod +x /tests/test.sh
+    printf '#!/bin/bash\nmkdir -p /logs/verifier\necho -1 > /logs/verifier/reward.txt\n' > /grade.sh && \
+    chmod +x /grade.sh
 WORKDIR /app

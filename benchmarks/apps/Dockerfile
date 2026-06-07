@@ -56,7 +56,7 @@ ENV EVAL_BENCHMARK=apps
 
 # Test: run agent's Python solution against decoded I/O test cases.
 # Handles both stdio mode and functional mode (when fn_name is set).
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 TASK_DIR="/tasks/$EVAL_TASK_ID"
@@ -144,7 +144,7 @@ else
 fi
 rm -rf $TMPDIR
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -161,7 +161,8 @@ $(cat /tasks/$EVAL_TASK_ID/starter_code.txt)"
 
 $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

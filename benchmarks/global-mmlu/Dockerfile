@@ -69,8 +69,8 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=global-mmlu
 
-COPY --from=test-exact-match /test.sh /tests/test.sh
-RUN chmod +x /tests/test.sh
+COPY --from=test-exact-match /test.sh /grade.sh
+RUN chmod +x /grade.sh
 
 # Reference implementation of the EVAL_BENCHMARK_VERSION override hook.
 # core/entrypoint/eval-entrypoint.sh invokes /eval-refetch-data <revision>
@@ -128,7 +128,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
   export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]
