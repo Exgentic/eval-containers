@@ -26,7 +26,7 @@ RUN /opt/agent/install.sh
 # below, not the multi-minute venv install above.
 COPY run_openhands.py /opt/agent/run_openhands.py
 RUN chmod +x /opt/agent/run_openhands.py
-RUN mkdir -p /agent && cat > /agent/run.sh <<'E' && chmod +x /agent/run.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export LLM_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
@@ -34,4 +34,4 @@ export LLM_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export LLM_MODEL="${EVAL_MODEL:-default}"
 exec /opt/openhands-venv/bin/python /opt/agent/run_openhands.py
 E
-ENTRYPOINT ["/agent/run.sh"]
+ENTRYPOINT ["/run.sh"]

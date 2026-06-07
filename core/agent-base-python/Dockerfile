@@ -77,9 +77,9 @@ echo "[eval-pip-shim] uv pip failed after 5 tries" >&2
 exit 1
 SHIM
 
-RUN mkdir -p /opt/agent /agent && \
+RUN mkdir -p /opt/agent && \
     printf '#!/bin/bash\nset -euo pipefail\n# Default skeleton: subclass agent Dockerfiles overwrite this.\n' > /opt/agent/install.sh && chmod +x /opt/agent/install.sh && \
-    printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /agent/run.sh && chmod +x /agent/run.sh
+    printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /run.sh && chmod +x /run.sh
 
 # Shared helper for agents whose upstream pins a specific Python version
 # (currently openhands-ai, harbor). Lives as a separate file so shellcheck

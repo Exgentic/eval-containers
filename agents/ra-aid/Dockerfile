@@ -25,7 +25,7 @@ set -euo pipefail
 apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
 pip install --no-cache-dir 'langgraph<0.4' ra-aid==0.19.1
 I
-RUN mkdir -p /agent && cat > /agent/run.sh <<'E' && chmod +x /agent/run.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
@@ -35,4 +35,4 @@ export EXPERT_OPENAI_API_BASE="${OPENAI_API_BASE}"
 exec ra-aid --cowboy-mode --provider openai-compatible --model "${EVAL_MODEL:-default}" \
   --expert-provider openai-compatible --expert-model "${EVAL_MODEL:-default}" -m "$TASK"
 E
-ENTRYPOINT ["/agent/run.sh"]
+ENTRYPOINT ["/run.sh"]

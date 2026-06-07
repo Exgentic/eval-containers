@@ -30,7 +30,7 @@ INSTALL
 RUN chmod +x /opt/agent/install.sh
 
 # entrypoint.sh — runs the agent at evaluation time
-RUN cat > /agent/run.sh <<'ENTRY'
+RUN cat > /run.sh <<'ENTRY'
 #!/bin/bash
 set -euo pipefail
 
@@ -47,9 +47,9 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # Run the agent — print answer to stdout
 exec {AGENT_COMMAND} "$TASK"
 ENTRY
-RUN chmod +x /agent/run.sh
+RUN chmod +x /run.sh
 
-ENTRYPOINT ["/agent/run.sh"]
+ENTRYPOINT ["/run.sh"]
 ```
 
 ## Blanks to fill
