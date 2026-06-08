@@ -27,7 +27,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt   # cargo fmt only; clippy/test gate lives in CI (test.yml)
-      - uses: Swatinem/rust-cache@v2
 
       - name: Install Python (for pre-commit + ruff)
         uses: actions/setup-python@v5
@@ -36,6 +35,15 @@ jobs:
 
       - name: Install pre-commit
         run: pip install pre-commit
+
+      # Cache the hook environments (gitleaks, ruff, shellcheck, …) — the bulk
+      # of the runtime is installing these, and they only change when the
+      # config or Python version does.
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
 
       # hadolint and helm hooks call the system binaries; install them so the
       # runner has what the local dev environment already provides.
