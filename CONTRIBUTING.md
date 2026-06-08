@@ -30,14 +30,15 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 Install the git hooks once per clone:
 
 ```sh
-pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
 This wires up the [`.pre-commit-config.yaml`](.pre-commit-config.yaml) gates:
-fast checks (fmt, gitleaks, hygiene, shellcheck, ruff, compose/helm lint) on
-**commit**, the heavier `clippy`/`cargo test` on **push**, and a **commit-msg**
-hook that auto-adds the `Signed-off-by` trailer so commits satisfy the GitHub
-DCO check. Hooks are advisory — DCO and CI remain the enforced gates on every PR.
+fast, non-compiling checks (fmt, gitleaks, hygiene, shellcheck, ruff, hadolint,
+compose/helm lint) on **commit**, and a **commit-msg** hook that auto-adds the
+`Signed-off-by` trailer so commits satisfy the GitHub DCO check. Compile-based
+gates (`clippy`, `cargo test`) run in CI, not in a hook. Hooks are advisory —
+DCO and CI remain the enforced gates on every PR.
 
 ## Contribution Workflow
 
