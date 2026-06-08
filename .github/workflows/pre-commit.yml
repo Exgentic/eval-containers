@@ -1,9 +1,7 @@
 name: Pre-commit
 
-# Runs the .pre-commit-config.yaml gates on GitHub so a clone that skipped the
-# local hook install (or used --no-verify) can't slip past them. Scoped to the
-# files a PR changes, so future drift in untouched files never blocks unrelated
-# work. DCO sign-off is enforced by the separate GitHub DCO check.
+# Enforces the .pre-commit-config.yaml hooks on PRs, scoped to changed files.
+# clippy/test live in test.yml; DCO in the GitHub DCO check.
 
 on:
   pull_request:
@@ -21,34 +19,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # need base history to diff the PR range
+          fetch-depth: 0   # base history for the PR diff
 
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt   # cargo fmt only; clippy/test gate lives in CI (test.yml)
-      - uses: Swatinem/rust-cache@v2
+      # cargo-fmt uses the runner's preinstalled rustfmt; fail fast if it's gone.
+      - name: Verify rustfmt is available
+        run: rustfmt --version
 
-      - name: Install Python (for pre-commit + ruff)
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
-      - name: Install pre-commit
-        run: pip install pre-commit
+      - run: pip install pre-commit
 
-      # hadolint and helm hooks call the system binaries; install them so the
-      # runner has what the local dev environment already provides.
+      - name: Cache pre-commit environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Install hadolint
         run: |
           sudo curl -fsSL -o /usr/local/bin/hadolint \
             https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64
           sudo chmod +x /usr/local/bin/hadolint
-      - name: Install helm
-        uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v4
 
-      # Check only the files this PR changes. Compile-based gates (clippy,
-      # cargo test) are owned by CI separately (test.yml), not here.
       - name: Run pre-commit
         run: |
           pre-commit run \
