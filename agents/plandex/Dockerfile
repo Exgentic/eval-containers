@@ -57,4 +57,5 @@ uv pip install --python /opt/agent/venv/bin/python3 \
 [ -x /opt/agent/bin/plandex ] && ln -sf /opt/agent/bin/plandex /usr/local/bin/plandex || true
 [ -x /opt/agent/bin/plandex-server ] && ln -sf /opt/agent/bin/plandex-server /usr/local/bin/plandex-server || true
 I
+
 ENTRYPOINT ["/run.sh"]

@@ -53,6 +53,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         count += 1
 print(f'Wrote {count} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 # Install official IFEval verification code from google-research
@@ -81,6 +82,7 @@ fi
 # Run the verifier
 python3 /tests/verify.py "$TASK_DIR" "$RESPONSE" > /logs/verifier/reward.txt 2>/logs/verifier/error.log
 TEST
+
 RUN chmod +x /grade.sh
 
 # Python verifier that uses the official IFEval instruction checks
@@ -133,6 +135,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

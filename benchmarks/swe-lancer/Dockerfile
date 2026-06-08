@@ -64,6 +64,7 @@ else
   echo 0 > /logs/verifier/reward.txt
 fi
 TEST
+
 RUN chmod +x /grade.sh && chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
@@ -80,6 +81,7 @@ $(cat /tasks/0/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

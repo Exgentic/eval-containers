@@ -49,6 +49,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         out.write(json.dumps(row) + '\n')
 print(f'Extracted {len(df)} tasks')
 PYEOF
+
 RUN rm -f /tmp/browsecomp.csv && pip uninstall -y pandas
 RUN chmod 600 /tasks/all.jsonl
 
@@ -70,6 +71,7 @@ $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

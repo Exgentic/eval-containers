@@ -35,6 +35,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         out.write(json.dumps(row) + '\n')
 print(f'Wrote {len(t)} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -54,6 +55,7 @@ $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

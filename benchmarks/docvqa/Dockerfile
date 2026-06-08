@@ -48,6 +48,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         os.remove("/tmp/data.parquet")
 print(f"Extracted {count} tasks")
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -91,6 +92,7 @@ Question: ${PROBLEM}${IMAGE_LINE}"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

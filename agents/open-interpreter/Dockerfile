@@ -19,6 +19,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 pip install --no-cache-dir 'setuptools<81' open-interpreter==0.4.3
 I
+
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
@@ -27,4 +28,5 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_API_BASE="${OPENAI_BASE_URL}"
 exec python3 /opt/agent/run_oi.py "$TASK"
 E
+
 ENTRYPOINT ["/run.sh"]

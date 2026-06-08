@@ -17,6 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 for b in node npm npx codex; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
+
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 mkdir -p ~/.codex
@@ -31,4 +32,5 @@ CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 exec codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"
 E
+
 ENTRYPOINT ["/run.sh"]

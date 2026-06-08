@@ -44,6 +44,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         out.write(json.dumps(row) + '\n')
 print(f'Extracted {len(t)} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -55,6 +56,7 @@ RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 mkdir -p /logs/verifier
 echo -1 > /logs/verifier/reward.txt
 TEST
+
 RUN chmod +x /grade.sh
 
 COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
@@ -69,6 +71,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

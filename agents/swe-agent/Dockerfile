@@ -26,6 +26,7 @@ pip install --no-cache-dir -e /opt/swe-agent
 chmod 0777 /root && mkdir -p /root/tools && chmod 0777 /root/tools
 touch /root/.swe-agent-env /root/state.json && chmod 0666 /root/.swe-agent-env /root/state.json
 I
+
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
@@ -49,4 +50,5 @@ exec sweagent run --agent.model.name="openai/${EVAL_MODEL:-default}" --agent.mod
   --agent.model.api_base="${OPENAI_BASE_URL:-http://model:4000}" --env.deployment.type=local \
   --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.text="$TASK"
 E
+
 ENTRYPOINT ["/run.sh"]
