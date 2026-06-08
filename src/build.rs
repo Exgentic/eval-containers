@@ -32,6 +32,10 @@
 
 use clap::{Args, Subcommand};
 use eval_containers::bake;
+use eval_containers::naming::{
+    agent_bake_target, agent_image, benchmark_bake_target, benchmark_image, benchmark_task_image,
+    compose_artifact, flatten_imagestream, model_bake_target, model_image,
+};
 use std::io::Write;
 use std::process::{Command, Stdio};
 
@@ -121,7 +125,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
 
     match args.target {
         BuildTarget::Agent { name } => {
-            bake(registry, &format!("agent-{name}"), &[], builder, dry_run)
+            bake(registry, &agent_bake_target(&name), &[], builder, dry_run)
         }
         BuildTarget::Bench { benchmark, task_id } => {
             if let Some(tid) = task_id {
@@ -133,7 +137,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 }
                 // Per-task variant — outside bake's static graph.
                 docker_build(
-                    &format!("{registry}/benchmarks/{benchmark}-{tid}:latest"),
+                    &benchmark_task_image(registry, &benchmark, &tid, "latest"),
                     &format!("./benchmarks/{benchmark}"),
                     &[format!("EVAL_TASK_ID={tid}")],
                     dry_run,
@@ -141,7 +145,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             } else {
                 bake(
                     registry,
-                    &format!("benchmark-{benchmark}"),
+                    &benchmark_bake_target(&benchmark),
                     &[],
                     builder,
                     dry_run,
@@ -149,8 +153,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             }
         }
         BuildTarget::Model { name } => {
-            let target = format!("model-{}", name.replace('.', "_"));
-            bake(registry, &target, &[], builder, dry_run)
+            bake(registry, &model_bake_target(&name), &[], builder, dry_run)
         }
         BuildTarget::Eval {
             benchmark,
@@ -161,12 +164,12 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
         } => {
             let tag = std::env::var("TAG").unwrap_or_else(|_| "latest".to_string());
             let bench_tag = if let Some(ref tid) = task_id {
-                format!("{registry}/benchmarks/{benchmark}-{tid}:{tag}")
+                benchmark_task_image(registry, &benchmark, tid, &tag)
             } else {
-                format!("{registry}/benchmarks/{benchmark}:{tag}")
+                benchmark_image(registry, &benchmark, &tag)
             };
-            let agent_tag = format!("{registry}/agents/{agent}:{tag}");
-            let model_tag = format!("{registry}/models/{model}:{tag}");
+            let agent_tag = agent_image(registry, &agent, &tag);
+            let model_tag = model_image(registry, &model, &tag);
             let bake_env = vec![
                 ("EVAL_BENCHMARK", benchmark.clone()),
                 ("EVAL_AGENT", agent.clone()),
@@ -195,14 +198,14 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                     let name = entry.file_name().to_string_lossy().to_string();
                     let compose = format!("./benchmarks/{name}/compose.yaml");
                     if std::path::Path::new(&compose).exists() {
-                        let tag = format!("{registry}/compose/{name}:latest");
+                        let tag = compose_artifact(registry, &name);
                         docker_compose_publish(&compose, &tag, dry_run)?;
                     }
                 }
                 Ok(())
             } else {
                 let compose = format!("./benchmarks/{benchmark}/compose.yaml");
-                let tag = format!("{registry}/compose/{benchmark}:latest");
+                let tag = compose_artifact(registry, &benchmark);
                 docker_compose_publish(&compose, &tag, dry_run)
             }
         }
@@ -379,19 +382,6 @@ struct BakePrint {
     target: std::collections::BTreeMap<String, BakeTargetSpec>,
 }
 
-/// Nested image repo path → OpenShift imagestream name (single segment).
-/// `core`/`gateways` keep their prefix (`core/otel` → `core-otel`); the
-/// per-eval categories drop it (`benchmarks/aime` → `aime`,
-/// `evals/aime--codex` → `aime-codex`); dots and `--` collapse to `-`.
-fn flatten_imagestream(repo: &str) -> String {
-    let (cat, rest) = repo.split_once('/').unwrap_or(("", repo));
-    let name = rest.to_lowercase().replace('.', "-").replace("--", "-");
-    match cat {
-        "core" | "gateways" => format!("{cat}-{name}"),
-        _ => name,
-    }
-}
-
 /// Split a full image ref into (repo-path, tag), stripping the registry.
 fn split_ref<'a>(full: &'a str, registry: &str) -> (&'a str, &'a str) {
     let no_reg = full.strip_prefix(&format!("{registry}/")).unwrap_or(full);
@@ -480,7 +470,7 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
     // Map the CLI target to its bake target + the same bake vars/overrides
     // the buildx path uses (combo parameterization, not graph knowledge).
     let (bake_target, overrides, env): (String, Vec<String>, Vec<(&str, String)>) = match target {
-        BuildTarget::Agent { name } => (format!("agent-{name}"), vec![], vec![]),
+        BuildTarget::Agent { name } => (agent_bake_target(&name), vec![], vec![]),
         BuildTarget::Bench { benchmark, task_id } => {
             if task_id.is_some() {
                 return Err(
@@ -489,11 +479,9 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
                         .into(),
                 );
             }
-            (format!("benchmark-{benchmark}"), vec![], vec![])
+            (benchmark_bake_target(&benchmark), vec![], vec![])
         }
-        BuildTarget::Model { name } => {
-            (format!("model-{}", name.replace('.', "_")), vec![], vec![])
-        }
+        BuildTarget::Model { name } => (model_bake_target(&name), vec![], vec![]),
         BuildTarget::Eval {
             benchmark,
             agent,

@@ -11,7 +11,7 @@ LABEL eval.agent.url="https://github.com/princeton-nlp/SWE-agent"
 LABEL eval.agent.version="2.2.8"
 ENV EVAL_AGENT_VERSION_DEFAULT="2.2.8"
 ENV EVAL_AGENT=mini-swe-agent
-RUN uv pip install --system mini-swe-agent==2.2.8
+RUN uv pip install --system --no-cache mini-swe-agent==2.2.8
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
