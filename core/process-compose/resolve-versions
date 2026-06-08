@@ -1,0 +1,52 @@
+#!/bin/bash
+# Version-override resolution (benchmarks/RULES.md + agents/RULES.md, principle 9).
+#
+# Two orthogonal version axes, each baked as a *_DEFAULT at image build time and
+# optionally overridden at run time via an EVAL_*_VERSION env var:
+#
+#   benchmark dataset revision : EVAL_BENCHMARK_VERSION  (hook: /eval-refetch-data)
+#   agent upstream CLI version : EVAL_AGENT_VERSION      (hook: /eval-reinstall-agent)
+#
+# When an override differs from the baked default we invoke the image's hook to
+# rematerialize the data / reinstall the agent; if the image ships no hook we
+# refuse to run rather than silently report the wrong version. Either way the
+# resolved version is recorded to version.json so every run artifact is honest
+# about what actually ran.
+#
+# Runs as root, before process-compose launches the agent (see `run`).
+#
+# OUTPUT_DIR and the *_HOOK paths are overridable purely so this script is
+# testable in isolation (tests/cli/version_resolve.rs); in the image they take
+# their production defaults.
+set -euo pipefail
+
+OUTPUT_DIR="${OUTPUT_DIR:-/output}"
+REFETCH_HOOK="${REFETCH_HOOK:-/eval-refetch-data}"
+REINSTALL_HOOK="${REINSTALL_HOOK:-/eval-reinstall-agent}"
+
+mkdir -p "$OUTPUT_DIR/task" "$OUTPUT_DIR/agent"
+
+# resolve <axis-label> <default> <override> <hook> <name> <out-file>
+resolve() {
+  local label="$1" default="$2" override="$3" hook="$4" name="$5" out="$6"
+  local resolved="${override:-$default}"
+  if [ -n "$override" ] && [ "$override" != "$default" ]; then
+    if [ -x "$hook" ]; then
+      echo "eval-containers: $label version override $default -> $override" >&2
+      "$hook" "$override"
+    else
+      echo "eval-containers: $label version override=$override set but this image has no $hook hook (baked default: $default). Refusing to run." >&2
+      exit 64
+    fi
+  fi
+  printf '{"%s":"%s","default":"%s","override":"%s","resolved":"%s"}\n' \
+    "$label" "$name" "$default" "$override" "$resolved" > "$out"
+}
+
+resolve "benchmark" \
+  "${EVAL_BENCHMARK_VERSION_DEFAULT:-}" "${EVAL_BENCHMARK_VERSION:-}" \
+  "$REFETCH_HOOK" "${EVAL_BENCHMARK:-unknown}" "$OUTPUT_DIR/task/version.json"
+
+resolve "agent" \
+  "${EVAL_AGENT_VERSION_DEFAULT:-}" "${EVAL_AGENT_VERSION:-}" \
+  "$REINSTALL_HOOK" "${EVAL_AGENT:-unknown}" "$OUTPUT_DIR/agent/version.json"

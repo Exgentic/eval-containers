@@ -36,7 +36,7 @@ services:
     image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/${EVAL_BENCHMARK:-aime}--${EVAL_AGENT:-claude-code}:latest
     environment:
       # Pass framework axes through as both EVAL_* (canonical — what
-      # /eval-entrypoint.sh and per-benchmark /entrypoint.sh read) and
+      # `run`/resolve-versions and per-benchmark /entrypoint.sh read) and
       # bare names (legacy — what process-compose.yaml + write-result
       # read internally). Until those internals migrate to EVAL_*,
       # we set both so the run is consistent regardless of which path
@@ -46,6 +46,11 @@ services:
       EVAL_MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
       EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-300}
+      # Version-override axes (principle 9). Empty unless the caller passes
+      # --benchmark-version / --agent-version; resolve-versions reads these
+      # against the image's baked EVAL_*_VERSION_DEFAULT.
+      EVAL_BENCHMARK_VERSION: ${EVAL_BENCHMARK_VERSION:-}
+      EVAL_AGENT_VERSION: ${EVAL_AGENT_VERSION:-}
       BENCHMARK: ${EVAL_BENCHMARK:-aime}
       AGENT: ${EVAL_AGENT:-claude-code}
       MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}

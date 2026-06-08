@@ -391,13 +391,49 @@ fn every_benchmark_has_readme() {
     eprintln!("✓ all benchmarks have README.md");
 }
 
-// NOTE: `shared_entrypoint_reads_version_vars` used to live here, guarding that
-// core/entrypoint/eval-entrypoint.sh reads EVAL_*_VERSION and writes the
-// version.json files (RULES.md principle 9). PR #50 deleted that script as
-// "dead code", and the version-override implementation no longer exists
-// anywhere in the repo — so the test was guarding a removed file. Removed here
-// to unblock the gate. Whether principle 9 is intentionally retired or #50
-// dropped a live contract is tracked separately (see PR #51 discussion).
+// ─── RULES.md principle 9: version-override contract is wired end-to-end ─
+//
+// The override axis (`--benchmark-version`/`--agent-version` → EVAL_*_VERSION)
+// is consumed at runtime by core/process-compose/resolve-versions, which `run`
+// invokes before the agent: it honors an override via the image's refetch/
+// reinstall hook and records version.json. PR #50 deleted the previous
+// implementation (eval-entrypoint.sh) and the refactor never ported it, so the
+// override silently no-op'd (issue #54); this guards the restored chain so it
+// can't rot again. (A full live render is exercised by the container/compose
+// suites; this is the cheap structural floor.)
+#[test]
+fn version_override_is_wired() {
+    let resolver = fs::read_to_string("core/process-compose/resolve-versions")
+        .expect("core/process-compose/resolve-versions missing");
+    let needles = [
+        "EVAL_BENCHMARK_VERSION",
+        "EVAL_AGENT_VERSION",
+        "/eval-refetch-data",
+        "/eval-reinstall-agent",
+        "version.json",
+    ];
+    let missing: Vec<&str> = needles
+        .iter()
+        .copied()
+        .filter(|n| !resolver.contains(n))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "resolve-versions no longer references (principle 9): {}",
+        missing.join(", ")
+    );
+
+    // `run` must actually invoke it, and compose must pass the override through.
+    assert!(
+        contains_line(Path::new("core/process-compose/run"), "resolve-versions"),
+        "core/process-compose/run does not invoke resolve-versions"
+    );
+    assert!(
+        contains_line(Path::new("compose/services.yaml"), "EVAL_BENCHMARK_VERSION"),
+        "compose/services.yaml runner does not pass EVAL_BENCHMARK_VERSION through"
+    );
+    eprintln!("✓ version-override contract wired (resolve-versions ← run ← compose)");
+}
 
 #[test]
 fn every_agent_has_readme() {
