@@ -1,26 +1,9 @@
 #!/usr/bin/env bash
-# run.sh — build and run ONE eval on OpenShift.
+# run.sh — build + run one eval on OpenShift: a single --task, or --dataset
+# (whole dataset → an Indexed Job). Model + flags: oc/README.md and the case below.
 #
-# A dataset eval is one k8s Indexed Job (the dataset IS the sweep): each example
-# is a completion index, k8s fans them out and caps concurrency. With --queue,
-# Kueue admits the Job against a global quota; without it, --parallelism is the cap.
-#
-#   ./oc/run.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --dataset-size 500
+#   ./oc/run.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --dataset
 #   ./oc/run.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --task 0   # single, debug
-#
-# Three standard tools: eval-containers (build) · helm (render) · oc (apply/watch).
-#
-# Flags: --benchmark --agent --model (required);
-#   --dataset-size N   run the whole dataset as an Indexed Job (omit → single --task)
-#   --task T           single-task debug run (default 0; ignored with --dataset-size)
-#   --parallelism M    concurrency cap within the run (default: all at once)
-#   --retry K          per-example retries (k8s ≥1.29; omit → no per-index retry)
-#   --queue NAME       Kueue local-queue (omit → no Kueue, parallelism is the cap)
-#   --eval-model S --namespace NS --registry URL --pvc NAME --repo-dir P
-#   --rebuild          force rebuild even if the imagestream exists
-#   --no-build         skip the build; --no-run build only, don't submit
-#   --test             isolated -test imagestreams + runs-test/ path (prod untouched)
-#   --rerun --watch --dry-run
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 

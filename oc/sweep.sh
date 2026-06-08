@@ -1,16 +1,8 @@
 #!/usr/bin/env bash
-# sweep.sh — run a benchmark×agent grid, each cell a dataset Indexed Job.
-#
-# The per-example fan-out lives in the Job (Indexed); this only loops the grid
-# and tags every Job `sweep-id=<id>`. With --queue, Kueue caps total concurrency
-# across the whole grid from one budget — so this stays a plain submit loop with
-# no client-side throttle.
+# sweep.sh — loop run.sh over a benchmark×agent grid, each cell a dataset Indexed
+# Job tagged sweep-id=<id>. Flags: see the case block. Default grid: the *.txt.
 #
 #   ./oc/sweep.sh --dataset-size 50 --model gpt-5.4--bifrost --queue eval-queue
-#
-# Flags: --model (required); --dataset-size N --parallelism M --retry K --queue NAME
-#   --benchmarks "a b c"  --agents "x y"   (default: oc/benchmarks.txt × oc/agents.txt)
-#   --eval-model --namespace --pvc --repo-dir --no-build --dry-run
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"

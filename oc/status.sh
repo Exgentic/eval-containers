@@ -1,16 +1,8 @@
 #!/usr/bin/env bash
-# status.sh — eval Job progress, straight off labels. One `oc get jobs`.
+# status.sh — eval Job *run* progress off labels (one `oc get jobs`). For eval
+# *results* (pass/reward/cost/traces): fetch.sh + `eval-containers report output/`.
 #
-#   ./oc/status.sh --sweep-id <id>          # one sweep
-#   ./oc/status.sh --benchmark aime         # everything for a benchmark
-#   ./oc/status.sh                          # all eval Jobs in the namespace
-#
-# Indexed Jobs report COMPLETIONS as <succeeded>/<datasetSize>, so dataset
-# progress needs no manifest, reader pod, or log scraping — it's a column.
-#
-# This shows *run* progress only. For *eval* results (PASS/FAIL, reward, tokens,
-# cost), pull them and use the CLI's aggregator — the source of truth:
-#   ./oc/fetch.sh --sweep-id <id> && eval-containers report output/
+#   ./oc/status.sh --sweep-id <id>   # or --benchmark aime, or nothing for all
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 

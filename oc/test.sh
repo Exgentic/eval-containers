@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
-# test.sh — smoke-test the pipeline: run one task, assert the result is real.
+# test.sh — CI smoke test: run one task in isolated -test mode (prod untouched),
+# then assert on the PVC output (result written, agent exit 0, gen_ai traces).
+# Exits non-zero on the first failed check.
 #
 #   ./oc/test.sh --benchmark aime --agent codex --model gpt-5.4--bifrost
-#
-# A thin wrapper over run.sh: runs a single task in isolated -test mode (so
-# production imagestreams + results are never touched), then asserts on the PVC
-# output (result written, agent exited cleanly, traces have LLM spans). Exits
-# non-zero on the first failed check — usable in CI.
-#
-# Flags: --benchmark --agent --model (required); --task --eval-model
-#   --namespace --pvc --repo-dir --rebuild --no-build
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"

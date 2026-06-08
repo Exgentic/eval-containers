@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
-# fetch.sh — copy eval output off the PVC with `oc cp`.
+# fetch.sh — `oc cp` eval output off the PVC (paths read from Job labels).
 #
 #   ./oc/fetch.sh --benchmark aime --agent codex --model gpt-5.4--bifrost   # whole dataset
 #   ./oc/fetch.sh --sweep-id <id>                                           # every Job in a sweep
-#
-# Reads result paths off the Jobs' own labels (benchmark/agent/model) — no
-# manifest. Uses the shared eval-reader pod, the standard way to read a PVC.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
