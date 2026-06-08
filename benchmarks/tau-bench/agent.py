@@ -102,7 +102,7 @@ def main():
 
             # Forward to real model
             response = forward_to_model(request_data)
-            print(f"[agent] got model response", file=sys.stderr)
+            print("[agent] got model response", file=sys.stderr)
 
             # Post response back to bridge
             post_response(response)

@@ -271,7 +271,7 @@ fi
 
 # Wait for pod to appear
 POD=""
-for i in $(seq 1 60); do
+for _ in $(seq 1 60); do
   POD=$(oc get pods -n "$NAMESPACE" -l "job-name=$JOB_NAME" -o name 2>/dev/null | head -1)
   [[ -n "$POD" ]] && break
   sleep 2
@@ -281,7 +281,7 @@ log "Pod: $POD"
 
 # Wait for runner container to be running
 log "Waiting for runner container to start ..."
-for i in $(seq 1 90); do
+for _ in $(seq 1 90); do
   RUNNER_STATE=$(oc get "$POD" -n "$NAMESPACE" \
     -o jsonpath='{.status.containerStatuses[?(@.name=="runner")].state.running}' 2>/dev/null || true)
   [[ -n "$RUNNER_STATE" ]] && break
@@ -293,7 +293,7 @@ oc logs -f -n "$NAMESPACE" "$POD" -c runner 2>&1 || true
 
 # Wait for job to reach terminal state
 log "Waiting for job to complete ..."
-for i in $(seq 1 180); do
+for _ in $(seq 1 180); do
   JOB_STATUS=$(oc get job "$JOB_NAME" -n "$NAMESPACE" \
     -o jsonpath='{.status.conditions[*].type}' 2>/dev/null || true)
   [[ "$JOB_STATUS" == *"Complete"* || "$JOB_STATUS" == *"Failed"* ]] && break

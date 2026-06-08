@@ -55,12 +55,14 @@ def call_judge(question: str, response: str, correct_answer: str) -> str:
         correct_answer=correct_answer,
     )
 
-    body = json.dumps({
-        "model": "default",
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": 0,
-        "max_tokens": 1024,
-    }).encode()
+    body = json.dumps(
+        {
+            "model": "default",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0,
+            "max_tokens": 1024,
+        }
+    ).encode()
 
     req = urllib.request.Request(
         f"{MODEL_URL}/v1/chat/completions",

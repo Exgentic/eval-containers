@@ -18,7 +18,11 @@ messages = interpreter.chat(task, display=False, stream=False)
 final = ""
 if isinstance(messages, list):
     for m in messages:
-        if isinstance(m, dict) and m.get("role") == "assistant" and m.get("type") == "message":
+        if (
+            isinstance(m, dict)
+            and m.get("role") == "assistant"
+            and m.get("type") == "message"
+        ):
             final = m.get("content", "") or final
 if not final and isinstance(messages, list) and messages:
     last = messages[-1]
