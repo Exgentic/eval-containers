@@ -28,6 +28,11 @@ flatImages: false
 otelImage: ""
 gatewayImageRef: ""
 runnerImageRef: ""
+# Isolation for `--test` runs: imageSuffix selects -test gateway/runner
+# imagestreams (production untouched); nameSuffix keeps the test Job name from
+# colliding with the production one. Empty for normal runs.
+imageSuffix: ""
+nameSuffix: ""
 # Internal upstream version overrides (CLI --*-version, --max-budget); empty = unset
 benchmarkVersion: ""
 agentVersion: ""

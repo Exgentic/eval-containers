@@ -14,11 +14,15 @@ The model in one line: **a dataset eval is one [Indexed Job](https://kubernetes.
 |--------|------|
 | `run.sh`    | build + submit **one** eval. `--dataset-size N` → an Indexed Job over the dataset; omit it for a single-`--task` debug run. |
 | `sweep.sh`  | loop a benchmark×agent grid, one Indexed Job per cell, all tagged `sweep-id=<id>`. |
-| `status.sh` | `oc get jobs` by label — `COMPLETIONS` is `<succeeded>/<datasetSize>`. |
+| `status.sh` | `oc get jobs` by label + per-Job PASSED/TOTAL and missing-traces count off the PVC (`--no-results` for Job columns only). |
 | `fetch.sh`  | `oc cp` results off the PVC (reads paths from Job labels). |
-| `test.sh`   | smoke test: run one task + assert result/exit/traces (CI-usable). |
+| `test.sh`   | smoke test in isolated `-test` mode (prod images untouched): run one task + assert result/exit/traces (CI-usable). |
 | `discover.sh` | regenerate `agents.txt` / `benchmarks.txt`. |
-| `_lib.sh`   | the only non-trivial logic: artifact name → flat ImageStream ref. |
+| `_lib.sh`   | shared defaults (namespace/registry) + the name-flatten helper. |
+
+`run.sh` also carries `--rebuild` (force rebuild), `--no-run` (build only), and
+`--test` (isolated `-test` imagestreams + `runs-test/` results — production
+untouched), matching the original tooling.
 
 ## Quickstart
 

@@ -4,7 +4,7 @@ kind: Job
 metadata:
   # A dataset eval (datasetSize set) is named <benchmark>-<agent>; a single-task
   # debug run keeps the task in the name so several can coexist.
-  name: {{ if $v.datasetSize }}{{ $v.benchmark }}-{{ $v.agent }}{{ else }}{{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}{{ end }}
+  name: {{ if $v.datasetSize }}{{ $v.benchmark }}-{{ $v.agent }}{{ else }}{{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}{{ end }}{{ $v.nameSuffix }}
   labels:
     {{- include "eval.labels" . | nindent 4 }}
 spec:

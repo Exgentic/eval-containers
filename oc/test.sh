@@ -3,12 +3,13 @@
 #
 #   ./oc/test.sh --benchmark aime --agent codex --model gpt-5.4--bifrost
 #
-# A thin wrapper over run.sh: runs a single task to completion, then asserts on
-# the PVC output (result written, agent exited cleanly, traces have LLM spans).
-# Exits non-zero on the first failed check — usable in CI.
+# A thin wrapper over run.sh: runs a single task in isolated -test mode (so
+# production imagestreams + results are never touched), then asserts on the PVC
+# output (result written, agent exited cleanly, traces have LLM spans). Exits
+# non-zero on the first failed check — usable in CI.
 #
 # Flags: --benchmark --agent --model (required); --task --eval-model
-#   --namespace --pvc --repo-dir --no-build
+#   --namespace --pvc --repo-dir --rebuild --no-build
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"
@@ -21,6 +22,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --eval-model) PASS_ARGS+=(--eval-model "$2"); shift 2;;
   --pvc) PASS_ARGS+=(--pvc "$2"); shift 2;;
   --repo-dir) REPO_DIR="$2"; PASS_ARGS+=(--repo-dir "$2"); shift 2;;
+  --rebuild) PASS_ARGS+=(--rebuild); shift;;
   --no-build) PASS_ARGS+=(--no-build); shift;;
   *) echo "Unknown argument: $1" >&2; exit 1;;
 esac; done
@@ -29,13 +31,14 @@ esac; done
 pass() { echo "[test] PASS: $*"; }
 fail() { echo "[test] FAIL: $*" >&2; exit 1; }
 
-JOB="${BENCHMARK}-${AGENT}-task-${TASK}"
-RESULT="/data/runs/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"
+# Isolated -test run: job <b>-<a>-task-<t>-test, results under runs-test/.
+JOB="${BENCHMARK}-${AGENT}-task-${TASK}-test"
+RESULT="/data/runs-test/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"
 read_file() { oc exec eval-reader -n "$NAMESPACE" -- cat "$1" 2>/dev/null || true; }
 
-echo "[test] running $BENCHMARK/$AGENT/$MODEL task=$TASK …"
+echo "[test] running $BENCHMARK/$AGENT/$MODEL task=$TASK (isolated -test) …"
 bash "$RUN" --benchmark "$BENCHMARK" --agent "$AGENT" --model "$MODEL" --task "$TASK" \
-  --rerun --watch "${PASS_ARGS[@]}"
+  --test --rerun --watch ${PASS_ARGS[@]+"${PASS_ARGS[@]}"}
 
 echo "[test] === assertions ==="
 RESULT_JSON=$(read_file "$RESULT/task/result.json")

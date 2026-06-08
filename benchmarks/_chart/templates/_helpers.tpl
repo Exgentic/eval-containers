@@ -33,17 +33,19 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
 
 {{/* Image refs. Default to the nested registry path (quay-style); when
      flatImages is set, compose the flat ImageStream name the OpenShift internal
-     registry requires (no slashes) — lowercase, dots→dash, `--`→`-`. An explicit
-     *ImageRef override always wins. This is the ONLY place flattening lives. */}}
+     registry requires (no slashes) — lowercase, dots→dash, `--`→`-`. imageSuffix
+     (e.g. "-test") selects isolated gateway+runner imagestreams so a test run
+     never touches production images. An explicit *ImageRef override always wins.
+     This is the ONLY place flattening lives. */}}
 {{- define "eval.flat" -}}{{ . | lower | replace "." "-" | replace "--" "-" }}{{- end -}}
 {{- define "eval.otelImage" -}}
 {{- if .otelImage }}{{ .otelImage }}{{ else if .flatImages }}{{ .registry }}/core-otel:latest{{ else }}{{ .registry }}/core/otel:latest{{ end -}}
 {{- end -}}
 {{- define "eval.gatewayImage" -}}
-{{- if .gatewayImageRef }}{{ .gatewayImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" .gatewayImage }}:{{ .gatewayTag }}{{ else }}{{ .registry }}/models/{{ .gatewayImage }}:{{ .gatewayTag }}{{ end -}}
+{{- if .gatewayImageRef }}{{ .gatewayImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" .gatewayImage }}{{ .imageSuffix }}:{{ .gatewayTag }}{{ else }}{{ .registry }}/models/{{ .gatewayImage }}:{{ .gatewayTag }}{{ end -}}
 {{- end -}}
 {{- define "eval.runnerImage" -}}
-{{- if .runnerImageRef }}{{ .runnerImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" (printf "%s--%s" .benchmark .agent) }}:{{ .runnerTag }}{{ else }}{{ .registry }}/evals/{{ .benchmark }}--{{ .agent }}:{{ .runnerTag }}{{ end -}}
+{{- if .runnerImageRef }}{{ .runnerImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" (printf "%s--%s" .benchmark .agent) }}{{ .imageSuffix }}:{{ .runnerTag }}{{ else }}{{ .registry }}/evals/{{ .benchmark }}--{{ .agent }}:{{ .runnerTag }}{{ end -}}
 {{- end -}}
 
 {{/* The /output mount. In Indexed mode each example gets its own per-index dir
