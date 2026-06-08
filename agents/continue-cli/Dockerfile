@@ -17,6 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 for b in node npm npx cn; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
+
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
@@ -38,4 +39,5 @@ models:
 CONF
 exec cn -p "$TASK"
 E
+
 ENTRYPOINT ["/run.sh"]

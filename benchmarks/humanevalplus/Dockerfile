@@ -41,6 +41,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         count += 1
 print(f'Wrote {count} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -75,6 +76,7 @@ else
 fi
 rm -rf $TMPDIR
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -87,6 +89,7 @@ $(cat /tasks/$EVAL_TASK_ID/prompt.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

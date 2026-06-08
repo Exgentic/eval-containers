@@ -59,7 +59,9 @@ fn split_artifact(dir: &Path) -> Result<(String, &str), String> {
         .and_then(|s| s.to_str())
         .ok_or_else(|| format!("artifact has no category parent: {}", dir.display()))?;
     if !["core", "agents", "benchmarks", "models", "gateways"].contains(&category) {
-        return Err(format!("unknown category `{category}` (expected one of core/agents/benchmarks/models/gateways)"));
+        return Err(format!(
+            "unknown category `{category}` (expected one of core/agents/benchmarks/models/gateways)"
+        ));
     }
     Ok((category.to_string(), name))
 }
@@ -178,7 +180,9 @@ mod tests {
         let deps = in_repo_deps(text);
         let out = render("agents", "openhands", &deps, false);
         assert!(out.contains("target \"agent-openhands\""));
-        assert!(out.contains("\"${REGISTRY}/core/agent-base-python\" = \"target:agent-base-python\""));
+        assert!(
+            out.contains("\"${REGISTRY}/core/agent-base-python\" = \"target:agent-base-python\"")
+        );
         assert!(out.contains("tags = [\"${REGISTRY}/agents/openhands:${TAG}\"]"));
     }
 }

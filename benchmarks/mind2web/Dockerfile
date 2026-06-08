@@ -53,6 +53,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         os.remove(local)
 print(f'Extracted {idx} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -66,6 +67,7 @@ mkdir -p /logs/verifier
 cp /output/agent/stdout.log /output/task/agent_trace.log 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -88,6 +90,7 @@ Task: $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

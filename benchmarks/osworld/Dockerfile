@@ -66,6 +66,7 @@ if count == 0:
     raise SystemExit('osworld: no tasks extracted from upstream repo')
 print(f'Extracted {count} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -78,6 +79,7 @@ RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 mkdir -p /logs/verifier
 echo -1 > /logs/verifier/reward.txt
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -98,6 +100,7 @@ Task: $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

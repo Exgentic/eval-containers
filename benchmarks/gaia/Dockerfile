@@ -55,6 +55,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         count += 1
 print(f'Wrote {count} tasks')
 PYEOF
+
 RUN rm -rf /tmp/gaia
 RUN chmod 600 /tasks/all.jsonl
 
@@ -97,6 +98,7 @@ $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

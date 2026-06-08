@@ -9,6 +9,7 @@ provisioning a self-contained Python 3.12 venv at /opt/openhands-venv
 via uv-managed Python during install.sh, and driving the SDK from
 this script under that venv's interpreter — a one-shot CLI wrapper.
 """
+
 import os
 import sys
 import tempfile
@@ -44,7 +45,9 @@ def main() -> None:
     llm = LLM(model=model, api_key=api_key, base_url=base_url, usage_id="smoke")
     agent = Agent(llm=llm)
     workspace = tempfile.mkdtemp(prefix="openhands-")
-    conversation = Conversation(agent=agent, workspace=workspace, max_iteration_per_run=3)
+    conversation = Conversation(
+        agent=agent, workspace=workspace, max_iteration_per_run=3
+    )
     conversation.send_message(Message(role="user", content=[TextContent(text=task)]))
     conversation.run()
     print(f"[openhands] task complete in {workspace}")

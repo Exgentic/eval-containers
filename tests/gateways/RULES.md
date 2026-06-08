@@ -49,7 +49,7 @@ Parent: [../RULES.md](../RULES.md)
    - `gen_ai.input.messages`
    - `gen_ai.output.messages`
    - `gen_ai.response.model`
-   
+
    Wired via the standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var (base
    URL — each flavor derives any provider-specific suffix internally).
 
