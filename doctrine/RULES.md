@@ -33,7 +33,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
    - **Container version** (the Eval Containers-authored wiring) is selected by the **image tag**, set via `EVAL_BENCHMARK_TAG`, `EVAL_AGENT_TAG`, `EVAL_MODEL_TAG`. This is Docker's native versioning mechanism — different tag, different pull, different bits.
 
-   - **Internal version** (the upstream software baked or installed inside) is selected at runtime via `EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_LITELLM_VERSION`. The entrypoint MUST read these env vars, install or activate the requested version, and write the resolved version to the run output directory so every run record is self-describing.
+   - **Internal version** (the upstream software baked or installed inside) is selected at runtime via `EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_LITELLM_VERSION`. The framework launcher (`/usr/local/bin/run`) MUST read these env vars, install or activate the requested version, and write the resolved version to the run output directory so every run record is self-describing.
 
    Both axes are orthogonal: tag controls which container to pull, env var controls what runs inside it. Concrete implementation rules live in `doctrine/benchmarks/RULES.md`, `doctrine/agents/RULES.md`, and `doctrine/models/RULES.md`.
 
@@ -152,3 +152,4 @@ not as issues. The issue tracker is for tracked work only.
 | 2026-05-31 | Tightened principle 15.b — `REGISTRY` and `TAG` are fleet-wide, declared once at the root `./docker-bake.hcl`; per-artifact files reference `${REGISTRY}/...:${TAG}` without redeclaring (principle 11 reuse-over-repetition applied to bake variables). Per-artifact tag overrides via `--set` if genuinely needed. |
 | 2026-05-31 | Added principle 15.h (Variable hygiene) — every bake `variable` exists for a documented reason (per-build override, build-time secret, or orchestration-composed reference); artifact identity stays hardcoded; dead variables fail the lint. Codifies the implicit pattern that drove the REGISTRY / TAG hoists. |
 | 2026-05-31 | Centralized governance under `doctrine/`: this file keeps the project principles (1–15); the Rules Process principles moved to `meta/rules/RULES.md`, the rules graph to `AGENTS.md`, and the procedures (verify/release/audits/build) became skills under `doctrine/`. Supersedes the former “rules live next to the code” principle with centralized governance. |
+| 2026-06-08 | Principle 9: replaced “the entrypoint” with “the framework launcher (`/usr/local/bin/run`)” — version resolution moved from eval-entrypoint.sh to run. |
