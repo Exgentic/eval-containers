@@ -90,6 +90,7 @@ COPY --from=runtime-bundle /bundle/bin/process-compose  /usr/local/bin/process-c
 COPY process-compose/process-compose.yaml         /etc/process-compose.yaml
 COPY process-compose/process-compose-runner.yaml  /etc/process-compose-runner.yaml
 COPY process-compose/run                          /usr/local/bin/run
+COPY process-compose/resolve-versions             /usr/local/bin/resolve-versions
 COPY process-compose/write-result                 /usr/local/bin/write-result
 COPY entrypoint/eval-materialize-task             /usr/local/bin/materialize-task
 COPY entrypoint/reap-sidecars                     /usr/local/bin/reap-sidecars
@@ -101,6 +102,7 @@ RUN chmod 0700 /opt/gateway \
                 /usr/local/bin/process-compose \
                 /usr/local/bin/gosu \
  && chmod +x /usr/local/bin/run \
+              /usr/local/bin/resolve-versions \
               /usr/local/bin/write-result \
               /usr/local/bin/materialize-task \
               /usr/local/bin/reap-sidecars \

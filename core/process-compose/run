@@ -71,6 +71,11 @@ mkdir -p /output/{model,agent,task} /logs/verifier
 chown -R agent:agent /output/agent /tmp 2>/dev/null || true
 chmod 0755 /output /output/agent /output/task /output/model
 
+# Resolve the benchmark/agent version axes (principle 9): honor any
+# EVAL_*_VERSION override via the image's refetch/reinstall hook and record the
+# resolved versions to version.json. Runs as root, before the agent starts.
+/usr/local/bin/resolve-versions
+
 # Capture run start time for the result writer.
 date -u +%Y-%m-%dT%H:%M:%SZ > /output/agent/.started-at
 
