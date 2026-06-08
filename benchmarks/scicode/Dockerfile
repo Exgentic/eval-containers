@@ -73,6 +73,7 @@ if size < 1_000_000:
     # Likely an HTML error page; bail out loudly.
     sys.exit("test_data.h5 download too small; Google Drive may have changed tokens")
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl /tests/data/test_data.h5
 
 WORKDIR /app
@@ -215,6 +216,7 @@ else
 fi
 rm -rf $TMPDIR
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -252,6 +254,7 @@ $SUBS"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

@@ -79,6 +79,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

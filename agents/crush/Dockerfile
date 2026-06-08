@@ -34,6 +34,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 [ -x /opt/agent/bin/crush ] && ln -sf /opt/agent/bin/crush /usr/local/bin/crush || true
 I
+
 COPY entrypoint.sh /run.sh
 RUN chmod +x /run.sh
 ENTRYPOINT ["/run.sh"]

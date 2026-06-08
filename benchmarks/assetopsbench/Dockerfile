@@ -46,6 +46,7 @@ with open('/tasks/all.jsonl', 'w') as out, open('/tmp/data.jsonl') as fin:
         count += 1
 print(f'Wrote {count} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -62,6 +63,7 @@ RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 mkdir -p /logs/verifier
 echo -1 > /logs/verifier/reward.txt
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -72,6 +74,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

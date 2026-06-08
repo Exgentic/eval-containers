@@ -69,6 +69,7 @@ else
   echo 0 > /logs/verifier/reward.txt
 fi
 TEST
+
 RUN chmod +x /grade.sh && chmod -R 700 /tests && chown -R root:root /tests
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -78,6 +79,7 @@ if [ -z "$TASK" ] && [ -f /task/instruction.md ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

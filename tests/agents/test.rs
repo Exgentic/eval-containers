@@ -277,7 +277,9 @@ async fn assert_agent_calls_llm(agent: &str) {
         }
     }
     impl ScopedDir {
-        fn path(&self) -> &std::path::Path { &self.0 }
+        fn path(&self) -> &std::path::Path {
+            &self.0
+        }
     }
     let replay = start_replay_mock(&net, &mock_host).await;
     let _agent_c = start_agent(agent, &net, &mock_host, output_dir.path()).await;

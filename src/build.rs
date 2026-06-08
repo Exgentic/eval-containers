@@ -507,9 +507,18 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
             // Derive flat imagestream names for the three bases, applying the
             // suffix so a --imagestream-suffix -test build pulls from *-test
             // imagestreams rather than the production ones.
-            let bench_is = format!("{}{is_suffix}", flatten_imagestream(&format!("benchmarks/{benchmark}")));
-            let agent_is = format!("{}{is_suffix}", flatten_imagestream(&format!("agents/{agent}")));
-            let model_is = format!("{}{is_suffix}", flatten_imagestream(&format!("models/{model}")));
+            let bench_is = format!(
+                "{}{is_suffix}",
+                flatten_imagestream(&format!("benchmarks/{benchmark}"))
+            );
+            let agent_is = format!(
+                "{}{is_suffix}",
+                flatten_imagestream(&format!("agents/{agent}"))
+            );
+            let model_is = format!(
+                "{}{is_suffix}",
+                flatten_imagestream(&format!("models/{model}"))
+            );
             let overrides = vec![
                 format!("eval.args.BENCHMARK_IMAGE={ir}/{bench_is}:latest"),
                 format!("eval.args.AGENT_IMAGE={ir}/{agent_is}:latest"),
@@ -578,7 +587,11 @@ fn oc_build(
         args_yaml.push_str(&format!("        - {{ name: {k}, value: \"{v}\" }}\n"));
     }
     // The combination image layers 5 large base images — needs more ephemeral storage.
-    let storage = if dockerfile.contains("combination") { "10Gi" } else { "4Gi" };
+    let storage = if dockerfile.contains("combination") {
+        "10Gi"
+    } else {
+        "4Gi"
+    };
     let bc = format!(
         "apiVersion: build.openshift.io/v1\n\
          kind: BuildConfig\n\

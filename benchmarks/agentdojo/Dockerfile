@@ -123,6 +123,7 @@ with open('/tasks/all.jsonl', 'w') as out:
             idx += 1
 print(f'Extracted {idx} tasks')
 PYEOF
+
 RUN rm -rf /tmp/ad
 RUN chmod 600 /tasks/all.jsonl
 
@@ -134,6 +135,7 @@ RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 mkdir -p /logs/verifier
 exec python3 /tests/judge.py
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /tests/judge.py <<'JUDGE'
@@ -216,6 +218,7 @@ def main():
 if __name__ == "__main__":
     main()
 JUDGE
+
 RUN chmod +x /tests/judge.py
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
@@ -228,6 +231,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

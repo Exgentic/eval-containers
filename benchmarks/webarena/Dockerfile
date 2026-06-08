@@ -41,6 +41,7 @@ with open('/tasks/all.jsonl', 'w') as out:
 os.remove('/tmp/tasks.json')
 print(f'Wrote {len(tasks)} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -88,6 +89,7 @@ echo "$REWARD" > /logs/verifier/reward.txt
 
 rm -rf "$EVAL_DIR"
 TEST
+
 RUN chmod +x /grade.sh
 
 # Transform script: extract JSON from agent stdout (handles markdown, extra text)
@@ -131,6 +133,7 @@ if start >= 0:
 # Fallback: empty response
 print(json.dumps({"task_type": "", "status": "", "retrieved_data": None, "error_details": None}))
 EXTRACT
+
 RUN chmod +x /tests/extract_response.py
 
 # Shared entrypoint
@@ -166,6 +169,7 @@ When done, output a JSON object with:
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

@@ -147,6 +147,7 @@ with open('/tasks/all.jsonl', 'w') as out:
 
 print(f'Generated {idx} RULER tasks')
 PYEOF
+
 RUN rm -rf /tmp/niah
 RUN chmod 600 /tasks/all.jsonl
 
@@ -176,6 +177,7 @@ else:
 open('/logs/verifier/reward.txt', 'w').write(f'{reward:.6f}\n')
 GRADE
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -190,6 +192,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]
