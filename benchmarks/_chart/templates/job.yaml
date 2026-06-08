@@ -50,7 +50,7 @@ spec:
         - name: otelcol
           restartPolicy: Always
           image: {{ include "eval.otelImage" $v }}
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: {{ $v.imagePullPolicy | default "IfNotPresent" }}
           ports:
             - { name: otlp-grpc, containerPort: 4317 }
             - { name: otlp-http, containerPort: 4318 }
@@ -67,7 +67,7 @@ spec:
         - name: gateway
           restartPolicy: Always
           image: {{ include "eval.gatewayImage" $v }}
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: {{ $v.imagePullPolicy | default "IfNotPresent" }}
           ports:
             - { name: gateway, containerPort: 4000 }
           startupProbe:
@@ -98,7 +98,7 @@ spec:
       containers:
         - name: runner
           image: {{ include "eval.runnerImage" $v }}
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: {{ $v.imagePullPolicy | default "IfNotPresent" }}
           command: ["/bin/bash", "-c"]
           # $? / $rc are the container's shell — Helm leaves them untouched
           # (they're not {{`{{ }}`}} actions). A few benchmarks override the

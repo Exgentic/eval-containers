@@ -16,6 +16,11 @@ model: gpt-5.4-bifrost
 # Image tags (CLI --model-tag → gatewayTag; --agent-tag/--benchmark-tag → runnerTag)
 gatewayTag: latest
 runnerTag: latest
+# imagePullPolicy for all eval images. IfNotPresent suits kind (images are
+# `kind load`ed) and immutable tags. On a registry where `:latest` is rebuilt in
+# place (the OpenShift internal registry), set Always via the platform overlay so
+# nodes don't serve a stale cached `:latest`.
+imagePullPolicy: IfNotPresent
 # Full image-ref overrides. Empty → the chart composes the default nested path
 # (registry/core/otel, registry/models/<gatewayImage>, registry/evals/<b>--<a>),
 # which suits a nested-path registry like quay. The OpenShift internal registry
