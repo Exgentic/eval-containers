@@ -1,11 +1,15 @@
 # Pre-commit gates for eval-containers. Self-contained — no helper scripts.
 #
-# pre-commit stage: fast, deterministic checks that block a commit.
-# pre-push  stage: clippy + cargo test (recompile/env-sensitive; block a push).
+# Principle: hooks run fast, deterministic, non-compiling checks only.
+# Anything that invokes the compiler (clippy, cargo test) is slow and
+# environment-dependent, so it lives in CI, not in a git hook. cargo fmt
+# stays because it is syntactic and instant.
+#
+# pre-commit stage: hygiene + fmt (block a commit).
 # commit-msg stage: DCO Signed-off-by autofix.
 #
-# Install all stages once:
-#   pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+# Install both stages once:
+#   pre-commit install --hook-type pre-commit --hook-type commit-msg
 
 repos:
   # --- DCO: ensure every commit message carries a Signed-off-by trailer ---
@@ -21,7 +25,11 @@ repos:
         language: system
         stages: [commit-msg]
 
-  # --- Rust: mirror the test.yml / VERIFY.md gates ---
+  # --- Rust formatting (syntactic, no compile) ---
+  # clippy and cargo test are intentionally NOT here — they compile, so CI owns
+  # them (see .github/workflows). A git hook is the wrong place for slow,
+  # daemon/toolchain-dependent checks: it trains contributors to --no-verify,
+  # which disables every hook including the cheap, valuable ones.
   - repo: local
     hooks:
       - id: cargo-fmt
@@ -30,22 +38,6 @@ repos:
         language: system
         types: [rust]
         pass_filenames: false
-
-      - id: cargo-clippy
-        name: cargo clippy -D warnings
-        entry: cargo clippy --all-targets -- -D warnings
-        language: system
-        types: [rust]
-        pass_filenames: false
-        stages: [pre-push]   # recompiles on Rust changes — too slow for every commit
-
-      - id: cargo-test
-        name: cargo test
-        entry: cargo test
-        language: system
-        types: [rust]
-        pass_filenames: false
-        stages: [pre-push]
 
   # --- Secrets: uses the repo's .gitleaks.toml allowlist ---
   - repo: https://github.com/gitleaks/gitleaks
