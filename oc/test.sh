@@ -39,9 +39,13 @@ RESULT_JSON=$(read_file "$RESULT/task/result.json")
 [[ -n "$RESULT_JSON" ]] || fail "task/result.json missing at $RESULT"
 pass "result written: $RESULT_JSON"
 
+# Assert the agent actually ran — started_at != ended_at (a non-zero duration).
+# A 0-duration run means the launcher never reached the agent (the pre-#72 bug).
 AGENT_JSON=$(read_file "$RESULT/agent/result.json")
-echo "$AGENT_JSON" | grep -q '"exit_code":0' && pass "agent exit_code=0" \
-  || fail "agent did not exit cleanly: ${AGENT_JSON:-<missing>}"
+a_start=$(echo "$AGENT_JSON" | sed -n 's/.*"started_at":"\([^"]*\)".*/\1/p')
+a_end=$(echo "$AGENT_JSON" | sed -n 's/.*"ended_at":"\([^"]*\)".*/\1/p')
+[[ -n "$a_end" && "$a_end" != "$a_start" ]] && pass "agent ran ($a_start → $a_end)" \
+  || fail "agent did not run (0-duration): ${AGENT_JSON:-<missing>}"
 
 echo "$(read_file "$RESULT/agent/stderr.log")" | grep -q "Reconnecting\.\.\. 5/5" \
   && fail "agent exhausted gateway retries (LLM call failed)" \
