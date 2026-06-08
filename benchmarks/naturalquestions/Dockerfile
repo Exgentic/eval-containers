@@ -20,7 +20,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="5dd9790a83002ad084ddeb7c420dc716852c6f28"
 LABEL eval.benchmark.url="https://ai.google.com/research/NaturalQuestions"
 LABEL eval.benchmark.paper="https://aclanthology.org/Q19-1026/"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="5dd9790a83002ad084ddeb7c420dc716852c6f28"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

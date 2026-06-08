@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="0e619dbeb34206cd48705a1a0ea7fb21cae09993"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/CohereLabs/Global-MMLU"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.03304"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="0e619dbeb34206cd48705a1a0ea7fb21cae09993"
 
 # Write every task to a single JSONL file. One line per task, ~200 bytes each.
 # Agent never sees this file (root-only). Runtime entrypoint materializes just

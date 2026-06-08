@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="91c6572c454088bf71b679ad90aa8dffcd0d5868"
 LABEL eval.benchmark.url="https://github.com/MedMCQA/MedMCQA"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.14371"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="91c6572c454088bf71b679ad90aa8dffcd0d5868"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

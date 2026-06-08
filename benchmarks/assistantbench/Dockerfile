@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="true"
 LABEL eval.benchmark.data_revision="482cbbc0400f6d048438c4021727f21a10cbff49"
 LABEL eval.benchmark.url="https://github.com/oriyor/assistant-bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.15711"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="482cbbc0400f6d048438c4021727f21a10cbff49"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json

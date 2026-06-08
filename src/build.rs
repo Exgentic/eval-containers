@@ -88,9 +88,9 @@ pub enum BuildTarget {
         agent: String,
         #[arg(long)]
         task_id: Option<String>,
-        /// Upstream agent CLI version baked as `EVAL_AGENT_VERSION_DEFAULT`
-        /// inside the eval image (RULES.md principle 9 — internal version
-        /// axis). Distinct from the image `TAG` (set via `TAG` env var).
+        /// Override the agent's upstream CLI version: passed as the
+        /// `AGENT_VERSION` build arg (RULES.md principle 9 — drives the install
+        /// + label). Empty uses the agent image's pin. Distinct from `TAG`.
         #[arg(long, default_value = "")]
         agent_version: String,
         #[arg(long, default_value = "gpt-5.4--bifrost")]
@@ -173,13 +173,18 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             let bake_env = vec![
                 ("EVAL_BENCHMARK", benchmark.clone()),
                 ("EVAL_AGENT", agent.clone()),
-                ("EVAL_AGENT_VERSION", agent_version.clone()),
             ];
-            let overrides = vec![
+            let mut overrides = vec![
                 format!("eval.args.BENCHMARK_IMAGE={bench_tag}"),
                 format!("eval.args.AGENT_IMAGE={agent_tag}"),
                 format!("eval.args.MODEL_IMAGE={model_tag}"),
             ];
+            // Version is a build arg (RULES.md principle 9). Empty => the
+            // combination defaults to the agent image's pinned /opt/agent/VERSION;
+            // set => override the upstream version the agent installs.
+            if !agent_version.is_empty() {
+                overrides.push(format!("eval.args.AGENT_VERSION={agent_version}"));
+            }
             bake_with_env(registry, "eval", &overrides, &bake_env, builder, dry_run)
         }
         BuildTarget::Compose { benchmark } => {
@@ -507,16 +512,15 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
                 "{}{is_suffix}",
                 flatten_imagestream(&format!("models/{model}"))
             );
-            let overrides = vec![
+            let mut overrides = vec![
                 format!("eval.args.BENCHMARK_IMAGE={ir}/{bench_is}:latest"),
                 format!("eval.args.AGENT_IMAGE={ir}/{agent_is}:latest"),
                 format!("eval.args.MODEL_IMAGE={ir}/{model_is}:latest"),
             ];
-            let env = vec![
-                ("EVAL_BENCHMARK", benchmark),
-                ("EVAL_AGENT", agent),
-                ("EVAL_AGENT_VERSION", agent_version),
-            ];
+            if !agent_version.is_empty() {
+                overrides.push(format!("eval.args.AGENT_VERSION={agent_version}"));
+            }
+            let env = vec![("EVAL_BENCHMARK", benchmark), ("EVAL_AGENT", agent)];
             ("eval".to_string(), overrides, env)
         }
         BuildTarget::Compose { .. } => {

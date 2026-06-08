@@ -31,9 +31,10 @@ Reject the PR if any evidence section is empty.
 - [ ] `LABEL eval.agent.runtime="node"` / `"python"` / `"go"` / whatever
 - [ ] `LABEL eval.agent.url="<upstream>"`
 
-### Required ENV (RULES.md principle 9)
+### Version (RULES.md principle 9)
 
-- [ ] `ENV EVAL_AGENT_VERSION_DEFAULT="<same as eval.agent.version>"` declared after the LABEL block
+- [ ] `ARG AGENT_VERSION=<pin>` drives both the install and the `eval.agent.version` label
+- [ ] If the combination re-runs `install.sh`, the version is published to `/opt/agent/VERSION`
 
 ### Image layout
 

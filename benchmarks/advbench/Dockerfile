@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="098262edf85f807224e70ecd87b9d83716bf6b73"
 LABEL eval.benchmark.url="https://github.com/llm-attacks/llm-attacks"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2307.15043"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="098262edf85f807224e70ecd87b9d83716bf6b73"
 
 RUN curl -sfL -o /tmp/advbench.csv \
     'https://raw.githubusercontent.com/llm-attacks/llm-attacks/098262edf85f807224e70ecd87b9d83716bf6b73/data/advbench/harmful_behaviors.csv'

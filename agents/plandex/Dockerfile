@@ -2,15 +2,15 @@
 # Plandex agent image — self-hosted client + server with Postgres + internal litellm.
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
-FROM plandexai/plandex-server:server-v2.2.1 AS plandex-server-src
+FROM plandexai/plandex-server:server-v${AGENT_VERSION} AS plandex-server-src
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-rust:latest
+ARG AGENT_VERSION=2.2.1
 LABEL eval.type="agent"
 LABEL eval.agent.name="plandex"
 LABEL eval.agent.description="Plandex terminal AI coding agent (self-hosted)"
 LABEL eval.agent.runtime="go"
 LABEL eval.agent.url="https://github.com/plandex-ai/plandex"
-LABEL eval.agent.version="2.2.1"
-ENV EVAL_AGENT_VERSION_DEFAULT="2.2.1"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=plandex
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -24,7 +24,7 @@ COPY --from=plandex-server-src /app/server/litellm_proxy.py /opt/agent/plandex/l
 COPY --from=plandex-server-src /scripts /opt/agent/plandex/scripts
 COPY --from=plandex-server-src /opt/venv /opt/agent/venv
 RUN ARCH=$(uname -m) && case "$ARCH" in x86_64) A=amd64 ;; aarch64|arm64) A=arm64 ;; *) exit 1 ;; esac && \
-    curl -fsSL "https://github.com/plandex-ai/plandex/releases/download/cli/v2.2.1/plandex_2.2.1_linux_${A}.tar.gz" -o /tmp/p.tgz && \
+    curl -fsSL "https://github.com/plandex-ai/plandex/releases/download/cli/v${AGENT_VERSION}/plandex_${AGENT_VERSION}_linux_${A}.tar.gz" -o /tmp/p.tgz && \
     tar -xzf /tmp/p.tgz -C /opt/agent/bin plandex && chmod +x /opt/agent/bin/plandex && \
     ln -sf /opt/agent/bin/plandex /usr/local/bin/plandex && rm /tmp/p.tgz
 COPY entrypoint.sh /run.sh

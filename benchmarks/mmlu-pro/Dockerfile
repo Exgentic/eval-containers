@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="54611cde22c74cca43dd78732198de6abe971398"
 LABEL eval.benchmark.url="https://github.com/TIGER-AI-Lab/MMLU-Pro"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmlu_pro"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.01574"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="54611cde22c74cca43dd78732198de6abe971398"
 
 # Single-JSONL task layout. Root-only; runtime entrypoint materializes the
 # requested task's fields into /tasks/$EVAL_TASK_ID/ on demand.

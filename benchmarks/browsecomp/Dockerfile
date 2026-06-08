@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="true"
 LABEL eval.benchmark.url="https://github.com/openai/simple-evals"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2504.16186"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 RUN pip install --no-cache-dir pandas
 

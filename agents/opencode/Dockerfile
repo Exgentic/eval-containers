@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=1.4.3
 LABEL eval.type="agent"
 LABEL eval.agent.name="opencode"
 LABEL eval.agent.description="SST opencode open-source AI coding agent"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/sst/opencode"
-LABEL eval.agent.version="1.4.3"
-ENV EVAL_AGENT_VERSION_DEFAULT="1.4.3"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=opencode
-RUN npm install -g opencode-ai@1.4.3
+RUN npm install -g opencode-ai@${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

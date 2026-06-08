@@ -21,7 +21,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 3. **Reproducible by default.** The exact dataset version MUST be pinned at build time as a default in the Dockerfile (`ARG DATA_REVISION=<sha>` or equivalent) and recorded in `eval.benchmark.data_revision`. The image MUST produce identical task content on every build when no env vars are set.
 
-4. **Runtime version override.** The framework launcher (`/usr/local/bin/run`) MUST read `EVAL_BENCHMARK_VERSION` and, when set, fetch and materialize that dataset revision into `/tasks/` in place of the default. It MUST write the resolved revision to `/output/task/version.json` before the agent runs. When `EVAL_BENCHMARK_VERSION` is unset, the build-time default applies unchanged. `EVAL_BENCHMARK_TAG` selects which container version (image tag) to pull — that's Docker's job, not the launcher's.
+4. **Version is a build arg.** The dataset revision MUST be a single `ARG BENCHMARK_VERSION=<rev>` that drives **both** the fetch/materialize step and the `eval.benchmark.data_revision` label, so the label can never disagree with the data baked in. Override at build (`build bench --benchmark-version <rev>`); unset uses the pinned revision. The revision is immutable per image — there is no runtime override (reproducibility: the data is whatever the image was built with). `EVAL_BENCHMARK_TAG` selects which image tag to pull — that's Docker's job, not the launcher's.
 
 ### Isolation
 

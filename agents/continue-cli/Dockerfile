@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=1.5.45
 LABEL eval.type="agent"
 LABEL eval.agent.name="continue-cli"
 LABEL eval.agent.description="Continue CLI (cn): terminal-native multi-model coding agent"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/continuedev/continue"
-LABEL eval.agent.version="1.5.45"
-ENV EVAL_AGENT_VERSION_DEFAULT="1.5.45"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=continue-cli
-RUN npm install -g @continuedev/cli@1.5.45
+RUN npm install -g @continuedev/cli@${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

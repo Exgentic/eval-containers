@@ -32,7 +32,6 @@ LABEL eval.benchmark.tasks="100+"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/laude-institute/terminal-bench"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="2.0"
 
 ARG EVAL_TASK_ID
 ENV EVAL_BENCHMARK=tbench

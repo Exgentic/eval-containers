@@ -166,10 +166,10 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
 
    - **Agent** (`agents/openhands`) — extends its runtime base
      (`doctrine/RULES.md:11`, sub-rule a). Per-agent upstream versions
-     live in the Dockerfile as `ENV EVAL_AGENT_VERSION_DEFAULT="x.y.z"`
-     (`doctrine/RULES.md:9` — internal version axis), NOT in the bake
-     tag; the tag is the framework's container version, set fleet-wide
-     via `${TAG}`:
+     live in the Dockerfile as `ARG AGENT_VERSION=x.y.z`
+     (`doctrine/RULES.md:9` — internal version axis), driving the install
+     + label, NOT the bake tag; the tag is the framework's container
+     version, set fleet-wide via `${TAG}`:
 
      ```hcl
      target "agent-openhands" {

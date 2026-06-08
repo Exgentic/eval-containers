@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=1.0.1
 LABEL eval.type="agent"
 LABEL eval.agent.name="bob"
 LABEL eval.agent.description="IBM Bob Shell — AI SDLC partner"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/ibm/bob-shell"
-LABEL eval.agent.version="1.0.1"
-ENV EVAL_AGENT_VERSION_DEFAULT="1.0.1"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=bob
-ARG BOB_VERSION=1.0.1
+ARG BOB_VERSION=${AGENT_VERSION}
 RUN curl -fsSL "https://s3.us-south.cloud-object-storage.appdomain.cloud/bob-shell/bobshell-${BOB_VERSION}.tgz" -o /tmp/bob.tgz && \
     npm install -g /tmp/bob.tgz && rm /tmp/bob.tgz
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh

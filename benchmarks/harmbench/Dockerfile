@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="8e1604d1171fe8a48d8febecd22f600e462bdcdd"
 LABEL eval.benchmark.url="https://github.com/centerforaisafety/HarmBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2402.04249"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="8e1604d1171fe8a48d8febecd22f600e462bdcdd"
 
 # Fetch HarmBench standard text behaviors CSV
 RUN curl -sfL -o /tmp/harmbench.csv \

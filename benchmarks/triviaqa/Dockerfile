@@ -15,7 +15,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
 LABEL eval.benchmark.url="https://nlp.cs.washington.edu/triviaqa/"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1705.03551"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

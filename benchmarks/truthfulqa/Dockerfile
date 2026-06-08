@@ -19,7 +19,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/truthfulqa/truthful_qa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2109.07958"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

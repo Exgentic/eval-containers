@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="539088ef8a8ada01ac8e2e6d4e372586748a265e"
 LABEL eval.benchmark.url="https://www.docvqa.org"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2007.00398"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="539088ef8a8ada01ac8e2e6d4e372586748a265e"
 
 # Write every task to a single JSONL file. One line per task. Image bytes
 # are base64-encoded inline so the whole benchmark lives in a single

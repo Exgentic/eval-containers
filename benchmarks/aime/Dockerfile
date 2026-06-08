@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="13f9e12f613e720c2a2b2f345dd04b998a29494d"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/AI-MO/aimo-validation-aime"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aime"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/aime2024"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="13f9e12f613e720c2a2b2f345dd04b998a29494d"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
