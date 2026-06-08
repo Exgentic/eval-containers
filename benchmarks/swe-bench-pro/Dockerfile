@@ -104,9 +104,6 @@ GRADE
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
-RUN chmod +x /eval-entrypoint.sh
-
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 chown -R agent:agent /app 2>/dev/null || true

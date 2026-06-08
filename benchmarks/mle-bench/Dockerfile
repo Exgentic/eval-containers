@@ -116,9 +116,8 @@ GRADE
 
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
-RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
+RUN chmod +x /eval-materialize-task
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
