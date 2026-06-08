@@ -1,13 +1,12 @@
 name: Pre-commit
 
-# Runs the same .pre-commit-config.yaml gates on GitHub so a clone that
-# skipped the local hook install (or used --no-verify) can't slip past them.
-# DCO sign-off is enforced separately by the GitHub DCO check.
+# Runs the .pre-commit-config.yaml gates on GitHub so a clone that skipped the
+# local hook install (or used --no-verify) can't slip past them. Scoped to the
+# files a PR actually changes, so pre-existing issues in untouched files don't
+# block unrelated work. DCO sign-off is enforced by the separate GitHub DCO check.
 
 on:
   pull_request:
-    branches: [main]
-  push:
     branches: [main]
   workflow_dispatch:
 
@@ -21,6 +20,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # need base history to diff the PR range
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -36,9 +37,18 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
 
-      # The pre-push stage runs every hook (default-stage hooks run in all
-      # stages, plus the pre-push-only clippy + cargo test), so one invocation
-      # covers the whole config. The commit-msg DCO hook is enforced
-      # separately by the GitHub DCO check.
-      - name: Run pre-commit hooks
+      # On a PR, scope hooks to the changed files via --from-ref/--to-ref so
+      # pre-existing issues in untouched files don't block. A hook only runs if
+      # the diff contains a file it matches; the whole-project hooks (cargo
+      # fmt/clippy/test, pass_filenames: false) run in full once any Rust file
+      # changes, and are skipped otherwise. Manual dispatch checks everything.
+      - name: Run pre-commit (PR-scoped)
+        if: github.event_name == 'pull_request'
+        run: |
+          pre-commit run --hook-stage pre-push \
+            --from-ref "origin/${{ github.base_ref }}" --to-ref HEAD \
+            --show-diff-on-failure --color=always
+
+      - name: Run pre-commit (all files)
+        if: github.event_name == 'workflow_dispatch'
         run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure --color=always
