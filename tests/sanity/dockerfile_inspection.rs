@@ -230,7 +230,11 @@ fn has_untagged_from(t: &str) -> bool {
         if rest.is_empty() || rest.starts_with("scratch") || rest.starts_with('$') {
             continue;
         }
-        let image = rest.split_whitespace().next().unwrap_or("");
+        // Skip FROM flags (`--platform=…`, `--chmod=…`) to reach the image ref.
+        let image = rest
+            .split_whitespace()
+            .find(|tok| !tok.starts_with("--"))
+            .unwrap_or("");
         let last_slash = image.rfind('/').map(|i| i + 1).unwrap_or(0);
         let tail = &image[last_slash..];
         if !tail.contains(':') && !tail.contains('@') {
@@ -359,7 +363,10 @@ fn pip_install_without_no_cache(t: &str) -> bool {
         if line.contains("pip uninstall") {
             continue;
         }
-        if !line.contains("--no-cache-dir") {
+        // `pip install` wants --no-cache-dir; `uv pip install` wants --no-cache
+        // (uv's spelling, as used by core/benchmark-base-*). Either disables the
+        // package cache, so accept whichever is present.
+        if !line.contains("--no-cache-dir") && !line.contains("--no-cache") {
             return true;
         }
     }
@@ -618,8 +625,14 @@ fn is_replay_model(_t: &str, dir: &str) -> bool {
     dir == "replay"
 }
 
+// Test carriers (eval.benchmark.env="test", e.g. agents-smoke) bake a single
+// trivial task at build time — there is no upstream dataset, so the
+// EVAL_BENCHMARK_VERSION axis does not apply.
+fn is_test_benchmark(t: &str) -> bool {
+    t.contains(r#"LABEL eval.benchmark.env="test""#)
+}
 fn benchmark_missing_version_default(t: &str, _dir: &str) -> bool {
-    is_benchmark(t) && !t.contains("ENV EVAL_BENCHMARK_VERSION_DEFAULT=")
+    is_benchmark(t) && !is_test_benchmark(t) && !t.contains("ENV EVAL_BENCHMARK_VERSION_DEFAULT=")
 }
 fn agent_missing_version_default(t: &str, _dir: &str) -> bool {
     is_agent(t) && !t.contains("ENV EVAL_AGENT_VERSION_DEFAULT=")

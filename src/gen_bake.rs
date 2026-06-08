@@ -80,7 +80,7 @@ fn in_repo_deps(text: &str) -> Vec<String> {
         let line = raw.trim();
         if let Some(rest) = line.strip_prefix("FROM ") {
             let mut tok = rest;
-            while let Some(_) = tok.strip_prefix("--") {
+            while tok.strip_prefix("--").is_some() {
                 let cut = tok.find(' ').map(|i| i + 1).unwrap_or(tok.len());
                 tok = &tok[cut..];
             }

@@ -35,6 +35,61 @@ fn benchmark_dirs() -> Vec<(String, PathBuf)> {
     out
 }
 
+/// Render one benchmark through the chart and (when available) schema-validate
+/// the output, pushing any problem onto `issues`.
+fn check_one(name: &str, have_kubeconform: bool, issues: &mut Vec<String>) {
+    // The benchmark is named via --set; its bespoke topology (if any) lives in
+    // the chart at presets/<name>.yaml — no per-benchmark file is passed.
+    let out = match Command::new("helm")
+        .args([
+            "template",
+            name,
+            "benchmarks/_chart",
+            "--set",
+            &format!("benchmark={name}"),
+        ])
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            issues.push(format!("{name}: helm spawn failed: {e}"));
+            return;
+        }
+    };
+    if !out.status.success() {
+        let first = String::from_utf8_lossy(&out.stderr)
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string();
+        issues.push(format!("{name}: helm template failed: {first}"));
+        return;
+    }
+    if !String::from_utf8_lossy(&out.stdout).contains("kind: Job") {
+        issues.push(format!("{name}: render produced no Job"));
+        return;
+    }
+    if have_kubeconform {
+        let mut kc = Command::new("kubeconform")
+            .args(["-strict", "-summary", "-"])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn kubeconform");
+        kc.stdin.as_mut().unwrap().write_all(&out.stdout).unwrap();
+        let r = kc.wait_with_output().expect("kubeconform wait");
+        if !r.status.success() {
+            let last = String::from_utf8_lossy(&r.stdout)
+                .lines()
+                .last()
+                .unwrap_or("")
+                .to_string();
+            issues.push(format!("{name}: kubeconform invalid: {last}"));
+        }
+    }
+}
+
 #[test]
 fn every_benchmark_renders_and_validates() {
     if Command::new("helm").arg("version").output().is_err() {
@@ -43,59 +98,33 @@ fn every_benchmark_renders_and_validates() {
     let have_kubeconform = Command::new("kubeconform").arg("-v").output().is_ok();
 
     let dirs = benchmark_dirs();
-    let mut issues: Vec<String> = Vec::new();
-    for (name, _dir) in &dirs {
-        // The benchmark is named via --set; its bespoke topology (if any) lives
-        // in the chart at presets/<name>.yaml — no per-benchmark file is passed.
-        let out = match Command::new("helm")
-            .args([
-                "template",
-                name,
-                "benchmarks/_chart",
-                "--set",
-                &format!("benchmark={name}"),
-            ])
-            .output()
-        {
-            Ok(o) => o,
-            Err(e) => {
-                issues.push(format!("{name}: helm spawn failed: {e}"));
-                continue;
-            }
-        };
-        if !out.status.success() {
-            let first = String::from_utf8_lossy(&out.stderr)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .to_string();
-            issues.push(format!("{name}: helm template failed: {first}"));
-            continue;
-        }
-        if !String::from_utf8_lossy(&out.stdout).contains("kind: Job") {
-            issues.push(format!("{name}: render produced no Job"));
-            continue;
-        }
-        if have_kubeconform {
-            let mut kc = Command::new("kubeconform")
-                .args(["-strict", "-summary", "-"])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-                .expect("spawn kubeconform");
-            kc.stdin.as_mut().unwrap().write_all(&out.stdout).unwrap();
-            let r = kc.wait_with_output().expect("kubeconform wait");
-            if !r.status.success() {
-                let last = String::from_utf8_lossy(&r.stdout)
-                    .lines()
-                    .last()
-                    .unwrap_or("")
-                    .to_string();
-                issues.push(format!("{name}: kubeconform invalid: {last}"));
-            }
-        }
-    }
+
+    // Each benchmark renders independently and shares no state, so fan the
+    // ~100 `helm template` (+ kubeconform) spawns across worker threads — the
+    // job is subprocess-bound, not CPU-bound, so this collapses the wall-clock
+    // to roughly (total / cores). std threads only; no extra dependency.
+    let workers = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
+    let per_worker = dirs.len().div_ceil(workers).max(1);
+    let issues: Vec<String> = std::thread::scope(|scope| {
+        let handles: Vec<_> = dirs
+            .chunks(per_worker)
+            .map(|chunk| {
+                scope.spawn(move || {
+                    let mut local = Vec::new();
+                    for (name, _dir) in chunk {
+                        check_one(name, have_kubeconform, &mut local);
+                    }
+                    local
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .flat_map(|h| h.join().expect("render worker panicked"))
+            .collect()
+    });
 
     assert!(
         issues.is_empty(),

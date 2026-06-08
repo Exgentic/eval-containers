@@ -51,7 +51,7 @@ apt-get install -y --no-install-recommends postgresql-16 postgresql-client-16 li
 rm -rf /var/lib/apt/lists/*
 PIP_BREAK_SYSTEM_PACKAGES=1 pip install --no-cache-dir uv==0.5.14
 rm -rf /opt/agent/venv && python3 -m venv /opt/agent/venv
-uv pip install --python /opt/agent/venv/bin/python3 \
+uv pip install --no-cache --python /opt/agent/venv/bin/python3 \
   litellm==1.72.6 fastapi==0.115.12 uvicorn==0.34.1 \
   google-cloud-aiplatform==1.96.0 boto3==1.38.40 botocore==1.38.40
 [ -x /opt/agent/bin/plandex ] && ln -sf /opt/agent/bin/plandex /usr/local/bin/plandex || true

@@ -184,12 +184,15 @@ const RULES: &[Rule] = &[
             }
             // Check just the first ~5 positions as probes — not exhaustive,
             // but catches real runaway concatenation without full scan.
+            // Index by chars, not bytes: fixtures contain multibyte UTF-8
+            // (e.g. CJK) and a byte slice can land mid-codepoint and panic.
+            let chars: Vec<char> = t.chars().collect();
             for start in [0, 200, 400, 600, 800] {
-                if start + 200 > t.len() {
+                if start + 200 > chars.len() {
                     break;
                 }
-                let probe = &t[start..start + 200];
-                if t.matches(probe).count() >= 10 {
+                let probe: String = chars[start..start + 200].iter().collect();
+                if t.matches(&probe).count() >= 10 {
                     return true;
                 }
             }

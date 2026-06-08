@@ -9,7 +9,7 @@ FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="hle"
-LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.released="false"
 LABEL eval.benchmark.description="HLE - Humanity's Last Exam, hardest standardized AI evaluation"
 LABEL eval.benchmark.tasks="2500"
 LABEL eval.benchmark.env="shared-env"
