@@ -1,9 +1,9 @@
 name: Pre-commit
 
 # Runs the .pre-commit-config.yaml gates on GitHub so a clone that skipped the
-# local hook install (or used --no-verify) can't slip past them. Scoped to the
-# files a PR actually changes, so pre-existing issues in untouched files don't
-# block unrelated work. DCO sign-off is enforced by the separate GitHub DCO check.
+# local hook install (or used --no-verify) can't slip past them. Checks every
+# file (the whole repo is compliant), so nothing is skipped. DCO sign-off is
+# enforced by the separate GitHub DCO check.
 
 on:
   pull_request:
@@ -20,8 +20,6 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # need base history to diff the PR range
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -47,18 +45,8 @@ jobs:
       - name: Install helm
         uses: azure/setup-helm@v4
 
-      # On a PR, scope hooks to the changed files via --from-ref/--to-ref so
-      # pre-existing issues in untouched files don't block. A hook only runs if
-      # the diff contains a file it matches (cargo fmt runs in full once any
-      # Rust file changes, since it sets pass_filenames: false). Compile-based
-      # gates (clippy, cargo test) are owned by CI separately, not here.
-      - name: Run pre-commit (PR-scoped)
-        if: github.event_name == 'pull_request'
-        run: |
-          pre-commit run \
-            --from-ref "origin/${{ github.base_ref }}" --to-ref HEAD \
-            --show-diff-on-failure --color=always
-
-      - name: Run pre-commit (all files)
-        if: github.event_name == 'workflow_dispatch'
+      # The whole repo passes the hooks, so check every file on every run —
+      # no per-PR scoping, no skipped files. Compile-based gates (clippy,
+      # cargo test) are owned by CI separately (test.yml), not here.
+      - name: Run pre-commit
         run: pre-commit run --all-files --show-diff-on-failure --color=always
