@@ -72,5 +72,6 @@ For cluster deploys, the key lives in a cluster Secret instead — see
 
 [Run your first eval](run-your-first-eval.md).
 
-For the local-dev loop (Docker Desktop, Podman, Rosetta specifics), see
-[`tests/LOCAL.md`](../../tests/LOCAL.md).
+For the local-dev loop (what to build/test at which level), see
+[`tests/LOCAL.md`](../../tests/LOCAL.md). On Apple Silicon with Podman, see
+[Run with Podman on Apple Silicon](podman-on-apple-silicon.md).
