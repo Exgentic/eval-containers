@@ -27,11 +27,9 @@
 #   /etc/otelcol/config.yaml       from OTEL_IMAGE
 #   /usr/local/bin/process-compose from RUNTIME_BUNDLE_IMAGE
 #   /usr/local/bin/gosu            from RUNTIME_BUNDLE_IMAGE
-#   /usr/local/bin/run             framework entrypoint (preps + exec process-compose)
-#   /usr/local/bin/write-result    final result writer
+#   /usr/local/bin/run             single-image orchestrator (preps + exec process-compose)
 #   /usr/local/bin/materialize-task per-task setup helper
-#   /etc/process-compose.yaml          full pipeline (single-image mode)
-#   /etc/process-compose-runner.yaml   runner-only (compose / k8s mode)
+#   /etc/process-compose.yaml          single-image pipeline (otelcol+gateway+runner)
 #   /root/tasks/                       benchmark task data (mode 0700 root-only)
 #   /grade.sh                          verifier (benchmark CMD)
 #   /entrypoint.sh                     benchmark setup (benchmark ENTRYPOINT)
@@ -88,9 +86,7 @@ COPY --from=runtime-bundle /bundle/bin/process-compose  /usr/local/bin/process-c
 
 # ─── Framework scripts and orchestration ─────────────────────────────
 COPY process-compose/process-compose.yaml         /etc/process-compose.yaml
-COPY process-compose/process-compose-runner.yaml  /etc/process-compose-runner.yaml
 COPY process-compose/run                          /usr/local/bin/run
-COPY process-compose/write-result                 /usr/local/bin/write-result
 COPY entrypoint/eval-materialize-task             /usr/local/bin/materialize-task
 COPY entrypoint/reap-sidecars                     /usr/local/bin/reap-sidecars
 
@@ -101,12 +97,10 @@ RUN chmod 0700 /opt/gateway \
                 /usr/local/bin/process-compose \
                 /usr/local/bin/gosu \
  && chmod +x /usr/local/bin/run \
-              /usr/local/bin/write-result \
               /usr/local/bin/materialize-task \
               /usr/local/bin/reap-sidecars \
  && chmod 0644 /etc/otelcol/config.yaml \
-                /etc/process-compose.yaml \
-                /etc/process-compose-runner.yaml
+                /etc/process-compose.yaml
 
 # ENTRYPOINT/CMD not set here — inherited from the benchmark image.
 # ENTRYPOINT = /entrypoint.sh (task setup, exec "$@")
