@@ -85,5 +85,11 @@ printf '%s\n' "$RENDER" | command oc apply -n "$NAMESPACE" -f -
 
 # ── 3. Watch (opt-in; with Kueue the Job may sit Suspended until admitted) ───
 $WATCH || { log "submitted. status: ./oc/status.sh --benchmark $BENCHMARK"; exit 0; }
-command oc wait --for=condition=complete --for=condition=failed "job/$JOB" -n "$NAMESPACE" --timeout=3600s || true
+# Poll for a terminal condition. `oc wait` can't OR two conditions — passing both
+# --for=complete --for=failed waits for *failed* and hangs on a successful job.
+for _ in $(seq 1 1800); do
+  st=$(command oc get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.conditions[*].type}' 2>/dev/null || true)
+  [[ "$st" == *Complete* || "$st" == *Failed* ]] && break
+  sleep 2
+done
 command oc get job "$JOB" -n "$NAMESPACE" -o jsonpath='Job {.metadata.name}: succeeded={.status.succeeded}/{.spec.completions} failed={.status.failed}{"\n"}'
