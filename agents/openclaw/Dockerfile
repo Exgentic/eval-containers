@@ -17,6 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 for b in node npm npx openclaw; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
+
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
@@ -34,4 +35,5 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # state is needed for non-interactive agent invocations.
 exec openclaw agent --local --session-id smoke --message "$TASK"
 E
+
 ENTRYPOINT ["/run.sh"]

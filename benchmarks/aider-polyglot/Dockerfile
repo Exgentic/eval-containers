@@ -179,6 +179,7 @@ else
   echo 0.0 > /logs/verifier/reward.txt
 fi
 TEST
+
 RUN chmod +x /grade.sh
 
 COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
@@ -242,6 +243,7 @@ $(for f in $SOLUTION_FILES; do
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

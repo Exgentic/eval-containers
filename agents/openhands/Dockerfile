@@ -21,6 +21,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 /opt/agent/setup-uv-venv.sh /opt/openhands-venv openhands-ai==1.7.0 lmnr==0.7.51
 I
+
 RUN /opt/agent/install.sh
 # Late COPY: editing run_openhands.py here invalidates only the layers
 # below, not the multi-minute venv install above.
@@ -34,4 +35,5 @@ export LLM_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export LLM_MODEL="${EVAL_MODEL:-default}"
 exec /opt/openhands-venv/bin/python /opt/agent/run_openhands.py
 E
+
 ENTRYPOINT ["/run.sh"]

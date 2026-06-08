@@ -86,6 +86,7 @@ answer = answer or meta.get("answer") or meta.get("flag") or ""
 row = {"id": tid, "problem": problem, "answer": str(answer).strip()}
 pathlib.Path("/tasks/all.jsonl").write_text(json.dumps(row) + "\n")
 PY
+
 RUN chmod 600 /tasks/all.jsonl
 
 # Agent workspace: the challenge/ directory (binaries, source, prompts).
@@ -113,6 +114,7 @@ $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

@@ -17,6 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 for b in node npm npx opencode; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
+
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
@@ -30,4 +31,5 @@ export OPENCODE_DISABLE_AUTOUPDATE=1
 export OPENCODE_DISABLE_MODELS_FETCH=1
 exec opencode run --model "eval-containers/${EVAL_MODEL:-default}" "$TASK"
 E
+
 ENTRYPOINT ["/run.sh"]

@@ -90,6 +90,7 @@ RUN cat > /grade.sh <<'TEST'
 mkdir -p /logs/verifier
 PYTHONPATH=/tests/deps python3 /tests/grade.py > /logs/verifier/reward.txt 2>/dev/null || echo 0 > /logs/verifier/reward.txt
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /tests/grade.py <<'GRADE'
@@ -133,6 +134,7 @@ $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]
