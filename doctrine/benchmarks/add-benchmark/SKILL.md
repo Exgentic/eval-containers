@@ -107,7 +107,7 @@ answer, and any attached files from `EVAL_TASK_ID` alone
    an outside service, still collect the agent's output, write `-1`, and do NOT
    approximate the external grader (`doctrine/benchmarks/RULES.md:20`). For a
    custom scorer, replace the `test-exact-match` COPY with your own
-   `/tests/test.sh`.
+   `/grade.sh`.
 
 8. **Set the required labels.** Every benchmark image MUST carry `eval.type`,
    `eval.benchmark.name`, `eval.benchmark.description`, `eval.benchmark.tasks`,

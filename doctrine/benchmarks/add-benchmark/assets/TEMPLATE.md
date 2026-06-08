@@ -55,8 +55,8 @@ RUN chmod -R 600 /tasks
 WORKDIR /app
 ENV BENCHMARK={name}
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /tests/test.sh
-RUN chmod +x /tests/test.sh
+COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /grade.sh
+RUN chmod +x /grade.sh
 
 COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
 RUN chmod +x /eval-entrypoint.sh
@@ -155,5 +155,5 @@ helm template {name} benchmarks/_chart \
 - Get the dataset revision: `curl -s https://huggingface.co/api/datasets/{DATASET} | jq .sha`
 - If the dataset is gated (needs token), use `huggingface_hub.snapshot_download` with `ARG HF_TOKEN` instead of parquet URL.
 - If tasks have attached files (PDFs, images), copy them to `/app/` in the entrypoint so the agent can read them. Never loosen `/tasks/` permissions.
-- For custom scoring (not exact match), replace the `test-exact-match` COPY with a custom `/tests/test.sh`.
+- For custom scoring (not exact match), replace the `test-exact-match` COPY with a custom `/grade.sh`.
 - For per-task benchmarks (like SWE-bench), see `benchmarks/swe-bench/Dockerfile` — `EVAL_TASK_ID` is a build-time `ARG` and each image bakes one task.

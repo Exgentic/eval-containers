@@ -48,14 +48,14 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=visualwebarena
 
 # Test: externally graded. Capture agent output + HAR for offline scoring.
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 cp /output/agent/stdout.log /output/task/agent_response.txt 2>/dev/null || true
 cp /output/agent/network.har /output/task/network.har 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -79,7 +79,8 @@ Credentials:
 
 When done, print your final answer (or the resulting URL for navigation tasks)."
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

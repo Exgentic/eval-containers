@@ -93,8 +93,8 @@ RUN mkdir -p /app \
  && if [ -d /task/challenge ]; then cp -r /task/challenge/. /app/ ; fi
 
 # Scoring: exact-match on the flag the agent printed.
-COPY --from=test-exact-match /test.sh /tests/test.sh
-RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
+COPY --from=test-exact-match /test.sh /grade.sh
+RUN chmod +x /grade.sh && chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
@@ -111,7 +111,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
   export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

@@ -59,7 +59,7 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=healthbench
 
 # Custom test: LLM-as-judge scoring using physician rubrics
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
@@ -73,7 +73,7 @@ fi
 
 python3 /tests/grade.py "$TASK_DIR" "$AGENT_RESPONSE" > /logs/verifier/reward.txt 2>/logs/verifier/grading.log
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /tests/grade.py <<'GRADE'
 import json, sys, os, urllib.request
@@ -187,7 +187,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 
 $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

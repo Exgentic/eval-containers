@@ -69,12 +69,12 @@ ENV EVAL_BENCHMARK=itbench
 # (K8s cluster with injected incidents, OPA policies, Prometheus targets,
 # etc). The verifier is scenario-specific and lives in the upstream eval.py.
 # Externally graded per compose/RULES.md rule 16 until the harness ships.
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 echo -1 > /logs/verifier/reward.txt
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -82,7 +82,8 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

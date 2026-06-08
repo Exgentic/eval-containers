@@ -75,8 +75,8 @@ RUN mkdir -p /tasks/0 \
 # Unconditional-pass grader. The smoke test only checks "did the
 # agent reach the LLM" — answer correctness is out of scope.
 RUN mkdir -p /tests \
- && printf '#!/bin/sh\nmkdir -p /logs/verifier\necho 1 > /logs/verifier/reward.txt\n' > /tests/test.sh \
- && chmod +x /tests/test.sh
+ && printf '#!/bin/sh\nmkdir -p /logs/verifier\necho 1 > /logs/verifier/reward.txt\n' > /grade.sh \
+ && chmod +x /grade.sh
 
 WORKDIR /app
 ENV EVAL_BENCHMARK=agents-smoke
@@ -90,7 +90,8 @@ RUN printf '%s\n' \
     '  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"' \
     '  export EXPECTED_ANSWER="$(cat /tasks/$EVAL_TASK_ID/answer.txt)"' \
     'fi' \
-    'exec /eval-entrypoint.sh' \
+    'exec "$@"' \
     > /entrypoint.sh \
  && chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

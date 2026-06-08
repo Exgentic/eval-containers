@@ -20,7 +20,7 @@ The agent receives a task of the form: "You are a computer use agent. Complete t
 
 ## How it's graded
 
-Custom `/tests/test.sh` defined inline in the Dockerfile. Reward is hard-coded to `-1` inside the container — this benchmark is externally graded (e.g. LLM-as-judge or uploaded to a leaderboard).
+Custom `/grade.sh` defined inline in the Dockerfile. Reward is hard-coded to `-1` inside the container — this benchmark is externally graded (e.g. LLM-as-judge or uploaded to a leaderboard).
 
 ## Files
 

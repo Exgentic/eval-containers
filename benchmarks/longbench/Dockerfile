@@ -107,12 +107,12 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=longbench
 
 # Custom test: metric selected per task type (F1 / ROUGE-L / classification / edit-sim)
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 python3 /tests/grade.py > /logs/verifier/reward.txt 2>/logs/verifier/error.log
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /tests/grade.py <<'GRADE'
 import os, json, re, string
@@ -228,7 +228,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   chmod 644 /app/task.txt
   export TASK="Your task is in /app/task.txt. Read the instructions and context there carefully, then print only the requested answer to stdout."
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

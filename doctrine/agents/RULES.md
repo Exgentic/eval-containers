@@ -15,7 +15,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Contract
 
-1. **Two scripts.** Every agent MUST provide `/opt/agent/install.sh` and `/opt/agent/entrypoint.sh`. Install sets up the runtime. Entrypoint runs the agent.
+1. **Two scripts.** Every agent MUST provide `/opt/agent/install.sh` and `/run.sh`. Install sets up the runtime. Entrypoint runs the agent.
 
 2. **Input is `$TASK`.** The entrypoint MUST read the task from the `TASK` environment variable. The agent MUST NOT assume any other context about the benchmark.
 

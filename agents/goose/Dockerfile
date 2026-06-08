@@ -33,7 +33,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 [ -x /opt/agent/bin/goose ] && ln -sf /opt/agent/bin/goose /usr/local/bin/goose || true
 I
-RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export GOOSE_PROVIDER="openai"
@@ -46,4 +46,4 @@ H="${OPENAI_BASE_URL:-http://model:4000}"; export OPENAI_HOST="${H%/v1}"
 export GOOSE_TELEMETRY_OFF=true
 exec goose run -t "$TASK" --no-session -q
 E
-ENTRYPOINT ["/opt/agent/entrypoint.sh"]
+ENTRYPOINT ["/run.sh"]

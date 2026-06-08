@@ -55,13 +55,13 @@ ENV EVAL_BENCHMARK=agentcompany
 
 # Test: externally graded by upstream per-task evaluator.py against the hosted
 # services. Capture the agent's final response and write -1.
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 cp /output/agent/stdout.log /output/task/agent_response.txt 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -71,7 +71,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 
 $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

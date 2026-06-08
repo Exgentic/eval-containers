@@ -81,7 +81,7 @@ ENV EVAL_BENCHMARK=core-bench
 # (same questions, values within tolerance across all runs), the scorer still
 # records -1 because full reproducibility cannot be verified without the
 # capsule environment. External grading required.
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 TASK_DIR="/tasks/$EVAL_TASK_ID"
@@ -104,7 +104,7 @@ cp "$TASK_DIR/results_json.txt" /logs/verifier/expected_results.json 2>/dev/null
 # verified inside this image). Per RULES rule 19, record -1.
 echo -1 > /logs/verifier/reward.txt
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -112,7 +112,8 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

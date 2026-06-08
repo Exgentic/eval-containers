@@ -23,7 +23,7 @@ The agent receives a task of the form: "Browse the web to answer this question. 
 
 ## How it's graded
 
-See `/tests/test.sh` in the built image for the scoring logic.
+See `/grade.sh` in the built image for the scoring logic.
 
 ## Files
 

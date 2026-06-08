@@ -20,7 +20,7 @@ The agent receives a task of the form: "$(cat "$f")"" The problem text is read f
 
 ## How it's graded
 
-See `/tests/test.sh` in the built image for the scoring logic. Grading runs inside the per-task image after the agent exits.
+See `/grade.sh` in the built image for the scoring logic. Grading runs inside the per-task image after the agent exits.
 
 
 ## Per-task build
