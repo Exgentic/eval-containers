@@ -58,9 +58,6 @@ ENV BENCHMARK={name}
 COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /grade.sh
 RUN chmod +x /grade.sh
 
-COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh
-RUN chmod +x /eval-entrypoint.sh
-
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
@@ -69,10 +66,11 @@ if [ -n "$TASK_ID" ] && [ -z "$TASK" ]; then
 $(cat /tasks/$TASK_ID/problem.txt)"
   export EXPECTED_ANSWER=$(cat /tasks/$TASK_ID/answer.txt)
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]
 ```
 
 ### container.Dockerfile
