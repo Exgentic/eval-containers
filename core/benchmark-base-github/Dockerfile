@@ -18,9 +18,8 @@ RUN set -e; ok=0; \
     [ "$ok" = 1 ] || { echo "apt install failed after 5 tries" >&2; exit 1; }; \
     rm -rf /var/lib/apt/lists/*
 
-COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
-RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
+RUN chmod +x /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app
 WORKDIR /app

@@ -10,6 +10,5 @@ LABEL eval.core.description="Shared evaluation entrypoint + network-resilience h
 # Keeping them here means ONE home per concern (RULES.md rule 11) —
 # a fix to the retry logic or entrypoint contract propagates to every
 # subclass on next rebuild without touching any benchmark/agent file.
-COPY eval-entrypoint.sh /eval-entrypoint.sh
 COPY eval-materialize-task /eval-materialize-task
 COPY eval-sitecustomize.py /eval-sitecustomize.py
