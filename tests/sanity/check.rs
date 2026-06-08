@@ -496,3 +496,37 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 
     eprintln!("✓ otelcol health gate consistent across all three modes (#45)");
 }
+
+/// The stitched eval image must launch the pipeline (rule 12): the combination
+/// overrides CMD to /usr/local/bin/run and copies the agent's /run.sh (it lives
+/// at the image root, not /opt/agent/); the k8s Job invokes the launcher via
+/// runnerArgs. All three were dropped by #39 and are pinned here.
+#[test]
+fn eval_image_launches_the_pipeline() {
+    let combo = fs::read_to_string("core/combination.Dockerfile")
+        .expect("missing core/combination.Dockerfile");
+    assert!(
+        combo.contains(r#"CMD ["/usr/local/bin/run"]"#),
+        "combination.Dockerfile must set `CMD [\"/usr/local/bin/run\"]` so the stitched \
+         eval image launches the pipeline (rule 12) instead of inheriting `CMD /grade.sh`"
+    );
+    assert!(
+        combo.contains("COPY --from=agent /run.sh"),
+        "combination.Dockerfile must `COPY --from=agent /run.sh` — the agent entrypoint \
+         lives at the image root, not under /opt/agent/, so process-compose's `/run.sh` exists"
+    );
+
+    let values = fs::read_to_string("benchmarks/_chart/values.yaml")
+        .expect("missing benchmarks/_chart/values.yaml");
+    let runner_args = values
+        .lines()
+        .find(|l| l.trim_start().starts_with("runnerArgs:"))
+        .expect("values.yaml must define runnerArgs");
+    assert!(
+        runner_args.contains("/usr/local/bin/run"),
+        "the Job overrides the image command, so runnerArgs must invoke /usr/local/bin/run \
+         (the inherited CMD is dropped by `command:`) — else the agent never runs in k8s"
+    );
+
+    eprintln!("✓ eval image launches the pipeline across all three modes (rule 12)");
+}
