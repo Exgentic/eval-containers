@@ -20,7 +20,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
 LABEL eval.benchmark.url="https://leaderboard.allenai.org/socialiqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1904.09728"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
 
 RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
 

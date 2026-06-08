@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=2.1.104
 LABEL eval.type="agent"
 LABEL eval.agent.name="claude-code"
 LABEL eval.agent.description="Anthropic Claude Code CLI"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/anthropics/claude-code"
-LABEL eval.agent.version="2.1.104"
-ENV EVAL_AGENT_VERSION_DEFAULT="2.1.104"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=claude-code
-RUN npm install -g @anthropic-ai/claude-code@2.1.104
+RUN npm install -g @anthropic-ai/claude-code@${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

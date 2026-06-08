@@ -15,7 +15,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="802411c3010cb00d1b05bad57ca77365a3c699d6"
 LABEL eval.benchmark.url="https://github.com/google-deepmind/code_contests"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.07814"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="802411c3010cb00d1b05bad57ca77365a3c699d6"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 

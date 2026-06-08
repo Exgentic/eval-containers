@@ -22,7 +22,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
 LABEL eval.benchmark.url="https://github.com/SWE-Gym/SWE-Gym"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.21139"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

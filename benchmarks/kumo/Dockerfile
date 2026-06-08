@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/Haowei-PKU/Kumo"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/kumo"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.08857"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'

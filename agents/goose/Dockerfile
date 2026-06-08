@@ -3,19 +3,19 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-rust:latest
+ARG AGENT_VERSION=1.30.0
 LABEL eval.type="agent"
 LABEL eval.agent.name="goose"
 LABEL eval.agent.description="Block Goose AI agent"
 LABEL eval.agent.runtime="rust"
 LABEL eval.agent.url="https://github.com/block/goose"
-LABEL eval.agent.version="1.30.0"
-ENV EVAL_AGENT_VERSION_DEFAULT="1.30.0"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=goose
 # Download + integrity-check, then extract. Streaming `curl | tar` fails
 # on partial bytes under flaky networks (observed 2026-04-17); download
 # to a file so curl can retry and we can size-check before extracting.
 RUN set -e; ok=0; ARCH=$(uname -m); \
-    URL="https://github.com/block/goose/releases/download/v1.30.0/goose-${ARCH}-unknown-linux-gnu.tar.bz2"; \
+    URL="https://github.com/block/goose/releases/download/v${AGENT_VERSION}/goose-${ARCH}-unknown-linux-gnu.tar.bz2"; \
     for i in 1 2 3 4 5; do \
       if curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --max-time 300 \
            "$URL" -o /tmp/goose.tar.bz2 \

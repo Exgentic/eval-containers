@@ -64,8 +64,12 @@ ARG AGENT_VERSION
 # ─── Agent layer ─────────────────────────────────────────────────────
 COPY --from=agent /opt/agent/install.sh /tmp/agent-install.sh
 COPY --from=agent /opt/agent/ /opt/agent/
-ENV AGENT_VERSION_DEFAULT=${AGENT_VERSION}
-RUN bash /tmp/agent-install.sh && rm /tmp/agent-install.sh
+# Reinstalling agents resolve their version from the agent image's
+# /opt/agent/VERSION (written from the agent's ARG AGENT_VERSION), unless this
+# build overrides it via --build-arg AGENT_VERSION. Single source of truth, so
+# install and label can never disagree (RULES.md principle 9).
+RUN AGENT_VERSION="${AGENT_VERSION:-$(cat /opt/agent/VERSION 2>/dev/null)}" \
+      bash /tmp/agent-install.sh && rm /tmp/agent-install.sh
 
 # ─── Gateway layer (uniform /opt/gateway/ contract) ──────────────────
 COPY --from=model /opt/gateway /opt/gateway

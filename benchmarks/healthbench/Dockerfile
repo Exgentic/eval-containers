@@ -17,7 +17,6 @@ LABEL eval.benchmark.data_revision="40ee1968852fc57f625934251ac22be47077a8fb"
 LABEL eval.benchmark.url="https://github.com/openai/healthbench"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/healthbench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.11709"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="40ee1968852fc57f625934251ac22be47077a8fb"
 
 # Fetch dataset (JSONL from OpenAI public blob storage)
 RUN curl -sfL -o /tmp/eval.jsonl \

@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="4510f6a6aa27c43fad7b43da2c59602a86e88480"
 LABEL eval.benchmark.url="https://github.com/scicode-bench/SciCode"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.13168"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="4510f6a6aa27c43fad7b43da2c59602a86e88480"
 
 # Runtime deps for test execution (tests use numpy/scipy/h5py and call the loader)
 RUN pip install --no-cache-dir numpy==2.0.2 scipy==1.14.1 h5py==3.12.1 sympy==1.13.3

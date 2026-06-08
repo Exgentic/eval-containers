@@ -39,7 +39,6 @@ LABEL eval.benchmark.internet="true"
 LABEL eval.benchmark.url="https://github.com/openai/mle-bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.07095"
 LABEL eval.benchmark.requires="Kaggle API credentials + per-competition rules acceptance"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="0.1.0"
 ENV EVAL_BENCHMARK=mle-bench
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl jq && rm -rf /var/lib/apt/lists/*

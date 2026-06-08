@@ -18,7 +18,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
 LABEL eval.benchmark.url="https://github.com/Aider-AI/polyglot-benchmark"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aider_polyglot"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
 
 ENV DEBIAN_FRONTEND=noninteractive
 

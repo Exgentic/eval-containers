@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="93931252bc1b71d495e67390235940643d926958"
 LABEL eval.benchmark.url="https://github.com/mandyyyyii/scibench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2307.10635"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="93931252bc1b71d495e67390235940643d926958"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

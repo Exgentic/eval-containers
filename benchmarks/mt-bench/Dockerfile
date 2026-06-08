@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
 LABEL eval.benchmark.url="https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge/data/mt_bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2306.05685"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

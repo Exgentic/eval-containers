@@ -3,19 +3,19 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
+ARG AGENT_VERSION=0.86.2
 LABEL eval.type="agent"
 LABEL eval.agent.name="aider"
 LABEL eval.agent.description="Aider AI pair programming tool"
 LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/Aider-AI/aider"
-LABEL eval.agent.version="0.86.2"
-ENV EVAL_AGENT_VERSION_DEFAULT="0.86.2"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=aider
-RUN uv pip install --system --no-cache aider-chat==0.86.2
-RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
+RUN uv pip install --system --no-cache aider-chat==${AGENT_VERSION}
+RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-pip install --no-cache-dir aider-chat==0.86.2
+pip install --no-cache-dir aider-chat==${AGENT_VERSION}
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh

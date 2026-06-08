@@ -17,7 +17,6 @@ LABEL eval.benchmark.data_revision="966cd89545d6b6acfd7638bc708b98261ca58e84"
 LABEL eval.benchmark.url="https://github.com/google-research/google-research/tree/master/instruction_following_eval"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/ifeval"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.07911"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="966cd89545d6b6acfd7638bc708b98261ca58e84"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # instruction_ids and kwargs are stored as JSON strings (field names

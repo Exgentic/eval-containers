@@ -3,19 +3,19 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
+ARG AGENT_VERSION=2.2.8
 LABEL eval.type="agent"
 LABEL eval.agent.name="mini-swe-agent"
 LABEL eval.agent.description="Mini-SWE-agent: lightweight AI coding agent for software engineering"
 LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/princeton-nlp/SWE-agent"
-LABEL eval.agent.version="2.2.8"
-ENV EVAL_AGENT_VERSION_DEFAULT="2.2.8"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=mini-swe-agent
-RUN uv pip install --system --no-cache mini-swe-agent==2.2.8
-RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
+RUN uv pip install --system --no-cache mini-swe-agent==${AGENT_VERSION}
+RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-pip install --no-cache-dir mini-swe-agent==2.2.8
+pip install --no-cache-dir mini-swe-agent==${AGENT_VERSION}
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh

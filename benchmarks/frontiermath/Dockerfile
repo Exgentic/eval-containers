@@ -19,7 +19,6 @@ LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://epochai.org/frontiermath"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2411.04872"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 RUN pip install --no-cache-dir pyarrow==18.1.0 huggingface_hub==0.26.2
 
