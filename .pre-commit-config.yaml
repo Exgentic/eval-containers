@@ -57,6 +57,8 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=1024]
       - id: check-yaml
+        # Helm templates are Go-templated, not valid YAML; helm-lint covers them.
+        exclude: ^benchmarks/_chart/templates/
       - id: check-json
 
   # --- Dockerfiles: hadolint ---
@@ -102,6 +104,9 @@ repos:
     rev: v0.10.0.1
     hooks:
       - id: shellcheck
+        # Fail on warnings/errors; style+info nitpicks (SC2001 regex-capture
+        # seds, SC2012 ls-for-newest, SC2015 intentional A&&B||C) are advisory.
+        args: [--severity=warning]
 
   # --- Python ---
   - repo: https://github.com/astral-sh/ruff-pre-commit

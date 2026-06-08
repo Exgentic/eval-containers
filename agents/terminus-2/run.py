@@ -6,6 +6,7 @@ that normally connects to a sandboxed environment via Harbor's BaseEnvironment.
 This wrapper creates a local environment shim so it can run inside this
 container for Eval Containers evaluation.
 """
+
 import asyncio
 import os
 import subprocess
@@ -16,10 +17,14 @@ from pathlib import Path
 
 class LocalEnvironmentShim:
     def __init__(self, trial_dir: Path):
-        self.trial_paths = type("TrialPaths", (), {
-            "agent_dir": trial_dir / "agent",
-            "trial_dir": trial_dir,
-        })()
+        self.trial_paths = type(
+            "TrialPaths",
+            (),
+            {
+                "agent_dir": trial_dir / "agent",
+                "trial_dir": trial_dir,
+            },
+        )()
         self.default_user = None
         (trial_dir / "agent").mkdir(parents=True, exist_ok=True)
 
@@ -27,34 +32,63 @@ class LocalEnvironmentShim:
         merged_env = {**os.environ, **(env or {})}
         try:
             result = subprocess.run(
-                command, shell=True, cwd=cwd, env=merged_env,
-                capture_output=True, text=True,
+                command,
+                shell=True,
+                cwd=cwd,
+                env=merged_env,
+                capture_output=True,
+                text=True,
                 timeout=timeout_sec or 300,
             )
-            return type("ExecResult", (), {
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-                "return_code": result.returncode,
-            })()
+            return type(
+                "ExecResult",
+                (),
+                {
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "return_code": result.returncode,
+                },
+            )()
         except subprocess.TimeoutExpired:
-            return type("ExecResult", (), {
-                "stdout": "",
-                "stderr": "Command timed out",
-                "return_code": 124,
-            })()
+            return type(
+                "ExecResult",
+                (),
+                {
+                    "stdout": "",
+                    "stderr": "Command timed out",
+                    "return_code": 124,
+                },
+            )()
 
-    async def start(self, force_build=False): pass
-    async def stop(self, delete=False): pass
-    async def attach(self): pass
-    def is_dir(self, path, user=None): return Path(path).is_dir()
-    def is_file(self, path, user=None): return Path(path).is_file()
-    async def upload_file(self, source_path, target_path): pass
-    async def upload_dir(self, source_dir, target_dir): pass
+    async def start(self, force_build=False):
+        pass
+
+    async def stop(self, delete=False):
+        pass
+
+    async def attach(self):
+        pass
+
+    def is_dir(self, path, user=None):
+        return Path(path).is_dir()
+
+    def is_file(self, path, user=None):
+        return Path(path).is_file()
+
+    async def upload_file(self, source_path, target_path):
+        pass
+
+    async def upload_dir(self, source_dir, target_dir):
+        pass
+
     async def download_file(self, source_path, target_path):
         import shutil
+
         shutil.copy2(source_path, target_path)
+
     async def download_dir(self, source_dir, target_dir):
         import shutil
+
         shutil.copytree(source_dir, target_dir, dirs_exist_ok=True)
 
 
@@ -80,7 +114,9 @@ async def main():
     logs_dir = Path(tempfile.mkdtemp(prefix="terminus2-"))
     trial_dir = Path(tempfile.mkdtemp(prefix="terminus2-trial-"))
 
-    agent = Terminus2(logs_dir=logs_dir, model_name=model, api_base=api_base, temperature=0.7)
+    agent = Terminus2(
+        logs_dir=logs_dir, model_name=model, api_base=api_base, temperature=0.7
+    )
     env = LocalEnvironmentShim(trial_dir)
     context = AgentContext()
 
@@ -92,9 +128,11 @@ async def main():
         for step in reversed(agent._trajectory_steps):
             if hasattr(step, "source") and step.source == "assistant":
                 if hasattr(step, "message") and step.message:
-                    answer = str(step.message); break
+                    answer = str(step.message)
+                    break
                 elif hasattr(step, "content") and step.content:
-                    answer = str(step.content); break
+                    answer = str(step.content)
+                    break
     if not answer and context.metadata:
         answer = str(context.metadata)
     if not answer:

@@ -4,6 +4,7 @@ and maintains /output/result.json with aggregated model metadata.
 
 The trajectory format is LiteLLM's standard — Eval Containers only controls where it's written.
 """
+
 import json
 import os
 from litellm.integrations.custom_logger import CustomLogger
@@ -14,10 +15,12 @@ class EvalContainersLogger(CustomLogger):
     # custom model paths (e.g. openai/azure/gpt-5.4).  These match the
     # model_info values in models/gpt-5.4/config.yaml so cost accounting
     # stays consistent.
-    _FALLBACK_INPUT_COST = float(os.environ.get(
-        "EVAL_FALLBACK_INPUT_COST_PER_TOKEN", 0.0000025))   # $2.50/1M
-    _FALLBACK_OUTPUT_COST = float(os.environ.get(
-        "EVAL_FALLBACK_OUTPUT_COST_PER_TOKEN", 0.000010))   # $10.00/1M
+    _FALLBACK_INPUT_COST = float(
+        os.environ.get("EVAL_FALLBACK_INPUT_COST_PER_TOKEN", 0.0000025)
+    )  # $2.50/1M
+    _FALLBACK_OUTPUT_COST = float(
+        os.environ.get("EVAL_FALLBACK_OUTPUT_COST_PER_TOKEN", 0.000010)
+    )  # $10.00/1M
 
     def __init__(self):
         self.output_dir = os.environ.get("EVAL_OUTPUT_DIR", "/output")
@@ -62,8 +65,10 @@ class EvalContainersLogger(CustomLogger):
                 # openai/azure/gpt-5.4 — compute from token counts.
                 prompt_tokens = payload.get("prompt_tokens", 0) or 0
                 completion_tokens = payload.get("completion_tokens", 0) or 0
-                cost = (prompt_tokens * self._FALLBACK_INPUT_COST
-                        + completion_tokens * self._FALLBACK_OUTPUT_COST)
+                cost = (
+                    prompt_tokens * self._FALLBACK_INPUT_COST
+                    + completion_tokens * self._FALLBACK_OUTPUT_COST
+                )
             self.total_cost += cost
 
             result = {

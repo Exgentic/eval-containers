@@ -64,7 +64,7 @@ if [[ "$READER_STATE" != "Running" ]]; then
   [[ "$READER_STATE" != "NotFound" ]] && oc delete pod eval-reader -n "$NAMESPACE" --ignore-not-found &>/dev/null
   log "eval-reader not running (state: $READER_STATE) — starting..."
   oc apply -f "$REPO_DIR/oc/eval-reader-pod.yaml" -n "$NAMESPACE" &>/dev/null
-  for i in $(seq 1 30); do
+  for _ in $(seq 1 30); do
     READER_STATE=$(oc get pod eval-reader -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || echo "")
     [[ "$READER_STATE" == "Running" ]] && break
     sleep 2
