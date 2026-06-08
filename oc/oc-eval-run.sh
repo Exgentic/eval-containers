@@ -38,6 +38,14 @@
 
 set -euo pipefail
 
+# ── Ensure eval-containers CLI is on PATH ────────────────────────────────────
+# Prefer the locally built binary (target/release/) over a system install.
+_REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -x "${_REPO_ROOT}/target/release/eval-containers" ]]; then
+  export PATH="${_REPO_ROOT}/target/release:${PATH}"
+fi
+unset _REPO_ROOT
+
 # ── Defaults ────────────────────────────────────────────────────────────────
 NAMESPACE="exgentic-ns"
 TASK_ID="0"
