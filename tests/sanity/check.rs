@@ -496,3 +496,32 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 
     eprintln!("✓ otelcol health gate consistent across all three modes (#45)");
 }
+
+/// Issue #66: the agent process must NOT receive the task id. By the time
+/// `/run.sh` runs, the harness has already used the id to materialize the task
+/// into `TASK`; the agent only needs the prompt. Leaking the stable id is a
+/// dataset-contamination vector — a model that memorized a public benchmark can
+/// map `task_id → answer` without solving — and the unprefixed `TASK_ID` also
+/// violates the `EVAL_`-prefix rule (doctrine principle 12).
+///
+/// The agent runs under `env -i` (a closed allowlist), so this pins that
+/// neither `TASK_ID` nor `EVAL_TASK_ID` is in that allowlist. The id stays
+/// available to the verifier / result writer, which run outside this allowlist.
+#[test]
+fn agent_env_has_no_task_id() {
+    let pc = fs::read_to_string("core/process-compose/process-compose.yaml")
+        .expect("missing core/process-compose/process-compose.yaml");
+
+    // The agent's command is the single `env -i` line in this file.
+    let agent_cmd = pc
+        .lines()
+        .find(|l| l.contains("gosu agent env -i"))
+        .expect("process-compose.yaml must define the agent `env -i` command");
+
+    assert!(
+        !agent_cmd.contains("TASK_ID="),
+        "agent env -i must not carry the task id (TASK_ID/EVAL_TASK_ID) — contamination vector (#66)"
+    );
+
+    eprintln!("✓ agent env carries no task id (#66)");
+}
