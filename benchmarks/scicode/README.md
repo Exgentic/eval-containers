@@ -20,7 +20,7 @@ The agent receives a task of the form: "Solve this scientific research coding pr
 
 ## How it's graded
 
-Custom `/tests/test.sh` defined inline in the Dockerfile.
+Custom `/grade.sh` defined inline in the Dockerfile.
 
 ## Files
 

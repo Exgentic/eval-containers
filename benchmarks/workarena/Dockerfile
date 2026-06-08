@@ -115,13 +115,13 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=workarena
 
 # Test: externally graded. Capture transcript, write -1.
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 cp /output/agent/stdout.log /output/task/agent_transcript.log 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -135,7 +135,8 @@ ServiceNow password: $SNOW_INSTANCE_PWD
 
 When done, print a short summary of the actions you took."
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

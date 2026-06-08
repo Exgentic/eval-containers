@@ -52,7 +52,7 @@ RUN mkdir -p /tasks/0 \
 
 # Scorer: runs the upstream Playwright E2E tests. The base image already has
 # /app/tests/run.sh that executes the full test harness.
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 # Capture agent's diff
@@ -64,7 +64,7 @@ else
   echo 0 > /logs/verifier/reward.txt
 fi
 TEST
-RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
+RUN chmod +x /grade.sh && chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 RUN chmod +x /eval-entrypoint.sh
@@ -78,7 +78,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 
 $(cat /tasks/0/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

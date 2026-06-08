@@ -33,8 +33,8 @@
 #   /etc/process-compose.yaml          full pipeline (single-image mode)
 #   /etc/process-compose-runner.yaml   runner-only (compose / k8s mode)
 #   /root/tasks/                       benchmark task data (mode 0700 root-only)
-#   /root/tests/test.sh                verifier
-#   /root/entrypoint.sh                benchmark wrapper (already in benchmark image)
+#   /grade.sh                          verifier (benchmark CMD)
+#   /entrypoint.sh                     benchmark setup (benchmark ENTRYPOINT)
 #
 # Why root-owned /root and /opt/gateway: agent uid 1002 cannot traverse
 # them (mode 0700 by default), so config + task data + verifier are
@@ -108,6 +108,7 @@ RUN chmod 0700 /opt/gateway \
                 /etc/process-compose.yaml \
                 /etc/process-compose-runner.yaml
 
-# ENTRYPOINT not set here — each benchmark image owns its own
-# /root/entrypoint.sh wrapper that materializes the task and execs
-# /usr/local/bin/run.
+# ENTRYPOINT/CMD not set here — inherited from the benchmark image.
+# ENTRYPOINT = /entrypoint.sh (task setup, exec "$@")
+# CMD = /grade.sh (default action; overridden to /usr/local/bin/run
+# in the combination image at runtime).

@@ -20,7 +20,7 @@ The agent receives a task of the form: "$(cat /tasks/0/problem.txt)"" The proble
 
 ## How it's graded
 
-See `/tests/test.sh` in the built image for the scoring logic. Grading runs inside the per-task image after the agent exits.
+See `/grade.sh` in the built image for the scoring logic. Grading runs inside the per-task image after the agent exits.
 
 This benchmark uses `env=per-task`: the Dockerfile takes a `EVAL_TASK_ID` build-arg and pulls a per-task upstream base image for each task.
 

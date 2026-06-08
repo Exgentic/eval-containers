@@ -63,7 +63,7 @@ ENV EVAL_BENCHMARK=gdpval
 
 # Test: GDPval is externally graded by OpenAI's auto-grader.
 # test.sh packages deliverables and uploads to HuggingFace for submission.
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
@@ -96,7 +96,7 @@ fi
 # Externally graded — write -1
 echo -1 > /logs/verifier/reward.txt
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 # Load task, download reference files to /app, then exec shared entrypoint
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -133,7 +133,8 @@ elif isinstance(urls, dict):
 " 2>/dev/null || true
   fi
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

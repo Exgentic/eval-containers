@@ -22,7 +22,7 @@ RUN cat > /eval-reinstall-agent <<'R' && chmod +x /eval-reinstall-agent
 set -euo pipefail
 "$(command -v npm || echo /opt/agent/node/bin/npm)" install -g "@anthropic-ai/claude-code@${1:?version required}"
 R
-RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
@@ -31,4 +31,4 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
 exec claude -p --dangerously-skip-permissions "$TASK"
 E
-ENTRYPOINT ["/opt/agent/entrypoint.sh"]
+ENTRYPOINT ["/run.sh"]

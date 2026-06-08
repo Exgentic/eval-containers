@@ -74,7 +74,7 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=mrcr
 
 # Custom test: SequenceMatcher ratio with prefix check (per MRCR spec)
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 python3 <<'GRADE'
@@ -101,7 +101,7 @@ else:
 open('/logs/verifier/reward.txt', 'w').write(f'{reward:.6f}\n')
 GRADE
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -112,7 +112,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="Your task is described in the file /app/task.txt — read it and follow the instructions inside."
   export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]
