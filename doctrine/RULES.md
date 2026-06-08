@@ -53,7 +53,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
     a. **Agent base images.** Every agent image MUST extend `core/agent-base-<runtime>` (node, python, go, universal) for its runtime. The base provides: apt-retry wrapper, runtime install with arch detection, `/opt/agent/` staging scaffold, standard `install.sh` skeleton that the combination image calls.
 
-    b. **Benchmark base images.** Every benchmark image MUST extend `core/benchmark-base-<pattern>` (hf-dataset, github-raw, per-task-upstream, external-graded). The base provides: Python + pyarrow + datasets, the shared label/ENV scaffold, copies of `/eval-entrypoint.sh` and `/eval-materialize-task`, a standard `entrypoint.sh` template, and a default `/grade.sh` for the matching grader.
+    b. **Benchmark base images.** Every benchmark image MUST extend `core/benchmark-base-<pattern>` (hf-dataset, github-raw, per-task-upstream, external-graded). The base provides: Python + pyarrow + datasets, the shared label/ENV scaffold, a copy of `/eval-materialize-task` (and `eval-sitecustomize.py` site customization), a standard `entrypoint.sh` template, and a default `/grade.sh` for the matching grader.
 
     c. **One home per concern.** A retry loop for apt, a tarball-size check, an arch detection `case` statement — each MUST appear in exactly one Dockerfile (the base). If you find yourself copy-pasting defensive code from another Dockerfile, you are violating this rule; the correct fix is to move that code to the base and have both callers inherit.
 
