@@ -52,6 +52,15 @@ pub struct BuildArgs {
     /// Print the underlying docker command(s) without executing them.
     #[arg(long, global = true)]
     pub dry_run: bool,
+
+    /// (`--builder oc` only) Append a suffix to every output imagestream name.
+    /// E.g. `--imagestream-suffix -test` writes to `aime-test`, `codex-test`,
+    /// `aime-codex-test` instead of the production imagestreams. The eval
+    /// combination's BENCHMARK_IMAGE/AGENT_IMAGE/MODEL_IMAGE build args are
+    /// also rewritten to reference the suffixed imagestreams so the test build
+    /// is fully isolated from production images.
+    #[arg(long, global = true, default_value = "")]
+    pub imagestream_suffix: String,
 }
 
 #[derive(Subcommand)]
@@ -99,7 +108,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     // before the buildx path so we don't `buildx inspect` a builder named
     // "oc". Cold-graph ordering lives in examples/openshift (principle 3).
     if builder == Some("oc") {
-        return oc_execute(args.target, dry_run);
+        return oc_execute(args.target, dry_run, &args.imagestream_suffix);
     }
 
     // A named builder must exist before bake can use it. Fail early with
@@ -456,7 +465,7 @@ fn bake_print(
         .ok_or_else(|| format!("bake --print has no target '{bake_target}'"))
 }
 
-fn oc_execute(target: BuildTarget, dry_run: bool) -> Result<(), String> {
+fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(), String> {
     // Internal registry prefix: <registry-host>/<current-namespace>.
     let ir = if dry_run {
         "image-registry.openshift-image-registry.svc:5000/NAMESPACE".to_string()
@@ -495,12 +504,16 @@ fn oc_execute(target: BuildTarget, dry_run: bool) -> Result<(), String> {
             if task_id.is_some() {
                 return Err("--builder oc does not support --task-id".into());
             }
-            // Select the combo (bake requires these at call time); OTEL/runtime
-            // bases come from the combination target's own bake defaults.
+            // Derive flat imagestream names for the three bases, applying the
+            // suffix so a --imagestream-suffix -test build pulls from *-test
+            // imagestreams rather than the production ones.
+            let bench_is = format!("{}{is_suffix}", flatten_imagestream(&format!("benchmarks/{benchmark}")));
+            let agent_is = format!("{}{is_suffix}", flatten_imagestream(&format!("agents/{agent}")));
+            let model_is = format!("{}{is_suffix}", flatten_imagestream(&format!("models/{model}")));
             let overrides = vec![
-                format!("eval.args.BENCHMARK_IMAGE={ir}/benchmarks/{benchmark}:latest"),
-                format!("eval.args.AGENT_IMAGE={ir}/agents/{agent}:latest"),
-                format!("eval.args.MODEL_IMAGE={ir}/models/{model}:latest"),
+                format!("eval.args.BENCHMARK_IMAGE={ir}/{bench_is}:latest"),
+                format!("eval.args.AGENT_IMAGE={ir}/{agent_is}:latest"),
+                format!("eval.args.MODEL_IMAGE={ir}/{model_is}:latest"),
             ];
             let env = vec![
                 ("EVAL_BENCHMARK", benchmark),
@@ -522,7 +535,7 @@ fn oc_execute(target: BuildTarget, dry_run: bool) -> Result<(), String> {
         .and_then(|t| t.first())
         .ok_or_else(|| format!("bake target '{bake_target}' has no tags"))?;
     let (repo, _) = split_ref(tag, &ir);
-    let imagestream = flatten_imagestream(repo);
+    let imagestream = format!("{}{is_suffix}", flatten_imagestream(repo));
     let context = spec.context.clone().unwrap_or_else(|| ".".into());
     let dockerfile = spec
         .dockerfile
@@ -564,6 +577,8 @@ fn oc_build(
         let (k, v) = kv.split_once('=').unwrap_or((kv.as_str(), ""));
         args_yaml.push_str(&format!("        - {{ name: {k}, value: \"{v}\" }}\n"));
     }
+    // The combination image layers 5 large base images — needs more ephemeral storage.
+    let storage = if dockerfile.contains("combination") { "10Gi" } else { "4Gi" };
     let bc = format!(
         "apiVersion: build.openshift.io/v1\n\
          kind: BuildConfig\n\
@@ -571,7 +586,7 @@ fn oc_build(
          spec:\n\
          \x20 source:\n    type: Binary\n    binary: {{}}\n\
          \x20 strategy:\n    type: Docker\n    dockerStrategy:\n      dockerfilePath: {dockerfile}\n      buildArgs:\n{args_yaml}\
-         \x20 resources:\n    requests: {{ ephemeral-storage: \"20Gi\" }}\n    limits: {{ ephemeral-storage: \"20Gi\" }}\n\
+         \x20 resources:\n    requests: {{ephemeral-storage: \"{storage}\"}}\n    limits: {{ephemeral-storage: \"{storage}\"}}\n\
          \x20 output:\n    to:\n      kind: ImageStreamTag\n      name: {imagestream}:latest\n"
     );
 
