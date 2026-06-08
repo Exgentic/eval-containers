@@ -1,0 +1,35 @@
+# Minimal OTLP collector config. Real config can override at deploy time.
+extensions:
+  # Readiness signal: serves 200 on :13133 once the pipeline is built and the
+  # OTLP receivers are listening. Every orchestration mode gates dependents on
+  # this so nothing emits spans before otelcol can receive them — the image's
+  # HEALTHCHECK (compose), process-compose's http_get probe, and the k8s
+  # sidecar startupProbe all hit this endpoint.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc: { endpoint: 0.0.0.0:4317 }
+      http: { endpoint: 0.0.0.0:4318 }
+
+exporters:
+  # File exporter writes one JSON-encoded ExportTraceServiceRequest per line
+  # (newline-delimited, NDJSON). The .jsonl extension reflects that format —
+  # `jq -s . /output/traces.jsonl` to slurp into an array. No batch processor:
+  # direct export so spans flush immediately on receipt rather than waiting for
+  # a batch timeout (which causes empty files when the eval pod exits before the
+  # batch fires).
+  file:
+    path: /output/traces.jsonl
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [file]
+  telemetry:
+    metrics:
+      level: none

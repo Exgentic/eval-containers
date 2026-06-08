@@ -442,3 +442,57 @@ fn openshift_values_overlay_is_present() {
     );
     eprintln!("✓ deploy/values-openshift.yaml is present and sets anyuid-sa");
 }
+
+/// Issue #45: otelcol's readiness was gated on :13133, but the otel image
+/// enabled no `health_check` extension there — the probe never passed until the
+/// failure_threshold elapsed, a latent race that could silently drop spans into
+/// a not-yet-listening collector.
+///
+/// The fix makes otelcol readiness a *real, verified* signal and gates on it in
+/// all three orchestration modes: the image enables the health_check extension
+/// on :13133, compose waits via `service_healthy`, the k8s sidecar via its
+/// `startupProbe`, and single-image (process-compose) via its `http_get` probe
+/// + `process_healthy`. This pins the contract.
+#[test]
+fn otelcol_health_gate_is_consistent_across_modes() {
+    let read = |p: &str| {
+        fs::read_to_string(p).unwrap_or_else(|_| panic!("missing {p} — expected by #45 gate"))
+    };
+
+    // 1. The image serves a health endpoint: health_check extension enabled
+    //    and wired into the collector config.
+    let cfg = read("core/otel/config.yaml");
+    assert!(
+        cfg.contains("health_check:") && cfg.contains("extensions: [health_check]"),
+        "core/otel/config.yaml must enable + wire the health_check extension (#45)"
+    );
+
+    // 2. Compose: otelcol has a healthcheck (probing :13133), gateway gates on
+    //    service_healthy.
+    let svc = read("compose/services.yaml");
+    assert!(
+        svc.contains("13133") && svc.contains("condition: service_healthy"),
+        "compose/services.yaml must healthcheck otelcol on :13133 and gate the gateway on service_healthy (#45)"
+    );
+
+    // 3. k8s: the otelcol sidecar has a startupProbe on :13133.
+    let job = read("benchmarks/_chart/templates/job.yaml");
+    let otelcol_block = job
+        .split("- name: gateway")
+        .next()
+        .expect("job.yaml has an otelcol section before the gateway");
+    assert!(
+        otelcol_block.contains("startupProbe:") && otelcol_block.contains("port: 13133"),
+        "job.yaml otelcol sidecar must define a startupProbe on :13133 (#45)"
+    );
+
+    // 4. Single-image (process-compose): otelcol probes :13133, the gateway
+    //    gates on process_healthy.
+    let pc = read("core/process-compose/process-compose.yaml");
+    assert!(
+        pc.contains("port: 13133") && pc.contains("condition: process_healthy"),
+        "process-compose.yaml must probe otelcol :13133 and gate on process_healthy (#45)"
+    );
+
+    eprintln!("✓ otelcol health gate consistent across all three modes (#45)");
+}
