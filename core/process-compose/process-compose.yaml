@@ -1,20 +1,22 @@
-# Eval orchestration. Five processes:
-#   otelcol → gateway → agent → verifier → result.
+# Single-image orchestration. Three units, mirroring the other two modes:
+#   otelcol → gateway → runner
 #
-# Compose / k8s mode applies process-compose-runner.yaml as an overlay
-# (process-compose merges multiple -f configs); the overlay sets
-# `disabled: true` on otelcol+gateway, leaving agent+verifier+result
-# active. Single source for the agent/verifier/result definitions.
+# Same shape as compose mode (compose/services.yaml) and k8s mode
+# (benchmarks/_chart/templates/job.yaml): otelcol + gateway are the
+# long-running daemons, and the runner is the shared /entrypoint.sh
+# (materialize → agent → grade → result) those modes launch as a sibling
+# service/container. Here all three run as process-compose processes.
 #
-# URL contract (resolved by /usr/local/bin/run BEFORE process-compose
-# starts, so plain $VAR refs in commands work uniformly):
-#   ANTHROPIC_BASE_URL  default http://127.0.0.1:4000/anthropic
-#   OPENAI_BASE_URL     default http://127.0.0.1:4000/openai
+# /usr/local/bin/run sets ANTHROPIC_BASE_URL/OPENAI_BASE_URL to 127.0.0.1
+# before exec'ing process-compose, so the runner's /entrypoint.sh →
+# eval-entrypoint.sh sees a wired gateway and runs its inline pipeline
+# against localhost instead of branching back into single-image mode.
 #
-# Mirrored per-benchmark in benchmarks/<name>/compose.yaml (compose mode)
-# and benchmarks/<name>/job.yaml (k8s mode) — same five units, same
-# dependency edges. processes:→services:/containers:, command:→image:,
-# readiness_probe:→healthcheck:, 127.0.0.1→service-name DNS / Pod loopback.
+# Dependency edges mirror the siblings: gateway waits for otelcol healthy
+# (its health_check on :13133), runner waits for gateway healthy (its
+# /opt/gateway/health probe) — i.e. processes:→services:/containers:,
+# command:→image:, readiness_probe:→healthcheck:/startupProbe,
+# 127.0.0.1→service-name DNS / Pod loopback.
 
 version: "0.5"
 
@@ -54,39 +56,16 @@ processes:
       restart: "no"
     log_location: /output/model/gateway.log
 
-  agent:
-    # Stdout/stderr write directly to /output/agent/{stdout,stderr}.log
-    # via shell redirection rather than process-compose's `log_location`,
-    # which wraps lines in a {level,process,replica,message} JSON envelope
-    # that breaks verifiers reading raw stdout.
-    command: timeout $TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$TASK" TASK_ID="$TASK_ID" MODEL="$MODEL" TIMEOUT="$TIMEOUT" OPENAI_BASE_URL="$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
+  runner:
+    # The shared entrypoint: materialize → agent → grade → result, run
+    # against the local gateway. Identical to the runner compose/k8s launch.
+    command: /entrypoint.sh
     depends_on:
       gateway:
         condition: process_healthy
     availability:
       restart: "no"
-
-  verifier:
-    command: bash /grade.sh
-    depends_on:
-      agent:
-        condition: process_completed
-    availability:
-      restart: "no"
-    log_location: /output/task/verifier.log
-
-  result:
-    command: /usr/local/bin/write-result
-    depends_on:
-      verifier:
-        condition: process_completed
-    availability:
-      restart: "no"
-      # When the result writer finishes, process-compose exits — so the
-      # whole container exits cleanly. Without this, otelcol+gateway
-      # (long-running daemons) would keep the container alive forever
-      # in single-image mode. In compose/k8s modes the gateway+otelcol
-      # are disabled via the overlay file, so this still terminates
-      # correctly there.
+      # The runner is the only finite unit; when it exits, process-compose
+      # tears down the otelcol+gateway daemons and the container exits.
       exit_on_end: true
-    log_location: /output/task/result-writer.log
+    log_location: /output/task/runner.log

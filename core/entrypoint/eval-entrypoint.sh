@@ -74,6 +74,20 @@ if [ -n "${EVAL_TASK_ID:-}" ] && [ -d "/tasks/$EVAL_TASK_ID" ]; then
   cp -r "/tasks/$EVAL_TASK_ID/." /output/task/input/ 2>/dev/null || true
 fi
 
+# ─── Single-image mode ───────────────────────────────────────────
+# Detect by the same signal /usr/local/bin/run uses: if no external
+# gateway was wired (ANTHROPIC_BASE_URL unset), this is single-image
+# mode — there are no otelcol/gateway sidecars, so hand off to
+# process-compose, which brings them up locally and then runs the
+# agent → verifier → result pipeline against 127.0.0.1. TASK and
+# EXPECTED_ANSWER (set by the per-benchmark /entrypoint.sh) and the
+# version.json / task-input artifacts written above all carry over.
+# In compose / k8s mode ANTHROPIC_BASE_URL points at the sibling
+# gateway, so we fall through to the inline runner below.
+if [ -z "${ANTHROPIC_BASE_URL+set}" ]; then
+  exec /usr/local/bin/run
+fi
+
 # Hide expected answer from agent
 SAVED_EXPECTED_ANSWER="${EXPECTED_ANSWER:-}"
 unset EXPECTED_ANSWER
