@@ -1,0 +1,119 @@
+# Pre-commit gates for eval-containers. Self-contained — no helper scripts.
+#
+# pre-commit stage: fast, deterministic checks that block a commit.
+# pre-push  stage: clippy + cargo test (recompile/env-sensitive; block a push).
+# commit-msg stage: DCO Signed-off-by autofix.
+#
+# Install all stages once:
+#   pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+
+repos:
+  # --- DCO: ensure every commit message carries a Signed-off-by trailer ---
+  # Appends one from git config if (and only if) missing — same as `git commit -s`.
+  # Matches the GitHub DCO check that gates PRs.
+  - repo: local
+    hooks:
+      - id: dco-sign-off
+        name: DCO Signed-off-by autofix
+        # Single-quoted YAML so the embedded bash (double-quotes, \n, colon)
+        # survives verbatim; inner ' are doubled per YAML rules.
+        entry: 'bash -c ''f="$1"; grep -qiE "^Signed-off-by: .+ <.+@.+>" "$f" && exit 0; n=$(git config user.name || true); e=$(git config user.email || true); if [ -z "$n" ] || [ -z "$e" ]; then echo "Missing Signed-off-by and git user.name/email unset; use: git commit -s" >&2; exit 1; fi; [ -n "$(tail -c1 "$f")" ] && printf "\n" >> "$f"; printf "Signed-off-by: %s <%s>\n" "$n" "$e" >> "$f"'' --'
+        language: system
+        stages: [commit-msg]
+
+  # --- Rust: mirror the test.yml / VERIFY.md gates ---
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt --check
+        entry: cargo fmt --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+
+      - id: cargo-clippy
+        name: cargo clippy -D warnings
+        entry: cargo clippy --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]   # recompiles on Rust changes — too slow for every commit
+
+      - id: cargo-test
+        name: cargo test
+        entry: cargo test
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+
+  # --- Secrets: uses the repo's .gitleaks.toml allowlist ---
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.18.4
+    hooks:
+      - id: gitleaks
+
+  # --- Generic hygiene ---
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.(jsonl|lock)$'
+      - id: end-of-file-fixer
+        exclude: '\.(jsonl|lock)$'
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: check-yaml
+      - id: check-json
+
+  # --- Dockerfiles: hadolint ---
+  # failure-threshold=error keeps the pervasive stylistic findings advisory
+  # (non-blocking); only parse/error-level issues fail. Ignored rules:
+  #   DL3059 staged RUNs · DL3007 :latest (pinned via bake) · DL3008/DL3018 apt/apk
+  #   version pins · DL3029 --platform in FROM (multi-arch bake).
+  # The 6 excluded images embed a `#!/bin/bash` shebang inside a heredoc, which
+  # trips a separate hadolint parser bug (hadolint/hadolint#806) that formatting
+  # can't fix. Everything else parses after the heredoc blank-line normalization.
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.14.0
+    hooks:
+      - id: hadolint
+        args:
+          - --failure-threshold=error
+          - --ignore=DL3059
+          - --ignore=DL3007
+          - --ignore=DL3008
+          - --ignore=DL3018
+          - --ignore=DL3029
+        exclude: ^benchmarks/(aider-polyglot|bigcodebench|humaneval|humanevalplus|mbpp|mbppplus)/Dockerfile$
+
+  # --- Compose files: schema-validate against the Compose spec (no daemon) ---
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.37.2
+    hooks:
+      - id: check-compose-spec
+        files: (^|/)compose\.ya?ml$   # repo uses bare compose.yaml, not docker-compose.yaml
+
+  # --- Helm chart lint ---
+  - repo: local
+    hooks:
+      - id: helm-lint
+        name: helm lint (_chart)
+        entry: helm lint benchmarks/_chart
+        language: system
+        files: ^benchmarks/_chart/
+        pass_filenames: false
+
+  # --- Shell ---
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+
+  # --- Python ---
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+      - id: ruff-format

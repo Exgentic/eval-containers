@@ -25,6 +25,20 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 5. **Never work around a rule.** If a rule blocks your work, the rule is the problem. Fix the rule first. Do not write code that violates an active rule.
 
+## Local Setup
+
+Install the git hooks once per clone:
+
+```sh
+pre-commit install --hook-type pre-commit --hook-type pre-push --hook-type commit-msg
+```
+
+This wires up the [`.pre-commit-config.yaml`](.pre-commit-config.yaml) gates:
+fast checks (fmt, gitleaks, hygiene, shellcheck, ruff, compose/helm lint) on
+**commit**, the heavier `clippy`/`cargo test` on **push**, and a **commit-msg**
+hook that auto-adds the `Signed-off-by` trailer so commits satisfy the GitHub
+DCO check. Hooks are advisory — DCO and CI remain the enforced gates on every PR.
+
 ## Contribution Workflow
 
 Every contribution MUST follow this flow:
