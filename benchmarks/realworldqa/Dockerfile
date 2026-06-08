@@ -74,8 +74,8 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=realworldqa
 
-COPY --from=test-exact-match /test.sh /tests/test.sh
-RUN chmod +x /tests/test.sh
+COPY --from=test-exact-match /test.sh /grade.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -107,7 +107,8 @@ Image: /app/image.png"
 Question: ${PROBLEM}${IMAGE_LINE}"
   export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

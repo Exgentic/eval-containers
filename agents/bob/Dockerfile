@@ -19,7 +19,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 for b in node npm npx bob; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
-RUN cat > /opt/agent/entrypoint.sh <<'E' && chmod +x /opt/agent/entrypoint.sh
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
@@ -28,4 +28,4 @@ export BOB_ACCEPT_LICENSE=1
 export BOB_TELEMETRY=off
 exec bob --yolo --accept-license "$TASK"
 E
-ENTRYPOINT ["/opt/agent/entrypoint.sh"]
+ENTRYPOINT ["/run.sh"]

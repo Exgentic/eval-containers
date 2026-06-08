@@ -80,7 +80,7 @@ ENV EVAL_BENCHMARK=scicode
 
 # Test: combine agent code with all sub-step test cases and run against test_data.h5
 # Scoring: fraction of subproblems passed for this main problem.
-RUN cat > /tests/test.sh <<'TEST'
+RUN cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 TASK_DIR="/tasks/$EVAL_TASK_ID"
@@ -215,7 +215,7 @@ else
 fi
 rm -rf $TMPDIR
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -250,7 +250,8 @@ $(cat /tasks/$EVAL_TASK_ID/dependencies.txt)
 Sub-steps:
 $SUBS"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

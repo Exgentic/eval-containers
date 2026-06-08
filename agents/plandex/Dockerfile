@@ -27,9 +27,9 @@ RUN ARCH=$(uname -m) && case "$ARCH" in x86_64) A=amd64 ;; aarch64|arm64) A=arm6
     curl -fsSL "https://github.com/plandex-ai/plandex/releases/download/cli/v2.2.1/plandex_2.2.1_linux_${A}.tar.gz" -o /tmp/p.tgz && \
     tar -xzf /tmp/p.tgz -C /opt/agent/bin plandex && chmod +x /opt/agent/bin/plandex && \
     ln -sf /opt/agent/bin/plandex /usr/local/bin/plandex && rm /tmp/p.tgz
-COPY entrypoint.sh /opt/agent/entrypoint.sh
+COPY entrypoint.sh /run.sh
 COPY custom-models.json /opt/agent/custom-models.json
-RUN chmod +x /opt/agent/entrypoint.sh && \
+RUN chmod +x /run.sh && \
     cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
@@ -57,4 +57,4 @@ uv pip install --python /opt/agent/venv/bin/python3 \
 [ -x /opt/agent/bin/plandex ] && ln -sf /opt/agent/bin/plandex /usr/local/bin/plandex || true
 [ -x /opt/agent/bin/plandex-server ] && ln -sf /opt/agent/bin/plandex-server /usr/local/bin/plandex-server || true
 I
-ENTRYPOINT ["/opt/agent/entrypoint.sh"]
+ENTRYPOINT ["/run.sh"]
