@@ -15,7 +15,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --namespace) NAMESPACE="$2"; PASS_ARGS+=(--namespace "$2"); shift 2;;
   --eval-model) PASS_ARGS+=(--eval-model "$2"); shift 2;;
   --pvc) PASS_ARGS+=(--pvc "$2"); shift 2;;
-  --repo-dir) REPO_DIR="$2"; PASS_ARGS+=(--repo-dir "$2"); shift 2;;
+  --repo-dir) PASS_ARGS+=(--repo-dir "$2"); shift 2;;
   --rebuild) PASS_ARGS+=(--rebuild); shift;;
   --no-build) PASS_ARGS+=(--no-build); shift;;
   *) echo "Unknown argument: $1" >&2; exit 1;;

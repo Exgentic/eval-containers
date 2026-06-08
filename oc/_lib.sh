@@ -1,3 +1,5 @@
+# shellcheck shell=bash
+# shellcheck disable=SC2034  # NS_DEFAULT/REPO_DIR are read by the scripts that source this
 # oc/_lib.sh — shared defaults + the name-flatten helper, sourced by the scripts.
 
 NS_DEFAULT="exgentic-ns"
