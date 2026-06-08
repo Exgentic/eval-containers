@@ -3,6 +3,15 @@ services:
     image: ${EVAL_REGISTRY:-quay.io/eval-containers}/core/otel:latest
     volumes:
       - output:/output
+    # Probe otelcol's health_check endpoint (:13133) so the gateway can gate on
+    # `service_healthy` below. Same per-orchestrator pattern as the gateway's
+    # /opt/gateway/health check. Image is alpine-based, so busybox wget exists.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+      start_period: 1s
     networks:
       - internal
 
@@ -27,7 +36,7 @@ services:
       start_period: 5s
     depends_on:
       otelcol:
-        condition: service_started
+        condition: service_healthy
     networks:
       - internal
       - upstream
