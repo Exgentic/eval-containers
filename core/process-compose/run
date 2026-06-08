@@ -27,14 +27,15 @@
 #   OPENAI_API_KEY    read by the in-container gateway in single-image mode
 set -euo pipefail
 
-# Resolve env-var defaults so process-compose.yaml's commands can use
-# plain $VAR — process-compose's ${VAR:-default} pre-substitution breaks
-# YAML when defaults contain colons.
-export TIMEOUT="${TIMEOUT:-300}"
-export TASK_ID="${TASK_ID:-}"
-export MODEL="${MODEL:-}"
-export BENCHMARK="${BENCHMARK:-unknown}"
-export AGENT="${AGENT:-unknown}"
+# Resolve from the EVAL_* canonical axis first (what the CLI sets in container
+# mode), falling back to the bare legacy names (set by compose/k8s), then a
+# default. process-compose.yaml's agent command reads these from the env at run
+# time (the values are $$-escaped there, not substituted at parse time).
+export TIMEOUT="${TIMEOUT:-${EVAL_TIMEOUT:-300}}"
+export TASK_ID="${TASK_ID:-${EVAL_TASK_ID:-}}"
+export MODEL="${MODEL:-${EVAL_MODEL:-}}"
+export BENCHMARK="${BENCHMARK:-${EVAL_BENCHMARK:-unknown}}"
+export AGENT="${AGENT:-${EVAL_AGENT:-unknown}}"
 export TASK="${TASK:-}"
 
 # Mode detection: external gateway iff ANTHROPIC_BASE_URL was set by

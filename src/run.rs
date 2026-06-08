@@ -152,6 +152,11 @@ pub struct RunArgs {
     overlay: Option<String>,
 }
 
+/// Upstream gateway credentials forwarded into the container in single-image
+/// mode (where the gateway runs in-process). Mirrors the keys the `eval-secrets`
+/// Secret supplies in k8s and that `compose/services.yaml` reads from the shell.
+const GATEWAY_CRED_VARS: &[&str] = &["OPENAI_API_KEY", "OPENAI_API_BASE"];
+
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     // Resolve benchmark: --benchmark flag wins over positional, either must be set.
     let benchmark = args
@@ -328,6 +333,16 @@ fn run_container(
     cmd.arg("run").arg("--rm");
     for (k, v) in envs {
         cmd.arg("-e").arg(format!("{k}={v}"));
+    }
+    // Single-image mode runs the gateway in-container, so it needs the upstream
+    // credentials the gateway service gets from `eval-secrets` (k8s) or the
+    // shell env (compose). Forward them from the caller's environment with
+    // docker's `-e NAME` passthrough (no value → not rendered into logs); unset
+    // vars are skipped, so this is a no-op when the caller didn't provide them.
+    for var in GATEWAY_CRED_VARS {
+        if std::env::var_os(var).is_some() {
+            cmd.arg("-e").arg(var);
+        }
     }
     cmd.arg("-v").arg("output:/output");
     cmd.arg(&image);
