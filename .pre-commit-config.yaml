@@ -25,11 +25,9 @@ repos:
         language: system
         stages: [commit-msg]
 
-  # --- Rust formatting (syntactic, no compile) ---
-  # clippy and cargo test are intentionally NOT here — they compile, so CI owns
-  # them (see .github/workflows). A git hook is the wrong place for slow,
-  # daemon/toolchain-dependent checks: it trains contributors to --no-verify,
-  # which disables every hook including the cheap, valuable ones.
+  # --- Rust formatting (no compile) ---
+  # clippy and cargo test are intentionally in CI (test.yml), not here: a hook
+  # is the wrong place for slow, toolchain-dependent checks — it breeds --no-verify.
   - repo: local
     hooks:
       - id: cargo-fmt
