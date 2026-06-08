@@ -22,6 +22,7 @@ set -euo pipefail
 apt-get update && apt-get install -y --no-install-recommends tmux && rm -rf /var/lib/apt/lists/*
 /opt/agent/setup-uv-venv.sh /opt/terminus2-venv harbor==0.6.4 asciinema
 I
+
 RUN /opt/agent/install.sh
 # Late COPY: editing run.py here invalidates only the layers below,
 # not the multi-minute apt+venv install above.
@@ -34,4 +35,5 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 exec /opt/terminus2-venv/bin/python /opt/agent/run.py
 E
+
 ENTRYPOINT ["/run.sh"]

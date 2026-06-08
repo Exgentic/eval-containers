@@ -31,7 +31,7 @@ Mount the trajectory file at /data/trajectory.jsonl.
 
 from __future__ import annotations
 
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 import json
 import os
 import sys
@@ -111,7 +111,9 @@ def _canonicalize(resp: dict[str, Any]) -> dict[str, Any]:
             if item.get("type") == "function_call":
                 tool_calls.append(
                     {
-                        "id": item.get("call_id") or item.get("id") or f"call_{uuid.uuid4().hex[:8]}",
+                        "id": item.get("call_id")
+                        or item.get("id")
+                        or f"call_{uuid.uuid4().hex[:8]}",
                         "type": "function",
                         "function": {
                             "name": item.get("name", ""),
@@ -299,7 +301,12 @@ def _next(emit_fn) -> Any:
             f"[replay] EXHAUSTED after {call_index} (returning empty in target format)",
             file=sys.stderr,
         )
-        canon = {"text": "REPLAY_EXHAUSTED", "tool_calls": [], "finish_reason": "stop", "model": "replay"}
+        canon = {
+            "text": "REPLAY_EXHAUSTED",
+            "tool_calls": [],
+            "finish_reason": "stop",
+            "model": "replay",
+        }
     return jsonify(emit_fn(canon))
 
 

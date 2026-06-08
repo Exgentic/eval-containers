@@ -116,6 +116,7 @@ print(f'Total tasks: {task_idx}')
 with open('/tasks/.count', 'w') as fh:
     fh.write(str(task_idx))
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl /tasks/.count
 
 WORKDIR /app
@@ -135,6 +136,7 @@ $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

@@ -42,6 +42,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         os.remove(local)
 print(f'Wrote {count} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -55,6 +56,7 @@ cp /output/agent/stdout.log /output/task/agent_response.txt 2>/dev/null || true
 cp /output/agent/network.har /output/task/network.har 2>/dev/null || true
 echo -1 > /logs/verifier/reward.txt
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -81,6 +83,7 @@ When done, print your final answer (or the resulting URL for navigation tasks)."
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

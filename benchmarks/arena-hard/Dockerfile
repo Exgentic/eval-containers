@@ -62,6 +62,7 @@ with open('/tasks/all.jsonl', 'w') as out:
 
 print(f'Generated {len(ordered_uids)} Arena-Hard tasks')
 PYEOF
+
 RUN rm -rf /tmp/ah
 RUN chmod 600 /tasks/all.jsonl
 
@@ -74,6 +75,7 @@ RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 mkdir -p /logs/verifier
 python3 /tests/grade.py > /logs/verifier/reward.txt 2>/logs/verifier/error.log
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /tests/grade.py <<'GRADE'
@@ -176,6 +178,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

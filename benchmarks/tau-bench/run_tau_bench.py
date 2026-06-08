@@ -33,7 +33,7 @@ print(f"[runner] bridge={BRIDGE_URL} model={MODEL_URL}", file=sys.stderr)
 # Monkey-patch the user simulator to use the model URL directly.
 # The agent's litellm calls go through OPENAI_BASE_URL (bridge),
 # but the user simulator should talk to the model proxy directly.
-import litellm
+import litellm  # noqa: E402  (must precede the monkey-patch below)
 
 _original_completion = litellm.completion
 
@@ -51,9 +51,9 @@ def _patched_completion(*args, **kwargs):
 
 litellm.completion = _patched_completion
 
-# Now import and run tau-bench
-from tau_bench.run import run
-from tau_bench.types import RunConfig
+# Now import and run tau-bench (after the monkey-patch is installed)
+from tau_bench.run import run  # noqa: E402
+from tau_bench.types import RunConfig  # noqa: E402
 
 # Find the task index within the domain's task list
 # TASK_ID is our sequential index; we need to find the matching index within
@@ -62,9 +62,11 @@ task_index_in_domain = None
 idx = 0
 if domain == "retail":
     from tau_bench.envs.retail.tasks_test import TASKS_TEST as retail_tasks
+
     task_index_in_domain = TASK_ID  # retail tasks come first (0..114)
 elif domain == "airline":
     from tau_bench.envs.retail.tasks_test import TASKS_TEST as retail_tasks
+
     task_index_in_domain = TASK_ID - len(retail_tasks)  # airline tasks follow
 
 print(f"[runner] domain_task_index={task_index_in_domain}", file=sys.stderr)
@@ -107,11 +109,16 @@ try:
     # Save full results
     os.makedirs("/logs/tau-bench", exist_ok=True)
     with open("/logs/tau-bench/results.json", "w") as f:
-        json.dump([r.model_dump() if hasattr(r, "model_dump") else str(r) for r in results], f, indent=2)
+        json.dump(
+            [r.model_dump() if hasattr(r, "model_dump") else str(r) for r in results],
+            f,
+            indent=2,
+        )
 
 except Exception as e:
     print(f"[runner] error: {e}", file=sys.stderr)
     import traceback
+
     traceback.print_exc(file=sys.stderr)
     os.makedirs("/logs/verifier", exist_ok=True)
     with open("/logs/verifier/reward.txt", "w") as f:

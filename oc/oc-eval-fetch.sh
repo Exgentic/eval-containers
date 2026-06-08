@@ -81,7 +81,7 @@ oc run "$READER_POD" --restart=Never -n "$NAMESPACE" --image=busybox:latest \
 trap 'log "Cleaning up reader pod..."; oc delete pod "$READER_POD" -n "$NAMESPACE" &>/dev/null || true' EXIT
 
 # Wait for reader pod to be Running
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   STATE=$(oc get pod "$READER_POD" -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null || true)
   [[ "$STATE" == "Running" ]] && break
   sleep 2
