@@ -15,7 +15,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
 LABEL eval.benchmark.url="https://github.com/evalplus/evalplus"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.01210"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

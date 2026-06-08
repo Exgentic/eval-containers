@@ -24,7 +24,6 @@ LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="66e27468505706643088b79f8efad6260c274dc5"
 LABEL eval.benchmark.url="https://github.com/QuesmaOrg/CompileBench"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="66e27468505706643088b79f8efad6260c274dc5"
 
 ARG EVAL_TASK_ID
 ENV EVAL_BENCHMARK=compilebench

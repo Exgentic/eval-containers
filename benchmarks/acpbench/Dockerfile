@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="05e5883d9afbcfa3bdc8f270cb345ef0b9526d4a"
 LABEL eval.benchmark.url="https://ibm.github.io/ACPBench/"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.05669"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="05e5883d9afbcfa3bdc8f270cb345ef0b9526d4a"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # Use the MCQ splits (boolean/generative are graded differently and deferred).

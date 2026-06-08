@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=1.0.24
 LABEL eval.type="agent"
 LABEL eval.agent.name="copilot-cli"
 LABEL eval.agent.description="GitHub Copilot CLI"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/github/copilot-cli"
-LABEL eval.agent.version="1.0.24"
-ENV EVAL_AGENT_VERSION_DEFAULT="1.0.24"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=copilot-cli
-RUN npm install -g @github/copilot@1.0.24
+RUN npm install -g @github/copilot@${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

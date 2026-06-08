@@ -19,7 +19,6 @@ LABEL eval.benchmark.url="https://github.com/openai/simple-evals"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/simpleqa"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/simpleqa"
 LABEL eval.benchmark.paper="https://openai.com/index/introducing-simpleqa/"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="e319282ab125c3dbd0c7fd00be2e4dd54e7e8f94"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

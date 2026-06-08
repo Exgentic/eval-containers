@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="218ec52e09a7e7462a5400043bb9a69a41d06b76"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/Rowan/hellaswag"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1905.07830"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="218ec52e09a7e7462a5400043bb9a69a41d06b76"
 
 # Single-JSONL task layout. Root-only; runtime entrypoint materializes the
 # requested task's fields into /tasks/$EVAL_TASK_ID/ on demand.

@@ -15,7 +15,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="21e74ddf8de1a21436da12e3e653065c5213e9d1"
 LABEL eval.benchmark.url="https://github.com/hendrycks/apps"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2105.09938"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="21e74ddf8de1a21436da12e3e653065c5213e9d1"
 
 # Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
 RUN python3 <<'PYEOF'

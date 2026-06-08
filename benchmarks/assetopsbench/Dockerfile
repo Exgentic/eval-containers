@@ -18,7 +18,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="c4a2ebd52436580723bf2c52b3aff87aa53bf999"
 LABEL eval.benchmark.url="https://github.com/IBM/AssetOpsBench"
 LABEL eval.benchmark.paper="https://huggingface.co/blog/ibm-research/assetopsbench-playground-on-hugging-face"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="c4a2ebd52436580723bf2c52b3aff87aa53bf999"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # Uses the scenario utterances file which contains the full 152-task set.

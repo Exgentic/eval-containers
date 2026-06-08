@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="b605b6e08b57faf4359aeb2fe6a3ca595f99b6c5"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/HuggingFaceM4/ChartQA"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.10244"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="b605b6e08b57faf4359aeb2fe6a3ca595f99b6c5"
 
 # Single-JSONL task layout. Image bytes are base64-encoded inline; the runtime
 # entrypoint materializes just the requested row and decodes image.png.

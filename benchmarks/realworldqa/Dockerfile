@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="17e7f75e092e47169732462ea3cdfebe911105dd"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/xai-org/RealworldQA"
 LABEL eval.benchmark.paper="https://x.ai/blog/grok-1.5v"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="17e7f75e092e47169732462ea3cdfebe911105dd"
 
 # Single-JSONL task layout. One line per task. Image bytes are base64-encoded
 # inline; runtime entrypoint decodes only the requested task's image.

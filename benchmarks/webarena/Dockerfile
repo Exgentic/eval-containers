@@ -15,7 +15,6 @@ LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/web-arena-x/webarena"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2307.13854"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="1.2.3"
 
 # Install evaluator
 RUN pip install --no-cache-dir webarena-verified==1.2.3

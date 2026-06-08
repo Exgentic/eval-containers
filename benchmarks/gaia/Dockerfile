@@ -19,7 +19,6 @@ LABEL eval.benchmark.url="https://github.com/gaia-benchmark/GAIA"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/gaia"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gaia"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.12983"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="682dd723ee1e1697e00360edccf2366dc8418dd9"
 
 RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0
 

@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="e32a2980e72fe6eb04ee04eb749458f570625663"
 LABEL eval.benchmark.url="https://github.com/siegelz/core-bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2409.11363"
 LABEL eval.benchmark.external_grading="true"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="e32a2980e72fe6eb04ee04eb749458f570625663"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'

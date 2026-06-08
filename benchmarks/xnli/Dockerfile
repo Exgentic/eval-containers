@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="b8dd5d7af51114dbda02c0e3f6133f332186418e"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/facebook/xnli"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1809.05053"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="b8dd5d7af51114dbda02c0e3f6133f332186418e"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

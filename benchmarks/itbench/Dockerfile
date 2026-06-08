@@ -26,7 +26,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="3c36485964b059621d439343009ec0e7b4d2354b"
 LABEL eval.benchmark.url="https://github.com/itbench-hub/ITBench"
 LABEL eval.benchmark.paper="https://research.ibm.com/publications/developing-ai-agents-for-it-automation-tasks-with-itbench"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="3c36485964b059621d439343009ec0e7b4d2354b"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # For the first pass we ingest only CISO k8s-opa-static scenarios from

@@ -30,7 +30,6 @@ LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/openai/preparedness"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.12115"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 ENV EVAL_BENCHMARK=swe-lancer
 
 ARG EVAL_TASK_ID

@@ -3,24 +3,24 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
+ARG AGENT_VERSION=0.6.4
 LABEL eval.type="agent"
 LABEL eval.agent.name="terminus-2"
 LABEL eval.agent.description="Harbor Terminus-2 reference agent"
 LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/harbor-ai/harbor"
-LABEL eval.agent.version="0.6.4"
-ENV EVAL_AGENT_VERSION_DEFAULT="0.6.4"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=terminus-2
 # harbor>=0.2.0 requires Python >=3.12; several benchmark bases ship 3.10
 # or 3.11 (appworld 3.11, ubuntu:22.04 3.10). Provision a self-contained
 # venv via the shared `/opt/agent/setup-uv-venv.sh` helper
 # (core/agent-base-python).
-RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
+RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
 # tmux is invoked by harbor's terminal session controller at runtime.
 apt-get update && apt-get install -y --no-install-recommends tmux && rm -rf /var/lib/apt/lists/*
-/opt/agent/setup-uv-venv.sh /opt/terminus2-venv harbor==0.6.4 asciinema
+/opt/agent/setup-uv-venv.sh /opt/terminus2-venv harbor==${AGENT_VERSION} asciinema
 I
 
 RUN /opt/agent/install.sh
