@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="196f6b826783b3da7310e361a805fa36f0be83f3"
 LABEL eval.benchmark.url="https://github.com/lmarena/arena-hard-auto"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.11939"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="196f6b826783b3da7310e361a805fa36f0be83f3"
 
 # Fetch the Arena-Hard v0.1 question set and baseline answers (pinned sha)
 RUN git clone --depth 1 https://github.com/lmarena/arena-hard-auto.git /tmp/ah \

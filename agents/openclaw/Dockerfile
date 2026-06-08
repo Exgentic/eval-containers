@@ -3,16 +3,16 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=2026.4.11
 LABEL eval.type="agent"
 LABEL eval.agent.name="openclaw"
 LABEL eval.agent.description="OpenClaw general-purpose AI agent"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/openclaw/openclaw"
-LABEL eval.agent.version="2026.4.11"
-ENV EVAL_AGENT_VERSION_DEFAULT="2026.4.11"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=openclaw
-RUN npm install -g openclaw@2026.4.11
-RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
+RUN npm install -g openclaw@${AGENT_VERSION}
+RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
 for b in node npm npx openclaw; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
@@ -29,7 +29,7 @@ cat > ~/.openclaw/exec-approvals.json <<CONF
 {"version":1,"defaults":{"security":"full","ask":"off","askFallback":"full"},"agents":{"*":{"security":"full","ask":"off","askFallback":"full","allowlist":[{"pattern":"**"}]}}}
 CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-# openclaw 2026.4.11 requires a session selector (one of --to /
+# openclaw ${AGENT_VERSION} requires a session selector (one of --to /
 # --session-id / --agent). --session-id is the cheapest — picks an
 # ad-hoc session derived from the literal string. No real session
 # state is needed for non-interactive agent invocations.

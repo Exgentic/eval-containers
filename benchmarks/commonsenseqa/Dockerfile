@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="94630fe30dad47192a8546eb75f094926d47e155"
 LABEL eval.benchmark.url="https://www.tau-nlp.sites.tau.ac.il/commonsenseqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1811.00937"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="94630fe30dad47192a8546eb75f094926d47e155"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json

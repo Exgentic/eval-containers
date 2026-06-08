@@ -3,13 +3,13 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
+ARG AGENT_VERSION=0.19.1
 LABEL eval.type="agent"
 LABEL eval.agent.name="ra-aid"
 LABEL eval.agent.description="RA.Aid — autonomous research-first coding agent"
 LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/ai-christianson/RA.Aid"
-LABEL eval.agent.version="0.19.1"
-ENV EVAL_AGENT_VERSION_DEFAULT="0.19.1"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=ra-aid
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
@@ -18,12 +18,12 @@ RUN set -e; ok=0; \
     done; \
     [ "$ok" = 1 ] || { echo "apt install failed after 5 tries" >&2; exit 1; }; \
     rm -rf /var/lib/apt/lists/* && \
-    uv pip install --system --no-cache 'langgraph<0.4' ra-aid==0.19.1
-RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
+    uv pip install --system --no-cache 'langgraph<0.4' ra-aid==${AGENT_VERSION}
+RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
 apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
-pip install --no-cache-dir 'langgraph<0.4' ra-aid==0.19.1
+pip install --no-cache-dir 'langgraph<0.4' ra-aid==${AGENT_VERSION}
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh

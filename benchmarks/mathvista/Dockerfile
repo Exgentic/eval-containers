@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="2b6ad69445fbb5695c9b165475e8decdbeb97747"
 LABEL eval.benchmark.url="https://mathvista.github.io"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2310.02255"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mathvista"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="2b6ad69445fbb5695c9b165475e8decdbeb97747"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Image bytes are
 # base64-encoded inline; entrypoint decodes back to image.png at runtime.

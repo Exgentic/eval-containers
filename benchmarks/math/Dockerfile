@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="21a5633873b6a120296cce3e2df9d5550074f4a3"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/EleutherAI/hendrycks_math"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2103.03874"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="21a5633873b6a120296cce3e2df9d5550074f4a3"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'

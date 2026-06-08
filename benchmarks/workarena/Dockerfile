@@ -19,7 +19,6 @@ LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/ServiceNow/WorkArena"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.07718"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="v0.5.3"
 
 # Pin the upstream tag. We only need the task-id enumeration (not the runtime), so
 # parse the registered task-id constants directly from the repo to avoid the heavy

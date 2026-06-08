@@ -17,7 +17,6 @@ LABEL eval.benchmark.data_revision="7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544"
 LABEL eval.benchmark.url="https://github.com/openai/human-eval"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/humaneval"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2107.03374"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'

@@ -17,7 +17,6 @@ LABEL eval.benchmark.data_revision="4bb6404fdc6cacfda99d4ac4205087b89d32030c"
 LABEL eval.benchmark.url="https://github.com/google-research/google-research/tree/master/mbpp"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mbpp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2108.07732"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="4bb6404fdc6cacfda99d4ac4205087b89d32030c"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'

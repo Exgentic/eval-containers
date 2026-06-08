@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="95cda593fae71b60b5b19f82de3fcf3298c1239c"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/ucinlp/drop"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1903.00161"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="95cda593fae71b60b5b19f82de3fcf3298c1239c"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json

@@ -53,7 +53,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 12. **Reproducible by default.** The upstream CLI version MUST be pinned at build time as a default in the Dockerfile (`ARG <NAME>_VERSION=<semver>`) and recorded in `eval.agent.version`. The image MUST produce a reproducible run with no environment variables set.
 
-13. **Runtime version override.** The entrypoint MUST read `EVAL_AGENT_VERSION` and, when set, install and activate that upstream version in place of the default before handing control to the agent. The entrypoint MUST write the resolved version to `/output/agent/version.json` before the agent starts. When `EVAL_AGENT_VERSION` is unset, the build-time default applies unchanged. Cache volumes (`/opt/agent-cache`) MAY be used to avoid reinstall cost on subsequent runs. `EVAL_AGENT_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
+13. **Version is a build arg.** The upstream CLI version MUST be a single `ARG AGENT_VERSION=<pin>` that drives **both** the install and the `eval.agent.version` label, so the label can never disagree with what was installed. Override at build (`build agent --agent-version <x>`); unset uses the pin. The version is immutable per image — there is no runtime override (reproducibility: the running version is whatever the image was built with). `EVAL_AGENT_TAG` selects which image tag to pull — that's Docker's job. Because the combination image re-runs the agent's `install.sh`, the agent MUST publish its version to `/opt/agent/VERSION` (from the ARG) so the combination installs the same version.
 
 14. **Labels.** Every agent image MUST include labels: `eval.type`, `eval.agent.name`, `eval.agent.description`, `eval.agent.version`.
 

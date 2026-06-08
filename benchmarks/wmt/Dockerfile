@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/google/wmt24pp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.12404"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
 
 RUN python3 <<'PYEOF'
 import urllib.request, json, os

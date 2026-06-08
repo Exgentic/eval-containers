@@ -20,7 +20,6 @@ LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 # publishes a stable release. Currently uses the auto-generated parquet
 # ref which is stable-enough but not formally pinned.
 LABEL eval.benchmark.data_revision="auto-parquet-ref"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="auto-parquet-ref"
 
 # libreoffice is installed for AGENT runtime use — gdpval tasks include
 # reference docx/xlsx/pptx files downloaded via reference_urls.json in

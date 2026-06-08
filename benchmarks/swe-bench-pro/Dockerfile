@@ -32,7 +32,6 @@ LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/scaleapi/SWE-bench_Pro-os"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2509.16941"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="3.0.18"
 ENV EVAL_BENCHMARK=swe-bench-pro
 
 # System deps + grading package (root-only).

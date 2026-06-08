@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/dapumptu/usaco_benchmark"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/usaco"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/usaco"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 

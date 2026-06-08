@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="388097ea7776314e93a529163e0fea805b8a6454"
 LABEL eval.benchmark.url="https://allenai.org/data/open-book-qa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1809.02789"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="388097ea7776314e93a529163e0fea805b8a6454"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="8b764d53dba2de1f684b836bb45c7ce389900fde"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/juletxara/mgsm"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mgsm"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2210.03057"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="8b764d53dba2de1f684b836bb45c7ce389900fde"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

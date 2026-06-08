@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="a340b1782960a712843aae3ed25f1e013cc008a5"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/TIGER-Lab/TheoremQA"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.12524"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="a340b1782960a712843aae3ed25f1e013cc008a5"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

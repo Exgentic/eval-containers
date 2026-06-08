@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=0.37.2
 LABEL eval.type="agent"
 LABEL eval.agent.name="gemini-cli"
 LABEL eval.agent.description="Google Gemini CLI"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/google-gemini/gemini-cli"
-LABEL eval.agent.version="0.37.2"
-ENV EVAL_AGENT_VERSION_DEFAULT="0.37.2"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=gemini-cli
-RUN npm install -g @google/gemini-cli@0.37.2
+RUN npm install -g @google/gemini-cli@${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

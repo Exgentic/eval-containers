@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="9ee07bd481feebf959a6b59d61ea57bdcf30964d"
 LABEL eval.benchmark.url="https://github.com/suzgunmirac/BIG-Bench-Hard"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2210.09261"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bbh"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="9ee07bd481feebf959a6b59d61ea57bdcf30964d"
 
 # Fetch all 27 BBH JSON files and write one JSONL row per task.
 RUN python3 <<'PYEOF'
