@@ -21,7 +21,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 3. **Reproducible by default.** The exact dataset version MUST be pinned at build time as a default in the Dockerfile (`ARG DATA_REVISION=<sha>` or equivalent) and recorded in `eval.benchmark.data_revision`. The image MUST produce identical task content on every build when no env vars are set.
 
-4. **Runtime version override.** The entrypoint MUST read `EVAL_BENCHMARK_VERSION` and, when set, fetch and materialize that dataset revision into `/tasks/` in place of the default. It MUST write the resolved revision to `/output/task/version.json` before the agent runs. When `EVAL_BENCHMARK_VERSION` is unset, the build-time default applies unchanged. `EVAL_BENCHMARK_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
+4. **Runtime version override.** The framework launcher (`/usr/local/bin/run`) MUST read `EVAL_BENCHMARK_VERSION` and, when set, fetch and materialize that dataset revision into `/tasks/` in place of the default. It MUST write the resolved revision to `/output/task/version.json` before the agent runs. When `EVAL_BENCHMARK_VERSION` is unset, the build-time default applies unchanged. `EVAL_BENCHMARK_TAG` selects which container version (image tag) to pull — that's Docker's job, not the launcher's.
 
 ### Isolation
 
@@ -41,11 +41,11 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Execution
 
-12. **Three-phase flow.** Execution MUST follow: agent runs → test runs → result is written. The shared `dock-entrypoint.sh` handles this. Benchmarks MUST NOT bypass it.
+12. **Three-phase flow.** Execution MUST follow: agent runs → test runs → result is written. The process-compose pipeline (orchestrated by `/usr/local/bin/run`) handles this. Benchmarks MUST NOT bypass it.
 
 13. **Agent as non-root.** The agent MUST run as an unprivileged user. The test phase MAY run as root.
 
-14. **Timeout.** Agent execution MUST be bounded by `EVAL_TIMEOUT`. The entrypoint enforces this.
+14. **Timeout.** Agent execution MUST be bounded by `EVAL_TIMEOUT`. The framework launcher (`/usr/local/bin/run`) bridges this to `$TIMEOUT`; process-compose's agent command enforces it via `timeout $TIMEOUT`.
 
 ### Task Format
 
@@ -71,7 +71,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 21b. **Upstream base tracking.** Benchmarks whose `FROM` line points at a third-party registry not under Dock's control (e.g. `ghcr.io/andyzorigin/*`, `ghcr.io/openai/*`) MUST declare `LABEL eval.benchmark.upstream_base="<full image ref>"` recording the exact upstream reference. This makes the external dependency visible to audit tools and to anyone reading the image metadata. Benchmarks that build from a Dock-controlled or fully in-repo base (e.g. `FROM python:3.12-slim`) do NOT need this label. `doctrine/verification/audit-fleet/references/checklist.md` question 6 (stale upstream images) walks every `upstream_base` label and reports yellow if any still points at `:latest` — such bases are legal but flagged as known supply-chain debt until mirrored or pinned by digest.
 
-22. **Shared components.** Benchmarks SHOULD use shared core images (`dock-entrypoint.sh`, `test-exact-match`) when applicable. Benchmarks MUST NOT reimplement shared logic.
+22. **Shared components.** Benchmarks SHOULD use shared core images (`/usr/local/bin/run`, `test-exact-match`) when applicable. Benchmarks MUST NOT reimplement shared logic.
 
 23. **No agent tooling.** Benchmark images MUST NOT include agent-specific tools (browsers, automation libraries, SDKs). The agent's `install.sh` installs what it needs. The benchmark provides the environment, not the tools.
 
@@ -147,3 +147,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-05-18 | Tightening pass before the 90-benchmark sweep. Rule 24a corrected: `container.Dockerfile` MUST be a single-line registry pin; inert `ARG` lines that the `FROM` doesn't consume are forbidden (they looked load-bearing but drifted). New rule 24c codifies task parameterization — shared-env `compose.yaml` MUST use `${TASK_ID:-0}`, `job.yaml` ships as a task-0 template; per-task benchmarks bake `EVAL_TASK_ID` via build ARG. New rule 24d makes network-isolation enforcement explicit per surface and honest about k8s achieving rule 9 via credential isolation (rule 8) rather than network policy. New rule 24e requires resource limits to be declared identically in both `compose.yaml` and `job.yaml`. Rule 25 strengthened to forbid inlining definitions that already exist in `compose/services.yaml`. New rule 29 mandates a triple-mode CI gate that walks `benchmarks/` and asserts artifact existence + parse + env-contract symmetry. |
 | 2026-06-01 | k8s surface moved from per-benchmark Kustomize to one shared **Helm chart** (`benchmarks/_chart`) + a per-benchmark `values.yaml`. Rule 24's k8s artifact is `values.yaml` (was `job.yaml`); 24b/25 replace the `benchmarks/_base/job.yaml` inline-and-drift model with "the Pod is defined once in the chart; `values.yaml` pins the benchmark and overrides only what differs"; 24c parameterizes the task via `helm --set task=`; 24e/24d retargeted at the chart. Rule 29 drops the canonical-drift sub-test (one chart can't drift) — it now renders each `values.yaml` via `helm template` and kubeconform-validates. `eval-containers run --mode job` and `--overlay` drive Helm; the OpenShift overlay is `deploy/values-openshift.yaml`. Deleted `benchmarks/_base` + 114 per-benchmark kustomize files (net −5.4k lines). |
 | 2026-06-03 | Per-benchmark `values.yaml` removed; the benchmark is now selected with `--set benchmark=<x>` and its bespoke topology (if any) lives in `benchmarks/_chart/presets/<x>.yaml`, bundled inside the chart and overlaid via `.Files.Get`. The chart is now self-contained — `helm template … --set benchmark=<x>` needs no external file, so it can be packaged/published to an OCI registry. Rule 24 drops `values.yaml` as a required artifact (k8s works for every benchmark with no per-benchmark file); 24b/24c/24e/25 retarget at the preset; rule 29(a)/(d) drop the values.yaml existence + pin checks and render via `--set benchmark`. The 4 bespoke benchmarks (osworld, tau-bench, visualwebarena, webarena) became presets; the 98 trivial one-line files were deleted. Renders byte-identical to the prior `-f values.yaml` form. |
+| 2026-06-08 | Rules 4, 12, 14, 22: replaced stale `dock-entrypoint.sh` / "the entrypoint" references with the framework launcher (`/usr/local/bin/run`) and the process-compose pipeline. Aligns rule text with the eval-entrypoint.sh → run migration. |
