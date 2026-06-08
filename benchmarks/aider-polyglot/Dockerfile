@@ -181,9 +181,8 @@ fi
 TEST
 RUN chmod +x /grade.sh
 
-COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
-RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
+RUN chmod +x /eval-materialize-task
 
 # --- Entrypoint: materialize task metadata, then copy starter files to /app ---
 RUN cat > /entrypoint.sh <<'ENTRY'
