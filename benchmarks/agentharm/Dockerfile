@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.09024"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
 
 RUN curl -sfL -o /tmp/agentharm.json \
     'https://huggingface.co/datasets/ai-safety-institute/AgentHarm/resolve/e23b3fe60a0da9037314b88e5ee3a0c054970dad/benchmark/harmful_behaviors_test_public.json'

@@ -20,7 +20,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="98b68ef82a47690c316f42fddb05baafaab56851"
 LABEL eval.benchmark.url="https://github.com/TheAgentCompany/TheAgentCompany"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.14161"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="98b68ef82a47690c316f42fddb05baafaab56851"
 
 # Fetch the repo tree, then download each task.md into /tasks/all.jsonl.
 RUN python3 <<'PYEOF'

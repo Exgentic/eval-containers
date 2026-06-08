@@ -39,9 +39,9 @@ if the evidence section is empty.
 - [ ] `LABEL eval.benchmark.upstream_base=...` (only if FROM references a third-party `ghcr.io` or similar)
 - [ ] `LABEL eval.benchmark.released="true"` (only if this benchmark is ready for release verification — if so, a replay fixture is also required; see below)
 
-### Required ENV (RULES.md principle 9)
+### Version (RULES.md principle 9)
 
-- [ ] `ENV EVAL_BENCHMARK_VERSION_DEFAULT="<same as data_revision>"` declared after the LABEL block
+- [ ] `ARG BENCHMARK_VERSION=<rev>` drives both the fetch and the `eval.benchmark.data_revision` label (fetch-by-revision benchmarks)
 
 ### Task data pattern (doctrine/benchmarks/RULES.md 22)
 

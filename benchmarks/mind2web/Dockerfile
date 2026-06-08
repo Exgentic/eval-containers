@@ -19,7 +19,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="17ece8eb89862368edc0cc806acee6fca5163474"
 LABEL eval.benchmark.url="https://github.com/OSU-NLP-Group/Mind2Web"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2306.06070"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="17ece8eb89862368edc0cc806acee6fca5163474"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

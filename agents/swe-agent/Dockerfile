@@ -3,22 +3,22 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
+ARG AGENT_VERSION=1.1.0
 LABEL eval.type="agent"
 LABEL eval.agent.name="swe-agent"
 LABEL eval.agent.description="Princeton SWE-agent: Agent-Computer Interface for software engineering"
 LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/SWE-agent/SWE-agent"
-LABEL eval.agent.version="1.1.0"
-ENV EVAL_AGENT_VERSION_DEFAULT="1.1.0"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=swe-agent
 # Clone + editable install — SWE-agent's wheel does NOT ship its `config/`
 # directory but its runtime asserts `CONFIG_DIR.is_dir()` against it.
-RUN git clone --depth 1 --branch v1.1.0 https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent && \
+RUN git clone --depth 1 --branch v${AGENT_VERSION} https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent && \
     uv pip install --system --no-cache -e /opt/swe-agent
-RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
+RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-git clone --depth 1 --branch v1.1.0 https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent 2>/dev/null || true
+git clone --depth 1 --branch v${AGENT_VERSION} https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent 2>/dev/null || true
 pip install --no-cache-dir -e /opt/swe-agent
 # SWE-agent's LocalDeployment assumes uid-0 root: it writes /root/state.json
 # + /root/.swe-agent-env and copies tool bundles into /root/tools. The eval

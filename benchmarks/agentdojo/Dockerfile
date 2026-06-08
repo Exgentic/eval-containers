@@ -19,7 +19,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="18b501a630db736e1d0496a496d8d7aa947c596d"
 LABEL eval.benchmark.url="https://github.com/ethz-spylab/agentdojo"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.13352"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="18b501a630db736e1d0496a496d8d7aa947c596d"
 
 # Fetch user_tasks.py and injection_tasks.py for each of the 4 v1 suites.
 RUN mkdir -p /tmp/ad && for suite in workspace slack travel banking; do \

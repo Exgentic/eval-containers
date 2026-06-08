@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="210d026faf9955653af8916fad021475a3f00453"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/allenai/ai2_arc"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1803.05457"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="210d026faf9955653af8916fad021475a3f00453"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json

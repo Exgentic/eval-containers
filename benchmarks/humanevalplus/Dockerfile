@@ -15,7 +15,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
 LABEL eval.benchmark.url="https://github.com/evalplus/evalplus"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.01210"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
 
 RUN pip install --no-cache-dir pyarrow==18.1.0 numpy==2.0.2
 

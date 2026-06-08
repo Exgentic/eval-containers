@@ -28,7 +28,6 @@ LABEL eval.benchmark.url="https://github.com/princeton-nlp/SWE-bench"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/swebench-verified"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/swe_bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2310.06770"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="c104f840cc67f8c6eec6f759ebc8b2693d585d4a"
 
 ENV EVAL_BENCHMARK=swe-bench
 

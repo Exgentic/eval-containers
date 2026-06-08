@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="c30699e8356da336a370243923dbaf21066bb9fe"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/cais/mmlu"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2009.03300"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="c30699e8356da336a370243923dbaf21066bb9fe"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

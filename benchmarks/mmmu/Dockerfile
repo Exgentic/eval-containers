@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
 LABEL eval.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.16502"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
 
 # Single-JSONL task layout. One line per task. Images base64-encoded inline;
 # runtime entrypoint decodes only the requested task's images.

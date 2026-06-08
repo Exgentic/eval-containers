@@ -19,7 +19,6 @@ LABEL eval.benchmark.url="https://github.com/ShishirPatil/gorilla"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/bfcl"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bfcl"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.06840"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 # Fetch task and answer files from HuggingFace
 RUN mkdir -p /tmp/bfcl/tasks /tmp/bfcl/answers

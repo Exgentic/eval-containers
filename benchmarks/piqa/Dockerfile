@@ -20,7 +20,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
 LABEL eval.benchmark.url="https://yonatanbisk.com/piqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1911.11641"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

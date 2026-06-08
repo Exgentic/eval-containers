@@ -19,7 +19,6 @@ LABEL eval.benchmark.url="https://github.com/centerforaisafety/hle"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/hle"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/hle"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2501.14249"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
 
 # Dataset is gated — download with huggingface_hub
 RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0

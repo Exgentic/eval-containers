@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="7125571f22f032c56415e7980f48d877dd830ff8"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/cais/wmdp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.03218"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="7125571f22f032c56415e7980f48d877dd830ff8"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

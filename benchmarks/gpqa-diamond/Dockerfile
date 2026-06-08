@@ -19,7 +19,6 @@ LABEL eval.benchmark.url="https://github.com/idavidrein/gpqa"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/gpqa-diamond"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gpqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.12022"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="68be7564497676e07a77a042fdb587deb88c51c3"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'

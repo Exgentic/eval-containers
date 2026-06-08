@@ -16,7 +16,6 @@ LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/web-arena-x/visualwebarena"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2401.13649"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="59a200c6d575d595120f1cb70fea53cef0632f6b"
 LABEL eval.benchmark.url="https://github.com/sierra-research/tau-bench"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/tau2"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.12045"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="59a200c6d575d595120f1cb70fea53cef0632f6b"
 
 # Install tau-bench at pinned commit and extract tasks + policy docs
 RUN pip install --no-cache-dir git+https://github.com/sierra-research/tau-bench.git@59a200c6d575d595120f1cb70fea53cef0632f6b

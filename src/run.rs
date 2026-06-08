@@ -14,31 +14,23 @@
 //!     interpolates `${EVAL_FOO:-default}` in compose.yaml; container
 //!     mode hands them in via `docker run -e`.
 //!   - **job** renders the shared Helm chart (`benchmarks/_chart`) with a
-//!     `--set` for each axis (benchmark/agent/task/model/tags/versions),
-//!     then `helm template … | kubectl apply -f -`. A benchmark's bespoke
+//!     `--set` for each axis (benchmark/agent/task/model/tags), then
+//!     `helm template … | kubectl apply -f -`. A benchmark's bespoke
 //!     topology, if any, lives in the chart at `presets/<x>.yaml`.
 //!     Helm interpolates the values (kubectl can't), keeps numeric fields
 //!     like `task` quoted, and the Job name carries the agent + task so
 //!     concurrent applies don't collide.
 //!
-//! Two orthogonal versioning axes (see RULES.md principle 9):
+//! Two axes select what runs (see RULES.md principle 9):
 //!
-//! - Container tag  → which image to pull (EVAL_*_TAG, flags --*-tag)
-//! - Internal ver.  → which upstream software runs inside (EVAL_*_VERSION,
-//!   flags --*-version)
+//! - Container tag  → which image to pull (EVAL_*_TAG, flags --*-tag). Run-time.
+//! - Upstream ver.  → which software is inside the image. BUILD-time only:
+//!   pinned via `ARG *_VERSION`, set at `build`, recorded in the label. There
+//!   is no runtime version override here.
 //!
 //! `--dry-run` short-circuits: compose dumps `docker compose config`,
 //! container prints the resolved `docker run` line, job forwards
 //! `--dry-run=server` to `kubectl apply` (exercises admission, no state).
-//!
-//! With `--local`, uses the in-repo `benchmarks/<name>/{compose.yaml,
-//! container.Dockerfile}` and the local chart instead of the registry artifact.
-//!
-//! Two orthogonal versioning axes (see RULES.md principle 9):
-//!
-//! - Container tag  → which image to pull (EVAL_*_TAG, flags --*-tag)
-//! - Internal ver.  → which upstream software runs inside (EVAL_*_VERSION,
-//!   flags --*-version)
 //!
 //! With `--local`, uses the in-repo `benchmarks/<name>/{compose.yaml,
 //! container.Dockerfile}` and the local chart instead of the registry artifact.
@@ -99,22 +91,11 @@ pub struct RunArgs {
     #[arg(long)]
     model_tag: Option<String>,
 
-    // ---- Internal upstream versions (what runs inside the container) ----
-    /// Override the dataset revision inside the benchmark image
-    /// (maps to $EVAL_BENCHMARK_VERSION)
-    #[arg(long)]
-    benchmark_version: Option<String>,
-
-    /// Override the upstream CLI version inside the agent image
-    /// (maps to $EVAL_AGENT_VERSION)
-    #[arg(long)]
-    agent_version: Option<String>,
-
-    /// Override the LiteLLM version inside the model image
-    /// (maps to $EVAL_LITELLM_VERSION)
-    #[arg(long)]
-    litellm_version: Option<String>,
-
+    // NOTE: upstream versions (benchmark dataset revision, agent CLI version,
+    // litellm version) are a BUILD-time axis (RULES.md principle 9): pinned via
+    // `ARG *_VERSION` in each image and overridden at `build` time, not here.
+    // There is no runtime override — the running version is whatever the image
+    // was built with, recorded in its label.
     /// Agent timeout in seconds (maps to $EVAL_TIMEOUT)
     #[arg(long)]
     timeout: Option<u32>,
@@ -189,17 +170,6 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(ref v) = args.model_tag {
         envs.push(("EVAL_MODEL_TAG", v.clone()));
-    }
-
-    // Internal upstream versions
-    if let Some(ref v) = args.benchmark_version {
-        envs.push(("EVAL_BENCHMARK_VERSION", v.clone()));
-    }
-    if let Some(ref v) = args.agent_version {
-        envs.push(("EVAL_AGENT_VERSION", v.clone()));
-    }
-    if let Some(ref v) = args.litellm_version {
-        envs.push(("EVAL_LITELLM_VERSION", v.clone()));
     }
 
     if let Some(timeout) = args.timeout {
@@ -423,15 +393,6 @@ fn run_job(
     // --benchmark-tag when both are set.
     if let Some(t) = args.agent_tag.as_ref().or(args.benchmark_tag.as_ref()) {
         sets.push(format!("runnerTag={t}"));
-    }
-    if let Some(v) = &args.benchmark_version {
-        sets.push(format!("benchmarkVersion={v}"));
-    }
-    if let Some(v) = &args.agent_version {
-        sets.push(format!("agentVersion={v}"));
-    }
-    if let Some(v) = &args.litellm_version {
-        sets.push(format!("litellmVersion={v}"));
     }
     if let Some(b) = args.max_budget {
         sets.push(format!("maxBudget={b}"));

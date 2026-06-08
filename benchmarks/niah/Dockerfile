@@ -16,7 +16,6 @@ LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="7b90d285651b68d39a94f3d3bd3672f84192c989"
 LABEL eval.benchmark.url="https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="7b90d285651b68d39a94f3d3bd3672f84192c989"
 
 # Fetch the Paul Graham essays from the upstream NIAH repo (pinned sha)
 RUN git clone --depth 1 https://github.com/gkamradt/LLMTest_NeedleInAHaystack.git /tmp/niah \

@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=0.120.0
 LABEL eval.type="agent"
 LABEL eval.agent.name="codex"
 LABEL eval.agent.description="OpenAI Codex CLI"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/openai/codex"
-LABEL eval.agent.version="0.120.0"
-ENV EVAL_AGENT_VERSION_DEFAULT="0.120.0"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=codex
-RUN npm install -g @openai/codex@0.120.0
+RUN npm install -g @openai/codex@${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

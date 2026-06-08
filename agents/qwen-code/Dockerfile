@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=0.14.4
 LABEL eval.type="agent"
 LABEL eval.agent.name="qwen-code"
 LABEL eval.agent.description="Qwen Code — Alibaba's terminal AI coding agent (gemini-cli fork)"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/QwenLM/qwen-code"
-LABEL eval.agent.version="0.14.4"
-ENV EVAL_AGENT_VERSION_DEFAULT="0.14.4"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=qwen-code
-RUN npm install -g @qwen-code/qwen-code@0.14.4
+RUN npm install -g @qwen-code/qwen-code@${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

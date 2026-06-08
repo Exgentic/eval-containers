@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
 LABEL eval.benchmark.url="https://github.com/hsiehjackson/RULER"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.06654"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
 
 # Generate RULER-style tasks deterministically. Uses Paul Graham essays
 # as the haystack source (same style as the reference implementation's

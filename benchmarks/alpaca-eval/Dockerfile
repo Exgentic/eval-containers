@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
 LABEL eval.benchmark.url="https://github.com/tatsu-lab/alpaca_eval"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.04475"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
 
 # Fetch the 805-example eval set and the gpt-4-turbo baseline outputs
 RUN curl -sSfL -o /tmp/eval.json \

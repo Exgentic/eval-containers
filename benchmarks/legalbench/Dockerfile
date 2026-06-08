@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
 LABEL eval.benchmark.url="https://github.com/HazyResearch/legalbench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.11462"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
 
 # Known 83 classification subtasks with uniform (index, answer, text) / (index, text, answer) schema.
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
