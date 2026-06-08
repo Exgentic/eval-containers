@@ -17,7 +17,7 @@ Eval Containers is a **Docker-first** project. Everything — Dockerfiles, compo
 
 - **Docker Desktop** — the canonical path, what CI uses. Easiest if you're on Mac or Windows and don't have a strong preference.
 - **Docker Engine** (Linux) — what the release pipeline runs against. Identical to Docker Desktop for our purposes.
-- **Podman** with the `docker` compatibility CLI — works if you already have Podman installed. A few setup gotchas below.
+- **Podman** with the `docker` compatibility CLI — works if you already have Podman installed; the Apple-Silicon setup has a few gotchas, all collected in [Run with Podman on Apple Silicon](../docs/guides/podman-on-apple-silicon.md).
 - **Colima / OrbStack / Rancher Desktop** — also work; same Docker-compatible API.
 
 **You interact with Docker through the `docker` command and nothing else.** `docker build`, `docker compose`, `docker buildx bake`. The underlying engine doesn't matter. If you find yourself typing `podman` directly, you're off the happy path — fix your setup and use `docker` instead.
@@ -64,43 +64,14 @@ Docker Desktop → Settings → Builders → edit the default builder → set **
 
 ## Setup: Podman (alternative)
 
-If you already use Podman, it works — Eval Containers's Dockerfiles and compose files use vanilla syntax with no Docker-only or Podman-only features. You just need to install the Docker-compat CLI shim and point it at Podman, then use `docker` commands from there.
+Podman works — the Dockerfiles and compose files are vanilla, with no Docker- or
+Podman-only features — but the Apple-Silicon setup has several gotchas (Rosetta
+machine-image pinning, the compose plugin, `DOCKER_HOST` for both the CLI **and**
+the test harness, Ryuk under podman). They're all collected in one place:
 
-```bash
-brew install docker                    # the docker CLI, client only
-podman machine init                    # if you don't already have one
-podman machine set --memory 32768 --cpus 10
-```
+**→ [Running with Podman on Apple Silicon](../docs/guides/podman-on-apple-silicon.md)**
 
-Enable Rosetta on the machine (REQUIRED on Apple Silicon):
-
-```bash
-podman machine ssh "sudo touch /etc/containers/enable-rosetta"
-podman machine stop && podman machine start
-```
-
-Point the `docker` CLI at Podman's socket and verify:
-
-```bash
-export DOCKER_HOST="unix://$(podman machine inspect --format '{{.ConnectionInfo.PodmanSocket.Path}}')"
-docker version     # should report a running server
-docker info        # should say Context: default, Server OS: linux
-```
-
-From here, use **`docker` commands for everything** — `docker build`, `docker compose`, etc. Never invoke `podman` directly for Eval Containers workflows. If you need BuildKit garbage collection, set it via the podman machine:
-
-```bash
-podman machine ssh <<'EOF'
-sudo tee /etc/containers/containers.conf.d/gc.conf <<CONF
-[build]
-gc_enabled = true
-gc_keep_storage = "20GB"
-CONF
-EOF
-podman machine stop && podman machine start
-```
-
-Note: Podman's docker-compat socket does not support `buildx`. For fleet builds (`docker buildx bake`), use real Docker. Single-image dev-loop builds (`docker build benchmarks/aime/`) work on Podman-backed `docker`.
+Once set up, use `docker` for everything — never invoke `podman` directly.
 
 ## Test Levels
 
