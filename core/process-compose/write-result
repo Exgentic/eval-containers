@@ -11,8 +11,6 @@
 #   /output/model/result.json   model
 set -euo pipefail
 
-mkdir -p /output/task /output/agent /output/model
-
 REWARD=$(cat /logs/verifier/reward.txt 2>/dev/null || echo 0)
 PASSED=$(awk -v r="$REWARD" 'BEGIN{print (r+0 >= 1) ? "true" : "false"}')
 ENDED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
