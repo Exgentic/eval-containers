@@ -1,60 +1,112 @@
-# DISABLED — see #3 commit msg. To re-enable: strip leading '# ' from every line.
+name: Tests
+
+# The compile-based gate: clippy + the daemon-free test suite. Runs on every
+# push and PR.
 #
-# name: Test
+# Split of responsibilities with pre-commit.yml: the pre-commit hooks own the
+# instant hygiene checks (fmt, hadolint, compose-schema, helm lint, secrets,
+# …); this workflow owns everything that invokes the compiler, which is too
+# slow/toolchain-dependent for a git hook. So fmt is NOT repeated here.
 #
-# # Runs the VERIFY.md sanity phase (steps 4–10) on every push and PR.
-# # Fast mechanical gates only — no docker build, no live API calls.
-# # The release workflow (release.yml) is the slow per-image build sweep
-# # and runs separately on tag / main push.
+# Everything below is pure Rust + file I/O (no daemon). It exercises the rule
+# engine, the catalog structure, and the CLI's naming/build assumptions — NOT
+# live containers, images, or API calls. The container/e2e suites (build,
+# replay, live, gateways, agents, fleet) need a docker daemon or a cluster and
+# run elsewhere (release.yml on tag/main; oc-connectivity.yml on PR).
 #
-# on:
-#   push:
-#     branches: [main]
-#   pull_request:
-#     branches: [main]
-#   workflow_dispatch:
-#
-# permissions:
-#   contents: read
-#
-# jobs:
-#   sanity:
-#     name: Sanity phase (VERIFY.md steps 4–10)
-#     runs-on: ubuntu-latest
-#     timeout-minutes: 10
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - name: Install Rust toolchain
-#         uses: dtolnay/rust-toolchain@stable
-#         with:
-#           components: rustfmt, clippy
-#
-#       - name: Cache cargo
-#         uses: Swatinem/rust-cache@v2
-#
-#       - name: fmt --check (VERIFY step 4a)
-#         run: cargo fmt --check
-#
-#       - name: clippy --all-targets -D warnings (VERIFY step 4b)
-#         run: cargo clippy --all-targets -- -D warnings
-#
-#       - name: cargo test (VERIFY steps 5–10)
-#         # Runs every #[test] that isn't behind #[ignore]:
-#         #   - rule-engine unit tests for dockerfile + trajectory inspection
-#         #   - tests/check.rs: structural validation, count reconciliation,
-#         #     released_benchmarks_have_fixtures
-#         #   - tests/compose.rs: every compose.yaml parses
-#         #   - tests/dockerfile_inspection.rs: 113-file rule sweep
-#         #   - tests/task_inspection.rs: 23-fixture task-half + run-half sweep
-#         # Pure file I/O + docker compose config (no daemon). ~10 seconds.
-#         run: cargo test
-#
-#       - name: Report fleet report artifact (if present)
-#         if: always()
-#         run: |
-#           if [ -f tests/fleet-report.md ]; then
-#             echo "::group::tests/fleet-report.md"
-#             cat tests/fleet-report.md
-#             echo "::endgroup::"
-#           fi
+# Excluded on purpose:
+#   - task_inspection::inspect_every_existing_fixture — an audit of recorded
+#     sample-trajectory data quality (refusals on safety benchmarks, file
+#     delegation on long-context benchmarks are working-as-designed and there
+#     is no label to distinguish them). It checks fixtures, not PR soundness,
+#     so it is not a per-PR gate. Its rule UNIT tests still run.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    name: clippy + daemon-free tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      # Lint exactly the daemon-free surface this gate builds — the shipping
+      # crate plus the fast test targets. The container/e2e suites (build,
+      # live, gateways, …) are linted in their own workflow where they run.
+      - name: cargo clippy -D warnings
+        run: |
+          cargo clippy --lib --bins \
+            --test check \
+            --test dockerfile_inspection \
+            --test task_inspection \
+            --test cli_conformance \
+            --test helm \
+            -- -D warnings
+
+      # Pure file I/O, no daemon. ~10s of work, dominated by the Rust compile
+      # (cached above).
+      #   - lib/bins        : naming + gen_bake unit tests
+      #   - check           : structural validation, count reconciliation, READMEs
+      #   - dockerfile_*    : 100+-file Dockerfile rule sweep
+      #   - task_inspection : trajectory rule UNIT tests (fixture audit skipped)
+      #   - cli_conformance : every benchmark/agent/model matches CLI naming
+      #
+      # compose.yaml validation is owned by the compose-schema pre-commit hook
+      # (pre-commit.yml): it is daemon-free and version-robust, whereas
+      # `tests/compose.rs` shells to `docker compose config`, whose include/
+      # override merging is sensitive to the runner's compose CLI version. That
+      # test stays runnable locally; it is just not part of this gate.
+      - name: cargo test (daemon-free)
+        run: |
+          cargo test --lib --bins \
+            --test check \
+            --test dockerfile_inspection \
+            --test task_inspection \
+            --test cli_conformance \
+            -- --skip inspect_every_existing_fixture
+
+  # Daemon-free, and fast now that the ~100 renders run in parallel (~10s), but
+  # it needs the helm + kubeconform binaries — kept as its own job so those
+  # installs don't sit on the lint-and-test critical path. Validates rule 29(d):
+  # every benchmark renders through the shared chart and validates against the
+  # k8s schema (kubeconform when present).
+  helm-render:
+    name: helm render (every benchmark)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install helm
+        uses: azure/setup-helm@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSLf https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar -xz -C /usr/local/bin kubeconform
+
+      - name: helm render + schema validate
+        run: cargo test --test helm

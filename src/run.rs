@@ -46,23 +46,18 @@
 use clap::{Args, ValueEnum};
 use std::process::Command;
 
-#[derive(Clone, Debug, ValueEnum)]
+#[derive(Clone, Debug, ValueEnum, Default)]
 pub enum Mode {
     /// One container, all 5 units inside (process-compose orchestrates).
     /// Invocation: `docker run`. The simplest surface — no orchestrator.
     Container,
     /// Three services on a compose network (otelcol + gateway + runner).
     /// Invocation: `docker compose up`. Default.
+    #[default]
     Compose,
     /// One k8s `Job` + one Pod + three containers (NetworkPolicy on runner).
     /// Invocation: `kubectl apply`. Production k8s surface.
     Job,
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Compose
-    }
 }
 
 #[derive(Args)]
@@ -315,7 +310,7 @@ fn run_container(
         }
         local_tag
     } else {
-        format!("{registry}/evals/{benchmark}--{agent}:latest")
+        eval_containers::naming::eval_image(registry, benchmark, &agent, "latest")
     };
 
     let env_str = envs
