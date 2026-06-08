@@ -20,10 +20,16 @@
 # Bifrost natively exposes the framework's path-prefix namespace
 # (/anthropic/v1/messages, /openai/v1/chat/completions, ...) so no
 # Caddy shim is needed (cf. gateways/litellm/ which does need one).
+# One ARG drives both the pull and the label so they can't drift (principle 9).
+# Named stage because `COPY --from=` can't take an `${ARG}`.
+ARG BIFROST_VERSION=v1.5.4
+FROM --platform=linux/amd64 docker.io/maximhq/bifrost:${BIFROST_VERSION} AS bifrost-bin
+
 FROM --platform=linux/amd64 alpine:3.20
+ARG BIFROST_VERSION
 
 LABEL gateway.kind="bifrost"
-LABEL gateway.bifrost_version="v1.4.24"
+LABEL gateway.bifrost_version="${BIFROST_VERSION}"
 LABEL gateway.translates_protocols="true"
 
 RUN apk add --no-cache ca-certificates curl gettext
@@ -31,7 +37,7 @@ RUN apk add --no-cache ca-certificates curl gettext
 # Pull just the binary out of the upstream distribution. The /app/data
 # directory and the dashboard's docker-entrypoint.sh are not copied —
 # we own the layout and the entrypoint.
-COPY --from=docker.io/maximhq/bifrost:latest /app/main /opt/gateway/main
+COPY --from=bifrost-bin /app/main /opt/gateway/main
 COPY start  /opt/gateway/start
 COPY health /opt/gateway/health
 RUN chmod +x /opt/gateway/start /opt/gateway/health /opt/gateway/main \
