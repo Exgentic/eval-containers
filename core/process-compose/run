@@ -47,6 +47,7 @@ if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
 fi
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://127.0.0.1:4000/anthropic}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai}"
+export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://127.0.0.1:4000/genai}"
 # litellm's OTel callback honors this env var. bifrost reads its
 # collector_url from config.json (the model image bakes in `otelcol`),
 # so this is litellm-specific. Setting it unconditionally is harmless
