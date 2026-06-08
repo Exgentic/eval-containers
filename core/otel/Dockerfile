@@ -14,13 +14,13 @@ receivers:
       grpc: { endpoint: 0.0.0.0:4317 }
       http: { endpoint: 0.0.0.0:4318 }
 
-processors:
-  batch: {}
-
 exporters:
   # File exporter writes one JSON-encoded ExportTraceServiceRequest per
   # line (newline-delimited, NDJSON). The .jsonl extension reflects that
   # format — `jq -s . /output/traces.jsonl` to slurp into an array.
+  # No batch processor: direct export so spans flush immediately on receipt
+  # rather than waiting for a batch timeout (which causes empty files when
+  # the eval pod exits before the batch fires).
   file:
     path: /output/traces.jsonl
 
@@ -28,7 +28,6 @@ service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [batch]
       exporters: [file]
   telemetry:
     metrics:

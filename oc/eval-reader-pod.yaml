@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: eval-reader
+  namespace: exgentic-ns
+  labels:
+    app: eval-reader
+spec:
+  serviceAccountName: anyuid-sa
+  restartPolicy: Never
+  containers:
+    - name: reader
+      image: busybox:latest
+      command: ["sleep", "infinity"]
+      volumeMounts:
+        - name: data
+          mountPath: /data
+  volumes:
+    - name: data
+      persistentVolumeClaim:
+        claimName: eval-output-pvc

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eval-output-pvc
+  namespace: exgentic-ns
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ibmc-vpc-file-retain-1000-iops
+  resources:
+    requests:
+      storage: 20Gi
