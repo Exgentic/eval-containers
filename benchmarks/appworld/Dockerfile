@@ -50,12 +50,12 @@ WORKDIR /app
 
 # Test: AppWorld evaluation is state-based (database checks) and requires
 # the full AppWorld runtime. This is externally graded — always write -1.
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 echo -1 > /logs/verifier/reward.txt
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
@@ -67,7 +67,8 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

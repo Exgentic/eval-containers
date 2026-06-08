@@ -47,4 +47,4 @@ RUN npm config set fetch-retries 10 --global && \
     npm config set fetch-retry-maxtimeout 120000 --global && \
     npm config set fetch-timeout 600000 --global
 RUN printf '#!/bin/bash\nset -euo pipefail\n# Default skeleton: subclass agent Dockerfiles overwrite this.\nfor b in node npm npx; do ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b 2>/dev/null || true; done\n' > /opt/agent/install.sh && chmod +x /opt/agent/install.sh && \
-    printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /opt/agent/entrypoint.sh && chmod +x /opt/agent/entrypoint.sh
+    printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /run.sh && chmod +x /run.sh

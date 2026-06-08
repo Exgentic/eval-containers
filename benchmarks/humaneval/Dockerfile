@@ -47,7 +47,7 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=humaneval
 
 # Test: combine agent code with test harness and run
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 TASK_DIR="/tasks/$EVAL_TASK_ID"
@@ -75,7 +75,7 @@ else
 fi
 rm -rf $TMPDIR
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
@@ -85,7 +85,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 
 $(cat /tasks/$EVAL_TASK_ID/prompt.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

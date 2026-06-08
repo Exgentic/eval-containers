@@ -59,12 +59,12 @@ RUN HF_ID="$(echo "${EVAL_TASK_ID}" | sed 's/_1776_/__/g')" && \
 RUN chmod -R 600 /tasks
 
 # Test: apply test_patch, run tests, grade
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 PYTHONPATH=/tests/deps python3 /tests/grade.py > /logs/verifier/reward.txt 2>/dev/null || echo 0 > /logs/verifier/reward.txt
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 RUN cat > /tests/grade.py <<'GRADE'
 import sys; sys.path.insert(0, '/tests/deps')
@@ -129,7 +129,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 
 $(cat /tasks/0/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

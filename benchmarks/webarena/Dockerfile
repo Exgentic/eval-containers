@@ -47,7 +47,7 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=webarena-verified
 
 # Test: run official webarena-verified evaluator
-RUN mkdir -p /tests && cat > /tests/test.sh <<'TEST'
+RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 
@@ -88,7 +88,7 @@ echo "$REWARD" > /logs/verifier/reward.txt
 
 rm -rf "$EVAL_DIR"
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 # Transform script: extract JSON from agent stdout (handles markdown, extra text)
 RUN cat > /tests/extract_response.py <<'EXTRACT'
@@ -164,7 +164,8 @@ Credentials:
 When done, output a JSON object with:
 {\"task_type\": \"RETRIEVE|NAVIGATE|MUTATE\", \"status\": \"SUCCESS|NOT_FOUND_ERROR\", \"retrieved_data\": <data or null>, \"error_details\": <string or null>}"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

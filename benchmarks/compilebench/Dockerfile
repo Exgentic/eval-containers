@@ -60,8 +60,8 @@ RUN mkdir -p /tasks /tests && \
     curl -sfL --retry 5 --retry-delay 3 --retry-connrefused --max-time 120 \
       "$BASE/instruction.md" -o /tmp/instruction.md && \
     curl -sfL --retry 5 --retry-delay 3 --retry-connrefused --max-time 120 \
-      "$BASE/tests/test.sh" -o /tests/test.sh && \
-    chmod +x /tests/test.sh && \
+      "$BASE/tests/test.sh" -o /grade.sh && \
+    chmod +x /grade.sh && \
     python3 -c "import json; open('/tasks/all.jsonl','w').write(json.dumps({'id':'${EVAL_COMPILEBENCH_UPSTREAM_ID}','problem':open('/tmp/instruction.md').read()})+'\n')" && \
     rm -f /tmp/instruction.md
 RUN chmod 600 /tasks/all.jsonl
@@ -78,7 +78,8 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

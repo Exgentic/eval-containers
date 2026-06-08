@@ -18,5 +18,5 @@ RUN set -e; ok=0; \
     rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /opt/agent/bin && \
     printf '#!/bin/bash\nset -euo pipefail\n# Default skeleton: subclass agent Dockerfiles overwrite this.\nfor f in /opt/agent/bin/*; do [ -x "$f" ] && ln -sf "$f" /usr/local/bin/$(basename "$f") || true; done\n' > /opt/agent/install.sh && chmod +x /opt/agent/install.sh && \
-    printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /opt/agent/entrypoint.sh && chmod +x /opt/agent/entrypoint.sh
+    printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /run.sh && chmod +x /run.sh
 ENV PATH=/opt/agent/bin:$PATH

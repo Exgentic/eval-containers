@@ -2,7 +2,7 @@
 # Final result writer. Runs after the verifier completes.
 #
 # Reads:
-#   /logs/verifier/reward.txt   written by /root/tests/test.sh
+#   /logs/verifier/reward.txt   written by /grade.sh
 #   /output/agent/.started-at   written by /usr/local/bin/run
 #
 # Writes:

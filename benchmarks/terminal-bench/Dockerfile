@@ -59,7 +59,7 @@ RUN mkdir -p /tests \
 
 # Scorer: run upstream run-tests.sh, translate pytest exit code into
 # /logs/verifier/reward.txt (1 on pass, 0 on fail).
-RUN cat > /tests/test.sh <<'TEST'
+RUN cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
 export TEST_DIR=/tests/tests
@@ -69,7 +69,7 @@ else
   echo 0 > /logs/verifier/reward.txt
 fi
 TEST
-RUN chmod +x /tests/test.sh && chmod -R 700 /tests && chown -R root:root /tests
+RUN chmod +x /grade.sh && chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 RUN chmod +x /eval-entrypoint.sh
@@ -79,7 +79,8 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 if [ -z "$TASK" ] && [ -f /task/instruction.md ]; then
   export TASK="$(cat /task/instruction.md)"
 fi
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]
