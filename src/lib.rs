@@ -6,3 +6,4 @@
 //! `tests/common/mod.rs`, and `tests/build/test.rs`.
 
 pub mod bake;
+pub mod naming;

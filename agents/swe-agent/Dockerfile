@@ -14,7 +14,7 @@ ENV EVAL_AGENT=swe-agent
 # Clone + editable install — SWE-agent's wheel does NOT ship its `config/`
 # directory but its runtime asserts `CONFIG_DIR.is_dir()` against it.
 RUN git clone --depth 1 --branch v1.1.0 https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent && \
-    uv pip install --system -e /opt/swe-agent
+    uv pip install --system --no-cache -e /opt/swe-agent
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
