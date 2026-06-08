@@ -37,6 +37,16 @@ jobs:
       - name: Install pre-commit
         run: pip install pre-commit
 
+      # hadolint and helm hooks call the system binaries; install them so the
+      # runner has what the local dev environment already provides.
+      - name: Install hadolint
+        run: |
+          sudo curl -fsSL -o /usr/local/bin/hadolint \
+            https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64
+          sudo chmod +x /usr/local/bin/hadolint
+      - name: Install helm
+        uses: azure/setup-helm@v4
+
       # On a PR, scope hooks to the changed files via --from-ref/--to-ref so
       # pre-existing issues in untouched files don't block. A hook only runs if
       # the diff contains a file it matches; the whole-project hooks (cargo
