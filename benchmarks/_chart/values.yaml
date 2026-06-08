@@ -16,6 +16,18 @@ model: gpt-5.4-bifrost
 # Image tags (CLI --model-tag → gatewayTag; --agent-tag/--benchmark-tag → runnerTag)
 gatewayTag: latest
 runnerTag: latest
+# Full image-ref overrides. Empty → the chart composes the default nested path
+# (registry/core/otel, registry/models/<gatewayImage>, registry/evals/<b>--<a>),
+# which suits a nested-path registry like quay. The OpenShift internal registry
+# has flat ImageStream names (no slashes), so the oc/ tooling passes flat refs
+# here via --set instead — replacing the old post-render sed rewriting.
+# flatImages: compose flat ImageStream names (no slashes) for the OpenShift
+# internal registry instead of the nested quay-style path. The oc/ tooling sets
+# this; quay/kind users leave it false. Per-image *ImageRef overrides still win.
+flatImages: false
+otelImage: ""
+gatewayImageRef: ""
+runnerImageRef: ""
 # Internal upstream version overrides (CLI --*-version, --max-budget); empty = unset
 benchmarkVersion: ""
 agentVersion: ""
@@ -35,6 +47,27 @@ resources:
 # the pod). Set one source key to persist them — e.g. a hostPath (kind) or a
 # PVC (a cluster):  --set outputVolume.hostPath.path=/eval-output
 outputVolume: {}
+# subPath within the output volume to mount at /output. Empty → the volume root.
+# The oc/ sweep tooling sets this to a per-run path so many runs share one PVC.
+# In Indexed mode it's the run root; each example lands in <outputSubPath>/<index>.
+outputSubPath: ""
+
+# ── Sweep model: a dataset eval is ONE Indexed Job ───────────────────────────
+# datasetSize empty → a single-task Job (debug: runs exactly `task`). Set it and
+# the Job becomes Indexed with one completion per example (task id = the index).
+datasetSize: ""
+# parallelism: concurrency cap WITHIN one dataset run (empty → datasetSize, i.e.
+# all at once). When Kueue manages the Job the global cap is the ClusterQueue;
+# this stays as a per-run ceiling.
+parallelism: ""
+# Per-example retry (k8s ≥1.29). Empty → whole-Job backoffLimit: 0 (older
+# clusters / OCP <4.16). Set e.g. 2 to retry a flaky example without failing the
+# sweep; maxFailedIndexes then bounds how many examples may stay broken.
+backoffLimitPerIndex: ""
+maxFailedIndexes: ""
+# Kueue local-queue name. Empty → no Kueue (runs immediately, capped by
+# parallelism). Set it and the Job starts suspended for Kueue to admit by quota.
+queueName: ""
 
 # ── Platform composition (layered via -f, e.g. deploy/values-openshift.yaml) ─
 serviceAccountName: ""   # OpenShift sets anyuid-sa
