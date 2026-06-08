@@ -25,7 +25,9 @@ maxBudget: ""
 # ── Knobs a benchmark MAY override in its values.yaml ────────────────────────
 timeout: "300"
 activeDeadlineSeconds: 900
-runnerArgs: "/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"
+# Job overrides the image command, so invoke the launcher explicitly:
+# /entrypoint.sh (task setup) execs /usr/local/bin/run (the pipeline).
+runnerArgs: "/entrypoint.sh /usr/local/bin/run; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"
 resources:
   requests: { cpu: "500m", memory: "512Mi" }
   limits:   { cpu: "2",    memory: "2Gi" }
