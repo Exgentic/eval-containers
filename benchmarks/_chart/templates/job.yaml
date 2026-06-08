@@ -34,6 +34,12 @@ spec:
             - { name: otlp-grpc, containerPort: 4317 }
             - { name: otlp-http, containerPort: 4318 }
             - { name: health,    containerPort: 13133 }
+          # Sidecar (restartPolicy: Always): k8s holds later containers until
+          # this startupProbe passes — probes otelcol's health_check (:13133).
+          startupProbe:
+            httpGet: { path: /, port: 13133 }
+            periodSeconds: 1
+            failureThreshold: 30
           volumeMounts:
             - { name: output, mountPath: /output }
 
