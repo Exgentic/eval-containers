@@ -1,0 +1,44 @@
+name: Pre-commit
+
+# Runs the same .pre-commit-config.yaml gates on GitHub so a clone that
+# skipped the local hook install (or used --no-verify) can't slip past them.
+# DCO sign-off is enforced separately by the GitHub DCO check.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pre-commit:
+    name: Run pre-commit hooks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Python (for pre-commit + ruff)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install pre-commit
+        run: pip install pre-commit
+
+      # The pre-push stage runs every hook (default-stage hooks run in all
+      # stages, plus the pre-push-only clippy + cargo test), so one invocation
+      # covers the whole config. The commit-msg DCO hook is enforced
+      # separately by the GitHub DCO check.
+      - name: Run pre-commit hooks
+        run: pre-commit run --all-files --hook-stage pre-push --show-diff-on-failure --color=always
