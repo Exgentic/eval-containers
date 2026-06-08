@@ -116,9 +116,6 @@ GRADE
 # Lock test infrastructure from agent (root-only read + execute)
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
-COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
-RUN chmod +x /eval-entrypoint.sh
-
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 # Make repo writable by agent

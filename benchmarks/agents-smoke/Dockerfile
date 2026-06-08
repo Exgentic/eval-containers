@@ -4,7 +4,7 @@
 #
 # Compared to FROM core/benchmark-base-external (~405 MB: python:3.12-
 # slim + apt + uv + pyarrow): this image FROMs debian:trixie-slim and
-# installs only what eval-entrypoint.sh actually invokes — `useradd`
+# installs only what the entrypoint actually invokes — `useradd`
 # (from the `passwd` package), `awk`, `su` and the coreutils that
 # debian-slim ships by default. No Python, no pyarrow, no uv. The task
 # data is baked at build time (single trivial task), so
@@ -26,7 +26,7 @@ LABEL eval.benchmark.env="test"
 LABEL eval.benchmark.internet="false"
 
 # Runtime deps:
-#   - mawk: eval-entrypoint's reward awk
+#   - mawk: reward awk in /grade.sh
 #   - git: swe-agent's install.sh does `uv pip install git+https://...`
 #     (no pre-built wheel for the Princeton harness)
 #
@@ -37,7 +37,7 @@ LABEL eval.benchmark.internet="false"
 # (rust toolchain + build-essential, several hundred MB) without it.
 #
 # Pre-baking the agent user instead of installing the `passwd` package
-# (eval-entrypoint's `id agent || useradd ...` short-circuits on the
+# (`id agent || useradd ...` short-circuits on the
 # pre-existing entry). Saves the package + its dependencies.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends mawk git libgomp1 python3-setuptools \
@@ -59,12 +59,6 @@ RUN apt-get update \
 ENV UV_BREAK_SYSTEM_PACKAGES=1
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
-# Eval entrypoint — copied from core/entrypoint so this benchmark goes
-# through the same execution shape as every other benchmark (uid
-# switch, version recording, two-phase agent + verifier).
-COPY core/entrypoint/eval-entrypoint.sh /eval-entrypoint.sh
-RUN chmod +x /eval-entrypoint.sh
-
 # Pre-bake the single task — no JSONL, no /eval-materialize-task,
 # no Python needed at runtime.
 RUN mkdir -p /tasks/0 \
@@ -82,7 +76,7 @@ WORKDIR /app
 ENV EVAL_BENCHMARK=agents-smoke
 
 # Benchmark wrapper: load the (pre-materialized) task into env vars,
-# hand off to eval-entrypoint. No call to /eval-materialize-task —
+# hand off to the framework launcher. No call to /eval-materialize-task —
 # the task is already on disk.
 RUN printf '%s\n' \
     '#!/bin/sh' \
