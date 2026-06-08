@@ -1,0 +1,138 @@
+//! Catalog conformance: does every benchmark, agent, and model in the tree
+//! satisfy the assumptions the CLI makes about them?
+//!
+//! The CLI ([src/build.rs], [src/run.rs]) maps each axis onto a bake target and
+//! a registry image ref via [eval_containers::naming]. If a benchmark's
+//! docker-bake.hcl names a target the CLI would never ask for — or tags an
+//! image at a path the CLI won't pull — then `eval-containers build`/`run` is
+//! silently broken for that benchmark even though its Dockerfile is fine. This
+//! sweep walks the whole catalog and asserts the contract holds for every entry.
+//!
+//! Pure file I/O, no docker daemon — runs on plain `cargo test`.
+//!
+//! Run: cargo test --test cli_conformance
+
+use eval_containers::naming::{
+    agent_bake_target, agent_image, benchmark_bake_target, benchmark_image, flatten_imagestream,
+    model_bake_target, model_image,
+};
+use std::fs;
+use std::path::{Path, PathBuf};
+
+/// Real catalog entries under `root` — directories that aren't underscore- or
+/// dot-prefixed (skips `benchmarks/_chart`, etc.).
+fn catalog_dirs(root: &str) -> Vec<(String, PathBuf)> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(root) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        if path.is_dir() && !name.starts_with('_') && !name.starts_with('.') {
+            out.push((name.to_string(), path));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+fn read(path: &Path) -> String {
+    fs::read_to_string(path).unwrap_or_default()
+}
+
+/// Assert every entry under `root` declares the bake target the CLI builds
+/// (`target`) and tags the image at the path the CLI pulls (`image`, with
+/// bake's `${REGISTRY}`/`${TAG}` placeholders). Reports all mismatches at once.
+fn assert_bake_matches_cli(
+    root: &str,
+    target: impl Fn(&str) -> String,
+    image: impl Fn(&str, &str, &str) -> String,
+) {
+    let entries = catalog_dirs(root);
+    assert!(!entries.is_empty(), "no {root}/");
+    let mut issues = Vec::new();
+    for (name, dir) in &entries {
+        let hcl = read(&dir.join("docker-bake.hcl"));
+        let want_target = format!("target \"{}\"", target(name));
+        if !hcl.contains(&want_target) {
+            issues.push(format!("{name}: docker-bake.hcl has no `{want_target}`"));
+        }
+        let want_tag = image("${REGISTRY}", name, "${TAG}");
+        if !hcl.contains(&want_tag) {
+            issues.push(format!("{name}: docker-bake.hcl does not tag `{want_tag}`"));
+        }
+    }
+    assert!(
+        issues.is_empty(),
+        "{} mismatch(es):\n  {}",
+        issues.len(),
+        issues.join("\n  ")
+    );
+    eprintln!(
+        "✓ {} {root}: bake target + image tag match the CLI",
+        entries.len()
+    );
+}
+
+#[test]
+fn benchmark_bake_targets_match_cli() {
+    assert_bake_matches_cli("benchmarks", benchmark_bake_target, benchmark_image);
+}
+
+#[test]
+fn agent_bake_targets_match_cli() {
+    assert_bake_matches_cli("agents", agent_bake_target, agent_image);
+}
+
+#[test]
+fn model_bake_targets_match_cli() {
+    assert_bake_matches_cli("models", model_bake_target, model_image);
+}
+
+/// Every benchmark×agent eval image, flattened to an OpenShift imagestream,
+/// must be a single DNS-1123 label (lowercase alnum + `-`). If `--builder oc`
+/// can't name the imagestream, that combination can't build on OpenShift.
+#[test]
+fn eval_imagestreams_are_dns_safe() {
+    let benchmarks = catalog_dirs("benchmarks");
+    let agents = catalog_dirs("agents");
+    let dns_ok = |s: &str| {
+        !s.is_empty()
+            && s.len() <= 63
+            && s.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            && !s.starts_with('-')
+            && !s.ends_with('-')
+    };
+
+    // Every real image repo: each category base, plus every benchmark×agent
+    // combination (the `--` → `-` collapse is the case most likely to break).
+    let mut repos: Vec<String> = Vec::new();
+    repos.extend(benchmarks.iter().map(|(b, _)| format!("benchmarks/{b}")));
+    repos.extend(agents.iter().map(|(a, _)| format!("agents/{a}")));
+    for (b, _) in &benchmarks {
+        repos.extend(agents.iter().map(|(a, _)| format!("evals/{b}--{a}")));
+    }
+
+    let issues: Vec<String> = repos
+        .iter()
+        .filter_map(|repo| {
+            let flat = flatten_imagestream(repo);
+            (!dns_ok(&flat)).then(|| format!("{repo} → `{flat}` is not a valid imagestream name"))
+        })
+        .collect();
+    assert!(
+        issues.is_empty(),
+        "{} issues:\n  {}",
+        issues.len(),
+        issues.join("\n  ")
+    );
+    eprintln!(
+        "✓ {}×{} eval imagestreams + categories are all DNS-safe",
+        benchmarks.len(),
+        agents.len()
+    );
+}
