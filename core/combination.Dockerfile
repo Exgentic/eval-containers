@@ -64,6 +64,9 @@ ARG AGENT_VERSION
 # ─── Agent layer ─────────────────────────────────────────────────────
 COPY --from=agent /opt/agent/install.sh /tmp/agent-install.sh
 COPY --from=agent /opt/agent/ /opt/agent/
+# Agent launch script lives at the image root, not under /opt/agent/ — copy it too.
+COPY --from=agent /run.sh /run.sh
+RUN chmod +x /run.sh
 # Reinstalling agents resolve their version from the agent image's
 # /opt/agent/VERSION (written from the agent's ARG AGENT_VERSION), unless this
 # build overrides it via --build-arg AGENT_VERSION. Single source of truth, so
@@ -112,7 +115,6 @@ RUN chmod 0700 /opt/gateway \
                 /etc/process-compose.yaml \
                 /etc/process-compose-runner.yaml
 
-# ENTRYPOINT/CMD not set here — inherited from the benchmark image.
-# ENTRYPOINT = /entrypoint.sh (task setup, exec "$@")
-# CMD = /grade.sh (default action; overridden to /usr/local/bin/run
-# in the combination image at runtime).
+# Inherited ENTRYPOINT /entrypoint.sh execs this. Override the benchmark's
+# default CMD /grade.sh so the stitched image launches the pipeline (rule 12).
+CMD ["/usr/local/bin/run"]
