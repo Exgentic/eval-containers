@@ -19,7 +19,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="d1e4a10db08c87075c78972e48ecc182be03e2d5"
 LABEL eval.benchmark.url="https://github.com/THUDM/AgentBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.03688"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="d1e4a10db08c87075c78972e48ecc182be03e2d5"
 
 # Fetch the DBBench standard split and write every task to /tasks/all.jsonl.
 RUN python3 <<'PYEOF'

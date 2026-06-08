@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="c83a9b9692933aff8349157c88a413df9d02c4e5"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/lmms-lab/ai2d"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1603.07396"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="c83a9b9692933aff8349157c88a413df9d02c4e5"
 
 # Single-JSONL task layout. Image bytes are base64-encoded inline; the runtime
 # entrypoint materializes just the requested row and decodes image.png.

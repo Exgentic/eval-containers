@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be"
 LABEL eval.benchmark.url="https://github.com/hendrycks/math"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/math"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2103.03874"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'

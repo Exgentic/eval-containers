@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="92a54bd1384387c178d5a07140a2d85e0a3d12e1"
 LABEL eval.benchmark.url="https://github.com/Yuliang-Liu/MultimodalOCR"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.07895"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="92a54bd1384387c178d5a07140a2d85e0a3d12e1"
 
 # Single-JSONL task layout. One line per task. Image bytes are base64-encoded
 # inline; runtime entrypoint decodes only the requested task's image.

@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/xlang-ai/OSWorld"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/osworld"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.07972"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 
 # Single-JSONL task layout. One line per task. Runtime entrypoint
 # materializes the requested task and renames task.txt -> task.json.

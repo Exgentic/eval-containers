@@ -3,15 +3,15 @@
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
+ARG AGENT_VERSION=2.15.0
 LABEL eval.type="agent"
 LABEL eval.agent.name="cline"
 LABEL eval.agent.description="Cline autonomous coding agent CLI (Plan/Act modes, MCP integration)"
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/cline/cline"
-LABEL eval.agent.version="2.15.0"
-ENV EVAL_AGENT_VERSION_DEFAULT="2.15.0"
+LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=cline
-RUN npm install -g cline@2.15.0
+RUN npm install -g cline@${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

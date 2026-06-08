@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="042f78955ba48e6404616762fa6e05e839c3907a"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/cambridgeltl/xcopa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2005.00333"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="042f78955ba48e6404616762fa6e05e839c3907a"
 
 # Write every task to a single JSONL file. One line per task. Agent never
 # sees this file (root-only). Runtime entrypoint materializes just the

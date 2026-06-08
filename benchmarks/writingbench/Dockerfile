@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="ae2d5176449b7b769815482641d35926f26793eb"
 LABEL eval.benchmark.url="https://github.com/X-PLUG/WritingBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2503.05244"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="ae2d5176449b7b769815482641d35926f26793eb"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

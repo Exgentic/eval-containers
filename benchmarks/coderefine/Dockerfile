@@ -18,7 +18,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
 LABEL eval.benchmark.url="https://github.com/microsoft/CodeXGLUE/tree/main/Code-Code/code-refinement"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2102.04664"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
 
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json

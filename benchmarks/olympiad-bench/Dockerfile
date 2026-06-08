@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="91184b52131e7fc9455fef848035173aea8cc01a"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/Hothan/OlympiadBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2402.14008"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="91184b52131e7fc9455fef848035173aea8cc01a"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

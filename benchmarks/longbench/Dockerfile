@@ -17,7 +17,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/THUDM/LongBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.14508"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
 
 RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
 

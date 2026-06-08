@@ -19,7 +19,6 @@ LABEL eval.benchmark.url="https://github.com/arcprize/ARC-AGI-2"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/arc_agi_2"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/arc"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1911.01547"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="f3283f727488ad98fe575ea6a5ac981e4a188e49"
 
 # Download all 120 evaluation tasks from pinned commit and write a single JSONL.
 RUN python3 <<'PYEOF'

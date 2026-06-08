@@ -608,9 +608,6 @@ fn uses_full_python_when_slim_exists(t: &str) -> bool {
 
 // ─── Type predicates (RULES.md principle 9: version-override axis) ─
 
-fn is_benchmark(t: &str) -> bool {
-    t.contains(r#"LABEL eval.type="benchmark""#)
-}
 fn is_agent(t: &str) -> bool {
     t.contains(r#"LABEL eval.type="agent""#)
 }
@@ -625,17 +622,14 @@ fn is_replay_model(_t: &str, dir: &str) -> bool {
     dir == "replay"
 }
 
-// Test carriers (eval.benchmark.env="test", e.g. agents-smoke) bake a single
-// trivial task at build time — there is no upstream dataset, so the
-// EVAL_BENCHMARK_VERSION axis does not apply.
-fn is_test_benchmark(t: &str) -> bool {
-    t.contains(r#"LABEL eval.benchmark.env="test""#)
-}
-fn benchmark_missing_version_default(t: &str, _dir: &str) -> bool {
-    is_benchmark(t) && !is_test_benchmark(t) && !t.contains("ENV EVAL_BENCHMARK_VERSION_DEFAULT=")
-}
-fn agent_missing_version_default(t: &str, _dir: &str) -> bool {
-    is_agent(t) && !t.contains("ENV EVAL_AGENT_VERSION_DEFAULT=")
+// Version is a build-time axis (principle 9): an agent pins its upstream CLI
+// version as `ARG AGENT_VERSION=<x>`, used to drive the install AND the
+// `eval.agent.version` label, so `build agent --agent-version` overrides it and
+// the label can never disagree with what was installed. (Benchmarks pin the
+// dataset revision similarly via the data_revision label; only those that fetch
+// by revision additionally take an ARG, so that is not lint-enforced.)
+fn agent_missing_version_arg(t: &str, _dir: &str) -> bool {
+    is_agent(t) && !t.contains("ARG AGENT_VERSION")
 }
 // Gateway-flavor model images (LABEL gateway.kind=…) are thin wrappers
 // over gateways/{bifrost,litellm,portkey}; they don't ship litellm
@@ -752,19 +746,13 @@ const RULES: &[Rule] = &[
         "Dockerfile fetches from a mutable ref (refs/convert/parquet, main, master) without pinning eval.benchmark.data_revision",
         |t, _| missing_data_revision_when_fetching_mutable_ref(t),
     ),
-    // ── Version-override contract (RULES.md principle 9) ──────────
-    // Each image declares its baked-in upstream version as an ENV so
-    // core/entrypoint/eval-entrypoint.sh can compare it to a runtime
-    // EVAL_*_VERSION override and decide whether to refetch/reinstall.
+    // ── Version is a build-time axis (RULES.md principle 9) ───────
+    // An agent pins its upstream CLI version as `ARG AGENT_VERSION`, which
+    // drives both the install and the eval.agent.version label.
     Rule::red(
-        "benchmark_missing_version_default",
-        "benchmark Dockerfile is missing ENV EVAL_BENCHMARK_VERSION_DEFAULT (RULES.md 9)",
-        benchmark_missing_version_default,
-    ),
-    Rule::red(
-        "agent_missing_version_default",
-        "agent Dockerfile is missing ENV EVAL_AGENT_VERSION_DEFAULT (RULES.md 9)",
-        agent_missing_version_default,
+        "agent_missing_version_arg",
+        "agent Dockerfile is missing `ARG AGENT_VERSION` (RULES.md 9 — version is a build arg)",
+        agent_missing_version_arg,
     ),
     Rule::red(
         "model_missing_litellm_version_label",

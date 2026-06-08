@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="740312add88f781978c0658806c59bc2815b9866"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/gsm8k"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2110.14168"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="740312add88f781978c0658806c59bc2815b9866"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). One line per task,
 # /eval-materialize-task materializes only the requested row at runtime.

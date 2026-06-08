@@ -16,7 +16,6 @@ LABEL eval.benchmark.data_revision="b74c0d0bf70d2c0bc459be537895cca163007f1a"
 LABEL eval.benchmark.url="https://github.com/bigcode-project/bigcodebench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.15877"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bigcodebench"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="b74c0d0bf70d2c0bc459be537895cca163007f1a"
 
 # Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
 RUN python3 <<'PYEOF'

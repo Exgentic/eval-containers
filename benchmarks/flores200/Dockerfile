@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="flores_plus-v2.0"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/openlanguagedata/flores_plus"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2207.04672"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="flores_plus-v2.0"
 
 RUN pip install --no-cache-dir huggingface_hub==0.26.2
 

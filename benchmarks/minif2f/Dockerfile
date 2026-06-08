@@ -16,7 +16,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
 LABEL eval.benchmark.url="https://github.com/yangky11/miniF2F"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2109.00110"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's

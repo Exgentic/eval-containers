@@ -18,7 +18,6 @@ LABEL eval.benchmark.data_revision="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
 LABEL eval.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.07974"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
 
 RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
 

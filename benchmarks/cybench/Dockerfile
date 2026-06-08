@@ -47,7 +47,6 @@ LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/andyzorigin/cybench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2408.08926"
-ENV EVAL_BENCHMARK_VERSION_DEFAULT=""
 ENV EVAL_BENCHMARK=cybench
 ENV DEBIAN_FRONTEND=noninteractive
 
