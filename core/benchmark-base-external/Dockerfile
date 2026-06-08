@@ -44,10 +44,9 @@ RUN set -e; ok=0; \
     done; \
     [ "$ok" = 1 ] || { echo "uv pip install failed after 5 tries" >&2; exit 1; }
 
-COPY --from=entrypoint /eval-entrypoint.sh /eval-entrypoint.sh
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 COPY --from=entrypoint /eval-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
-RUN chmod +x /eval-entrypoint.sh /eval-materialize-task
+RUN chmod +x /eval-materialize-task
 
 RUN mkdir -p /tasks /tests /app && \
     printf '#!/bin/bash\nmkdir -p /logs/verifier\necho -1 > /logs/verifier/reward.txt\n' > /grade.sh && \

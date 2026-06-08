@@ -73,7 +73,7 @@ COPY --from=test-exact-match /test.sh /grade.sh
 RUN chmod +x /grade.sh
 
 # Reference implementation of the EVAL_BENCHMARK_VERSION override hook.
-# core/entrypoint/eval-entrypoint.sh invokes /eval-refetch-data <revision>
+# /usr/local/bin/run invokes /eval-refetch-data <revision>
 # when EVAL_BENCHMARK_VERSION is set and differs from the build-time default.
 # This is the first benchmark to ship the hook; the pattern is copyable.
 RUN cat > /eval-refetch-data <<'RELOAD' && chmod +x /eval-refetch-data
