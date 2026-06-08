@@ -18,7 +18,7 @@ RUN set -e; ok=0; \
     done; \
     [ "$ok" = 1 ] || { echo "apt install failed after 5 tries" >&2; exit 1; }; \
     rm -rf /var/lib/apt/lists/* && \
-    uv pip install --system 'langgraph<0.4' ra-aid==0.19.1
+    uv pip install --system --no-cache 'langgraph<0.4' ra-aid==0.19.1
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail

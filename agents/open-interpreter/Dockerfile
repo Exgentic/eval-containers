@@ -11,7 +11,7 @@ LABEL eval.agent.url="https://github.com/OpenInterpreter/open-interpreter"
 LABEL eval.agent.version="0.4.3"
 ENV EVAL_AGENT_VERSION_DEFAULT="0.4.3"
 ENV EVAL_AGENT=open-interpreter
-RUN uv pip install --system 'setuptools<81' open-interpreter==0.4.3
+RUN uv pip install --system --no-cache 'setuptools<81' open-interpreter==0.4.3
 COPY run_oi.py /opt/agent/run_oi.py
 RUN chmod +x /opt/agent/run_oi.py
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
