@@ -2,7 +2,8 @@
 # sweep.sh — loop run.sh over a benchmark×agent grid, each cell a dataset Indexed
 # Job tagged sweep-id=<id>. Flags: see the case block. Default grid: the *.txt.
 #
-#   ./oc/sweep.sh --dataset-size 50 --model gpt-5.4--bifrost --queue eval-queue
+#   ./oc/sweep.sh --model gpt-5.4--bifrost --benchmarks "aime gsm8k"   # each auto-sized
+#   ./oc/sweep.sh --model gpt-5.4--bifrost --dataset-size 50           # uniform cap
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"
@@ -31,7 +32,9 @@ SWEEP_ID="$(date -u +%Y%m%dT%H%M%S)--$(flat "$MODEL")"
 log "sweep-id: $SWEEP_ID   grid: ${#BENCHMARKS[@]} benchmarks × ${#AGENTS[@]} agents${QUEUE:+   queue: $QUEUE}"
 
 PASS=(--model "$MODEL" --namespace "$NAMESPACE" --pvc "$PVC" --repo-dir "$REPO_DIR" --sweep-id "$SWEEP_ID")
-[[ -n "$DATASET"     ]] && PASS+=(--dataset-size "$DATASET")
+# No --dataset-size → each benchmark auto-sizes from its eval.benchmark.tasks
+# label (run.sh --dataset); a uniform --dataset-size overrides it for every cell.
+if [[ -n "$DATASET" ]]; then PASS+=(--dataset-size "$DATASET"); else PASS+=(--dataset); fi
 [[ -n "$PARALLELISM" ]] && PASS+=(--parallelism "$PARALLELISM")
 [[ -n "$RETRY"       ]] && PASS+=(--retry "$RETRY")
 [[ -n "$QUEUE"       ]] && PASS+=(--queue "$QUEUE")
