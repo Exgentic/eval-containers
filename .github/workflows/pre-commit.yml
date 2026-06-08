@@ -26,7 +26,7 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt, clippy
+          components: rustfmt   # cargo fmt only; clippy/test gate lives in CI (test.yml)
       - uses: Swatinem/rust-cache@v2
 
       - name: Install Python (for pre-commit + ruff)
