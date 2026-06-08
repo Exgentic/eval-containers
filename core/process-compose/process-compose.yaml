@@ -59,7 +59,14 @@ processes:
     # via shell redirection rather than process-compose's `log_location`,
     # which wraps lines in a {level,process,replica,message} JSON envelope
     # that breaks verifiers reading raw stdout.
-    command: timeout $TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$TASK" TASK_ID="$TASK_ID" MODEL="$MODEL" TIMEOUT="$TIMEOUT" OPENAI_BASE_URL="$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
+    #
+    # $$VAR escapes process-compose's parse-time variable substitution so the
+    # values expand in the command shell at run time instead. This is required
+    # for $$TASK — the problem prompt is multi-line, and substituting it into
+    # this YAML scalar at parse time corrupts the document ("could not find
+    # expected ':'"). run exports all of these into the env process-compose
+    # inherits, so the shell still resolves them.
+    command: timeout $$TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$$TASK" TASK_ID="$$TASK_ID" MODEL="$$MODEL" TIMEOUT="$$TIMEOUT" OPENAI_BASE_URL="$$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
     depends_on:
       gateway:
         condition: process_healthy
