@@ -28,7 +28,7 @@ eval-containers [--registry <ref>] <command> [args]
 | `images` | Show images with sizes | `docker images` |
 | `inspect` | Inspect an image | `docker inspect` |
 | `prune` | Reclaim disk | `docker builder prune` + `docker image prune` |
-| `report` | Aggregate and report results | reads `output/` |
+| `report` | Aggregate results: pass/reward/tokens/cost + traces health | reads `output/` |
 | `gen-bake` | Scaffold a `docker-bake.hcl` for an artifact | writes a file |
 
 ## `run` flags

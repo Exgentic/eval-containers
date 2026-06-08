@@ -31,7 +31,7 @@ untouched), matching the original tooling.
 ./oc/run.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --dataset-size 50 --parallelism 8 --watch
 ./oc/status.sh --benchmark aime                                  # run progress (Jobs)
 ./oc/fetch.sh  --benchmark aime --agent codex --model gpt-5.4--bifrost
-eval-containers report output/                                   # PASS/FAIL, reward, tokens, cost
+eval-containers report output/                                   # PASS/FAIL, reward, tokens, cost, traces health
 
 # a grid
 ./oc/sweep.sh --dataset-size 50 --model gpt-5.4--bifrost
