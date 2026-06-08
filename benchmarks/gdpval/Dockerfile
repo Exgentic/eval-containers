@@ -56,6 +56,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         count += 1
 print(f'Wrote {count} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
@@ -96,6 +97,7 @@ fi
 # Externally graded — write -1
 echo -1 > /logs/verifier/reward.txt
 TEST
+
 RUN chmod +x /grade.sh
 
 # Load task, download reference files to /app, then exec shared entrypoint
@@ -135,6 +137,7 @@ elif isinstance(urls, dict):
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

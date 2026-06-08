@@ -1,7 +1,7 @@
 # DISABLED — see #3 commit msg. To re-enable: strip leading '# ' from every line.
 #
 # name: Build sweep
-# 
+#
 # # Fan out the benchmark and agent build sweeps across GitHub Actions
 # # runners. Every benchmark builds in its own job via a matrix strategy,
 # # so 96 benchmarks land in parallel instead of an hour-long serial
@@ -14,7 +14,7 @@
 # # This workflow is the CI-side counterpart to the VERIFY.md build
 # # phase (steps 11–13). Runs on PR changes under benchmarks/ or agents/.
 # # On manual dispatch (workflow_dispatch), builds everything.
-# 
+#
 # on:
 #   pull_request:
 #     paths:
@@ -24,10 +24,10 @@
 #       - 'tests/build.rs'
 #       - 'tests/check.rs'
 #   workflow_dispatch:
-# 
+#
 # permissions:
 #   contents: read
-# 
+#
 # jobs:
 #   # Stage 1 — enumerate the benchmark + agent targets the rest of the
 #   # workflow will fan out over. Uses `jq` to emit a JSON array that the
@@ -49,7 +49,7 @@
 #           echo "── enumeration ──"
 #           echo "benchmarks: $BENCH"
 #           echo "agents:     $AGENT"
-# 
+#
 #   # Stage 2 — one job per benchmark. Matrix fails-fast is off so one
 #   # failure doesn't cancel the rest; the aggregate job at the end
 #   # summarizes the result.
@@ -64,21 +64,21 @@
 #         bench: ${{ fromJson(needs.enumerate.outputs.benchmarks) }}
 #     steps:
 #       - uses: actions/checkout@v4
-# 
+#
 #       - name: Install Rust toolchain
 #         uses: dtolnay/rust-toolchain@stable
-# 
+#
 #       - name: Cache cargo
 #         uses: Swatinem/rust-cache@v2
 #         with:
 #           key: build-${{ matrix.bench }}
-# 
+#
 #       - name: Build ${{ matrix.bench }}
 #         env:
 #           EVAL_BUILD_FILTER: ${{ matrix.bench }}
 #         run: |
 #           cargo test --test build build_every_benchmark -- --ignored --nocapture
-# 
+#
 #   # Stage 3 — one job per agent, same shape as benchmark.
 #   agent:
 #     name: build ${{ matrix.agent }}
@@ -91,21 +91,21 @@
 #         agent: ${{ fromJson(needs.enumerate.outputs.agents) }}
 #     steps:
 #       - uses: actions/checkout@v4
-# 
+#
 #       - name: Install Rust toolchain
 #         uses: dtolnay/rust-toolchain@stable
-# 
+#
 #       - name: Cache cargo
 #         uses: Swatinem/rust-cache@v2
 #         with:
 #           key: build-agent-${{ matrix.agent }}
-# 
+#
 #       - name: Build ${{ matrix.agent }}
 #         env:
 #           EVAL_BUILD_FILTER: ${{ matrix.agent }}
 #         run: |
 #           cargo test --test build build_every_agent -- --ignored --nocapture
-# 
+#
 #   # Stage 4 — summary that depends on both matrices. Fails the
 #   # workflow if any matrix job failed, so branch protection rules
 #   # can gate PR merges on "build-sweep / summary".

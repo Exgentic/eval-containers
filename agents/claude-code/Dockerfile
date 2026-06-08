@@ -17,11 +17,13 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 for b in node npm npx claude; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
 I
+
 RUN cat > /eval-reinstall-agent <<'R' && chmod +x /eval-reinstall-agent
 #!/bin/bash
 set -euo pipefail
 "$(command -v npm || echo /opt/agent/node/bin/npm)" install -g "@anthropic-ai/claude-code@${1:?version required}"
 R
+
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
@@ -31,4 +33,5 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
 exec claude -p --dangerously-skip-permissions "$TASK"
 E
+
 ENTRYPOINT ["/run.sh"]

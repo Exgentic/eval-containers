@@ -71,6 +71,7 @@ with open('/tasks/all.jsonl', 'w') as out:
         count += 1
 print(f'Extracted {count} tasks')
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl /tasks/.prompt_easy.txt /tasks/.prompt_hard.txt
 
 WORKDIR /app
@@ -104,6 +105,7 @@ cp "$TASK_DIR/results_json.txt" /logs/verifier/expected_results.json 2>/dev/null
 # verified inside this image). Per RULES rule 19, record -1.
 echo -1 > /logs/verifier/reward.txt
 TEST
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -114,6 +116,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 fi
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

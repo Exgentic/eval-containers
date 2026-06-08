@@ -17,6 +17,7 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 set -euo pipefail
 pip install --no-cache-dir mini-swe-agent==2.2.8
 I
+
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
@@ -28,4 +29,5 @@ export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 export MSWEA_CONFIGURED=1
 exec script -qec "mini --model openai/${EVAL_MODEL:-default} --yolo --task \"$TASK\"" /dev/null
 E
+
 ENTRYPOINT ["/run.sh"]
