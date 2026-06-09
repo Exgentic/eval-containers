@@ -3,6 +3,7 @@ mod gen_bake;
 mod images;
 mod inspect;
 mod list;
+mod oracle;
 mod prune;
 mod push;
 mod report;
@@ -41,6 +42,8 @@ enum Commands {
     Prune(prune::PruneArgs),
     /// Run evaluations
     Run(run::RunArgs),
+    /// Validate a benchmark's grading with its gold solution (gold→1.0, no-op→<1.0)
+    Oracle(oracle::OracleArgs),
     /// Aggregate and report results
     Report(report::ReportArgs),
     /// Scaffold a docker-bake.hcl for an artifact (RULES.md principle 15)
@@ -64,6 +67,7 @@ fn main() {
         Commands::Inspect(args) => inspect::execute(&cli.registry, args),
         Commands::Prune(args) => prune::execute(args),
         Commands::Run(args) => run::execute(&cli.registry, args),
+        Commands::Oracle(args) => oracle::execute(&cli.registry, args),
         Commands::Report(args) => report::execute(args),
         Commands::GenBake(args) => gen_bake::execute(args),
     };
