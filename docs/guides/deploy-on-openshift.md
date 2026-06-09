@@ -6,6 +6,34 @@ OpenShift is Kubernetes plus stricter admission (SCCs) and an internal
 registry. Start from [Deploy on Kubernetes](deploy-on-kubernetes.md); this page
 covers only the OpenShift-specific steps. Use `oc` in place of `kubectl`.
 
+## Authenticate `oc`
+
+`oc` needs its own OpenShift OAuth token, separate from any managed-platform
+login. On hosted OpenShift (IBM Cloud ROKS, Azure ARO, ROSA, …), signing in to
+the *cloud* CLI (`ibmcloud login`, `az login`, `rosa login`) does **not** log
+`oc` in — when `oc whoami` returns `Unauthorized`, the OpenShift token expired
+and you must re-authenticate.
+
+**Interactive (any OpenShift).** Web console → top-right user menu → *Copy login
+command* → run the printed `oc login --token=… --server=…`.
+
+**Non-interactive (CI / scripts).** Pass a token directly, or — on clusters
+whose OAuth federates with the cloud IAM — an API key. IBM Cloud ROKS, e.g.:
+
+```bash
+KEY=$(ibmcloud iam api-key-create oc-temp --output json | jq -r .apikey)
+oc login -u apikey -p "$KEY" --server=https://<api-host>:<port>
+```
+
+A cloud cluster-config command (`ibmcloud ks cluster config`, `az aro …`) sets
+up the kube *context* but may leave `oc` as `system:anonymous`; the OAuth token
+above is what grants your identity. `--admin`-style configs need a cluster
+Administrator role.
+
+> **`kind` footgun:** `kind create cluster` rewrites `~/.kube/config` and can
+> clobber a cluster token you're using. Isolate local clusters with their own
+> file: `KUBECONFIG=$(mktemp) kind create cluster …`.
+
 ## 1. Service account (once per namespace)
 
 The runner needs the `anyuid` SCC. A ready service account ships in the repo:
@@ -56,7 +84,7 @@ OpenShift `BuildConfig` backend — `oc start-build` (buildah under the platform
 `builder` SCC), needing no admin and no privileged pod:
 
 ```bash
-oc login …
+oc login …                                      # see "Authenticate oc" above
 eval-containers build bench aime --builder oc   # one artifact, on the cluster
 ```
 
