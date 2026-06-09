@@ -27,18 +27,20 @@ NAMESPACE="exgentic-ns"
 PERSIST_PVC="eval-output-pvc"
 NO_CLEANUP=false
 REBUILD=false
+TEST_SUFFIX="-test"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --benchmark)   BENCHMARK="$2";   shift 2 ;;
-    --agent)       AGENT="$2";       shift 2 ;;
-    --model)       MODEL="$2";       shift 2 ;;
-    --task-id)     TASK_ID="$2";     shift 2 ;;
-    --eval-model)  EVAL_MODEL="$2";  shift 2 ;;
-    --namespace)   NAMESPACE="$2";   shift 2 ;;
-    --pvc)         PERSIST_PVC="$2"; shift 2 ;;
-    --rebuild)     REBUILD=true;     shift ;;
-    --no-cleanup)  NO_CLEANUP=true;  shift ;;
+    --benchmark)    BENCHMARK="$2";    shift 2 ;;
+    --agent)        AGENT="$2";        shift 2 ;;
+    --model)        MODEL="$2";        shift 2 ;;
+    --task-id)      TASK_ID="$2";      shift 2 ;;
+    --eval-model)   EVAL_MODEL="$2";   shift 2 ;;
+    --namespace)    NAMESPACE="$2";    shift 2 ;;
+    --pvc)          PERSIST_PVC="$2";  shift 2 ;;
+    --rebuild)      REBUILD=true;      shift ;;
+    --no-cleanup)   NO_CLEANUP=true;   shift ;;
+    --test-suffix)  TEST_SUFFIX="$2";  shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -53,12 +55,12 @@ pass() { echo "[oc-eval-test] PASS: $*"; }
 
 to_imagestream() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr '.' '-' | sed 's/--/-/g'; }
 
-IMG_BENCH="$(to_imagestream "$BENCHMARK")-test"
-IMG_AGENT_IS="$(to_imagestream "$AGENT")-test"
-IMG_MODEL_IS="$(to_imagestream "$MODEL")-test"
-IMG_EVAL_IS="$(to_imagestream "${BENCHMARK}-${AGENT}")-test"
-JOB_NAME="${BENCHMARK}-${AGENT}-task-${TASK_ID}-test"
-RESULT_PATH="runs-test/${BENCHMARK}/${AGENT}/${MODEL}/${TASK_ID}/${JOB_NAME}"
+IMG_BENCH="$(to_imagestream "$BENCHMARK")${TEST_SUFFIX}"
+IMG_AGENT_IS="$(to_imagestream "$AGENT")${TEST_SUFFIX}"
+IMG_MODEL_IS="$(to_imagestream "$MODEL")${TEST_SUFFIX}"
+IMG_EVAL_IS="$(to_imagestream "${BENCHMARK}-${AGENT}")${TEST_SUFFIX}"
+JOB_NAME="${BENCHMARK}-${AGENT}-task-${TASK_ID}${TEST_SUFFIX}"
+RESULT_PATH="runs${TEST_SUFFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK_ID}/${JOB_NAME}"
 
 EVAL_MODEL_FLAG=()
 [[ -n "$EVAL_MODEL" ]] && EVAL_MODEL_FLAG=(--eval-model "$EVAL_MODEL")
@@ -97,15 +99,15 @@ log "=== Step 2: Running eval pipeline (--test --persist --rerun${REBUILD:+ --re
 T_START=$SECONDS
 
 bash "$REPO_DIR/oc/oc-eval-run.sh" \
-  --benchmark "$BENCHMARK" \
-  --agent     "$AGENT" \
-  --model     "$MODEL" \
-  --task-id   "$TASK_ID" \
-  --persist   \
-  --pvc       "$PERSIST_PVC" \
-  --namespace "$NAMESPACE" \
-  --rerun     \
-  --test      \
+  --benchmark   "$BENCHMARK" \
+  --agent       "$AGENT" \
+  --model       "$MODEL" \
+  --task-id     "$TASK_ID" \
+  --persist     \
+  --pvc         "$PERSIST_PVC" \
+  --namespace   "$NAMESPACE" \
+  --rerun       \
+  --test-suffix "$TEST_SUFFIX" \
   "${REBUILD_FLAG[@]}" \
   "${EVAL_MODEL_FLAG[@]}"
 
