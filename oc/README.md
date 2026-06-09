@@ -20,9 +20,14 @@ The model in one line: **a dataset eval is one [Indexed Job](https://kubernetes.
 | `discover.sh` | regenerate `agents.txt` / `benchmarks.txt`. |
 | `_lib.sh`   | shared defaults (namespace/registry) + the name-flatten helper. |
 
-`run.sh` also carries `--rebuild` (force rebuild), `--no-run` (build only), and
+`run.sh` also carries `--rebuild` (force rebuild), `--no-run` (build only),
 `--test` (isolated `-test` imagestreams + `runs-test/` results — production
-untouched), matching the original tooling.
+untouched), and `--test-suffix <s>` (a custom isolation suffix, e.g. `-ci-42`,
+so parallel test envs don't collide). Each OC build is wrapped with a ConfigMap
+quota guard + GC: builds leave `*-ca`/`*-sys-config` ConfigMaps behind that
+aren't auto-deleted, so under a namespace quota they pile up and block new
+builds — `run.sh` deletes the ones each build creates and fails early with a
+cleanup hint if the quota is nearly full.
 
 ## Quickstart
 

@@ -8,7 +8,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"
 
-BENCHMARK="" AGENT="" MODEL="" TASK="0" NAMESPACE="$NS_DEFAULT" PASS_ARGS=()
+BENCHMARK="" AGENT="" MODEL="" TASK="0" NAMESPACE="$NS_DEFAULT" SUFFIX="-test" PASS_ARGS=()
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
   --model) MODEL="$2"; shift 2;; --task) TASK="$2"; shift 2;;
@@ -18,6 +18,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --repo-dir) PASS_ARGS+=(--repo-dir "$2"); shift 2;;
   --rebuild) PASS_ARGS+=(--rebuild); shift;;
   --no-build) PASS_ARGS+=(--no-build); shift;;
+  --test-suffix) SUFFIX="$2"; shift 2;;   # isolated env, e.g. --test-suffix -ci-42
   *) echo "Unknown argument: $1" >&2; exit 1;;
 esac; done
 [[ -z "$BENCHMARK" || -z "$AGENT" || -z "$MODEL" ]] && {
@@ -25,14 +26,14 @@ esac; done
 pass() { echo "[test] PASS: $*"; }
 fail() { echo "[test] FAIL: $*" >&2; exit 1; }
 
-# Isolated -test run: job <b>-<a>-task-<t>-test, results under runs-test/.
-JOB="${BENCHMARK}-${AGENT}-task-${TASK}-test"
-RESULT="/data/runs-test/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"
+# Isolated run: job <b>-<a>-task-<t><suffix>, results under runs<suffix>/.
+JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"
+RESULT="/data/runs${SUFFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"
 read_file() { oc exec eval-reader -n "$NAMESPACE" -- cat "$1" 2>/dev/null || true; }
 
-echo "[test] running $BENCHMARK/$AGENT/$MODEL task=$TASK (isolated -test) …"
+echo "[test] running $BENCHMARK/$AGENT/$MODEL task=$TASK (isolated $SUFFIX) …"
 bash "$RUN" --benchmark "$BENCHMARK" --agent "$AGENT" --model "$MODEL" --task "$TASK" \
-  --test --rerun --watch ${PASS_ARGS[@]+"${PASS_ARGS[@]}"}
+  --test-suffix "$SUFFIX" --rerun --watch ${PASS_ARGS[@]+"${PASS_ARGS[@]}"}
 
 echo "[test] === assertions ==="
 RESULT_JSON=$(read_file "$RESULT/task/result.json")
