@@ -4,3 +4,7 @@
 # ServiceAccount bound to the anyuid SCC (run-as-image-UID), which the eval
 # pods require. Vanilla k8s leaves serviceAccountName empty.
 serviceAccountName: anyuid-sa
+# The OpenShift internal registry rebuilds `:latest` in place, so IfNotPresent
+# would serve a stale image cached on a node (e.g. an old core-otel that fails
+# the :13133 startup probe). Always re-pulls the current digest.
+imagePullPolicy: Always

@@ -14,12 +14,51 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- mergeOverwrite (deepCopy .Values) $preset | toYaml -}}
 {{- end -}}
 
-{{/* Shared labels: benchmark/agent/task, plus sweep-id only when set. */}}
+{{/* Shared labels: benchmark/agent/model, sweep-id + Kueue queue only when set.
+     `task` is dropped for a dataset eval (every index shares the Job). */}}
 {{- define "eval.labels" -}}
 benchmark: {{ required "benchmark is required (--set benchmark=<x>)" .Values.benchmark }}
 agent: {{ .Values.agent }}
+model: {{ .Values.model | quote }}
+{{- if not .Values.datasetSize }}
 task: {{ .Values.task | quote }}
+{{- end }}
 {{- with .Values.sweepId }}
 sweep-id: {{ . | quote }}
 {{- end }}
+{{- with .Values.queueName }}
+kueue.x-k8s.io/queue-name: {{ . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/* Image refs. Default to the nested registry path (quay-style); when
+     flatImages is set, compose the flat ImageStream name the OpenShift internal
+     registry requires (no slashes) — lowercase, dots→dash, `--`→`-`. imageSuffix
+     (e.g. "-test") selects isolated gateway+runner imagestreams so a test run
+     never touches production images. An explicit *ImageRef override always wins.
+     This is the ONLY place flattening lives. */}}
+{{- define "eval.flat" -}}{{ . | lower | replace "." "-" | replace "--" "-" }}{{- end -}}
+{{- define "eval.otelImage" -}}
+{{- if .otelImage }}{{ .otelImage }}{{ else if .flatImages }}{{ .registry }}/core-otel:latest{{ else }}{{ .registry }}/core/otel:latest{{ end -}}
+{{- end -}}
+{{- define "eval.gatewayImage" -}}
+{{- if .gatewayImageRef }}{{ .gatewayImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" .gatewayImage }}{{ .imageSuffix }}:{{ .gatewayTag }}{{ else }}{{ .registry }}/models/{{ .gatewayImage }}:{{ .gatewayTag }}{{ end -}}
+{{- end -}}
+{{- define "eval.runnerImage" -}}
+{{- if .runnerImageRef }}{{ .runnerImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" (printf "%s--%s" .benchmark .agent) }}{{ .imageSuffix }}:{{ .runnerTag }}{{ else }}{{ .registry }}/evals/{{ .benchmark }}--{{ .agent }}:{{ .runnerTag }}{{ end -}}
+{{- end -}}
+
+{{/* The /output mount. In Indexed mode each example gets its own per-index dir
+     via subPathExpr + the k8s-injected $(JOB_COMPLETION_INDEX); otherwise a fixed
+     subPath (or the volume root). Called with the merged values ($v). */}}
+{{- define "eval.outputMount" -}}
+{{- if and .datasetSize .outputSubPath -}}
+- name: output
+  mountPath: /output
+  subPathExpr: {{ .outputSubPath }}/$(JOB_COMPLETION_INDEX)
+{{- else if .outputSubPath -}}
+- { name: output, mountPath: /output, subPath: {{ .outputSubPath }} }
+{{- else -}}
+- { name: output, mountPath: /output }
+{{- end -}}
 {{- end -}}

@@ -1,0 +1,41 @@
+# deploy/kueue.yaml — one-time Kueue setup (applied once by a cluster admin).
+#
+# Defines the GLOBAL concurrency budget for evals. Every sweep joins `eval-queue`
+# (Jobs get label kueue.x-k8s.io/queue-name: eval-queue) and Kueue admits pods up
+# to the ClusterQueue's quota, queuing the rest — so ten sweeps share one budget
+# instead of each running its own parallelism and oversubscribing the cluster.
+#
+# Prereqs (check first):
+#   oc get crd | grep kueue.x-k8s.io          # Kueue operator installed?
+#   oc auth can-i create clusterqueues.kueue.x-k8s.io
+# Install Kueue (admin):
+#   oc apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/latest/download/manifests.yaml
+#
+# Tune `nominalQuota` to the slice of the cluster evals may use at once.
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: default
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: eval-cluster-queue
+spec:
+  namespaceSelector: {}            # all namespaces may borrow from this queue
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: default
+          resources:
+            - { name: "cpu",    nominalQuota: "64" }    # ← global eval CPU budget
+            - { name: "memory", nominalQuota: "128Gi" } # ← global eval memory budget
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: eval-queue              # ← the name sweeps reference (--queue eval-queue)
+  namespace: exgentic-ns
+spec:
+  clusterQueue: eval-cluster-queue
