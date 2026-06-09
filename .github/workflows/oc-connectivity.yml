@@ -25,4 +25,4 @@ jobs:
         run: oc login "${{ secrets.OC_SERVER }}" --token="${{ secrets.OC_TOKEN }}" --insecure-skip-tls-verify
 
       - name: Run e2e test
-        run: bash oc/oc-eval-test.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --task-id 0
+        run: bash oc/test.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --task 0

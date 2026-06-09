@@ -2,11 +2,32 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}
+  # A dataset eval (datasetSize set) is named <benchmark>-<agent>; a single-task
+  # debug run keeps the task in the name so several can coexist.
+  name: {{ if $v.datasetSize }}{{ $v.benchmark }}-{{ $v.agent }}{{ else }}{{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}{{ end }}{{ $v.nameSuffix }}
   labels:
     {{- include "eval.labels" . | nindent 4 }}
 spec:
+  {{- if $v.queueName }}
+  # Kueue manages this Job: it starts suspended and the controller unsuspends it
+  # when the queue's quota admits it. Global concurrency lives in the ClusterQueue,
+  # not in parallelism — so many sweeps share one budget instead of oversubscribing.
+  suspend: true
+  {{- end }}
+  {{- if $v.datasetSize }}
+  # The dataset IS the sweep: one completion index per example, k8s fans them out.
+  completionMode: Indexed
+  completions: {{ $v.datasetSize }}
+  parallelism: {{ $v.parallelism | default $v.datasetSize }}
+  {{- if $v.backoffLimitPerIndex }}
+  backoffLimitPerIndex: {{ $v.backoffLimitPerIndex }}   # per-example retry (k8s ≥1.29)
+  maxFailedIndexes: {{ $v.maxFailedIndexes | default $v.datasetSize }}
+  {{- else }}
   backoffLimit: 0
+  {{- end }}
+  {{- else }}
+  backoffLimit: 0
+  {{- end }}
   ttlSecondsAfterFinished: 3600
   activeDeadlineSeconds: {{ $v.activeDeadlineSeconds }}
   template:
@@ -28,8 +49,8 @@ spec:
         {{- end }}
         - name: otelcol
           restartPolicy: Always
-          image: {{ $v.registry }}/core/otel:latest
-          imagePullPolicy: IfNotPresent
+          image: {{ include "eval.otelImage" $v }}
+          imagePullPolicy: {{ $v.imagePullPolicy | default "IfNotPresent" }}
           ports:
             - { name: otlp-grpc, containerPort: 4317 }
             - { name: otlp-http, containerPort: 4318 }
@@ -41,12 +62,12 @@ spec:
             periodSeconds: 1
             failureThreshold: 30
           volumeMounts:
-            - { name: output, mountPath: /output }
+            {{- include "eval.outputMount" $v | nindent 12 }}
 
         - name: gateway
           restartPolicy: Always
-          image: {{ $v.registry }}/models/{{ $v.gatewayImage }}:{{ $v.gatewayTag }}
-          imagePullPolicy: IfNotPresent
+          image: {{ include "eval.gatewayImage" $v }}
+          imagePullPolicy: {{ $v.imagePullPolicy | default "IfNotPresent" }}
           ports:
             - { name: gateway, containerPort: 4000 }
           startupProbe:
@@ -76,13 +97,18 @@ spec:
 
       containers:
         - name: runner
-          image: {{ $v.registry }}/evals/{{ $v.benchmark }}--{{ $v.agent }}:{{ $v.runnerTag }}
-          imagePullPolicy: IfNotPresent
+          image: {{ include "eval.runnerImage" $v }}
+          imagePullPolicy: {{ $v.imagePullPolicy | default "IfNotPresent" }}
           command: ["/bin/bash", "-c"]
           # $? / $rc are the container's shell — Helm leaves them untouched
           # (they're not {{`{{ }}`}} actions). A few benchmarks override the
-          # command (e.g. tau-bench runs python3 /app/agent.py).
+          # command (e.g. tau-bench runs python3 /app/agent.py). In Indexed mode
+          # the task id IS the completion index (k8s injects JOB_COMPLETION_INDEX).
+          {{- if $v.datasetSize }}
+          args: [{{ printf "export EVAL_TASK_ID=\"$JOB_COMPLETION_INDEX\" TASK_ID=\"$JOB_COMPLETION_INDEX\"; %s" $v.runnerArgs | quote }}]
+          {{- else }}
           args: [{{ $v.runnerArgs | quote }}]
+          {{- end }}
           env:
             # Framework axes in BOTH namespaces, mirroring compose/services.yaml:
             # EVAL_* is canonical (read by /eval-entrypoint.sh + per-benchmark
@@ -118,7 +144,7 @@ spec:
           resources:
             {{- toYaml $v.resources | nindent 12 }}
           volumeMounts:
-            - { name: output, mountPath: /output }
+            {{- include "eval.outputMount" $v | nindent 12 }}
             - { name: tmp,    mountPath: /tmp }
             - { name: logs,   mountPath: /logs }
             {{- with $v.runnerExtraVolumeMounts }}

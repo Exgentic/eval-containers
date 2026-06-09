@@ -1,8 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: eval-reader
-  namespace: exgentic-ns
+  name: eval-reader            # namespace comes from `oc apply -n` (fetch.sh)
   labels:
     app: eval-reader
 spec:
