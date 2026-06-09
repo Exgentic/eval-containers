@@ -112,35 +112,7 @@ fn list_benchmarks() -> Vec<Benchmark> {
         if task_count == 0 {
             continue;
         }
-        // Per-task-build benchmarks fall into TWO categories:
-        //   (1) FROM line interpolates ${EVAL_TASK_ID} — e.g. swe-bench
-        //       pulls a different base image per task.
-        //   (2) Dockerfile declares `ARG EVAL_TASK_ID` without a
-        //       default — e.g. compilebench uses the task id inside
-        //       a RUN block but the FROM line is static.
-        // Both require an explicit EVAL_TASK_ID build-arg and both
-        // are incompatible with the JSONL `all.jsonl` runtime
-        // materialization path. A runtime reference to $EVAL_TASK_ID
-        // (e.g. `cat /tasks/$EVAL_TASK_ID/problem.txt` inside an
-        // entrypoint) does NOT count — those exist in every JSONL
-        // benchmark and are resolved by /eval-materialize-task.
-        let per_task_build = dockerfile.lines().any(|l| {
-            let t = l.trim_start();
-            if t.starts_with("FROM ")
-                && (t.contains("${EVAL_TASK_ID}") || t.contains("$EVAL_TASK_ID"))
-            {
-                return true;
-            }
-            // `ARG EVAL_TASK_ID` on its own line with no `=<default>`.
-            if t.starts_with("ARG EVAL_TASK_ID") {
-                let rest = t.trim_start_matches("ARG EVAL_TASK_ID");
-                let rest = rest.trim();
-                if rest.is_empty() {
-                    return true;
-                }
-            }
-            false
-        });
+        let per_task_build = eval_containers::benchmark::is_per_task(&dockerfile);
         let per_task_ids = if per_task_build {
             // For per-task-build benchmarks we reuse a single curated
             // representative task id (see tests/build/test.rs
