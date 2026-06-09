@@ -40,6 +40,10 @@ name = "check"
 path = "tests/sanity/check.rs"
 
 [[test]]
+name = "oracle"
+path = "tests/oracle/test.rs"
+
+[[test]]
 name = "cli_conformance"
 path = "tests/cli/conformance.rs"
 
