@@ -59,6 +59,7 @@ FIRE_AND_FORGET=false
 SWEEP_ID=""
 PERSIST_PVC="eval-output-pvc"
 TEST=false
+TEST_SUFFIX=""
 BENCHMARK=""
 AGENT=""
 MODEL=""
@@ -85,6 +86,7 @@ while [[ $# -gt 0 ]]; do
     --fire-and-forget)  FIRE_AND_FORGET=true; shift ;;
     --sweep-id)         SWEEP_ID="$2";        shift 2 ;;
     --test)             TEST=true;            shift ;;
+    --test-suffix)      TEST=true; TEST_SUFFIX="$2"; shift 2 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
 done
@@ -111,9 +113,9 @@ fi
 
 # In test mode, all imagestreams and result paths get a -test suffix so
 # production images are never touched.
-IS_SUFFIX=""; $TEST && IS_SUFFIX="-test"
-RESULT_PREFIX="runs"; $TEST && RESULT_PREFIX="runs-test"
-$TEST && log "TEST MODE: imagestreams will use -test suffix, results under runs-test/"
+IS_SUFFIX=""; $TEST && IS_SUFFIX="${TEST_SUFFIX:--test}"
+RESULT_PREFIX="runs"; $TEST && RESULT_PREFIX="runs${IS_SUFFIX}"
+$TEST && log "TEST MODE: imagestreams will use ${IS_SUFFIX} suffix, results under runs${IS_SUFFIX}/"
 
 # Job name matches the Helm chart template: <benchmark>-<agent>-task-<task>
 JOB_NAME="${BENCHMARK}-${AGENT}-task-${TASK_ID}${IS_SUFFIX}"
@@ -156,6 +158,48 @@ IMG_EVAL_IS="$(to_imagestream "${BENCHMARK}-${AGENT}")${IS_SUFFIX}"
 CLI_IS_FLAG=()
 [[ -n "$IS_SUFFIX" ]] && CLI_IS_FLAG=(--imagestream-suffix="$IS_SUFFIX")
 
+# ── ConfigMap quota guard and GC ─────────────────────────────────────────────
+# Each OC build creates two ConfigMaps (*-ca, *-sys-config) that are never
+# auto-deleted. With a namespace quota of 50, these accumulate and block new
+# builds with "exceeded quota: configmaps". We snapshot before each build and
+# delete the new ones after, keeping the quota clean.
+cm_quota_check() {
+  if $DRY_RUN; then return 0; fi
+  local quota used remaining
+  quota=$(oc get resourcequota -n "$NAMESPACE" -o jsonpath='{.items[*].spec.hard.configmaps}' 2>/dev/null | tr ' ' '\n' | grep -v '^$' | head -1)
+  used=$(oc get configmaps -n "$NAMESPACE" --no-headers 2>/dev/null | wc -l | tr -d ' ')
+  [[ -z "$quota" ]] && return 0  # no quota set, nothing to check
+  remaining=$(( quota - used ))
+  log "ConfigMap quota: ${used}/${quota} used (${remaining} free)"
+  if [[ "$remaining" -lt 5 ]]; then
+    log "ERROR: ConfigMap quota nearly exhausted (${used}/${quota})."
+    log "       Each OC build needs 2 ConfigMaps. Only ${remaining} slots remain."
+    log "       Fix: delete stale build ConfigMaps with:"
+    log "         oc get configmaps -n ${NAMESPACE} --no-headers | awk '{print \$1}' | grep -E '\-bc\-[0-9]+-' | xargs oc delete configmap -n ${NAMESPACE}"
+    return 1
+  fi
+}
+
+cm_snapshot() {
+  if $DRY_RUN; then echo ""; return; fi
+  oc get configmaps -n "$NAMESPACE" --no-headers 2>/dev/null | awk '{print $1}' | sort
+}
+
+cm_gc() {
+  local before_file="$1"
+  if $DRY_RUN; then return 0; fi
+  local after
+  after=$(cm_snapshot)
+  local new_cms
+  new_cms=$(comm -13 "$before_file" <(echo "$after"))
+  if [[ -n "$new_cms" ]]; then
+    local count; count=$(echo "$new_cms" | wc -l | tr -d ' ')
+    log "GC: deleting $count build ConfigMaps created by this build..."
+    echo "$new_cms" | xargs oc delete configmap -n "$NAMESPACE" 2>/dev/null || true
+  fi
+  rm -f "$before_file"
+}
+
 build_artifact() {
   local label="$1" imagestream="$2"; shift 2
   if ! $REBUILD && oc get imagestreamtag "${imagestream}:latest" -n "$NAMESPACE" &>/dev/null; then
@@ -165,9 +209,18 @@ build_artifact() {
   log "Building: $label"
   if $DRY_RUN; then
     echo "[dry-run] eval-containers build $* --builder oc ${CLI_IS_FLAG[*]}"
-  else
-    eval-containers build "$@" --builder oc "${CLI_IS_FLAG[@]}"
+    return 0
   fi
+  # Pre-build: check quota and snapshot ConfigMaps
+  cm_quota_check || return 1
+  local cm_before; cm_before=$(mktemp)
+  cm_snapshot > "$cm_before"
+  # Build
+  eval-containers build "$@" --builder oc "${CLI_IS_FLAG[@]}"
+  local rc=$?
+  # Post-build: clean up ConfigMaps created by this build
+  cm_gc "$cm_before"
+  return $rc
 }
 
 # Dependency order: cores bootstrapped separately (see examples/openshift/README.md).
