@@ -23,11 +23,11 @@ The model in one line: **a dataset eval is one [Indexed Job](https://kubernetes.
 `run.sh` also carries `--rebuild` (force rebuild), `--no-run` (build only),
 `--test` (isolated `-test` imagestreams + `runs-test/` results — production
 untouched), and `--test-suffix <s>` (a custom isolation suffix, e.g. `-ci-42`,
-so parallel test envs don't collide). Each OC build is wrapped with a ConfigMap
-quota guard + GC: builds leave `*-ca`/`*-sys-config` ConfigMaps behind that
-aren't auto-deleted, so under a namespace quota they pile up and block new
-builds — `run.sh` deletes the ones each build creates and fails early with a
-cleanup hint if the quota is nearly full.
+so parallel test envs don't collide). Build-ConfigMap cleanup is handled by the
+BuildConfig itself: `eval-containers build --builder oc` sets
+`successfulBuildsHistoryLimit` so the controller prunes old build pods (and GCs
+their `*-ca`/`*-sys-config` ConfigMaps) — no shell housekeeping, and it covers
+every `--builder oc` consumer, not just this script.
 
 ## Quickstart
 

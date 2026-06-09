@@ -37,39 +37,16 @@ RESULT_PREFIX="runs${SUFFIX}"
 [[ -n "$SUFFIX" ]] && log "TEST MODE (${SUFFIX} imagestreams → ${RESULT_PREFIX}/)" || true
 
 # ── 1. Build (CLI; skip if imagestream exists, unless --rebuild) ──────────────
-# Each OC build leaves *-ca / *-sys-config ConfigMaps behind that are never
-# auto-deleted; under a namespace quota they pile up and block new builds with
-# "exceeded quota: configmaps". Guard before, and GC the ones a build creates.
-cm_count() { command oc get configmaps -n "$NAMESPACE" --no-headers 2>/dev/null | awk '{print $1}'; }
-cm_quota_check() {
-  $DRY_RUN && return 0
-  local quota used; quota=$(command oc get resourcequota -n "$NAMESPACE" \
-    -o jsonpath='{.items[*].spec.hard.configmaps}' 2>/dev/null | tr ' ' '\n' | grep -v '^$' | head -1)
-  [[ -z "$quota" ]] && return 0
-  used=$(cm_count | wc -l | tr -d ' '); local free=$(( quota - used ))
-  log "ConfigMap quota: ${used}/${quota} (${free} free)"
-  [[ "$free" -ge 5 ]] && return 0
-  log "ERROR: ConfigMap quota nearly exhausted; GC stale build CMs:"
-  log "  oc get cm -n $NAMESPACE --no-headers | awk '{print \$1}' | grep -E '\\-bc\\-[0-9]+-' | xargs oc delete cm -n $NAMESPACE"
-  return 1
-}
-cm_gc() {  # $1 = newline-list of CM names present before the build
-  $DRY_RUN && return 0
-  local new; new=$(comm -13 <(printf '%s\n' "$1" | sort) <(cm_count | sort))
-  [[ -n "$new" ]] && { log "GC $(printf '%s\n' "$new" | grep -c .) build ConfigMaps"; \
-    printf '%s\n' "$new" | xargs command oc delete configmap -n "$NAMESPACE" >/dev/null 2>&1 || true; }
-}
-
+# Per-build ConfigMap cleanup is the BuildConfig's job — the CLI sets
+# successfulBuildsHistoryLimit on it so the controller GCs old build pods (and
+# their ConfigMaps) natively; no shell housekeeping needed here.
 if ! $NO_BUILD; then
   log "=== build ($BENCHMARK / $AGENT / $MODEL) ==="
   ISFLAG=(); [[ -n "$SUFFIX" ]] && ISFLAG=(--imagestream-suffix="$SUFFIX")
   build() { local label="$1" is="$2"; shift 2
     $DRY_RUN && { echo "[dry-run] eval-containers build $* --builder oc ${ISFLAG[*]:-}"; return; }
     ! $REBUILD && command oc get istag "${is}:latest" -n "$NAMESPACE" &>/dev/null && { log "skip $label (exists)"; return; }
-    cm_quota_check || return 1
-    local before; before=$(cm_count)
-    eval-containers build "$@" --builder oc ${ISFLAG[@]+"${ISFLAG[@]}"}
-    cm_gc "$before"; }
+    eval-containers build "$@" --builder oc ${ISFLAG[@]+"${ISFLAG[@]}"}; }
   ( cd "$REPO_DIR"
     build "bench" "$(flat "$BENCHMARK")$SUFFIX"        bench "$BENCHMARK"
     build "agent" "$(flat "$AGENT")$SUFFIX"            agent "$AGENT"
