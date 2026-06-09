@@ -40,6 +40,10 @@ struct EvalResult {
     task: Option<TaskResult>,
     agent: Option<AgentResult>,
     model: Option<ModelResult>,
+    /// Whether OTel traces were captured with at least one LLM (gen_ai) span —
+    /// a health signal independent of the task result (empty traces on a
+    /// "passed" run usually means the gateway/collector wiring is broken).
+    traces_ok: bool,
 }
 
 pub fn execute(args: ReportArgs) -> Result<(), String> {
@@ -99,20 +103,32 @@ fn load_eval(dir: &Path) -> EvalResult {
         task: read_json(dir.join("task/result.json")),
         agent: read_json(dir.join("agent/result.json")),
         model: read_json(dir.join("model/result.json")),
+        traces_ok: has_gen_ai_traces(dir),
     }
+}
+
+/// True if the run dir has a traces file (.jsonl or .json) with at least one
+/// gen_ai (LLM) span. Substring check — no full OTel parse needed.
+fn has_gen_ai_traces(dir: &Path) -> bool {
+    ["traces.jsonl", "traces.json"].iter().any(|name| {
+        fs::read_to_string(dir.join(name))
+            .map(|c| c.contains("gen_ai"))
+            .unwrap_or(false)
+    })
 }
 
 fn print_table(results: &[EvalResult]) {
     println!(
-        "{:<20} {:<30} {:<15} {:<30} {:<8} {:<6} {:<10} COST",
-        "BENCHMARK", "TASK", "AGENT", "MODEL", "REWARD", "PASS", "TOKENS"
+        "{:<20} {:<30} {:<15} {:<30} {:<8} {:<6} {:<10} {:<10} TRACES",
+        "BENCHMARK", "TASK", "AGENT", "MODEL", "REWARD", "PASS", "TOKENS", "COST"
     );
-    println!("{}", "-".repeat(130));
+    println!("{}", "-".repeat(140));
 
     let mut total_reward = 0.0;
     let mut total_passed = 0;
     let mut total_tokens: u64 = 0;
     let mut total_cost = 0.0;
+    let mut total_no_traces = 0;
     let count = results.len();
 
     for r in results {
@@ -147,21 +163,31 @@ fn print_table(results: &[EvalResult]) {
         }
         total_tokens += tokens;
         total_cost += cost;
+        if !r.traces_ok {
+            total_no_traces += 1;
+        }
 
         let pass_str = if passed { "PASS" } else { "FAIL" };
+        let cost_str = format!("${cost:.3}");
+        let traces_str = if r.traces_ok { "OK" } else { "NONE" };
         println!(
-            "{benchmark:<20} {task_id:<30} {agent_name:<15} {model_name:<30} {reward:<8.2} {pass_str:<6} {tokens:<10} ${cost:.3}"
+            "{benchmark:<20} {task_id:<30} {agent_name:<15} {model_name:<30} {reward:<8.2} {pass_str:<6} {tokens:<10} {cost_str:<10} {traces_str}"
         );
     }
 
-    println!("{}", "-".repeat(130));
+    println!("{}", "-".repeat(140));
     let avg_reward = if count > 0 {
         total_reward / count as f64
     } else {
         0.0
     };
+    let traces_summary = if total_no_traces == 0 {
+        "all OK".to_string()
+    } else {
+        format!("{total_no_traces} NONE")
+    };
     println!(
-        "{:<20} {:<30} {:<15} {:<30} {:<8.2} {}/{:<4} {:<10} ${:.3}",
+        "{:<20} {:<30} {:<15} {:<30} {:<8.2} {}/{:<4} {:<10} {:<10} {}",
         "TOTAL",
         format!("{count} tasks"),
         "",
@@ -170,12 +196,13 @@ fn print_table(results: &[EvalResult]) {
         total_passed,
         count,
         total_tokens,
-        total_cost
+        format!("${total_cost:.3}"),
+        traces_summary
     );
 }
 
 fn print_csv(results: &[EvalResult]) {
-    println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd");
+    println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd,traces_ok");
     for r in results {
         let task_id = r
             .task
@@ -203,7 +230,8 @@ fn print_csv(results: &[EvalResult]) {
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
         println!(
-            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost}"
+            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost},{traces_ok}",
+            traces_ok = r.traces_ok
         );
     }
 }
@@ -239,7 +267,8 @@ fn print_json(results: &[EvalResult]) {
 
         let comma = if i < results.len() - 1 { "," } else { "" };
         println!(
-            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost}}}{comma}"
+            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost},\"traces_ok\":{traces_ok}}}{comma}",
+            traces_ok = r.traces_ok
         );
     }
     println!("]");

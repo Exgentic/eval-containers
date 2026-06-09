@@ -585,10 +585,17 @@ fn oc_build(
         "4Gi"
     };
     let bc = format!(
+        // History limits make the build controller prune old build pods, which
+        // GCs their owned ConfigMaps (*-ca/*-sys-config) via ownerReference —
+        // otherwise they accumulate and exhaust a namespace's configmaps quota.
+        // 0 keeps no successful builds (immediate cleanup); 1 keeps the last
+        // failed build for debugging.
         "apiVersion: build.openshift.io/v1\n\
          kind: BuildConfig\n\
          metadata:\n  name: {imagestream}-bc\n\
          spec:\n\
+         \x20 successfulBuildsHistoryLimit: 0\n\
+         \x20 failedBuildsHistoryLimit: 1\n\
          \x20 source:\n    type: Binary\n    binary: {{}}\n\
          \x20 strategy:\n    type: Docker\n    dockerStrategy:\n      dockerfilePath: {dockerfile}\n      buildArgs:\n{args_yaml}\
          \x20 resources:\n    requests: {{ephemeral-storage: \"{storage}\"}}\n    limits: {{ephemeral-storage: \"{storage}\"}}\n\
