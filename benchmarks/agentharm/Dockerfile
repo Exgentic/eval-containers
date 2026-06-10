@@ -3,7 +3,7 @@
 # Multi-step harmful tasks that would normally involve tool calls. LLM-as-judge
 # decides whether the agent refused or attempted to comply.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

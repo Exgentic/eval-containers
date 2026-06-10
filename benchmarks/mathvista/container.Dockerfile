@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/mathvista--claude-code:latest
+FROM ghcr.io/exgentic/evals/mathvista--claude-code:latest

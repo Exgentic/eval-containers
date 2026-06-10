@@ -9,7 +9,7 @@
 #   docker buildx bake -f <(scripts/bake-plan.sh) --push
 #
 # Env:
-#   REGISTRY   (default: quay.io/eval-containers)
+#   REGISTRY   (default: ghcr.io/exgentic)
 #   TAG        (default: latest)
 #   GIT_SHA    (default: empty)
 #   BUILD_DATE (default: empty)
@@ -17,7 +17,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-REGISTRY="${REGISTRY:-quay.io/eval-containers}"
+REGISTRY="${REGISTRY:-ghcr.io/exgentic}"
 TAG="${TAG:-latest}"
 GIT_SHA="${GIT_SHA:-}"
 BUILD_DATE="${BUILD_DATE:-}"

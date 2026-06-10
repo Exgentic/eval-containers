@@ -101,7 +101,7 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     let override_content = format!(
         "services:\n\
          \x20 gateway:\n\
-         \x20   image: quay.io/eval-containers/models/replay:latest\n\
+         \x20   image: ghcr.io/exgentic/models/replay:latest\n\
          \x20   volumes:\n\
          \x20     - {fixture_abs}:/data/trajectory.jsonl:ro\n\
          volumes:\n\

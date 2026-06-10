@@ -20,7 +20,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 |---|---|---|
 | `agent` | `claude-code` | `--agent` |
 | `task` | `"0"` | `--task-id` |
-| `registry` | `quay.io/eval-containers` | `--registry` |
+| `registry` | `ghcr.io/exgentic` | `--registry` |
 | `evalModel` | `openai/azure/gpt-5.4` | `--model` (also sets `model`) |
 | `model` | `gpt-5.4-bifrost` | runner's logging tag |
 | `gatewayImage` | `gpt-5.4--bifrost` | the proxy image |

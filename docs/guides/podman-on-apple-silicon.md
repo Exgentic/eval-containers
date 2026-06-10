@@ -153,15 +153,15 @@ Two podman-specific notes:
   ```bash
   # Single-FROM benchmark: docker build is fine (buildah → Rosetta; base already local).
   DOCKER_BUILDKIT=0 docker build \
-    -t quay.io/eval-containers/benchmarks/aime:latest benchmarks/aime
+    -t ghcr.io/exgentic/benchmarks/aime:latest benchmarks/aime
 
   # Multi-stage benchmark (FROM core/<x> AS <x> — the exact-match family, swe-bench):
   # 1. put the tiny FROM-scratch core base into buildah's store (native build);
-  podman build -t quay.io/eval-containers/core/test-exact-match:latest core/test-exact-match
+  podman build -t ghcr.io/exgentic/core/test-exact-match:latest core/test-exact-match
   # 2. build with --platform (so FROM --platform=amd64 matches the local single-arch
   #    base) and --pull=never (don't try the unpublished registry). Rosetta, no QEMU.
   podman build --platform linux/amd64 --pull=never \
-    -t quay.io/eval-containers/benchmarks/gsm8k:latest benchmarks/gsm8k
+    -t ghcr.io/exgentic/benchmarks/gsm8k:latest benchmarks/gsm8k
   ```
   This is the one spot where you must run `podman` directly; once the registry is
   published, plain `docker build` pulls the bases and the workaround goes away.

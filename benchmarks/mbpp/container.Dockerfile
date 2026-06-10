@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/mbpp--claude-code:latest
+FROM ghcr.io/exgentic/evals/mbpp--claude-code:latest

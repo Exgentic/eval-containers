@@ -2,7 +2,7 @@
 # 165 test tasks from Codeforces/AtCoder/etc. Data: HuggingFace deepmind/code_contests
 # Agent writes a solution. Test runs it against public + private + generated I/O tests.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

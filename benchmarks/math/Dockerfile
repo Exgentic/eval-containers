@@ -2,7 +2,7 @@
 # 5000 tasks (7 subjects x test split). Data: HuggingFace EleutherAI/hendrycks_math
 # Agent prints answer to stdout. Test compares to boxed expected answer.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

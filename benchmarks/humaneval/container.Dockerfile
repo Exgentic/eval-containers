@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/humaneval--claude-code:latest
+FROM ghcr.io/exgentic/evals/humaneval--claude-code:latest

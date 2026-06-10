@@ -2,7 +2,7 @@
 # 164 tasks. Data: HuggingFace openai/openai_humaneval
 # Agent completes a Python function. Test runs it against unit tests.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

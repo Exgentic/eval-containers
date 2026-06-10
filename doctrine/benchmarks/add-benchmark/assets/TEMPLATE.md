@@ -55,7 +55,7 @@ RUN chmod -R 600 /tasks
 WORKDIR /app
 ENV BENCHMARK={name}
 
-COPY --from=quay.io/eval-containers/core/test-exact-match:latest /test.sh /grade.sh
+COPY --from=ghcr.io/exgentic/core/test-exact-match:latest /test.sh /grade.sh
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -76,7 +76,7 @@ CMD ["/grade.sh"]
 ### container.Dockerfile
 
 ```dockerfile
-FROM quay.io/eval-containers/evals/{name}--claude-code:latest
+FROM ghcr.io/exgentic/evals/{name}--claude-code:latest
 ```
 
 ### compose.yaml
@@ -87,7 +87,7 @@ include:
 
 services:
   runner:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/{name}--claude-code:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/{name}--claude-code:latest
     environment:
       BENCHMARK: {name}
 ```
@@ -128,11 +128,11 @@ If a benchmark's canonical isn't `gpt-5.4--bifrost` × `claude-code`, override:
 # compose.yaml — add gateway image + EVAL_MODEL overrides
 services:
   gateway:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/<other-combo>:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/<other-combo>:latest
     environment:
       EVAL_MODEL: <other-provider/other-model>
   runner:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/{name}--<other-agent>:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/{name}--<other-agent>:latest
     environment:
       BENCHMARK: {name}
 ```

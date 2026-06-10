@@ -73,13 +73,13 @@ struct UpstreamRef {
 }
 
 /// First-party images — built from `core/*` in this repo, tagged with
-/// the `quay.io/eval-containers/core/...` ref so benchmarks and agents can
+/// the `ghcr.io/exgentic/core/...` ref so benchmarks and agents can
 /// resolve them after the bootstrap phase in `tests/build/test.rs`.
 /// Not yet published to the real registry, so `docker manifest
 /// inspect` would always 404. These are out of scope for the upstream
 /// drift probe.
 fn is_first_party(image: &str) -> bool {
-    image.starts_with("quay.io/eval-containers/")
+    image.starts_with("ghcr.io/exgentic/")
 }
 
 fn probe_benchmark(dir: &Path) -> Vec<UpstreamRef> {

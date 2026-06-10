@@ -32,7 +32,7 @@ extraManifests:
       spec:
         containers:
         - name: bridge
-          image: quay.io/eval-containers/benchmarks/tau-bench-bridge:latest
+          image: ghcr.io/exgentic/benchmarks/tau-bench-bridge:latest
           ports:
           - containerPort: 8000
           readinessProbe:
@@ -72,7 +72,7 @@ extraManifests:
       spec:
         containers:
         - name: user-gateway
-          image: quay.io/eval-containers/models/gpt-5.4--bifrost:latest
+          image: ghcr.io/exgentic/models/gpt-5.4--bifrost:latest
           ports:
           - containerPort: 4000
           env:
@@ -133,7 +133,7 @@ extraManifests:
           - until nc -z bridge 8000 && nc -z user-gateway 4000; do sleep 2; done
         containers:
         - name: harness
-          image: quay.io/eval-containers/evals/tau-bench--claude-code:latest
+          image: ghcr.io/exgentic/evals/tau-bench--claude-code:latest
           command:
           - bash
           - -c

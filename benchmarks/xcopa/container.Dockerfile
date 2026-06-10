@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/xcopa--claude-code:latest
+FROM ghcr.io/exgentic/evals/xcopa--claude-code:latest

@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/hellaswag--claude-code:latest
+FROM ghcr.io/exgentic/evals/hellaswag--claude-code:latest

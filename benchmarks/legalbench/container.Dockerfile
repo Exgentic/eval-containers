@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/legalbench--claude-code:latest
+FROM ghcr.io/exgentic/evals/legalbench--claude-code:latest

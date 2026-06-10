@@ -178,13 +178,13 @@ fn walk(root: &Path, current: &Path, out: &mut Vec<(PathBuf, String)>) {
 
 // ─── Bootstrap: core images referenced by benchmark FROMs ──────────
 //
-// Every benchmark Dockerfile does `COPY --from=quay.io/eval-containers/core/*`
+// Every benchmark Dockerfile does `COPY --from=ghcr.io/exgentic/core/*`
 // for shared pieces (entrypoint.sh, test-exact-match). Those aren't
 // yet published to the real quay.io — they live in this repo under
 // `core/*` and are built locally. On a fresh podman machine they do
 // not exist, so every benchmark in the sweep fails with:
 //
-//   COPY --from=quay.io/eval-containers/core/entrypoint:latest: no stage
+//   COPY --from=ghcr.io/exgentic/core/entrypoint:latest: no stage
 //   or image found with that name
 //
 // Bootstrap them once before the benchmark sweep starts. Tagged with
@@ -211,33 +211,33 @@ async fn build_bootstrap_core_images() -> Result<Vec<String>, String> {
     // images support) still goes through testcontainers for the
     // images under test.
     let targets: &[(&str, &str)] = &[
-        ("quay.io/eval-containers/core/entrypoint", "core/entrypoint"),
+        ("ghcr.io/exgentic/core/entrypoint", "core/entrypoint"),
         (
-            "quay.io/eval-containers/core/test-exact-match",
+            "ghcr.io/exgentic/core/test-exact-match",
             "core/test-exact-match",
         ),
         (
-            "quay.io/eval-containers/core/benchmark-base-hf",
+            "ghcr.io/exgentic/core/benchmark-base-hf",
             "core/benchmark-base-hf",
         ),
         (
-            "quay.io/eval-containers/core/benchmark-base-github",
+            "ghcr.io/exgentic/core/benchmark-base-github",
             "core/benchmark-base-github",
         ),
         (
-            "quay.io/eval-containers/core/benchmark-base-external",
+            "ghcr.io/exgentic/core/benchmark-base-external",
             "core/benchmark-base-external",
         ),
         (
-            "quay.io/eval-containers/core/agent-base-node",
+            "ghcr.io/exgentic/core/agent-base-node",
             "core/agent-base-node",
         ),
         (
-            "quay.io/eval-containers/core/agent-base-python",
+            "ghcr.io/exgentic/core/agent-base-python",
             "core/agent-base-python",
         ),
         (
-            "quay.io/eval-containers/core/agent-base-rust",
+            "ghcr.io/exgentic/core/agent-base-rust",
             "core/agent-base-rust",
         ),
     ];
@@ -647,7 +647,7 @@ async fn build_every_benchmark() {
     // aren't published to the real quay.io yet; they live under core/*
     // in this repo. Building them via GenericBuildableImage and tagging
     // with the exact refs the benchmark Dockerfiles use lets every
-    // subsequent `COPY --from=quay.io/eval-containers/core/*` succeed.
+    // subsequent `COPY --from=ghcr.io/exgentic/core/*` succeed.
     let bootstrap_tags = build_bootstrap_core_images()
         .await
         .expect("failed to bootstrap core images");

@@ -2,7 +2,7 @@
 # 500 tasks. Data: HuggingFace HuggingFaceH4/MATH-500
 # Agent prints answer to stdout. Test compares to expected answer.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

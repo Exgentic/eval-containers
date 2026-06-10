@@ -145,7 +145,7 @@ Usage:
 
 ```bash
 EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=claude-code EVAL_MODEL=inspector \
-  docker compose -f oci://quay.io/eval-containers/evaluate up --abort-on-container-exit
+  docker compose -f oci://ghcr.io/exgentic/evaluate up --abort-on-container-exit
 ```
 
 Output lands at `output/aime/0/inspector/first_request.json`.

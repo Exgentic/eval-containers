@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Crush agent image (Charm)
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-rust:latest
 ARG AGENT_VERSION=0.57.0

@@ -136,7 +136,7 @@ mod tests {
         // in-repo FROMs — the form gen-bake must recognize; a literal
         // `quay.io/...` FROM no longer appears in any Dockerfile — plus an
         // HF_TOKEN build secret. End-to-end guard for the contexts block.
-        let text = "ARG REGISTRY=quay.io/eval-containers\n\
+        let text = "ARG REGISTRY=ghcr.io/exgentic\n\
             ARG REGISTRY_SUFFIX=/\n\
             FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match\n\
             FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest\n\
@@ -145,8 +145,8 @@ mod tests {
         assert_eq!(
             deps,
             vec![
-                "quay.io/eval-containers/core/benchmark-base-hf".to_string(),
-                "quay.io/eval-containers/core/test-exact-match".to_string(),
+                "ghcr.io/exgentic/core/benchmark-base-hf".to_string(),
+                "ghcr.io/exgentic/core/test-exact-match".to_string(),
             ]
         );
         let takes_hf = text.contains("HF_TOKEN");
@@ -163,7 +163,7 @@ mod tests {
 
     #[test]
     fn agent_with_in_repo_base() {
-        let text = "ARG REGISTRY=quay.io/eval-containers\n\
+        let text = "ARG REGISTRY=ghcr.io/exgentic\n\
             ARG REGISTRY_SUFFIX=/\n\
             FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest\n";
         let deps = bake::dockerfile_in_repo_deps(text);
@@ -185,7 +185,7 @@ mod tests {
         assert!(out.contains("context = \"gateways/litellm\""));
         // A model FROMing its gateway resolves to the prefixed target.
         assert_eq!(
-            ref_to_target("quay.io/eval-containers/gateways/bifrost:latest"),
+            ref_to_target("ghcr.io/exgentic/gateways/bifrost:latest"),
             "gateway-bifrost"
         );
     }

@@ -8,7 +8,7 @@
 #                       Litellm parses the prefix natively to dispatch
 #                       to the right provider plugin.
 #   <PROVIDER>_API_KEY  read by the chosen provider plugin from container env.
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/gateways${REGISTRY_SUFFIX}litellm:latest
 

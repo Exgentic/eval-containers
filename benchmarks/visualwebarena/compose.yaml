@@ -3,7 +3,7 @@ include:
 
 services:
   runner:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/visualwebarena--${EVAL_AGENT:-claude-code}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/visualwebarena--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: visualwebarena
       TIMEOUT: "1800"

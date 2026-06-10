@@ -10,7 +10,7 @@
 #   - /tasks /tests /app scaffolding
 # Pin amd64 so runtime arch matches what agents' COPYd binaries expect
 # (see core/agent-base-node Dockerfile for the full rationale).
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM --platform=linux/amd64 python:3.12-slim
