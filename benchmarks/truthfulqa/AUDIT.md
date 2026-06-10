@@ -48,3 +48,10 @@ commit: 1a344fd
 |--------|-------|
 | per task | ? |
 | full suite | ? |
+
+## Distribution — is it shipped?
+
+| Check | Status / Value | Evidence |
+|-------|:--------------:|----------|
+| published | ✗ | not in ghcr.io/exgentic/benchmarks |
+| pull size | — | not published |

@@ -48,3 +48,10 @@ Status: `✓` verified (a check passed) · `✗` failing · `?` unchecked · `n/
 |--------|-------|
 | per task | ? |
 | full suite | ? |
+
+## Distribution — is it shipped?
+
+| Check | Status / Value | Evidence |
+|-------|:--------------:|----------|
+| published | ? | in the registry — `docker manifest inspect ghcr.io/exgentic/benchmarks/<name>:latest` |
+| pull size | ? | compressed download (sum of manifest layer sizes) |
