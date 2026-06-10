@@ -1,4 +1,4 @@
-target "portkey" {
+target "gateway-portkey" {
   context = "gateways/portkey"
   tags = ["${REGISTRY}/gateways/portkey:${TAG}"]
 }
