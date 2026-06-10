@@ -209,3 +209,32 @@ fn per_task_label_matches_structure() {
         );
     }
 }
+
+/// Rule 24g: a benchmark that builds its per-task env from source ships an
+/// executable `build.sh`, and its `Dockerfile` is an overlay on the prebuilt task
+/// env (`ARG TASK_BASE` + `FROM ${TASK_BASE}`), not a standalone image. Such
+/// benchmarks are per-task by construction.
+#[test]
+fn build_script_benchmarks_overlay_a_task_env() {
+    for (name, dir) in catalog_dirs("benchmarks") {
+        let script = dir.join("build.sh");
+        if !script.is_file() {
+            continue;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&script).unwrap().permissions().mode();
+            assert!(mode & 0o111 != 0, "{name}/build.sh must be executable");
+        }
+        let df = read(&dir.join("Dockerfile"));
+        assert!(
+            df.contains("ARG TASK_BASE") && df.contains("FROM ${TASK_BASE}"),
+            "{name}: a build.sh benchmark's Dockerfile must overlay the task env (FROM ${{TASK_BASE}})"
+        );
+        assert!(
+            is_per_task_by_name(&name),
+            "{name}: a build.sh (built-from-source) benchmark must be per-task"
+        );
+    }
+}
