@@ -114,7 +114,7 @@ red), and `doctrine/RULES.md:15` (the bake graph is the build artifact).
    invocation is what makes the build graph reusable
    (`doctrine/RULES.md:15`, sub-rule d).
 
-7. **Prefer letting CI build the fleet.** `.github/workflows/release.yml`
+7. **Prefer letting CI build the fleet.** `.github/workflows/release-images.yml`
    runs bake on every push to `main` (tag: `latest`) and every `v*` tag
    (tag: the git tag), setting `GIT_SHA` and `BUILD_DATE`, then
    `bake --push`es the result. CI runs on real Docker on Linux, where

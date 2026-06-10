@@ -2,7 +2,23 @@
 name = "eval-containers"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 description = "A build system for AI agent evaluations"
+authors = ["The Exgentic organization and its contributors"]
+license = "Apache-2.0"
+repository = "https://github.com/Exgentic/eval-containers"
+homepage = "https://github.com/Exgentic/eval-containers"
+readme = "README.md"
+keywords = ["evaluation", "benchmark", "llm", "agents", "docker"]
+categories = ["command-line-utilities", "development-tools::build-utils"]
+# Publish only the Rust crate, not the 100-benchmark / 20-agent monorepo
+# around it. Without this, `cargo publish` bundles every benchmarks/,
+# agents/, models/, compose/ tree into the tarball and blows crates.io's
+# 10 MB limit. Patterns are gitignore-style: the LEADING SLASH anchors each
+# to the package root — without it a bare `README.md` matches every
+# benchmarks/*/README.md at any depth. The binary embeds nothing at compile
+# time (no include_str!/include_bytes!), so src/ + manifests are enough.
+include = ["/src/**/*.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
@@ -86,3 +102,8 @@ path = "tests/gateways/test.rs"
 [[test]]
 name = "agents"
 path = "tests/agents/test.rs"
+
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"

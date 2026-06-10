@@ -14,6 +14,15 @@ addition; the patch on a bug fix that doesn't change the rule surface.
 
 ### Added
 
+- **The `eval-containers` CLI is now installable as a published artifact.**
+  Apache-2.0 licensed, with crates.io metadata (`cargo install eval-containers`)
+  and a [`dist`](https://opensource.axo.dev/cargo-dist/)-driven `release.yml`
+  that, on every `v*` tag, builds prebuilt binaries for macOS (Apple Silicon +
+  Intel), Linux (x86_64 + aarch64), and Windows — installable with no Rust
+  toolchain via the generated `curl … | sh` / PowerShell installers. An
+  `include` allowlist keeps the crate tarball to just `src/` + manifests so the
+  surrounding 100-benchmark monorepo is not published. The prior image-fleet
+  release workflow is renamed to `release-images.yml`.
 - **100 benchmarks × 20 agents** in the fleet (up from 96 × 17).
   - New IBM benchmarks: `acpbench` (1040 MCQ), `assetopsbench`
     (152 industrial-asset scenarios), `vakra` (28 multi-hop tool-calling),
