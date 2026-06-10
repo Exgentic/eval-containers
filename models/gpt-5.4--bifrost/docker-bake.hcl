@@ -1,7 +1,7 @@
 target "model-gpt-5_4--bifrost" {
   context = "models/gpt-5.4--bifrost"
   contexts = {
-    "${REGISTRY}/gateways/bifrost" = "target:bifrost"
+    "${REGISTRY}/gateways/bifrost" = "target:gateway-bifrost"
   }
   tags = ["${REGISTRY}/models/gpt-5.4--bifrost:${TAG}"]
 }

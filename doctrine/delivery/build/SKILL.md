@@ -203,7 +203,7 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
      ```hcl
      target "model-gpt-5_4--bifrost" {
        context  = "models/gpt-5.4--bifrost"
-       contexts = { "${REGISTRY}/gateways/bifrost:${TAG}" = "target:bifrost" }
+       contexts = { "${REGISTRY}/gateways/bifrost:${TAG}" = "target:gateway-bifrost" }
        tags     = ["${REGISTRY}/models/gpt-5.4--bifrost:${TAG}"]
      }
      ```
