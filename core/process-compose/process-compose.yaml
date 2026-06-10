@@ -66,7 +66,13 @@ processes:
     # this YAML scalar at parse time corrupts the document ("could not find
     # expected ':'"). run exports all of these into the env process-compose
     # inherits, so the shell still resolves them.
-    command: timeout $$TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$$TASK" TASK_ID="$$TASK_ID" MODEL="$$MODEL" TIMEOUT="$$TIMEOUT" OPENAI_BASE_URL="$$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
+    #
+    # `env -i` is an allow-list: the agent gets ONLY the problem text ($$TASK)
+    # and the gateway endpoints — never the task IDENTITY ($$TASK_ID). A model
+    # that recognizes a benchmark instance id (e.g. SWE-bench's) can recall a
+    # memorized fix and inflate the score; the verifier/result steps read the id
+    # from the inherited env, so grading is unaffected. (benchmarks/RULES.md 7.)
+    command: timeout $$TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$$TASK" MODEL="$$MODEL" TIMEOUT="$$TIMEOUT" OPENAI_BASE_URL="$$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
     depends_on:
       gateway:
         condition: process_healthy
