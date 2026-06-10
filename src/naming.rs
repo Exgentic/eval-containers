@@ -14,9 +14,15 @@ pub fn benchmark_image(registry: &str, benchmark: &str, tag: &str) -> String {
 }
 
 /// `{registry}/benchmarks/<name>-<task>:<tag>` — a per-task benchmark variant
-/// (swe-bench-style), built outside bake's static graph (BAKE.md).
+/// (swe-bench-style), built outside bake's static graph (BAKE.md). The task id is
+/// lowercased: Docker repo names + tags MUST be lowercase and some per-task ids
+/// carry uppercase (swe-bench-pro's `instance_NodeBB__…`). This affects only the
+/// image NAME — `EVAL_TASK_ID` keeps the real id at runtime.
 pub fn benchmark_task_image(registry: &str, benchmark: &str, task_id: &str, tag: &str) -> String {
-    format!("{registry}/benchmarks/{benchmark}-{task_id}:{tag}")
+    format!(
+        "{registry}/benchmarks/{benchmark}-{}:{tag}",
+        task_id.to_lowercase()
+    )
 }
 
 /// `{registry}/agents/<name>:<tag>` — the per-agent image.
@@ -41,7 +47,8 @@ pub fn eval_image(registry: &str, benchmark: &str, agent: &str, tag: &str) -> St
 /// for a **per-task** benchmark (each task bakes a separate image; the task id
 /// is part of the name, mirroring [`benchmark_task_image`]). Every surface
 /// (build / compose / container / job) MUST address per-task evals by this name
-/// (benchmarks/RULES.md — eval-image naming).
+/// (benchmarks/RULES.md — eval-image naming). The task id is lowercased for the
+/// same Docker-tag reason as [`benchmark_task_image`].
 pub fn eval_task_image(
     registry: &str,
     benchmark: &str,
@@ -49,7 +56,10 @@ pub fn eval_task_image(
     agent: &str,
     tag: &str,
 ) -> String {
-    format!("{registry}/evals/{benchmark}-{task_id}--{agent}:{tag}")
+    format!(
+        "{registry}/evals/{benchmark}-{}--{agent}:{tag}",
+        task_id.to_lowercase()
+    )
 }
 
 /// `{registry}/compose/<name>:latest` — a benchmark's published compose file.
@@ -144,6 +154,30 @@ mod tests {
         assert_eq!(
             benchmark_task_image(REG, "swe-bench", "42", "latest"),
             "quay.io/eval-containers/benchmarks/swe-bench-42:latest"
+        );
+    }
+
+    #[test]
+    fn per_task_image_refs_lowercase_the_task_id() {
+        // Docker repo names/tags MUST be lowercase; swe-bench-pro ids carry uppercase.
+        assert_eq!(
+            benchmark_task_image(
+                REG,
+                "swe-bench-pro",
+                "instance_NodeBB__NodeBB-abc",
+                "latest"
+            ),
+            "quay.io/eval-containers/benchmarks/swe-bench-pro-instance_nodebb__nodebb-abc:latest"
+        );
+        assert_eq!(
+            eval_task_image(
+                REG,
+                "swe-bench-pro",
+                "instance_NodeBB__NodeBB-abc",
+                "claude-code",
+                "latest"
+            ),
+            "quay.io/eval-containers/evals/swe-bench-pro-instance_nodebb__nodebb-abc--claude-code:latest"
         );
     }
 

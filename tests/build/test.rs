@@ -75,20 +75,13 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     mle.insert("EVAL_TASK_ID".into(), "spaceship-titanic".into());
     out.insert("mle-bench", mle);
 
-    let mut swe_pro = HashMap::new();
-    swe_pro.insert(
-        "EVAL_TASK_ID".into(),
-        "instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan".into(),
-    );
-    out.insert("swe-bench-pro", swe_pro);
-
     let mut swelancer = HashMap::new();
     swelancer.insert("EVAL_TASK_ID".into(), "16912_4".into());
     out.insert("swe-lancer", swelancer);
 
-    // terminal-bench builds per-task envs from source via build.sh (rule 24g),
-    // not a single `docker build`; its build is exercised by the oracle daemon-lane
-    // test (tests/oracle), so it is intentionally absent here (and thus skipped).
+    // swe-bench-pro and terminal-bench build per-task via build.sh (rule 24g), not a
+    // single `docker build`; their builds are exercised by the oracle daemon-lane
+    // test (tests/oracle), so they are intentionally absent here (and thus skipped).
 
     out.remove(benchmark)
 }
