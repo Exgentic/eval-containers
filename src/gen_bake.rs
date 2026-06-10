@@ -98,9 +98,10 @@ fn in_repo_deps(text: &str) -> Vec<String> {
 
 fn target_name_for(category: &str, name: &str) -> String {
     match category {
-        "core" | "gateways" => name.replace('.', "_"),
+        "core" => name.replace('.', "_"),
         "agents" => format!("agent-{}", name),
         "benchmarks" => format!("benchmark-{}", name),
+        "gateways" => format!("gateway-{}", name),
         "models" => format!("model-{}", name.replace('.', "_")),
         _ => name.to_string(),
     }
@@ -184,5 +185,20 @@ mod tests {
             out.contains("\"${REGISTRY}/core/agent-base-python\" = \"target:agent-base-python\"")
         );
         assert!(out.contains("tags = [\"${REGISTRY}/agents/openhands:${TAG}\"]"));
+    }
+
+    #[test]
+    fn gateway_target_is_category_prefixed() {
+        // Gateways follow <category>-<name> like agents/benchmarks, NOT a bare
+        // name — a bare `litellm` would collide with core/litellm's target when
+        // both bake files load in one invocation (RULES.md principle 15.a).
+        let out = render("gateways", "litellm", &[], false);
+        assert!(out.contains("target \"gateway-litellm\""));
+        assert!(out.contains("context = \"gateways/litellm\""));
+        // A model FROMing its gateway resolves to the prefixed target.
+        assert_eq!(
+            ref_to_target("quay.io/eval-containers/gateways/bifrost:latest"),
+            "gateway-bifrost"
+        );
     }
 }
