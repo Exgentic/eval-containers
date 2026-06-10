@@ -135,13 +135,24 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                                 remote builder"
                         .into());
                 }
-                // Per-task variant — outside bake's static graph.
-                docker_build(
-                    &benchmark_task_image(registry, &benchmark, &tid, "latest"),
-                    &format!("./benchmarks/{benchmark}"),
-                    &[format!("EVAL_TASK_ID={tid}")],
-                    dry_run,
-                )
+                let image = benchmark_task_image(registry, &benchmark, &tid, "latest");
+                // Benchmarks whose per-task env must be BUILT from source (e.g.
+                // terminal-bench: build the task's own upstream Dockerfile, then
+                // overlay our pipeline) ship a build.sh — a two-step the static
+                // bake graph and a single `docker build` can't express. Prefer it
+                // when present; otherwise the per-task variant is a plain `docker
+                // build` outside bake's static graph. (benchmarks/RULES.md 24g.)
+                let script = format!("benchmarks/{benchmark}/build.sh");
+                if std::path::Path::new(&script).is_file() {
+                    run_build_script(&script, &image, &tid, dry_run)
+                } else {
+                    docker_build(
+                        &image,
+                        &format!("./benchmarks/{benchmark}"),
+                        &[format!("EVAL_TASK_ID={tid}")],
+                        dry_run,
+                    )
+                }
             } else {
                 bake(
                     registry,
@@ -363,6 +374,26 @@ fn docker_build(
         }
     }
     Err(last_err)
+}
+
+/// Run a benchmark's `build.sh <image> <task-id>` — for per-task benchmarks whose
+/// environment must be built from source (terminal-bench), a two-step build the
+/// bake graph and a single `docker build` can't express (benchmarks/RULES.md 24g).
+/// The script is responsible for tagging `image`.
+fn run_build_script(script: &str, image: &str, task_id: &str, dry_run: bool) -> Result<(), String> {
+    eprintln!("$ bash {script} {image} {task_id}");
+    if dry_run {
+        return Ok(());
+    }
+    let status = Command::new("bash")
+        .args([script, image, task_id])
+        .status()
+        .map_err(|e| format!("failed to run {script}: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("{script} failed with {status}"))
+    }
 }
 
 // ─── OpenShift BuildConfig backend (`--builder oc`) ──────────────────────────
