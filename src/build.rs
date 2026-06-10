@@ -34,7 +34,7 @@ use clap::{Args, Subcommand};
 use eval_containers::bake;
 use eval_containers::naming::{
     agent_bake_target, agent_image, benchmark_bake_target, benchmark_image, benchmark_task_image,
-    compose_artifact, flatten_imagestream, model_bake_target, model_image,
+    compose_artifact, eval_task_image, flatten_imagestream, model_bake_target, model_image,
 };
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -179,6 +179,15 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 format!("eval.args.AGENT_IMAGE={agent_tag}"),
                 format!("eval.args.MODEL_IMAGE={model_tag}"),
             ];
+            // Per-task: tag the eval image evals/<b>-<task>--<a> (what compose,
+            // container, and the chart all address), overriding the bake file's
+            // shared-env default — else `build` and `run` disagree (RULES.md 24f).
+            if let Some(ref tid) = task_id {
+                overrides.push(format!(
+                    "eval.tags={}",
+                    eval_task_image(registry, &benchmark, tid, &agent, &tag)
+                ));
+            }
             // Version is a build arg (RULES.md principle 9). Empty => the
             // combination defaults to the agent image's pinned /opt/agent/VERSION;
             // set => override the upstream version the agent installs.
