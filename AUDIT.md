@@ -93,7 +93,7 @@ means the benchmark changed after that commit, so the row is stale and needs a r
 | swe-gym | ? | ? | ? | ? | ? | ? | ? | — |
 | swe-lancer | ? | ? | ? | ? | ? | ? | ? | — |
 | tau-bench | ? | ? | ? | ? | ? | ? | ? | — |
-| terminal-bench | ? | ? | ? | ? | ? | ? | ? | — |
+| terminal-bench | ✓ | ? | ✓ | ✓ | ? | ? | ? | 2026-06-10 |
 | theoremqa | ✓ | ? | ? | ✓ | ? | ? | ? | 2026-06-10 |
 | triviaqa | ✓ | ? | ? | ✓ | ? | ? | ? | 2026-06-10 |
 | truthfulqa | ✓ | ? | ? | ✓ | ? | ? | ? | 2026-06-10 |
@@ -110,4 +110,4 @@ means the benchmark changed after that commit, so the row is stale and needs a r
 | xnli | ✓ | ? | ? | ✓ | ? | ? | ? | 2026-06-10 |
 | xstory-cloze | ✓ | ? | ? | ✓ | ? | ? | ? | 2026-06-10 |
 
-**Totals:** building 61/101 · isolation 0/101 · oracle 61/101 · running 0/101 · traces 0/101 · replicate 0/101 · safety 0/101
+**Totals:** building 62/101 · isolation 1/101 · oracle 62/101 · running 0/101 · traces 0/101 · replicate 0/101 · safety 0/101
