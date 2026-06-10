@@ -30,6 +30,7 @@ eval-containers [--registry <ref>] <command> [args]
 | `prune` | Reclaim disk | `docker builder prune` + `docker image prune` |
 | `report` | Aggregate results: pass/reward/tokens/cost + traces health | reads `output/` |
 | `gen-bake` | Scaffold a `docker-bake.hcl` for an artifact | writes a file |
+| `oracle` | Validate a benchmark's grading: a gold solution must score 1.0 and a no-op < 1.0 through the benchmark's own grader (no agent, no model). See [Oracle](../../core/oracle/README.md). | `docker run` against the grader |
 
 ## `run` flags
 
