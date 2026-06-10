@@ -141,14 +141,30 @@ the test's own `Drop` handlers.
 For day-to-day dev, build only what you touched (see [LOCAL.md](../../tests/LOCAL.md)).
 Two podman-specific notes:
 
-- **Bare `docker build` of an in-repo Dockerfile can 401.** Many Dockerfiles
-  `FROM ${REGISTRY}/core/...:latest` — a registry path that isn't pulled
-  locally, so a standalone `docker build` tries the registry and hits
-  `401 UNAUTHORIZED`. Use the bake graph instead, which builds the dependency
-  chain locally:
+- **Bare `docker build` of an in-repo Dockerfile can 401 — and bake won't save
+  you here.** Many Dockerfiles `FROM ${REGISTRY}/core/...:latest`. Until that
+  registry is published those bases can only come from the local image store, and
+  two podman quirks collide: podman's docker-compat `docker build` *force-pulls* a
+  multi-stage stage base (`FROM ... AS x`) from the registry → `401 UNAUTHORIZED`;
+  and `docker buildx bake` routes through a BuildKit container that emulates amd64
+  with **QEMU, not Rosetta**, so Python-heavy builds segfault (`qemu: uncaught
+  target signal 11` installing pyarrow). The only local path that uses Rosetta
+  *and* resolves the local bases is **native `podman build`**:
   ```bash
-  eval-containers build eval aime --agent codex
+  # Single-FROM benchmark: docker build is fine (buildah → Rosetta; base already local).
+  DOCKER_BUILDKIT=0 docker build \
+    -t quay.io/eval-containers/benchmarks/aime:latest benchmarks/aime
+
+  # Multi-stage benchmark (FROM core/<x> AS <x> — the exact-match family, swe-bench):
+  # 1. put the tiny FROM-scratch core base into buildah's store (native build);
+  podman build -t quay.io/eval-containers/core/test-exact-match:latest core/test-exact-match
+  # 2. build with --platform (so FROM --platform=amd64 matches the local single-arch
+  #    base) and --pull=never (don't try the unpublished registry). Rosetta, no QEMU.
+  podman build --platform linux/amd64 --pull=never \
+    -t quay.io/eval-containers/benchmarks/gsm8k:latest benchmarks/gsm8k
   ```
+  This is the one spot where you must run `podman` directly; once the registry is
+  published, plain `docker build` pulls the bases and the workaround goes away.
 - **`--model` needs `<provider>/<model>` form** (e.g. `openai/azure/gpt-4.1`),
   not a bare name, or the gateway rejects it:
   ```
@@ -170,8 +186,10 @@ EOF
 podman machine stop && podman machine start
 ```
 
-Note: podman's docker-compat socket does **not** support `buildx`. Single-image
-`docker build` works; for `docker buildx bake` fleet builds, use real Docker.
+Note: podman's docker-compat socket does **not** support Rosetta under `buildx`.
+Single-`FROM` `docker build` works (buildah → Rosetta); multi-stage builds need
+the native-`podman build` recipe above; `docker buildx bake` emulates amd64 with
+QEMU and segfaults Python builds, so for bake use real Docker.
 
 ## Troubleshooting
 
@@ -182,7 +200,7 @@ Note: podman's docker-compat socket does **not** support `buildx`. Single-image
 | `SocketNotFoundError("/var/run/docker.sock")` in tests | testcontainers ignores docker context | export `DOCKER_HOST` (§3) |
 | Ryuk container fails to start | reaper unsupported under podman | `TESTCONTAINERS_RYUK_DISABLED=true` (§5) |
 | `docker compose: not found` | client-only install | install + symlink the compose plugin (§2) |
-| `401 UNAUTHORIZED` on `docker build` | `FROM ${REGISTRY}/...` not local | build via `eval-containers build` / bake (§6) |
+| `401 UNAUTHORIZED` on `docker build`, or `qemu: ... signal 11` on bake | multi-stage `FROM ${REGISTRY}/...` not pulled; bake uses QEMU not Rosetta | native `podman build --platform linux/amd64 --pull=never` (§6) |
 | `EVAL_MODEL must be of form <provider>/<model>` | bare model name | pass `<provider>/<model>` (§6) |
 
 ## See also
