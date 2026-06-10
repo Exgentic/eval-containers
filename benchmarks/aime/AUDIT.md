@@ -48,3 +48,10 @@ commit: 1a344fd
 |--------|-------|
 | per task | ? |
 | full suite | ? |
+
+## Distribution — is it shipped?
+
+| Check | Status / Value | Evidence |
+|-------|:--------------:|----------|
+| published | ✓ | ghcr.io/exgentic/benchmarks/aime:latest |
+| pull size | 138 MB | compressed (manifest layer sizes) |
