@@ -25,7 +25,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 4. **Double dash for eval images.** Eval images MUST use `{benchmark}--{agent}` naming. The double dash (`--`) is the separator between benchmark and agent.
 
-5. **Version tags.** Agent and eval images MUST use the agent version as the tag. Benchmark and model images SHOULD use `latest`.
+5. **Version tags.** Every image's tag is the Eval Containers **release version** — one SemVer for the whole fleet, set by the git tag (`latest` on `main`). The tag encodes *our* version, never the upstream software version (top-level [RULES.md](../RULES.md) principle 9); upstream versions are recorded in `eval.*.version` labels. A single component is pulled at a non-default version with `EVAL_*_TAG`.
 
 ### Labels
 
@@ -88,3 +88,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 |------|--------|
 | 2026-04-13 | Initial version |
 | 2026-04-16 | Tightened rule 16: every benchmark metric MUST be a named field in `task/result.json`, with `reward` as the primary metric (not just the minimum subset). `test.sh` is the only writer; downstream inspection reads from this file, never from stdout. |
+| 2026-06-10 | Rule 5 (Version tags): retired "agent version as the tag" — it conflicted with top-level principle 9. The tag now encodes the Eval Containers release version (one fleet SemVer from the git tag; `latest` on `main`); upstream software versions live in `eval.*.version` labels. Resolves the principle-9-vs-rule-5 drift flagged by the rules audit. |
