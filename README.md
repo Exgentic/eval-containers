@@ -230,6 +230,16 @@ EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
 
 `--local` points at `benchmarks/<name>/compose.yaml` on disk instead of `oci://...`.
 
+To check that a benchmark's **grading** is sound — a correct solution scores 1.0
+and a non-solution scores less — run the oracle (no agent, no model):
+
+```bash
+eval-containers oracle aime                 # exact-match: default gold solution
+eval-containers oracle humaneval --task-id 0
+```
+
+See [Oracle](core/oracle/README.md) for how it works and how to add a benchmark.
+
 ## Rules
 
 All work is governed by RULES documents. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full index.
