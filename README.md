@@ -39,7 +39,11 @@ Requires Docker Compose ≥ 2.34 for `oci://` support. See [offline / older Dock
 
 ## Install the CLI
 
-Pre-release — not published yet, so build from source ([Rust](https://rustup.rs)):
+```bash
+cargo install eval-containers
+```
+
+Or build from source ([Rust](https://rustup.rs)):
 
 ```bash
 git clone https://github.com/Exgentic/eval-containers
