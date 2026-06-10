@@ -5,7 +5,7 @@
 //!
 //!   --mode compose    (default) → docker compose -f benchmarks/<x>/compose.yaml up
 //!   --mode container            → docker run -e EVAL_MODEL=... <eval-image>
-//!   --mode job                  → helm template benchmarks/_chart --set benchmark=<x> | kubectl apply -f -
+//!   --mode job                  → helm template oci://<registry>/charts/eval | kubectl apply -f -  (--local: ./benchmarks/_chart)
 //!
 //! Mapping flags → manifest, by mode:
 //!
@@ -13,7 +13,8 @@
 //!     `EVAL_*` environment variable on the spawned subprocess. Compose
 //!     interpolates `${EVAL_FOO:-default}` in compose.yaml; container
 //!     mode hands them in via `docker run -e`.
-//!   - **job** renders the shared Helm chart (`benchmarks/_chart`) with a
+//!   - **job** renders the shared Helm chart (`oci://<registry>/charts/eval`,
+//!     or `benchmarks/_chart` with `--local`) with a
 //!     `--set` for each axis (benchmark/agent/task/model/tags), then
 //!     `helm template … | kubectl apply -f -`. A benchmark's bespoke
 //!     topology, if any, lives in the chart at `presets/<x>.yaml`.
@@ -138,6 +139,13 @@ pub struct RunArgs {
 /// Secret supplies in k8s and that `compose/services.yaml` reads from the shell.
 const GATEWAY_CRED_VARS: &[&str] = &["OPENAI_API_KEY", "OPENAI_API_BASE"];
 
+/// The shared Helm chart, published as
+/// `oci://{registry}/charts/<CHART_NAME>:<CHART_VERSION>` and rendered by
+/// `--mode job` (non-local). Mirrors `benchmarks/_chart/Chart.yaml`
+/// (`name`/`version`); the guard test below fails if they drift.
+const CHART_NAME: &str = "eval";
+const CHART_VERSION: &str = "0.1.0";
+
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     // Resolve benchmark: --benchmark flag wins over positional, either must be set.
     let benchmark = args
@@ -215,7 +223,7 @@ fn run_compose(
         .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<_>>()
         .join(" ");
-    eprintln!("$ {env_str} docker compose -f {compose_ref} up --abort-on-container-exit");
+    eprintln!("$ {env_str} docker compose -f {compose_ref} up -y --abort-on-container-exit");
     if dry_run {
         // For compose, dry-run means show the resolved manifest (which
         // includes all `${EVAL_*:-default}` interpolations) and stop.
@@ -237,7 +245,9 @@ fn run_compose(
 
     let mut cmd = Command::new("docker");
     cmd.arg("compose").arg("-f").arg(&compose_ref);
-    cmd.arg("up").arg("--abort-on-container-exit");
+    // `-y`: a published `oci://` stack prompts to confirm (and echoes) the
+    // variables it injects; assume yes so the run stays non-interactive.
+    cmd.arg("up").arg("-y").arg("--abort-on-container-exit");
     for (k, v) in envs {
         cmd.env(k, v);
     }
@@ -355,7 +365,8 @@ fn run_container(
     Ok(())
 }
 
-/// `--mode job` → `helm template benchmarks/_chart --set benchmark=<x> … | kubectl apply -f -`
+/// `--mode job` → `helm template oci://<registry>/charts/eval … | kubectl apply -f -`
+/// (or `./benchmarks/_chart` with `--local`).
 ///
 /// The shared chart (`benchmarks/_chart`) renders the otelcol+gateway+runner
 /// Job; the axes (benchmark/agent/task/model/tags/versions) come in via `--set`,
@@ -373,15 +384,23 @@ fn run_job(
     args: &RunArgs,
     _envs: &[(&str, String)],
 ) -> Result<(), String> {
-    let chart = "./benchmarks/_chart";
-    if !std::path::Path::new(chart).exists() {
-        return Err("missing benchmarks/_chart; run from repo root".into());
-    }
-
     let agent = args.agent.as_deref().unwrap_or("claude-code");
     let task = args.task_id.as_deref().unwrap_or("0");
 
-    // helm template <release> <chart> [-f <overlay values>] --set benchmark=… --set …
+    // Chart source mirrors compose/container: `--local` renders the in-repo
+    // chart; otherwise pull the published OCI chart so `--mode job` needs no repo
+    // checkout (src/RULES.md principle 8 registry-aware, principle 9 local-first).
+    let chart = if args.local {
+        let local = "./benchmarks/_chart".to_string();
+        if !std::path::Path::new(&local).exists() {
+            return Err("--local needs ./benchmarks/_chart; run from the repo root".into());
+        }
+        local
+    } else {
+        format!("oci://{registry}/charts/{CHART_NAME}")
+    };
+
+    // helm template <release> <chart> [--version <v>] [-f <overlay>] --set benchmark=… …
     // The benchmark is named via --set; its bespoke topology (if any) lives in
     // the chart at presets/<benchmark>.yaml, so no per-benchmark file is passed.
     // The release name is a DNS-1123 label (Helm forbids `_`); per-task task ids
@@ -389,7 +408,12 @@ fn run_job(
     // `--mode job` can't render for per-task benchmarks (benchmarks/RULES.md 24f).
     let release =
         eval_containers::naming::release_name(&format!("{benchmark}-{agent}-task-{task}"));
-    let mut helm: Vec<String> = vec!["template".into(), release, chart.into()];
+    let mut helm: Vec<String> = vec!["template".into(), release, chart];
+    // OCI charts are versioned; pin the published version (the `--local` dir needs none).
+    if !args.local {
+        helm.push("--version".into());
+        helm.push(CHART_VERSION.into());
+    }
 
     // Platform composition: --overlay points at a Helm values file (e.g.
     // deploy/values-openshift.yaml), layered on top of the chart values.
@@ -497,4 +521,28 @@ fn run_job(
         return Err(format!("kubectl apply failed with {status}"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CHART_NAME, CHART_VERSION};
+
+    // `--mode job` (non-local) renders `oci://…/charts/{CHART_NAME}` pinned to
+    // {CHART_VERSION}; both MUST track benchmarks/_chart/Chart.yaml, or the
+    // published chart and the CLI silently drift apart.
+    #[test]
+    fn chart_consts_match_chart_yaml() {
+        let yaml = std::fs::read_to_string("benchmarks/_chart/Chart.yaml")
+            .expect("read benchmarks/_chart/Chart.yaml from the repo root");
+        assert!(
+            yaml.lines()
+                .any(|l| l.trim() == format!("name: {CHART_NAME}")),
+            "CHART_NAME ({CHART_NAME}) must match Chart.yaml `name`"
+        );
+        assert!(
+            yaml.lines()
+                .any(|l| l.trim() == format!("version: {CHART_VERSION}")),
+            "CHART_VERSION ({CHART_VERSION}) must match Chart.yaml `version`"
+        );
+    }
 }
