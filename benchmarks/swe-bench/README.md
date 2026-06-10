@@ -20,7 +20,26 @@ The agent receives a task of the form: "Fix this GitHub issue in the repository 
 
 ## How it's graded
 
-Custom `/grade.sh` defined inline in the Dockerfile. Grading runs inside the per-task image after the agent exits.
+`/grade.sh` runs inside the per-task image after the agent exits and reuses the
+**official SWE-bench harness** — no bespoke eval or grading logic. Two linear
+steps:
+
+1. **Run** (`bash`): execute `/tests/eval.sh` — swebench's own per-instance eval
+   script, baked at build time from `test_spec.eval_script` (the exact script
+   `run_evaluation` runs inside its container: activate conda, reinstall the
+   patched package, reset the test files, apply the `test_patch`, run the test
+   command). Output is captured to `/logs/verifier/test_output.log`.
+2. **Grade** (`python`): `/tests/grade.py` scores that log with swebench's own
+   `get_eval_report` (the same call `run_evaluation` makes) and prints the
+   `reward` — `1` iff the instance resolves, else `0`.
+
+The only difference from `run_evaluation` is *where* the eval script runs: in
+this container (which already **is** the testbed, with the agent's edits applied
+in place) instead of a fresh one `run_evaluation` would launch — there is no
+Docker daemon inside the eval container, and this keeps grading self-contained
+across the compose / container / job run modes. Python is used only where
+swebench requires it (its log parser + report are a library, not a CLI); the
+eval procedure itself stays bash.
 
 
 ## Per-task build
