@@ -86,9 +86,9 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     swelancer.insert("EVAL_TASK_ID".into(), "16912_4".into());
     out.insert("swe-lancer", swelancer);
 
-    let mut tbench = HashMap::new();
-    tbench.insert("EVAL_TASK_ID".into(), "hello-world".into());
-    out.insert("terminal-bench", tbench);
+    // terminal-bench builds per-task envs from source via build.sh (rule 24g),
+    // not a single `docker build`; its build is exercised by the oracle daemon-lane
+    // test (tests/oracle), so it is intentionally absent here (and thus skipped).
 
     out.remove(benchmark)
 }
