@@ -274,7 +274,7 @@ fn run_container(
         .iter()
         .find(|(k, _)| *k == "EVAL_TASK_ID")
         .map(|(_, v)| v.clone());
-    let per_task = eval_containers::naming::is_per_task(benchmark);
+    let per_task = eval_containers::benchmark::is_per_task_by_name(benchmark);
     if per_task && task_id.is_none() {
         return Err(format!(
             "{benchmark} is a per-task benchmark — pass --task-id <id> in container mode"
@@ -417,7 +417,7 @@ fn run_job(
     // the task-aware runner image (evals/<b>-<task>--<a>). Each runs as one Job
     // per task — they can't use the Indexed dataset Job (one image × N indices);
     // the chart enforces that with a perTask+datasetSize guard. (benchmarks/RULES.md.)
-    if eval_containers::naming::is_per_task(benchmark) {
+    if eval_containers::benchmark::is_per_task_by_name(benchmark) {
         sets.push("perTask=true".into());
     }
     if let Some(m) = &args.model {
