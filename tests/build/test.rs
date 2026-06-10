@@ -341,23 +341,15 @@ fn subdirs_with_dockerfile(root: &str) -> Vec<PathBuf> {
     out
 }
 
-/// True if the Dockerfile's `FROM` line references `${EVAL_TASK_ID}`
-/// or `$EVAL_TASK_ID`. Such images can only be built with an explicit
-/// task id — `per_task_build_args` must have an entry for them.
+/// True if the benchmark declares the per-task label — the single source of
+/// truth (`benchmark::is_per_task`, benchmarks/RULES.md 24f). Such images bake
+/// one per task and need an explicit task id, so `per_task_build_args` must
+/// have an entry for them.
 fn is_per_task_benchmark(dir: &Path) -> bool {
-    let Ok(text) = fs::read_to_string(dir.join("Dockerfile")) else {
-        return false;
-    };
-    for line in text.lines() {
-        let trimmed = line.trim_start();
-        if !trimmed.starts_with("FROM ") {
-            continue;
-        }
-        if trimmed.contains("${EVAL_TASK_ID}") || trimmed.contains("$EVAL_TASK_ID") {
-            return true;
-        }
-    }
-    false
+    fs::read_to_string(dir.join("Dockerfile"))
+        .as_deref()
+        .map(eval_containers::benchmark::is_per_task)
+        .unwrap_or(false)
 }
 
 // ─── Test driver ───────────────────────────────────────────────────

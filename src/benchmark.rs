@@ -1,19 +1,42 @@
 //! Benchmark metadata derived from a benchmark's `Dockerfile`.
 
-/// A benchmark is *per-task* (one image per task, with `EVAL_TASK_ID` baked as a
-/// build arg) iff its Dockerfile interpolates the task id into a `FROM` line, or
-/// declares a default-less `ARG EVAL_TASK_ID`. A *runtime* `$EVAL_TASK_ID`
-/// reference (resolved by `/eval-materialize-task`) does NOT count — that's the
-/// shared-env JSONL path served from `all.jsonl`.
+/// A benchmark is *per-task* — one eval image baked per task (swe-bench-style) —
+/// iff its `Dockerfile` declares `LABEL eval.benchmark.env="per-task"`. That
+/// label is the single source of truth for per-task detection across the CLI
+/// (build, run, oracle) and the chart's `perTask` value (benchmarks/RULES.md 24f).
+/// Matched on a `LABEL` line so a comment or `RUN echo` mentioning the string
+/// cannot false-positive.
 pub fn is_per_task(dockerfile: &str) -> bool {
     dockerfile.lines().any(|line| {
         let t = line.trim_start();
-        if t.starts_with("FROM ") && (t.contains("${EVAL_TASK_ID}") || t.contains("$EVAL_TASK_ID"))
-        {
-            return true;
-        }
-        // `ARG EVAL_TASK_ID` on its own line with no `=<default>`.
-        t.strip_prefix("ARG EVAL_TASK_ID")
-            .is_some_and(|rest| rest.trim().is_empty())
+        t.starts_with("LABEL ") && t.contains(r#"eval.benchmark.env="per-task""#)
     })
+}
+
+/// [`is_per_task`] for a benchmark by name — reads `benchmarks/<name>/Dockerfile`
+/// (a missing file reads as shared-env, `false`).
+pub fn is_per_task_by_name(name: &str) -> bool {
+    std::fs::read_to_string(format!("benchmarks/{name}/Dockerfile"))
+        .as_deref()
+        .map(is_per_task)
+        .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_per_task_keys_off_the_label() {
+        assert!(is_per_task(
+            "FROM scratch\nLABEL eval.benchmark.env=\"per-task\"\n"
+        ));
+        assert!(!is_per_task(
+            "FROM scratch\nLABEL eval.benchmark.env=\"shared\"\n"
+        ));
+        // A FROM/ARG mentioning EVAL_TASK_ID is NOT per-task without the label.
+        assert!(!is_per_task("ARG EVAL_TASK_ID\nFROM x-${EVAL_TASK_ID}\n"));
+        // A comment / RUN echo mentioning the label string must not false-positive.
+        assert!(!is_per_task("# eval.benchmark.env=\"per-task\"\nFROM x\n"));
+    }
 }

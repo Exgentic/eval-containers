@@ -110,17 +110,6 @@ pub fn release_name(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// True iff the benchmark declares a per-task environment
-/// (`LABEL eval.benchmark.env="per-task"` in its Dockerfile) — i.e. each task
-/// bakes its own image, addressed by [`eval_task_image`] instead of
-/// [`eval_image`]. The single source of truth the CLI uses to pick per-task
-/// naming; a missing Dockerfile reads as shared-env (`false`).
-pub fn is_per_task(benchmark: &str) -> bool {
-    std::fs::read_to_string(format!("benchmarks/{benchmark}/Dockerfile"))
-        .unwrap_or_default()
-        .contains(r#"eval.benchmark.env="per-task""#)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
