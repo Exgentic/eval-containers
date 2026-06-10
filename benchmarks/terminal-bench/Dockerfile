@@ -1,84 +1,73 @@
 # syntax=docker/dockerfile:1
-# Terminal-Bench 2.0
-# Built from upstream source at github.com/laude-institute/terminal-bench.
-# Each task lives under original-tasks/<task>/ with its own Dockerfile, task.yaml,
-# tests/, and run-tests.sh. We clone the repo at a pinned commit and layer the
-# task on top of its upstream base image.
+# Terminal-Bench 2.0 — per-task eval overlay.
+#
+# Terminal-bench is the first benchmark whose per-task environment must be BUILT
+# from source: no per-task upstream images exist, and each task ships its OWN
+# Dockerfile with a heterogeneous base (python-3-13, ubuntu, …) plus setup. So
+# the per-task build is two steps, orchestrated by build.sh:
+#   1. build the task's own upstream Dockerfile (its base + setup) -> the task env
+#   2. THIS file overlays the eval pipeline on that env (TASK_BASE = the env image)
+# Both steps use the upstream task dir at a pinned ref as the build context.
+#
+# We add ONLY: the instruction (TASK), a root-only copy of the test harness, the
+# grader, and the entrypoint. The gold solution is NEVER baked, and the raw tests
+# are root-only (chmod 700) — the agent can read neither the answer nor the tests
+# (benchmarks/RULES.md rule 9 / eval integrity; see core/oracle, solution.sh).
+ARG TASK_BASE
 
-ARG EVAL_TASK_ID
+# Parse task.yaml -> instruction.md in an isolated python stage, so we don't need
+# the (heterogeneous) task base to ship python + pyyaml.
+FROM python:3.13-slim AS meta
+COPY task.yaml /task.yaml
+RUN pip install --no-cache-dir pyyaml==6.0.2 \
+ && python -c "import yaml,pathlib; pathlib.Path('/instruction.md').write_text(yaml.safe_load(open('/task.yaml')).get('instruction',''))"
 
-# Stage 1: fetch the task directory from upstream at a pinned commit.
-ARG REGISTRY=quay.io/eval-containers
-ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
-FROM alpine/git:2.47.2 AS upstream
-ARG EVAL_TASK_ID
-ARG TBENCH_REF=1a6ffa9674b571da0ed040c470cb40c4d85f9b9b
-RUN git clone https://github.com/laude-institute/terminal-bench.git /tb \
- && cd /tb && git checkout ${TBENCH_REF} \
- && test -d "/tb/original-tasks/${EVAL_TASK_ID}" \
- && cp -r "/tb/original-tasks/${EVAL_TASK_ID}" /task \
- && rm -rf /tb
-
-# Stage 2: layer the task on top of the upstream shared base (a public image,
-# anonymously pullable).
-FROM ghcr.io/laude-institute/t-bench/python-3-13:20250620
-
+FROM ${TASK_BASE}
+# One label per line: the CLI detects per-task benchmarks by a `LABEL
+# eval.benchmark.env="per-task"` line (benchmark::is_per_task), so it must not be
+# folded into a multi-line LABEL (benchmarks/RULES.md 24f).
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="terminal-bench"
-LABEL eval.benchmark.upstream_base="ghcr.io/laude-institute/t-bench/python-3-13:20250620"
-LABEL eval.benchmark.description="Terminal-Bench 2.0 - terminal tasks, built from upstream source"
-LABEL eval.benchmark.tasks="100+"
+LABEL eval.benchmark.tasks="241"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/laude-institute/terminal-bench"
-
+# EVAL_TASK_ID is consumed here (the per-task marker, benchmarks/RULES.md 24a/24f).
+# TBENCH_TASK pins the real upstream task name for solution.sh: the oracle/runner
+# override EVAL_TASK_ID at run time (their /tasks index convention), so the gold
+# fetcher can't rely on it. TBENCH_REF is the pinned upstream commit. build.sh
+# passes EVAL_TASK_ID + TBENCH_REF as build args.
 ARG EVAL_TASK_ID
-ENV EVAL_BENCHMARK=tbench
-ENV EVAL_TASK_ID=${EVAL_TASK_ID}
+ARG TBENCH_REF
+ENV EVAL_BENCHMARK=tbench \
+    EVAL_TASK_ID=${EVAL_TASK_ID} \
+    TBENCH_TASK=${EVAL_TASK_ID} \
+    TBENCH_REF=${TBENCH_REF}
 
-RUN apt-get update \
- && apt-get install -y --no-install-recommends python3-yaml \
- && rm -rf /var/lib/apt/lists/*
+# The instruction the agent sees (TASK) — agent-readable by design.
+COPY --from=meta /instruction.md /task/instruction.md
 
-# Copy the task tree from the upstream stage.
-COPY --from=upstream /task /task
+# Root-only test harness — never agent-readable (the agent must not see the tests).
+COPY tests /tests/tests
+COPY run-tests.sh /tests/run-tests.sh
+RUN chmod +x /tests/run-tests.sh && chmod -R 700 /tests && chown -R root:root /tests
 
-WORKDIR /app
+# Grader: run the task's upstream run-tests.sh, map pytest exit -> reward.
+RUN printf '%s\n' \
+  '#!/bin/bash' \
+  'mkdir -p /logs/verifier' \
+  'export TEST_DIR=/tests/tests' \
+  'if /tests/run-tests.sh > /logs/verifier/test.log 2>&1; then' \
+  '  echo 1 > /logs/verifier/reward.txt' \
+  'else' \
+  '  echo 0 > /logs/verifier/reward.txt' \
+  'fi' > /grade.sh && chmod +x /grade.sh
 
-# Extract task.yaml's instruction field into a plain-text file the entrypoint
-# can read.
-RUN python3 -c "import yaml,pathlib; y=yaml.safe_load(pathlib.Path('/task/task.yaml').read_text()); pathlib.Path('/task/instruction.md').write_text(y.get('instruction',''))"
+# Entrypoint: seed TASK from the instruction if the runner didn't set it.
+RUN printf '%s\n' \
+  '#!/bin/bash' \
+  'if [ -z "$TASK" ] && [ -f /task/instruction.md ]; then export TASK="$(cat /task/instruction.md)"; fi' \
+  'exec "$@"' > /entrypoint.sh && chmod +x /entrypoint.sh
 
-# Move upstream tests + runner into a root-only /tests dir.
-RUN mkdir -p /tests \
- && cp -r /task/tests /tests/tests \
- && cp /task/run-tests.sh /tests/run-tests.sh \
- && chmod +x /tests/run-tests.sh
-
-# Scorer: run upstream run-tests.sh, translate pytest exit code into
-# /logs/verifier/reward.txt (1 on pass, 0 on fail).
-RUN cat > /grade.sh <<'TEST'
-#!/bin/bash
-mkdir -p /logs/verifier
-export TEST_DIR=/tests/tests
-if /tests/run-tests.sh > /logs/verifier/test.log 2>&1; then
-  echo 1 > /logs/verifier/reward.txt
-else
-  echo 0 > /logs/verifier/reward.txt
-fi
-TEST
-
-RUN chmod +x /grade.sh && chmod -R 700 /tests && chown -R root:root /tests
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-if [ -z "$TASK" ] && [ -f /task/instruction.md ]; then
-  export TASK="$(cat /task/instruction.md)"
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]
