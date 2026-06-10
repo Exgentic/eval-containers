@@ -266,24 +266,54 @@ fn run_container(
     let agent = agent
         .clone()
         .ok_or_else(|| "--agent is required in container mode".to_string())?;
-    let local_tag = format!("evals/{benchmark}--{agent}:local");
+    // Per-task benchmarks bake one eval image per task: address it by the
+    // task-aware name (evals/<b>-<task>--<a>) and build container.Dockerfile with
+    // EVAL_TASK_ID so its ARG/FROM resolve. Shared-env benchmarks ignore the
+    // (harmless) build-arg. (benchmarks/RULES.md — eval-image naming.)
+    let task_id = envs
+        .iter()
+        .find(|(k, _)| *k == "EVAL_TASK_ID")
+        .map(|(_, v)| v.clone());
+    let per_task = eval_containers::naming::is_per_task(benchmark);
+    if per_task && task_id.is_none() {
+        return Err(format!(
+            "{benchmark} is a per-task benchmark — pass --task-id <id> in container mode"
+        ));
+    }
+    let local_tag = match (per_task, task_id.as_deref()) {
+        (true, Some(t)) => format!("evals/{benchmark}-{t}--{agent}:local"),
+        _ => format!("evals/{benchmark}--{agent}:local"),
+    };
     let image = if local {
         // Build from the per-benchmark container.Dockerfile, then run.
         let dockerfile = format!("./benchmarks/{benchmark}/container.Dockerfile");
-        eprintln!("$ docker build -f {dockerfile} -t {local_tag} .");
-        let status = Command::new("docker")
-            .arg("build")
-            .arg("-f")
-            .arg(&dockerfile)
-            .arg("-t")
-            .arg(&local_tag)
-            .arg(".")
+        let shown_arg = task_id
+            .as_deref()
+            .map(|t| format!(" --build-arg EVAL_TASK_ID={t}"))
+            .unwrap_or_default();
+        eprintln!("$ docker build -f {dockerfile}{shown_arg} -t {local_tag} .");
+        let mut build = Command::new("docker");
+        build.arg("build").arg("-f").arg(&dockerfile);
+        if let Some(t) = task_id.as_deref() {
+            build.arg("--build-arg").arg(format!("EVAL_TASK_ID={t}"));
+        }
+        build.arg("-t").arg(&local_tag).arg(".");
+        let status = build
             .status()
             .map_err(|e| format!("failed to docker build: {e}"))?;
         if !status.success() {
             return Err(format!("docker build failed with {status}"));
         }
         local_tag
+    } else if per_task {
+        // task_id is guaranteed Some by the per_task check above.
+        eval_containers::naming::eval_task_image(
+            registry,
+            benchmark,
+            task_id.as_deref().unwrap(),
+            &agent,
+            "latest",
+        )
     } else {
         eval_containers::naming::eval_image(registry, benchmark, &agent, "latest")
     };
@@ -354,7 +384,11 @@ fn run_job(
     // helm template <release> <chart> [-f <overlay values>] --set benchmark=… --set …
     // The benchmark is named via --set; its bespoke topology (if any) lives in
     // the chart at presets/<benchmark>.yaml, so no per-benchmark file is passed.
-    let release = format!("{benchmark}-{agent}-task-{task}");
+    // The release name is a DNS-1123 label (Helm forbids `_`); per-task task ids
+    // carry forbidden chars (SWE-bench's `sympy__sympy-24066`), so sanitize it or
+    // `--mode job` can't render for per-task benchmarks (benchmarks/RULES.md 24f).
+    let release =
+        eval_containers::naming::release_name(&format!("{benchmark}-{agent}-task-{task}"));
     let mut helm: Vec<String> = vec!["template".into(), release, chart.into()];
 
     // Platform composition: --overlay points at a Helm values file (e.g.
@@ -379,6 +413,13 @@ fn run_job(
         format!("agent={agent}"),
         format!("task={task}"),
     ];
+    // Per-task benchmarks bake one eval image per task, so the chart must render
+    // the task-aware runner image (evals/<b>-<task>--<a>). Each runs as one Job
+    // per task — they can't use the Indexed dataset Job (one image × N indices);
+    // the chart enforces that with a perTask+datasetSize guard. (benchmarks/RULES.md.)
+    if eval_containers::naming::is_per_task(benchmark) {
+        sets.push("perTask=true".into());
+    }
     if let Some(m) = &args.model {
         sets.push(format!("evalModel={m}"));
         sets.push(format!("model={m}"));
