@@ -23,6 +23,7 @@ use std::process::Command;
 /// answer matches itself (substring / token-recall / normalized).
 const SPECIAL: &[(&str, &str)] = &[
     ("swe-bench", "sympy__sympy-24066"), // per-task state grader (apply gold patch to /testbed)
+    ("terminal-bench", "broken-python"), // per-task, built from source (rule 24g); solution.yaml gold
     // Code benchmarks — gold solution = the dataset's reference, written to stdout.
     ("humaneval", "0"),
     ("humanevalplus", "0"),
