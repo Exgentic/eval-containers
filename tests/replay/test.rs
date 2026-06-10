@@ -232,7 +232,7 @@ async fn bootstrap_core_bases() {
                 "agent-base-node",
                 "agent-base-python",
                 "agent-base-rust",
-                "bifrost",
+                "gateway-bifrost",
                 "model-replay",
                 "benchmark-base-hf",
                 "benchmark-base-github",
