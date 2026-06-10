@@ -1,24 +1,32 @@
 # syntax=docker/dockerfile:1
 # SWE-bench Verified
-# Per-task base images come from the upstream PUBLIC Docker Hub registry at
-# docker.io/swebench/sweb.eval.x86_64.<task_id>:latest — anonymously pullable,
-# no auth required.
+# Per-task base images come from Epoch AI's PUBLIC registry on GHCR:
+#   ghcr.io/epoch-research/swe-bench.eval.<arch>.<instance_id>:latest
+# Layer-optimized rebuilds of the official swebench eval images — ~6x smaller,
+# all 500 Verified instances, tested on x86_64; anonymously pullable, no auth.
+# See https://epoch.ai/blog/swebench-docker.
 #
-# NOTE: The SWE-bench harness sanitizes instance ids for Docker by replacing
-# "__" with "_1776_" (see swebench.harness.test_spec.test_spec). Callers must
-# pass EVAL_TASK_ID in the sanitized form used by the published images — e.g.
-# "sympy_1776_sympy-24066" rather than "sympy__sympy-24066". The HuggingFace
-# dataset lookup below reverses the transform so we fetch the right row.
+# EVAL_TASK_ID is the instance id in its native "__" form (e.g.
+# "sympy__sympy-24066") — exactly as in tasks.txt and the HuggingFace dataset,
+# with no Docker-Hub "_1776_" sanitization. EVAL_BASE_ARCH selects the
+# architecture: x86_64 (default — OpenShift/Linux, tested) or arm64 (Apple
+# Silicon, native / no-Rosetta; best-effort & untested by Epoch — gold-check
+# before trusting its grades).
 
 ARG EVAL_TASK_ID
+ARG EVAL_BASE_ARCH=x86_64
 ARG REGISTRY=quay.io/eval-containers
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
-FROM docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest
+FROM ghcr.io/epoch-research/swe-bench.eval.${EVAL_BASE_ARCH}.${EVAL_TASK_ID}:latest
+
+# Re-declare in-stage so the LABELs below can expand them.
+ARG EVAL_TASK_ID
+ARG EVAL_BASE_ARCH=x86_64
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="swe-bench"
-LABEL eval.benchmark.upstream_base="docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest"
+LABEL eval.benchmark.upstream_base="ghcr.io/epoch-research/swe-bench.eval.${EVAL_BASE_ARCH}.${EVAL_TASK_ID}:latest"
 LABEL eval.benchmark.description="SWE-bench Verified - software engineering"
 LABEL eval.benchmark.tasks="500"
 LABEL eval.benchmark.env="per-task"
@@ -38,13 +46,11 @@ RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
 RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.17) \
  || pip install --no-cache-dir --target /tests/deps swebench==3.0.17
 
-# Fetch this task's metadata from HuggingFace. The dataset stores instance_id
-# in its human form (e.g. "sympy__sympy-24066"); EVAL_TASK_ID is the Docker-
-# sanitized form (e.g. "sympy_1776_sympy-24066"). Reverse the transform for
-# the dataset lookup.
+# Fetch this task's metadata from HuggingFace. EVAL_TASK_ID is already the
+# dataset's native instance_id (with "__"), so it is used directly.
 ARG EVAL_TASK_ID
 ENV EVAL_TASK_ID=${EVAL_TASK_ID}
-RUN HF_ID="$(echo "${EVAL_TASK_ID}" | sed 's/_1776_/__/g')" && \
+RUN HF_ID="${EVAL_TASK_ID}" && \
     mkdir -p /tasks/0 && \
     for offset in 0 100 200 300 400 500; do \
       curl -sf "https://datasets-server.huggingface.co/rows?dataset=princeton-nlp/SWE-bench_Verified&config=default&split=test&offset=$offset&length=100" > /tmp/page.json && \
@@ -57,60 +63,57 @@ RUN HF_ID="$(echo "${EVAL_TASK_ID}" | sed 's/_1776_/__/g')" && \
     done && rm -f /tmp/page.json
 RUN chmod -R 600 /tasks
 
-# Test: apply test_patch, run tests, grade
-RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
+# Grade with the official SWE-bench harness in two linear steps — RUN (bash)
+# then GRADE (python) — with no bespoke eval/grading logic. We only ever *use*
+# swebench: its per-instance eval script (bash) and its report function (python).
+# The sole deviation from run_evaluation is that we run its script in THIS
+# container, which already IS the testbed (the agent edited /testbed in place)
+# and has no Docker daemon to launch a fresh one.
+RUN cat > /grade.sh <<'SH' && chmod +x /grade.sh
 #!/bin/bash
-mkdir -p /logs/verifier
-PYTHONPATH=/tests/deps python3 /tests/grade.py > /logs/verifier/reward.txt 2>/dev/null || echo 0 > /logs/verifier/reward.txt
-TEST
+# Framework verifier contract: write the reward (1=resolved, 0=not) to
+# /logs/verifier/reward.txt.
+set -uo pipefail
+mkdir -p /logs/verifier /output/agent
+cd /testbed
+# The verifier runs as root on the agent-owned repo; allow git operations here.
+git config --global --add safe.directory /testbed
+git diff > /output/agent/patch.diff 2>/dev/null || true
+# RUN swebench's eval script (baked at build).
+#  - env -u PYTHONPATH: keep the grading deps under /tests/deps from shadowing
+#    the testbed's own packages.
+#  - PIP_NO_BUILD_ISOLATION=1: the eval script's pip install must use the
+#    setuptools/wheel already in the testbed env, not fetch them (no internet).
+#  - PIP_NO_INDEX=1: never reach PyPI; every dep is baked into the image, so the
+#    reinstall stays fully offline and reproducible (rules 1 & 3).
+env -u PYTHONPATH PIP_NO_BUILD_ISOLATION=1 PIP_NO_INDEX=1 bash /tests/eval.sh > /logs/verifier/test_output.log 2>&1
+# GRADE the log with swebench (its parser + report are a library, not a CLI).
+PYTHONPATH=/tests/deps python3 /tests/grade.py /logs/verifier/test_output.log > /logs/verifier/reward.txt 2>/dev/null || echo 0 > /logs/verifier/reward.txt
+SH
 
-RUN chmod +x /grade.sh
+# Bake swebench's per-instance eval script (each image is one fixed instance):
+# the exact bash run_evaluation runs inside its container — activate conda,
+# reinstall the patched package, reset the test files, apply the test_patch, run
+# the test command between Start/End Test markers. sys.path.insert puts
+# /tests/deps before '' (cwd /testbed) so swebench's deps (e.g. requests) aren't
+# shadowed by the testbed package of the same name.
+RUN PYTHONPATH=/tests/deps python3 -c "import sys; sys.path.insert(0, '/tests/deps'); import json; from swebench.harness.test_spec.test_spec import make_test_spec; open('/tests/eval.sh', 'w').write(make_test_spec(json.load(open('/tasks/0/config.json'))).eval_script)"
 
 RUN cat > /tests/grade.py <<'GRADE'
+# Pure grader: score one test log with swebench's own report function (the same
+# call run_evaluation makes) and print the reward — 1 iff the instance resolves.
+# sys.path.insert puts /tests/deps before '' (cwd /testbed) so swebench's deps
+# aren't shadowed by the testbed package of the same name.
 import sys; sys.path.insert(0, '/tests/deps')
-import json, subprocess, shlex, re, tempfile, os
+import json, os
 from swebench.harness.test_spec.test_spec import make_test_spec
-from swebench.harness.test_spec.python import get_test_directives
-from swebench.harness.constants import (MAP_REPO_VERSION_TO_SPECS, ResolvedStatus,
-    EvalType, FAIL_TO_PASS, PASS_TO_PASS, KEY_INSTANCE_ID, FAIL_ONLY_REPOS,
-    START_TEST_OUTPUT, END_TEST_OUTPUT)
-from swebench.harness.grading import get_logs_eval, get_eval_tests_report, get_resolution_status
+from swebench.harness.grading import get_eval_report
+from swebench.harness.constants import KEY_INSTANCE_ID, KEY_PREDICTION
 
-config = json.load(open('/tasks/0/config.json'))
-spec = MAP_REPO_VERSION_TO_SPECS[config['repo']][config['version']]
-test_spec = make_test_spec(config)
-
-os.chdir('/testbed')
-
-# Capture the agent's patch
-subprocess.run('git diff > /output/agent/patch.diff', shell=True)
-
-# Activate conda
-os.environ['PATH'] = '/opt/miniconda3/envs/testbed/bin:' + os.environ.get('PATH', '')
-
-# Reset test files to pre-PR state, apply test patch
-tracked = [p for p in re.findall(r'^--- a/(.*)$', config['test_patch'], re.MULTILINE) if p != '/dev/null']
-if tracked:
-    subprocess.run(f"git checkout {config['base_commit']} {' '.join(shlex.quote(p) for p in tracked)}", shell=True)
-subprocess.run(f"echo {shlex.quote(config['test_patch'])} | git apply -", shell=True)
-
-# Run tests
-test_files = get_test_directives({'repo': config['repo'], 'test_patch': config['test_patch']})
-test_cmd = spec['test_cmd'] + ' ' + ' '.join(test_files)
-log = tempfile.NamedTemporaryFile(mode='w', suffix='.log', delete=False)
-result = subprocess.run(test_cmd, shell=True, capture_output=True, text=True)
-log.write(f'{START_TEST_OUTPUT}\n{result.stdout}\n{result.stderr}\n{END_TEST_OUTPUT}')
-log.close()
-
-# Grade
-eval_status_map, found = get_logs_eval(test_spec, log.name)
-if found:
-    eval_ref = {KEY_INSTANCE_ID: test_spec.instance_id, FAIL_TO_PASS: test_spec.FAIL_TO_PASS, PASS_TO_PASS: test_spec.PASS_TO_PASS}
-    eval_type = EvalType.FAIL_ONLY if test_spec.repo in FAIL_ONLY_REPOS else EvalType.PASS_AND_FAIL
-    report = get_eval_tests_report(eval_status_map, eval_ref, eval_type=eval_type)
-    print(1 if get_resolution_status(report) == ResolvedStatus.FULL.value else 0)
-else:
-    print(0)
+test_spec = make_test_spec(json.load(open('/tasks/0/config.json')))
+patch = open('/output/agent/patch.diff').read() if os.path.exists('/output/agent/patch.diff') else ''
+report = get_eval_report(test_spec, {KEY_INSTANCE_ID: test_spec.instance_id, KEY_PREDICTION: patch}, sys.argv[1], False)
+print(1 if report[test_spec.instance_id]['resolved'] else 0)
 GRADE
 
 # Lock test infrastructure from agent (root-only read + execute)
