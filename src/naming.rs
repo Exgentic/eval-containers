@@ -52,9 +52,11 @@ pub fn eval_task_image(
     format!("{registry}/evals/{benchmark}-{task_id}--{agent}:{tag}")
 }
 
-/// `{registry}/compose/<name>:latest` — a benchmark's published compose file.
-pub fn compose_artifact(registry: &str, benchmark: &str) -> String {
-    format!("{registry}/compose/{benchmark}:latest")
+/// `{registry}/evaluate` — the single published evaluation compose artifact.
+/// `run --mode compose` consumes it as `oci://{registry}/evaluate`; one generic,
+/// `EVAL_BENCHMARK`-parameterized artifact, not one per benchmark.
+pub fn compose_artifact(registry: &str) -> String {
+    format!("{registry}/evaluate")
 }
 
 /// Bake target for an agent: `agent-<name>`.
@@ -192,5 +194,13 @@ mod tests {
             release_name("aime-claude-code-task-0"),
             "aime-claude-code-task-0"
         );
+    }
+
+    #[test]
+    fn compose_artifact_is_the_single_evaluate_ref() {
+        // The publish target (`build compose`) MUST equal what `run --mode
+        // compose` consumes as oci://{registry}/evaluate — one shared helper,
+        // so the two sides can't drift apart again.
+        assert_eq!(compose_artifact(REG), format!("{REG}/evaluate"));
     }
 }
