@@ -12,7 +12,7 @@ name: Tests
 # engine, the catalog structure, and the CLI's naming/build assumptions — NOT
 # live containers, images, or API calls. The container/e2e suites (build,
 # replay, live, gateways, agents, fleet) need a docker daemon or a cluster and
-# run elsewhere (release.yml on tag/main; oc-connectivity.yml on PR).
+# run elsewhere (release-images.yml on tag/main; oc-connectivity.yml on PR).
 #
 # Excluded on purpose:
 #   - task_inspection::inspect_every_existing_fixture — an audit of recorded
