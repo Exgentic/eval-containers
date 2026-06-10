@@ -1,9 +1,9 @@
 ---
 benchmark: terminal-bench
 host: local podman+Rosetta
-commit: cf863b0
+commit: 8be773e
 ---
-# Audit — terminal-bench
+# Audit — terminal-bench (Harbor 2.1)
 
 `✓` verified (a check passed) · `✗` failing · `?` unchecked · `n/a` not applicable
 
@@ -11,10 +11,10 @@ commit: cf863b0
 
 | Check | Status | Evidence |
 |-------|:------:|----------|
-| building | ✓ | built on Rosetta (`podman build --platform linux/amd64`, no QEMU) via `build.sh` for hello-world, broken-python, analyze-access-logs, assign-seats |
+| building | ✓ | built on Rosetta (`podman build --platform linux/amd64`) via `build.sh` (env from the task's `environment/Dockerfile` + overlay) for build-cython-ext, break-filter-js-from-html, bn-fit-modify |
 | running | ? | not run with a live agent (oracle only) |
-| isolation | ✓ | gold solution not baked (`find / -name 'solution.*'` → 0); tests root-only (`/tests` = 700); `/task` holds only `instruction.md`; the task id is excluded from the agent env (framework `env -i`, rule 7) |
-| oracle | ✓ | gold=1.0 / no-op=0.0 on 4 tasks — `eval-containers oracle terminal-bench --task-id {hello-world,broken-python,analyze-access-logs,assign-seats}` |
+| isolation | ✓ | gold solution not baked (fetched fresh by `solution.sh`); tests root-only (`/tests` = 700); `/task` holds only `instruction.md`; the task id is excluded from the agent env (framework `env -i`, rule 7) |
+| oracle | ✓ | gold=1.0 / no-op=0.0 on 3 tasks — `eval-containers oracle terminal-bench --task-id {build-cython-ext,break-filter-js-from-html,bn-fit-modify}` |
 | traces-reviewed | ? | no human trajectory review |
 | replicate-official | ? | no known-model reproduction of a published score |
 
@@ -31,16 +31,16 @@ commit: cf863b0
 
 | Metric | Value |
 |--------|-------|
-| image | ~126–166 MB per task (e.g. analyze-access-logs 126 MB, hello-world / assign-seats 166 MB) |
-| per-task multiplier | per-task (one image per task; size varies with the task's own base + setup) |
+| image | per-task; ~hundreds of MB, varies with the task's own `environment/Dockerfile` |
+| per-task multiplier | per-task (one image per task) |
 
 ## Speed
 
 | Metric | Value |
 |--------|-------|
-| build | within the e2e below (not split out) |
-| grade | within the e2e below (not split out) |
-| end-to-end | ~41 s for broken-python (clean build + gold + no-op, Rosetta, base images cached); varies widely per task with the task's own setup |
+| build | task env (`environment/Dockerfile`) + overlay; varies per task |
+| grade | upstream `tests/test.sh` (installs pytest + runs the suite) |
+| end-to-end | ~minutes per task on Rosetta (clean build + gold + no-op); varies with the task |
 
 ## Cost
 
@@ -48,3 +48,10 @@ commit: cf863b0
 |--------|-------|
 | per task | ? |
 | full suite | ? |
+
+## Distribution — is it shipped?
+
+| Check | Status / Value | Evidence |
+|-------|:--------------:|----------|
+| published | ✗ | not in ghcr.io/exgentic/benchmarks |
+| pull size | — | not published (per-task, built from source) |
