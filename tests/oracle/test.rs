@@ -24,6 +24,11 @@ use std::process::Command;
 const SPECIAL: &[(&str, &str)] = &[
     ("swe-bench", "sympy__sympy-24066"), // per-task state grader (apply gold patch to /testbed)
     ("terminal-bench", "build-cython-ext"), // per-task (Harbor 2.1), built from source (rule 24g)
+    // per-task pull + own grader (run_script.sh/parser.py); resolve = fail_to_pass+pass_to_pass all PASS
+    (
+        "swe-bench-pro",
+        "instance_qutebrowser__qutebrowser-e57b6e0eeeb656eb2c84d6547d5a0a7333ecee85-v2ef375ac784985212b1805e1d0431dc8f1b3c171",
+    ),
     // Code benchmarks — gold solution = the dataset's reference, written to stdout.
     ("humaneval", "0"),
     ("humanevalplus", "0"),

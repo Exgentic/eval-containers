@@ -77,7 +77,7 @@ eval-containers run aime --task-id 0 --agent codex --mode job
 |---|---|---|
 | `compose` *(default)* | `docker compose -f benchmarks/<x>/compose.yaml up` | Local laptop, full stack with gateway + OTel sidecars, fastest iteration. |
 | `container` | `docker run -e EVAL_MODEL=... <eval-image>` | CI smoke tests, one-shot runs against an existing model proxy, minimal footprint. |
-| `job` | `helm template benchmarks/_chart --set benchmark=<x> \| kubectl apply -f -` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
+| `job` | `helm template oci://<registry>/charts/eval --set benchmark=<x> \| kubectl apply -f -` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
 
 ### Kubernetes (`--mode job`)
 
@@ -89,12 +89,16 @@ helm template aime oci://quay.io/eval-containers/charts/eval --version 0.1.0 \
   --set benchmark=aime --set agent=claude-code --set task=0 | kubectl apply -f -
 ```
 
-Working in a clone, render the local chart instead — which is what the CLI builds today, mapping every axis to a `--set`:
+The CLI maps every axis to a `--set` and renders that **published** chart by
+default; add `--local` to render the in-repo `./benchmarks/_chart` instead:
 
 ```bash
 eval-containers run aime --agent codex --task-id 42 --mode job
-# → helm template aime-codex-task-42 ./benchmarks/_chart --set benchmark=aime \
-#       --set registry=… --set agent=codex --set task=42 | kubectl apply -f -
+# → helm template aime-codex-task-42 oci://<registry>/charts/eval --version 0.1.0 \
+#       --set benchmark=aime --set registry=… --set agent=codex --set task=42 | kubectl apply -f -
+
+eval-containers run aime --agent codex --task-id 42 --mode job --local
+# → helm template aime-codex-task-42 ./benchmarks/_chart --set … | kubectl apply -f -
 ```
 
 Platform specifics (corp registry, NodeAffinity, NetworkPolicies, a different service account, ...) are a Helm **values file you own**, layered on with `--overlay` (an extra `helm -f`), so the eval axes and your platform settings merge. A ready-to-adapt OpenShift overlay (sets the `anyuid` service account) ships as [`deploy/values-openshift.yaml`](deploy/values-openshift.yaml):
