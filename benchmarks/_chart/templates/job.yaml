@@ -1,4 +1,7 @@
 {{- $v := include "eval.values" . | fromYaml -}}
+{{- if and ($v.perTask | default false) $v.datasetSize -}}
+{{- fail "per-task benchmarks bake one eval image per task and cannot use a dataset (Indexed) Job — run one Job per task (omit datasetSize)" -}}
+{{- end -}}
 apiVersion: batch/v1
 kind: Job
 metadata:

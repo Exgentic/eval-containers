@@ -14,7 +14,7 @@
 
 use eval_containers::naming::{
     agent_bake_target, agent_image, benchmark_bake_target, benchmark_image, flatten_imagestream,
-    model_bake_target, model_image,
+    is_per_task, model_bake_target, model_image,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -135,4 +135,48 @@ fn eval_imagestreams_are_dns_safe() {
         benchmarks.len(),
         agents.len()
     );
+}
+
+/// `naming::is_per_task` (label-driven) is what the CLI uses to pick the
+/// eval-image name (`evals/<b>-<task>--<a>` vs `evals/<b>--<a>`) and the chart's
+/// `perTask`. The known per-task set MUST be detected; shared-env MUST NOT.
+#[test]
+fn per_task_benchmarks_are_detected() {
+    for b in [
+        "swe-bench",
+        "swe-bench-pro",
+        "compilebench",
+        "cybench",
+        "mle-bench",
+        "swe-lancer",
+        "terminal-bench",
+    ] {
+        assert!(is_per_task(b), "{b} should be detected as per-task");
+    }
+    for b in ["aime", "gpqa-diamond"] {
+        assert!(!is_per_task(b), "{b} should be shared-env, not per-task");
+    }
+}
+
+/// Regression guard for the per-task eval-image naming bug: `build eval --task-id X`
+/// used to tag `evals/<b>--<a>` while compose/run expected `evals/<b>-<task>--<a>`.
+/// build/container/job are now anchored to `naming::eval_task_image`; this guards
+/// the one hand-written surface — every per-task `compose.yaml` MUST address the
+/// runner by the task-aware name (benchmarks/RULES.md 24f).
+#[test]
+fn per_task_compose_runner_image_is_task_aware() {
+    let mut issues = Vec::new();
+    for (name, dir) in catalog_dirs("benchmarks") {
+        if !is_per_task(&name) {
+            continue;
+        }
+        let compose = read(&dir.join("compose.yaml"));
+        let needle = format!("/evals/{name}-${{EVAL_TASK_ID");
+        if !compose.contains(&needle) {
+            issues.push(format!(
+                "{name}/compose.yaml runner image is not task-aware (expected to contain `{needle}…`)"
+            ));
+        }
+    }
+    assert!(issues.is_empty(), "{}", issues.join("\n"));
 }

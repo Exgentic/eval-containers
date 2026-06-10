@@ -29,11 +29,27 @@ pub fn model_image(registry: &str, model: &str, tag: &str) -> String {
     format!("{registry}/models/{model}:{tag}")
 }
 
-/// `{registry}/evals/<benchmark>--<agent>:<tag>` — the combined eval image.
+/// `{registry}/evals/<benchmark>--<agent>:<tag>` — the combined eval image
+/// (shared-env benchmarks: one image, task chosen at runtime).
 /// The `--` separator is load-bearing: the OpenShift flattener collapses it to
 /// a single `-` for imagestream names (see [`flatten_imagestream`]).
 pub fn eval_image(registry: &str, benchmark: &str, agent: &str, tag: &str) -> String {
     format!("{registry}/evals/{benchmark}--{agent}:{tag}")
+}
+
+/// `{registry}/evals/<benchmark>-<task>--<agent>:<tag>` — the combined eval image
+/// for a **per-task** benchmark (each task bakes a separate image; the task id
+/// is part of the name, mirroring [`benchmark_task_image`]). Every surface
+/// (build / compose / container / job) MUST address per-task evals by this name
+/// (benchmarks/RULES.md — eval-image naming).
+pub fn eval_task_image(
+    registry: &str,
+    benchmark: &str,
+    task_id: &str,
+    agent: &str,
+    tag: &str,
+) -> String {
+    format!("{registry}/evals/{benchmark}-{task_id}--{agent}:{tag}")
 }
 
 /// `{registry}/compose/<name>:latest` — a benchmark's published compose file.
@@ -68,6 +84,41 @@ pub fn flatten_imagestream(repo: &str) -> String {
         "core" | "gateways" => format!("{cat}-{name}"),
         _ => name,
     }
+}
+
+/// Sanitize an axis-derived string into a valid Helm release name — a DNS-1123
+/// label: lowercase, each run of non-`[a-z0-9]` collapses to one `-`, no leading
+/// or trailing `-`, capped at Helm's 53-char limit. Job mode's release name is
+/// `<benchmark>-<agent>-task-<task>`; per-task task ids carry chars Helm forbids
+/// (SWE-bench's `sympy__sympy-24066` has `_`), so without this `run --mode job`
+/// can't even render the chart for a per-task benchmark. Sibling to
+/// [`flatten_imagestream`] — both make a name k8s-safe.
+pub fn release_name(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut dash = false;
+    for c in s.chars() {
+        let c = c.to_ascii_lowercase();
+        if c.is_ascii_lowercase() || c.is_ascii_digit() {
+            out.push(c);
+            dash = false;
+        } else if !dash {
+            out.push('-');
+            dash = true;
+        }
+    }
+    out.truncate(53);
+    out.trim_matches('-').to_string()
+}
+
+/// True iff the benchmark declares a per-task environment
+/// (`LABEL eval.benchmark.env="per-task"` in its Dockerfile) — i.e. each task
+/// bakes its own image, addressed by [`eval_task_image`] instead of
+/// [`eval_image`]. The single source of truth the CLI uses to pick per-task
+/// naming; a missing Dockerfile reads as shared-env (`false`).
+pub fn is_per_task(benchmark: &str) -> bool {
+    std::fs::read_to_string(format!("benchmarks/{benchmark}/Dockerfile"))
+        .unwrap_or_default()
+        .contains(r#"eval.benchmark.env="per-task""#)
 }
 
 #[cfg(test)]
@@ -108,6 +159,20 @@ mod tests {
     }
 
     #[test]
+    fn eval_task_image_carries_task_before_agent() {
+        assert_eq!(
+            eval_task_image(
+                REG,
+                "swe-bench",
+                "sympy__sympy-24066",
+                "claude-code",
+                "latest"
+            ),
+            "quay.io/eval-containers/evals/swe-bench-sympy__sympy-24066--claude-code:latest"
+        );
+    }
+
+    #[test]
     fn model_bake_target_replaces_dots() {
         assert_eq!(model_bake_target("gpt-5.4"), "model-gpt-5_4");
         assert_eq!(
@@ -124,5 +189,19 @@ mod tests {
         assert_eq!(flatten_imagestream("benchmarks/aime"), "aime");
         assert_eq!(flatten_imagestream("evals/aime--codex"), "aime-codex");
         assert_eq!(flatten_imagestream("models/gpt-5.4"), "gpt-5-4");
+    }
+
+    #[test]
+    fn release_name_sanitizes_to_a_dns_label() {
+        // SWE-bench task ids carry `__`, which Helm rejects in a release name.
+        assert_eq!(
+            release_name("swe-bench-claude-code-task-sympy__sympy-24066"),
+            "swe-bench-claude-code-task-sympy-sympy-24066"
+        );
+        // Already-valid names pass through unchanged.
+        assert_eq!(
+            release_name("aime-claude-code-task-0"),
+            "aime-claude-code-task-0"
+        );
     }
 }
