@@ -12,9 +12,10 @@
 //!
 //! Run: cargo test --test cli_conformance
 
+use eval_containers::benchmark::{is_per_task, is_per_task_by_name};
 use eval_containers::naming::{
     agent_bake_target, agent_image, benchmark_bake_target, benchmark_image, flatten_imagestream,
-    is_per_task, model_bake_target, model_image,
+    model_bake_target, model_image,
 };
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -137,7 +138,7 @@ fn eval_imagestreams_are_dns_safe() {
     );
 }
 
-/// `naming::is_per_task` (label-driven) is what the CLI uses to pick the
+/// `benchmark::is_per_task` (label-driven) is what the CLI uses to pick the
 /// eval-image name (`evals/<b>-<task>--<a>` vs `evals/<b>--<a>`) and the chart's
 /// `perTask`. The known per-task set MUST be detected; shared-env MUST NOT.
 #[test]
@@ -151,10 +152,13 @@ fn per_task_benchmarks_are_detected() {
         "swe-lancer",
         "terminal-bench",
     ] {
-        assert!(is_per_task(b), "{b} should be detected as per-task");
+        assert!(is_per_task_by_name(b), "{b} should be detected as per-task");
     }
     for b in ["aime", "gpqa-diamond"] {
-        assert!(!is_per_task(b), "{b} should be shared-env, not per-task");
+        assert!(
+            !is_per_task_by_name(b),
+            "{b} should be shared-env, not per-task"
+        );
     }
 }
 
@@ -167,7 +171,7 @@ fn per_task_benchmarks_are_detected() {
 fn per_task_compose_runner_image_is_task_aware() {
     let mut issues = Vec::new();
     for (name, dir) in catalog_dirs("benchmarks") {
-        if !is_per_task(&name) {
+        if !is_per_task_by_name(&name) {
             continue;
         }
         let compose = read(&dir.join("compose.yaml"));
@@ -179,4 +183,29 @@ fn per_task_compose_runner_image_is_task_aware() {
         }
     }
     assert!(issues.is_empty(), "{}", issues.join("\n"));
+}
+
+/// The per-task **label** is the single source of truth (rule 24f); the structural
+/// shape (`FROM …${EVAL_TASK_ID}` or a default-less `ARG EVAL_TASK_ID`) MUST agree
+/// with it across the whole catalog. Catches a per-task Dockerfile that forgot the
+/// label (now silently shared-env) and keeps the consolidation's "label set ==
+/// heuristic set" claim enforced by CI rather than by hand.
+#[test]
+fn per_task_label_matches_structure() {
+    fn structural(df: &str) -> bool {
+        df.lines().map(str::trim_start).any(|t| {
+            (t.starts_with("FROM ")
+                && (t.contains("${EVAL_TASK_ID}") || t.contains("$EVAL_TASK_ID")))
+                || t.strip_prefix("ARG EVAL_TASK_ID")
+                    .is_some_and(|r| r.trim().is_empty())
+        })
+    }
+    for (name, dir) in catalog_dirs("benchmarks") {
+        let df = read(&dir.join("Dockerfile"));
+        assert_eq!(
+            is_per_task(&df),
+            structural(&df),
+            "{name}: per-task LABEL and ${{EVAL_TASK_ID}} FROM/ARG must agree (rule 24f)"
+        );
+    }
 }
