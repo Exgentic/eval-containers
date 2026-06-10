@@ -15,7 +15,7 @@
 
 ARG EVAL_TASK_ID
 ARG EVAL_BASE_ARCH=x86_64
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM ghcr.io/epoch-research/swe-bench.eval.${EVAL_BASE_ARCH}.${EVAL_TASK_ID}:latest

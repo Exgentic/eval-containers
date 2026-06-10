@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/arc-agi--claude-code:latest
+FROM ghcr.io/exgentic/evals/arc-agi--claude-code:latest

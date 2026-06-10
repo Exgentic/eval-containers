@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/triviaqa--claude-code:latest
+FROM ghcr.io/exgentic/evals/triviaqa--claude-code:latest

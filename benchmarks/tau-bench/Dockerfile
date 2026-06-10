@@ -4,7 +4,7 @@
 # Evaluation is state-based (database + output checks), requires the TAU-bench runtime.
 # Externally graded: test writes -1.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

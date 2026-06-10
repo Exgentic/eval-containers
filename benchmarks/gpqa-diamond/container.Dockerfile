@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/gpqa-diamond--claude-code:latest
+FROM ghcr.io/exgentic/evals/gpqa-diamond--claude-code:latest

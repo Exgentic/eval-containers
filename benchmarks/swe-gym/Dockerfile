@@ -9,7 +9,7 @@
 # exposes the problem statement to the agent, captures the produced patch, and writes
 # -1 (externally graded).
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

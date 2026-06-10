@@ -6,7 +6,7 @@
 # script, which can't be parquet-converted by HF. We fetch the original raw
 # JSONL files hosted by the authors at yonatanbisk.com (same data).
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

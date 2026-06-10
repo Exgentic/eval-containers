@@ -50,7 +50,7 @@ uses (eval combination + gateway + otelcol) from your local engine — the chart
 
 ```bash
 for img in core/otel:latest models/gpt-5.4--bifrost:latest evals/aime--claude-code:latest; do
-  kind load docker-image --name eval-local quay.io/eval-containers/$img
+  kind load docker-image --name eval-local ghcr.io/exgentic/$img
 done
 ```
 

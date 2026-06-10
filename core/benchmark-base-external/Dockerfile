@@ -7,7 +7,7 @@
 # Plus: default /grade.sh writes reward=-1 so externally-graded
 # benchmarks start from a known-bad baseline that their real grader
 # overrides.
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM --platform=linux/amd64 python:3.12-slim

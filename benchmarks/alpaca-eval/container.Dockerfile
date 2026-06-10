@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/alpaca-eval--claude-code:latest
+FROM ghcr.io/exgentic/evals/alpaca-eval--claude-code:latest

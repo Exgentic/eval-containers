@@ -8,7 +8,7 @@
 # Default MODEL_IMAGE points at the bifrost flavor (smaller, lighter,
 # native OTel emission). Override at build time:
 #
-#   docker build --build-arg MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--litellm ...
+#   docker build --build-arg MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--litellm ...
 #                                                                    ^^^^^^ litellm
 #
 # Build args:
@@ -43,9 +43,9 @@
 ARG BENCHMARK_IMAGE
 ARG AGENT_IMAGE
 ARG AGENT_VERSION
-ARG MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--bifrost:latest
-ARG OTEL_IMAGE=quay.io/eval-containers/core/otel:latest
-ARG RUNTIME_BUNDLE_IMAGE=quay.io/eval-containers/core/runtime-bundle:latest
+ARG MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest
+ARG OTEL_IMAGE=ghcr.io/exgentic/core/otel:latest
+ARG RUNTIME_BUNDLE_IMAGE=ghcr.io/exgentic/core/runtime-bundle:latest
 
 # Named stages for the build-arg base images: buildx forbids variable
 # expansion in `COPY --from=` ("variable expansion is not supported for

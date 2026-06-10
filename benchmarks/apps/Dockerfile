@@ -2,7 +2,7 @@
 # 5000 test tasks. Data: HuggingFace codeparrot/apps
 # Agent writes a Python solution. Test runs it against JSON-encoded I/O test cases.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

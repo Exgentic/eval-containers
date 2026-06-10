@@ -15,7 +15,7 @@ eval-containers [--registry <ref>] <command> [args]
 
 | Flag | Env | Default |
 |---|---|---|
-| `--registry <ref>` | `EVAL_REGISTRY` | `quay.io/eval-containers` |
+| `--registry <ref>` | `EVAL_REGISTRY` | `ghcr.io/exgentic` |
 
 ## Commands
 

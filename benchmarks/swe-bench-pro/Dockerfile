@@ -14,7 +14,7 @@
 # every fail_to_pass + pass_to_pass test PASSES. Both are fetched from upstream at
 # a pinned commit and baked root-only — no swebench package, grading is offline.
 ARG TASK_BASE
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM ${TASK_BASE}

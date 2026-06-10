@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/ruler--claude-code:latest
+FROM ghcr.io/exgentic/evals/ruler--claude-code:latest

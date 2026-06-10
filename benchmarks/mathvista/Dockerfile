@@ -2,7 +2,7 @@
 # 1000 tasks (testmini split). Data: HuggingFace AI4Math/MathVista
 # Agent sees question + image. Prints the final answer. Test compares to expected answer.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

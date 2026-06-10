@@ -134,7 +134,7 @@ fn fixture_path() -> PathBuf {
 
 async fn start_replay_mock(net: &str, host_name: &str) -> ContainerAsync<GenericImage> {
     ensure_mock_built().await;
-    GenericImage::new("quay.io/eval-containers/models/replay", "latest")
+    GenericImage::new("ghcr.io/exgentic/models/replay", "latest")
         .with_exposed_port(ContainerPort::Tcp(4000))
         // Replay logs `[replay] loaded N responses from ...` on
         // successful fixture load — wait for that before letting the
@@ -176,7 +176,7 @@ async fn start_agent(
     // into those files inside the container, and the container is
     // typically already stopped by the time the panic path runs.
     GenericImage::new(
-        format!("quay.io/eval-containers/evals/agents-smoke--{agent}"),
+        format!("ghcr.io/exgentic/evals/agents-smoke--{agent}"),
         "latest".to_string(),
     )
     // The eval entrypoint exits when the agent finishes (or the

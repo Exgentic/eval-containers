@@ -4,7 +4,7 @@ description: >-
   Cut a release of the Eval Containers image fleet — pass the readiness
   gate, then build, tag, and push every benchmark, agent, model, gateway,
   and core image to the registry in bulk. Use when tagging a release or
-  pushing the fleet to quay.io/eval-containers. For building images during
+  pushing the fleet to ghcr.io/exgentic. For building images during
   local dev (one artifact at a time, no push, no readiness gate), use the
   `build` skill instead; this skill is the full release flow that wraps it.
 ---
@@ -13,7 +13,7 @@ description: >-
 
 Releasing means producing the whole fleet — every benchmark, agent,
 model, gateway, and core image — tagged, labeled, and pushed to
-`quay.io/eval-containers`. The guiding principle: **CI builds the fleet;
+`ghcr.io/exgentic`. The guiding principle: **CI builds the fleet;
 humans build one thing at a time** (see the `build` skill for the
 single-artifact loop). A release is the one time the entire fleet builds
 and ships together, so it MUST pass the full readiness gate first.
@@ -114,7 +114,7 @@ red), and `doctrine/RULES.md:15` (the bake graph is the build artifact).
    REGISTRY=ghcr.io/eval-containers TAG=v1.2.0 docker buildx bake --push
    ```
 
-   `REGISTRY` (default `quay.io/eval-containers`) and `TAG` (default
+   `REGISTRY` (default `ghcr.io/exgentic`) and `TAG` (default
    `latest`) are declared once at the repo root `./docker-bake.hcl` and
    picked up by auto-discovery (`doctrine/RULES.md:15`, sub-rules b–c).
    The `build` skill covers composing and building individual targets,

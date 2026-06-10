@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/wmt--claude-code:latest
+FROM ghcr.io/exgentic/evals/wmt--claude-code:latest
