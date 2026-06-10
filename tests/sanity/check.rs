@@ -530,3 +530,24 @@ fn eval_image_launches_the_pipeline() {
 
     eprintln!("✓ eval image launches the pipeline across all three modes (rule 12)");
 }
+
+/// Eval integrity (rule 7): the agent process MUST NOT receive the task
+/// identity. The agent runs via `gosu agent env -i <allow-list> /run.sh`; that
+/// allow-list must not pass TASK_ID/EVAL_TASK_ID — a model that recognizes a
+/// benchmark instance id can recall a memorized solution and inflate the score.
+/// The verifier/result steps read the id from the inherited container env, not
+/// the agent's, so grading is unaffected.
+#[test]
+fn agent_env_excludes_the_task_id() {
+    let pc = fs::read_to_string("core/process-compose/process-compose.yaml")
+        .expect("read process-compose.yaml");
+    let agent_cmd = pc
+        .lines()
+        .find(|l| l.contains("gosu agent") && l.contains("env -i"))
+        .expect("agent command (`gosu agent env -i`) not found in process-compose.yaml");
+    assert!(
+        !agent_cmd.contains("TASK_ID="),
+        "agent env -i allow-list leaks the task id to the agent process:\n{agent_cmd}"
+    );
+    eprintln!("✓ agent env -i allow-list excludes the task id (rule 7)");
+}
