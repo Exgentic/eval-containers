@@ -2,7 +2,8 @@
 name: audit-benchmark
 description: >-
   Produce or refresh one benchmark's AUDIT.md — the standing record of what has
-  actually been checked about it (validity, safety, size, speed, cost). Use it
+  actually been checked about it (validity, safety, size, speed, cost,
+  distribution). Use it
   when adding a benchmark, after changing its Dockerfile or grader, when its
   AUDIT.md is stale, or as the per-benchmark step of a fleet audit. It fills the
   machine-measurable fields from real tool runs and leaves human-judgment fields
@@ -52,13 +53,18 @@ Serves `doctrine/verification/audit/RULES.md:1`–`8`.
    build, grade, and end-to-end wall-clock → **Speed**. Copy the measured numbers
    in; never hand-type an estimate (RULES.md:8).
 
-7. **Leave the rest honestly unchecked.** **running** (a live agent run),
+7. **Check distribution.** `docker manifest inspect
+   ghcr.io/exgentic/benchmarks/<name>:latest` — set **published** `✓` if it
+   resolves, `✗` if not. Record **pull size** as the sum of the manifest's layer
+   sizes: the compressed download, distinct from the local image size (RULES.md:6).
+
+8. **Leave the rest honestly unchecked.** **running** (a live agent run),
    **traces-reviewed** (human reads a trajectory), **replicate-official** (a
    known model reproduces the published score), **resource-limited**, and
    **cost** need work this skill does not do. Mark each `?` (or `✗`), never `✓`,
    until that work actually happens (RULES.md:5, :7).
 
-8. **Commit it, then refresh the rollup.** Commit `benchmarks/<name>/AUDIT.md`,
+9. **Commit it, then refresh the rollup.** Commit `benchmarks/<name>/AUDIT.md`,
    then regenerate the root project table (the `audit-rollup` skill) so it
    reflects this change. The report is a tracked artifact, refreshed whenever the
    benchmark or its grader changes so its provenance never goes stale

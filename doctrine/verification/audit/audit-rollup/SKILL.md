@@ -26,22 +26,29 @@ cannot drift from the per-benchmark reports it summarizes. Serves
    all four are `✓`, `✗` if any is `✗`, else `?`. The table shows the headline;
    the per-benchmark file holds the detail.
 
-3. **Render the table.** From `references/project-template.md`, write one row per
-   benchmark — Building, Running, Isolation, Oracle, Traces, Replicate, Safety,
-   Audited — copying each status verbatim from its source. The Audited cell is the
-   commit's date (`git show -s --format=%cs <commit>`), not a stored field. Never
-   upgrade a `?` to a `✓` (RULES.md:10); the rollup is only as audited as its sources.
+3. **Resolve Published live.** Ask the registry which benchmark images exist —
+   one `gh api /orgs/Exgentic/packages?package_type=container` call (filter
+   `benchmarks/<name>`), or `docker manifest inspect ghcr.io/exgentic/benchmarks/<name>`.
+   Set **Published** `✓` if present, `✗` if not. Compute it live, like the Audited
+   date — so the column is complete even for benchmarks with no `AUDIT.md` (RULES.md:9).
 
-4. **Flag stale rows.** For each benchmark, compare its `AUDIT.md` `commit` to the
+4. **Render the table.** From `references/project-template.md`, write one row per
+   benchmark — Building, Running, Isolation, Oracle, Traces, Replicate, Safety,
+   Published, Audited — copying each status verbatim from its source. The Audited
+   cell is the commit's date (`git show -s --format=%cs <commit>`), not a stored
+   field. Never upgrade a `?` to a `✓` (RULES.md:10); the rollup is only as audited
+   as its sources.
+
+5. **Flag stale rows.** For each benchmark, compare its `AUDIT.md` `commit` to the
    latest commit touching its *sources* — `git log -1 --format=%H --
    benchmarks/<name>/ ':(exclude)benchmarks/<name>/AUDIT.md'`. Exclude the report
    itself, or committing an `AUDIT.md` would mark its own benchmark stale. If the
    sources changed since, mark its Audited cell stale (`⚠`): a green status against
    old code is worse than none (RULES.md:11).
 
-5. **Total each column.** Append a line counting `✓` per column (e.g. oracle
-   X/N), so the fleet's audit progress reads off the bottom at a glance.
+6. **Total each column.** Append a line counting `✓` per column (e.g. oracle
+   X/N, published Y/N), so the fleet's audit and publish progress read off the bottom.
 
-6. **Write to the root.** Write the table to `./AUDIT.md` and commit it.
+7. **Write to the root.** Write the table to `./AUDIT.md` and commit it.
    Regenerate it whenever any benchmark's `AUDIT.md` changes, so the rollup and
    its sources never disagree (RULES.md:10).

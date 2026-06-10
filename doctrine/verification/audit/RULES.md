@@ -6,7 +6,7 @@
 ## Abstract
 
 Every benchmark carries an `AUDIT.md` recording what has actually been checked
-about it — validity, safety, size, speed, cost — and the repository root carries
+about it — validity, safety, size, speed, cost, and distribution — and the root carries
 a generated `AUDIT.md` aggregating each benchmark's bottom line. This document
 fixes what an audit report must contain, what its statuses mean, and the rollup
 over them.
@@ -28,7 +28,7 @@ recorded outcome.
    benchmark, host, and audit commit.
 
 3. **Dimensions.** An `AUDIT.md` **MUST** cover validity, safety, size, speed,
-   and cost.
+   cost, and distribution.
 
 4. **Vocabulary.** Every check **MUST** carry one status: verified, failing,
    unchecked, or not-applicable.
