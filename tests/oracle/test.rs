@@ -29,6 +29,8 @@ const SPECIAL: &[(&str, &str)] = &[
         "swe-bench-pro",
         "instance_qutebrowser__qutebrowser-e57b6e0eeeb656eb2c84d6547d5a0a7333ecee85-v2ef375ac784985212b1805e1d0431dc8f1b3c171",
     ),
+    // per-task built from source (rule 24g); gold = reverse the bug_reintroduce patch
+    ("swe-lancer", "12155_1"),
     // Code benchmarks — gold solution = the dataset's reference, written to stdout.
     ("humaneval", "0"),
     ("humanevalplus", "0"),
