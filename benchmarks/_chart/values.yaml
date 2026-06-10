@@ -7,6 +7,12 @@
 # ── Per-run axes (overridden at deploy via --set / the eval-containers CLI) ──
 agent: claude-code
 task: "0"
+# perTask: this benchmark bakes one eval image per task, so the runner image is
+# evals/<benchmark>-<task>--<agent> (not evals/<benchmark>--<agent>). The CLI sets
+# it from the benchmark's `eval.benchmark.env=per-task` label. Per-task benchmarks
+# run one Job per task and CANNOT use a dataset (Indexed) Job — datasetSize is
+# rejected when perTask is true. (benchmarks/RULES.md — eval-image naming.)
+perTask: false
 registry: quay.io/eval-containers
 # The gateway is a fixed proxy image; `evalModel` is the upstream it proxies to
 # (CLI --model sets evalModel + model). `model` is the runner's logging tag.

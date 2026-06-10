@@ -44,8 +44,12 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
 {{- define "eval.gatewayImage" -}}
 {{- if .gatewayImageRef }}{{ .gatewayImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" .gatewayImage }}{{ .imageSuffix }}:{{ .gatewayTag }}{{ else }}{{ .registry }}/models/{{ .gatewayImage }}:{{ .gatewayTag }}{{ end -}}
 {{- end -}}
+{{/* Per-task benchmarks bake one eval image per task → the runner is
+     evals/<benchmark>-<task>--<agent>; shared-env benchmarks → evals/<benchmark>--<agent>.
+     (benchmarks/RULES.md — eval-image naming.) */}}
 {{- define "eval.runnerImage" -}}
-{{- if .runnerImageRef }}{{ .runnerImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" (printf "%s--%s" .benchmark .agent) }}{{ .imageSuffix }}:{{ .runnerTag }}{{ else }}{{ .registry }}/evals/{{ .benchmark }}--{{ .agent }}:{{ .runnerTag }}{{ end -}}
+{{- $ba := ternary (printf "%s-%s--%s" .benchmark .task .agent) (printf "%s--%s" .benchmark .agent) (.perTask | default false) -}}
+{{- if .runnerImageRef }}{{ .runnerImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" $ba }}{{ .imageSuffix }}:{{ .runnerTag }}{{ else }}{{ .registry }}/evals/{{ $ba }}:{{ .runnerTag }}{{ end -}}
 {{- end -}}
 
 {{/* The /output mount. In Indexed mode each example gets its own per-index dir
