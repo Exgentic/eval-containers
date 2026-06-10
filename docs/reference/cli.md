@@ -62,7 +62,11 @@ See [Environment variables](env-vars.md) for the full `EVAL_*` namespace.
 
 ## `build` flags
 
-`eval-containers build <agent|bench|model|eval|compose> <name> [flags]`
+`eval-containers build <agent|bench|model|eval> <name> [flags]`
+
+`eval-containers build compose` takes no name — it publishes the generic
+compose artifact to `oci://<registry>/evaluate`, parameterized at run time by
+`EVAL_BENCHMARK` / `EVAL_AGENT`.
 
 | Flag | Notes |
 |---|---|

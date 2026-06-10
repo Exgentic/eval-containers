@@ -36,6 +36,7 @@
 //! container.Dockerfile}` and the local chart instead of the registry artifact.
 
 use clap::{Args, ValueEnum};
+use eval_containers::naming::compose_artifact;
 use std::process::Command;
 
 #[derive(Clone, Debug, ValueEnum, Default)]
@@ -208,7 +209,7 @@ fn run_compose(
     let compose_ref = if local {
         format!("./benchmarks/{benchmark}/compose.yaml")
     } else {
-        format!("oci://{registry}/evaluate")
+        format!("oci://{}", compose_artifact(registry))
     };
     let env_str = envs
         .iter()
