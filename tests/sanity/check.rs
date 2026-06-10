@@ -551,3 +551,28 @@ fn agent_env_excludes_the_task_id() {
     );
     eprintln!("✓ agent env -i allow-list excludes the task id (rule 7)");
 }
+
+/// Fleet versioning (RULES.md principle 9): the image tag is the Eval Containers
+/// release version, so the CLI crate and the Helm chart MUST carry that same
+/// version. Guards `Cargo.toml` vs `benchmarks/_chart/Chart.yaml`; CI also
+/// asserts the git tag matches at release.
+#[test]
+fn repo_version_aligns_across_cargo_and_chart() {
+    let cargo = fs::read_to_string("Cargo.toml").expect("read Cargo.toml");
+    let cargo_ver = cargo
+        .lines()
+        .find_map(|l| l.strip_prefix("version = \"")?.strip_suffix('"'))
+        .expect("Cargo.toml [package] version");
+    let chart = fs::read_to_string("benchmarks/_chart/Chart.yaml").expect("read Chart.yaml");
+    let chart_ver = chart
+        .lines()
+        .find_map(|l| l.strip_prefix("version: "))
+        .map(str::trim)
+        .expect("Chart.yaml version");
+    assert_eq!(
+        cargo_ver, chart_ver,
+        "fleet version drift: Cargo.toml ({cargo_ver}) != Chart.yaml ({chart_ver}) — \
+         both MUST equal the release version (RULES.md principle 9)"
+    );
+    eprintln!("✓ fleet version aligned: Cargo.toml == Chart.yaml == {cargo_ver}");
+}
