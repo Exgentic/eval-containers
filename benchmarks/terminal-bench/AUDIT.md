@@ -48,3 +48,10 @@ commit: 8be773e
 |--------|-------|
 | per task | ? |
 | full suite | ? |
+
+## Distribution — is it shipped?
+
+| Check | Status / Value | Evidence |
+|-------|:--------------:|----------|
+| published | ✗ | not in ghcr.io/exgentic/benchmarks |
+| pull size | — | not published (per-task, built from source) |
