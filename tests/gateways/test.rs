@@ -108,7 +108,7 @@ async fn ensure_built() {
             let _ = dotenvy::dotenv();
             let mut targets: Vec<String> = vec!["otel".to_string()];
             for f in FLAVORS {
-                targets.push(f.to_string());
+                targets.push(format!("gateway-{f}"));
                 targets.push(format!("model-gpt-5_4--{f}"));
             }
             let refs: Vec<&str> = targets.iter().map(String::as_str).collect();
