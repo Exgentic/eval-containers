@@ -18,6 +18,16 @@ humans build one thing at a time** (see the `build` skill for the
 single-artifact loop). A release is the one time the entire fleet builds
 and ships together, so it MUST pass the full readiness gate first.
 
+A release ships the **CLI at the same version** too: the `vX.Y.Z` tag also
+fires `.github/workflows/release.yml` (cargo-dist), which builds the
+`eval-containers` binaries and publishes the crate. This skill covers the
+fleet half; the unified outcomes — one tag, and which workflow owns what —
+are [`doctrine/delivery/RULES.md`](../RULES.md). Because the tag *is* the
+version (`doctrine/RULES.md:9`), bump `Cargo.toml`,
+`benchmarks/_chart/Chart.yaml`, and `CHANGELOG.md` to the release version
+**before** tagging, or the release aborts on the version-agreement gate
+(`doctrine/delivery/RULES.md:6`).
+
 Serves: `doctrine/RULES.md:1` (the image is the product),
 `doctrine/RULES.md:2` (standalone artifacts),
 `doctrine/RULES.md:14` (verification is normative — no release ships
@@ -131,6 +141,22 @@ red), and `doctrine/RULES.md:15` (the bake graph is the build artifact).
    (`tests/fleet/RULES.md:8`). Why: a release that ships
    without its certifying report cannot be audited after the fact.
 
+## Releasing the CLI alongside the fleet
+
+The CLI half is automatic on the tag — no bake, no fleet gate. Once
+`Cargo.toml`, `benchmarks/_chart/Chart.yaml`, and `CHANGELOG.md` carry the
+release version and the `vX.Y.Z` tag is pushed,
+`.github/workflows/release.yml` (cargo-dist) builds the cross-platform
+`eval-containers` binaries, generates the installers, publishes the crate to
+crates.io, and creates the tag's GitHub Release
+(`doctrine/delivery/RULES.md:2`, `doctrine/delivery/RULES.md:4`). The fleet
+workflow (`release-images.yml`) publishes only to the registry and MUST NOT
+touch that GitHub Release, so the two halves compose on one tag instead of
+clobbering each other (`doctrine/delivery/RULES.md:3`–`4`). crates.io
+versions are immutable — never reuse a number, so the first unified tag after
+a manual crate publish starts one patch above it
+(`doctrine/delivery/RULES.md:7`).
+
 ## What this skill does NOT cover
 
 - **Building one artifact for local dev** — that's the `build` skill.
@@ -142,6 +168,8 @@ red), and `doctrine/RULES.md:15` (the bake graph is the build artifact).
 
 ## References
 
+- [Delivery rules](../RULES.md) — the version/release outcomes (one tag,
+  workflow ownership, guards) this procedure satisfies.
 - [references/readiness.md](references/readiness.md) — the go/no-go gate.
 - [Docker Bake docs](https://docs.docker.com/build/bake/)
 - The `build` skill (`doctrine/build/SKILL.md`) — single-artifact and
