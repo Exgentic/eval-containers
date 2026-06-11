@@ -69,6 +69,19 @@ pub fn compose_artifact(registry: &str) -> String {
     format!("{registry}/evaluate")
 }
 
+/// The canonical source repository for every fleet image, emitted as the
+/// `org.opencontainers.image.source` label ([`OCI_SOURCE`]) at build time —
+/// the standard provenance pointer GitHub reads to link a package to its repo
+/// (on an Actions push or a one-time UI "Connect repository"; a manual
+/// `docker push` with the label alone does not auto-link). Stamped fleet-wide
+/// via the `*` bake wildcard in [`crate::bake::base_args`] and explicitly on
+/// per-task `docker build` images — never stored in the per-artifact
+/// `docker-bake.hcl` files (RULES.md principle 15.f).
+pub const REPO_URL: &str = "https://github.com/Exgentic/eval-containers";
+
+/// The OCI source-label key (see [`REPO_URL`]).
+pub const OCI_SOURCE: &str = "org.opencontainers.image.source";
+
 /// Bake target for an agent: `agent-<name>`.
 pub fn agent_bake_target(agent: &str) -> String {
     format!("agent-{agent}")
