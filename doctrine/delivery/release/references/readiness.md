@@ -73,7 +73,7 @@ standing waiver — re-justify each release):
 
 - Build/live sweeps that fail under **local concurrent-network
   contention** (podman-on-macOS) but pass on CI under real Docker on
-  Linux. Per `RELEASE.md`'s principle "CI builds the fleet, humans
+  Linux. Per `doctrine/delivery/RULES.md`'s principle "CI builds the fleet, humans
   build one thing at a time", the authoritative full sweep is the CI
   run; document the local caveat in
   `doctrine/verification/build/known-broken.md`

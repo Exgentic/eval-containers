@@ -143,4 +143,4 @@ A single markdown report:
 - `doctrine/verification/audit-dockerfile/references/checklist.md` —
   per-Dockerfile static health spec.
 - `tests/fleet/RULES.md` — the aggregator rules.
-- `RELEASE.md` — how CI builds and publishes the fleet.
+- `doctrine/delivery/RULES.md` — how CI builds and publishes the fleet.

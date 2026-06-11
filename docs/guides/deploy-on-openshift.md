@@ -91,7 +91,7 @@ eval-containers build bench aime --builder oc   # one artifact, on the cluster
 `--builder oc` reads the artifact's build spec from `docker buildx bake --print`
 and submits a binary `BuildConfig`. It builds a **single** artifact; for a full
 benchmark × agent eval in dependency order (and the one-time core-base
-bootstrap), see [`examples/openshift/`](../../examples/openshift/).
+bootstrap), see [`deploy/examples/openshift/`](../../deploy/examples/openshift/).
 
 ## Caveat
 

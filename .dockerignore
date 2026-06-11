@@ -1,8 +1,0 @@
-target/
-output/
-.git/
-node_modules/
-*.swp
-tests/
-sweeps/
-doctrine/

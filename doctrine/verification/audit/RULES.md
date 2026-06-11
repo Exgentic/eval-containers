@@ -44,13 +44,13 @@ recorded outcome.
 8. **Reproducible.** A check a tool can measure **MUST** record a value matching
    that tool's output.
 
-9. **Rollup.** An `AUDIT.md` at the repository root **MUST** summarize every
+9. **Rollup.** An `AUDIT.md` in `containers/` (the fleet root) **MUST** summarize every
    benchmark's audit, one row each.
 
-10. **Generated.** The root `AUDIT.md` **MUST** be generated from the per-benchmark
+10. **Generated.** The `containers/AUDIT.md` rollup **MUST** be generated from the per-benchmark
     reports, not hand-edited.
 
-11. **Stale-aware.** The root `AUDIT.md` **MUST** mark a benchmark whose sources
+11. **Stale-aware.** The `containers/AUDIT.md` rollup **MUST** mark a benchmark whose sources
     changed after its audit's commit as stale.
 
 ## References
@@ -59,7 +59,7 @@ recorded outcome.
 - `doctrine/verification/audit/audit-benchmark/SKILL.md` — the procedure that
   produces a benchmark's `AUDIT.md`.
 - `doctrine/verification/audit/audit-rollup/SKILL.md` — the procedure that
-  generates the root `AUDIT.md`.
+  generates `containers/AUDIT.md`.
 - `core/oracle/README.md` — the oracle behind the validity `oracle` check.
 
 ## Changelog

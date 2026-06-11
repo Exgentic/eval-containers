@@ -69,7 +69,7 @@ is shipping now, and a dirty tree makes the verdict irreproducible.
    no untracked or modified files.
 2. **Read the last release report** (`tests/fleet/report.md`) so you know what
    was flagged previously and can diff against it.
-3. **Read the release notes draft** (`RELEASE.md` / `CHANGELOG.md`) so you know
+3. **Read the release notes draft** (`CHANGELOG.md`) so you know
    the user-visible surface you are signing off.
 
 ### Phase 2 — Sanity gates (steps 4–10, fast, offline)
