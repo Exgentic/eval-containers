@@ -10,12 +10,14 @@ services:
       HTTP_PROXY: http://proxy:8080
       HTTPS_PROXY: http://proxy:8080
       NO_PROXY: gateway,otelcol,localhost,127.0.0.1
+      # Each app's real internal port (per upstream's docker-compose.yml):
+      # shopping/shopping_admin/reddit :80, gitlab :8023, wikipedia/map :8080.
       SHOPPING_URL: http://shopping:80
       SHOPPING_ADMIN_URL: http://shopping-admin:80
       REDDIT_URL: http://reddit:80
-      GITLAB_URL: http://gitlab:8080
-      WIKIPEDIA_URL: http://wikipedia:80
-      MAP_URL: http://map:80
+      GITLAB_URL: http://gitlab:8023
+      WIKIPEDIA_URL: http://wikipedia:8080
+      MAP_URL: http://map:8080
     depends_on:
       proxy:
         condition: service_started
@@ -38,26 +40,41 @@ services:
       - internal
       - upstream
 
+  # Website sidecars — each gated by a compose profile named after its site (the
+  # dataset's `sites` value). Only the profiles in $COMPOSE_PROFILES start, so a
+  # run brings up just the task's site(s); `eval-containers run` sets
+  # COMPOSE_PROFILES from benchmarks/webarena/task-profiles.json. Tags pinned.
   shopping:
-    image: am1n3e/webarena-verified-shopping
+    image: am1n3e/webarena-verified-shopping:0.1.0
+    profiles: [shopping]
     networks: [internal]
 
   shopping-admin:
-    image: am1n3e/webarena-verified-shopping_admin
+    image: am1n3e/webarena-verified-shopping_admin:1.0.0
+    profiles: [shopping_admin]
     networks: [internal]
 
   reddit:
-    image: am1n3e/webarena-verified-reddit
+    image: am1n3e/webarena-verified-reddit:0.1.0
+    profiles: [reddit]
     networks: [internal]
 
   gitlab:
-    image: am1n3e/webarena-verified-gitlab
+    image: am1n3e/webarena-verified-gitlab:0.1.0
+    profiles: [gitlab]
+    shm_size: 2gb
     networks: [internal]
 
+  # NOTE: this image is arm64-only and needs the .zim data volume — both are part
+  # of a separate data/arch fix (swap to multi-arch ghcr.io/kiwix/kiwix-serve and
+  # mount the .zim). Gated by the `wikipedia` profile, so it only starts for the
+  # ~23 wikipedia tasks.
   wikipedia:
-    image: am1n3e/webarena-verified-wikipedia
+    image: am1n3e/webarena-verified-wikipedia:1.0.0
+    profiles: [wikipedia]
     networks: [internal]
 
   map:
-    image: am1n3e/webarena-verified-map
+    image: am1n3e/webarena-verified-map:0.1.0
+    profiles: [map]
     networks: [internal]

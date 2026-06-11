@@ -180,3 +180,55 @@ fn runner_gates_on_gateway_readiness() {
         );
     }
 }
+
+/// Per-task sidecar selection (benchmarks/RULES.md): rendering webarena with
+/// `activeProfiles={map}` brings up only the map site sidecar (plus the always-on
+/// proxy), not the other sites — so a `--mode job` run deploys just the task's
+/// sites. The CLI sets activeProfiles per task from task-profiles.json.
+#[test]
+fn webarena_renders_only_active_sidecars() {
+    if Command::new("helm").arg("version").output().is_err() {
+        return; // helm absent → skip (render is the floor)
+    }
+    let out = Command::new("helm")
+        .args([
+            "template",
+            "wa",
+            "benchmarks/_chart",
+            "--set",
+            "benchmark=webarena",
+            "--set",
+            "activeProfiles={map}",
+        ])
+        .output()
+        .expect("helm template webarena");
+    assert!(
+        out.status.success(),
+        "render failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let render = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        render.contains("app: map"),
+        "the active map sidecar must render"
+    );
+    assert!(
+        render.contains("app: proxy"),
+        "the always-on proxy must render"
+    );
+    for site in [
+        "app: gitlab",
+        "app: reddit",
+        "app: wikipedia",
+        "app: shopping",
+    ] {
+        assert!(
+            !render.contains(site),
+            "{site} must NOT render for a map-only task (per-task sidecar selection)"
+        );
+    }
+    assert!(
+        render.contains("nc -z map 8080"),
+        "the wait gate must wait only for the active site"
+    );
+}

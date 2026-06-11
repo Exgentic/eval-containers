@@ -100,3 +100,10 @@ gatewayExtraEnv: []
 runnerExtraVolumeMounts: []
 extraVolumes: []
 extraManifests: []          # extra Deployments/Services (full manifests)
+# Per-task website sidecars (webarena-style). A catalog of name → {image, port,
+# [profile], [shmSize]}; the chart renders a Deployment+Service and a wait gate
+# for each whose `profile` (default: the name) is in `activeProfiles`, so a run
+# brings up only the task's sites. The CLI sets activeProfiles per task from
+# benchmarks/<name>/task-profiles.json. (benchmarks/RULES.md — per-task sidecars.)
+sidecars: {}
+activeProfiles: []
