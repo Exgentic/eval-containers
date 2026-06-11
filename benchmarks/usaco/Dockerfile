@@ -2,7 +2,7 @@
 # 307 tasks. Data: HuggingFace dapumptu/usaco_benchmark
 # Agent writes solution code. Test runs it against I/O test cases.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/global-mmlu--claude-code:latest
+FROM ghcr.io/exgentic/evals/global-mmlu--claude-code:latest

@@ -2,7 +2,7 @@
 # 17944 tasks. Data: HuggingFace mandarjoshi/trivia_qa (rc.nocontext/validation)
 # Agent prints answer to stdout. Test matches against any normalized alias.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

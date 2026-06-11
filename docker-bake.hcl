@@ -6,5 +6,5 @@
 # stay in the artifact's own file — those are scoped concerns, not
 # fleet-wide.
 
-variable "REGISTRY" { default = "quay.io/eval-containers" }
+variable "REGISTRY" { default = "ghcr.io/exgentic" }
 variable "TAG"      { default = "latest" }

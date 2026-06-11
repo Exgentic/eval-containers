@@ -4,7 +4,7 @@
 # We follow the AlpacaEval 2.0 protocol using the gpt4_baseline outputs.
 # Ref: https://github.com/tatsu-lab/alpaca_eval (Li et al. 2023)
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

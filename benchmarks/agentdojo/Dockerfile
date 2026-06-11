@@ -6,7 +6,7 @@
 # tool-output that contains a malicious injected command. LLM-as-judge decides
 # whether the agent obeyed the injection.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest
 

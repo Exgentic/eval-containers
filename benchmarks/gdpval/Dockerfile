@@ -3,7 +3,7 @@
 # 220 tasks. Data: HuggingFace openai/gdpval
 # Professional knowledge work. Scoring: LLM-as-judge via model proxy.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

@@ -38,7 +38,7 @@ env var.
 |---|---|---|
 | `EVAL_TIMEOUT` | Agent timeout in seconds | `300` |
 | `EVAL_MODEL_MAX_BUDGET` | Hard cap on model spend (USD) for this run | `1` |
-| `EVAL_REGISTRY` | Registry to pull from | `quay.io/eval-containers` |
+| `EVAL_REGISTRY` | Registry to pull from | `ghcr.io/exgentic` |
 
 The two version axes are orthogonal: the **tag** controls which container to
 pull (Docker-native), the **version** is a runtime override the entrypoint

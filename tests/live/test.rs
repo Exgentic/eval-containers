@@ -352,7 +352,7 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
 
     // Pre-build the eval combination image. `eval-containers run --local` uses
     // the in-repo compose file but the `image:` field still refers
-    // to `quay.io/eval-containers/evals/<bench>--<agent>:latest`; without a
+    // to `ghcr.io/exgentic/evals/<bench>--<agent>:latest`; without a
     // local build of that tag, compose tries to pull from the
     // registry and fails. `eval-containers build eval` auto-builds the
     // benchmark and agent base images if they're missing, so this

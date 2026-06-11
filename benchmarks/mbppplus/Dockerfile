@@ -2,7 +2,7 @@
 # 378 tasks. Data: HuggingFace evalplus/mbppplus
 # Agent writes a Python function. Test runs it against the EvalPlus extended test harness.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

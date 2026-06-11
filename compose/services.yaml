@@ -1,6 +1,6 @@
 services:
   otelcol:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/core/otel:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/otel:latest
     volumes:
       - output:/output
     # Probe otelcol's health_check endpoint (:13133) so the gateway can gate on
@@ -16,7 +16,7 @@ services:
       - internal
 
   gateway:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/${EVAL_GATEWAY_IMAGE:-gpt-5.4--bifrost}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/${EVAL_GATEWAY_IMAGE:-gpt-5.4--bifrost}:latest
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}
@@ -42,7 +42,7 @@ services:
       - upstream
 
   runner:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/${EVAL_BENCHMARK:-aime}--${EVAL_AGENT:-claude-code}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/${EVAL_BENCHMARK:-aime}--${EVAL_AGENT:-claude-code}:latest
     environment:
       # Pass framework axes through as both EVAL_* (canonical — what
       # /eval-entrypoint.sh and per-benchmark /entrypoint.sh read) and

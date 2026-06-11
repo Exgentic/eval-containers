@@ -32,7 +32,7 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
 
 1. **`REGISTRY` and `TAG` are fleet-wide, declared once at the root.**
    `./docker-bake.hcl` declares `REGISTRY` (default
-   `quay.io/eval-containers`) and `TAG` (default `latest`). Per-artifact
+   `ghcr.io/exgentic`) and `TAG` (default `latest`). Per-artifact
    files reference `${REGISTRY}/...:${TAG}` and never redeclare them
    (`doctrine/RULES.md:15`, sub-rule b — reuse over repetition). Invoking
    `docker buildx bake` from the repo root picks up the root file via
@@ -71,9 +71,9 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
      -f benchmarks/aime/docker-bake.hcl \
      -f agents/openhands/docker-bake.hcl \
      -f core/combination.docker-bake.hcl \
-     --set "eval.args.BENCHMARK_IMAGE=quay.io/eval-containers/benchmarks/aime:latest" \
-     --set "eval.args.AGENT_IMAGE=quay.io/eval-containers/agents/openhands:latest" \
-     --set "eval.args.MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--bifrost:latest" \
+     --set "eval.args.BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/aime:latest" \
+     --set "eval.args.AGENT_IMAGE=ghcr.io/exgentic/agents/openhands:latest" \
+     --set "eval.args.MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest" \
      --load eval
    ```
 

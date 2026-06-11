@@ -2,7 +2,7 @@
 # 900 tasks. Data: HuggingFace MMMU/MMMU (validation split, 30 subjects x 30)
 # Agent sees question + options + image(s). Prints answer letter. Test compares to expected.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

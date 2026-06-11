@@ -6,7 +6,7 @@
 # trace is tightly coupled to upstream tooling). This benchmark captures the agent's
 # output trace and writes -1 per RULES.md section Scoring.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

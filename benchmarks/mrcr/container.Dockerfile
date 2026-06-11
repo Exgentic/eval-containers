@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/mrcr--claude-code:latest
+FROM ghcr.io/exgentic/evals/mrcr--claude-code:latest

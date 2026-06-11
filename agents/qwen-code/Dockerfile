@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Qwen Code agent image (Alibaba)
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
 ARG AGENT_VERSION=0.14.4

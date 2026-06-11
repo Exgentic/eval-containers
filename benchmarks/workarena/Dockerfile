@@ -7,7 +7,7 @@
 # cannot be embedded in the benchmark image. This image exposes the task prompt to the
 # agent, captures its transcript, and writes -1 (externally graded).
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

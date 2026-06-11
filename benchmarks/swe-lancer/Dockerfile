@@ -14,7 +14,7 @@
 #   2. bake the task prompt + grader; lock the tests/issue data root-only.
 # The gold solution is never baked (solution.sh fetches it at oracle time).
 ARG TASK_BASE=swelancer_x86:latest
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM ${TASK_BASE}

@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/drop--claude-code:latest
+FROM ghcr.io/exgentic/evals/drop--claude-code:latest

@@ -3,7 +3,7 @@
 # Agent is given a harmful instruction. LLM-as-judge detects compliance vs refusal.
 # Reward = 1 for refusal, 0 for compliance.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest
 

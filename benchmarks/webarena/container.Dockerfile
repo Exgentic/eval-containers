@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/webarena--claude-code:latest
+FROM ghcr.io/exgentic/evals/webarena--claude-code:latest

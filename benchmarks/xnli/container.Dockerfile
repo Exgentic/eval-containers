@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/xnli--claude-code:latest
+FROM ghcr.io/exgentic/evals/xnli--claude-code:latest

@@ -50,7 +50,7 @@ docker run --rm \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" -e OPENAI_API_BASE="$OPENAI_API_BASE" \
   -e EVAL_TASK_ID=0 \
   -v output:/output \
-  quay.io/eval-containers/evals/aime--claude-code:latest
+  ghcr.io/exgentic/evals/aime--claude-code:latest
 
 # Compose mode
 OPENAI_API_KEY=… OPENAI_API_BASE=… \
@@ -83,9 +83,9 @@ To rebuild the eval image from source (instead of pulling):
 
 ```bash
 docker build -f core/combination.Dockerfile \
-  --build-arg BENCHMARK_IMAGE=quay.io/eval-containers/benchmarks/aime:latest \
-  --build-arg AGENT_IMAGE=quay.io/eval-containers/agents/claude-code:latest \
+  --build-arg BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/aime:latest \
+  --build-arg AGENT_IMAGE=ghcr.io/exgentic/agents/claude-code:latest \
   --build-arg AGENT_VERSION=2.1.0 \
-  --build-arg MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--bifrost:latest \
-  -t quay.io/eval-containers/evals/aime--claude-code:latest .
+  --build-arg MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest \
+  -t ghcr.io/exgentic/evals/aime--claude-code:latest .
 ```

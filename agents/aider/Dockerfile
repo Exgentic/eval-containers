@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Aider agent image (AI pair programming tool)
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
 ARG AGENT_VERSION=0.86.2

@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/truthfulqa--claude-code:latest
+FROM ghcr.io/exgentic/evals/truthfulqa--claude-code:latest

@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/healthbench--claude-code:latest
+FROM ghcr.io/exgentic/evals/healthbench--claude-code:latest

@@ -3,6 +3,6 @@ include:
 
 services:
   runner:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/mind2web--${EVAL_AGENT:-claude-code}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/mind2web--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: mind2web
