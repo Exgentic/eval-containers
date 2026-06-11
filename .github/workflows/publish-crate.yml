@@ -1,0 +1,42 @@
+# Publish the crate to crates.io as part of the CLI release.
+#
+# This is a dist custom publish job: it is invoked BY `release.yml` (wired via
+# `publish-jobs` in dist-workspace.toml), so the crates.io publish is owned by
+# the CLI release workflow — doctrine/delivery/RULES.md:2. It runs only in the
+# publish phase of a real `vX.Y.Z` tag release, never on a PR.
+#
+# Prerequisite: a repository secret `CARGO_REGISTRY_TOKEN` (a crates.io API
+# token with publish scope).
+name: Publish crate
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        description: The dist release plan (JSON); passed by dist, unused here.
+        required: true
+        type: string
+
+jobs:
+  publish-crate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # doctrine/delivery/RULES.md:6 — the release aborts unless the git tag,
+      # Cargo.toml, and Chart.yaml versions all agree.
+      - name: Verify tag == Cargo.toml == Chart.yaml
+        run: |
+          ver="${GITHUB_REF_NAME#v}"
+          cargo_ver="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          chart_ver="$(grep -m1 '^version: ' benchmarks/_chart/Chart.yaml | awk '{print $2}')"
+          echo "tag=$ver  cargo=$cargo_ver  chart=$chart_ver"
+          if [ "$ver" != "$cargo_ver" ] || [ "$ver" != "$chart_ver" ]; then
+            echo "::error::release version mismatch (tag=$ver cargo=$cargo_ver chart=$chart_ver) — bump Cargo.toml and benchmarks/_chart/Chart.yaml to $ver before tagging"
+            exit 1
+          fi
+
+      - name: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --locked
