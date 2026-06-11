@@ -5,7 +5,7 @@ The model in one line: **a dataset eval is one [Indexed Job](https://kubernetes.
 | tool | role |
 |------|------|
 | `eval-containers` (the repo CLI) | build images (`build … --builder oc`) |
-| `helm` | render the Job from `benchmarks/_chart` |
+| `helm` | render the Job from `containers/benchmarks/_chart` |
 | `oc` / `kubectl` | apply, watch, fetch — and Kueue for global concurrency |
 
 ## Scripts (all of `oc/`)

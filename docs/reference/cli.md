@@ -1,6 +1,6 @@
 # CLI reference
 
-*Reference · for operators & contributors · derives from `src/` (`main.rs`, `run.rs`, `build.rs`) and [`.agents/src/RULES.md`](../../.agents/src/RULES.md). The source is authoritative; run `eval-containers --help` for the exact, current flags.*
+*Reference · for operators & contributors · derives from `cli/src/` (`main.rs`, `run.rs`, `build.rs`) and [`.agents/src/RULES.md`](../../.agents/src/RULES.md). The source is authoritative; run `eval-containers --help` for the exact, current flags.*
 
 The `eval-containers` CLI is optional — every command maps to a plain
 `docker` / `helm` / `kubectl` / `oc` command you could type yourself. State- or
@@ -30,7 +30,7 @@ eval-containers [--registry <ref>] <command> [args]
 | `prune` | Reclaim disk | `docker builder prune` + `docker image prune` |
 | `report` | Aggregate results: pass/reward/tokens/cost + traces health | reads `output/` |
 | `gen-bake` | Scaffold a `docker-bake.hcl` for an artifact | writes a file |
-| `oracle` | Validate a benchmark's grading: a gold solution must score 1.0 and a no-op < 1.0 through the benchmark's own grader (no agent, no model). See [Oracle](../../core/oracle/README.md). | `docker run` against the grader |
+| `oracle` | Validate a benchmark's grading: a gold solution must score 1.0 and a no-op < 1.0 through the benchmark's own grader (no agent, no model). See [Oracle](../../containers/core/oracle/README.md). | `docker run` against the grader |
 
 ## `run` flags
 
@@ -53,7 +53,7 @@ overrides the env var.
 | `--litellm-version <v>` | `EVAL_LITELLM_VERSION` | LiteLLM version inside the image |
 | `--timeout <secs>` | `EVAL_TIMEOUT` | default `300` |
 | `--max-budget <usd>` | `EVAL_MODEL_MAX_BUDGET` | hard spend cap; default `$1` |
-| `--local` | — | use in-repo `benchmarks/<name>/` instead of the registry |
+| `--local` | — | use in-repo `containers/benchmarks/<name>/` instead of the registry |
 | `--dry-run` | — | print/validate without deploying (`job`: `kubectl --dry-run=server`) |
 | `-n, --namespace <ns>` | — | `job` mode only; `kubectl -n` |
 | `--overlay <values.yaml>` | — | `job` mode only; extra `helm -f` (e.g. `deploy/values-openshift.yaml`) |

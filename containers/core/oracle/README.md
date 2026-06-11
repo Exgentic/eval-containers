@@ -32,7 +32,7 @@ oracle supplies it at run time:
   strips from the agent). The gate **auto-covers every one of them** (any
   shared-env benchmark using the `test-exact-match` grader). *Example: aime.*
 - **Other graders** (run-tests, fuzzy / byte-sensitive match, …): add a
-  `benchmarks/<name>/solution.sh` — co-located with the benchmark's `Dockerfile`
+  `containers/benchmarks/<name>/solution.sh` — co-located with the benchmark's `Dockerfile`
   and versioned with it, **mounted** read-only at oracle run time and **never
   `COPY`'d** into the image (a daemon-free test, `oracle_solutions_are_never_baked`,
   enforces that).
@@ -59,5 +59,5 @@ never baked into the agent-facing image.
 ## Extend it
 
 Exact-match benchmarks are covered automatically — nothing to do. For another
-grader, add a `benchmarks/<name>/solution.sh` and a row in `SPECIAL`
+grader, add a `containers/benchmarks/<name>/solution.sh` and a row in `SPECIAL`
 (`tests/oracle/test.rs`) if it needs a `--task-id`.

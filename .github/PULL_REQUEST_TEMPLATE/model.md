@@ -100,7 +100,7 @@ eval-containers run aime --agent codex --model <name> --task-id 0 --local --max-
 ```
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty
-- [ ] Known issue: cost tracking on the `/v1/responses` path may not populate `response_cost` until [core/litellm/eval_logger.py](../../core/litellm/eval_logger.py) is fixed. Document this in the PR description if it applies.
+- [ ] Known issue: cost tracking on the `/v1/responses` path may not populate `response_cost` until [core/litellm/eval_logger.py](../../containers/core/litellm/eval_logger.py) is fixed. Document this in the PR description if it applies.
 
 ### Budget enforcement
 

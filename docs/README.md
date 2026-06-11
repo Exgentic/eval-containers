@@ -40,4 +40,4 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 
 - [CLI](reference/cli.md) — `eval-containers` commands and flags
 - [Environment variables](reference/env-vars.md) — the `EVAL_*` namespace
-- [Chart values](reference/chart-values.md) — `benchmarks/_chart` values
+- [Chart values](reference/chart-values.md) — `containers/benchmarks/_chart` values
