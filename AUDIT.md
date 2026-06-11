@@ -90,7 +90,7 @@ benchmark changed after that commit, so the row is stale.
 | scicode | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | simpleqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | socialiqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
-| swe-bench-pro | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
+| swe-bench-pro | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | swe-bench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | swe-gym | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | swe-lancer | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
@@ -112,4 +112,4 @@ benchmark changed after that commit, so the row is stale.
 | xnli | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | xstory-cloze | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 
-**Totals:** building 63/101 · isolation 0/101 · oracle 63/101 · running 0/101 · traces 0/101 · replicate 0/101 · safety 0/101 · published 1/101
+**Totals:** building 64/101 · isolation 0/101 · oracle 64/101 · running 0/101 · traces 0/101 · replicate 0/101 · safety 0/101 · published 1/101
