@@ -78,6 +78,16 @@ pub fn base_args(targets: &[&str], overrides: &[&str], builder: Option<&str>) ->
         }
         None => args.push("--load".into()),
     }
+    // Stamp the OCI source label on every image this bake builds (the requested
+    // target AND its dependency targets) — provenance + the pointer GitHub uses
+    // to link a package to its repo. Fleet-wide, so it rides the `*` wildcard
+    // (per-task `docker build` images set it explicitly; see src/build.rs).
+    args.push("--set".into());
+    args.push(format!(
+        "*.labels.{}={}",
+        crate::naming::OCI_SOURCE,
+        crate::naming::REPO_URL
+    ));
     for o in overrides {
         args.push("--set".into());
         args.push((*o).to_string());
