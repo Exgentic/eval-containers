@@ -33,6 +33,24 @@ work with no Dock install and no internet, resolving task content, expected
 answer, and any attached files from `EVAL_TASK_ID` alone
 (`doctrine/benchmarks/RULES.md:1`, `doctrine/benchmarks/RULES.md:2`).
 
+## Before you start: check prior art in Harbor and Inspect Evals
+
+Before porting from the raw upstream, check whether the benchmark already has a
+reference implementation in the two main harnesses, and reuse their work:
+
+- **Inspect Evals** ([`UKGovernmentBEIS/inspect_evals`](https://github.com/UKGovernmentBEIS/inspect_evals)) —
+  search its README/registry. An existing eval is an authoritative reference for
+  the dataset source + pinned revision, the prompt template, and the scorer.
+- **Harbor** ([`harbor-framework/harbor`](https://github.com/harbor-framework/harbor)) —
+  check `harbor datasets list` and its adapters for an existing adapter; reuse
+  its environment and verifier shape.
+
+Treat them as references, not dependencies — the Dock benchmark stays
+self-contained (`doctrine/benchmarks/RULES.md:2`). Mine them for: the dataset
+revision to pin (step 3), the grading logic and reward mapping (step 7), and the
+exact prompt format. Record in `README.md` which upstream you cribbed from (or
+note that neither had it, so you ported from the original source).
+
 ## Steps
 
 1. **Create the benchmark directory.** Make `benchmarks/<name>/` and copy
