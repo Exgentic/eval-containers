@@ -31,7 +31,7 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
 {{- end }}
 {{- end -}}
 
-{{/* Image refs. Default to the nested registry path (quay-style); when
+{{/* Image refs. Default to the nested registry path; when
      flatImages is set, compose the flat ImageStream name the OpenShift internal
      registry requires (no slashes) — lowercase, dots→dash, `--`→`-`. imageSuffix
      (e.g. "-test") selects isolated gateway+runner imagestreams so a test run
