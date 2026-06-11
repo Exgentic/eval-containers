@@ -17,7 +17,7 @@ name: Release the fleet
 
 on:
   push:
-    tags: ['v*']
+    tags: ['**[0-9]+.[0-9]+.[0-9]+*']  # match release.yml so one tag fires both (delivery/RULES.md:1)
   workflow_dispatch:
     inputs:
       tag:
