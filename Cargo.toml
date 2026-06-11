@@ -76,6 +76,10 @@ name = "task_inspection"
 path = "tests/sanity/task_inspection.rs"
 
 [[test]]
+name = "upstream_pins"
+path = "tests/sanity/upstream_pins.rs"
+
+[[test]]
 name = "build"
 path = "tests/build/test.rs"
 
