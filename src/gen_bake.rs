@@ -134,7 +134,7 @@ mod tests {
     fn benchmark_with_hf_and_deps() {
         // Real benchmark convention (cf. benchmarks/hle): parameterized
         // in-repo FROMs — the form gen-bake must recognize; a literal
-        // `quay.io/...` FROM no longer appears in any Dockerfile — plus an
+        // `ghcr.io/...` FROM no longer appears in any Dockerfile — plus an
         // HF_TOKEN build secret. End-to-end guard for the contexts block.
         let text = "ARG REGISTRY=ghcr.io/exgentic\n\
             ARG REGISTRY_SUFFIX=/\n\
