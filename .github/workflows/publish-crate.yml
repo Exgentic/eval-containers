@@ -28,15 +28,15 @@ jobs:
       - name: Verify tag == Cargo.toml == Chart.yaml
         run: |
           ver="${GITHUB_REF_NAME#v}"
-          cargo_ver="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
-          chart_ver="$(grep -m1 '^version: ' benchmarks/_chart/Chart.yaml | awk '{print $2}')"
+          cargo_ver="$(grep -m1 '^version = ' cli/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          chart_ver="$(grep -m1 '^version: ' containers/benchmarks/_chart/Chart.yaml | awk '{print $2}')"
           echo "tag=$ver  cargo=$cargo_ver  chart=$chart_ver"
           if [ "$ver" != "$cargo_ver" ] || [ "$ver" != "$chart_ver" ]; then
-            echo "::error::release version mismatch (tag=$ver cargo=$cargo_ver chart=$chart_ver) — bump Cargo.toml and benchmarks/_chart/Chart.yaml to $ver before tagging"
+            echo "::error::release version mismatch (tag=$ver cargo=$cargo_ver chart=$chart_ver) — bump cli/Cargo.toml and containers/benchmarks/_chart/Chart.yaml to $ver before tagging"
             exit 1
           fi
 
       - name: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish --locked
+        run: cargo publish --locked -p eval-containers
