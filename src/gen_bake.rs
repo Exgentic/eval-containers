@@ -7,9 +7,8 @@
 //! hand-writing from the convention guide or copy-pasting a stale one.
 
 use clap::Args;
+use eval_containers::bake;
 use std::path::{Path, PathBuf};
-
-const REGISTRY_PREFIX: &str = "quay.io/eval-containers/";
 
 #[derive(Args)]
 pub struct GenBakeArgs {
@@ -32,7 +31,7 @@ pub fn execute(args: GenBakeArgs) -> Result<(), String> {
     let (category, name) = split_artifact(&dir)?;
     let dockerfile_text = std::fs::read_to_string(&dockerfile)
         .map_err(|e| format!("read {}: {e}", dockerfile.display()))?;
-    let deps = in_repo_deps(&dockerfile_text);
+    let deps = bake::dockerfile_in_repo_deps(&dockerfile_text);
     let takes_hf = dockerfile_text.contains("HF_TOKEN");
     let content = render(&category, name, &deps, takes_hf);
 
@@ -66,36 +65,6 @@ fn split_artifact(dir: &Path) -> Result<(String, &str), String> {
     Ok((category.to_string(), name))
 }
 
-fn in_repo_deps(text: &str) -> Vec<String> {
-    let mut deps: Vec<String> = Vec::new();
-    let push = |s: &str, deps: &mut Vec<String>| {
-        if s.starts_with(REGISTRY_PREFIX) {
-            let bare = s.split(':').next().unwrap_or(s).to_string();
-            if !deps.contains(&bare) {
-                deps.push(bare);
-            }
-        }
-    };
-    for raw in text.lines() {
-        let line = raw.trim();
-        if let Some(rest) = line.strip_prefix("FROM ") {
-            let mut tok = rest;
-            while tok.strip_prefix("--").is_some() {
-                let cut = tok.find(' ').map(|i| i + 1).unwrap_or(tok.len());
-                tok = &tok[cut..];
-            }
-            let image = tok.split_whitespace().next().unwrap_or("");
-            push(image, &mut deps);
-            continue;
-        }
-        if let Some(rest) = line.strip_prefix("COPY --from=") {
-            let image = rest.split_whitespace().next().unwrap_or("");
-            push(image, &mut deps);
-        }
-    }
-    deps
-}
-
 fn target_name_for(category: &str, name: &str) -> String {
     match category {
         "core" => name.replace('.', "_"),
@@ -108,7 +77,7 @@ fn target_name_for(category: &str, name: &str) -> String {
 }
 
 fn ref_to_target(image_ref: &str) -> String {
-    let no_reg = &image_ref[REGISTRY_PREFIX.len()..];
+    let no_reg = &image_ref[bake::REGISTRY_PREFIX.len()..];
     let no_tag = no_reg.split(':').next().unwrap_or(no_reg);
     let mut parts = no_tag.splitn(2, '/');
     let cat = parts.next().unwrap_or("");
@@ -127,7 +96,7 @@ fn render(category: &str, name: &str, deps: &[String], takes_hf: bool) -> String
     if !deps.is_empty() {
         out.push_str("  contexts = {\n");
         for dep in deps {
-            let key = dep.replace(REGISTRY_PREFIX, "${REGISTRY}/");
+            let key = dep.replace(bake::REGISTRY_PREFIX, "${REGISTRY}/");
             out.push_str(&format!(
                 "    \"{key}\" = \"target:{}\"\n",
                 ref_to_target(dep)
@@ -152,7 +121,7 @@ mod tests {
     #[test]
     fn leaf_core() {
         let text = "FROM --platform=linux/amd64 python:3.12-slim\nRUN echo hi\n";
-        assert_eq!(in_repo_deps(text), Vec::<String>::new());
+        assert_eq!(bake::dockerfile_in_repo_deps(text), Vec::<String>::new());
         let out = render("core", "agent-base-python", &[], false);
         assert!(out.contains("target \"agent-base-python\""));
         assert!(out.contains("context = \"core/agent-base-python\""));
@@ -163,22 +132,41 @@ mod tests {
 
     #[test]
     fn benchmark_with_hf_and_deps() {
-        let text = "FROM --platform=linux/amd64 python:3.12-slim\n\
-            COPY --from=quay.io/eval-containers/core/entrypoint:latest /eval-entrypoint.sh /eval-entrypoint.sh\n\
+        // Real benchmark convention (cf. benchmarks/hle): parameterized
+        // in-repo FROMs — the form gen-bake must recognize; a literal
+        // `quay.io/...` FROM no longer appears in any Dockerfile — plus an
+        // HF_TOKEN build secret. End-to-end guard for the contexts block.
+        let text = "ARG REGISTRY=quay.io/eval-containers\n\
+            ARG REGISTRY_SUFFIX=/\n\
+            FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match\n\
+            FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest\n\
             ARG HF_TOKEN\nRUN curl ... $HF_TOKEN\n";
-        let deps = in_repo_deps(text);
-        assert_eq!(deps, vec!["quay.io/eval-containers/core/entrypoint"]);
+        let deps = bake::dockerfile_in_repo_deps(text);
+        assert_eq!(
+            deps,
+            vec![
+                "quay.io/eval-containers/core/benchmark-base-hf".to_string(),
+                "quay.io/eval-containers/core/test-exact-match".to_string(),
+            ]
+        );
         let takes_hf = text.contains("HF_TOKEN");
         let out = render("benchmarks", "hle", &deps, takes_hf);
         assert!(out.contains("variable \"HF_TOKEN\""));
-        assert!(out.contains("\"${REGISTRY}/core/entrypoint\" = \"target:entrypoint\""));
+        assert!(
+            out.contains("\"${REGISTRY}/core/benchmark-base-hf\" = \"target:benchmark-base-hf\"")
+        );
+        assert!(
+            out.contains("\"${REGISTRY}/core/test-exact-match\" = \"target:test-exact-match\"")
+        );
         assert!(out.contains("args = { HF_TOKEN = HF_TOKEN }"));
     }
 
     #[test]
     fn agent_with_in_repo_base() {
-        let text = "FROM quay.io/eval-containers/core/agent-base-python:latest\n";
-        let deps = in_repo_deps(text);
+        let text = "ARG REGISTRY=quay.io/eval-containers\n\
+            ARG REGISTRY_SUFFIX=/\n\
+            FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest\n";
+        let deps = bake::dockerfile_in_repo_deps(text);
         let out = render("agents", "openhands", &deps, false);
         assert!(out.contains("target \"agent-openhands\""));
         assert!(
