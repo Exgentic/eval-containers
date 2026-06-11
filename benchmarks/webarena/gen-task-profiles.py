@@ -25,7 +25,11 @@ with urllib.request.urlopen(URL) as resp:  # noqa: S310 (pinned github raw URL)
 
 profiles = {str(t["task_id"]): sorted(t["sites"]) for t in tasks}
 items = sorted(profiles.items(), key=lambda kv: int(kv[0]))
-body = "{\n" + ",\n".join(f"  {json.dumps(k)}: {json.dumps(v)}" for k, v in items) + "\n}\n"
+body = (
+    "{\n"
+    + ",\n".join(f"  {json.dumps(k)}: {json.dumps(v)}" for k, v in items)
+    + "\n}\n"
+)
 
 with open("benchmarks/webarena/task-profiles.json", "w") as f:
     f.write(body)
