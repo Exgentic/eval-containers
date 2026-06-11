@@ -50,6 +50,17 @@ spec:
         {{- with $v.initContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        {{- $active := $v.activeProfiles | default list }}
+        {{- if $v.sidecars }}
+        # Hold the runner until this task's active site sidecars accept connections
+        # (`until true` exits at once when none are active).
+        - name: wait-sidecars
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "until{{- range $name, $sc := $v.sidecars }}{{- if has ($sc.profile | default $name) $active }} nc -z {{ $name }} {{ $sc.port }} &&{{- end }}{{- end }} true; do echo 'waiting for sidecars'; sleep 2; done"
+        {{- end }}
         - name: otelcol
           restartPolicy: Always
           image: {{ include "eval.otelImage" $v }}
@@ -165,4 +176,57 @@ spec:
 {{- range $v.extraManifests }}
 ---
 {{ toYaml . }}
+{{- end }}
+{{/* Per-task website sidecars: a Deployment+Service for each catalog entry whose
+     profile (default: the name) is active. activeProfiles is set per task by the
+     CLI from benchmarks/<name>/task-profiles.json. */}}
+{{- range $name, $sc := $v.sidecars }}
+{{- if has ($sc.profile | default $name) ($v.activeProfiles | default list) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    benchmark: {{ $v.benchmark }}
+    app: {{ $name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        benchmark: {{ $v.benchmark }}
+        app: {{ $name }}
+    spec:
+      {{- if $sc.shmSize }}
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: {{ $sc.shmSize }} }
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ $sc.image }}
+          ports:
+            - containerPort: {{ $sc.port }}
+          {{- if $sc.shmSize }}
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    benchmark: {{ $v.benchmark }}
+spec:
+  selector:
+    app: {{ $name }}
+  ports:
+    - port: {{ $sc.port }}
+      targetPort: {{ $sc.port }}
+{{- end }}
 {{- end }}

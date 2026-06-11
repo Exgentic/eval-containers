@@ -206,6 +206,21 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
 }
 
+/// The sidecar profiles a task needs, from `benchmarks/<benchmark>/task-profiles.json`
+/// (task id → profile names). A benchmark with per-task sidecars (e.g. webarena's
+/// websites) ships this map; the CLI feeds the result to `COMPOSE_PROFILES` (compose)
+/// and `--set activeProfiles` (job) so a run brings up only that task's sidecars.
+/// `None` for any benchmark without the map (or task not listed) — so every other
+/// benchmark is unaffected. Read from the in-repo file (the `--local`/repo path).
+/// (benchmarks/RULES.md — per-task sidecars.)
+fn task_profiles(benchmark: &str, task_id: Option<&str>) -> Option<Vec<String>> {
+    let task = task_id?;
+    let body =
+        std::fs::read_to_string(format!("benchmarks/{benchmark}/task-profiles.json")).ok()?;
+    let map: std::collections::HashMap<String, Vec<String>> = serde_json::from_str(&body).ok()?;
+    map.get(task).cloned()
+}
+
 /// `--mode compose` → docker compose -f compose.yaml up
 fn run_compose(
     registry: &str,
@@ -219,11 +234,19 @@ fn run_compose(
     } else {
         format!("oci://{}", compose_artifact(registry))
     };
-    let env_str = envs
+    // Per-task sidecar selection: bring up only the task's site sidecars via
+    // compose profiles. A no-op for benchmarks without a task-profiles.json.
+    let task = envs
         .iter()
-        .map(|(k, v)| format!("{k}={v}"))
-        .collect::<Vec<_>>()
-        .join(" ");
+        .find(|(k, _)| *k == "EVAL_TASK_ID")
+        .map(|(_, v)| v.as_str());
+    let profiles = task_profiles(benchmark, task).map(|p| p.join(","));
+    let mut shown: Vec<String> = Vec::new();
+    if let Some(p) = &profiles {
+        shown.push(format!("COMPOSE_PROFILES={p}"));
+    }
+    shown.extend(envs.iter().map(|(k, v)| format!("{k}={v}")));
+    let env_str = shown.join(" ");
     eprintln!("$ {env_str} docker compose -f {compose_ref} up -y --abort-on-container-exit");
     if dry_run {
         // For compose, dry-run means show the resolved manifest (which
@@ -234,6 +257,9 @@ fn run_compose(
         cmd.arg("compose").arg("-f").arg(&compose_ref).arg("config");
         for (k, v) in envs {
             cmd.env(k, v);
+        }
+        if let Some(p) = &profiles {
+            cmd.env("COMPOSE_PROFILES", p);
         }
         let status = cmd
             .status()
@@ -251,6 +277,9 @@ fn run_compose(
     cmd.arg("up").arg("-y").arg("--abort-on-container-exit");
     for (k, v) in envs {
         cmd.env(k, v);
+    }
+    if let Some(p) = &profiles {
+        cmd.env("COMPOSE_PROFILES", p);
     }
     let status = cmd
         .status()
@@ -463,6 +492,11 @@ fn run_job(
     if let Some(b) = args.max_budget {
         sets.push(format!("maxBudget={b}"));
     }
+    // Per-task sidecar selection: render only the task's site sidecars (Helm list
+    // syntax {a,b}). A no-op for benchmarks without a task-profiles.json.
+    if let Some(p) = task_profiles(benchmark, args.task_id.as_deref()) {
+        sets.push(format!("activeProfiles={{{}}}", p.join(",")));
+    }
     for s in &sets {
         helm.push("--set".into());
         helm.push(s.clone());
@@ -545,5 +579,37 @@ mod tests {
                 .any(|l| l.trim() == format!("version: {CHART_VERSION}")),
             "CHART_VERSION ({CHART_VERSION}) must match Chart.yaml `version`"
         );
+    }
+
+    // Per-task sidecar selection (benchmarks/RULES.md): the CLI resolves a task's
+    // sidecar profiles from benchmarks/<name>/task-profiles.json — driving
+    // COMPOSE_PROFILES (compose) and --set activeProfiles (job) so only the task's
+    // sites come up. Benchmarks without the map resolve to None (unaffected).
+    #[test]
+    fn task_profiles_resolves_per_task_sidecars() {
+        use super::task_profiles;
+        assert_eq!(
+            task_profiles("webarena", Some("356")),
+            Some(vec!["map".to_string()]),
+            "single-site task → its one site"
+        );
+        let mut two = task_profiles("webarena", Some("552")).expect("552 is in the map");
+        two.sort();
+        assert_eq!(
+            two,
+            vec!["gitlab".to_string(), "reddit".to_string()],
+            "two-site task"
+        );
+        assert_eq!(
+            task_profiles("webarena", Some("99999")),
+            None,
+            "task not in the map"
+        );
+        assert_eq!(
+            task_profiles("aime", Some("0")),
+            None,
+            "benchmark without a map"
+        );
+        assert_eq!(task_profiles("webarena", None), None, "no task id");
     }
 }
