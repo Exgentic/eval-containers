@@ -1,6 +1,6 @@
 # Triple-mode
 
-*Concept · for operators · derives from [`doctrine/benchmarks/RULES.md`](../../doctrine/benchmarks/RULES.md) rule 24, [`doctrine/src/RULES.md`](../../doctrine/src/RULES.md).*
+*Concept · for operators · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rule 24, [`.agents/src/RULES.md`](../../.agents/src/RULES.md).*
 
 The same evaluation runs on three runtimes. Pick the one that matches your
 environment — the benchmark, agent, and model are identical across all three.
@@ -22,7 +22,7 @@ eval-containers run aime --task-id 0 --agent codex --mode job
 ## Artifacts per benchmark
 
 The container and compose modes each need one file in the benchmark's dir
-([rule 24](../../doctrine/benchmarks/RULES.md), enforced by `tests/sanity/check.rs`):
+([rule 24](../../.agents/benchmarks/RULES.md), enforced by `tests/sanity/check.rs`):
 
 - `container.Dockerfile` — the single-container image (`container` mode)
 - `compose.yaml` — the compose stack (`compose` mode)

@@ -101,7 +101,7 @@ docker build -t local/claude-code agents/claude-code/
 eval-containers build eval aime --agent codex
 ```
 
-That's it. Don't try to build the fleet locally — CI does that via [release pipeline](../doctrine/delivery/release/SKILL.md).
+That's it. Don't try to build the fleet locally — CI does that via [release pipeline](../.agents/delivery/release/SKILL.md).
 
 ### Level 2b: Full-fleet build sweep (local)
 
@@ -197,7 +197,7 @@ docker build benchmarks/aime/                # only the ones you changed
 cargo test --test replay -- --ignored        # only the ones you changed
 ```
 
-Everything else — full fleet build, registry push, multi-arch — is CI's job. See [release pipeline](../doctrine/delivery/release/SKILL.md).
+Everything else — full fleet build, registry push, multi-arch — is CI's job. See [release pipeline](../.agents/delivery/release/SKILL.md).
 
 **Reclaim a weekend's worth of builds:**
 ```bash
@@ -227,4 +227,4 @@ No local builds needed. CI builds once; everyone pulls.
 - [Testing Policy](RULES.md) — normative spec
 - [CLI](../src/RULES.md) — CLI design rules
 - [Containers](containers/RULES.md) — container test rules
-- [Release pipeline](../doctrine/delivery/release/SKILL.md) — how CI builds and pushes the fleet
+- [Release pipeline](../.agents/delivery/release/SKILL.md) — how CI builds and pushes the fleet

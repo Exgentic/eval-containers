@@ -1,6 +1,6 @@
 # The Helm chart
 
-*Concept · for operators · derives from [`doctrine/benchmarks/RULES.md`](../../doctrine/benchmarks/RULES.md) rules 24/29, [`doctrine/src/RULES.md`](../../doctrine/src/RULES.md).*
+*Concept · for operators · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rules 24/29, [`.agents/src/RULES.md`](../../.agents/src/RULES.md).*
 
 In `job` mode, every benchmark deploys through **one shared Helm chart**,
 `benchmarks/_chart`. A benchmark is selected by name (`--set benchmark=<x>`);

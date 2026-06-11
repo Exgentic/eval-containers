@@ -2,7 +2,7 @@
 #
 # This is a dist custom publish job: it is invoked BY `release.yml` (wired via
 # `publish-jobs` in dist-workspace.toml), so the crates.io publish is owned by
-# the CLI release workflow — doctrine/delivery/RULES.md:2. It runs only in the
+# the CLI release workflow — .agents/delivery/RULES.md:2. It runs only in the
 # publish phase of a real `vX.Y.Z` tag release, never on a PR.
 #
 # Prerequisite: a repository secret `CARGO_REGISTRY_TOKEN` (a crates.io API
@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # doctrine/delivery/RULES.md:6 — the release aborts unless the git tag,
+      # .agents/delivery/RULES.md:6 — the release aborts unless the git tag,
       # Cargo.toml, and Chart.yaml versions all agree.
       - name: Verify tag == Cargo.toml == Chart.yaml
         run: |

@@ -95,7 +95,7 @@ fn check_one(name: &str, have_kubeconform: bool, issues: &mut Vec<String>) {
 #[test]
 fn every_benchmark_renders_and_validates() {
     if Command::new("helm").arg("version").output().is_err() {
-        panic!("helm not found — required by doctrine/benchmarks/RULES.md rule 29(d)");
+        panic!("helm not found — required by .agents/benchmarks/RULES.md rule 29(d)");
     }
     let have_kubeconform = Command::new("kubeconform").arg("-v").output().is_ok();
 
@@ -156,7 +156,7 @@ fn every_benchmark_renders_and_validates() {
 #[test]
 fn runner_gates_on_gateway_readiness() {
     if Command::new("helm").arg("version").output().is_err() {
-        panic!("helm not found — required by doctrine/benchmarks/RULES.md rule 29(d)");
+        panic!("helm not found — required by .agents/benchmarks/RULES.md rule 29(d)");
     }
     let chart = repo_root().join("containers/benchmarks/_chart");
     for name in ["aime", "tau-bench"] {
