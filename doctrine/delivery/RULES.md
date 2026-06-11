@@ -28,7 +28,7 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 4. **One Release owner.** A tag's GitHub Release object MUST be created and owned solely by the CLI release workflow.
 
-5. **Tag-gated publishing.** The crate and the tagged image fleet MUST be published only on a `vX.Y.Z` tag push, never on a branch push.
+5. **Tag-gated publishing.** The crate and the tagged image fleet MUST be published only by a `vX.Y.Z` tag push or an explicit `workflow_dispatch`, never by a branch push.
 
 6. **Version-agreement gate.** A tagged release MUST abort unless the git tag equals both the `Cargo.toml` and `Chart.yaml` versions.
 
@@ -46,3 +46,4 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 | Date | Change |
 |------|--------|
 | 2026-06-11 | Initial version. Lifts the unified fleet + CLI release outcomes out of the root `RELEASE.md` into the delivery topic, which had skills but no `RULES.md`. |
+| 2026-06-11 | Rule 5: permit an explicit `workflow_dispatch` (manual re-run with a version input) alongside a tag push — the fleet workflow's escape hatch; still forbids branch-push publishes. |
