@@ -1,113 +1,15 @@
-[package]
-name = "eval-containers"
-version = "0.1.0"
-edition = "2024"
-rust-version = "1.85"
-description = "A build system for AI agent evaluations"
-authors = ["The Exgentic organization and its contributors"]
-license = "Apache-2.0"
-repository = "https://github.com/Exgentic/eval-containers"
-homepage = "https://github.com/Exgentic/eval-containers"
-readme = "README.md"
-keywords = ["evaluation", "benchmark", "llm", "agents", "docker"]
-categories = ["command-line-utilities", "development-tools::build-utils"]
-# Publish only the Rust crate, not the 100-benchmark / 20-agent monorepo
-# around it. Without this, `cargo publish` bundles every benchmarks/,
-# agents/, models/, compose/ tree into the tarball and blows crates.io's
-# 10 MB limit. Patterns are gitignore-style: the LEADING SLASH anchors each
-# to the package root — without it a bare `README.md` matches every
-# benchmarks/*/README.md at any depth. The binary embeds nothing at compile
-# time (no include_str!/include_bytes!), so src/ + manifests are enough.
-include = ["/src/**/*.rs", "/Cargo.toml", "/Cargo.lock", "/README.md", "/LICENSE"]
+# Virtual workspace root. The Rust packaging lives in `cli/` (the published
+# `eval-containers` binary + library); the fleet's integration-test suite is
+# its own crate in `tests/` (depends on `cli`) so the quality process is a
+# first-class citizen, not a subdirectory of the optional CLI. The container
+# fleet itself (benchmarks/agents/models/core/gateways/compose) lives in
+# `containers/`, and platform-specific deployment in `deploy/`.
+[workspace]
+members = ["cli", "tests"]
+resolver = "2"
 
-[dependencies]
-clap = { version = "4", features = ["derive", "env"] }
-# `dotenvy::dotenv()` walks up from cwd to find a `.env` file and loads
-# its contents into the process env without overwriting existing keys —
-# the same well-trodden pattern as Node's `dotenv`. Called from main()
-# so every `eval-containers` invocation auto-picks up the repo's `.env`
-# (HF_TOKEN, OPENAI_API_KEY, …). Tests inherit this behavior when they
-# shell out to the CLI; nothing test-specific to maintain.
-dotenvy = "0.15"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-
-[dev-dependencies]
-testcontainers = { version = "0.27", features = ["docker-compose", "http_wait"] }
-tokio = { version = "1", features = ["full"] }
-tempfile = "3"
-# HTTP client for the gateway test suite. The tests POST real
-# /openai/v1/chat/completions, /anthropic/v1/messages, and
-# /genai/v1beta/.../generateContent against gateway containers started
-# by testcontainers — the only way to verify the protocol-translation
-# matrix from the outside. rustls-tls avoids dragging openssl into the
-# test build; testcontainers' internal reqwest also uses rustls so no
-# duplicated TLS stack.
-reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-
-# Integration tests are organized into category subfolders under
-# `tests/<category>/`. Each RULES.md in that subfolder describes what
-# testing means for that category. See tests/RULES.md for the overall
-# strategy. Test names are preserved (e.g. `cargo test --test build`
-# still works) so CI scripts and docs don't need to change.
-
-[[test]]
-name = "check"
-path = "tests/sanity/check.rs"
-
-[[test]]
-name = "oracle"
-path = "tests/oracle/test.rs"
-
-[[test]]
-name = "cli_conformance"
-path = "tests/cli/conformance.rs"
-
-[[test]]
-name = "compose"
-path = "tests/sanity/compose.rs"
-
-[[test]]
-name = "dockerfile_inspection"
-path = "tests/sanity/dockerfile_inspection.rs"
-
-[[test]]
-name = "task_inspection"
-path = "tests/sanity/task_inspection.rs"
-
-[[test]]
-name = "upstream_pins"
-path = "tests/sanity/upstream_pins.rs"
-
-[[test]]
-name = "build"
-path = "tests/build/test.rs"
-
-[[test]]
-name = "replay"
-path = "tests/replay/test.rs"
-
-[[test]]
-name = "upstream"
-path = "tests/upstream/test.rs"
-
-[[test]]
-name = "fleet"
-path = "tests/fleet/test.rs"
-
-[[test]]
-name = "live"
-path = "tests/live/test.rs"
-
-[[test]]
-name = "gateways"
-path = "tests/gateways/test.rs"
-
-[[test]]
-name = "agents"
-path = "tests/agents/test.rs"
-
-# The profile that 'dist' will build with
+# Profiles may only live at the workspace root. The release/dist profile is
+# consumed by `dist` (see dist-workspace.toml) to build the published binaries.
 [profile.dist]
 inherits = "release"
 lto = "thin"

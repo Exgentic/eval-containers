@@ -19,7 +19,7 @@ Our goal is to deliver agent evaluations you can trust: fast to run, thin to shi
 > **Pre-release.** The `oci://ghcr.io/exgentic/…` registry below is the
 > published-future shape — the artifacts aren't public yet. For now, clone the
 > repo and add `--local` to the CLI (see [Local development](#local-development))
-> or use `docker compose -f benchmarks/<name>/compose.yaml up` directly.
+> or use `docker compose -f containers/benchmarks/<name>/compose.yaml up` directly.
 
 ```bash
 # Set your API key
@@ -47,7 +47,7 @@ Or build from source ([Rust](https://rustup.rs)):
 
 ```bash
 git clone https://github.com/Exgentic/eval-containers
-cargo install --path eval-containers
+cargo install --path cli
 ```
 
 ## Or use the `eval-containers` CLI
@@ -79,7 +79,7 @@ eval-containers run aime --task-id 0 --agent codex --mode job
 
 | Mode | Wraps | Use it for |
 |---|---|---|
-| `compose` *(default)* | `docker compose -f benchmarks/<x>/compose.yaml up` | Local laptop, full stack with gateway + OTel sidecars, fastest iteration. |
+| `compose` *(default)* | `docker compose -f containers/benchmarks/<x>/compose.yaml up` | Local laptop, full stack with gateway + OTel sidecars, fastest iteration. |
 | `container` | `docker run -e EVAL_MODEL=... <eval-image>` | CI smoke tests, one-shot runs against an existing model proxy, minimal footprint. |
 | `job` | `helm template oci://<registry>/charts/eval --set benchmark=<x> \| kubectl apply -f -` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
 
@@ -94,7 +94,7 @@ helm template aime oci://ghcr.io/exgentic/charts/eval --version 0.1.0 \
 ```
 
 The CLI maps every axis to a `--set` and renders that **published** chart by
-default; add `--local` to render the in-repo `./benchmarks/_chart` instead:
+default; add `--local` to render the in-repo `./containers/benchmarks/_chart` instead:
 
 ```bash
 eval-containers run aime --agent codex --task-id 42 --mode job
@@ -102,7 +102,7 @@ eval-containers run aime --agent codex --task-id 42 --mode job
 #       --set benchmark=aime --set registry=… --set agent=codex --set task=42 | kubectl apply -f -
 
 eval-containers run aime --agent codex --task-id 42 --mode job --local
-# → helm template aime-codex-task-42 ./benchmarks/_chart --set … | kubectl apply -f -
+# → helm template aime-codex-task-42 ./containers/benchmarks/_chart --set … | kubectl apply -f -
 ```
 
 Platform specifics (corp registry, NodeAffinity, NetworkPolicies, a different service account, ...) are a Helm **values file you own**, layered on with `--overlay` (an extra `helm -f`), so the eval axes and your platform settings merge. A ready-to-adapt OpenShift overlay (sets the `anyuid` service account) ships as [`deploy/values-openshift.yaml`](deploy/values-openshift.yaml):
@@ -141,7 +141,7 @@ eval-containers build eval aime --agent codex --builder oc
 
 ```bash
 REGISTRY=ghcr.io/exgentic docker buildx bake \
-  -f docker-bake.hcl -f core/combination.docker-bake.hcl -f … \
+  -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl -f … \
   --builder oc --push \
   --set eval.args.BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/aime:latest \
   --set eval.args.AGENT_IMAGE=ghcr.io/exgentic/agents/codex:latest \
@@ -233,10 +233,10 @@ eval-containers run aime --task-id 0 --agent codex --model gpt-5.4 --local
 
 ```bash
 EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
-  docker compose -f ./benchmarks/aime/compose.yaml up --abort-on-container-exit
+  docker compose -f ./containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 ```
 
-`--local` points at `benchmarks/<name>/compose.yaml` on disk instead of `oci://...`.
+`--local` points at `containers/benchmarks/<name>/compose.yaml` on disk instead of `oci://...`.
 
 To check that a benchmark's **grading** is sound — a correct solution scores 1.0
 and a non-solution scores less — run the oracle (no agent, no model):
@@ -246,7 +246,7 @@ eval-containers oracle aime                 # exact-match: default gold solution
 eval-containers oracle humaneval --task-id 0
 ```
 
-See [Oracle](core/oracle/README.md) for how it works and how to add a benchmark.
+See [Oracle](containers/core/oracle/README.md) for how it works and how to add a benchmark.
 
 ## Rules
 

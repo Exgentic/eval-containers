@@ -792,9 +792,12 @@ fn inspect_dockerfile(path: &Path, text: &str, dir: &str) -> Vec<Finding> {
 // ─── Discovery ─────────────────────────────────────────────────────
 
 fn walk_dockerfiles() -> Vec<(PathBuf, String)> {
+    use eval_containers_tests::repo_root;
     let mut out = Vec::new();
     for root in ["benchmarks", "agents", "models"] {
-        let Ok(entries) = fs::read_dir(root) else {
+        // The catalog lives under containers/; resolve against the repo root so
+        // the sweep is independent of the cwd cargo sets for the test binary.
+        let Ok(entries) = fs::read_dir(repo_root().join("containers").join(root)) else {
             continue;
         };
         for entry in entries.flatten() {
