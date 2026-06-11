@@ -13,12 +13,17 @@
 #   /opt/gateway/portkey/          the portkey JS bundle (node runtime)
 #
 # Honest size: ~215 MB (portkey + node + caddy). No bundled translator.
-FROM --platform=linux/amd64 docker.io/portkeyai/gateway:latest AS portkey
+#
+# One ARG drives both the pull and the version label so they can't drift
+# (principle 9). Named stage because `COPY --from=` can't take an `${ARG}`.
+ARG PORTKEY_VERSION=1.15.2
+FROM --platform=linux/amd64 docker.io/portkeyai/gateway:${PORTKEY_VERSION} AS portkey
 
 FROM --platform=linux/amd64 node:20-alpine
+ARG PORTKEY_VERSION
 
 LABEL gateway.kind="portkey"
-LABEL gateway.portkey_version="v1.15.x"
+LABEL gateway.portkey_version="${PORTKEY_VERSION}"
 # This flavor only serves the OpenAI wire format — it does NOT cross-
 # translate from Anthropic Messages or Google Gemini. Compose/k8s
 # matrices that want full protocol coverage must use a translating
