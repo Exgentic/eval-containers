@@ -100,7 +100,7 @@ gatewayExtraEnv: []
 runnerExtraVolumeMounts: []
 extraVolumes: []
 extraManifests: []          # extra Deployments/Services (full manifests)
-# Per-task website sidecars (webarena-style). A catalog of name → {image, port,
+# Per-task service sidecars. A catalog of name → {image, port,
 # [profile], [shmSize]}; the chart renders a Deployment+Service and a readiness
 # gate for each whose `profile` (default: the name) the current task needs. The
 # chart self-resolves that set from a committed map at
