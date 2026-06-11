@@ -1,6 +1,6 @@
 # Run your first eval
 
-*Guide · for operators · derives from [`README.md`](../../README.md), [`doctrine/src/RULES.md`](../../doctrine/src/RULES.md).*
+*Guide · for operators · derives from [`README.md`](../../README.md), [`.agents/src/RULES.md`](../../.agents/src/RULES.md).*
 
 This runs one AIME task with the Codex agent against `gpt-5.4`, locally.
 

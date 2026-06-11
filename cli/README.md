@@ -20,4 +20,4 @@ eval-containers run aime --task-id 0 --agent codex --model gpt-5.4
 ```
 
 See the [repository README](https://github.com/Exgentic/eval-containers) and the
-`doctrine/` directory for full documentation and the rules that govern the CLI.
+`.agents/` directory for full documentation and the rules that govern the CLI.

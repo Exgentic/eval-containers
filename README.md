@@ -4,7 +4,7 @@ AI agent evaluations in containers. 101 benchmarks, 20 agents — ready to deplo
 
 Our goal is to deliver agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
 
-> **Working in this repo (human or AI agent)?** It is governed by [`AGENTS.md`](AGENTS.md) and the [`doctrine/`](doctrine/) directory — its **rules** (what a result must be) and **skills** (how to produce it). Read the doctrine for the area you touch before changing it.
+> **Working in this repo (human or AI agent)?** It is governed by [`AGENTS.md`](AGENTS.md) and the [`.agents/`](.agents/) directory — its **rules** (what a result must be) and **skills** (how to produce it). Read the doctrine for the area you touch before changing it.
 
 ## Why Eval Containers
 
@@ -255,11 +255,11 @@ All work is governed by RULES documents. See [CONTRIBUTING.md](CONTRIBUTING.md) 
 | Rules | Scope |
 |-------|-------|
 | [RULES.md](RULES.md) | Core principles |
-| [doctrine/benchmarks/RULES.md](doctrine/benchmarks/RULES.md) | Building benchmarks |
-| [doctrine/agents/RULES.md](doctrine/agents/RULES.md) | Building agents |
-| [doctrine/models/RULES.md](doctrine/models/RULES.md) | Building models |
-| [doctrine/src/RULES.md](doctrine/src/RULES.md) | CLI |
-| [doctrine/compose/RULES.md](doctrine/compose/RULES.md) | Naming, compose, output, registry |
+| [.agents/benchmarks/RULES.md](.agents/benchmarks/RULES.md) | Building benchmarks |
+| [.agents/agents/RULES.md](.agents/agents/RULES.md) | Building agents |
+| [.agents/models/RULES.md](.agents/models/RULES.md) | Building models |
+| [.agents/src/RULES.md](.agents/src/RULES.md) | CLI |
+| [.agents/compose/RULES.md](.agents/compose/RULES.md) | Naming, compose, output, registry |
 
 ## Documentation
 
@@ -270,4 +270,4 @@ Full human-facing docs — concepts, guides, and reference — live in
 ## Setup
 
 - [tests/LOCAL.md](tests/LOCAL.md) — local dev loop (Docker Desktop, Podman, Rosetta)
-- [doctrine/delivery/release/SKILL.md](doctrine/delivery/release/SKILL.md) — how CI builds and publishes the fleet
+- [.agents/delivery/release/SKILL.md](.agents/delivery/release/SKILL.md) — how CI builds and publishes the fleet

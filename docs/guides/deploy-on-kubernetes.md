@@ -1,6 +1,6 @@
 # Deploy on Kubernetes
 
-*Guide · for operators · derives from [`README.md`](../../README.md), [`doctrine/src/RULES.md`](../../doctrine/src/RULES.md), [`concepts/the-helm-chart.md`](../concepts/the-helm-chart.md).*
+*Guide · for operators · derives from [`README.md`](../../README.md), [`.agents/src/RULES.md`](../../.agents/src/RULES.md), [`concepts/the-helm-chart.md`](../concepts/the-helm-chart.md).*
 
 In `job` mode an evaluation runs as a Kubernetes Job rendered from the shared
 Helm chart. See [The Helm chart](../concepts/the-helm-chart.md) for the model.

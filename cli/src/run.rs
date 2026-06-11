@@ -382,7 +382,7 @@ fn run_container(
 /// anyuid SCC) layers in as an extra `-f <values>` via `--overlay`. Helm fills
 /// the values, keeps numeric fields (task) quoted, and leaves the runner
 /// command's `$?`/`$rc` untouched — no kustomize overlay to synthesize.
-/// See doctrine/benchmarks/RULES.md.
+/// See .agents/benchmarks/RULES.md.
 ///
 /// Cluster `eval-secrets` Secret still provides upstream credentials.
 fn run_job(

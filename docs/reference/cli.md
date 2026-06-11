@@ -1,6 +1,6 @@
 # CLI reference
 
-*Reference · for operators & contributors · derives from `src/` (`main.rs`, `run.rs`, `build.rs`) and [`doctrine/src/RULES.md`](../../doctrine/src/RULES.md). The source is authoritative; run `eval-containers --help` for the exact, current flags.*
+*Reference · for operators & contributors · derives from `src/` (`main.rs`, `run.rs`, `build.rs`) and [`.agents/src/RULES.md`](../../.agents/src/RULES.md). The source is authoritative; run `eval-containers --help` for the exact, current flags.*
 
 The `eval-containers` CLI is optional — every command maps to a plain
 `docker` / `helm` / `kubectl` / `oc` command you could type yourself. State- or
