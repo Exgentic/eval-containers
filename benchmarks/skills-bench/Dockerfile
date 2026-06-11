@@ -18,7 +18,7 @@ ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 
 FROM ubuntu:24.04
-ARG EVAL_TASK_ID=citation-check
+ARG EVAL_TASK_ID
 ARG SKILLS_BENCH_REVISION=312d07e15e5398f6eda32ee1bb86e492ab18edd1
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -55,7 +55,7 @@ RUN set -e; ok=0; \
 # Pre-install uv and the pytest deps into a venv so the verifier runs fully offline.
 RUN pip3 install --no-cache-dir --break-system-packages uv==0.7.13
 RUN uv venv /opt/pytest-venv && \
-    uv pip install --python /opt/pytest-venv/bin/python \
+    uv pip install --no-cache --python /opt/pytest-venv/bin/python \
       pytest==8.4.1 \
       pytest-json-ctrf==0.3.5
 
@@ -103,12 +103,9 @@ mkdir -p /logs/verifier
 cd /root
 /opt/pytest-venv/bin/pytest \
   --ctrf /logs/verifier/ctrf.json \
-  /tests/test_outputs.py -rA -v
-if [ $? -eq 0 ]; then
-  echo 1 > /logs/verifier/reward.txt
-else
-  echo 0 > /logs/verifier/reward.txt
-fi
+  /tests/test_outputs.py -rA -v \
+  && echo 1 > /logs/verifier/reward.txt \
+  || echo 0 > /logs/verifier/reward.txt
 GRADE
 RUN chmod +x /grade.sh
 
