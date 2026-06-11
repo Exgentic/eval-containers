@@ -29,12 +29,12 @@ runnerTag: latest
 imagePullPolicy: IfNotPresent
 # Full image-ref overrides. Empty → the chart composes the default nested path
 # (registry/core/otel, registry/models/<gatewayImage>, registry/evals/<b>--<a>),
-# which suits a nested-path registry like quay. The OpenShift internal registry
+# which suits a nested-path registry like ghcr.io/exgentic. The OpenShift internal registry
 # has flat ImageStream names (no slashes), so the oc/ tooling passes flat refs
 # here via --set instead — replacing the old post-render sed rewriting.
 # flatImages: compose flat ImageStream names (no slashes) for the OpenShift
-# internal registry instead of the nested quay-style path. The oc/ tooling sets
-# this; quay/kind users leave it false. Per-image *ImageRef overrides still win.
+# internal registry instead of the nested registry path. The oc/ tooling sets
+# this; ghcr/kind users leave it false. Per-image *ImageRef overrides still win.
 flatImages: false
 otelImage: ""
 gatewayImageRef: ""
