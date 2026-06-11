@@ -4,7 +4,7 @@
 # Tasks cover a grid of (context_length, depth_percent).
 # Scoring: substring match of the needle answer.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

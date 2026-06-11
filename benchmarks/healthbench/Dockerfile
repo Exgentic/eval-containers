@@ -2,7 +2,7 @@
 # 5000 tasks. Data: openai/healthbench via Azure blob
 # Agent responds to health conversations. Test uses LLM-as-judge with physician rubrics.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

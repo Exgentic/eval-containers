@@ -5,7 +5,7 @@
 # Data: github THUDM/AgentBench (data/dbbench/standard.jsonl)
 # Agent prints the answer to stdout. Test compares stdout to expected label.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest

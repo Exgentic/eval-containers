@@ -3,7 +3,7 @@
 Canonical home: `core/entrypoint/eval-sitecustomize.py`. Any image that
 needs urllib retries does:
 
-    COPY --from=quay.io/eval-containers/core/entrypoint:latest \\
+    COPY --from=ghcr.io/exgentic/core/entrypoint:latest \\
          /eval-sitecustomize.py \\
          /usr/local/lib/python3.12/site-packages/sitecustomize.py
 

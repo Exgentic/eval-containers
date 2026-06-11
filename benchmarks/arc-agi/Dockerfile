@@ -2,7 +2,7 @@
 # 120 tasks. Data: GitHub arcprize/ARC-AGI-2 evaluation set
 # Agent sees train examples and test input grids, prints predicted output grid as JSON.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest

@@ -2,7 +2,7 @@
 # 1273 tasks. Data: HuggingFace GBaker/MedQA-USMLE-4-options (test split)
 # Agent prints answer letter (A-D) to stdout. Test compares to expected answer.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Goose agent image (Block)
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-rust:latest
 ARG AGENT_VERSION=1.30.0

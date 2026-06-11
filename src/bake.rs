@@ -21,15 +21,15 @@ pub const COMBINATION_BAKE_FILE: &str = "core/combination.docker-bake.hcl";
 pub const ROOT_BAKE_FILE: &str = "docker-bake.hcl";
 
 /// The fleet-wide image registry — the build-arg default baked into every
-/// Dockerfile (`ARG REGISTRY=quay.io/eval-containers`) and the default of
+/// Dockerfile (`ARG REGISTRY=ghcr.io/exgentic`) and the default of
 /// the root bake file's `REGISTRY` variable (RULES.md principle 15.b).
-pub const REGISTRY: &str = "quay.io/eval-containers";
+pub const REGISTRY: &str = "ghcr.io/exgentic";
 
 /// [`REGISTRY`] with the trailing `/` an in-repo image ref carries once
 /// `${REGISTRY}` and `${REGISTRY_SUFFIX}` (default `/`) are resolved. A
 /// resolved ref under this prefix is an in-repo image; anything else
 /// (`python:3.12-slim`, `${TASK_BASE}`) is external.
-pub const REGISTRY_PREFIX: &str = "quay.io/eval-containers/";
+pub const REGISTRY_PREFIX: &str = "ghcr.io/exgentic/";
 
 /// Every `docker-bake.hcl` in the fleet, plus the root and combination
 /// seeds. Order doesn't matter — bake merges by target name.
@@ -176,15 +176,15 @@ mod tests {
         // The real benchmark convention (aime, hle, …): a named test stage
         // plus an HF base, both parameterized. Resolved to the literal refs
         // the bake `contexts` keys carry, sorted, tag stripped.
-        let text = "ARG REGISTRY=quay.io/eval-containers\n\
+        let text = "ARG REGISTRY=ghcr.io/exgentic\n\
             ARG REGISTRY_SUFFIX=/\n\
             FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match\n\
             FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest\n";
         assert_eq!(
             dockerfile_in_repo_deps(text),
             vec![
-                "quay.io/eval-containers/core/benchmark-base-hf".to_string(),
-                "quay.io/eval-containers/core/test-exact-match".to_string(),
+                "ghcr.io/exgentic/core/benchmark-base-hf".to_string(),
+                "ghcr.io/exgentic/core/test-exact-match".to_string(),
             ]
         );
     }
@@ -196,7 +196,7 @@ mod tests {
         let text = "FROM ${REGISTRY}/gateways${REGISTRY_SUFFIX}litellm:latest\n";
         assert_eq!(
             dockerfile_in_repo_deps(text),
-            vec!["quay.io/eval-containers/gateways/litellm".to_string()]
+            vec!["ghcr.io/exgentic/gateways/litellm".to_string()]
         );
     }
 
@@ -215,20 +215,20 @@ mod tests {
     fn literal_copy_from_still_recognized() {
         // Back-compat: a fully-resolved literal ref (no parameterization)
         // is still an in-repo dep.
-        let text = "COPY --from=quay.io/eval-containers/core/entrypoint:latest /e /e\n";
+        let text = "COPY --from=ghcr.io/exgentic/core/entrypoint:latest /e /e\n";
         assert_eq!(
             dockerfile_in_repo_deps(text),
-            vec!["quay.io/eval-containers/core/entrypoint".to_string()]
+            vec!["ghcr.io/exgentic/core/entrypoint".to_string()]
         );
     }
 
     #[test]
     fn duplicate_refs_collapse() {
         let text = "FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS a\n\
-            COPY --from=quay.io/eval-containers/core/entrypoint:latest /e /e\n";
+            COPY --from=ghcr.io/exgentic/core/entrypoint:latest /e /e\n";
         assert_eq!(
             dockerfile_in_repo_deps(text),
-            vec!["quay.io/eval-containers/core/entrypoint".to_string()]
+            vec!["ghcr.io/exgentic/core/entrypoint".to_string()]
         );
     }
 }

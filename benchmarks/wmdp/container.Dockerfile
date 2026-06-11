@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/wmdp--claude-code:latest
+FROM ghcr.io/exgentic/evals/wmdp--claude-code:latest

@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/itbench--claude-code:latest
+FROM ghcr.io/exgentic/evals/itbench--claude-code:latest

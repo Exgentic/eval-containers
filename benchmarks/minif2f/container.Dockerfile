@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/minif2f--claude-code:latest
+FROM ghcr.io/exgentic/evals/minif2f--claude-code:latest

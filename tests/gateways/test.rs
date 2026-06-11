@@ -85,7 +85,7 @@ fn dockerfile_text(flavor: &str) -> String {
 
 fn gateway_image_ref(flavor: &str) -> (String, String) {
     (
-        format!("quay.io/eval-containers/models/gpt-5.4--{flavor}"),
+        format!("ghcr.io/exgentic/models/gpt-5.4--{flavor}"),
         "latest".to_string(),
     )
 }
@@ -598,7 +598,7 @@ async fn start_pod_with_otel(
     // before any `ImageExt` method (with_platform, with_mount, ...)
     // because the ImageExt calls convert to ContainerRequest, on which
     // with_wait_for is not defined.
-    let otel = GenericImage::new("quay.io/eval-containers/core/otel", "latest")
+    let otel = GenericImage::new("ghcr.io/exgentic/core/otel", "latest")
         .with_wait_for(WaitFor::message_on_stderr(
             "Everything is ready. Begin running and processing data.",
         ))

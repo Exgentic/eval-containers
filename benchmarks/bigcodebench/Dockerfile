@@ -2,7 +2,7 @@
 # 1140 tasks. Data: HuggingFace bigcode/bigcodebench (v0.1.4)
 # Agent writes a complete Python function. Test runs upstream unittest harness.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

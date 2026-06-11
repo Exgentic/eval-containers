@@ -26,7 +26,7 @@ Dependencies resolve from the **internal registry** because the Dockerfiles'
 `REGISTRY=<internal-registry>` + `REGISTRY_SUFFIX=-` as build args (binary
 builds ignore `oc start-build --build-arg`, so the CLI bakes them into the
 BuildConfig). The same Dockerfiles still build unchanged with `docker buildx
-bake` locally — the build-arg defaults are `quay.io/eval-containers` / `/`.
+bake` locally — the build-arg defaults are `ghcr.io/exgentic` / `/`.
 
 The CLI builds **one** artifact, and re-derives nothing — every field comes
 from `bake --print`; it adds only the OpenShift-specific flattening

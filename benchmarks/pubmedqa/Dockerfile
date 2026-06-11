@@ -2,7 +2,7 @@
 # 1000 tasks. Data: HuggingFace qiaojin/PubMedQA (pqa_labeled/train)
 # Agent reads a biomedical abstract and answers yes/no/maybe to a question.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

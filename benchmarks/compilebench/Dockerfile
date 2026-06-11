@@ -6,12 +6,12 @@
 # This Dockerfile fetches a single task's assets from the upstream repo
 # and sets up the Eval Containers entrypoint. The base image comes from the task's own Dockerfile.
 #
-# Build: docker build --build-arg EVAL_TASK_ID=curl -t quay.io/eval-containers/benchmarks/compilebench-curl:latest .
+# Build: docker build --build-arg EVAL_TASK_ID=curl -t ghcr.io/exgentic/benchmarks/compilebench-curl:latest .
 
 ARG EVAL_TASK_ID
 ARG BASE_IMAGE=ubuntu:22.04
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM ${BASE_IMAGE}

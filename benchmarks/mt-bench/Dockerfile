@@ -4,7 +4,7 @@
 # Scoring: LLM-as-judge single-answer grading on a 1-10 scale.
 # Ref: https://arxiv.org/abs/2306.05685
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest
 

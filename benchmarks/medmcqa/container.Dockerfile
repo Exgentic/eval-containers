@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/medmcqa--claude-code:latest
+FROM ghcr.io/exgentic/evals/medmcqa--claude-code:latest

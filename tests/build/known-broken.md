@@ -70,7 +70,7 @@ ahead-of-time mirror in the release registry. See release runbook.
 
 | Agent | Root cause | Mitigation |
 |---|---|---|
-| `plandex` | Multi-stage Dockerfile combines `FROM plandexai/plandex-server:...` and `FROM quay.io/eval-containers/core/agent-base-rust:latest`. testcontainers-rs / bollard / BuildKit can't resolve the second locally-tagged FROM when the first references a remote image — attempts to pull `quay.io/eval-containers/core/agent-base-rust` from the registry and fails with `unauthorized`. Direct `docker build agents/plandex/` from the shell succeeds (BuildKit classic-image-store path). | Runs fine on CI Linux real Docker. Locally, `docker build -t quay.io/eval-containers/agents/plandex:latest agents/plandex/` works. Not a structural defect — a podman-BuildKit multi-stage quirk. |
+| `plandex` | Multi-stage Dockerfile combines `FROM plandexai/plandex-server:...` and `FROM ghcr.io/exgentic/core/agent-base-rust:latest`. testcontainers-rs / bollard / BuildKit can't resolve the second locally-tagged FROM when the first references a remote image — attempts to pull `ghcr.io/exgentic/core/agent-base-rust` from the registry and fails with `unauthorized`. Direct `docker build agents/plandex/` from the shell succeeds (BuildKit classic-image-store path). | Runs fine on CI Linux real Docker. Locally, `docker build -t ghcr.io/exgentic/agents/plandex:latest agents/plandex/` works. Not a structural defect — a podman-BuildKit multi-stage quirk. |
 
 ## Fixed since round 4
 

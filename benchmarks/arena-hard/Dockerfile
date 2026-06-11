@@ -4,7 +4,7 @@
 # LLM-as-judge, with both orderings considered to reduce position bias.
 # Ref: https://github.com/lmarena/arena-hard-auto (Li et al. 2024)
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
