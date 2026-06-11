@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # GitHub Copilot CLI agent image
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
 ARG AGENT_VERSION=1.0.24

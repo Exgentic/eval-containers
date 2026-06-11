@@ -2,7 +2,7 @@
 # 5500 tasks (500 test examples x 11 languages). Data: HuggingFace cambridgeltl/xcopa
 # Agent prints A or B. Test compares to expected choice.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

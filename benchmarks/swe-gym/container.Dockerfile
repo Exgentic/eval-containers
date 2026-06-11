@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/swe-gym--claude-code:latest
+FROM ghcr.io/exgentic/evals/swe-gym--claude-code:latest

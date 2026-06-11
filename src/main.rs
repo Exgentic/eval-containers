@@ -19,7 +19,7 @@ use clap::{Parser, Subcommand};
 )]
 struct Cli {
     /// Docker registry to use
-    #[arg(long, env = "EVAL_REGISTRY", default_value = "quay.io/eval-containers")]
+    #[arg(long, env = "EVAL_REGISTRY", default_value = "ghcr.io/exgentic")]
     registry: String,
 
     #[command(subcommand)]

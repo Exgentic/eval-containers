@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/harmbench--claude-code:latest
+FROM ghcr.io/exgentic/evals/harmbench--claude-code:latest

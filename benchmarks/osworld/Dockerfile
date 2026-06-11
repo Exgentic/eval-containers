@@ -4,7 +4,7 @@
 # Agent connects via HTTP API: GET /screenshot, POST /execute_action.
 # VM disk image (11GB) must be downloaded separately.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

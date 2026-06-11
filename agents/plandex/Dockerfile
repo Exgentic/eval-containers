@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Plandex agent image — self-hosted client + server with Postgres + internal litellm.
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM plandexai/plandex-server:server-v${AGENT_VERSION} AS plandex-server-src
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-rust:latest

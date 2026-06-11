@@ -214,9 +214,9 @@ verification record (`tests/fleet/RULES.md:8`).
 38. **Tag the commit:** `git tag -s eval-vX.Y.Z` (signed). *(Do not run git in a
     dry verification; this is the live release step.)*
 39. **Push the tag + trigger the release workflow:** `git push origin eval-vX.Y.Z`.
-40. **Verify images published** — `docker pull quay.io/eval-containers/<image>:eval-vX.Y.Z`
+40. **Verify images published** — `docker pull ghcr.io/exgentic/<image>:eval-vX.Y.Z`
     for each. Pass = every expected tag exists.
-41. **Verify signatures / attestations** — `cosign verify quay.io/eval-containers/<image>:eval-vX.Y.Z`.
+41. **Verify signatures / attestations** — `cosign verify ghcr.io/exgentic/<image>:eval-vX.Y.Z`.
 42. **Smoke test one image from a clean machine** — pull + run from a different
     host. Pass = end-to-end works from nothing.
 43. **Attach the report to the GitHub release** —

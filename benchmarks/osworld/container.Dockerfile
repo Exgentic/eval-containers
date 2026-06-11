@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/osworld--claude-code:latest
+FROM ghcr.io/exgentic/evals/osworld--claude-code:latest

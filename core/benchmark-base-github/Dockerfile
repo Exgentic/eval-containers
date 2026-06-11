@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Shared base for GitHub-raw-file-backed benchmarks (Rule 11b).
 # Provides: apt-retry wrapper, curl + jq, entrypoint + materialize copy, /tasks /tests /app.
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM --platform=linux/amd64 python:3.12-slim

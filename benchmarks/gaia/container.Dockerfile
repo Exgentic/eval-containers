@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/gaia--claude-code:latest
+FROM ghcr.io/exgentic/evals/gaia--claude-code:latest

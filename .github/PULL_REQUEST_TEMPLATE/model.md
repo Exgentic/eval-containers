@@ -44,7 +44,7 @@ sweet spot, context window, etc.) -->
 
 ### `config.yaml` contract
 
-- [ ] `FROM quay.io/eval-containers/core/litellm:latest` (inherits the shared proxy + eval-logger + budget wrapper)
+- [ ] `FROM ghcr.io/exgentic/core/litellm:latest` (inherits the shared proxy + eval-logger + budget wrapper)
 - [ ] `model_list` has a wildcard route (`model_name: "*"`) aliasing to `<provider>/<model>`
 - [ ] `model_list` ALSO has explicit aliases for every common name agents might send (gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini, claude-3-5-sonnet, claude-3-5-haiku, claude-sonnet-4-5, gemini-2.5-pro, o1, o1-mini). The wildcard alone is NOT reliable on the OpenAI `/v1/chat/completions` path — explicit aliases are the fix, see the `models/gpt-5.4/config.yaml` reference.
 - [ ] Every alias uses a YAML anchor (`&gpt54` / `*gpt54`) so the `litellm_params` block is declared once

@@ -4,7 +4,7 @@
 # Full reproduction requires the upstream CodeOcean capsules (not distributed here),
 # so scoring is deferred to an external grader: reward = -1 per benchmarks/RULES.md rule 19.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

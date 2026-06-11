@@ -3,7 +3,7 @@
 # Data: github suzgunmirac/BIG-Bench-Hard
 # Agent prints answer to stdout. Test compares to expected target.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest

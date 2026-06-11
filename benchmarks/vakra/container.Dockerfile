@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/vakra--claude-code:latest
+FROM ghcr.io/exgentic/evals/vakra--claude-code:latest

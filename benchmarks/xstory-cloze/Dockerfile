@@ -2,7 +2,7 @@
 # 16621 tasks (1511 eval examples x 11 languages). Data: HuggingFace juletxara/xstory_cloze
 # Agent prints 1 or 2. Test compares to expected correct ending.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

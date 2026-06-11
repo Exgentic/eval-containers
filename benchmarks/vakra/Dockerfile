@@ -4,7 +4,7 @@
 # Full evaluation requires the VAKRA executable environment (8,000+ locally
 # hosted APIs, SQLite databases, document collections). Externally graded.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

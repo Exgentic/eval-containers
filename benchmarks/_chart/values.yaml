@@ -13,7 +13,7 @@ task: "0"
 # run one Job per task and CANNOT use a dataset (Indexed) Job — datasetSize is
 # rejected when perTask is true. (benchmarks/RULES.md — eval-image naming.)
 perTask: false
-registry: quay.io/eval-containers
+registry: ghcr.io/exgentic
 # The gateway is a fixed proxy image; `evalModel` is the upstream it proxies to
 # (CLI --model sets evalModel + model). `model` is the runner's logging tag.
 gatewayImage: gpt-5.4--bifrost

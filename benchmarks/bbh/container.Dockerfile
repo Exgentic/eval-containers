@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/bbh--claude-code:latest
+FROM ghcr.io/exgentic/evals/bbh--claude-code:latest
