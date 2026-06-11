@@ -725,49 +725,14 @@ async fn build_replay_model() {
 //
 // No docker calls; runs in milliseconds on plain `cargo test`.
 
-const REGISTRY_PREFIX: &str = "quay.io/eval-containers/";
-
 fn in_repo_deps_from_dockerfile(path: &Path) -> Vec<String> {
+    // The Dockerfile-side parser lives in the library
+    // (`bake::dockerfile_in_repo_deps`) and is shared with `gen-bake`,
+    // which emits these same deps as a target's `contexts`. Sharing one
+    // parser is what keeps the generator and this lint from drifting —
+    // exactly the drift principle 15 exists to catch (principle 11).
     let text = fs::read_to_string(path).unwrap_or_default();
-    let mut deps: Vec<String> = Vec::new();
-    let push_if_in_repo = |s: &str, deps: &mut Vec<String>| {
-        // Dockerfile FROMs are parameterized as `${REGISTRY}/<cat>${REGISTRY_SUFFIX}<name>`
-        // so a single `oc start-build --build-arg REGISTRY=…` builds in-cluster
-        // (src/RULES.md principle 11). Resolve with the build-arg DEFAULTS —
-        // which are exactly `quay.io/eval-containers` / `/` — so the result is
-        // identical to the old hardcoded ref and matches the bake `contexts`
-        // (which resolve `${REGISTRY}` the same way in `in_repo_deps_from_bake`).
-        let s = s
-            .replace("${REGISTRY}", "quay.io/eval-containers")
-            .replace("${REGISTRY_SUFFIX}", "/");
-        if s.starts_with(REGISTRY_PREFIX) {
-            // Normalize: strip :tag for comparison against bake contexts keys.
-            let bare = s.split(':').next().unwrap_or(&s).to_string();
-            if !deps.contains(&bare) {
-                deps.push(bare);
-            }
-        }
-    };
-    for raw in text.lines() {
-        let line = raw.trim();
-        // FROM [--platform=...] image[:tag] [AS stage]
-        if let Some(rest) = line.strip_prefix("FROM ") {
-            let mut tok = rest;
-            while let Some(stripped) = tok.strip_prefix("--") {
-                let end = stripped.find(' ').map(|i| i + 2).unwrap_or(rest.len());
-                tok = &rest[end..].trim_start();
-            }
-            let image = tok.split_whitespace().next().unwrap_or("");
-            push_if_in_repo(image, &mut deps);
-            continue;
-        }
-        // COPY --from=image[:tag] src dst
-        if let Some(rest) = line.strip_prefix("COPY --from=") {
-            let image = rest.split_whitespace().next().unwrap_or("");
-            push_if_in_repo(image, &mut deps);
-        }
-    }
-    deps
+    eval_containers::bake::dockerfile_in_repo_deps(&text)
 }
 
 fn in_repo_deps_from_bake(path: &Path) -> Vec<String> {
@@ -789,7 +754,7 @@ fn in_repo_deps_from_bake(path: &Path) -> Vec<String> {
         let Some(end) = after.find('"') else { continue };
         let lhs = &after[..end];
         let resolved = lhs
-            .replace("${REGISTRY}", "quay.io/eval-containers")
+            .replace("${REGISTRY}", eval_containers::bake::REGISTRY)
             .split(':')
             .next()
             .unwrap_or("")
