@@ -22,7 +22,7 @@
 //! imagestream names plus `REGISTRY`/`REGISTRY_SUFFIX` build args so the
 //! parameterized `${REGISTRY}/...${REGISTRY_SUFFIX}` FROMs resolve to the
 //! internal registry. One artifact; dependency-ORDERED cold-graph builds
-//! are a thin loop over it in `examples/openshift/` (principle 3 — no graph
+//! are a thin loop over it in `deploy/examples/openshift/` (principle 3 — no graph
 //! ordering inside the CLI).
 //!
 //! Per-task benchmark variants (swe-bench's 1000+ tasks) remain
@@ -50,7 +50,7 @@ pub struct BuildArgs {
     /// The special value `oc` builds the artifact on an OpenShift cluster
     /// via a binary `BuildConfig` (`oc start-build`, buildah) — the
     /// no-admin path when in-cluster BuildKit is blocked by PodSecurity;
-    /// see `examples/openshift/` for the dependency-ordered fleet loop.
+    /// see `deploy/examples/openshift/` for the dependency-ordered fleet loop.
     #[arg(long, global = true)]
     pub builder: Option<String>,
 
@@ -110,7 +110,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     // `--builder oc` is the OpenShift BuildConfig backend (not a buildx
     // builder): build one artifact in-cluster with `oc start-build`. Routed
     // before the buildx path so we don't `buildx inspect` a builder named
-    // "oc". Cold-graph ordering lives in examples/openshift (principle 3).
+    // "oc". Cold-graph ordering lives in deploy/examples/openshift (principle 3).
     if builder == Some("oc") {
         return oc_execute(args.target, dry_run, &args.imagestream_suffix);
     }

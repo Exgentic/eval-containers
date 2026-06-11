@@ -1,7 +1,7 @@
 ---
 name: audit-rollup
 description: >-
-  Generate or refresh the repository-root AUDIT.md — the project-level table that
+  Generate or refresh containers/AUDIT.md — the project-level table that
   shows the bottom line of every benchmark's audit in one grid. Use it after any
   benchmark's AUDIT.md changes, or to see fleet-wide audit status at a glance. It
   scrapes each benchmarks/<name>/AUDIT.md and copies status verbatim, never
@@ -11,7 +11,7 @@ description: >-
 
 # Generate the project audit table
 
-The root `AUDIT.md` is the one place to see, across the fleet, how far each
+The `containers/AUDIT.md` rollup is the one place to see, across the fleet, how far each
 benchmark has actually been audited. It is generated, never hand-edited, so it
 cannot drift from the per-benchmark reports it summarizes. Serves
 `doctrine/verification/audit/RULES.md:9` and `:10`.

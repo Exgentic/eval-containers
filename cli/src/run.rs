@@ -297,18 +297,24 @@ fn run_container(
     };
     let image = if local {
         // Build from the per-benchmark container.Dockerfile, then run.
-        let dockerfile = format!("./containers/benchmarks/{benchmark}/container.Dockerfile");
+        // The build context is the benchmark's own dir, not the repo root:
+        // container.Dockerfile is FROM-only, so a small, scoped context is all
+        // it needs — and scoping it here is what lets us drop a root
+        // `.dockerignore` whose sole job was keeping target/, .git/, etc. out of
+        // an otherwise repo-sized context for this one dev-mode build.
+        let context = format!("./containers/benchmarks/{benchmark}");
+        let dockerfile = format!("{context}/container.Dockerfile");
         let shown_arg = task_id
             .as_deref()
             .map(|t| format!(" --build-arg EVAL_TASK_ID={t}"))
             .unwrap_or_default();
-        eprintln!("$ docker build -f {dockerfile}{shown_arg} -t {local_tag} .");
+        eprintln!("$ docker build -f {dockerfile}{shown_arg} -t {local_tag} {context}");
         let mut build = Command::new("docker");
         build.arg("build").arg("-f").arg(&dockerfile);
         if let Some(t) = task_id.as_deref() {
             build.arg("--build-arg").arg(format!("EVAL_TASK_ID={t}"));
         }
-        build.arg("-t").arg(&local_tag).arg(".");
+        build.arg("-t").arg(&local_tag).arg(&context);
         let status = build
             .status()
             .map_err(|e| format!("failed to docker build: {e}"))?;
