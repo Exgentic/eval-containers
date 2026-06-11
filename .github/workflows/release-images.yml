@@ -1,56 +1,103 @@
-# DISABLED — see #3 commit msg. To re-enable: strip leading '# ' from every line.
+name: Release the fleet
+
+# On a `vX.Y.Z` tag, build + push the ENTIRE base fleet (core, agents,
+# benchmarks, models, gateways) to GHCR at `:<tag>`, then publish the `evaluate`
+# compose artifact + the `charts/eval` Helm chart at the same version.
+# (Crate releases — `cargo install eval-containers` — live separately in
+# release.yml / cargo-dist; this workflow is the container/chart fleet only.)
 #
-# name: Release images
+# Fleet-version policy (RULES.md principle 9): the git tag IS the one release
+# version; Cargo.toml and benchmarks/_chart/Chart.yaml MUST equal it (guarded
+# below + by tests/sanity/check.rs). Eval combination images (evals/<b>--<a>)
+# are built on demand by the CLI, not pre-published, so they are not in the
+# fleet build (RELEASE skill: "every benchmark, agent, model, gateway, core").
 #
-# # Build the full fleet of benchmark and agent images and push to quay.io.
-# # See RELEASE.md for the design. This is a release tool, not a test tool.
-# # Test workflows live in test.yml and run cargo tests.
-#
-# on:
-#   push:
-#     branches: [main]
-#     tags: ['v*']
-#   workflow_dispatch:
-#
-# permissions:
-#   contents: read
-#
-# env:
-#   REGISTRY: quay.io/eval-containers
-#
-# jobs:
-#   bake:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - uses: actions/checkout@v4
-#
-#       - uses: docker/setup-buildx-action@v3
-#
-#       - uses: docker/login-action@v3
-#         with:
-#           registry: quay.io
-#           username: ${{ secrets.QUAY_USERNAME }}
-#           password: ${{ secrets.QUAY_ROBOT_TOKEN }}
-#
-#       - name: Compute tag
-#         id: tag
-#         run: |
-#           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-#             echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
-#           else
-#             echo "tag=latest" >> "$GITHUB_OUTPUT"
-#           fi
-#
-#       - name: Lint Dockerfiles
-#         env:
-#           TAG: ${{ steps.tag.outputs.tag }}
-#           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-#           GIT_SHA: ${{ github.sha }}
-#         run: docker buildx bake -f <(scripts/bake-plan.sh) --check
-#
-#       - name: Build and push
-#         env:
-#           TAG: ${{ steps.tag.outputs.tag }}
-#           BUILD_DATE: ${{ github.event.head_commit.timestamp }}
-#           GIT_SHA: ${{ github.sha }}
-#         run: docker buildx bake -f <(scripts/bake-plan.sh) --push
+# NOTE: only validated by a real `v*` tag push — a ~150-image build runs on a
+# Linux runner, not locally.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version to publish, e.g. v0.1.0"
+        required: true
+
+permissions:
+  contents: read
+  packages: write # push to GHCR; Actions-pushed packages auto-link to this repo
+
+env:
+  REGISTRY: ghcr.io/exgentic
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: azure/setup-helm@v4
+
+      - name: Resolve version
+        id: ver
+        run: |
+          TAG="${{ github.event.inputs.tag }}"
+          [ -n "$TAG" ] || TAG="${GITHUB_REF#refs/tags/}"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Guard — git tag matches Cargo.toml and Chart.yaml
+        run: |
+          ver="${{ steps.ver.outputs.ver }}"
+          cargo_ver=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          chart_ver=$(grep -m1 '^version: ' benchmarks/_chart/Chart.yaml | awk '{print $2}')
+          echo "tag=$ver  cargo=$cargo_ver  chart=$chart_ver"
+          if [ "$ver" != "$cargo_ver" ] || [ "$ver" != "$chart_ver" ]; then
+            echo "::error::fleet-version mismatch — bump Cargo.toml + Chart.yaml to $ver before tagging"
+            exit 1
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build + push the fleet at the tag
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          # Load every artifact bake file — they carry the `contexts` that let one
+          # bake call build the whole graph in dependency order (core → bases →
+          # leaves). The parameterized eval combination (core/combination.docker-
+          # bake.hcl) is excluded: those images are built on demand, not published.
+          mapfile -t FILES < <(ls docker-bake.hcl \
+            core/*/docker-bake.hcl agents/*/docker-bake.hcl benchmarks/*/docker-bake.hcl \
+            models/*/docker-bake.hcl gateways/*/docker-bake.hcl)
+          FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
+          mapfile -t TARGETS < <(grep -hoE '^target "[^"]+"' "${FILES[@]}" \
+            | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+          echo "Building ${#TARGETS[@]} targets at ${REGISTRY}:${TAG}"
+          # --set '*.args.REGISTRY=' so every Dockerfile's `FROM ${REGISTRY}/...`
+          # resolves to GHCR (the bake context keys already use ${REGISTRY}).
+          # --set '*.labels.…source=' stamps the OCI provenance label on every
+          # image, matching the CLI build path (naming::REPO_URL / bake::base_args).
+          docker buildx bake "${FARGS[@]}" \
+            --set "*.args.REGISTRY=${REGISTRY}" \
+            --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
+            "${TARGETS[@]}" --push
+
+      - name: Publish the evaluate compose artifact
+        env:
+          EVAL_REGISTRY: ${{ env.REGISTRY }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: cargo run --quiet -- build compose
+
+      - name: Publish the Helm chart at the tag
+        run: |
+          ver="${{ steps.ver.outputs.ver }}"
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm package benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
+          helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"
