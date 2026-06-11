@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/kumo--claude-code:latest
+FROM ghcr.io/exgentic/evals/kumo--claude-code:latest

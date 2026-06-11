@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/agentharm--claude-code:latest
+FROM ghcr.io/exgentic/evals/agentharm--claude-code:latest

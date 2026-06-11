@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/niah--claude-code:latest
+FROM ghcr.io/exgentic/evals/niah--claude-code:latest

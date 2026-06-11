@@ -16,7 +16,7 @@ Our goal is to deliver agent evaluations you can trust: fast to run, thin to shi
 
 ## Quick start
 
-> **Pre-release.** The `oci://quay.io/eval-containers/…` registry below is the
+> **Pre-release.** The `oci://ghcr.io/exgentic/…` registry below is the
 > published-future shape — the artifacts aren't public yet. For now, clone the
 > repo and add `--local` to the CLI (see [Local development](#local-development))
 > or use `docker compose -f benchmarks/<name>/compose.yaml up` directly.
@@ -27,7 +27,7 @@ echo "OPENAI_API_KEY=sk-..." > .env
 
 # Run one task — pure docker, no clone, no CLI  (once registry is published)
 EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f oci://quay.io/eval-containers/evaluate up --abort-on-container-exit
+  docker compose -f oci://ghcr.io/exgentic/evaluate up --abort-on-container-exit
 
 # Results
 cat output/aime/0/task/result.json
@@ -62,7 +62,7 @@ eval-containers run aime --task-id 0 --agent codex --model gpt-5.4
 
 ```bash
 EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
-  docker compose -f oci://quay.io/eval-containers/evaluate up --abort-on-container-exit
+  docker compose -f oci://ghcr.io/exgentic/evaluate up --abort-on-container-exit
 ```
 
 That's the whole idea: every `eval-containers` command is a reminder of a plain `docker`/`kubectl` command — run any of them with `--dry-run` to print the exact command without executing. Every `EVAL_*` env var has a matching `--kebab-case` flag. Pick whichever you prefer.
@@ -89,7 +89,7 @@ Every benchmark renders from one shared [Helm](https://helm.sh/) chart — selec
 
 ```bash
 # From the published chart (see Pre-release note above) — no clone needed:
-helm template aime oci://quay.io/eval-containers/charts/eval --version 0.1.0 \
+helm template aime oci://ghcr.io/exgentic/charts/eval --version 0.1.0 \
   --set benchmark=aime --set agent=claude-code --set task=0 | kubectl apply -f -
 ```
 
@@ -140,12 +140,12 @@ eval-containers build eval aime --agent codex --builder oc
 → runs the same bake graph on the in-cluster builder (one `-f` per artifact bake file, abbreviated to `…`):
 
 ```bash
-REGISTRY=quay.io/eval-containers docker buildx bake \
+REGISTRY=ghcr.io/exgentic docker buildx bake \
   -f docker-bake.hcl -f core/combination.docker-bake.hcl -f … \
   --builder oc --push \
-  --set eval.args.BENCHMARK_IMAGE=quay.io/eval-containers/benchmarks/aime:latest \
-  --set eval.args.AGENT_IMAGE=quay.io/eval-containers/agents/codex:latest \
-  --set eval.args.MODEL_IMAGE=quay.io/eval-containers/models/gpt-5.4--bifrost:latest \
+  --set eval.args.BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/aime:latest \
+  --set eval.args.AGENT_IMAGE=ghcr.io/exgentic/agents/codex:latest \
+  --set eval.args.MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest \
   eval
 ```
 
@@ -185,7 +185,7 @@ All Eval Containers env vars are prefixed `EVAL_` to avoid collision with CI sys
 | Variable | Meaning | Default |
 |---|---|---|
 | `EVAL_TIMEOUT` | Agent timeout in seconds | `300` |
-| `EVAL_REGISTRY` | Registry to pull from | `quay.io/eval-containers` |
+| `EVAL_REGISTRY` | Registry to pull from | `ghcr.io/exgentic` |
 
 Container tags are Docker-native (different tag → different pull). Internal versions are runtime overrides (the entrypoint installs the requested version at container start).
 
@@ -206,7 +206,7 @@ If you're on Docker < 2.34, airgapped, or just prefer a local file:
 ```bash
 # Fetch + flatten the compose file once (needs a machine with network)
 EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f oci://quay.io/eval-containers/evaluate config > aime.compose.yaml
+  docker compose -f oci://ghcr.io/exgentic/evaluate config > aime.compose.yaml
 
 # Transport aime.compose.yaml anywhere. Run offline:
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
@@ -216,8 +216,8 @@ EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
 Or for fully airgapped deployments, bundle the images too:
 
 ```bash
-docker save quay.io/eval-containers/evals/aime--codex:latest \
-            quay.io/eval-containers/models/gpt-5.4:latest \
+docker save ghcr.io/exgentic/evals/aime--codex:latest \
+            ghcr.io/exgentic/models/gpt-5.4:latest \
   | gzip > aime-bundle.tar.gz
 ```
 

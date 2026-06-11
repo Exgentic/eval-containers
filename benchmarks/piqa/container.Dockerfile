@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/piqa--claude-code:latest
+FROM ghcr.io/exgentic/evals/piqa--claude-code:latest

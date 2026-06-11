@@ -2,7 +2,7 @@
 # 1221 tasks. Data: HuggingFace tau/commonsense_qa (validation split; test labels are hidden)
 # Agent prints answer letter to stdout. Test compares stdout to expected letter.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest

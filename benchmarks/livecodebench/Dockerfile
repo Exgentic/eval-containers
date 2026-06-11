@@ -3,7 +3,7 @@
 # Data: HuggingFace livecodebench/code_generation_lite release_v5
 # Agent writes solution code. Test runs it against hidden test cases.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

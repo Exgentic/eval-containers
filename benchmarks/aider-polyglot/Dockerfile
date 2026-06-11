@@ -3,7 +3,7 @@
 # Data: https://github.com/Aider-AI/polyglot-benchmark
 # Agent edits starter code files. Test runs language-specific test suite.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM ubuntu:22.04

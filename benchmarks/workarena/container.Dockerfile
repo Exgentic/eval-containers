@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/workarena--claude-code:latest
+FROM ghcr.io/exgentic/evals/workarena--claude-code:latest

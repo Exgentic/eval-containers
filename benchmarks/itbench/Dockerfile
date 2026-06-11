@@ -13,7 +13,7 @@
 # prometheus, loki, opa, test app) and wire scenario-specific ground-truth
 # verifiers from the upstream eval.py into test.sh.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

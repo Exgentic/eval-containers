@@ -2,7 +2,7 @@
 # 1266 tasks. Data: OpenAI public blob (encrypted, decrypted at build time)
 # Agent browses the web and prints answer to stdout.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

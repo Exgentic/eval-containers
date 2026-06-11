@@ -24,7 +24,7 @@
 # Kaggle's spaceship-titanic is a free, public "Getting Started" competition.
 
 ARG EVAL_TASK_ID
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM mlebench-env:latest

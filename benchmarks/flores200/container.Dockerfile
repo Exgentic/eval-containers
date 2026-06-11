@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/flores200--claude-code:latest
+FROM ghcr.io/exgentic/evals/flores200--claude-code:latest

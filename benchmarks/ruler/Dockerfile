@@ -4,7 +4,7 @@
 # common_words_extraction across a range of context lengths.
 # Ref: https://github.com/hsiehjackson/RULER (Hsieh et al. 2024, arXiv:2404.06654)
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

@@ -3,7 +3,7 @@
 # Multi-service with website sidecars + mitmproxy for HAR capture.
 # Evaluation via official webarena-verified package.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-github:latest
 

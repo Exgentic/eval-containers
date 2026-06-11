@@ -125,13 +125,13 @@ pub fn release_name(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    const REG: &str = "quay.io/eval-containers";
+    const REG: &str = "ghcr.io/exgentic";
 
     #[test]
     fn eval_image_uses_double_dash_separator() {
         assert_eq!(
             eval_image(REG, "aime", "claude-code", "2.5.0"),
-            "quay.io/eval-containers/evals/aime--claude-code:2.5.0"
+            "ghcr.io/exgentic/evals/aime--claude-code:2.5.0"
         );
     }
 
@@ -139,15 +139,15 @@ mod tests {
     fn category_images_are_namespaced() {
         assert_eq!(
             benchmark_image(REG, "aime", "latest"),
-            "quay.io/eval-containers/benchmarks/aime:latest"
+            "ghcr.io/exgentic/benchmarks/aime:latest"
         );
         assert_eq!(
             agent_image(REG, "codex", "latest"),
-            "quay.io/eval-containers/agents/codex:latest"
+            "ghcr.io/exgentic/agents/codex:latest"
         );
         assert_eq!(
             model_image(REG, "gpt-5.4--bifrost", "latest"),
-            "quay.io/eval-containers/models/gpt-5.4--bifrost:latest"
+            "ghcr.io/exgentic/models/gpt-5.4--bifrost:latest"
         );
     }
 
@@ -155,7 +155,7 @@ mod tests {
     fn per_task_variant_appends_task_id() {
         assert_eq!(
             benchmark_task_image(REG, "swe-bench", "42", "latest"),
-            "quay.io/eval-containers/benchmarks/swe-bench-42:latest"
+            "ghcr.io/exgentic/benchmarks/swe-bench-42:latest"
         );
     }
 
@@ -169,7 +169,7 @@ mod tests {
                 "instance_NodeBB__NodeBB-abc",
                 "latest"
             ),
-            "quay.io/eval-containers/benchmarks/swe-bench-pro-instance_nodebb__nodebb-abc:latest"
+            "ghcr.io/exgentic/benchmarks/swe-bench-pro-instance_nodebb__nodebb-abc:latest"
         );
         assert_eq!(
             eval_task_image(
@@ -179,7 +179,7 @@ mod tests {
                 "claude-code",
                 "latest"
             ),
-            "quay.io/eval-containers/evals/swe-bench-pro-instance_nodebb__nodebb-abc--claude-code:latest"
+            "ghcr.io/exgentic/evals/swe-bench-pro-instance_nodebb__nodebb-abc--claude-code:latest"
         );
     }
 
@@ -193,7 +193,7 @@ mod tests {
                 "claude-code",
                 "latest"
             ),
-            "quay.io/eval-containers/evals/swe-bench-sympy__sympy-24066--claude-code:latest"
+            "ghcr.io/exgentic/evals/swe-bench-sympy__sympy-24066--claude-code:latest"
         );
     }
 

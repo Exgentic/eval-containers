@@ -7,7 +7,7 @@
 # Wikipedia pages and byte-offset annotations). `nq_open` is the standard
 # version used in open-book QA evaluations (RAG, closed-book LLMs, etc.).
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

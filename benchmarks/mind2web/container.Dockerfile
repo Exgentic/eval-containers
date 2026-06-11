@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/mind2web--claude-code:latest
+FROM ghcr.io/exgentic/evals/mind2web--claude-code:latest

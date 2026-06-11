@@ -4,7 +4,7 @@
 # Evaluation is externally handled by the upstream visualwebarena harness; this image
 # captures the agent's final answer + network HAR and writes -1.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

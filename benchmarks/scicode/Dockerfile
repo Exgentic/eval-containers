@@ -3,7 +3,7 @@
 # Numeric ground-truth tensors: Google Drive (~1GB test_data.h5).
 # Agent writes Python code for each sub-step. Test asserts output equals loaded targets.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 

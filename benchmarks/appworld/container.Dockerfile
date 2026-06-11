@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/appworld--claude-code:latest
+FROM ghcr.io/exgentic/evals/appworld--claude-code:latest

@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # RA.Aid agent image
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
 ARG AGENT_VERSION=0.19.1

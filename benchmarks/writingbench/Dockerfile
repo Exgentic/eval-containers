@@ -4,7 +4,7 @@
 # Scoring is externally graded with a fine-tuned critic model upstream;
 # this benchmark captures the agent's writing and writes -1 per RULES.md scoring.
 
-ARG REGISTRY=quay.io/eval-containers
+ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 

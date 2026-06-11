@@ -5,7 +5,7 @@ services:
   # Agent runner — pass-through that polls bridge and forwards to gateway.
   # Built locally (custom Dockerfile), not the pre-built eval image.
   runner:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/tau-bench--${EVAL_AGENT:-claude-code}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/tau-bench--${EVAL_AGENT:-claude-code}:latest
     build:
       context: .
     entrypoint: ["python3", "/app/agent.py"]
@@ -20,7 +20,7 @@ services:
 
   # Bespoke — second gateway for the user simulator's LLM (not logged).
   user-gateway:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/models/gpt-5.4--bifrost:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/gpt-5.4--bifrost:latest
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}

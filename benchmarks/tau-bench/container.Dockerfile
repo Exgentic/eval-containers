@@ -1,1 +1,1 @@
-FROM quay.io/eval-containers/evals/tau-bench--claude-code:latest
+FROM ghcr.io/exgentic/evals/tau-bench--claude-code:latest

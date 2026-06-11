@@ -25,10 +25,10 @@ Once the registry is public you won't need to clone the repo:
 ```bash
 echo "OPENAI_API_KEY=sk-..." > .env
 EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f oci://quay.io/eval-containers/evaluate up --abort-on-container-exit
+  docker compose -f oci://ghcr.io/exgentic/evaluate up --abort-on-container-exit
 ```
 
-> **Pre-release note.** The `oci://quay.io/eval-containers/…` registry is the
+> **Pre-release note.** The `oci://ghcr.io/exgentic/…` registry is the
 > published-future shape; the artifacts aren't public yet. For now, clone the
 > repo and use `--local` (below) or point `docker compose` at a benchmark's
 > `compose.yaml` directly.
