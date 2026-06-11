@@ -33,8 +33,9 @@
 use clap::{Args, Subcommand};
 use eval_containers::bake;
 use eval_containers::naming::{
-    agent_bake_target, agent_image, benchmark_bake_target, benchmark_image, benchmark_task_image,
-    compose_artifact, eval_task_image, flatten_imagestream, model_bake_target, model_image,
+    OCI_SOURCE, REPO_URL, agent_bake_target, agent_image, benchmark_bake_target, benchmark_image,
+    benchmark_task_image, compose_artifact, eval_task_image, flatten_imagestream,
+    model_bake_target, model_image,
 };
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -145,10 +146,14 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 if std::path::Path::new(&script).is_file() {
                     run_build_script(&script, &image, &tid, dry_run)
                 } else {
+                    // Per-task variants build via `docker build`, outside the
+                    // bake graph — so the `*` source-label wildcard in
+                    // bake::base_args doesn't reach them; set it explicitly.
                     docker_build(
                         &image,
                         &format!("./benchmarks/{benchmark}"),
                         &[format!("EVAL_TASK_ID={tid}")],
+                        &[(OCI_SOURCE.to_string(), REPO_URL.to_string())],
                         dry_run,
                     )
                 }
@@ -346,11 +351,15 @@ fn docker_build(
     tag: &str,
     context: &str,
     build_args: &[String],
+    labels: &[(String, String)],
     dry_run: bool,
 ) -> Result<(), String> {
     let mut shown = format!("docker build -t {tag}");
     for arg in build_args {
         shown.push_str(&format!(" --build-arg {arg}"));
+    }
+    for (k, v) in labels {
+        shown.push_str(&format!(" --label {k}={v}"));
     }
     if std::env::var("HF_TOKEN").is_ok() {
         shown.push_str(" --build-arg HF_TOKEN=$HF_TOKEN");
@@ -365,6 +374,9 @@ fn docker_build(
     cmd.arg("build").arg("-t").arg(tag);
     for arg in build_args {
         cmd.arg("--build-arg").arg(arg);
+    }
+    for (k, v) in labels {
+        cmd.arg("--label").arg(format!("{k}={v}"));
     }
     if std::env::var("HF_TOKEN").is_ok() {
         cmd.arg("--build-arg").arg("HF_TOKEN");

@@ -38,7 +38,7 @@ emit_target() {
       tags:      [$tag],
       labels: {
         "eval.type":                         $type,
-        "org.opencontainers.image.source":   "https://github.com/eval-containers/eval-containers",
+        "org.opencontainers.image.source":   "https://github.com/Exgentic/eval-containers",
         "org.opencontainers.image.revision": $sha,
         "org.opencontainers.image.created":  $date
       }
