@@ -180,7 +180,7 @@ fn walk(root: &Path, current: &Path, out: &mut Vec<(PathBuf, String)>) {
 //
 // Every benchmark Dockerfile does `COPY --from=ghcr.io/exgentic/core/*`
 // for shared pieces (entrypoint.sh, test-exact-match). Those aren't
-// yet published to the real quay.io — they live in this repo under
+// yet published to the real ghcr.io — they live in this repo under
 // `core/*` and are built locally. On a fresh podman machine they do
 // not exist, so every benchmark in the sweep fails with:
 //
@@ -644,7 +644,7 @@ fn assert_no_failures(kind: &str, failures: &[BuildFailure], total: usize) {
 #[ignore]
 async fn build_every_benchmark() {
     // Bootstrap the core images every benchmark COPYs from. These
-    // aren't published to the real quay.io yet; they live under core/*
+    // aren't published to the real ghcr.io yet; they live under core/*
     // in this repo. Building them via GenericBuildableImage and tagging
     // with the exact refs the benchmark Dockerfiles use lets every
     // subsequent `COPY --from=ghcr.io/exgentic/core/*` succeed.

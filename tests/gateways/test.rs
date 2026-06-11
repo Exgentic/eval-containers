@@ -138,7 +138,7 @@ async fn start_gateway(flavor: &str, extra_env: &[(&str, &str)]) -> ContainerAsy
                 // its happy-path health endpoint.
                 .with_expected_status_code(200u16),
         )))
-        // Quay images are linux/amd64 — on Apple Silicon dev machines
+        // Fleet images are linux/amd64 — on Apple Silicon dev machines
         // podman still runs them via the qemu shim. Explicit so the
         // emulation is intentional, not "accidentally pulled wrong arch".
         .with_platform("linux/amd64")
