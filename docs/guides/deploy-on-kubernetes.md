@@ -21,7 +21,7 @@ kubectl create secret generic eval-secrets \
 Plain Helm — no CLI required:
 
 ```bash
-helm template aime benchmarks/_chart --set benchmark=aime \
+helm template aime containers/benchmarks/_chart --set benchmark=aime \
   --set agent=claude-code --set task=0 | kubectl apply -f -
 ```
 

@@ -56,7 +56,7 @@ if the evidence section is empty.
 - [ ] `COPY --from=ghcr.io/exgentic/core/test-exact-match:latest /test.sh /grade.sh` (or benchmark-specific test.sh with a justification)
 - [ ] `grade.sh` reads task data and writes `/logs/verifier/reward.txt` as an integer 0, 1, or fraction. Externally graded benchmarks MAY write `-1`.
 - [ ] `grade.sh` does NOT leak `EXPECTED_ANSWER` back to the agent (it's unset during the agent phase and restored for grading)
-- [ ] **Every metric the benchmark reports lands in `task/result.json`**, with the primary metric named `reward` ([.agents/compose/RULES.md](../../compose/RULES.md) rule 16). Additional metrics (e.g. `exact_match`, `f1`, `bleu`, `partial_credit`, `tool_calls`) are named fields alongside `reward`. `grade.sh` is the only writer; NO metric is left in stdout for downstream to parse.
+- [ ] **Every metric the benchmark reports lands in `task/result.json`**, with the primary metric named `reward` ([.agents/compose/RULES.md](../../.agents/compose/RULES.md) rule 16). Additional metrics (e.g. `exact_match`, `f1`, `bleu`, `partial_credit`, `tool_calls`) are named fields alongside `reward`. `grade.sh` is the only writer; NO metric is left in stdout for downstream to parse.
 - [ ] Paste the `task/result.json` from one real run here so a reviewer can see the exact field set:
 
 <details><summary>Sample <code>task/result.json</code></summary>

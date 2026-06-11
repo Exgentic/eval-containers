@@ -59,7 +59,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Budget
 
-16. **Hard budget cap.** The proxy MUST enforce a per-run hard cap on spend via `EVAL_MODEL_MAX_BUDGET` (USD). When crossed, the proxy MUST reject further requests with `BudgetExceededError` so the agent's next call fails fast. Default cap is `$1`. Configurable via `.env` or `eval-containers run --max-budget <N>`; no model-specific value MAY be hardcoded in image config (per [.agents/compose/RULES.md](../compose/RULES.md) rule 10). The enforcement entrypoint lives in `core/litellm/eval-litellm-entrypoint.sh` and rewrites `/app/config.yaml`'s `max_budget` at container start from the env var.
+16. **Hard budget cap.** The proxy MUST enforce a per-run hard cap on spend via `EVAL_MODEL_MAX_BUDGET` (USD). When crossed, the proxy MUST reject further requests with `BudgetExceededError` so the agent's next call fails fast. Default cap is `$1`. Configurable via `.env` or `eval-containers run --max-budget <N>`; no model-specific value MAY be hardcoded in image config (per [.agents/compose/RULES.md](../compose/RULES.md) rule 10). The enforcement entrypoint lives in `containers/core/litellm/eval-litellm-entrypoint.sh` and rewrites `/app/config.yaml`'s `max_budget` at container start from the env var.
 
 ## References
 

@@ -7,9 +7,9 @@ environment — the benchmark, agent, and model are identical across all three.
 
 | Mode | Wraps | Use it for |
 |---|---|---|
-| `compose` *(default)* | `docker compose -f benchmarks/<x>/compose.yaml up` | Laptop, full stack (gateway + OTel), fastest iteration |
+| `compose` *(default)* | `docker compose -f containers/benchmarks/<x>/compose.yaml up` | Laptop, full stack (gateway + OTel), fastest iteration |
 | `container` | `docker run -e EVAL_MODEL=… <eval-image>` | CI smoke tests, one-shot runs, minimal footprint |
-| `job` | `helm template benchmarks/_chart --set benchmark=<x> \| kubectl apply -f -` | Kubernetes, production-scale parallel runs |
+| `job` | `helm template containers/benchmarks/_chart --set benchmark=<x> \| kubectl apply -f -` | Kubernetes, production-scale parallel runs |
 
 Select the mode with `--mode`:
 
@@ -29,7 +29,7 @@ The container and compose modes each need one file in the benchmark's dir
 
 The `job` mode renders one shared Helm chart, selected with `--set benchmark=<x>`
 — no per-benchmark file required. A benchmark with bespoke topology adds an
-optional `benchmarks/_chart/presets/<x>.yaml`. See
+optional `containers/benchmarks/_chart/presets/<x>.yaml`. See
 [The Helm chart](the-helm-chart.md).
 
 ## The mental model

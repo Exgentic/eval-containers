@@ -69,7 +69,7 @@ eval-containers run aime --agent codex --mode job \
 Plain Helm equivalent (no CLI):
 
 ```bash
-helm template aime benchmarks/_chart \
+helm template aime containers/benchmarks/_chart \
   --set benchmark=aime \
   -f deploy/values-openshift.yaml \
   --set agent=codex,task=0,registry=image-registry.openshift-image-registry.svc:5000/<namespace> \

@@ -32,7 +32,7 @@ specifically. -->
 ## Fit with existing rules
 
 - [ ] Agent has a non-interactive mode (can be run headless with
-      a single `TASK` env var input; see [.agents/agents/RULES.md](../../agents/RULES.md) rule 2)
+      a single `TASK` env var input; see [.agents/agents/RULES.md](../../.agents/agents/RULES.md) rule 2)
 - [ ] Agent routes LLM calls through `ANTHROPIC_BASE_URL` or
       `OPENAI_BASE_URL` (no hardcoded provider URL)
 - [ ] Agent CLI is pinnable to a specific version — not a moving

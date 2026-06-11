@@ -31,12 +31,12 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
 ## Building
 
 1. **`REGISTRY` and `TAG` are fleet-wide, declared once at the root.**
-   `./docker-bake.hcl` declares `REGISTRY` (default
+   `containers/docker-bake.hcl` declares `REGISTRY` (default
    `ghcr.io/exgentic`) and `TAG` (default `latest`). Per-artifact
    files reference `${REGISTRY}/...:${TAG}` and never redeclare them
    (`.agents/RULES.md:15`, sub-rule b — reuse over repetition). Invoking
-   `docker buildx bake` from the repo root picks up the root file via
-   auto-discovery; wrappers include it explicitly. Why: one place to
+   `docker buildx bake` from the repo root picks up
+   `containers/docker-bake.hcl`; wrappers include it explicitly. Why: one place to
    point the whole fleet at a different registry or tag.
 
 2. **Build a single target by name.** Target names are
@@ -61,16 +61,16 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
 
    ```bash
    docker buildx bake \
-     -f core/agent-base-python/docker-bake.hcl \
-     -f core/benchmark-base-hf/docker-bake.hcl \
-     -f core/test-exact-match/docker-bake.hcl \
-     -f core/otel/docker-bake.hcl \
-     -f core/runtime-bundle/docker-bake.hcl \
-     -f gateways/bifrost/docker-bake.hcl \
-     -f models/gpt-5.4--bifrost/docker-bake.hcl \
-     -f benchmarks/aime/docker-bake.hcl \
-     -f agents/openhands/docker-bake.hcl \
-     -f core/combination.docker-bake.hcl \
+     -f containers/core/agent-base-python/docker-bake.hcl \
+     -f containers/core/benchmark-base-hf/docker-bake.hcl \
+     -f containers/core/test-exact-match/docker-bake.hcl \
+     -f containers/core/otel/docker-bake.hcl \
+     -f containers/core/runtime-bundle/docker-bake.hcl \
+     -f containers/gateways/bifrost/docker-bake.hcl \
+     -f containers/models/gpt-5.4--bifrost/docker-bake.hcl \
+     -f containers/benchmarks/aime/docker-bake.hcl \
+     -f containers/agents/openhands/docker-bake.hcl \
+     -f containers/core/combination.docker-bake.hcl \
      --set "eval.args.BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/aime:latest" \
      --set "eval.args.AGENT_IMAGE=ghcr.io/exgentic/agents/openhands:latest" \
      --set "eval.args.MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest" \
@@ -85,7 +85,7 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
 4. **Prefer the CLI wrapper over hand-chaining `-f` files.** The
    framework's CLI (`eval-containers build eval <bench> --agent <agent>`)
    and the OC build script wrap the composition in step 3, always
-   including the root `./docker-bake.hcl`. Hand-chain `-f` files only
+   including the root `containers/docker-bake.hcl`. Hand-chain `-f` files only
    when debugging the graph directly. Why: the wrapper is the
    maintained composition; hand-listing drifts as dependencies change.
 
@@ -111,8 +111,8 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
    new artifact:
 
    ```bash
-   eval-containers gen-bake agents/foo
-   # wrote agents/foo/docker-bake.hcl
+   eval-containers gen-bake containers/agents/foo
+   # wrote containers/agents/foo/docker-bake.hcl
    ```
 
    The generator parses the artifact's `Dockerfile` (`FROM` +

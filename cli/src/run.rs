@@ -3,9 +3,9 @@
 //!
 //! Three modes (per benchmarks/RULES.md rule 24 — the triple-mode contract):
 //!
-//!   --mode compose    (default) → docker compose -f benchmarks/<x>/compose.yaml up
+//!   --mode compose    (default) → docker compose -f containers/benchmarks/<x>/compose.yaml up
 //!   --mode container            → docker run -e EVAL_MODEL=... <eval-image>
-//!   --mode job                  → helm template oci://<registry>/charts/eval | kubectl apply -f -  (--local: ./benchmarks/_chart)
+//!   --mode job                  → helm template oci://<registry>/charts/eval | kubectl apply -f -  (--local: ./containers/benchmarks/_chart)
 //!
 //! Mapping flags → manifest, by mode:
 //!
@@ -14,7 +14,7 @@
 //!     interpolates `${EVAL_FOO:-default}` in compose.yaml; container
 //!     mode hands them in via `docker run -e`.
 //!   - **job** renders the shared Helm chart (`oci://<registry>/charts/eval`,
-//!     or `benchmarks/_chart` with `--local`) with a
+//!     or `containers/benchmarks/_chart` with `--local`) with a
 //!     `--set` for each axis (benchmark/agent/task/model/tags), then
 //!     `helm template … | kubectl apply -f -`. A benchmark's bespoke
 //!     topology, if any, lives in the chart at `presets/<x>.yaml`.
@@ -33,7 +33,7 @@
 //! container prints the resolved `docker run` line, job forwards
 //! `--dry-run=server` to `kubectl apply` (exercises admission, no state).
 //!
-//! With `--local`, uses the in-repo `benchmarks/<name>/{compose.yaml,
+//! With `--local`, uses the in-repo `containers/benchmarks/<name>/{compose.yaml,
 //! container.Dockerfile}` and the local chart instead of the registry artifact.
 
 use clap::{Args, ValueEnum};
@@ -109,7 +109,7 @@ pub struct RunArgs {
     #[arg(long)]
     max_budget: Option<f64>,
 
-    /// Use the in-repo `benchmarks/<name>/` artifacts instead of the
+    /// Use the in-repo `containers/benchmarks/<name>/` artifacts instead of the
     /// published registry artifact. For development.
     #[arg(long)]
     local: bool,
@@ -142,7 +142,7 @@ const GATEWAY_CRED_VARS: &[&str] = &["OPENAI_API_KEY", "OPENAI_API_BASE"];
 
 /// The shared Helm chart, published as
 /// `oci://{registry}/charts/<CHART_NAME>:<CHART_VERSION>` and rendered by
-/// `--mode job` (non-local). Mirrors `benchmarks/_chart/Chart.yaml`
+/// `--mode job` (non-local). Mirrors `containers/benchmarks/_chart/Chart.yaml`
 /// (`name`/`version`); the guard test below fails if they drift.
 const CHART_NAME: &str = "eval";
 const CHART_VERSION: &str = "0.1.0";
@@ -264,7 +264,7 @@ fn run_compose(
 /// `--mode container` → docker run -e ... <eval-image>
 ///
 /// In `--local` mode the image is built first from
-/// `benchmarks/<x>/container.Dockerfile`. Otherwise the registry-published
+/// `containers/benchmarks/<x>/container.Dockerfile`. Otherwise the registry-published
 /// `evals/<benchmark>--<agent>:<tag>` image is pulled.
 fn run_container(
     registry: &str,

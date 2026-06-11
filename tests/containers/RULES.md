@@ -75,8 +75,8 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 ## References
 
 - [Testing Policy](../RULES.md)
-- [Benchmarks](../../benchmarks/RULES.md)
-- [Agents](../../agents/RULES.md)
+- [Benchmarks](../../.agents/benchmarks/RULES.md)
+- [Agents](../../.agents/agents/RULES.md)
 - [testcontainers-rs](https://github.com/testcontainers/testcontainers-rs)
 
 ## Changelog

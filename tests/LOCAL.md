@@ -92,7 +92,7 @@ Local dev loop: build exactly the benchmark or agent you're working on. Nothing 
 
 ```bash
 # One benchmark
-docker build -t local/aime benchmarks/aime/
+docker build -t local/aime containers/benchmarks/aime/
 
 # One agent
 docker build -t local/claude-code agents/claude-code/
@@ -136,7 +136,7 @@ One-time. Runs a real task with a real model, saves the trajectory as a fixture.
 ```bash
 # Record one combination
 TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-4.1-mini \
-  docker compose -f benchmarks/aime/compose.yaml up --abort-on-container-exit
+  docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
 cp output/aime/0/model/trajectory.jsonl \
    tests/fixtures/aime-0-codex.trajectory.jsonl
@@ -179,11 +179,11 @@ With BuildKit GC configured in setup, you rarely need `eval-containers prune` ma
 cargo test --test check structural_validation
 
 # 2. Build + verify labels
-docker build -t local/aime benchmarks/aime/
+docker build -t local/aime containers/benchmarks/aime/
 
 # 3. Run one task with a real model
 TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-4.1-mini \
-  docker compose -f benchmarks/aime/compose.yaml up --abort-on-container-exit
+  docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
 # 4. Check the output
 cat output/aime/0/task/result.json
@@ -193,7 +193,7 @@ cat output/aime/0/task/result.json
 ```bash
 cargo test --test check structural_validation                      # every benchmark + agent structurally
 cargo test --test compose -- --ignored       # cargo compose tests
-docker build benchmarks/aime/                # only the ones you changed
+docker build containers/benchmarks/aime/                # only the ones you changed
 cargo test --test replay -- --ignored        # only the ones you changed
 ```
 
@@ -225,6 +225,6 @@ No local builds needed. CI builds once; everyone pulls.
 ## References
 
 - [Testing Policy](RULES.md) — normative spec
-- [CLI](../src/RULES.md) — CLI design rules
+- [CLI](../.agents/src/RULES.md) — CLI design rules
 - [Containers](containers/RULES.md) — container test rules
 - [Release pipeline](../.agents/delivery/release/SKILL.md) — how CI builds and pushes the fleet

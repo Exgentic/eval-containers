@@ -12,7 +12,7 @@ replacement — follow the skill and the rules it links.
 3. **Ship the deploy artifacts** — every benchmark needs `container.Dockerfile`
    and `compose.yaml` (the single-container and compose surfaces;
    `tests/sanity/check.rs` enforces it). The k8s surface is the shared chart
-   selected with `--set benchmark=<x>` — add a `benchmarks/_chart/presets/<x>.yaml`
+   selected with `--set benchmark=<x>` — add a `containers/benchmarks/_chart/presets/<x>.yaml`
    only if the benchmark needs bespoke topology. See
    [Triple-mode](../concepts/triple-mode.md).
 4. **Open the PR** using the
