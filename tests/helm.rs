@@ -181,40 +181,47 @@ fn runner_gates_on_gateway_readiness() {
     }
 }
 
-/// Per-task sidecar selection (benchmarks/RULES.md): rendering webarena with
-/// `activeProfiles={map}` brings up only the map site sidecar (plus the always-on
-/// proxy), not the other sites — so a `--mode job` run deploys just the task's
-/// sites. The CLI sets activeProfiles per task from task-profiles.json.
+/// Per-task sidecar selection (benchmarks/RULES.md 24h): the chart self-resolves
+/// the task's site sidecars from the benchmark's committed task-profiles map and
+/// the task id, so `helm template` with just `task=<id>` selects them, no CLI
+/// involved. A map-only task renders just map; a two-site task renders both; the
+/// readiness gate covers only the active sites.
 #[test]
-fn webarena_renders_only_active_sidecars() {
+fn webarena_self_resolves_per_task_sidecars() {
     if Command::new("helm").arg("version").output().is_err() {
         return; // helm absent → skip (render is the floor)
     }
-    let out = Command::new("helm")
-        .args([
-            "template",
-            "wa",
-            "benchmarks/_chart",
-            "--set",
-            "benchmark=webarena",
-            "--set",
-            "activeProfiles={map}",
-        ])
-        .output()
-        .expect("helm template webarena");
+    let render = |task: &str| -> String {
+        let out = Command::new("helm")
+            .args([
+                "template",
+                "wa",
+                "benchmarks/_chart",
+                "--set",
+                "benchmark=webarena",
+                "--set",
+                &format!("task={task}"),
+            ])
+            .output()
+            .expect("helm template webarena");
+        assert!(
+            out.status.success(),
+            "render failed for task {task}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    // Map-only task (356 -> map): only map + the always-on proxy.
+    let r = render("356");
     assert!(
-        out.status.success(),
-        "render failed: {}",
-        String::from_utf8_lossy(&out.stderr)
+        r.contains("app: map"),
+        "the map sidecar must self-resolve for task 356"
     );
-    let render = String::from_utf8_lossy(&out.stdout);
+    assert!(r.contains("app: proxy"), "the always-on proxy must render");
     assert!(
-        render.contains("app: map"),
-        "the active map sidecar must render"
-    );
-    assert!(
-        render.contains("app: proxy"),
-        "the always-on proxy must render"
+        r.contains("nc -z map 8080"),
+        "the gate must cover only the active site"
     );
     for site in [
         "app: gitlab",
@@ -223,12 +230,18 @@ fn webarena_renders_only_active_sidecars() {
         "app: shopping",
     ] {
         assert!(
-            !render.contains(site),
-            "{site} must NOT render for a map-only task (per-task sidecar selection)"
+            !r.contains(site),
+            "{site} must NOT render for a map-only task"
         );
     }
+
+    // Two-site task (552 -> gitlab + reddit): both render, map/wikipedia do not.
+    let r = render("552");
     assert!(
-        render.contains("nc -z map 8080"),
-        "the wait gate must wait only for the active site"
+        r.contains("app: gitlab") && r.contains("app: reddit"),
+        "both sites must self-resolve for task 552"
     );
+    for site in ["app: map", "app: wikipedia"] {
+        assert!(!r.contains(site), "{site} must NOT render for task 552");
+    }
 }
