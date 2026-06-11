@@ -40,41 +40,35 @@ services:
       - internal
       - upstream
 
-  # Website sidecars — each gated by a compose profile named after its site (the
-  # dataset's `sites` value). Only the profiles in $COMPOSE_PROFILES start, so a
-  # run brings up just the task's site(s); `eval-containers run` sets
-  # COMPOSE_PROFILES from benchmarks/webarena/task-profiles.json. Tags pinned.
+  # Website sidecars. compose can't compute a per-task subset from EVAL_TASK_ID,
+  # so (rule 1) `EVAL_TASK_ID=<id> docker compose up` brings up the full site set —
+  # no CLI required. To run lean locally, name only the task's site(s):
+  #   docker compose up runner map        # (the per-task site list is in the chart's task-profiles map)
+  # The k8s/job surface selects per task automatically (the chart self-resolves).
+  # Tags pinned.
   shopping:
     image: am1n3e/webarena-verified-shopping:0.1.0
-    profiles: [shopping]
     networks: [internal]
 
   shopping-admin:
     image: am1n3e/webarena-verified-shopping_admin:1.0.0
-    profiles: [shopping_admin]
     networks: [internal]
 
   reddit:
     image: am1n3e/webarena-verified-reddit:0.1.0
-    profiles: [reddit]
     networks: [internal]
 
   gitlab:
     image: am1n3e/webarena-verified-gitlab:0.1.0
-    profiles: [gitlab]
     shm_size: 2gb
     networks: [internal]
 
-  # NOTE: this image is arm64-only and needs the .zim data volume — both are part
-  # of a separate data/arch fix (swap to multi-arch ghcr.io/kiwix/kiwix-serve and
-  # mount the .zim). Gated by the `wikipedia` profile, so it only starts for the
-  # ~23 wikipedia tasks.
+  # NOTE: this image is arm64-only and needs the .zim data volume — both part of a
+  # separate data/arch fix (swap to multi-arch ghcr.io/kiwix/kiwix-serve + the .zim).
   wikipedia:
     image: am1n3e/webarena-verified-wikipedia:1.0.0
-    profiles: [wikipedia]
     networks: [internal]
 
   map:
     image: am1n3e/webarena-verified-map:0.1.0
-    profiles: [map]
     networks: [internal]

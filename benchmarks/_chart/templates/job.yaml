@@ -1,4 +1,10 @@
 {{- $v := include "eval.values" . | fromYaml -}}
+{{- /* Per-task site sidecars: the chart self-resolves which sidecars to bring up
+       from the benchmark's committed task-profiles map + the task id — no CLI, so
+       `helm template --set task=<id>` alone selects them. Empty for benchmarks
+       without a map. (benchmarks/RULES.md 24h.) */ -}}
+{{- $taskmap := $.Files.Get (printf "task-profiles/%s.json" $v.benchmark) | default "{}" | fromJson -}}
+{{- $active := index $taskmap (toString $v.task) | default list -}}
 {{- if and ($v.perTask | default false) $v.datasetSize -}}
 {{- fail "per-task benchmarks bake one eval image per task and cannot use a dataset (Indexed) Job — run one Job per task (omit datasetSize)" -}}
 {{- end -}}
@@ -50,7 +56,6 @@ spec:
         {{- with $v.initContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- $active := $v.activeProfiles | default list }}
         {{- if $v.sidecars }}
         # Hold the runner until this task's active site sidecars accept connections
         # (`until true` exits at once when none are active).
@@ -178,10 +183,11 @@ spec:
 {{ toYaml . }}
 {{- end }}
 {{/* Per-task website sidecars: a Deployment+Service for each catalog entry whose
-     profile (default: the name) is active. activeProfiles is set per task by the
-     CLI from benchmarks/<name>/task-profiles.json. */}}
+     profile (default: the name) is in $active — the chart self-resolves $active
+     above from the benchmark's task-profiles map + the task id, so no CLI is
+     involved. */}}
 {{- range $name, $sc := $v.sidecars }}
-{{- if has ($sc.profile | default $name) ($v.activeProfiles | default list) }}
+{{- if has ($sc.profile | default $name) $active }}
 ---
 apiVersion: apps/v1
 kind: Deployment

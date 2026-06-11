@@ -31,6 +31,8 @@ body = (
     + "\n}\n"
 )
 
-with open("benchmarks/webarena/task-profiles.json", "w") as f:
+# Output lives in the chart so Helm's `Files.Get` can read it and self-resolve the
+# task's sidecars (benchmarks/_chart/templates/job.yaml). Run from the repo root.
+with open("benchmarks/_chart/task-profiles/webarena.json", "w") as f:
     f.write(body)
 print(f"wrote {len(items)} tasks from webarena-verified@{DATASET_REV[:7]}")
