@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Regenerate task-profiles.json — task id -> the site(s) it needs — from the
+pinned WebArena Verified dataset.
+
+The CLI reads this map to bring up only a task's site sidecars (one Deployment+
+Service / compose service per active site) instead of all six. See
+doctrine/benchmarks/RULES.md 24h. Re-run when DATASET_REV changes:
+
+    python3 benchmarks/webarena/gen-task-profiles.py
+"""
+
+import json
+import urllib.request
+
+# Pin: the WebArena Verified dataset commit the map is derived from. Keep this in
+# sync with the dataset revision the benchmark image is built against.
+DATASET_REV = "6473f72db5dcefc97b5725b59e734504edc28a21"
+URL = (
+    "https://raw.githubusercontent.com/ServiceNow/webarena-verified/"
+    f"{DATASET_REV}/assets/dataset/webarena-verified.json"
+)
+
+with urllib.request.urlopen(URL) as resp:  # noqa: S310 (pinned github raw URL)
+    tasks = json.load(resp)
+
+profiles = {str(t["task_id"]): sorted(t["sites"]) for t in tasks}
+items = sorted(profiles.items(), key=lambda kv: int(kv[0]))
+body = "{\n" + ",\n".join(f"  {json.dumps(k)}: {json.dumps(v)}" for k, v in items) + "\n}\n"
+
+with open("benchmarks/webarena/task-profiles.json", "w") as f:
+    f.write(body)
+print(f"wrote {len(items)} tasks from webarena-verified@{DATASET_REV[:7]}")
