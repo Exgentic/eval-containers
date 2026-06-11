@@ -19,7 +19,7 @@ BENCHMARK=${1:?usage: build-eval.sh <benchmark> <agent> [model]}
 AGENT=${2:?usage: build-eval.sh <benchmark> <agent> [model]}
 MODEL=${3:-gpt-5.4--bifrost}
 
-cd "$(dirname "$0")/../.."   # repo root (contexts are relative to it)
+cd "$(dirname "$0")/../../.."   # repo root (contexts are relative to it)
 
 # The three bases are independent (given core), the combination depends on all
 # three — so: bases first, eval last. The CLI derives every imagestream name,

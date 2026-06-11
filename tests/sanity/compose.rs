@@ -15,7 +15,7 @@ use std::process::Command;
 
 fn benchmark_compose_files() -> Vec<PathBuf> {
     let mut out = Vec::new();
-    let root = PathBuf::from("benchmarks");
+    let root = eval_containers_tests::repo_root().join("containers/benchmarks");
     let entries =
         fs::read_dir(&root).unwrap_or_else(|e| panic!("failed to read {}: {e}", root.display()));
     for entry in entries {
@@ -86,7 +86,7 @@ fn compose_image_tags_use_tag_not_version_axis() {
     let mut files = benchmark_compose_files();
     // Also include the base compose templates.
     for extra in ["compose/services.yaml", "compose/evaluate.yaml"] {
-        let p = PathBuf::from(extra);
+        let p = eval_containers_tests::repo_root().join("containers").join(extra);
         if p.is_file() {
             files.push(p);
         }
