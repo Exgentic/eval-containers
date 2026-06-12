@@ -86,7 +86,9 @@ fn compose_image_tags_use_tag_not_version_axis() {
     let mut files = benchmark_compose_files();
     // Also include the base compose templates.
     for extra in ["compose/services.yaml", "compose/evaluate.yaml"] {
-        let p = eval_containers_tests::repo_root().join("containers").join(extra);
+        let p = eval_containers_tests::repo_root()
+            .join("containers")
+            .join(extra);
         if p.is_file() {
             files.push(p);
         }

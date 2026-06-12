@@ -221,7 +221,8 @@ fn upstream_references_resolve() {
     let mut checked = 0usize;
     let mut skipped = 0usize;
 
-    let entries = fs::read_dir(eval_containers_tests::repo_root().join("containers/benchmarks")).expect("benchmarks dir missing");
+    let entries = fs::read_dir(eval_containers_tests::repo_root().join("containers/benchmarks"))
+        .expect("benchmarks dir missing");
     let mut dirs: Vec<_> = entries
         .flatten()
         .filter(|e| e.path().is_dir())
