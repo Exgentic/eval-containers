@@ -22,10 +22,10 @@ composes the *axes* at run time instead of pulling a pre-fused product.
 ## How (daemonless — no DinD)
 
 `materialize` does: **crane export** the benchmark rootfs (download + untar, no
-daemon) → **overlay the agent** → **bwrap/chroot** in to run agent + grade. The
+daemon) → **overlay the agent** → **chroot/bwrap** in to run agent + grade. The
 distinction from DinD: crane only *downloads a filesystem*; it never runs a
-daemon. The core primitive (crane pull + run-in-rootfs + agent-edits-testbed) is
-proven daemonless — run [`crane-poc.sh`](crane-poc.sh) in any Linux container.
+daemon — so nothing here needs privilege or a Docker socket. Verified daemonless
+against the real swe-bench + claude-code images (see the PR).
 
 ## Status — first cut (statically verified)
 
