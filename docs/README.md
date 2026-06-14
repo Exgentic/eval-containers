@@ -20,7 +20,7 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 ## Concepts — *what it is and why*
 
 - [Overview](concepts/overview.md) — the model: images as the product, three axes
-- [Runtime lifecycle](concepts/runtime-lifecycle.md) — the 4-step sequence: entrypoint → agent → grader → result
+- [Build and runtime lifecycle](concepts/runtime-lifecycle.md) — how the evaluation image is assembled, then what happens when you run it
 - [Triple-mode](concepts/triple-mode.md) — the same eval as container / compose / k8s job
 - [Isolation & gateways](concepts/isolation-and-gateways.md) — how trajectories stay honest
 - [The Helm chart](concepts/the-helm-chart.md) — one chart, `--set benchmark=<x>` to select; optional per-benchmark preset
