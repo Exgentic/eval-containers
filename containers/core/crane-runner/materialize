@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Materialize one eval by fusing per-axis images at run time, then run it.
+# Proven primitive: crane export (daemonless pull) + bwrap/chroot (run in rootfs).
+set -euo pipefail
+: "${EVAL_REGISTRY:?}" "${EVAL_BENCHMARK:?}" "${EVAL_AGENT:?}"
+btag="${EVAL_BENCHMARK_TAG:-latest}"
+atag="${EVAL_AGENT_TAG:-latest}"
+root=/run/eval
+mkdir -p "$root"
+
+echo "crane-runner: fusing ${EVAL_BENCHMARK} x ${EVAL_AGENT} at run time (no combination image)"
+
+# [1] Benchmark filesystem (testbed + tasks + grader + entrypoint). Per-task
+#     benchmarks resolve to benchmarks/<b>-<task>; shared-env to benchmarks/<b>.
+if [ "${EVAL_BENCHMARK_ENV:-shared-env}" = "per-task" ]; then
+  bench="${EVAL_REGISTRY}/benchmarks/${EVAL_BENCHMARK}-${EVAL_TASK_ID:?per-task needs EVAL_TASK_ID}:${btag}"
+else
+  bench="${EVAL_REGISTRY}/benchmarks/${EVAL_BENCHMARK}:${btag}"
+fi
+echo "  [1] crane export ${bench}"
+crane export "$bench" - | tar -x -C "$root"
+
+# [2] Overlay the agent into the benchmark rootfs (mirrors the combination
+#     Dockerfile's `COPY --from=agent /opt/agent`).
+agent="${EVAL_REGISTRY}/agents/${EVAL_AGENT}:${atag}"
+echo "  [2] crane export ${agent} -> overlay"
+crane export "$agent" - | tar -x -C "$root"
+
+# Run inside the fused rootfs: bwrap if user namespaces are available
+# (isolation), else chroot (root, still daemonless).
+in_root() { bwrap --bind "$root" / --dev /dev --proc /proc "$@" 2>/dev/null || chroot "$root" "$@"; }
+
+# ---------------------------------------------------------------------------
+# VALIDATION GATE (see README): wiring the in-rootfs gateway + otel via
+# process-compose and the root-only grader perms is the remaining build-out. It
+# reuses the EXACT mechanism the combination image already ships
+# (/usr/local/bin/run + /etc/process-compose.yaml). This first cut proves the
+# FUSION above; end-to-end against real benchmark/agent images is not yet run.
+# ---------------------------------------------------------------------------
+export EVAL_TASK_ID="${EVAL_TASK_ID:-0}"
+echo "  [3] fused rootfs ready at ${root} ($(du -sh "$root" 2>/dev/null | cut -f1))"
+echo "      next (build-out): in_root /entrypoint.sh /run.sh  with gateway via process-compose"

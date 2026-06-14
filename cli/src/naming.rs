@@ -62,6 +62,15 @@ pub fn eval_task_image(
     )
 }
 
+/// `{registry}/core/crane-runner:<tag>` — the generic runtime-fusion runner.
+/// One image for every (benchmark, agent): `--mode crane` runs it and it
+/// crane-pulls the per-axis `benchmarks/<b>` + `agents/<a>` images and fuses
+/// them at run time, so the per-(benchmark, agent) `evals/` images above are not
+/// required (they stay an optional pre-bake).
+pub fn crane_runner_image(registry: &str, tag: &str) -> String {
+    format!("{registry}/core/crane-runner:{tag}")
+}
+
 /// `{registry}/evaluate` — the single published evaluation compose artifact.
 /// `run --mode compose` consumes it as `oci://{registry}/evaluate`; one generic,
 /// `EVAL_BENCHMARK`-parameterized artifact, not one per benchmark.
@@ -145,6 +154,14 @@ mod tests {
         assert_eq!(
             eval_image(REG, "aime", "claude-code", "2.5.0"),
             "ghcr.io/exgentic/evals/aime--claude-code:2.5.0"
+        );
+    }
+
+    #[test]
+    fn crane_runner_is_one_generic_core_image() {
+        assert_eq!(
+            crane_runner_image(REG, "latest"),
+            "ghcr.io/exgentic/core/crane-runner:latest"
         );
     }
 
