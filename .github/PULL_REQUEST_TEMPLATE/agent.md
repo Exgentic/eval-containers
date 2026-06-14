@@ -45,7 +45,7 @@ Reject the PR if any evidence section is empty.
 
 ### Version override hook (optional but recommended)
 
-- [ ] `/eval-reinstall-agent` script exists and re-installs the agent at the version given as its first arg. Invoked by `core/entrypoint/eval-entrypoint.sh` when `EVAL_AGENT_VERSION` differs from the baked default. If omitted, the agent refuses to run with an override (fail-loud). See `agents/claude-code/Dockerfile` for the reference implementation.
+- [ ] `/eval-reinstall-agent` script exists and re-installs the agent at the version given as its first arg. Invoked by the framework launcher (`/usr/local/bin/run`) when `EVAL_AGENT_VERSION` differs from the baked default. If omitted, the agent refuses to run with an override (fail-loud). See `agents/claude-code/Dockerfile` for the reference implementation.
 
 ### Local build
 
