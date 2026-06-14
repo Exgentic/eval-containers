@@ -55,5 +55,6 @@ Casual users never touch these; power users pin. Full list in
 
 ## Where to go next
 
+- [Runtime lifecycle](runtime-lifecycle.md) — the 4-step sequence every eval runs
 - [Triple-mode](triple-mode.md) — the three runtimes for the same eval
 - [Run your first eval](../guides/run-your-first-eval.md) — hands-on
