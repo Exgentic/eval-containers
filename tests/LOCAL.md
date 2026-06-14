@@ -142,7 +142,7 @@ EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
 # The output lives in the named volume, not on the host filesystem.
 # Extract via a one-shot alpine container that mounts it read-only.
 docker run --rm -v aime_output:/output:ro alpine \
-  cat /output/traces.jsonl > tests/replay/fixtures/aime-0-codex.trajectory.jsonl
+  cat /output/traces.jsonl > tests/run/replay/fixtures/aime-0-codex.trajectory.jsonl
 ```
 
 The volume name follows `<benchmark>_output` (compose project + the `output` declared in `compose/services.yaml`). Sanity-check the result:

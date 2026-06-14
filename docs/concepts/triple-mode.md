@@ -22,7 +22,7 @@ eval-containers run aime --task-id 0 --agent codex --mode job
 ## Artifacts per benchmark
 
 The container and compose modes each need one file in the benchmark's dir
-([rule 24](../../.agents/benchmarks/RULES.md), enforced by `tests/sanity/check.rs`):
+([rule 24](../../.agents/benchmarks/RULES.md), enforced by `tests/static/check.rs`):
 
 - `container.Dockerfile` — the single-container image (`container` mode)
 - `compose.yaml` — the compose stack (`compose` mode)

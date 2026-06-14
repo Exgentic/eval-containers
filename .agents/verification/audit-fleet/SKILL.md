@@ -34,13 +34,13 @@ skill. Read it before walking the ten questions.
 
 ## Rules this skill serves
 
-- `tests/fleet/RULES.md:3` — the report has three sections
+- `tests/run/fleet/RULES.md:3` — the report has three sections
   (mechanical gates, procedural audits, verdict); this audit produces the
   procedural section and the verdict.
-- `tests/fleet/RULES.md:4` — the verdict classification (green =
+- `tests/run/fleet/RULES.md:4` — the verdict classification (green =
   all green, yellow = some yellows no reds, red = any red); step 4 of this walk
   applies it.
-- `tests/fleet/RULES.md:6` — known-broken aware: a build failure
+- `tests/run/fleet/RULES.md:6` — known-broken aware: a build failure
   inside `tests/build/known-broken.md` is yellow, not red; this audit honours
   the manifests when judging questions 2 and 6.
 - `tests/build/RULES.md:6` — failures within the build
@@ -73,7 +73,7 @@ and the current RULES.
    - `ls benchmarks/ | wc -l` vs the README claim (excluding `RULES.md` /
      `TEMPLATE.md`).
    - `ls agents/ | wc -l` vs the README claim (same exclusions).
-   - `ls tests/replay/fixtures/*.trajectory.jsonl | wc -l` vs how many
+   - `ls tests/run/replay/fixtures/*.trajectory.jsonl | wc -l` vs how many
      benchmarks have fixtures.
 
 3. **Walk the ten fleet questions**, each yes / no / n.a. with a one-line
@@ -84,7 +84,7 @@ and the current RULES.
    |---|----------|
    | 1 | Does every benchmark in `benchmarks/` have both a `Dockerfile` and a `compose.yaml`? |
    | 2 | Does every committed benchmark and agent actually build? |
-   | 3 | Does every benchmark labeled `eval.benchmark.released="true"` have at least one replay fixture under `tests/replay/fixtures/`? (see `benchmarks/RULES.md` 21a) |
+   | 3 | Does every benchmark labeled `eval.benchmark.released="true"` have at least one replay fixture under `tests/run/replay/fixtures/`? (see `benchmarks/RULES.md` 21a) |
    | 4 | Does the README's benchmark/agent/model count match the filesystem? |
    | 5 | Does every agent in `agents/` have a pinned `eval.agent.version` label — no `unpinned`, no `latest`? |
    | 6 | Are there any benchmarks whose Dockerfiles reference upstream images we no longer control or that have gone stale? |
@@ -100,7 +100,7 @@ and the current RULES.
    - Question 10 is informational but **mandatory** before shipping.
    - Honour the known-broken manifests: a build failure inside
      `tests/build/known-broken.md` is yellow, not red
-     (`tests/fleet/RULES.md:6`).
+     (`tests/run/fleet/RULES.md:6`).
 
 5. **Emit one report** in the fixed structure: a Counts section, a Mechanical
    gates section (one row per gate), a Fleet questions table, a Suggested fixes
@@ -148,7 +148,7 @@ and the current RULES.
 
 - `references/checklist.md` — the full red / yellow / green fleet signal
   catalog, classification rules, layered model, and output format.
-- `tests/fleet/RULES.md` — the aggregator rules and verdict
+- `tests/run/fleet/RULES.md` — the aggregator rules and verdict
   classification this audit produces.
 - `.agents/verification/audit-dockerfile/SKILL.md` and
   `.agents/verification/audit-trajectory/SKILL.md` — the per-file audits whose
