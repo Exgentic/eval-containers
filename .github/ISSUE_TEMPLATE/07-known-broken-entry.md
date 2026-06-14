@@ -13,8 +13,8 @@ rule change — it's a housekeeping record of a gap.
 
 Known-broken manifests live in:
 - tests/build/known-broken.md       (build-time failures)
-- tests/replay/fixtures/broken.json (recorded trajectory failures)
-- tests/live/known-broken.md        (live-run failures, future)
+- tests/run/replay/fixtures/broken.json (recorded trajectory failures)
+- tests/run/live/known-broken.md        (live-run failures, future)
 
 The issue you open with this template feeds one of the manifests
 above.

@@ -108,7 +108,7 @@ eval-containers run aime --agent codex --model <name> --task-id 0 --local --max-
 
 ### Fixture promotion
 
-- [ ] Fixtures under `tests/replay/fixtures/` remain unchanged — adding a model does NOT invalidate existing fixtures, it just adds a new option to the canonical matrix. Changing the "model of record" is a separate RFC process.
+- [ ] Fixtures under `tests/run/replay/fixtures/` remain unchanged — adding a model does NOT invalidate existing fixtures, it just adds a new option to the canonical matrix. Changing the "model of record" is a separate RFC process.
 
 ### Known limitations
 

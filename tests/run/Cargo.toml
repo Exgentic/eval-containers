@@ -1,0 +1,53 @@
+[package]
+name = "eval-containers-tests-run"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+autotests = false
+
+# RUN stage — starts containers/compose/cluster and drives them end to end
+# (oracle, upstream, fleet, agents, replay, live, gateways). Heaviest crate:
+# testcontainers for RUN/START/STOP, reqwest for the gateway protocol matrix,
+# dotenvy for the live/replay credential load. All targets are `#[ignore]` and
+# run off the per-PR path. The canonical build invocation shared by these tests
+# lives in `common/mod.rs`.
+[dependencies]
+eval-containers = { path = "../../cli" }
+serde_json = "1"
+test-support = { package = "eval-containers-test-support", path = "../support" }
+
+[dev-dependencies]
+testcontainers = { version = "0.27", features = ["docker-compose", "http_wait"] }
+tokio = { version = "1", features = ["full"] }
+tempfile = "3"
+dotenvy = "0.15"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[[test]]
+name = "oracle"
+path = "oracle/test.rs"
+
+[[test]]
+name = "upstream"
+path = "upstream/test.rs"
+
+[[test]]
+name = "fleet"
+path = "fleet/test.rs"
+
+[[test]]
+name = "agents"
+path = "agents/test.rs"
+
+[[test]]
+name = "replay"
+path = "replay/test.rs"
+
+[[test]]
+name = "live"
+path = "live/test.rs"
+
+[[test]]
+name = "gateways"
+path = "gateways/test.rs"

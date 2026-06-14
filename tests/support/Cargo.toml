@@ -1,0 +1,13 @@
+[package]
+name = "eval-containers-test-support"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+
+# Shared helpers for the three fleet test crates (static / build / run): the
+# repo-root locators every test uses. Kept dependency-free so the light
+# `tests/static` gate that depends on it stays cheap to compile.
+[lib]
+name = "test_support"
+path = "src/lib.rs"

@@ -33,10 +33,10 @@ releases.
 - `.agents/verification/RULES.md:13` — mechanical > procedural > aspirational;
   this audit exists to find aspirational rules (prose with no check) and either
   confirm them against the code or convert them into a mechanical check.
-- `tests/sanity/RULES.md:9` — prefer mechanical over procedural;
+- `tests/static/RULES.md:9` — prefer mechanical over procedural;
   every drift finding ends in a proposed catalog rule so the same drift cannot
   recur unseen.
-- `tests/sanity/RULES.md:10` — rule IDs must stay aligned across
+- `tests/static/RULES.md:10` — rule IDs must stay aligned across
   RULES bodies and the rule catalogs; this audit catches the divergence when
   text and code disagree.
 - `.agents/meta/rules/RULES.md` and `.agents/meta/skills/RULES.md` — the meta
@@ -82,9 +82,9 @@ report (what was flagged last time).
    references `EVAL_BENCHMARK_VERSION` and writes `/output/task/version.json`";
    "assert every `models/*/Dockerfile` contains `LABEL eval.model.litellm_version=`";
    "assert no benchmark `compose.yaml` uses `EVAL_*_VERSION` as a Docker image
-   tag"; "assert every file under `tests/replay/fixtures/` ends in
+   tag"; "assert every file under `tests/run/replay/fixtures/` ends in
    `.trajectory.jsonl`"). WHY: this is the mechanical > procedural escalation
-   (`tests/sanity/RULES.md:9`) — a drift that recurs belongs in
+   (`tests/static/RULES.md:9`) — a drift that recurs belongs in
    code, not in a quarterly manual walk.
 
 6. **Emit one report** in the fixed structure: a per-rule section (verdict,
@@ -134,7 +134,7 @@ report (what was flagged last time).
 
 - `.agents/verification/RULES.md` — the precedence rule (mechanical >
   procedural > aspirational) this audit enforces.
-- `tests/sanity/RULES.md` — where every mechanizable drift
+- `tests/static/RULES.md` — where every mechanizable drift
   finding should land as a catalog rule.
 - `.agents/meta/rules/RULES.md`, `.agents/meta/skills/RULES.md` — what a rule
   and a skill must be.
