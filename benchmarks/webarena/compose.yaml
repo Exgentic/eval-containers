@@ -40,12 +40,15 @@ services:
       - internal
       - upstream
 
-  # Website sidecars. compose can't compute a per-task subset from EVAL_TASK_ID,
-  # so (rule 1) `EVAL_TASK_ID=<id> docker compose up` brings up the full site set —
-  # no CLI required. To run lean locally, name only the task's site(s):
-  #   docker compose up runner map        # (the per-task site list is in the chart's task-profiles map)
-  # The k8s/job surface selects per task automatically (the chart self-resolves).
-  # Tags pinned.
+  # Website sidecars. Bare `EVAL_TASK_ID=<id> docker compose up` brings up the full
+  # site set — the zero-knowledge standalone default (rule 1, no CLI). To run lean,
+  # name just the task's site(s): the runner depends_on only the proxy, so a subset
+  # doesn't pull in the rest. The per-task list comes from the SAME map the chart
+  # self-resolves (task-profiles/webarena.json) — compose has no templating, so the
+  # shell supplies it:
+  #   EVAL_TASK_ID=$N docker compose up runner proxy \
+  #     $(jq -r --arg t "$N" '.[$t][]' ../_chart/task-profiles/webarena.json)
+  # One map, both surfaces. Tags pinned.
   shopping:
     image: am1n3e/webarena-verified-shopping:0.1.0
     networks: [internal]
