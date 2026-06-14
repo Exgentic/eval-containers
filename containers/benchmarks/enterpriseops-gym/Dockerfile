@@ -89,6 +89,7 @@ with open("/tasks/all.jsonl", "w") as out:
 assert total == 649, f"expected 649 tasks at pinned dataset SHA, got {total}"
 print(f"Wrote {total} tasks")
 PYEOF
+
 RUN chmod 600 /tasks/all.jsonl
 
 # ── Seed SQL corpus from upstream gym_dbs.zip ─────────────────────────
@@ -103,6 +104,7 @@ with zipfile.ZipFile(buf) as zf:
     zf.extractall("/seed")
 print("gym_dbs.zip extracted into /seed")
 PYEOF
+
 RUN find /seed -type d -exec chmod 700 {} + && \
     find /seed -type f -exec chmod 600 {} +
 
