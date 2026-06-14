@@ -26,9 +26,9 @@ Our goal is to deliver agent evaluations you can trust: fast to run, thin to shi
 echo "OPENAI_API_KEY=sk-..." > .env
 
 # Run one task — pure docker, no clone, no CLI  (once registry is published)
-export EVAL_BENCHMARK=aime
+# The benchmark is the artifact name; agent/task/model stay runtime knobs.
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f oci://ghcr.io/exgentic/eval-${EVAL_BENCHMARK} up -y --abort-on-container-exit
+  docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
 
 # Results
 cat output/aime/0/task/result.json
@@ -62,9 +62,8 @@ eval-containers run aime --task-id 0 --agent codex --model gpt-5.4
 → runs the plain Docker command (the same one shown in Quick start above):
 
 ```bash
-export EVAL_BENCHMARK=aime
 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
-  docker compose -f oci://ghcr.io/exgentic/eval-${EVAL_BENCHMARK} up -y --abort-on-container-exit
+  docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
 ```
 
 That's the whole idea: every `eval-containers` command is a reminder of a plain `docker`/`kubectl` command — run any of them with `--dry-run` to print the exact command without executing. Every `EVAL_*` env var has a matching `--kebab-case` flag. Pick whichever you prefer.
@@ -207,9 +206,8 @@ If you're on Docker < 2.34, airgapped, or just prefer a local file:
 
 ```bash
 # Fetch + flatten the compose file once (needs a machine with network)
-export EVAL_BENCHMARK=aime
 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f oci://ghcr.io/exgentic/eval-${EVAL_BENCHMARK} config > aime.compose.yaml
+  docker compose -f oci://ghcr.io/exgentic/eval-aime config > aime.compose.yaml
 
 # Transport aime.compose.yaml anywhere. Run offline:
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
