@@ -1,184 +1,99 @@
 # syntax=docker/dockerfile:1
-# SkillsBench (benchflow-ai/skillsbench)
-# 86 tasks across 11 domains. Per-task images: EVAL_TASK_ID is a build ARG
-# set to the task name (e.g. "citation-check"). Each image bakes exactly one
-# task's input files, instruction, and test suite.
+# SkillsBench (benchflow-ai/skillsbench) — per-task eval overlay (Harbor format).
 #
-# Build the shared base first (once), then per-task images are fast (~10s):
-#   docker build --target skills-bench-base \
-#     -t local/benchmarks/skills-bench-base:latest benchmarks/skills-bench/
-#   docker build --build-arg EVAL_TASK_ID=citation-check \
-#     -t local/benchmarks/skills-bench-citation-check:latest benchmarks/skills-bench/
+# Each task ships an environment/Dockerfile (the task env, heterogeneous base +
+# setup), a direct instruction.md, tests/ (test.sh + test_outputs.py), and
+# solution/solve.sh. No per-task upstream images exist, so the per-task build is
+# two steps (build.sh): (1) build environment/Dockerfile -> the task env; (2) THIS
+# file overlays the eval pipeline on it (TASK_BASE = the env image).
 #
-# SKILLS_BENCH_REVISION pins the upstream repo commit for reproducibility.
-# Get the current SHA: git ls-remote https://github.com/benchflow-ai/skillsbench HEAD
+# We add ONLY: the instruction (TASK), a root-only copy of the tests, pytest for
+# the grader, the grader, and the entrypoint. The gold solution is NEVER baked,
+# and the tests are root-only (chmod 700) — the agent can read neither the answer
+# nor the tests (benchmarks/RULES.md rule 9 / 24g; see core/oracle, solution.sh).
+ARG TASK_BASE
+FROM ${TASK_BASE}
 
-ARG REGISTRY=ghcr.io/exgentic
-ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
-
-# ── Shared base: all heavy deps, cloned repo ─────────────────────────────────
-# Built once. Per-task images FROM this stage so pyscipopt, node, jdk etc.
-# are in the cache and don't recompile on every task build.
-FROM ubuntu:24.04 AS skills-bench-base
-
-ARG SKILLS_BENCH_REVISION=312d07e15e5398f6eda32ee1bb86e492ab18edd1
-
-ENV DEBIAN_FRONTEND=noninteractive
-
-# System deps: union across all supported tasks
-# libgfortran5: pyscipopt (bike-rebalance)
-# nodejs/npm: data-to-d3, fix-visual-stability, react-performance-debugging,
-#             threejs-*, suricata-custom-exfil, radar-vital-signs, fix-build-agentops
-# default-jdk: fix-build-google-auto, fix-druid-loophole-cve, flink-query,
-#              python-scala-translation, spring-boot-jakarta-migration
-# graphviz: dialogue-parser
-# ffmpeg: video-silence-remover, multilingual-video-dubbing
-# poppler-utils: edit-pdf, pdf-excel-diff, latex-formula-extraction
-RUN set -e; ok=0; \
-    for i in 1 2 3 4 5; do \
-      if apt-get update --fix-missing && apt-get install -y --no-install-recommends \
-           git curl ca-certificates wget \
-           python3 python3-pip python3-venv \
-           libgfortran5 \
-           nodejs npm \
-           default-jdk \
-           graphviz \
-           ffmpeg \
-           poppler-utils \
-           libgomp1; \
-      then ok=1; break; fi; \
-      echo "apt attempt $i failed; retry" >&2; sleep $((i*5)); \
-    done; \
-    [ "$ok" = 1 ] || exit 1; \
-    rm -rf /var/lib/apt/lists/*
-
-# uv + pytest venv with all verifier deps pre-installed
-RUN pip3 install --no-cache-dir --break-system-packages uv==0.7.13
-RUN uv venv /opt/pytest-venv && \
-    uv pip install --no-cache --python /opt/pytest-venv/bin/python \
-      pytest==8.4.1 \
-      pytest-json-ctrf==0.3.5 \
-      pyscipopt==6.1.0
-
-# Common task deps (union across all tasks that don't install their own)
-RUN pip3 install --no-cache-dir --break-system-packages \
-      requests==2.32.3 \
-      bibtexparser==1.4.2 \
-      pyscipopt==6.1.0 \
-      pandas \
-      numpy \
-      scipy \
-      matplotlib \
-      openpyxl \
-      python-pptx \
-      Pillow \
-      PyPDF2 \
-      pypdf \
-      pymupdf \
-      reportlab \
-      sympy \
-      networkx \
-      scikit-learn \
-      pyarrow
-
-# Clone the benchmark repo at the pinned revision into the base layer
-RUN git clone --depth=1 https://github.com/benchflow-ai/skillsbench.git /opt/skillsbench \
-    && (git -C /opt/skillsbench checkout "${SKILLS_BENCH_REVISION}" 2>/dev/null || true)
-
-COPY --from=entrypoint /eval-materialize-task /usr/local/bin/eval-materialize-task
-RUN chmod +x /usr/local/bin/eval-materialize-task
-
-# ── Per-task image ────────────────────────────────────────────────────────────
-FROM skills-bench-base:latest AS final
-
+# Build args that parameterize this per-task overlay (consumed below).
+# EVAL_TASK_ID is the per-task marker (benchmarks/RULES.md 24a/24f). SB_TASK pins
+# the real task name for solution.sh: the oracle/runner override EVAL_TASK_ID at
+# run time (their /tasks index), so the gold fetcher can't rely on it. SB_REF is
+# the pinned upstream commit — it pins BOTH code and data (the repo holds the
+# tasks, tests, solutions, and env Dockerfiles); build.sh is its single source.
 ARG EVAL_TASK_ID
-
-ENV EVAL_BENCHMARK=skills-bench
-ENV EVAL_TASK_ID=${EVAL_TASK_ID}
+ARG SB_REF
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="skills-bench"
-LABEL eval.benchmark.description="SkillsBench - expert tasks across software engineering, math, cybersecurity, and more"
+LABEL eval.benchmark.description="SkillsBench — expert tasks across software engineering, math, cybersecurity, and more"
 LABEL eval.benchmark.tasks="86"
 LABEL eval.benchmark.env="per-task"
+# Agent needs egress: many skills fetch data at run time (e.g. citation-management
+# searches Google Scholar / PubMed), so the with-skills eval requires internet
+# (rule 9 — "unless the benchmark explicitly requires it"). Label-only, as for the
+# other internet=true benchmarks (gaia, assistantbench) and upstream skills-bench.
 LABEL eval.benchmark.internet="true"
-LABEL eval.benchmark.data_revision="312d07e15e5398f6eda32ee1bb86e492ab18edd1"
 LABEL eval.benchmark.url="https://www.skillsbench.ai/"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2602.12670"
+# Record the pinned upstream revision (rule 3/4) — driven by the same SB_REF that
+# build.sh fetches from, so the label can never disagree with the baked data.
+LABEL eval.benchmark.data_revision="${SB_REF}"
 
-# Install task-specific extra deps from the upstream Dockerfile (if any).
-# We source the task's own Dockerfile for RUN pip/apt lines so each task
-# gets exactly the deps its tests need without us having to enumerate them.
-# Tasks that need torch or erlang are excluded (too heavy / custom builds).
-RUN df=/opt/skillsbench/tasks/${EVAL_TASK_ID}/environment/Dockerfile; \
-    if [ -f "$df" ]; then \
-      grep -E "^RUN pip" "$df" | grep -v "torch\|trl\|pyopenjtalk\|elan\|lean" \
-        | sed 's/^RUN //' | while IFS= read -r cmd; do \
-            eval "$cmd" 2>/dev/null || true; \
-          done; \
-    fi
+ENV EVAL_BENCHMARK=skills-bench \
+    EVAL_TASK_ID=${EVAL_TASK_ID} \
+    SB_TASK=${EVAL_TASK_ID} \
+    SB_REF=${SB_REF}
 
-# Task input files → /root (agent-visible working dir)
-# Flat files from environment/ → /root
-# data/ tree → /data/ (civ6 and similar tasks)
-RUN mkdir -p /root /tasks /tests /data \
-    && find /opt/skillsbench/tasks/${EVAL_TASK_ID}/environment \
-            -maxdepth 1 -type f ! -name Dockerfile \
-            -exec cp {} /root/ \; \
-    && if [ -d /opt/skillsbench/tasks/${EVAL_TASK_ID}/environment/data ]; then \
-         cp -r /opt/skillsbench/tasks/${EVAL_TASK_ID}/environment/data/. /data/; \
-       fi \
-    && chmod -R a+rX /root /data
+# The instruction the agent sees (TASK) — agent-readable by design.
+COPY instruction.md /task/instruction.md
 
-# Test suite → /tests (root-owned, agent cannot read)
-RUN cp /opt/skillsbench/tasks/${EVAL_TASK_ID}/tests/test_outputs.py /tests/test_outputs.py \
-    && find /opt/skillsbench/tasks/${EVAL_TASK_ID}/tests \
-            -maxdepth 1 -type f ! -name test.sh ! -name test_outputs.py \
-            -exec cp {} /tests/ \; 2>/dev/null || true \
-    && for d in src ground_truths; do \
-         if [ -d /opt/skillsbench/tasks/${EVAL_TASK_ID}/tests/$d ]; then \
-           cp -r /opt/skillsbench/tasks/${EVAL_TASK_ID}/tests/$d /tests/$d; \
-         fi; \
-       done \
-    && chmod -R 600 /tests
+# Skills — SkillsBench's whole point. The task's environment/skills/ is dropped at
+# the agent's working directory (the inherited WORKDIR, where /run.sh runs `claude`
+# without cd'ing) so claude-code auto-discovers them as project skills
+# (./.claude/skills) in -p mode. Agent-READABLE by design, unlike /tests: these are
+# the expert knowledge the agent is meant to leverage. Every upstream task ships
+# environment/skills/.
+COPY environment/skills ./.claude/skills
 
-# Task instruction → /tasks (root-only)
-RUN cp /opt/skillsbench/tasks/${EVAL_TASK_ID}/instruction.md /tasks/instruction.txt \
-    && echo "${EVAL_TASK_ID}" > /tasks/id.txt \
-    && chmod -R 600 /tasks
+# Root-only tests — never agent-readable (the agent must not see the tests/answers).
+COPY tests /tests
+RUN chmod -R 700 /tests && chown -R root:root /tests
 
-# Grade script
-RUN cat > /grade.sh <<'GRADE'
-#!/bin/bash
-mkdir -p /logs/verifier/scores
-export PYTHONPATH="/tests/src:${PYTHONPATH:-}"
-cd /root
-/opt/pytest-venv/bin/pytest \
-  --ctrf /logs/verifier/ctrf.json \
-  /tests/test_outputs.py -rA -v \
-  && PYTEST_OK=1 || PYTEST_OK=0
-# civ6-adjacency-optimizer writes a continuous score to scores/scenario_3.txt
-if [ -f /logs/verifier/scores/scenario_3.txt ]; then
-  cat /logs/verifier/scores/scenario_3.txt > /logs/verifier/reward.txt
-else
-  echo $PYTEST_OK > /logs/verifier/reward.txt
-fi
-GRADE
-RUN chmod +x /grade.sh
+# pytest for the grader, installed at build time so grading needs no network.
+# Upstream tests/test.sh fetches pytest via `uvx` at run time; we install it here
+# instead to keep grading offline and reproducible. The task env already provides
+# every other dep the tests import (it is the same env upstream runs the tests in).
+RUN python3 -m pip install --no-cache-dir --break-system-packages pytest==8.4.1 pytest-json-ctrf==0.3.5 \
+ || python3 -m pip install --no-cache-dir pytest==8.4.1 pytest-json-ctrf==0.3.5
 
-# Entrypoint: exports TASK from baked instruction
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-if [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/instruction.txt)"
-fi
-exec "$@"
-ENTRY
-RUN chmod +x /entrypoint.sh
+# Agent output dirs (tasks write to absolute /root and /output paths).
+RUN mkdir -p /root /output && chmod 777 /root /output
 
-RUN chmod 777 /root
+# Grader: run the upstream tests against the agent's result, write the reward.
+# A task that emits a continuous score (civ6) drops it in scores/; otherwise the
+# reward is pytest pass/fail. (benchmarks/RULES.md rule 18.)
+RUN printf '%s\n' \
+  '#!/bin/bash' \
+  'mkdir -p /logs/verifier/scores' \
+  'export PYTHONPATH="/tests/src:${PYTHONPATH:-}"' \
+  'cd /root' \
+  'python3 -m pytest --ctrf /logs/verifier/ctrf.json /tests/test_outputs.py -rA -v && ok=1 || ok=0' \
+  'if [ -f /logs/verifier/scores/scenario_3.txt ]; then' \
+  '  cat /logs/verifier/scores/scenario_3.txt > /logs/verifier/reward.txt' \
+  'else' \
+  '  echo "$ok" > /logs/verifier/reward.txt' \
+  'fi' \
+  > /grade.sh && chmod +x /grade.sh
 
-WORKDIR /root
+# Entrypoint: runtime skills toggle, then seed TASK. EVAL_SKILLS=off deletes the
+# staged skills before the agent ever starts — the without-skills baseline for
+# measuring lift. Runs as root at container start (cwd = WORKDIR, where the skills
+# were COPY'd), before the agent drops to its unprivileged user. Default: on.
+RUN printf '%s\n' \
+  '#!/bin/bash' \
+  'if [ "${EVAL_SKILLS:-on}" = off ]; then rm -rf ./.claude/skills; fi' \
+  'if [ -z "$TASK" ] && [ -f /task/instruction.md ]; then export TASK="$(cat /task/instruction.md)"; fi' \
+  'exec "$@"' > /entrypoint.sh && chmod +x /entrypoint.sh
+
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]
