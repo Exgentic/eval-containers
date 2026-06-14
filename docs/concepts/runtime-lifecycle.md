@@ -2,104 +2,124 @@
 
 *Concept · for benchmark and agent authors · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rule 12.*
 
-An evaluation image is built by stitching a benchmark image, an agent
-image, a gateway, and runtime tooling into a single container
-(`combination.Dockerfile`). What each image must provide at that
-boundary is the contract. Everything else — how the pipeline runs, how
-processes are orchestrated — is framework plumbing that the combination
-layer adds.
+An evaluation answers one question: *"How well does this agent solve
+this benchmark using this model?"* To answer it, the framework gives
+the agent a task, lets it work, then checks the result. This page
+explains exactly how that happens inside the container.
 
-## The contract
+## The three pieces
 
-The combination Dockerfile copies specific paths from each source image.
-If your image is missing one of these, the build or the run breaks.
+You don't ship one big image. You ship small, independent images that
+each do one thing:
 
-**From the benchmark image:**
+- A **benchmark image** knows how to pose a problem and grade the
+  answer. It contains tasks, a setup script, and a grading script.
+- An **agent image** knows how to solve problems. It contains the
+  agent's code and dependencies.
+- A **model image** contains a gateway proxy that sits between the agent
+  and the LLM provider, logging every API call.
 
-| Path | Role |
-|------|------|
-| `/entrypoint.sh` | ENTRYPOINT — runs before anything else; must set `TASK` |
-| `/grade.sh` | Scores the agent's output; writes reward to `/logs/verifier/reward.txt` |
+At build time, these three images (plus some runtime tooling) are
+combined into a single **evaluation image**. Think of it as layering
+transparencies on an overhead projector — each image contributes its
+files, and the result has everything needed to run one evaluation.
 
-**From the agent image:**
+## What happens when you run an eval
 
-| Path | Role |
-|------|------|
-| `/run.sh` | Agent launch script — the code that solves the task |
-| `/opt/agent/` | Agent installation directory (with `install.sh`) |
+The evaluation image starts, and four things happen in order:
 
-That's the interface. The combination layer inherits the benchmark's
-`ENTRYPOINT ["/entrypoint.sh"]` and overrides its `CMD` from `/grade.sh`
-to `/usr/local/bin/run` — the framework launcher.
+### 1. Setup — prepare the task
 
-## What happens at runtime
+The benchmark's setup script (`/entrypoint.sh`) runs first. Its job is
+to pick the current task and set a `TASK` environment variable — this is
+the plain-text prompt the agent will see. Most benchmarks ship a file
+with all their tasks and unpack the one matching `EVAL_TASK_ID`; some
+bake one task per image at build time instead.
 
-Once the stitched image starts, the sequence is:
+Once `TASK` is set, the setup script hands control to the framework.
 
-1. **Setup** — `/entrypoint.sh` runs, sets `TASK` (the prompt the agent
-   will see), then `exec "$@"` hands off to the framework launcher.
-2. **Agent** — `/run.sh` runs as an unprivileged `agent` user with a
-   minimal environment: `TASK`, model endpoints (`OPENAI_BASE_URL`,
-   `ANTHROPIC_BASE_URL`, `GOOGLE_GEMINI_BASE_URL`), `MODEL`, `TIMEOUT`.
-3. **Grade** — `/grade.sh` scores the agent's output and writes a number
-   (0, 1, or a fraction) to `/logs/verifier/reward.txt`.
-4. **Result** — `/usr/local/bin/write-result` reads the reward and writes
-   structured output to `/output/`.
+### 2. Agent — solve the task
 
-How these four steps are orchestrated depends on the runtime mode.
+The agent's script (`/run.sh`) runs next. It sees a deliberately small
+environment:
 
-## How each mode runs the sequence
+- `TASK` — the problem to solve
+- `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` / `GOOGLE_GEMINI_BASE_URL`
+  — all pointing at the gateway proxy, never at a real provider
+- `MODEL` — which model to talk to
+- `TIMEOUT` — how long it has
 
-### Single-image (container mode)
+The agent runs as an unprivileged user and cannot read the grading
+script's test data, the task answers, or the gateway configuration.
+This is enforced by file permissions — the agent's user simply cannot
+access those paths.
 
-The framework launcher (`/usr/local/bin/run`) starts **process-compose**,
-an in-container orchestrator that runs five processes in dependency
-order: otelcol → gateway → agent (`/run.sh`) → verifier (`/grade.sh`) →
-result (`write-result`).
+### 3. Grade — score the output
 
-### Compose mode
+The benchmark's grading script (`/grade.sh`) runs after the agent
+finishes. It reads whatever the agent produced and writes a score to
+`/logs/verifier/reward.txt` — a number between 0 and 1. How it decides
+that score is entirely up to the benchmark: string comparison, a test
+suite, a judge LLM, or something custom.
 
-Three containers: `otelcol`, `gateway`, `runner`. The runner still uses
-`/entrypoint.sh` → `/usr/local/bin/run` → process-compose, but with an
-overlay that disables the in-container otelcol and gateway (they have
-their own containers). Only agent → verifier → result run inside
-process-compose.
+### 4. Result — record the outcome
 
-### Kubernetes (Helm Job)
+A framework utility (`write-result`) reads the score and writes
+structured JSON files to `/output/` — one for the task result, one for
+the agent metadata, one for the model. This is what the outside world
+reads to know what happened.
 
-The Helm chart overrides the image command entirely:
+## The contract — what your image must provide
 
-```yaml
-command: ["/bin/bash", "-c"]
-args: ["/entrypoint.sh /usr/local/bin/run; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
-```
+The build that combines these images copies specific files from each
+one. If your image is missing a required file, the build breaks.
 
-otelcol and gateway run as native Kubernetes sidecars. The runner goes
-through the same `/entrypoint.sh` → `/usr/local/bin/run` →
-process-compose chain. After the pipeline exits, `reap-sidecars` tears
-down the sidecars.
+**If you're writing a benchmark**, you provide:
 
-## Isolation
+- `/entrypoint.sh` — sets `TASK`, then hands off with `exec "$@"`
+- `/grade.sh` — scores the agent's output, writes to
+  `/logs/verifier/reward.txt`
 
-The agent cannot see the answers. Benchmarks protect their test data
-(`/tests/`, root-owned, mode 0700) and the combination layer protects
-gateway config (`/opt/gateway/`). The agent process runs via `env -i`
-with an explicit allow-list of variables — it never sees `TASK_ID`,
-`EXPECTED_ANSWER`, or anything outside its sandbox.
+**If you're writing an agent**, you provide:
 
-## Benchmarks that override the flow
+- `/run.sh` — your agent's launch script
+- `/opt/agent/` — your agent's installation (including `install.sh`)
 
-The standard flow (entrypoint → framework launcher → process-compose) is
-the default, not a requirement. A benchmark with bespoke topology can
-replace it.
+Everything else — the process orchestrator, the result writer, the
+telemetry collector — comes from the framework. You don't need to think
+about it.
 
-**tau-bench** is the main example: in compose mode it replaces the runner
-entrypoint with `python3 /app/agent.py` and adds a separate harness
-container. In k8s it overrides `runnerArgs` in its Helm preset. Neither
-path uses process-compose — but the four steps (setup → agent → grade →
-result) still happen.
+## Runtime modes
+
+The same evaluation image runs in three modes. The four steps above
+always happen; the mode decides where each process lives.
+
+**Single-image** — everything in one container. A built-in orchestrator
+(process-compose) runs the gateway, agent, grader, and result writer as
+separate processes inside the same container.
+
+**Compose** — three containers (`otelcol`, `gateway`, `runner`). The
+gateway and telemetry collector get their own containers; the runner
+still orchestrates the agent → grade → result chain internally.
+
+**Kubernetes** — a Helm Job. The gateway and telemetry run as Kubernetes
+sidecars; the runner pod handles agent → grade → result, then tears down
+the sidecars when done.
+
+See [Triple-mode](triple-mode.md) for the full details on each.
+
+## Not every benchmark follows the standard flow
+
+The entrypoint → framework → orchestrator chain is the default path, not
+a hard requirement. A benchmark with unusual needs can override it.
+
+For example, tau-bench replaces the runner's entrypoint entirely with
+its own Python script and adds extra containers for its harness. It
+doesn't use the built-in orchestrator at all — but the four steps
+(setup → agent → grade → result) still happen in order.
 
 ## Where to go next
 
-- [Triple-mode](triple-mode.md) — more on the three runtimes
 - [Overview](overview.md) — what Eval Containers is
+- [Triple-mode](triple-mode.md) — more on the three runtime modes
+- [Add a benchmark](../guides/add-a-benchmark.md) — build one yourself
