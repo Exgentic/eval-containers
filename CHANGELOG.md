@@ -46,7 +46,7 @@ principles 8–10.
 - **`EVAL_BUILD_PARALLEL`** env var on `cargo test --test build`.
   Tokio `JoinSet + Semaphore` parallelise the build sweep; label-check
   phase stays serial for deterministic logging. Drains on panic so no
-  `ImageGuard` leaks. Documented in [`tests/LOCAL.md`](tests/LOCAL.md)
+  `ImageGuard` leaks. Documented in [`docs/guides/running-tests-locally.md`](docs/guides/running-tests-locally.md)
   Level 2b.
 - **`.gitleaks.toml`** — scoped allowlist for `user_api_key_hash` and
   `prompt_cache_key` inside `tests/fixtures/*.trajectory.jsonl`
@@ -90,8 +90,7 @@ principles 8–10.
   images (not testcontainers `build_image`). BuildKit's image-cache
   vs daemon's classic image-store race intermittently broke
   `COPY --from=<just-built-tag>` inside bootstrap chains. Rule 6b
-  carve-out per [`tests/containers/RULES.md`](tests/containers/RULES.md)
-  rule 1.
+  carve-out per [`.agents/verification/RULES.md`](.agents/verification/RULES.md).
 - **`tests/upstream/test.rs`** gained `is_first_party()` filter for
   `quay.io/eval-containers/*` self-references — they're locally built, not
   yet published, so probing `docker manifest inspect` on them always

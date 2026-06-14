@@ -1,6 +1,6 @@
 # Install
 
-*Guide · for operators & contributors · derives from [`README.md`](../../README.md), [`tests/LOCAL.md`](../../tests/LOCAL.md).*
+*Guide · for operators & contributors · derives from [`README.md`](../../README.md), [`running-tests-locally.md`](running-tests-locally.md).*
 
 What you install depends on how you'll run evals. Install only what your path
 needs.
@@ -73,5 +73,5 @@ For cluster deploys, the key lives in a cluster Secret instead — see
 [Run your first eval](run-your-first-eval.md).
 
 For the local-dev loop (what to build/test at which level), see
-[`tests/LOCAL.md`](../../tests/LOCAL.md). On Apple Silicon with Podman, see
+[`running-tests-locally.md`](running-tests-locally.md). On Apple Silicon with Podman, see
 [Run with Podman on Apple Silicon](podman-on-apple-silicon.md).
