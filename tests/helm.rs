@@ -7,6 +7,7 @@
 //!
 //! Run: `cargo test --test helm`
 
+use eval_containers_tests::repo_root;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -14,7 +15,7 @@ use std::process::{Command, Stdio};
 
 fn benchmark_dirs() -> Vec<(String, PathBuf)> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir("benchmarks") else {
+    let Ok(entries) = fs::read_dir(repo_root().join("containers/benchmarks")) else {
         return out;
     };
     for e in entries.flatten() {
@@ -40,11 +41,12 @@ fn benchmark_dirs() -> Vec<(String, PathBuf)> {
 fn check_one(name: &str, have_kubeconform: bool, issues: &mut Vec<String>) {
     // The benchmark is named via --set; its bespoke topology (if any) lives in
     // the chart at presets/<name>.yaml — no per-benchmark file is passed.
+    let chart = repo_root().join("containers/benchmarks/_chart");
     let out = match Command::new("helm")
         .args([
             "template",
             name,
-            "benchmarks/_chart",
+            chart.to_str().expect("chart path is valid UTF-8"),
             "--set",
             &format!("benchmark={name}"),
         ])
@@ -93,7 +95,7 @@ fn check_one(name: &str, have_kubeconform: bool, issues: &mut Vec<String>) {
 #[test]
 fn every_benchmark_renders_and_validates() {
     if Command::new("helm").arg("version").output().is_err() {
-        panic!("helm not found — required by doctrine/benchmarks/RULES.md rule 29(d)");
+        panic!("helm not found — required by .agents/benchmarks/RULES.md rule 29(d)");
     }
     let have_kubeconform = Command::new("kubeconform").arg("-v").output().is_ok();
 
@@ -154,14 +156,15 @@ fn every_benchmark_renders_and_validates() {
 #[test]
 fn runner_gates_on_gateway_readiness() {
     if Command::new("helm").arg("version").output().is_err() {
-        panic!("helm not found — required by doctrine/benchmarks/RULES.md rule 29(d)");
+        panic!("helm not found — required by .agents/benchmarks/RULES.md rule 29(d)");
     }
+    let chart = repo_root().join("containers/benchmarks/_chart");
     for name in ["aime", "tau-bench"] {
         let out = Command::new("helm")
             .args([
                 "template",
                 name,
-                "benchmarks/_chart",
+                chart.to_str().expect("chart path is valid UTF-8"),
                 "--set",
                 &format!("benchmark={name}"),
             ])
@@ -181,7 +184,7 @@ fn runner_gates_on_gateway_readiness() {
     }
 }
 
-/// Per-task sidecar selection (benchmarks/RULES.md 24h): the chart self-resolves
+/// Per-task sidecar selection (.agents/benchmarks/RULES.md 24h): the chart self-resolves
 /// the task's site sidecars from the benchmark's committed task-profiles map and
 /// the task id, so `helm template` with just `task=<id>` selects them, no CLI
 /// involved. A map-only task renders just map; a two-site task renders both; the
@@ -191,12 +194,13 @@ fn webarena_self_resolves_per_task_sidecars() {
     if Command::new("helm").arg("version").output().is_err() {
         return; // helm absent → skip (render is the floor)
     }
+    let chart = repo_root().join("containers/benchmarks/_chart");
     let render = |task: &str| -> String {
         let out = Command::new("helm")
             .args([
                 "template",
                 "wa",
-                "benchmarks/_chart",
+                chart.to_str().expect("chart path is valid UTF-8"),
                 "--set",
                 "benchmark=webarena",
                 "--set",

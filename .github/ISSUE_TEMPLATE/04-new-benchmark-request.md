@@ -31,7 +31,7 @@ specifically — "it's popular" is not a reason. -->
 ## Fit with existing rules
 
 - [ ] Data pattern is compatible with the single-JSONL convention
-      ([doctrine/benchmarks/RULES.md](../../benchmarks/RULES.md) rule 22)
+      ([.agents/benchmarks/RULES.md](../../.agents/benchmarks/RULES.md) rule 22)
 - [ ] Grader is either exact-match, code-execution, LLM-judge, or
       can be written as a short shell script with a clear contract
 - [ ] Upstream license allows redistribution of task metadata inside

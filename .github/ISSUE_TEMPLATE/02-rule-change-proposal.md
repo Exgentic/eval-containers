@@ -19,7 +19,7 @@ changes to what the rule demands.
 
 ## Which rule
 
-- **Document**: <!-- e.g. `doctrine/agents/RULES.md` -->
+- **Document**: <!-- e.g. `.agents/agents/RULES.md` -->
 - **Rule number / section**: <!-- e.g. rule 13 "Runtime version override" -->
 - **Current text** (pasted verbatim):
 

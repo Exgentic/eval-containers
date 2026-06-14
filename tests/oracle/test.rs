@@ -31,8 +31,10 @@ const SPECIAL: &[(&str, &str)] = &[
     ),
     // per-task built from source (rule 24g); gold = reverse the bug_reintroduce patch
     ("swe-lancer", "12155_1"),
-    // per-task; solution.sh writes the correct answer.json for each task
+    // per-task; solution.sh writes the correct output for each task
     ("skills-bench", "citation-check"),
+    ("skills-bench", "bike-rebalance"),
+    ("skills-bench", "civ6-adjacency-optimizer"),
     // Code benchmarks — gold solution = the dataset's reference, written to stdout.
     ("humaneval", "0"),
     ("humanevalplus", "0"),
@@ -65,7 +67,7 @@ fn benchmarks_are_oracle_solvable() {
 
     // Auto-cover every exact-match, shared-env benchmark: the default gold
     // solution (emit EXPECTED_ANSWER) solves them by construction.
-    for entry in std::fs::read_dir("benchmarks")
+    for entry in std::fs::read_dir(eval_containers_tests::repo_root().join("containers/benchmarks"))
         .expect("read benchmarks/")
         .flatten()
     {
@@ -102,7 +104,7 @@ fn benchmarks_are_oracle_solvable() {
 #[test]
 fn oracle_solutions_are_never_baked() {
     let mut leaked = Vec::new();
-    for entry in std::fs::read_dir("benchmarks")
+    for entry in std::fs::read_dir(eval_containers_tests::repo_root().join("containers/benchmarks"))
         .expect("read benchmarks/")
         .flatten()
     {

@@ -18,7 +18,7 @@ keep the rules graph honest. Include evidence, not opinion.
 
 ## Which rule
 
-- **Document**: <!-- e.g. `doctrine/benchmarks/RULES.md` -->
+- **Document**: <!-- e.g. `.agents/benchmarks/RULES.md` -->
 - **Rule number / section**: <!-- e.g. rule 22 "Shared components" -->
 - **Rule text** (pasted verbatim):
 

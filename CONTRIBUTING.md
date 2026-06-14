@@ -7,7 +7,7 @@
 
 This document defines how contributions to Eval Containers are made. A contribution is either an issue or a PR that solves an issue. Nothing else. Filing a good issue is a contribution — you are credited as a contributor on the PR that resolves it.
 
-The standards and procedures a contribution must follow live in [`doctrine/`](doctrine/) — see [`AGENTS.md`](AGENTS.md) for the map. **Rules** govern outcomes; **skills** govern how, e.g. [`add-benchmark`](doctrine/benchmarks/add-benchmark/SKILL.md), [`add-agent`](doctrine/agents/add-agent/SKILL.md), and [`release`](doctrine/delivery/release/SKILL.md).
+The standards and procedures a contribution must follow live in [`.agents/`](.agents/) — see [`AGENTS.md`](AGENTS.md) for the map. **Rules** govern outcomes; **skills** govern how, e.g. [`add-benchmark`](.agents/benchmarks/add-benchmark/SKILL.md), [`add-agent`](.agents/agents/add-agent/SKILL.md), and [`release`](.agents/delivery/release/SKILL.md).
 
 ## Terminology
 
@@ -57,11 +57,11 @@ Skipping any step is not acceptable.
 | Document | Location | Scope |
 |----------|----------|-------|
 | [Process](RULES.md) | `RULES.md` | How rules work |
-| [Benchmarks](doctrine/benchmarks/RULES.md) | `doctrine/benchmarks/RULES.md` | Building benchmark images |
-| [Agents](doctrine/agents/RULES.md) | `doctrine/agents/RULES.md` | Building agent images |
-| [Models](doctrine/models/RULES.md) | `doctrine/models/RULES.md` | Building model images |
-| [CLI](doctrine/src/RULES.md) | `doctrine/src/RULES.md` | CLI design principles |
-| [Repository](doctrine/compose/RULES.md) | `doctrine/compose/RULES.md` | Naming, compose, output, registry |
+| [Benchmarks](.agents/benchmarks/RULES.md) | `.agents/benchmarks/RULES.md` | Building benchmark images |
+| [Agents](.agents/agents/RULES.md) | `.agents/agents/RULES.md` | Building agent images |
+| [Models](.agents/models/RULES.md) | `.agents/models/RULES.md` | Building model images |
+| [CLI](.agents/src/RULES.md) | `.agents/src/RULES.md` | CLI design principles |
+| [Repository](.agents/compose/RULES.md) | `.agents/compose/RULES.md` | Naming, compose, output, registry |
 
 ## Changelog
 
