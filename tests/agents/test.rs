@@ -90,6 +90,7 @@ const AGENTS: &[&str] = &[
     "openclaw",
     "opencode",
     "openhands",
+    "plandex",
     "qwen-code",
     "ra-aid",
     "swe-agent",
@@ -97,11 +98,6 @@ const AGENTS: &[&str] = &[
     // bob     — IBM-internal: bundled JS hardcodes api.us-east.bob.ibm.com
     //           with no override, only IBM-issued auth accepted. Cannot
     //           be smoke-tested against our mock LLM. See broken.md.
-    // plandex — Self-hosted stack (postgres + plandex-server + internal
-    //           litellm proxy + interactive model-pack setup). Its CLI
-    //           and server are designed around a TUI flow that even
-    //           Harbor (the upstream wrapper) confirms can't be
-    //           automated. See broken.md.
 ];
 
 /// How long to wait for the first LLM call before declaring the agent
@@ -345,11 +341,12 @@ agent_smoke!(agent_qwen_code, "qwen-code");
 agent_smoke!(agent_ra_aid, "ra-aid");
 agent_smoke!(agent_swe_agent, "swe-agent");
 agent_smoke!(agent_terminus_2, "terminus-2");
-// bob, plandex — architecturally tied to IBM/self-hosted-server, see AGENTS const comment.
+agent_smoke!(agent_plandex, "plandex");
+// bob — architecturally tied to IBM's backend, see AGENTS const comment.
 
 // Count sanity check: catches "added an agent to AGENTS but forgot the
-// macro invocation" (the assert trips when AGENTS grows past 18 without
+// macro invocation" (the assert trips when AGENTS grows past 19 without
 // also bumping this literal). It does NOT catch the reverse — an
 // agent_smoke! without an AGENTS entry just adds a test. The list above
 // is the documented roster; the macro invocations are the test surface.
-const _: () = assert!(AGENTS.len() == 18);
+const _: () = assert!(AGENTS.len() == 19);
