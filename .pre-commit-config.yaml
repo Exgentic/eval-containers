@@ -98,6 +98,43 @@ repos:
         files: ^containers/benchmarks/_chart/
         pass_filenames: false
 
+  # --- Dockerfiles: eval-domain policy (conftest/OPA) ---
+  # The eval LABEL contract + pin allowlist + eval-specific hygiene, migrated
+  # from the Rust dockerfile_inspection/check/upstream_pins suites for #114.
+  # hadolint (above) owns generic Dockerfile hygiene; this owns the eval rules.
+  - repo: local
+    hooks:
+      - id: conftest-dockerfile
+        name: conftest dockerfile policy (eval LABEL/pin/hygiene)
+        entry: tests/policy/dockerfile/run.sh
+        language: system
+        files: (^containers/.*/Dockerfile$|^tests/policy/dockerfile/)
+        pass_filenames: false
+
+  # --- Compose files: eval-domain policy (conftest/OPA) ---
+  # The compose markers + the principle-9 image-tag-axis rule. Schema validation
+  # is the check-compose-spec hook above; this adds the eval conventions.
+  - repo: local
+    hooks:
+      - id: conftest-compose
+        name: conftest compose policy (eval markers + tag axis)
+        entry: tests/compose.sweep.sh
+        language: system
+        files: (^containers/benchmarks/.*/compose\.ya?ml$|^containers/compose/.*\.ya?ml$|^tests/policy/compose/)
+        pass_filenames: false
+
+  # --- IaC / misconfig: trivy config ---
+  # Net-new for #114: trivy config over containers/ Dockerfiles + compose
+  # (misconfig + secret-in-build-arg). Complements gitleaks (secret values).
+  - repo: local
+    hooks:
+      - id: trivy-config
+        name: trivy config (IaC/misconfig over containers/)
+        entry: tests/security/trivy.sh config
+        language: system
+        files: (^containers/.*\.ya?ml$|^containers/.*/Dockerfile$|^\.trivyignore$)
+        pass_filenames: false
+
   # --- Shell ---
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.10.0.1

@@ -10,7 +10,11 @@
 //!
 //! Pure file I/O, no docker daemon — runs on plain `cargo test`.
 //!
-//! Run: cargo test --test cli_conformance
+//! This is a CLI test (it guards `cli/src/naming.rs` against the fleet), so it
+//! lives in the CLI crate's own `tests/` dir — the idiomatic Cargo home for a
+//! crate's integration tests — not in the fleet's framework-free suite.
+//!
+//! Run: cargo test -p eval-containers --test cli_conformance
 
 use eval_containers::benchmark::is_per_task;
 use eval_containers::naming::{
@@ -19,13 +23,29 @@ use eval_containers::naming::{
 };
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Once;
+
+static ENTER: Once = Once::new();
+
+/// Set cwd to the repo root (this crate's parent), once per test binary. The
+/// catalog helpers read `containers/<category>` relative to cwd, but `cargo
+/// test` runs this crate from `cli/`. Resolved from the compile-time manifest
+/// dir so it is independent of the process working directory; `Once` makes it
+/// safe under the harness's parallel test threads.
+fn enter_repo_root() {
+    ENTER.call_once(|| {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("the cli/ crate always has a parent (the repo root)");
+        std::env::set_current_dir(root).expect("set current dir to repo root");
+    });
+}
 
 /// `eval_containers::benchmark::is_per_task_by_name`, anchored at the repo root:
-/// it reads `containers/benchmarks/<name>/Dockerfile` relative to cwd, but
-/// `cargo test` runs this crate from `tests/`. `enter_repo_root` (idempotent)
-/// sets cwd to the repo root the first time any helper here is called.
+/// it reads `containers/benchmarks/<name>/Dockerfile` relative to cwd, so anchor
+/// there first (idempotent).
 fn is_per_task_by_name(name: &str) -> bool {
-    eval_containers_tests::enter_repo_root();
+    enter_repo_root();
     eval_containers::benchmark::is_per_task_by_name(name)
 }
 
@@ -33,7 +53,7 @@ fn is_per_task_by_name(name: &str) -> bool {
 /// dot-prefixed (skips `benchmarks/_chart`, etc.). The catalog lives under
 /// `containers/`; cwd is anchored at the repo root so the relative path resolves.
 fn catalog_dirs(root: &str) -> Vec<(String, PathBuf)> {
-    eval_containers_tests::enter_repo_root();
+    enter_repo_root();
     let mut out = Vec::new();
     let Ok(entries) = fs::read_dir(format!("containers/{root}")) else {
         return out;
