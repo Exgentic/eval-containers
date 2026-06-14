@@ -1,0 +1,13 @@
+schemaVersion: '2.0.0'
+# Built-image label contract for benchmark images — moved from
+# tests/build/test.rs (build_every_benchmark's check_labels). Asserted on the
+# real built image. The fuller Dockerfile-text label set (env/tasks/internet)
+# is policy checked statically by conftest on every PR; this is the built-image
+# floor the release build sweep guarantees.
+metadataTest:
+  labels:
+    - key: eval.type
+      value: benchmark
+    - key: eval.benchmark.name
+      value: '.+'
+      isRegex: true
