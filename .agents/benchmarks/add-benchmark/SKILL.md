@@ -19,14 +19,26 @@ it and why each piece exists.
 
 ## Before you start: pick the benchmark shape
 
-Decide between the two task models, because it changes how `EVAL_TASK_ID` flows:
+Decide which of the three task models fits, because it changes how `EVAL_TASK_ID`
+flows and how the image is built:
 
 - **Shared-env** — one image, many tasks; all tasks share the same environment
   and only the instruction differs (AIME, SimpleQA, GPQA). `EVAL_TASK_ID` is the
   *only required runtime input* and selects the task at run time.
-- **Per-task** — one image per task; `EVAL_TASK_ID` is a *build-time* `ARG` and
-  each image bakes exactly one task (SWE-bench style; see
+- **Per-task, prebuilt base** — one image per task and a per-task upstream base
+  image already exists; `EVAL_TASK_ID` is a *build-time* `ARG` and a single
+  `Dockerfile` bakes exactly one task (see
   `benchmarks/swe-bench/Dockerfile`).
+- **Per-task, built-from-source** — one image per task, but **no** per-task
+  upstream image exists and each task ships its own `environment/Dockerfile`
+  (heterogeneous bases + setup — the Harbor task format). Ship an executable
+  **`build.sh <image> <task-id>`** that (1)
+  builds the task's own `environment/Dockerfile` into a task-env image, then (2)
+  overlays the eval pipeline via a `FROM ${TASK_BASE}` `Dockerfile`. Do NOT
+  improvise a shared base that clones the whole upstream repo — that is the
+  anti-pattern rule 24g exists to prevent. Copy `benchmarks/terminal-bench/`
+  (`build.sh` + overlay `Dockerfile` + fetch-the-gold `solution.sh`) and
+  substitute the repo + ref (`.agents/benchmarks/RULES.md:24g`).
 
 Either `docker run` (single-image) or `docker compose up` (multi-service) MUST
 work with no Dock install and no internet, resolving task content, expected
@@ -55,7 +67,13 @@ answer, and any attached files from `EVAL_TASK_ID` alone
    anything the test phase uses (`.agents/benchmarks/RULES.md:5`,
    `.agents/benchmarks/RULES.md:28`). If a task has attached files, copy them
    into `/app/` (agent-readable) in the entrypoint — never loosen `/tasks/`
-   permissions (`.agents/benchmarks/RULES.md:17`).
+   permissions (`.agents/benchmarks/RULES.md:17`). For a **built-from-source**
+   benchmark you do not materialize tasks here — the task's own
+   `environment/Dockerfile` provides them and the overlay `Dockerfile` adds only
+   the agent-readable `instruction.md` plus a **root-only** copy of the tests
+   (`chmod 700`, root-owned). Never bake the upstream repo into the image: it
+   carries every task's gold solution and tests, which the agent could then read
+   (`.agents/benchmarks/RULES.md:5`, `.agents/benchmarks/RULES.md:9`).
 
 3. **Pin the dataset version (knob 1 of 2 — build-time default).** Set
    `ARG DATA_REVISION=<sha>` (or equivalent) as the default and record it in the
@@ -107,7 +125,18 @@ answer, and any attached files from `EVAL_TASK_ID` alone
    an outside service, still collect the agent's output, write `-1`, and do NOT
    approximate the external grader (`.agents/benchmarks/RULES.md:20`). For a
    custom scorer, replace the `test-exact-match` COPY with your own
-   `/grade.sh`.
+   `/grade.sh`. Then add the **oracle** that validates this scorer — a
+   `benchmarks/<name>/solution.sh`, mounted read-only at oracle run time and never
+   `COPY`'d into the image — that *derives* the gold (runs the upstream reference
+   solution, or fetches the dataset's canonical answer) and writes it where the
+   agent would; never hardcode a literal answer or copy the test's expected-output
+   file — a derived oracle stays valid as the data revision moves and proves the
+   task is solvable (`.agents/benchmarks/RULES.md:20a`). For a built-from-source benchmark the
+   `solution.sh` fetches the per-task upstream gold fresh and MUST read the task
+   name from a baked `ENV`, not `EVAL_TASK_ID` (which the oracle overrides to `0`)
+   (`.agents/benchmarks/RULES.md:24i`). Validate both halves with
+   `eval-containers oracle <name> [--task-id <t>] --local`: a correct gold MUST
+   score `1.0` and a no-op MUST score `< 1.0`.
 
 8. **Set the required labels.** Every benchmark image MUST carry `eval.type`,
    `eval.benchmark.name`, `eval.benchmark.description`, `eval.benchmark.tasks`,
@@ -124,8 +153,11 @@ answer, and any attached files from `EVAL_TASK_ID` alone
    upstream credentials) and produce byte-equivalent `task/result.json` for the
    same inputs (`.agents/benchmarks/RULES.md:24`):
    - `container.Dockerfile` (**single**) — a *single-line* registry pin
-     `FROM <registry>/evals/<name>--<agent>:<tag>`, nothing more. Record the
-     canonical build args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`,
+     `FROM <registry>/evals/<name>--<agent>:<tag>`, nothing more (shared-env). A
+     **per-task** benchmark instead writes exactly two lines — `ARG EVAL_TASK_ID`
+     then `FROM <registry>/evals/<name>-${EVAL_TASK_ID}--<agent>:<tag>` — so the
+     pin resolves per task; never hardcode one task's name in the `FROM`. Record
+     the canonical build args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`,
      `MODEL_IMAGE`) in the `README.md` so CI can rebuild via
      `core/combination.Dockerfile`. Inert `ARG` lines the `FROM` does not
      consume are forbidden (`.agents/benchmarks/RULES.md:24a`).
@@ -189,4 +221,6 @@ answer, and any attached files from `EVAL_TASK_ID` alone
   Dockerfile, the per-benchmark deploy files, the blanks-to-fill table, and gotchas.
 - `.agents/benchmarks/RULES.md` — the outcomes every benchmark MUST satisfy.
 - `benchmarks/aime/` — canonical simple shared-env reference.
+- `benchmarks/terminal-bench/` — canonical per-task built-from-source reference
+  (`build.sh` + `FROM ${TASK_BASE}` overlay + fetch-the-gold `solution.sh`).
 - `benchmarks/_chart/` — the shared k8s Helm chart (the canonical Pod, once).
