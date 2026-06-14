@@ -2,118 +2,134 @@
 
 *Concept · for benchmark and agent authors · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rule 12.*
 
-When an evaluation runs, four things happen in order. Every mode
-(container, compose, job) runs the same sequence — the mode only changes
-who orchestrates it.
+Every evaluation follows the same four-step contract, regardless of how
+it is orchestrated. The mode (container, compose, k8s Job) changes who
+starts each step and where the processes live — the steps themselves are
+the same.
 
-## The sequence
+## The contract
 
 ```
-/entrypoint.sh            benchmark setup (Docker ENTRYPOINT)
-  └─ exec "$@"            hands off to CMD
-       │
-       ▼
-/usr/local/bin/run        framework launcher (CMD in the combination image)
-  └─ process-compose      orchestrates the three steps below
-       │
-       ├─ /run.sh         agent solves the task
-       │
-       ├─ /grade.sh       verifier grades the agent's output
-       │
-       └─ write-result    writes /output/{task,agent,model}/result.json
+  setup        materialize the task, set TASK + EXPECTED_ANSWER
+     │
+     ▼
+  agent        solve the task (sees only TASK + model endpoints)
+     │
+     ▼
+  grade        compare agent output to expected answer → reward
+     │
+     ▼
+  result       write structured output to /output/
 ```
 
-## Step by step
+### 1. Setup — task materialization
 
-### 1. `/entrypoint.sh` — benchmark setup
+Unpack the current task from `/tasks/all.jsonl` into
+`/tasks/$EVAL_TASK_ID/`, then export `TASK` (the prompt the agent sees)
+and `EXPECTED_ANSWER` (the ground truth the grader uses).
 
-The benchmark's `ENTRYPOINT`. Runs as root before anything else.
+In the standard flow, `/entrypoint.sh` (the benchmark's ENTRYPOINT) does
+this by calling `/eval-materialize-task`, then `exec "$@"` to hand off.
 
-- Calls `/eval-materialize-task` to unpack the current task from
-  `/tasks/all.jsonl` into `/tasks/$EVAL_TASK_ID/`.
-- Sets `TASK` (the prompt the agent sees) and `EXPECTED_ANSWER`.
-- Ends with `exec "$@"` — this is what connects ENTRYPOINT to CMD.
+### 2. Agent
 
-Every benchmark Dockerfile sets:
-```dockerfile
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
-```
-
-The combination layer (which stitches benchmark + agent + gateway into one
-image) overrides CMD to `/usr/local/bin/run` — the framework launcher that
-starts process-compose. The benchmark's `CMD ["/grade.sh"]` only fires if
-you run the bare benchmark image without the combination layer.
-
-### 1b. `/usr/local/bin/run` — framework launcher
-
-Invoked by `exec "$@"` as the combination image's CMD. Prepares the
-environment (output dirs, agent user, mode detection) then execs
-process-compose, which runs the agent, verifier, and result writer in
-dependency order. See `core/process-compose/run` for the full script.
-
-In **single-image mode** (no external gateway), process-compose runs all
-five processes: otelcol → gateway → agent → verifier → result. In
-**compose/k8s mode** (ANTHROPIC_BASE_URL already set), it runs only the
-last three — otelcol and gateway are sibling containers.
-
-### 2. `/run.sh` — agent
-
-The agent's entrypoint. Runs as unprivileged user `agent` (uid 1002).
-The agent sees only:
+Run as unprivileged user `agent` (uid 1002). The agent sees only:
 
 - `TASK` — the problem to solve
-- `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` — model endpoints
-- `TASK_ID`, `MODEL`, `TIMEOUT`
+- `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` — model endpoints (the
+  gateway, never a direct provider URL)
+- `MODEL`, `TIMEOUT`
 
 It cannot read `/grade.sh`, `/entrypoint.sh`, task data, or gateway
 config (all root-owned, mode 0700).
 
-Every agent Dockerfile must place its script at `/run.sh`:
-```dockerfile
-RUN cat > /run.sh <<'E' && chmod +x /run.sh
-#!/bin/bash
-exec my-agent "$TASK"
-E
-ENTRYPOINT ["/run.sh"]
-```
+Standard path: `/run.sh`, placed by the agent Dockerfile.
 
-### 3. `/grade.sh` — verifier
+### 3. Grade
 
-Runs after the agent finishes. Reads the agent's output and the expected
-answer, writes an integer (0 or 1) or fraction to
-`/logs/verifier/reward.txt`.
+Read the agent's output and the expected answer, write an integer (0 or
+1) or fraction to `/logs/verifier/reward.txt`.
 
-Most benchmarks copy a shared grader:
+Standard path: `/grade.sh`, placed by the benchmark Dockerfile. Most
+benchmarks copy a shared grader:
 ```dockerfile
 COPY --from=test-exact-match /test.sh /grade.sh
 ```
 
-### 4. `write-result` — output
+### 4. Result
 
-The `write-result` script reads `/logs/verifier/reward.txt` and writes
-three files:
+Read `/logs/verifier/reward.txt` and write structured output:
 
 - `/output/task/result.json` — `task_id`, `benchmark`, `reward`, `passed`
 - `/output/agent/result.json` — `agent`, `started_at`, `ended_at`
 - `/output/model/result.json` — `model`
 
-When write-result finishes, process-compose exits (via `exit_on_end: true`),
-which exits the container.
+Standard path: `/usr/local/bin/write-result`.
+
+## How each mode runs the contract
+
+### Single-image (container mode)
+
+Everything in one container. The Docker image's ENTRYPOINT and CMD wire
+the whole chain:
+
+```
+ENTRYPOINT ["/entrypoint.sh"]  →  exec "$@"  →  CMD ["/usr/local/bin/run"]
+```
+
+`/usr/local/bin/run` (the framework launcher) starts **process-compose**,
+which orchestrates all five processes in dependency order:
+otelcol → gateway → agent (`/run.sh`) → verifier (`/grade.sh`) → result
+(`write-result`).
+
+### Compose mode
+
+Three containers: `otelcol`, `gateway`, `runner`. The runner still uses
+`/entrypoint.sh` → `/usr/local/bin/run` → process-compose, but with an
+overlay (`process-compose-runner.yaml`) that disables the in-container
+otelcol and gateway — only agent → verifier → result run inside
+process-compose. Networking changes from `localhost` to Docker service
+names.
+
+### Kubernetes (Helm Job)
+
+The chart overrides the image command entirely:
+
+```yaml
+command: ["/bin/bash", "-c"]
+args: ["/entrypoint.sh /usr/local/bin/run; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
+```
+
+otelcol and gateway run as native sidecars (init containers with
+`restartPolicy: Always`). The runner still goes through `/entrypoint.sh`
+→ `/usr/local/bin/run` → process-compose (runner-only mode), then
+`reap-sidecars` tears down the sidecars after the pipeline exits.
+
+## Benchmarks that override the flow
+
+The standard flow (entrypoint → framework launcher → process-compose) is
+the default, not a requirement. A benchmark with bespoke topology can
+override it entirely.
+
+**tau-bench** is the main example: in compose mode it replaces the runner
+entrypoint with `python3 /app/agent.py` and adds a separate harness
+container that calls `/eval-materialize-task` itself. In k8s it overrides
+`runnerArgs` in its Helm preset. Neither path uses process-compose — but
+the four-step contract (setup → agent → grade → result) still holds.
 
 ## Key paths
 
 | Role | Path | Set by |
 |------|------|--------|
 | Benchmark setup | `/entrypoint.sh` | Benchmark Dockerfile (ENTRYPOINT) |
+| Task unpacker | `/eval-materialize-task` | Framework (core/entrypoint) |
 | Framework launcher | `/usr/local/bin/run` | Combination layer (CMD) |
 | Agent entrypoint | `/run.sh` | Agent Dockerfile |
 | Grading script | `/grade.sh` | Benchmark Dockerfile |
 | Result writer | `/usr/local/bin/write-result` | Framework (core/process-compose) |
 
-Benchmark and agent authors only need to care about `/entrypoint.sh`,
-`/run.sh`, and `/grade.sh`. The framework launcher, process-compose,
-and result writing are provided by the combination layer automatically.
+Benchmark and agent authors need to provide `/entrypoint.sh`, `/run.sh`,
+and `/grade.sh`. Everything else is inherited from the framework.
 
 ## Where to go next
 
