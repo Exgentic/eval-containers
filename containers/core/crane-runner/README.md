@@ -27,15 +27,29 @@ distinction from DinD: crane only *downloads a filesystem*; it never runs a
 daemon. The core primitive (crane pull + run-in-rootfs + agent-edits-testbed) is
 proven daemonless — run [`crane-poc.sh`](crane-poc.sh) in any Linux container.
 
-## Status — first cut
+## Status — first cut (statically verified)
 
-- ✅ **Fusion** ([1]/[2] in `materialize`) — the proven primitive.
-- ⛳ **Validation gate**: wiring the in-rootfs gateway/otel via `process-compose`
-  and the root-only grader perms ([3]) reuses the combination image's existing
-  `/usr/local/bin/run` mechanism; **end-to-end against real images is not yet
-  run**. Pin pulls by **digest** for reproducibility before shipping.
-- This is a **doctrine-level** addition (late- vs early-binding): it needs a rule
-  for *when* crane applies (`per-task`, or opt-in) and the digest-pin requirement.
+Proven:
+- **Fusion** ([1]/[2]) against **real** images — the real swe-bench `/testbed` (sympy
+  repo) ⊎ the real claude-code `/opt/agent` reproduce the combination image's layout.
+- **Isolation survives the fusion**: `export` preserves root-only modes/owners
+  (`/tasks` `0600`, `/tests` & `/opt/gateway` `0700`, root), so *extract as root* and
+  run the agent through the existing `gosu agent` / `env -i` pipeline (which even hides
+  the task id from the model) and the answers stay unreadable. The invariant is
+  **reused, not reinvented**.
+
+Build-out ([3]) — wire the existing runtime, don't invent one:
+1. **Bake the fixed core** into this image: `otelcol`, `process-compose`, `gosu`,
+   `/usr/local/bin/{run,write-result}` + configs.
+2. **Pull the 3rd axis** (`models/<gateway>` → `/opt/gateway`) alongside benchmark+agent;
+   run the agent image's `install.sh` (symlinks).
+3. **Extract as root**, then `exec /entrypoint.sh /usr/local/bin/run` — the existing
+   5-process pipeline (otelcol → gateway → agent → verifier → result).
+
+Hard constraint: **arch** — the runner, the node, and the pulled rootfs must match
+(swe-bench is `x86_64`; the runner built here is `arm64`). Plus **digest-pinned** pulls,
+a **conformance test** (`crane(X) == container(X)`), a **bake target**, and a **doctrine
+rule** (when crane applies + the digest-pin + isolation invariants).
 
 ## Use (additive, opt-in — nothing else depends on it)
 
