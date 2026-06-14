@@ -16,7 +16,7 @@ LABEL eval.benchmark.data_revision="802411c3010cb00d1b05bad57ca77365a3c699d6"
 LABEL eval.benchmark.url="https://github.com/google-deepmind/code_contests"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.07814"
 
-RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout. Merged I/O tests are stored as a JSON array in the
 # "tests_json" field; the entrypoint expands them into /tasks/$EVAL_TASK_ID/tests/.
