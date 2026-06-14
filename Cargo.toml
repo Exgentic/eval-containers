@@ -1,11 +1,14 @@
 # Virtual workspace root. The Rust packaging lives in `cli/` (the published
 # `eval-containers` binary + library); the fleet's integration-test suite is
-# its own crate in `tests/` (depends on `cli`) so the quality process is a
-# first-class citizen, not a subdirectory of the optional CLI. The container
-# fleet itself (benchmarks/agents/models/core/gateways/compose) lives in
-# `containers/`, and platform-specific deployment in `deploy/`.
+# split by stage into its own crates under `tests/` (each depends on `cli`) so
+# the quality process is a first-class citizen, not a subdirectory of the
+# optional CLI. The stages: `tests/static` (daemon-free, every-PR, light deps),
+# `tests/build` (image builds), `tests/run` (live container/cluster), with
+# shared repo-root helpers in `tests/support`. The container fleet itself
+# (benchmarks/agents/models/core/gateways/compose) lives in `containers/`, and
+# platform-specific deployment in `deploy/`.
 [workspace]
-members = ["cli", "tests"]
+members = ["cli", "tests/support", "tests/static", "tests/build", "tests/run"]
 resolver = "2"
 
 # Profiles may only live at the workspace root. The release/dist profile is

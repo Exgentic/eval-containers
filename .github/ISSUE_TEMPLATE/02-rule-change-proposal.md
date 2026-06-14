@@ -39,7 +39,7 @@ by the rule. Not abstract preferences. -->
 
 - [ ] Code changes required: <!-- which files/tests need updating -->
 - [ ] Other rules invalidated: <!-- which RULES.md principles need coordinated updates -->
-- [ ] Mechanical check changes: <!-- which rules in tests/sanity/ need to be added / removed / rewritten -->
+- [ ] Mechanical check changes: <!-- which rules in tests/static/ need to be added / removed / rewritten -->
 - [ ] Breaking for contributors: <!-- does this invalidate existing PRs in flight? existing fixtures? existing external integrations? -->
 
 ## Migration path

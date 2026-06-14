@@ -1,0 +1,33 @@
+[package]
+name = "eval-containers-tests-static"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+# Targets are the explicit `[[test]]` list below, not auto-discovered.
+autotests = false
+
+# STATIC stage — the daemon-free fleet gate that runs on every PR (see
+# tests/static/RULES.md). Deliberately the lightest crate in the workspace: it
+# does NOT depend on testcontainers / tokio / reqwest (those are the build/run
+# crates), so the every-PR Rust gate compiles a fraction of the dependency
+# tree. The artifact-shaped static checks (Dockerfile/compose/helm/CVE) live
+# beside these as standard-tool policy under `policy/` and `security/`; what
+# stays in Rust here is only the residual no standard tool expresses —
+# cross-file repo invariants (check) and trajectory-data analysis
+# (task_inspection) — plus the procedural pip/npm pin walk (dockerfile_inspection).
+[dependencies]
+serde_json = "1"
+test-support = { package = "eval-containers-test-support", path = "../support" }
+
+[[test]]
+name = "check"
+path = "check.rs"
+
+[[test]]
+name = "dockerfile_inspection"
+path = "dockerfile_inspection.rs"
+
+[[test]]
+name = "task_inspection"
+path = "task_inspection.rs"

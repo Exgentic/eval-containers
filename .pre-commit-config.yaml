@@ -106,9 +106,9 @@ repos:
     hooks:
       - id: conftest-dockerfile
         name: conftest dockerfile policy (eval LABEL/pin/hygiene)
-        entry: tests/policy/dockerfile/run.sh
+        entry: tests/static/policy/dockerfile/run.sh
         language: system
-        files: (^containers/.*/Dockerfile$|^tests/policy/dockerfile/)
+        files: (^containers/.*/Dockerfile$|^tests/static/policy/dockerfile/)
         pass_filenames: false
 
   # --- Compose files: eval-domain policy (conftest/OPA) ---
@@ -118,9 +118,9 @@ repos:
     hooks:
       - id: conftest-compose
         name: conftest compose policy (eval markers + tag axis)
-        entry: tests/compose.sweep.sh
+        entry: tests/static/compose.sweep.sh
         language: system
-        files: (^containers/benchmarks/.*/compose\.ya?ml$|^containers/compose/.*\.ya?ml$|^tests/policy/compose/)
+        files: (^containers/benchmarks/.*/compose\.ya?ml$|^containers/compose/.*\.ya?ml$|^tests/static/policy/compose/)
         pass_filenames: false
 
   # --- IaC / misconfig: trivy config ---
@@ -130,7 +130,7 @@ repos:
     hooks:
       - id: trivy-config
         name: trivy config (IaC/misconfig over containers/)
-        entry: tests/security/trivy.sh config
+        entry: tests/static/security/trivy.sh config
         language: system
         files: (^containers/.*\.ya?ml$|^containers/.*/Dockerfile$|^\.trivyignore$)
         pass_filenames: false

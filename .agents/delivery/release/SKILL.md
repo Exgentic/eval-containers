@@ -50,31 +50,31 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
 
 2. **Run the release-only gates out of band first.** The fleet report
    is a pure aggregator — it probes each category's log, it does not
-   re-run them (`tests/fleet/RULES.md:1`,
-   `tests/fleet/RULES.md:2`). So run, in any order:
+   re-run them (`tests/run/fleet/RULES.md:1`,
+   `tests/run/fleet/RULES.md:2`). So run, in any order:
    - `cargo test --test build -- --ignored` — the build sweep
      (`tests/build/RULES.md`). On macOS/podman set
      `DOCKER_HOST` to the podman machine socket
      (`tests/build/RULES.md:9`); CI uses the default.
    - `cargo test --test upstream -- --ignored` — every pinned `FROM`,
      `upstream_base` label, and HF/GitHub URL still resolves
-     (`tests/upstream/RULES.md`). Any 404 is red
-     (`tests/upstream/RULES.md:9`).
+     (`tests/run/upstream/RULES.md`). Any 404 is red
+     (`tests/run/upstream/RULES.md:9`).
    - `cargo test --test live -- --ignored` — the live fleet sweep:
      every buildable benchmark, ≥3 tasks each, against the model of
      record (gpt-5.4) with the reference agent (claude-code)
-     (`tests/live/RULES.md:3`,
-     `tests/live/RULES.md:4`,
-     `tests/live/RULES.md:5`). Respect
-     `EVAL_LIVE_BUDGET_USD` (`tests/live/RULES.md:7`).
+     (`tests/run/live/RULES.md:3`,
+     `tests/run/live/RULES.md:4`,
+     `tests/run/live/RULES.md:5`). Respect
+     `EVAL_LIVE_BUDGET_USD` (`tests/run/live/RULES.md:7`).
    Why first: the fleet report reads these logs; stale logs yield a
    stale verdict.
 
 3. **Render the fleet report and read the verdict.** Run
    `cargo test --test fleet -- --ignored` to regenerate
    `.agents/verification/fleet/report.md` from scratch — never
-   hand-edit it (`tests/fleet/RULES.md:7`). The verdict
-   is red / yellow / green (`tests/fleet/RULES.md:4`).
+   hand-edit it (`tests/run/fleet/RULES.md:7`). The verdict
+   is red / yellow / green (`tests/run/fleet/RULES.md:4`).
    **No release MAY ship with a red verdict** (`.agents/RULES.md:14`).
 
 4. **Walk the go/no-go readiness checklist.** Confirm every gate is
@@ -88,18 +88,18 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
 
 5. **Promote any new live-sweep trajectories to fixtures.** Each passing
    live run becomes a replay fixture so contribution verification can
-   re-run it at zero cost (`tests/live/RULES.md:2`,
-   `tests/live/RULES.md:11`). Rename
+   re-run it at zero cost (`tests/run/live/RULES.md:2`,
+   `tests/run/live/RULES.md:11`). Rename
    `output/<bench>/<task>/model/trajectory.jsonl` →
    `.agents/verification/replay/fixtures/<bench>-<task>-claude-code.trajectory.jsonl`
    and add a `provenance.json` entry recording model, agent version,
    benchmark data_revision, timestamp, and the release tag
-   (`tests/replay/RULES.md:6`). A run that fails an
+   (`tests/run/replay/RULES.md:6`). A run that fails an
    inspection rule is NOT promoted — record it in
    `.agents/verification/live/known-broken.md` instead
-   (`tests/live/RULES.md:12`). Why: fixtures are the
+   (`tests/run/live/RULES.md:12`). Why: fixtures are the
    immutable ground truth that makes the next cycle's offline replay
-   meaningful (`tests/replay/RULES.md:4`).
+   meaningful (`tests/run/replay/RULES.md:4`).
 
 6. **Build and push the fleet via Docker Bake.** The build graph is an
    artifact in the tree: every `core/`, `agents/`, `benchmarks/`,
@@ -141,7 +141,7 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
 8. **Commit the fleet report alongside the release tag.** When cutting
    the tag, commit the final `.agents/verification/fleet/report.md` so
    the release artifact carries its own verification record
-   (`tests/fleet/RULES.md:8`). Why: a release that ships
+   (`tests/run/fleet/RULES.md:8`). Why: a release that ships
    without its certifying report cannot be audited after the fact.
 
 ## Releasing the CLI alongside the fleet

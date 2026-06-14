@@ -5,7 +5,7 @@
 
 ## Abstract
 
-Eval Containers's product is Docker images, Compose files, and the evaluations they produce. This document defines the overall testing strategy — what testing *means* in this repo, regardless of which specific category of test is being written. Per-category rules live next door in `tests/<category>/RULES.md`.
+Eval Containers's product is Docker images, Compose files, and the evaluations they produce. This document defines the overall testing strategy — what testing *means* in this repo, regardless of which specific category of test is being written. Per-category rules live next door in `tests/<stage>/<category>/RULES.md` (the suite is grouped into stage crates — see rule 3).
 
 ## Terminology
 
@@ -33,7 +33,7 @@ The **procedure** for executing each process — exact commands, order, gates �
 
 ## Test category organization
 
-3. **One subfolder per test category.** Every test lives under `tests/<category>/` with a local `RULES.md`, one or more `*.rs` integration test files, and any category-local data (fixtures, known-broken manifests, reports). The Cargo integration-test target is registered via `[[test]]` in `Cargo.toml` so `cargo test --test <name>` keeps working.
+3. **Tests are grouped by stage, one Cargo crate per stage.** Every test lives under `tests/<stage>/`, where `<stage>` is `static` (daemon-free, every-PR, dependency-light), `build` (image builds), or `run` (live container/cluster). A category is a subfolder within its stage (`tests/run/<category>/`; the `static` category's files sit directly under `tests/static/`) with a local `RULES.md`, its `*.rs` test file(s), and any category-local data (fixtures, known-broken manifests, reports). Each target is registered via `[[test]]` in its stage crate's `Cargo.toml`, with names unique across the workspace so `cargo test --test <name>` keeps working. Shared repo-root helpers live in `tests/support`. The `static` crate is the per-PR gate and MUST NOT depend on the testcontainers/tokio/reqwest stack; that stack belongs only to `build` and `run`.
 
 4. **Subfolder rules are local.** A rule that applies only to build tests lives in `tests/build/RULES.md`. A rule that applies across every test category lives here.
 
@@ -50,26 +50,26 @@ The **procedure** for executing each process — exact commands, order, gates �
    - Removing a built image via `docker rmi -f` (library auto-cleans containers, not images).
    Both carve-outs MUST be called out in the test file's doc comment with a reference to this rule.
 
-6c. **Builds go through `docker buildx bake`.** Per top-level RULES.md principle 15, the framework's build graph lives in `docker-bake.hcl` files. Tests that need to materialize an image MUST shell to `docker buildx bake <target> --load` (via the helper in `tests/common/mod.rs`) rather than using testcontainers-rs's `GenericBuildableImage`. This keeps tests, the CLI, and any out-of-process consumer (OC in-cluster builds, bakah) on the same canonical build invocation. RUN/START/STOP of containers still goes through testcontainers-rs per rule 6 — only BUILD is exempt.
+6c. **Builds go through `docker buildx bake`.** Per top-level RULES.md principle 15, the framework's build graph lives in `docker-bake.hcl` files. Tests that need to materialize an image MUST shell to `docker buildx bake <target> --load` (via the helper in `tests/run/common/mod.rs`) rather than using testcontainers-rs's `GenericBuildableImage`. This keeps tests, the CLI, and any out-of-process consumer (OC in-cluster builds, bakah) on the same canonical build invocation. RUN/START/STOP of containers still goes through testcontainers-rs per rule 6 — only BUILD is exempt.
 
-7. **No API keys in contribution verification.** The `replay` model is the only LLM backend in contribution-verification tests. Any test that reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider credential MUST be gated behind `#[ignore]` and live under `tests/live/`, NOT in any continuous-verification category.
+7. **No API keys in contribution verification.** The `replay` model is the only LLM backend in contribution-verification tests. Any test that reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider credential MUST be gated behind `#[ignore]` and live under `tests/run/live/`, NOT in any continuous-verification category.
 
 8. **Fail loud over fail silent.** Test code MUST NOT use `|| true`, `2>/dev/null`, or any other error swallowing. Known failures are documented in explicit `known-broken.md` / `broken.json` manifests per category; undocumented failures panic the run.
 
 ## Fixture lifecycle
 
-9. **Fixtures are immutable ground truth.** Recorded trajectories under `tests/replay/fixtures/` are PRODUCED by release verification's live sweep and feed contribution verification's replay sweep. Contributors MUST NOT hand-edit fixtures.
+9. **Fixtures are immutable ground truth.** Recorded trajectories under `tests/run/replay/fixtures/` are PRODUCED by release verification's live sweep and feed contribution verification's replay sweep. Contributors MUST NOT hand-edit fixtures.
 
-10. **Every fixture has a provenance record.** Filename convention `{benchmark}-{task-id}-{agent}.trajectory.jsonl`. A sibling `tests/replay/fixtures/provenance.json` records the model, timestamp, and release tag under which each fixture was captured.
+10. **Every fixture has a provenance record.** Filename convention `{benchmark}-{task-id}-{agent}.trajectory.jsonl`. A sibling `tests/run/replay/fixtures/provenance.json` records the model, timestamp, and release tag under which each fixture was captured.
 
-11. **Broken fixtures are documented, not deleted.** `tests/replay/fixtures/broken.json` marks fixtures whose recorded run is known-bad (refusals, wrong answers, content filter hits, max-tokens truncation). Mechanical findings on these are reported but do NOT fail the continuous tests — they are re-recorded in the next release verification cycle.
+11. **Broken fixtures are documented, not deleted.** `tests/run/replay/fixtures/broken.json` marks fixtures whose recorded run is known-bad (refusals, wrong answers, content filter hits, max-tokens truncation). Mechanical findings on these are reported but do NOT fail the continuous tests — they are re-recorded in the next release verification cycle.
 
 ## Known-broken manifests
 
 12. **Every test category that can have expected failures ships a known-broken manifest.**
    - `tests/build/known-broken.md` — platform/upstream build failures (qemu segfaults, gated datasets).
-   - `tests/replay/fixtures/broken.json` — broken recorded trajectories.
-   - `tests/live/known-broken.md` — benchmarks that cannot run live (require secrets the release runner lacks).
+   - `tests/run/replay/fixtures/broken.json` — broken recorded trajectories.
+   - `tests/run/live/known-broken.md` — benchmarks that cannot run live (require secrets the release runner lacks).
 
    The test probe for each category MUST compare actual failures to its manifest. Any excess failure is red; failures within the manifest are yellow, not red.
 
@@ -86,18 +86,20 @@ The **procedure** for executing each process — exact commands, order, gates �
 
 The verification **strategy** (this file) and the **procedures** (the `verify`
 and `audit-*` skills) live in `.agents/verification/`. Each test **category**
-keeps its rules beside the Rust that enforces them, under `tests/<category>/`:
+keeps its rules beside the Rust that enforces them, grouped by **stage** under
+`tests/{static,build,run}/` (the stage is also a Cargo crate; shared helpers in
+`tests/support`):
 
-- [sanity](../../tests/sanity/RULES.md) — fast mechanical gates
+- [static](../../tests/static/RULES.md) — fast mechanical gates (the *Sanity* verify phase)
 - [build](../../tests/build/RULES.md) — build sweep
-- [replay](../../tests/replay/RULES.md) — recorded-trajectory sweep
-- [upstream](../../tests/upstream/RULES.md) — network reachability
-- [live](../../tests/live/RULES.md) — live-inference sweep
-- [fleet](../../tests/fleet/RULES.md) — aggregator and report
+- [replay](../../tests/run/replay/RULES.md) — recorded-trajectory sweep
+- [upstream](../../tests/run/upstream/RULES.md) — network reachability
+- [live](../../tests/run/live/RULES.md) — live-inference sweep
+- [fleet](../../tests/run/fleet/RULES.md) — aggregator and report
 - [cli](../../tests/cli/RULES.md) — CLI unit tests
 - [containers](../../tests/containers/RULES.md) — container runtime tests
-- [gateways](../../tests/gateways/RULES.md) — gateway tests
-- [agents](../../tests/agents/RULES.md) — agent test rules
+- [gateways](../../tests/run/gateways/RULES.md) — gateway tests
+- [agents](../../tests/run/agents/RULES.md) — agent test rules
 
 A category's `RULES.md` is the markdown half of a catalog whose entries pair
 one-to-one with the `const RULES: &[Rule]` arrays in its sibling `*.rs`; the
@@ -118,3 +120,4 @@ tests rather than moving into `.agents/`.
 | 2026-04-13 | Replace mock model with replay model |
 | 2026-04-15 | Narrow rule 2 to runtime tests; add carve-out 2a for static validation |
 | 2026-04-15 | Rewrite as testing strategy. Two verification processes; subfolder organization; known-broken manifests; fixture provenance; mechanical > procedural > aspirational precedence. |
+| 2026-06-14 | Rule 3: split the suite into per-stage Cargo crates (`tests/static` / `tests/build` / `tests/run` + shared `tests/support`). The dependency-light `static` crate is the per-PR gate and excludes the testcontainers/tokio/reqwest stack. Test target names preserved, so `cargo test --test <name>` is unchanged. |
