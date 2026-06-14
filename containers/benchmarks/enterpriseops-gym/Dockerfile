@@ -91,12 +91,15 @@ RUN chmod 600 /tasks/all.jsonl
 # ~14 MB of per-task seed databases. Root-only per §5: the agent (non-root)
 # must not see the seed corpus; test.sh (root) reads it during pre-agent
 # setup to create fresh DB instances on the MCP services.
-RUN curl -fsSL "https://raw.githubusercontent.com/ServiceNow/EnterpriseOps-Gym/${UPSTREAM_REPO_SHA}/gym_dbs.zip" \
-      -o /tmp/gym_dbs.zip && \
-    mkdir -p /seed && \
-    unzip -q /tmp/gym_dbs.zip -d /seed && \
-    rm /tmp/gym_dbs.zip && \
-    find /seed -type d -exec chmod 700 {} + && \
+RUN python3 <<PYEOF
+import urllib.request, zipfile, io, os
+URL = f"https://raw.githubusercontent.com/ServiceNow/EnterpriseOps-Gym/${UPSTREAM_REPO_SHA}/gym_dbs.zip"
+buf = io.BytesIO(urllib.request.urlopen(URL).read())
+with zipfile.ZipFile(buf) as zf:
+    zf.extractall("/seed")
+print("gym_dbs.zip extracted into /seed")
+PYEOF
+RUN find /seed -type d -exec chmod 700 {} + && \
     find /seed -type f -exec chmod 600 {} +
 
 WORKDIR /app
