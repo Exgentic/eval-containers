@@ -2,9 +2,10 @@
 """Regenerate task-profiles.json — task id -> the site(s) it needs — from the
 pinned WebArena Verified dataset.
 
-The CLI reads this map to bring up only a task's site sidecars (one Deployment+
-Service / compose service per active site) instead of all six. See
-doctrine/benchmarks/RULES.md 24h. Re-run when DATASET_REV changes:
+The Helm chart self-resolves a task's site sidecars from this map (one Deployment+
+Service per active site); compose reads the same map to name the task's services.
+Site labels are emitted as DNS-1123 service names. See doctrine/benchmarks/RULES.md
+24h. Re-run when DATASET_REV changes:
 
     python3 benchmarks/webarena/gen-task-profiles.py
 """
@@ -23,7 +24,12 @@ URL = (
 with urllib.request.urlopen(URL) as resp:  # noqa: S310 (pinned github raw URL)
     tasks = json.load(resp)
 
-profiles = {str(t["task_id"]): sorted(t["sites"]) for t in tasks}
+# Site labels in the dataset use the upstream key (e.g. "shopping_admin"); emit the
+# DNS-1123 service name ("shopping-admin") so the map is the one naming convention
+# shared by the catalog, chart, and compose.
+profiles = {
+    str(t["task_id"]): sorted(s.replace("_", "-") for s in t["sites"]) for t in tasks
+}
 items = sorted(profiles.items(), key=lambda kv: int(kv[0]))
 body = (
     "{\n"

@@ -244,4 +244,18 @@ fn webarena_self_resolves_per_task_sidecars() {
     for site in ["app: map", "app: wikipedia"] {
         assert!(!r.contains(site), "{site} must NOT render for task 552");
     }
+
+    // A `shopping_admin`-site task (0): the generator emits the DNS-1123 service
+    // name, so the sidecar renders as `shopping-admin` — one naming convention
+    // across map/catalog/chart/compose, no `profile` field. (The upstream image is
+    // still `…-shopping_admin`, so match the `app:` label, not the bare string.)
+    let r = render("0");
+    assert!(
+        r.contains("app: shopping-admin"),
+        "the shopping-admin sidecar must self-resolve for task 0"
+    );
+    assert!(
+        !r.contains("app: shopping_admin"),
+        "the sidecar must render under the DNS-1123 name, not the dataset's underscore label"
+    );
 }

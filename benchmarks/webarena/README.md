@@ -27,10 +27,17 @@ Custom `/grade.sh` defined inline in the Dockerfile.
 Each task touches only a subset of the six websites (most just one). The benchmark
 declares a sidecar catalog in `benchmarks/_chart/presets/webarena.yaml` and a
 committed task→sites map at `benchmarks/_chart/task-profiles/webarena.json`
-(regenerate with `gen-task-profiles.py`).
+(regenerate with `gen-task-profiles.py`). Both surfaces select from that one map —
+no CLI (rule 1):
 
-- **k8s / job:** the chart self-resolves — `helm template --set benchmark=webarena --set task=<id>` (or `eval-containers run webarena --task-id <id> --mode job`) brings up only that task's site(s). No CLI logic involved.
-- **compose:** `docker compose` can't compute the subset from `EVAL_TASK_ID`, so `EVAL_TASK_ID=<id> docker compose up` brings up the full site set — and works without the CLI (rule 1). To run lean locally, name the task's service(s), e.g. `docker compose up runner map`.
+- **k8s / job:** the chart self-resolves — `helm template --set benchmark=webarena --set task=<id>` (or `eval-containers run webarena --task-id <id> --mode job`) brings up only that task's site(s).
+- **compose:** bare `EVAL_TASK_ID=<id> docker compose up` brings up the full set (the zero-knowledge standalone default). To select per task, name the sites from the same map — the runner depends only on the proxy, so a subset doesn't pull in the rest:
+  ```
+  EVAL_TASK_ID=$N docker compose up runner proxy \
+    $(jq -r --arg t "$N" '.[$t][]' ../_chart/task-profiles/webarena.json)
+  ```
+
+compose has no templating, so the shell supplies the list; the chart does the same resolution internally.
 
 ## Files
 

@@ -64,7 +64,7 @@ spec:
           command:
             - sh
             - -c
-            - "until{{- range $name, $sc := $v.sidecars }}{{- if has ($sc.profile | default $name) $active }} nc -z {{ $name }} {{ $sc.port }} &&{{- end }}{{- end }} true; do echo 'waiting for sidecars'; sleep 2; done"
+            - "until{{- range $name, $sc := $v.sidecars }}{{- if has $name $active }} nc -z {{ $name }} {{ $sc.port }} &&{{- end }}{{- end }} true; do echo 'waiting for sidecars'; sleep 2; done"
         {{- end }}
         - name: otelcol
           restartPolicy: Always
@@ -183,11 +183,10 @@ spec:
 {{ toYaml . }}
 {{- end }}
 {{/* Per-task website sidecars: a Deployment+Service for each catalog entry whose
-     profile (default: the name) is in $active — the chart self-resolves $active
-     above from the benchmark's task-profiles map + the task id, so no CLI is
-     involved. */}}
+     name is in $active — the chart self-resolves $active above from the
+     benchmark's task-profiles map + the task id, so no CLI is involved. */}}
 {{- range $name, $sc := $v.sidecars }}
-{{- if has ($sc.profile | default $name) $active }}
+{{- if has $name $active }}
 ---
 apiVersion: apps/v1
 kind: Deployment
