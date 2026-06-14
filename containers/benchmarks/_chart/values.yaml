@@ -100,3 +100,11 @@ gatewayExtraEnv: []
 runnerExtraVolumeMounts: []
 extraVolumes: []
 extraManifests: []          # extra Deployments/Services (full manifests)
+# Per-task service sidecars. A catalog of name → {image, port,
+# [profile], [shmSize]}; the chart renders a Deployment+Service and a readiness
+# gate for each whose `profile` (default: the name) the current task needs. The
+# chart self-resolves that set from a committed map at
+# `<chart>/task-profiles/<benchmark>.json` keyed by the task id — no CLI involved,
+# so `helm template --set task=<id>` alone selects them (benchmarks/RULES.md 24h).
+# Empty for benchmarks without a catalog/map.
+sidecars: {}

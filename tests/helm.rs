@@ -183,3 +183,83 @@ fn runner_gates_on_gateway_readiness() {
         );
     }
 }
+
+/// Per-task sidecar selection (.agents/benchmarks/RULES.md 24h): the chart self-resolves
+/// the task's site sidecars from the benchmark's committed task-profiles map and
+/// the task id, so `helm template` with just `task=<id>` selects them, no CLI
+/// involved. A map-only task renders just map; a two-site task renders both; the
+/// readiness gate covers only the active sites.
+#[test]
+fn webarena_self_resolves_per_task_sidecars() {
+    if Command::new("helm").arg("version").output().is_err() {
+        return; // helm absent → skip (render is the floor)
+    }
+    let chart = repo_root().join("containers/benchmarks/_chart");
+    let render = |task: &str| -> String {
+        let out = Command::new("helm")
+            .args([
+                "template",
+                "wa",
+                chart.to_str().expect("chart path is valid UTF-8"),
+                "--set",
+                "benchmark=webarena",
+                "--set",
+                &format!("task={task}"),
+            ])
+            .output()
+            .expect("helm template webarena");
+        assert!(
+            out.status.success(),
+            "render failed for task {task}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    // Map-only task (356 -> map): only map + the always-on proxy.
+    let r = render("356");
+    assert!(
+        r.contains("app: map"),
+        "the map sidecar must self-resolve for task 356"
+    );
+    assert!(r.contains("app: proxy"), "the always-on proxy must render");
+    assert!(
+        r.contains("nc -z map 8080"),
+        "the gate must cover only the active site"
+    );
+    for site in [
+        "app: gitlab",
+        "app: reddit",
+        "app: wikipedia",
+        "app: shopping",
+    ] {
+        assert!(
+            !r.contains(site),
+            "{site} must NOT render for a map-only task"
+        );
+    }
+
+    // Two-site task (552 -> gitlab + reddit): both render, map/wikipedia do not.
+    let r = render("552");
+    assert!(
+        r.contains("app: gitlab") && r.contains("app: reddit"),
+        "both sites must self-resolve for task 552"
+    );
+    for site in ["app: map", "app: wikipedia"] {
+        assert!(!r.contains(site), "{site} must NOT render for task 552");
+    }
+
+    // A `shopping_admin`-site task (0): the generator emits the DNS-1123 service
+    // name, so the sidecar renders as `shopping-admin` — one naming convention
+    // across map/catalog/chart/compose, no `profile` field. (The upstream image is
+    // still `…-shopping_admin`, so match the `app:` label, not the bare string.)
+    let r = render("0");
+    assert!(
+        r.contains("app: shopping-admin"),
+        "the shopping-admin sidecar must self-resolve for task 0"
+    );
+    assert!(
+        !r.contains("app: shopping_admin"),
+        "the sidecar must render under the DNS-1123 name, not the dataset's underscore label"
+    );
+}
