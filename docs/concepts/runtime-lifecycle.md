@@ -10,13 +10,13 @@ the same.
 ## The contract
 
 ```
-  setup        materialize the task, set TASK + EXPECTED_ANSWER
+  setup        materialize the task, set TASK
      │
      ▼
   agent        solve the task (sees only TASK + model endpoints)
      │
      ▼
-  grade        compare agent output to expected answer → reward
+  grade        score the agent's output → reward
      │
      ▼
   result       write structured output to /output/
@@ -25,8 +25,10 @@ the same.
 ### 1. Setup — task materialization
 
 Unpack the current task from `/tasks/all.jsonl` into
-`/tasks/$EVAL_TASK_ID/`, then export `TASK` (the prompt the agent sees)
-and `EXPECTED_ANSWER` (the ground truth the grader uses).
+`/tasks/$EVAL_TASK_ID/`, then export `TASK` (the prompt the agent sees).
+The benchmark may also set grader-specific variables (e.g.
+`EXPECTED_ANSWER` for exact-match benchmarks) — these are conventions of
+individual graders, not part of the contract.
 
 In the standard flow, `/entrypoint.sh` (the benchmark's ENTRYPOINT) does
 this by calling `/eval-materialize-task`, then `exec "$@"` to hand off.
@@ -47,8 +49,10 @@ Standard path: `/run.sh`, placed by the agent Dockerfile.
 
 ### 3. Grade
 
-Read the agent's output and the expected answer, write an integer (0 or
-1) or fraction to `/logs/verifier/reward.txt`.
+Score the agent's output and write an integer (0 or 1) or fraction to
+`/logs/verifier/reward.txt`. How scoring works is benchmark-specific —
+exact-match against `EXPECTED_ANSWER`, a judge LLM call, a test suite,
+or something custom.
 
 Standard path: `/grade.sh`, placed by the benchmark Dockerfile. Most
 benchmarks copy a shared grader:
