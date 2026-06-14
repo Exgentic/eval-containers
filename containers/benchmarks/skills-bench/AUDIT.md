@@ -1,7 +1,7 @@
 ---
 benchmark: skills-bench
-host: local Docker+Rosetta
-commit: 1090431
+host: local podman+Rosetta
+commit: d58e20e
 ---
 # Audit — skills-bench
 
@@ -11,10 +11,10 @@ commit: 1090431
 
 | Check | Status | Evidence |
 |-------|:------:|----------|
-| building | ✓ | built locally (Docker+Rosetta, citation-check task) |
-| running | ✓ | citation-check ran end-to-end: gateway → codex → pytest verifier |
-| isolation | ? | not audited per-benchmark |
-| oracle | ? | solution.sh written; oracle not yet run (`eval-containers oracle skills-bench --task-id citation-check --local`) |
+| building | ✓ | build.sh builds the task env (upstream environment/Dockerfile) + overlays the pipeline; citation-check, bike-rebalance, civ6 built locally (podman+Rosetta); bike-rebalance compiles pyscipopt/SCIP (slow under emulation) |
+| running | ✓ | verifier path re-confirmed on the new build via the oracle below; full gateway → agent → verifier run still on the pre-refactor build |
+| isolation | ? | improved — tests root-only (chmod 700, root-owned) and the upstream repo is no longer baked into the image (removes the prior agent-readable gold/tests leak); full per-benchmark egress/secret audit still pending |
+| oracle | ✓ | 3/3 verified gold=1 / no-op<1 (manual podman oracle flow): citation-check, bike-rebalance (SCIP solver), civ6-adjacency-optimizer. civ6 needed solution.sh to stage the whole upstream solution/ tree (its solve.sh reads sibling ground_truths/) via a tool-agnostic fetch (its env lacks curl). Remaining 83 tasks unswept. |
 | traces-reviewed | ? | |
 | replicate-official | ? | |
 
@@ -32,13 +32,13 @@ commit: 1090431
 | Metric | Value |
 |--------|-------|
 | image | ? |
-| per-task multiplier | per-task (×94) |
+| per-task multiplier | per-task (×86) |
 
 ## Speed
 
 | Metric | Value |
 |--------|-------|
-| build | ? |
+| build | ~2–3 min (citation-check: task env + overlay; podman+Rosetta, amd64 emulation) |
 | grade | ? |
 | end-to-end | ? |
 

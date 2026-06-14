@@ -3,6 +3,9 @@ include:
 
 services:
   runner:
-    image: ${EVAL_REGISTRY:-quay.io/eval-containers}/evals/skills-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/skills-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: skills-bench
+      # Runtime skills toggle: off => the entrypoint deletes the staged skills
+      # before the agent runs (the without-skills baseline). Default: on.
+      EVAL_SKILLS: ${EVAL_SKILLS:-on}
