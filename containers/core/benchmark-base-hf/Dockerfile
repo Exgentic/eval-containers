@@ -58,7 +58,11 @@ RUN set -e; ok=0; \
 # location. Tests this by running `python3 -c 'import sys; print(sys.modules["sitecustomize"])'`.
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 COPY --from=entrypoint /eval-sitecustomize.py /usr/local/lib/python3.12/site-packages/sitecustomize.py
-RUN chmod +x /eval-materialize-task
+# /eval-grade — shared code-execution grader harness (benchmarks/RULES.md 22).
+# Lives in the base (not just the combined image) so `eval-containers oracle`,
+# which runs /grade.sh in the bare benchmark image, can find it too.
+COPY --from=entrypoint /eval-grade /eval-grade
+RUN chmod +x /eval-materialize-task /eval-grade
 
 RUN mkdir -p /tasks /tests /app
 WORKDIR /app
