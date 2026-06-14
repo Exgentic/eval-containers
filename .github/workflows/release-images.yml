@@ -1,8 +1,9 @@
 name: Release the fleet
 
 # On a `vX.Y.Z` tag, build + push the ENTIRE base fleet (core, agents,
-# benchmarks, models, gateways) to GHCR at `:<tag>`, then publish the `evaluate`
-# compose artifact + the `charts/eval` Helm chart at the same version.
+# benchmarks, models, gateways) to GHCR at `:<tag>`, then publish the
+# per-benchmark `eval-<benchmark>` compose artifacts + the `charts/eval` Helm
+# chart at the same version.
 # (Crate releases — `cargo install eval-containers` — live separately in
 # release.yml / cargo-dist; this workflow is the container/chart fleet only.)
 #

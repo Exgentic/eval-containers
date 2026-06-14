@@ -144,8 +144,9 @@ The `inspector` model (`models/inspector/`) is a tiny Flask app that:
 Usage:
 
 ```bash
-EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=claude-code EVAL_MODEL=inspector \
-  docker compose -f oci://ghcr.io/exgentic/eval-${EVAL_BENCHMARK} up --abort-on-container-exit
+export EVAL_BENCHMARK=aime
+EVAL_TASK_ID=0 EVAL_AGENT=claude-code EVAL_MODEL=inspector \
+  docker compose -f oci://ghcr.io/exgentic/eval-${EVAL_BENCHMARK} up -y --abort-on-container-exit
 ```
 
 Output lands at `output/aime/0/inspector/first_request.json`.

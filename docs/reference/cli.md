@@ -73,8 +73,9 @@ The runner image and env stay parameterized at run time by `EVAL_AGENT` /
 
 | Flag | Notes |
 |---|---|
+| `--benchmark <x>` | `build compose` only — which benchmark's stack to publish (required there) |
 | `--builder <name>` | build with a named buildx builder (e.g. in-cluster `--driver kubernetes`); **implies `--push`** |
-| `--dry-run` | print the `docker buildx bake` command without running it |
+| `--dry-run` | print the underlying command(s) without running them (`build compose`: the `docker compose config` + `publish` pair; image builds: the `docker buildx bake` line) |
 
 If the named builder doesn't exist, the command fails with the exact
 `docker buildx create` line to run.

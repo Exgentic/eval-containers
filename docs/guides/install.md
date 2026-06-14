@@ -24,8 +24,9 @@ Once the registry is public you won't need to clone the repo:
 
 ```bash
 echo "OPENAI_API_KEY=sk-..." > .env
-EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f oci://ghcr.io/exgentic/eval-${EVAL_BENCHMARK} up --abort-on-container-exit
+export EVAL_BENCHMARK=aime
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
+  docker compose -f oci://ghcr.io/exgentic/eval-${EVAL_BENCHMARK} up -y --abort-on-container-exit
 ```
 
 > **Pre-release note.** The `oci://ghcr.io/exgentic/…` registry is the
