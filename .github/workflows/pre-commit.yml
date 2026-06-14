@@ -58,10 +58,11 @@ jobs:
       # trivy powers the trivy-config hook (IaC/misconfig + secret-in-build-arg
       # over containers/, net-new for #114).
       - name: Install trivy
+        # NOTE: setup-trivy@v0.3.1's `cache: true` breaks the install (its
+        # install.sh exits 1 writing to the cache BINARY_DIR), so the binary is
+        # downloaded each run (~seconds). Caching trivy's misconfig checks DB is a
+        # follow-up (a manual actions/cache on ~/.cache/trivy), not this action's option.
         uses: aquasecurity/setup-trivy@v0.3.1
-        with:
-          version: v0.71.1   # pin (matches local) — avoids surprise upgrades
-          cache: true        # cache the binary + the misconfig checks DB (the slow part)
 
       # PRs: scope to changed files. main/manual: full check (no PR diff exists).
       - name: Run pre-commit (PR)
