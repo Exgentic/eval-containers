@@ -24,26 +24,34 @@ the same.
 
 ### 1. Setup — task materialization
 
-Unpack the current task from `/tasks/all.jsonl` into
-`/tasks/$EVAL_TASK_ID/`, then export `TASK` (the prompt the agent sees).
-The benchmark may also set grader-specific variables (e.g.
-`EXPECTED_ANSWER` for exact-match benchmarks) — these are conventions of
-individual graders, not part of the contract.
+Set the `TASK` environment variable (the prompt the agent sees) and
+prepare any data the grader will need. The benchmark may also set
+grader-specific variables (e.g. `EXPECTED_ANSWER` for exact-match
+benchmarks) — these are conventions of individual graders, not part of
+the contract.
 
-In the standard flow, `/entrypoint.sh` (the benchmark's ENTRYPOINT) does
-this by calling `/eval-materialize-task`, then `exec "$@"` to hand off.
+Most benchmarks do this by calling `/eval-materialize-task` in their
+`/entrypoint.sh`, which unpacks the current task from `/tasks/all.jsonl`
+into `/tasks/$EVAL_TASK_ID/`. Per-task benchmarks (swe-bench,
+terminal-bench) bake task data into the image at build time and skip
+`/eval-materialize-task` entirely — their entrypoint just sets `TASK`
+directly.
 
 ### 2. Agent
 
-Run as unprivileged user `agent` (uid 1002). The agent sees only:
+Run as unprivileged user `agent`. (The framework creates this user with
+uid 1002 as a fallback if the image didn't pre-create it.) The agent
+sees only:
 
 - `TASK` — the problem to solve
-- `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` — model endpoints (the
-  gateway, never a direct provider URL)
+- `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` / `GOOGLE_GEMINI_BASE_URL`
+  — model endpoints (the gateway, never a direct provider URL)
 - `MODEL`, `TIMEOUT`
 
-It cannot read `/grade.sh`, `/entrypoint.sh`, task data, or gateway
-config (all root-owned, mode 0700).
+It cannot read test data or gateway config — benchmarks protect `/tests/`
+and the combination layer protects `/opt/gateway/` (root-owned, mode
+0700). The scripts `/grade.sh` and `/entrypoint.sh` themselves are
+world-executable.
 
 Standard path: `/run.sh`, placed by the agent Dockerfile.
 
@@ -126,7 +134,7 @@ the four-step contract (setup → agent → grade → result) still holds.
 | Role | Path | Set by |
 |------|------|--------|
 | Benchmark setup | `/entrypoint.sh` | Benchmark Dockerfile (ENTRYPOINT) |
-| Task unpacker | `/eval-materialize-task` | Framework (core/entrypoint) |
+| Task unpacker (most benchmarks) | `/eval-materialize-task` | Framework (core/entrypoint) |
 | Framework launcher | `/usr/local/bin/run` | Combination layer (CMD) |
 | Agent entrypoint | `/run.sh` | Agent Dockerfile |
 | Grading script | `/grade.sh` | Benchmark Dockerfile |
