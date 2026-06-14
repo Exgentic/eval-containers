@@ -130,10 +130,9 @@ spec:
           {{- end }}
           env:
             # Framework axes in BOTH namespaces, mirroring compose/services.yaml:
-            # EVAL_* is canonical (read by /eval-entrypoint.sh + per-benchmark
-            # /entrypoint.sh — incl. the task materialization that sets $TASK);
+            # EVAL_* is canonical (read by /entrypoint.sh + /usr/local/bin/run);
             # the bare names are the process-compose legacy path. Set both so the
-            # run works regardless of which entrypoint the eval image uses.
+            # run works regardless of which internal path produces result.json.
             - { name: EVAL_BENCHMARK,              value: {{ $v.benchmark | quote }} }
             - { name: EVAL_AGENT,                  value: {{ $v.agent | quote }} }
             - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
