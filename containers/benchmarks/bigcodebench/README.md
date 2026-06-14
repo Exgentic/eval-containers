@@ -16,11 +16,18 @@ BigCodeBench - practical Python function generation with rich tool calls
 
 ## What the agent sees
 
-The agent receives a task of the form: "Write a complete, self-contained Python solution for the following task. Print ONLY the Python code (including all needed imports and the full function definition), nothing else." The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
+The agent receives a task of the form: "Write a complete, self-contained Python solution for the following task. Print ONLY the Python code (including all needed imports and the full function definition), nothing else." The problem text is read from `/tasks/$EVAL_TASK_ID/instruct_prompt.txt` and passed in via the `TASK` environment variable.
 
 ## How it's graded
 
-Custom `/grade.sh` defined inline in the Dockerfile.
+`/grade.sh` (inline in the Dockerfile) assembles the agent's stdout + the task's
+upstream test and grades them with the shared `/eval-grade` harness
+(`benchmarks/RULES.md` 22). The reward is decided by the harness, not by the
+candidate process's exit code: the reward file is seeded to `0.0` and `/eval-grade`
+overwrites it with `1.0` only on a genuine unittest pass (read from `TestResult`
+attributes), so a completion cannot self-pass by exiting cleanly or patching the
+test runner (rule 5). The test suite is `0600` root-only and the agent runs
+unprivileged, so the agent cannot read it.
 
 ## Files
 
