@@ -1,4 +1,10 @@
 {{- $v := include "eval.values" . | fromYaml -}}
+{{- /* Per-task site sidecars: the chart self-resolves which sidecars to bring up
+       from the benchmark's committed task-profiles map + the task id — no CLI, so
+       `helm template --set task=<id>` alone selects them. Empty for benchmarks
+       without a map. (benchmarks/RULES.md 24h.) */ -}}
+{{- $taskmap := $.Files.Get (printf "task-profiles/%s.json" $v.benchmark) | default "{}" | fromJson -}}
+{{- $active := index $taskmap (toString $v.task) | default list -}}
 {{- if and ($v.perTask | default false) $v.datasetSize -}}
 {{- fail "per-task benchmarks bake one eval image per task and cannot use a dataset (Indexed) Job — run one Job per task (omit datasetSize)" -}}
 {{- end -}}
@@ -49,6 +55,16 @@ spec:
       initContainers:
         {{- with $v.initContainers }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
+        {{- if $v.sidecars }}
+        # Hold the runner until this task's active site sidecars accept connections
+        # (`until true` exits at once when none are active).
+        - name: wait-sidecars
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - "until{{- range $name, $sc := $v.sidecars }}{{- if has $name $active }} nc -z {{ $name }} {{ $sc.port }} &&{{- end }}{{- end }} true; do echo 'waiting for sidecars'; sleep 2; done"
         {{- end }}
         - name: otelcol
           restartPolicy: Always
@@ -165,4 +181,57 @@ spec:
 {{- range $v.extraManifests }}
 ---
 {{ toYaml . }}
+{{- end }}
+{{/* Per-task website sidecars: a Deployment+Service for each catalog entry whose
+     name is in $active — the chart self-resolves $active above from the
+     benchmark's task-profiles map + the task id, so no CLI is involved. */}}
+{{- range $name, $sc := $v.sidecars }}
+{{- if has $name $active }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    benchmark: {{ $v.benchmark }}
+    app: {{ $name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ $name }}
+  template:
+    metadata:
+      labels:
+        benchmark: {{ $v.benchmark }}
+        app: {{ $name }}
+    spec:
+      {{- if $sc.shmSize }}
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: {{ $sc.shmSize }} }
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ $sc.image }}
+          ports:
+            - containerPort: {{ $sc.port }}
+          {{- if $sc.shmSize }}
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    benchmark: {{ $v.benchmark }}
+spec:
+  selector:
+    app: {{ $name }}
+  ports:
+    - port: {{ $sc.port }}
+      targetPort: {{ $sc.port }}
+{{- end }}
 {{- end }}
