@@ -19,6 +19,7 @@ Verifier types:
   - tool_execution: needs the agent's tool-call list in a known shape.
     Skipped in v1 for the same reason.
 """
+
 from __future__ import annotations
 
 import json
@@ -35,7 +36,9 @@ OUT_TASK = Path("/output/task")
 REWARD_PATH = Path("/logs/verifier/reward.txt")
 
 
-def _post_json(url: str, payload: Dict[str, Any], headers: Dict[str, str]) -> Tuple[int, Any]:
+def _post_json(
+    url: str, payload: Dict[str, Any], headers: Dict[str, str]
+) -> Tuple[int, Any]:
     body = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=body, headers=headers, method="POST")
     try:
@@ -103,7 +106,9 @@ def _context_headers(server: Dict[str, Any]) -> Dict[str, str]:
     return headers
 
 
-def _evaluate_database_state(server: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+def _evaluate_database_state(
+    server: Dict[str, Any], cfg: Dict[str, Any]
+) -> Dict[str, Any]:
     query = cfg.get("query")
     if not query:
         return {"passed": False, "error": "missing query"}
@@ -116,8 +121,14 @@ def _evaluate_database_state(server: Dict[str, Any], cfg: Dict[str, Any]) -> Dic
     if status >= 300:
         return {"passed": False, "error": f"sql-runner HTTP {status}", "body": body}
     actual = _normalize(body)
-    passed = _compare(actual, cfg.get("expected_value"), cfg.get("comparison_type", "equals"))
-    return {"passed": bool(passed), "expected": cfg.get("expected_value"), "actual": actual}
+    passed = _compare(
+        actual, cfg.get("expected_value"), cfg.get("comparison_type", "equals")
+    )
+    return {
+        "passed": bool(passed),
+        "expected": cfg.get("expected_value"),
+        "actual": actual,
+    }
 
 
 def main() -> int:
@@ -137,7 +148,11 @@ def main() -> int:
         vtype = (v.get("verifier_type") or "").strip().lower()
         gym_name = v.get("gym_name", "")
         cfg = v.get("validation_config", {})
-        report: Dict[str, Any] = {"verifier_type": vtype, "name": v.get("name", ""), "gym_name": gym_name}
+        report: Dict[str, Any] = {
+            "verifier_type": vtype,
+            "name": v.get("name", ""),
+            "gym_name": gym_name,
+        }
         if vtype == "database_state":
             try:
                 server = _server_by_name(servers, gym_name)
@@ -158,13 +173,18 @@ def main() -> int:
     reward = (passed / total) if total > 0 else 0.0
     REWARD_PATH.write_text(f"{reward}\n")
 
-    (OUT_TASK / "verifier_report.json").write_text(json.dumps({
-        "verifier_pass_rate": reward,
-        "verifier_total":     total,
-        "verifier_passed":    passed,
-        "verifier_skipped":   skipped,
-        "reports":            reports,
-    }, indent=2))
+    (OUT_TASK / "verifier_report.json").write_text(
+        json.dumps(
+            {
+                "verifier_pass_rate": reward,
+                "verifier_total": total,
+                "verifier_passed": passed,
+                "verifier_skipped": skipped,
+                "reports": reports,
+            },
+            indent=2,
+        )
+    )
     return 0
 
 

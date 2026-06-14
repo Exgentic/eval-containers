@@ -26,13 +26,13 @@ DOMAINS = ["calendar", "csm", "drive", "email", "hr", "hybrid", "itsm", "teams"]
 # Upstream gym_server_name → DNS-1123 sidecar name. Keep in sync with the
 # sidecars catalog in containers/benchmarks/_chart/presets/enterpriseops-gym.yaml.
 GYM_TO_SIDECAR = {
-    "gym-calendar":         "calendar",
-    "sn-csm-server":        "csm",
+    "gym-calendar": "calendar",
+    "sn-csm-server": "csm",
     "gym-google-drive-mcp": "drive",
-    "gym-email-mcp":        "email",
-    "sn-hr-internal":       "hr",
-    "gym-itsm-mcp":         "itsm",
-    "gym-teams-mcp":        "teams",
+    "gym-email-mcp": "email",
+    "sn-hr-internal": "hr",
+    "gym-itsm-mcp": "itsm",
+    "gym-teams-mcp": "teams",
 }
 
 profiles: dict[str, list[str]] = {}
@@ -43,7 +43,11 @@ for domain in DOMAINS:
     for row in table.to_pylist():
         servers = json.loads(row["gym_servers_config"])
         names = sorted(
-            {GYM_TO_SIDECAR[s["mcp_server_name"]] for s in servers if s.get("mcp_server_name") in GYM_TO_SIDECAR}
+            {
+                GYM_TO_SIDECAR[s["mcp_server_name"]]
+                for s in servers
+                if s.get("mcp_server_name") in GYM_TO_SIDECAR
+            }
         )
         # Sequential integer keys: same iteration order as the Dockerfile's
         # /tasks/all.jsonl materialization, so EVAL_TASK_ID = line index.
@@ -61,6 +65,8 @@ body = (
 
 # Output lives in the chart so Helm's Files.Get can read it.
 # Run from repo root.
-with open("containers/benchmarks/_chart/task-profiles/enterpriseops-gym.json", "w") as f:
+with open(
+    "containers/benchmarks/_chart/task-profiles/enterpriseops-gym.json", "w"
+) as f:
     f.write(body)
 print(f"wrote {len(items)} tasks from enterpriseops-gym@{DATASET_REV[:7]}")

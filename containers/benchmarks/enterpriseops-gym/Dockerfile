@@ -16,9 +16,12 @@ ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 # Rule 4: a single ARG drives both the fetch step and the data_revision label,
-# so the two can never disagree.
+# so the two can never disagree. Bake into ENV so the (quoted) Python heredocs
+# below read via os.environ — hadolint doesn't parse unquoted heredocs.
 ARG BENCHMARK_VERSION=c8e538eae8a6205294f0a86675fefdc1fac408f6
 ARG UPSTREAM_REPO_SHA=09593147ac79cf722cf2111ac6d4b10b9a6d5a58
+ENV BENCHMARK_VERSION=${BENCHMARK_VERSION}
+ENV UPSTREAM_REPO_SHA=${UPSTREAM_REPO_SHA}
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.released="true"
@@ -37,11 +40,11 @@ LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
 # concatenate into /tasks/all.jsonl, and rewrite the upstream gym_server
 # URLs from http://localhost:<host-port> to the in-cluster service names
 # the agent will actually reach.
-RUN python3 <<PYEOF
+RUN python3 <<'PYEOF'
 import urllib.request, json, os, io
 import pyarrow.parquet as pq
 
-HF_SHA = "${BENCHMARK_VERSION}"
+HF_SHA = os.environ["BENCHMARK_VERSION"]
 BASE = f"https://huggingface.co/datasets/ServiceNow-AI/EnterpriseOps-Gym/resolve/{HF_SHA}/oracle/"
 DOMAINS = ["calendar", "csm", "drive", "email", "hr", "hybrid", "itsm", "teams"]
 
@@ -92,9 +95,9 @@ RUN chmod 600 /tasks/all.jsonl
 # ~14 MB of per-task seed databases. Root-only per §5: the agent (non-root)
 # must not see the seed corpus; test.sh (root) reads it during pre-agent
 # setup to create fresh DB instances on the MCP services.
-RUN python3 <<PYEOF
+RUN python3 <<'PYEOF'
 import urllib.request, zipfile, io, os
-URL = f"https://raw.githubusercontent.com/ServiceNow/EnterpriseOps-Gym/${UPSTREAM_REPO_SHA}/gym_dbs.zip"
+URL = f"https://raw.githubusercontent.com/ServiceNow/EnterpriseOps-Gym/{os.environ['UPSTREAM_REPO_SHA']}/gym_dbs.zip"
 buf = io.BytesIO(urllib.request.urlopen(URL).read())
 with zipfile.ZipFile(buf) as zf:
     zf.extractall("/seed")

@@ -15,6 +15,7 @@ out how to speak MCP on its own (RULES.md spirit: don't help the agent).
 State is locked to root-only (mode 600). The agent (non-root) cannot read
 /var/eval-state/state.json; only TASK reaches it via env var.
 """
+
 from __future__ import annotations
 
 import json
@@ -43,12 +44,14 @@ def _generate_db_id() -> str:
 def _seed_database(gym_url: str, sql_path: Path) -> str:
     db_id = _generate_db_id()
     sql_content = sql_path.read_text(encoding="utf-8")
-    payload = json.dumps({
-        "database_id": db_id,
-        "name": f"eval-{os.environ['EVAL_TASK_ID']}",
-        "description": "eval-containers per-task DB",
-        "sql_content": sql_content,
-    }).encode()
+    payload = json.dumps(
+        {
+            "database_id": db_id,
+            "name": f"eval-{os.environ['EVAL_TASK_ID']}",
+            "description": "eval-containers per-task DB",
+            "sql_content": sql_content,
+        }
+    ).encode()
     req = urllib.request.Request(
         f"{gym_url}/api/seed-database",
         data=payload,
@@ -76,19 +79,23 @@ def main() -> int:
     for s in servers:
         seed_rel = s.get("seed_database_file", "")
         if not seed_rel:
-            raise RuntimeError(f"server {s.get('mcp_server_name')} missing seed_database_file")
+            raise RuntimeError(
+                f"server {s.get('mcp_server_name')} missing seed_database_file"
+            )
         seed_path = SEED_ROOT / seed_rel
         if not seed_path.exists():
             raise RuntimeError(f"seed file not found in image: {seed_rel}")
         db_id = _seed_database(s["mcp_server_url"], seed_path)
-        seeded.append({
-            "mcp_server_name": s["mcp_server_name"],
-            "mcp_server_url":  s["mcp_server_url"],
-            "mcp_endpoint":    s.get("mcp_endpoint", "/mcp"),
-            "database_id":     db_id,
-            "context":         s.get("context", {}),
-            "user_info":       s.get("user_info", {}),
-        })
+        seeded.append(
+            {
+                "mcp_server_name": s["mcp_server_name"],
+                "mcp_server_url": s["mcp_server_url"],
+                "mcp_endpoint": s.get("mcp_endpoint", "/mcp"),
+                "database_id": db_id,
+                "context": s.get("context", {}),
+                "user_info": s.get("user_info", {}),
+            }
+        )
 
     state = {"servers": seeded}
     state_path = STATE_DIR / "state.json"
@@ -97,17 +104,21 @@ def main() -> int:
 
     # Build the TASK string the agent will see.
     lines = []
-    lines.append("You are an AI agent in the EnterpriseOps-Gym evaluation. "
-                 "Follow the system policy and complete the user request by "
-                 "calling MCP tools on the servers listed below.")
+    lines.append(
+        "You are an AI agent in the EnterpriseOps-Gym evaluation. "
+        "Follow the system policy and complete the user request by "
+        "calling MCP tools on the servers listed below."
+    )
     lines.append("")
     lines.append("=== SYSTEM POLICY ===")
     lines.append(system_prompt.strip())
     lines.append("=== END SYSTEM POLICY ===")
     lines.append("")
     lines.append("=== MCP SERVERS ===")
-    lines.append("Each server speaks MCP over HTTP at its mcp_endpoint. Include the "
-                 "x-database-id header AND the listed context headers on every call.")
+    lines.append(
+        "Each server speaks MCP over HTTP at its mcp_endpoint. Include the "
+        "x-database-id header AND the listed context headers on every call."
+    )
     for s in seeded:
         lines.append(f"- name: {s['mcp_server_name']}")
         lines.append(f"  url:  {s['mcp_server_url']}{s['mcp_endpoint']}")
