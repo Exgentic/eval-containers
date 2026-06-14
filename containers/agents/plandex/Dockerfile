@@ -2,6 +2,7 @@
 # Plandex agent image — self-hosted client + server with Postgres + internal litellm.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
+ARG AGENT_VERSION=2.2.1
 FROM plandexai/plandex-server:server-v${AGENT_VERSION} AS plandex-server-src
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-rust:latest
 ARG AGENT_VERSION=2.2.1

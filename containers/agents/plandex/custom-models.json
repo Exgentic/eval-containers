@@ -34,7 +34,11 @@
       "coder": "eval-mock-model",
       "architect": "eval-mock-model",
       "summarizer": "eval-mock-model",
-      "builder": "eval-mock-model"
+      "builder": "eval-mock-model",
+      "wholeFileBuilder": "eval-mock-model",
+      "names": "eval-mock-model",
+      "commitMessages": "eval-mock-model",
+      "autoContinue": "eval-mock-model"
     }
   ]
 }
