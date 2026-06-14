@@ -19,7 +19,7 @@ LABEL eval.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.07974"
 
-RUN apt-get update && apt-get install -y curl gcc g++ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl gcc g++ && rm -rf /var/lib/apt/lists/*
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Private test cases
 # are stored as a JSON array under the tests_json field; entrypoint decodes

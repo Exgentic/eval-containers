@@ -18,7 +18,7 @@ LABEL eval.benchmark.data_revision="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/THUDM/LongBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.14508"
 
-RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip && rm -rf /var/lib/apt/lists/*
 
 # Download the official data.zip bundle (pinned revision)
 RUN curl -sSfL \
