@@ -45,6 +45,11 @@ or AI, that executes it.
 7. **No surprises.** A skill **MUST NOT** contain content that surprises a
    contributor relative to its description.
 
+8. **Lockstep with the rules served.** When a rule a skill is responsible for
+   producing gains, loses, or changes an outcome, the skill — and any template,
+   checklist, or script it bundles — **MUST** be updated in the same change, so
+   that following the skill still yields a conforming artifact.
+
 ## References
 
 - RFC 2119, RFC 8174 (BCP 14).
@@ -55,3 +60,4 @@ or AI, that executes it.
 | Date       | Change           |
 |------------|------------------|
 | 2026-05-31 | Initial version. |
+| 2026-06-14 | Added principle 8 (lockstep with the rules served): a rule change MUST update, in the same change, the skill that produces it — so authoring guidance can't drift behind the rules. |
