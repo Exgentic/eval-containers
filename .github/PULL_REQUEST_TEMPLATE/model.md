@@ -31,7 +31,7 @@ sweet spot, context window, etc.) -->
 | Tool-calling support | yes / no / partial |
 | Responses API support | yes / no / n/a |
 
-### Required Dockerfile labels (doctrine/models/RULES.md 14, 15)
+### Required Dockerfile labels (.agents/models/RULES.md 14, 15)
 
 - [ ] `LABEL eval.type="model"`
 - [ ] `LABEL eval.model.name="<name>"` (matches directory name)
@@ -49,13 +49,13 @@ sweet spot, context window, etc.) -->
 - [ ] `model_list` ALSO has explicit aliases for every common name agents might send (gpt-4o, gpt-4o-mini, gpt-4.1, gpt-4.1-mini, gpt-5, gpt-5-mini, claude-3-5-sonnet, claude-3-5-haiku, claude-sonnet-4-5, gemini-2.5-pro, o1, o1-mini). The wildcard alone is NOT reliable on the OpenAI `/v1/chat/completions` path — explicit aliases are the fix, see the `models/gpt-5.4/config.yaml` reference.
 - [ ] Every alias uses a YAML anchor (`&gpt54` / `*gpt54`) so the `litellm_params` block is declared once
 - [ ] `litellm_settings.callbacks: ["eval_logger.eval_logger_instance"]` — cost tracking on
-- [ ] `api_key: "os.environ/<PROVIDER>_API_KEY"` — NO hardcoded keys (doctrine/models/RULES.md 5)
+- [ ] `api_key: "os.environ/<PROVIDER>_API_KEY"` — NO hardcoded keys (.agents/models/RULES.md 5)
 - [ ] `api_base: "os.environ/<PROVIDER>_API_BASE"` if the provider uses a non-default endpoint
 
 ### Key management
 
 - [ ] API key name documented in `.env.example` with `<PROVIDER>_API_KEY=sk-...`
-- [ ] No API key leaks to labels, compose files, or the agent container (doctrine/models/RULES.md 4)
+- [ ] No API key leaks to labels, compose files, or the agent container (.agents/models/RULES.md 4)
 - [ ] Rate limit and spend budget documented in the PR description (if provider enforces one)
 
 ### Local build
@@ -100,7 +100,7 @@ eval-containers run aime --agent codex --model <name> --task-id 0 --local --max-
 ```
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty
-- [ ] Known issue: cost tracking on the `/v1/responses` path may not populate `response_cost` until [core/litellm/eval_logger.py](../../core/litellm/eval_logger.py) is fixed. Document this in the PR description if it applies.
+- [ ] Known issue: cost tracking on the `/v1/responses` path may not populate `response_cost` until [core/litellm/eval_logger.py](../../containers/core/litellm/eval_logger.py) is fixed. Document this in the PR description if it applies.
 
 ### Budget enforcement
 
@@ -119,9 +119,9 @@ benchmarks" is a limitation. Be specific. -->
 ### RULES.md changelog
 
 - [ ] No RULES.md changes needed
-- [ ] `doctrine/models/RULES.md` updated with a changelog entry dated today
+- [ ] `.agents/models/RULES.md` updated with a changelog entry dated today
 
-### Docs ([doctrine/docs/RULES.md](../../doctrine/docs/RULES.md))
+### Docs ([.agents/docs/RULES.md](../../.agents/docs/RULES.md))
 
 - [ ] User-facing knowledge this change adds or alters is reachable from `docs/` — nothing a user needs lives only in source/commits/heads (rule 13, sufficiency)
 - [ ] Affected `docs/` pages updated in this PR (rule 15) and compliant with the docs rules

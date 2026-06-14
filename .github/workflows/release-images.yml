@@ -50,11 +50,11 @@ jobs:
       - name: Guard — git tag matches Cargo.toml and Chart.yaml
         run: |
           ver="${{ steps.ver.outputs.ver }}"
-          cargo_ver=$(grep -m1 '^version = ' Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
-          chart_ver=$(grep -m1 '^version: ' benchmarks/_chart/Chart.yaml | awk '{print $2}')
+          cargo_ver=$(grep -m1 '^version = ' cli/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
+          chart_ver=$(grep -m1 '^version: ' containers/benchmarks/_chart/Chart.yaml | awk '{print $2}')
           echo "tag=$ver  cargo=$cargo_ver  chart=$chart_ver"
           if [ "$ver" != "$cargo_ver" ] || [ "$ver" != "$chart_ver" ]; then
-            echo "::error::fleet-version mismatch — bump Cargo.toml + Chart.yaml to $ver before tagging"
+            echo "::error::fleet-version mismatch — bump cli/Cargo.toml + containers/benchmarks/_chart/Chart.yaml to $ver before tagging"
             exit 1
           fi
 
@@ -71,11 +71,12 @@ jobs:
         run: |
           # Load every artifact bake file — they carry the `contexts` that let one
           # bake call build the whole graph in dependency order (core → bases →
-          # leaves). The parameterized eval combination (core/combination.docker-
-          # bake.hcl) is excluded: those images are built on demand, not published.
-          mapfile -t FILES < <(ls docker-bake.hcl \
-            core/*/docker-bake.hcl agents/*/docker-bake.hcl benchmarks/*/docker-bake.hcl \
-            models/*/docker-bake.hcl gateways/*/docker-bake.hcl)
+          # leaves). The parameterized eval combination (containers/core/
+          # combination.docker-bake.hcl) is excluded: those images are built on
+          # demand, not published.
+          mapfile -t FILES < <(ls containers/docker-bake.hcl \
+            containers/core/*/docker-bake.hcl containers/agents/*/docker-bake.hcl containers/benchmarks/*/docker-bake.hcl \
+            containers/models/*/docker-bake.hcl containers/gateways/*/docker-bake.hcl)
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           mapfile -t TARGETS < <(grep -hoE '^target "[^"]+"' "${FILES[@]}" \
             | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
@@ -93,11 +94,11 @@ jobs:
         env:
           EVAL_REGISTRY: ${{ env.REGISTRY }}
           TAG: ${{ steps.ver.outputs.tag }}
-        run: cargo run --quiet -- build compose
+        run: cargo run -p eval-containers --quiet -- build compose
 
       - name: Publish the Helm chart at the tag
         run: |
           ver="${{ steps.ver.outputs.ver }}"
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
-          helm package benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
+          helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
           helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"

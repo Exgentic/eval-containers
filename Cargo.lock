@@ -638,6 +638,16 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "dotenvy",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "eval-containers-tests"
+version = "0.0.0"
+dependencies = [
+ "dotenvy",
+ "eval-containers",
  "reqwest 0.12.28",
  "serde",
  "serde_json",

@@ -12,7 +12,7 @@
 //!
 //! Run: cargo test --test cli_conformance
 
-use eval_containers::benchmark::{is_per_task, is_per_task_by_name};
+use eval_containers::benchmark::is_per_task;
 use eval_containers::naming::{
     agent_bake_target, agent_image, benchmark_bake_target, benchmark_image, flatten_imagestream,
     model_bake_target, model_image,
@@ -20,11 +20,22 @@ use eval_containers::naming::{
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// `eval_containers::benchmark::is_per_task_by_name`, anchored at the repo root:
+/// it reads `containers/benchmarks/<name>/Dockerfile` relative to cwd, but
+/// `cargo test` runs this crate from `tests/`. `enter_repo_root` (idempotent)
+/// sets cwd to the repo root the first time any helper here is called.
+fn is_per_task_by_name(name: &str) -> bool {
+    eval_containers_tests::enter_repo_root();
+    eval_containers::benchmark::is_per_task_by_name(name)
+}
+
 /// Real catalog entries under `root` — directories that aren't underscore- or
-/// dot-prefixed (skips `benchmarks/_chart`, etc.).
+/// dot-prefixed (skips `benchmarks/_chart`, etc.). The catalog lives under
+/// `containers/`; cwd is anchored at the repo root so the relative path resolves.
 fn catalog_dirs(root: &str) -> Vec<(String, PathBuf)> {
+    eval_containers_tests::enter_repo_root();
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(root) else {
+    let Ok(entries) = fs::read_dir(format!("containers/{root}")) else {
         return out;
     };
     for entry in entries.flatten() {
