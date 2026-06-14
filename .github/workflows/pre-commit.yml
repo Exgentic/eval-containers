@@ -59,6 +59,9 @@ jobs:
       # over containers/, net-new for #114).
       - name: Install trivy
         uses: aquasecurity/setup-trivy@v0.3.1
+        with:
+          version: v0.71.1   # pin (matches local) — avoids surprise upgrades
+          cache: true        # cache the binary + the misconfig checks DB (the slow part)
 
       # PRs: scope to changed files. main/manual: full check (no PR diff exists).
       - name: Run pre-commit (PR)
