@@ -204,10 +204,9 @@ async fn build_bootstrap_core_images() -> Result<Vec<String>, String> {
     // the BuildKit cache but does NOT always tag them in the daemon's
     // classic image store in time for the next build's `COPY --from=<tag>`
     // lookup. `docker build -t <tag> .` loads the tag into the image
-    // store synchronously. This is inside the rule 6b carve-out per
-    // tests/containers/RULES.md rule 1: "Build tests MAY shell out to
-    // `docker build` and `docker inspect` — testcontainers does not
-    // cover image builds." The SWEEP itself (which these bootstrap
+    // store synchronously. This is inside the rule 6b carve-out
+    // (.agents/verification/RULES.md): raw image build/inspect where
+    // testcontainers-rs has no first-class API. The SWEEP itself (which these bootstrap
     // images support) still goes through testcontainers for the
     // images under test.
     let targets: &[(&str, &str)] = &[

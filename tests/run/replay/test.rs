@@ -1,7 +1,7 @@
 //! Replay tests: full evaluation pipeline with recorded LLM responses.
 //!
 //! Each test runs a benchmark × agent combination with a recorded trajectory.
-//! See tests/MATRIX.md for the full test matrix.
+//! See tests/run/replay/MATRIX.md for the full test matrix.
 //!
 //! Run: cargo test --test replay -- --ignored
 
@@ -326,7 +326,7 @@ macro_rules! replay_test {
 // The replay model translates each recorded response into the protocol
 // the agent's SDK expects (see models/replay/server.py), so any fixture
 // can be served to any agent regardless of recorded format. See
-// tests/MATRIX.md for the full matrix.
+// tests/run/replay/MATRIX.md for the full matrix.
 
 replay_test!(
     replay_advbench_103_codex,
