@@ -54,9 +54,10 @@ path = "sanity/check.rs"
 name = "oracle"
 path = "oracle/test.rs"
 
-[[test]]
-name = "cli_conformance"
-path = "cli/conformance.rs"
+# cli_conformance moved to the CLI crate (cli/tests/cli_conformance.rs): it
+# guards cli/src/naming.rs against the fleet, so it belongs in the crate it
+# tests — the idiomatic Cargo home for a crate's integration tests — not in
+# the fleet's framework-free suite. Run: cargo test -p eval-containers --test cli_conformance
 
 [[test]]
 name = "compose"

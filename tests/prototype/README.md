@@ -97,9 +97,13 @@ own it").
    they never used. This aligns the quality gate with the manifesto and
    `.agents/src/RULES.md`.
 2. **Live/runtime tests — compose-native oracle**, not pytest+testcontainers.
-3. **Remaining unknowns for a full plan:** `replay` (2507 lines — trajectory
-   analysis, likely `jq`/python over fixtures) and the
-   `cli_conformance` ↔ `cli/src/naming.rs` coupling (keep as a `cli/` Rust test,
-   or make the naming convention shared data both consume). The
-   `.agents/verification/RULES.md` rule-6 change (mandates testcontainers today)
-   must ship as a **separate PR** from the code (PR rule R-3).
+3. **`cli_conformance` ↔ `cli/src/naming.rs` — resolved.** Relocated into the
+   CLI crate at `cli/tests/cli_conformance.rs` (this PR): a crate's integration
+   tests belong in `<crate>/tests/`, and this one guards `naming.rs`, so it
+   lives with the code it tests. No cross-crate dep, no "shared data" hack;
+   `cargo test -p eval-containers --test cli_conformance`. The clean split is
+   now: `cli/` owns all Rust testing; the fleet tests go framework-free.
+4. **Remaining unknown for a full plan:** `replay` (2507 lines — trajectory
+   analysis, likely `jq`/python over fixtures).
+5. The `.agents/verification/RULES.md` rule-6 change (mandates testcontainers
+   today) must ship as a **separate PR** from the code (PR rule R-3).
