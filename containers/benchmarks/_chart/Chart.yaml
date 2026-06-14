@@ -1,0 +1,11 @@
+apiVersion: v2
+name: eval
+description: >-
+  The one Kubernetes deploy surface for every eval benchmark. The shared
+  otelcol + gateway + runner Job lives here once; each benchmark is a small
+  values.yaml that pins its name and (if it needs them) composes extra
+  sidecars/Deployments/Services. Render per (benchmark, agent, task, model)
+  with `helm template`; platform specifics (e.g. the OpenShift anyuid SCC)
+  layer in as an extra `-f` values file. See .agents/benchmarks/RULES.md.
+type: application
+version: 0.1.0

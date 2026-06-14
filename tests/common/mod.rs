@@ -29,6 +29,10 @@ pub async fn bake_target(target: &str) {
 /// podman 404s the amd64 probe — pin `*.platform=linux/amd64` here so
 /// every test-driven build matches the runtime probe.
 pub async fn bake_targets(targets: &[&str]) {
+    // bake discovery reads `containers/<category>` relative to cwd; cargo runs
+    // each test binary from the crate dir, so anchor at the repo root first
+    // (idempotent — safe under the harness's parallel threads).
+    eval_containers_tests::enter_repo_root();
     let args = bake::base_args(targets, &["*.platform=linux/amd64"], None);
     let mut cmd = Command::new("docker");
     cmd.args(&args);

@@ -79,8 +79,10 @@ fn health_path(flavor: &str) -> &'static str {
 }
 
 fn dockerfile_text(flavor: &str) -> String {
-    std::fs::read_to_string(format!("gateways/{flavor}/Dockerfile"))
-        .unwrap_or_else(|e| panic!("read gateways/{flavor}/Dockerfile: {e}"))
+    std::fs::read_to_string(
+        eval_containers_tests::repo_root().join(format!("containers/gateways/{flavor}/Dockerfile")),
+    )
+    .unwrap_or_else(|e| panic!("read gateways/{flavor}/Dockerfile: {e}"))
 }
 
 fn gateway_image_ref(flavor: &str) -> (String, String) {
@@ -293,15 +295,19 @@ fn static_portkey_has_no_bifrost_reference() {
 #[test]
 fn static_portkey_has_no_bundled_bifrost_config() {
     assert!(
-        !Path::new("gateways/portkey/bifrost-config.json").exists(),
+        !eval_containers_tests::repo_root()
+            .join("containers/gateways/portkey/bifrost-config.json")
+            .exists(),
         "gateways/portkey/bifrost-config.json must not exist — sidecar config was removed alongside the binary"
     );
 }
 
 #[test]
 fn static_portkey_caddyfile_returns_501_on_anthropic_and_genai() {
-    let cf = std::fs::read_to_string("gateways/portkey/Caddyfile")
-        .expect("read gateways/portkey/Caddyfile");
+    let cf = std::fs::read_to_string(
+        eval_containers_tests::repo_root().join("containers/gateways/portkey/Caddyfile"),
+    )
+    .expect("read gateways/portkey/Caddyfile");
     // The Caddyfile MUST short-circuit these protocols before any
     // upstream call. We assert on the response code + body marker.
     assert!(
@@ -324,8 +330,10 @@ fn static_portkey_health_does_not_probe_removed_sidecar() {
     // health probe still pointed at 127.0.0.1:4002. That makes the
     // gateway perpetually unhealthy with no obvious symptom — the kind
     // of bug a test should catch the next time someone refactors.
-    let health =
-        std::fs::read_to_string("gateways/portkey/health").expect("read gateways/portkey/health");
+    let health = std::fs::read_to_string(
+        eval_containers_tests::repo_root().join("containers/gateways/portkey/health"),
+    )
+    .expect("read gateways/portkey/health");
     assert!(
         !health.contains(":4002"),
         "gateways/portkey/health still probes :4002 (bifrost sidecar port) — sidecar was removed, update the probe"

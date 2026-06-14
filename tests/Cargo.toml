@@ -1,0 +1,107 @@
+[package]
+name = "eval-containers-tests"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+# Every integration test is declared explicitly below (the suite is organized
+# into `<category>/test.rs` subfolders, which Cargo would not auto-discover),
+# so disable autodiscovery to keep the target list exactly this set.
+autotests = false
+
+# Placeholder library target so this is a valid package. The crate has no
+# library API of its own — all real content is the `[[test]]` targets below,
+# the fleet's quality suite. See tests/RULES.md for the overall strategy.
+[lib]
+name = "eval_containers_tests"
+path = "harness.rs"
+
+[dependencies]
+# The CLI library under test. The fleet tests drive `docker buildx bake` /
+# `docker compose` via the same `eval_containers::bake` helpers the CLI uses,
+# so the test build and the real build can't drift apart.
+eval-containers = { path = "../cli" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+testcontainers = { version = "0.27", features = ["docker-compose", "http_wait"] }
+tokio = { version = "1", features = ["full"] }
+tempfile = "3"
+# The gateway/live/replay suites load the repo `.env` (OPENAI_API_KEY, …) the
+# same way the CLI's main() does. Was inherited from the crate's [dependencies]
+# when tests lived in the same package; now an explicit test dependency.
+dotenvy = "0.15"
+# HTTP client for the gateway test suite. The tests POST real
+# /openai/v1/chat/completions, /anthropic/v1/messages, and
+# /genai/v1beta/.../generateContent against gateway containers started
+# by testcontainers — the only way to verify the protocol-translation
+# matrix from the outside. rustls-tls avoids dragging openssl into the
+# test build; testcontainers' internal reqwest also uses rustls so no
+# duplicated TLS stack.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# Integration tests, organized into category subfolders under `tests/<category>/`.
+# Each subfolder's RULES.md describes what testing means for that category; see
+# tests/RULES.md for the overall strategy. Test names are preserved (e.g.
+# `cargo test -p eval-containers-tests --test build` still works) so CI scripts
+# and docs don't need to change.
+[[test]]
+name = "check"
+path = "sanity/check.rs"
+
+[[test]]
+name = "oracle"
+path = "oracle/test.rs"
+
+[[test]]
+name = "cli_conformance"
+path = "cli/conformance.rs"
+
+[[test]]
+name = "compose"
+path = "sanity/compose.rs"
+
+[[test]]
+name = "dockerfile_inspection"
+path = "sanity/dockerfile_inspection.rs"
+
+[[test]]
+name = "task_inspection"
+path = "sanity/task_inspection.rs"
+
+[[test]]
+name = "upstream_pins"
+path = "sanity/upstream_pins.rs"
+
+[[test]]
+name = "build"
+path = "build/test.rs"
+
+[[test]]
+name = "replay"
+path = "replay/test.rs"
+
+[[test]]
+name = "upstream"
+path = "upstream/test.rs"
+
+[[test]]
+name = "fleet"
+path = "fleet/test.rs"
+
+[[test]]
+name = "live"
+path = "live/test.rs"
+
+[[test]]
+name = "gateways"
+path = "gateways/test.rs"
+
+[[test]]
+name = "agents"
+path = "agents/test.rs"
+
+[[test]]
+name = "helm"
+path = "helm.rs"

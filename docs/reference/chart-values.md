@@ -1,8 +1,8 @@
 # Chart values reference
 
-*Reference · for operators · derives from [`benchmarks/_chart/values.yaml`](../../benchmarks/_chart/values.yaml). That file is authoritative — these are its fields with defaults at the time of writing.*
+*Reference · for operators · derives from [`containers/benchmarks/_chart/values.yaml`](../../containers/benchmarks/_chart/values.yaml). That file is authoritative — these are its fields with defaults at the time of writing.*
 
-The shared chart `benchmarks/_chart` renders the otelcol + gateway + runner Job.
+The shared chart `containers/benchmarks/_chart` renders the otelcol + gateway + runner Job.
 The benchmark is named via `--set benchmark=<x>` (required); a benchmark with
 bespoke topology overrides what differs through an optional `presets/<x>.yaml`
 in the chart. Per-run axes arrive via `--set` (or the CLI). See

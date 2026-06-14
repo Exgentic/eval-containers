@@ -23,6 +23,7 @@
 //! Run just this file: `cargo test --test check`
 //! Run a single gate:  `cargo test --test check structural`
 
+use eval_containers_tests::repo_root;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,7 +32,9 @@ use std::path::{Path, PathBuf};
 
 fn sibling_dirs(root: &str) -> Vec<(String, PathBuf)> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir(root) else {
+    // The catalog lives under containers/ (containers/benchmarks, …); resolve it
+    // against the repo root so the test is independent of the cwd cargo sets.
+    let Ok(entries) = fs::read_dir(repo_root().join("containers").join(root)) else {
         return out;
     };
     for entry in entries.flatten() {
@@ -201,7 +204,7 @@ fn readme_counts() -> BTreeMap<&'static str, u32> {
     // this brittle on purpose: if the README's headline sentence stops
     // containing these exact tokens, the test should fail so we notice
     // that the claim moved.
-    let text = fs::read_to_string("README.md").expect("README.md missing");
+    let text = fs::read_to_string(repo_root().join("README.md")).expect("README.md missing");
     let mut claims = BTreeMap::new();
     for (key, suffix) in [("benchmarks", "benchmarks"), ("agents", "agents")] {
         if let Some(n) = extract_count_before(&text, suffix) {
@@ -299,7 +302,7 @@ fn released_benchmarks() -> Vec<String> {
 
 fn fixture_benchmarks() -> Vec<String> {
     let mut out = Vec::new();
-    let Ok(entries) = fs::read_dir("tests/replay/fixtures") else {
+    let Ok(entries) = fs::read_dir(repo_root().join("tests/replay/fixtures")) else {
         return out;
     };
     for entry in entries.flatten() {
@@ -422,8 +425,8 @@ fn openshift_values_overlay_is_present() {
     // The OpenShift platform overlay is consumed via `run --overlay` (layered
     // onto the chart as an extra `-f`); if it's deleted or mangled, that path
     // silently stops working. This gate keeps it honest.
-    let values = Path::new("deploy/values-openshift.yaml");
-    let text = fs::read_to_string(values).unwrap_or_else(|_| {
+    let values = repo_root().join("deploy/values-openshift.yaml");
+    let text = fs::read_to_string(&values).unwrap_or_else(|_| {
         panic!(
             "missing {} — the OpenShift values overlay for `run --overlay` must exist",
             values.display()
@@ -437,7 +440,9 @@ fn openshift_values_overlay_is_present() {
     );
     // And the ServiceAccount it names ships so users can apply it once.
     assert!(
-        Path::new("deploy/openshift-service-account.yaml").is_file(),
+        repo_root()
+            .join("deploy/openshift-service-account.yaml")
+            .is_file(),
         "deploy/openshift-service-account.yaml must exist (the anyuid-sa ServiceAccount)"
     );
     eprintln!("✓ deploy/values-openshift.yaml is present and sets anyuid-sa");
@@ -456,27 +461,28 @@ fn openshift_values_overlay_is_present() {
 #[test]
 fn otelcol_health_gate_is_consistent_across_modes() {
     let read = |p: &str| {
-        fs::read_to_string(p).unwrap_or_else(|_| panic!("missing {p} — expected by #45 gate"))
+        fs::read_to_string(repo_root().join(p))
+            .unwrap_or_else(|_| panic!("missing {p} — expected by #45 gate"))
     };
 
     // 1. The image serves a health endpoint: health_check extension enabled
     //    and wired into the collector config.
-    let cfg = read("core/otel/config.yaml");
+    let cfg = read("containers/core/otel/config.yaml");
     assert!(
         cfg.contains("health_check:") && cfg.contains("extensions: [health_check]"),
-        "core/otel/config.yaml must enable + wire the health_check extension (#45)"
+        "containers/core/otel/config.yaml must enable + wire the health_check extension (#45)"
     );
 
     // 2. Compose: otelcol has a healthcheck (probing :13133), gateway gates on
     //    service_healthy.
-    let svc = read("compose/services.yaml");
+    let svc = read("containers/compose/services.yaml");
     assert!(
         svc.contains("13133") && svc.contains("condition: service_healthy"),
-        "compose/services.yaml must healthcheck otelcol on :13133 and gate the gateway on service_healthy (#45)"
+        "containers/compose/services.yaml must healthcheck otelcol on :13133 and gate the gateway on service_healthy (#45)"
     );
 
     // 3. k8s: the otelcol sidecar has a startupProbe on :13133.
-    let job = read("benchmarks/_chart/templates/job.yaml");
+    let job = read("containers/benchmarks/_chart/templates/job.yaml");
     let otelcol_block = job
         .split("- name: gateway")
         .next()
@@ -488,7 +494,7 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 
     // 4. Single-image (process-compose): otelcol probes :13133, the gateway
     //    gates on process_healthy.
-    let pc = read("core/process-compose/process-compose.yaml");
+    let pc = read("containers/core/process-compose/process-compose.yaml");
     assert!(
         pc.contains("port: 13133") && pc.contains("condition: process_healthy"),
         "process-compose.yaml must probe otelcol :13133 and gate on process_healthy (#45)"
@@ -503,8 +509,8 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 /// runnerArgs. All three were dropped by #39 and are pinned here.
 #[test]
 fn eval_image_launches_the_pipeline() {
-    let combo = fs::read_to_string("core/combination.Dockerfile")
-        .expect("missing core/combination.Dockerfile");
+    let combo = fs::read_to_string(repo_root().join("containers/core/combination.Dockerfile"))
+        .expect("missing containers/core/combination.Dockerfile");
     assert!(
         combo.contains(r#"CMD ["/usr/local/bin/run"]"#),
         "combination.Dockerfile must set `CMD [\"/usr/local/bin/run\"]` so the stitched \
@@ -516,8 +522,8 @@ fn eval_image_launches_the_pipeline() {
          lives at the image root, not under /opt/agent/, so process-compose's `/run.sh` exists"
     );
 
-    let values = fs::read_to_string("benchmarks/_chart/values.yaml")
-        .expect("missing benchmarks/_chart/values.yaml");
+    let values = fs::read_to_string(repo_root().join("containers/benchmarks/_chart/values.yaml"))
+        .expect("missing containers/benchmarks/_chart/values.yaml");
     let runner_args = values
         .lines()
         .find(|l| l.trim_start().starts_with("runnerArgs:"))
@@ -539,8 +545,10 @@ fn eval_image_launches_the_pipeline() {
 /// the agent's, so grading is unaffected.
 #[test]
 fn agent_env_excludes_the_task_id() {
-    let pc = fs::read_to_string("core/process-compose/process-compose.yaml")
-        .expect("read process-compose.yaml");
+    let pc = fs::read_to_string(
+        repo_root().join("containers/core/process-compose/process-compose.yaml"),
+    )
+    .expect("read process-compose.yaml");
     let agent_cmd = pc
         .lines()
         .find(|l| l.contains("gosu agent") && l.contains("env -i"))
@@ -558,12 +566,14 @@ fn agent_env_excludes_the_task_id() {
 /// asserts the git tag matches at release.
 #[test]
 fn repo_version_aligns_across_cargo_and_chart() {
-    let cargo = fs::read_to_string("Cargo.toml").expect("read Cargo.toml");
+    let cargo =
+        fs::read_to_string(repo_root().join("cli/Cargo.toml")).expect("read cli/Cargo.toml");
     let cargo_ver = cargo
         .lines()
         .find_map(|l| l.strip_prefix("version = \"")?.strip_suffix('"'))
         .expect("Cargo.toml [package] version");
-    let chart = fs::read_to_string("benchmarks/_chart/Chart.yaml").expect("read Chart.yaml");
+    let chart = fs::read_to_string(repo_root().join("containers/benchmarks/_chart/Chart.yaml"))
+        .expect("read Chart.yaml");
     let chart_ver = chart
         .lines()
         .find_map(|l| l.strip_prefix("version: "))
