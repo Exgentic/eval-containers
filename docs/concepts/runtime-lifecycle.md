@@ -2,148 +2,146 @@
 
 *Concept · for benchmark and agent authors · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rule 12.*
 
-Every evaluation follows the same four-step contract, regardless of how
-it is orchestrated. The mode (container, compose, k8s Job) changes who
-starts each step and where the processes live — the steps themselves are
-the same.
+When you launch an evaluation, four things happen in sequence: the task
+is prepared, the agent works on it, a grader scores the work, and the
+result is written out. This page walks you through that sequence — first
+the common path, then how each runtime mode implements it, then the
+places where benchmarks diverge.
 
-## The contract
+## What happens when an eval runs
 
-```
-  setup        materialize the task, set TASK
-     │
-     ▼
-  agent        solve the task (sees only TASK + model endpoints)
-     │
-     ▼
-  grade        score the agent's output → reward
-     │
-     ▼
-  result       write structured output to /output/
-```
+### 1. Setup — "what should the agent do?"
 
-### 1. Setup — task materialization
+The benchmark's entrypoint (`/entrypoint.sh`) prepares the task. In the
+common case it calls `/eval-materialize-task`, which reads the task list
+at `/tasks/all.jsonl`, unpacks the row matching `EVAL_TASK_ID` into
+`/tasks/$EVAL_TASK_ID/`, and exports a `TASK` environment variable —
+the plain-text prompt the agent will see.
 
-Set the `TASK` environment variable (the prompt the agent sees) and
-prepare any data the grader will need. The benchmark may also set
-grader-specific variables (e.g. `EXPECTED_ANSWER` for exact-match
-benchmarks) — these are conventions of individual graders, not part of
-the contract.
+Some benchmarks also set grader-specific variables here (e.g.
+`EXPECTED_ANSWER` for exact-match graders). These are conventions of
+individual graders, not part of the contract.
 
-Most benchmarks do this by calling `/eval-materialize-task` in their
-`/entrypoint.sh`, which unpacks the current task from `/tasks/all.jsonl`
-into `/tasks/$EVAL_TASK_ID/`. Per-task benchmarks (swe-bench,
-terminal-bench) bake task data into the image at build time and skip
-`/eval-materialize-task` entirely — their entrypoint just sets `TASK`
-directly.
+Not every benchmark works this way. Per-task benchmarks like swe-bench
+and terminal-bench bake one task per image at build time — their
+entrypoint sets `TASK` directly and never calls `/eval-materialize-task`.
+The only requirement is that `TASK` is set by the time the agent starts.
 
-### 2. Agent
+### 2. Agent — "solve this"
 
-Run as unprivileged user `agent`. (The framework creates this user with
-uid 1002 as a fallback if the image didn't pre-create it.) The agent
-sees only:
+The agent runs as an unprivileged `agent` user. (The framework creates
+this user with uid 1002 as a fallback if the image didn't already have
+one.) It gets a minimal environment:
 
 - `TASK` — the problem to solve
 - `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` / `GOOGLE_GEMINI_BASE_URL`
-  — model endpoints (the gateway, never a direct provider URL)
-- `MODEL`, `TIMEOUT`
+  — model endpoints, always pointing at the gateway proxy, never at a
+  provider directly
+- `MODEL` — which model to request
+- `TIMEOUT` — wall-clock limit
 
-It cannot read test data or gateway config — benchmarks protect `/tests/`
-and the combination layer protects `/opt/gateway/` (root-owned, mode
-0700). The scripts `/grade.sh` and `/entrypoint.sh` themselves are
-world-executable.
+The agent cannot see the answers. Benchmarks protect their test data
+(`/tests/`, root-owned, mode 0700) and the combination layer protects
+gateway config (`/opt/gateway/`). The scripts `/grade.sh` and
+`/entrypoint.sh` are world-executable but reading them is usually
+harmless — the secrets are in the data, not the scripts.
 
-Standard path: `/run.sh`, placed by the agent Dockerfile.
+The agent's code lives at `/run.sh`, provided by the agent's Dockerfile.
 
-### 3. Grade
+### 3. Grade — "how did it do?"
 
-Score the agent's output and write an integer (0 or 1) or fraction to
-`/logs/verifier/reward.txt`. How scoring works is benchmark-specific —
-exact-match against `EXPECTED_ANSWER`, a judge LLM call, a test suite,
-or something custom.
+The grader scores the agent's output and writes a number to
+`/logs/verifier/reward.txt` — an integer (0 or 1) or a fraction. How it
+scores is benchmark-specific: compare against `EXPECTED_ANSWER`, call a
+judge LLM, run a test suite, or something entirely custom.
 
-Standard path: `/grade.sh`, placed by the benchmark Dockerfile. Most
-benchmarks copy a shared grader:
+The grading script lives at `/grade.sh`. Most benchmarks copy a shared
+grader image:
 ```dockerfile
 COPY --from=test-exact-match /test.sh /grade.sh
 ```
 
-### 4. Result
+### 4. Result — "write it down"
 
-Read `/logs/verifier/reward.txt` and write structured output:
+`/usr/local/bin/write-result` reads `/logs/verifier/reward.txt` and
+writes three structured files:
 
 - `/output/task/result.json` — `task_id`, `benchmark`, `reward`, `passed`
 - `/output/agent/result.json` — `agent`, `started_at`, `ended_at`
 - `/output/model/result.json` — `model`
 
-Standard path: `/usr/local/bin/write-result`.
+This is what the outside world reads to know what happened.
 
-## How each mode runs the contract
+## How each runtime mode wires the sequence
+
+The four steps are always the same. What changes is who starts each step
+and where the processes live.
 
 ### Single-image (container mode)
 
-Everything in one container. The Docker image's ENTRYPOINT and CMD wire
-the whole chain:
+Everything runs in one container. The Docker image's ENTRYPOINT and CMD
+chain the whole sequence:
 
 ```
 ENTRYPOINT ["/entrypoint.sh"]  →  exec "$@"  →  CMD ["/usr/local/bin/run"]
 ```
 
-`/usr/local/bin/run` (the framework launcher) starts **process-compose**,
-which orchestrates all five processes in dependency order:
-otelcol → gateway → agent (`/run.sh`) → verifier (`/grade.sh`) → result
-(`write-result`).
+`/entrypoint.sh` does setup (step 1), then hands off to
+`/usr/local/bin/run` — the **framework launcher**. It starts
+**process-compose**, an in-container orchestrator that runs five
+processes in dependency order: otelcol → gateway → agent (`/run.sh`) →
+verifier (`/grade.sh`) → result (`write-result`).
 
 ### Compose mode
 
 Three containers: `otelcol`, `gateway`, `runner`. The runner still uses
 `/entrypoint.sh` → `/usr/local/bin/run` → process-compose, but with an
-overlay (`process-compose-runner.yaml`) that disables the in-container
-otelcol and gateway — only agent → verifier → result run inside
-process-compose. Networking changes from `localhost` to Docker service
-names.
+overlay that disables the in-container otelcol and gateway (they have
+their own containers now). Only agent → verifier → result run inside
+process-compose.
 
 ### Kubernetes (Helm Job)
 
-The chart overrides the image command entirely:
+The Helm chart overrides the image command entirely:
 
 ```yaml
 command: ["/bin/bash", "-c"]
 args: ["/entrypoint.sh /usr/local/bin/run; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
 ```
 
-otelcol and gateway run as native sidecars (init containers with
-`restartPolicy: Always`). The runner still goes through `/entrypoint.sh`
-→ `/usr/local/bin/run` → process-compose (runner-only mode), then
-`reap-sidecars` tears down the sidecars after the pipeline exits.
+otelcol and gateway run as native Kubernetes sidecars (init containers
+with `restartPolicy: Always`). The runner goes through the same
+`/entrypoint.sh` → `/usr/local/bin/run` → process-compose chain. After
+the pipeline exits, `reap-sidecars` tears down the sidecars.
 
-## Benchmarks that override the flow
+## Benchmarks that skip the standard flow
 
 The standard flow (entrypoint → framework launcher → process-compose) is
 the default, not a requirement. A benchmark with bespoke topology can
-override it entirely.
+replace it.
 
 **tau-bench** is the main example: in compose mode it replaces the runner
 entrypoint with `python3 /app/agent.py` and adds a separate harness
 container that calls `/eval-materialize-task` itself. In k8s it overrides
 `runnerArgs` in its Helm preset. Neither path uses process-compose — but
-the four-step contract (setup → agent → grade → result) still holds.
+the four steps (setup → agent → grade → result) still happen.
 
-## Key paths
+## Key paths at a glance
 
-| Role | Path | Set by |
-|------|------|--------|
-| Benchmark setup | `/entrypoint.sh` | Benchmark Dockerfile (ENTRYPOINT) |
-| Task unpacker (most benchmarks) | `/eval-materialize-task` | Framework (core/entrypoint) |
-| Framework launcher | `/usr/local/bin/run` | Combination layer (CMD) |
-| Agent entrypoint | `/run.sh` | Agent Dockerfile |
-| Grading script | `/grade.sh` | Benchmark Dockerfile |
-| Result writer | `/usr/local/bin/write-result` | Framework (core/process-compose) |
+| What | Path | Who provides it |
+|------|------|-----------------|
+| Benchmark entrypoint | `/entrypoint.sh` | You (benchmark Dockerfile) |
+| Task unpacker | `/eval-materialize-task` | Framework — most benchmarks use it |
+| Framework launcher | `/usr/local/bin/run` | Framework (combination layer) |
+| Agent code | `/run.sh` | You (agent Dockerfile) |
+| Grading script | `/grade.sh` | You (benchmark Dockerfile) |
+| Result writer | `/usr/local/bin/write-result` | Framework |
 
-Benchmark and agent authors need to provide `/entrypoint.sh`, `/run.sh`,
-and `/grade.sh`. Everything else is inherited from the framework.
+If you're writing a benchmark, you provide `/entrypoint.sh` and
+`/grade.sh`. If you're writing an agent, you provide `/run.sh`.
+Everything else comes from the framework.
 
 ## Where to go next
 
-- [Triple-mode](triple-mode.md) — the three runtimes that run this chain
+- [Triple-mode](triple-mode.md) — more on the three runtimes
 - [Overview](overview.md) — what Eval Containers is
