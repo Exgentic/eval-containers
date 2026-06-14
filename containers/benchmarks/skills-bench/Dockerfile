@@ -85,9 +85,13 @@ RUN printf '%s\n' \
   'fi' \
   > /grade.sh && chmod +x /grade.sh
 
-# Entrypoint: seed TASK from the instruction if the runner didn't set it.
+# Entrypoint: runtime skills toggle, then seed TASK. EVAL_SKILLS=off deletes the
+# staged skills before the agent ever starts — the without-skills baseline for
+# measuring lift. Runs as root at container start (cwd = WORKDIR, where the skills
+# were COPY'd), before the agent drops to its unprivileged user. Default: on.
 RUN printf '%s\n' \
   '#!/bin/bash' \
+  'if [ "${EVAL_SKILLS:-on}" = off ]; then rm -rf ./.claude/skills; fi' \
   'if [ -z "$TASK" ] && [ -f /task/instruction.md ]; then export TASK="$(cat /task/instruction.md)"; fi' \
   'exec "$@"' > /entrypoint.sh && chmod +x /entrypoint.sh
 

@@ -29,8 +29,10 @@ auto-discovers them as project skills in `-p` mode — no agent or launcher chan
 needed, because `claude` runs in the eval image's `WORKDIR` (the benchmark is the
 `FROM` base) and never `cd`s. Verified end-to-end on `citation-check`: the agent
 invoked the `Skill` tool for `citation-management`, ran its scripts, and solved
-the task. (Skill discovery is claude-code-specific; the no-skills baseline is the
-benchmark built without this copy.)
+the task. (Skill discovery is claude-code-specific.) Skills are **on by default**;
+set `EVAL_SKILLS=off` to run the without-skills baseline — the entrypoint deletes
+the staged `.claude/skills` before the agent starts (the with−off delta is the
+skill *lift*).
 
 ## How it's graded
 
