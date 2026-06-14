@@ -1,0 +1,75 @@
+# EnterpriseOps-Gym - single-generalist mode
+# 649 enterprise tasks. Outcome-based scoring (SQL verifiers via each MCP
+# service's /api/sql-runner HTTP endpoint). The agent gets system policy,
+# MCP endpoints, per-server database_id, and the user request — figures out
+# the protocol on its own.
+#
+# Per-task sidecar selection (RULES.md 24h): each task's gym_servers_config
+# names a subset of the seven sidecars. Bare `EVAL_TASK_ID=<id> docker compose
+# up` brings up the full set (zero-knowledge standalone default, rule 1).
+# Lean local runs name the task's MCP service(s) — the runner waits only on
+# the gateway, so a subset doesn't pull in the rest:
+#
+#   EVAL_TASK_ID=$N docker compose up runner gateway otelcol \
+#     $(jq -r --arg t "$N" \
+#         '.[$t][]' \
+#         ../_chart/task-profiles/enterpriseops-gym.json)
+#
+# One map drives both surfaces.
+
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/enterpriseops-gym--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: enterpriseops-gym
+      TIMEOUT: "1800"
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
+
+  # ── EnterpriseOps-Gym MCP service sidecars ────────────────────────────
+  # Each is a HTTP MCP server with embedded multi-tenant DB store. Per-task
+  # DB instances are minted at /api/seed-database and torn down implicitly
+  # when the container exits. Sidecars are network-isolated (rule §12) and
+  # never see agent credentials. Supply-chain debt: :latest tags from a
+  # third-party Docker Hub account — yellow per tests/FLEET.md until
+  # mirrored to ghcr.io/exgentic/backends/.
+  csm:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-csm:latest
+    networks: [internal]
+    deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
+
+  teams:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-teams:latest
+    networks: [internal]
+    deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
+
+  calendar:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-calendar:latest
+    networks: [internal]
+    deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
+
+  email:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-email:latest
+    networks: [internal]
+    deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
+
+  itsm:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-itsm:latest
+    networks: [internal]
+    deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
+
+  drive:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-drive:latest
+    networks: [internal]
+    deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
+
+  hr:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-hr:latest
+    networks: [internal]
+    deploy: { resources: { limits: { cpus: "1", memory: 512M } } }
