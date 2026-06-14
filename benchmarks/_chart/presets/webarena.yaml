@@ -29,11 +29,11 @@ runnerExtraEnv:
   value: http://map:8080
 
 # Website sidecars. The chart renders a Deployment+Service for each entry whose
-# `profile` (default: the key) is in `activeProfiles`, and the runner waits only
-# for those — so a run brings up just the task's site(s). eval-containers sets
-# activeProfiles from benchmarks/webarena/task-profiles.json. (See
-# benchmarks/RULES.md — per-task sidecars.) Key = the k8s/DNS name (matches the
-# *_URL above); `profile` = the dataset site name when it differs.
+# `profile` (default: the key) the current task needs, and the runner waits only
+# for those — so a run brings up just the task's site(s). The chart self-resolves
+# that set from the committed map at task-profiles/webarena.json keyed by the task
+# id — no CLI involved (benchmarks/RULES.md 24h). Key = the k8s/DNS name (matches
+# the *_URL above); `profile` = the dataset site name when it differs.
 sidecars:
   shopping:
     image: am1n3e/webarena-verified-shopping:0.1.0
