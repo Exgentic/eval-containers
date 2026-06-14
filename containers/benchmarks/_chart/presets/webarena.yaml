@@ -14,6 +14,7 @@ runnerExtraEnv:
   value: http://proxy:8080
 - name: NO_PROXY
   value: localhost,127.0.0.1
+# Each app's real internal port (per upstream's docker-compose.yml).
 - name: SHOPPING_URL
   value: http://shopping:80
 - name: SHOPPING_ADMIN_URL
@@ -21,18 +22,42 @@ runnerExtraEnv:
 - name: REDDIT_URL
   value: http://reddit:80
 - name: GITLAB_URL
-  value: http://gitlab:8080
+  value: http://gitlab:8023
 - name: WIKIPEDIA_URL
-  value: http://wikipedia:80
+  value: http://wikipedia:8080
 - name: MAP_URL
-  value: http://map:80
-initContainers:
-- name: wait-for-deps
-  image: busybox:1.36
-  command:
-  - sh
-  - -c
-  - until nc -z proxy 8080 && nc -z shopping 80 && nc -z shopping-admin 80 && nc -z reddit 80 && nc -z gitlab 8080 && nc -z wikipedia 80 && nc -z map 80; do echo waiting; sleep 2; done
+  value: http://map:8080
+
+# Website sidecars. The chart renders a Deployment+Service for each entry the
+# current task needs, and the runner waits only for those — so a run brings up just
+# the task's site(s). The chart self-resolves that set from the committed map at
+# task-profiles/webarena.json keyed by the task id — no CLI (benchmarks/RULES.md
+# 24h). Key = the DNS service name; the map uses the same names (the *_URL env above
+# points at them) — one naming convention end to end.
+sidecars:
+  shopping:
+    image: am1n3e/webarena-verified-shopping:0.1.0
+    port: 80
+  shopping-admin:
+    image: am1n3e/webarena-verified-shopping_admin:1.0.0
+    port: 80
+  reddit:
+    image: am1n3e/webarena-verified-reddit:0.1.0
+    port: 80
+  gitlab:
+    image: am1n3e/webarena-verified-gitlab:0.1.0
+    port: 8023
+    shmSize: 2Gi
+  # NOTE: arm64-only image + needs the .zim data volume — both a separate
+  # data/arch fix (swap to multi-arch ghcr.io/kiwix/kiwix-serve, mount the .zim).
+  wikipedia:
+    image: am1n3e/webarena-verified-wikipedia:1.0.0
+    port: 8080
+  map:
+    image: am1n3e/webarena-verified-map:0.1.0
+    port: 8080
+
+# Always-on services (not profile-gated): the mitmproxy that captures the HAR.
 extraManifests:
 - apiVersion: apps/v1
   kind: Deployment
@@ -78,213 +103,3 @@ extraManifests:
     ports:
     - port: 8080
       targetPort: 8080
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: shopping
-    labels:
-      benchmark: webarena
-      app: shopping
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: shopping
-    template:
-      metadata:
-        labels:
-          benchmark: webarena
-          app: shopping
-      spec:
-        containers:
-        - name: shopping
-          image: am1n3e/webarena-verified-shopping
-          ports:
-          - containerPort: 80
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: shopping
-    labels:
-      benchmark: webarena
-  spec:
-    selector:
-      app: shopping
-    ports:
-    - port: 80
-      targetPort: 80
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: shopping-admin
-    labels:
-      benchmark: webarena
-      app: shopping-admin
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: shopping-admin
-    template:
-      metadata:
-        labels:
-          benchmark: webarena
-          app: shopping-admin
-      spec:
-        containers:
-        - name: shopping-admin
-          image: am1n3e/webarena-verified-shopping_admin
-          ports:
-          - containerPort: 80
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: shopping-admin
-    labels:
-      benchmark: webarena
-  spec:
-    selector:
-      app: shopping-admin
-    ports:
-    - port: 80
-      targetPort: 80
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: reddit
-    labels:
-      benchmark: webarena
-      app: reddit
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: reddit
-    template:
-      metadata:
-        labels:
-          benchmark: webarena
-          app: reddit
-      spec:
-        containers:
-        - name: reddit
-          image: am1n3e/webarena-verified-reddit
-          ports:
-          - containerPort: 80
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: reddit
-    labels:
-      benchmark: webarena
-  spec:
-    selector:
-      app: reddit
-    ports:
-    - port: 80
-      targetPort: 80
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: gitlab
-    labels:
-      benchmark: webarena
-      app: gitlab
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: gitlab
-    template:
-      metadata:
-        labels:
-          benchmark: webarena
-          app: gitlab
-      spec:
-        containers:
-        - name: gitlab
-          image: am1n3e/webarena-verified-gitlab
-          ports:
-          - containerPort: 8080
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: gitlab
-    labels:
-      benchmark: webarena
-  spec:
-    selector:
-      app: gitlab
-    ports:
-    - port: 8080
-      targetPort: 8080
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: wikipedia
-    labels:
-      benchmark: webarena
-      app: wikipedia
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: wikipedia
-    template:
-      metadata:
-        labels:
-          benchmark: webarena
-          app: wikipedia
-      spec:
-        containers:
-        - name: wikipedia
-          image: am1n3e/webarena-verified-wikipedia
-          ports:
-          - containerPort: 80
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: wikipedia
-    labels:
-      benchmark: webarena
-  spec:
-    selector:
-      app: wikipedia
-    ports:
-    - port: 80
-      targetPort: 80
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: map
-    labels:
-      benchmark: webarena
-      app: map
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: map
-    template:
-      metadata:
-        labels:
-          benchmark: webarena
-          app: map
-      spec:
-        containers:
-        - name: map
-          image: am1n3e/webarena-verified-map
-          ports:
-          - containerPort: 80
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: map
-    labels:
-      benchmark: webarena
-  spec:
-    selector:
-      app: map
-    ports:
-    - port: 80
-      targetPort: 80
