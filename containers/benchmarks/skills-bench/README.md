@@ -10,7 +10,7 @@ systems, and more), built from upstream source.
 |-------|-------|
 | Tasks | 86 (`tasks/<task>` upstream) |
 | Environment | per-task |
-| Internet required | false (agent) · true (build) |
+| Internet required | true (agent — skills fetch data) · true (build) |
 | Released | no |
 | Upstream | [github.com/benchflow-ai/skillsbench](https://github.com/benchflow-ai/skillsbench) |
 | Paper | [arxiv.org/abs/2602.12670](https://arxiv.org/abs/2602.12670) |

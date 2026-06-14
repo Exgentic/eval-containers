@@ -28,7 +28,11 @@ LABEL eval.benchmark.name="skills-bench"
 LABEL eval.benchmark.description="SkillsBench — expert tasks across software engineering, math, cybersecurity, and more"
 LABEL eval.benchmark.tasks="86"
 LABEL eval.benchmark.env="per-task"
-LABEL eval.benchmark.internet="false"
+# Agent needs egress: many skills fetch data at run time (e.g. citation-management
+# searches Google Scholar / PubMed), so the with-skills eval requires internet
+# (rule 9 — "unless the benchmark explicitly requires it"). Label-only, as for the
+# other internet=true benchmarks (gaia, assistantbench) and upstream skills-bench.
+LABEL eval.benchmark.internet="true"
 LABEL eval.benchmark.url="https://www.skillsbench.ai/"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2602.12670"
 # Record the pinned upstream revision (rule 3/4) — driven by the same SB_REF that
