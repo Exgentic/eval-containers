@@ -44,35 +44,19 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=bigcodebench
 
-# Test: combine agent solution with upstream test and run unittest
+# Test: pipe solution + upstream test into the shared grader /eval-grade
+# (benchmarks/RULES.md 22). Reward is the harness's verdict, never the candidate's
+# exit code (rule 5): grade.sh seeds reward.txt with a fail and /eval-grade
+# overwrites it with 1.0 only on a genuine unittest pass (read from TestResult,
+# not the patchable runner). See /eval-grade for the guarantee and residuals.
 RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
+echo 0.0 > /logs/verifier/reward.txt          # default-fail (rule 18)
 TASK_DIR="/tasks/$EVAL_TASK_ID"
-SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
-TEST_CODE=$(cat $TASK_DIR/test.txt)
-
-TMPDIR=$(mktemp -d)
-{
-  echo "$SOLUTION"
-  echo
-  echo "$TEST_CODE"
-  echo
-  echo "import unittest"
-  echo "if __name__ == '__main__':"
-  echo "    loader = unittest.TestLoader()"
-  echo "    suite = loader.loadTestsFromTestCase(TestCases)"
-  echo "    runner = unittest.TextTestRunner(verbosity=0)"
-  echo "    result = runner.run(suite)"
-  echo "    import sys; sys.exit(0 if result.wasSuccessful() else 1)"
-} > $TMPDIR/test_solution.py
-
-if timeout 60 python3 $TMPDIR/test_solution.py >/dev/null 2>&1; then
-  echo 1.0 > /logs/verifier/reward.txt
-else
-  echo 0.0 > /logs/verifier/reward.txt
-fi
-rm -rf $TMPDIR
+{ cat /output/agent/stdout.log 2>/dev/null; echo
+  cat "$TASK_DIR/test.txt"
+} | timeout 90 /eval-grade unittest /logs/verifier/reward.txt >/dev/null 2>&1 || true
 TEST
 
 RUN chmod +x /grade.sh
