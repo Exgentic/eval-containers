@@ -136,6 +136,14 @@ cargo test --test replay  -- --ignored --test-threads=6
 (Ryuk), which often can't start under podman; containers are still torn down by
 the test's own `Drop` handlers.
 
+> **`replay`, `build`, `oracle` won't pass locally on podman.** These suites
+> bootstrap core base images via `docker buildx bake`, which routes through a
+> buildx-container BuildKit. That BuildKit's sub-containers register their own
+> QEMU at `/dev/.buildkit_qemu_emulator`, bypassing the machine's Rosetta
+> registration — Python-heavy builds (pyarrow) segfault. Rely on CI for these.
+> The fast suites (`check`, `compose`, `dockerfile_inspection`,
+> `task_inspection`, `helm`) work fine locally.
+
 ## 6. Building images / `--local`
 
 For day-to-day dev, build only what you touched (see [LOCAL.md](../../tests/LOCAL.md)).
@@ -170,6 +178,48 @@ Two podman-specific notes:
   ```
   EVAL_MODEL must be of form <provider>/<model> (got: gpt-5.4)
   ```
+
+### Recording a replay fixture for a new benchmark
+
+`eval-containers build eval <name> --agent <a>` invokes `docker buildx bake`,
+which hits the QEMU-not-Rosetta wall above. The bypass: pre-build everything
+with native `podman build`, then `docker compose up` consumes the locally-tagged
+images. End-to-end recipe (one task → one trajectory fixture):
+
+```bash
+# 1. Pull deps that ARE already published (skips the bake)
+for img in agents/codex models/gpt-5.4--bifrost core/otel core/runtime-bundle; do
+  docker pull --platform linux/amd64 ghcr.io/exgentic/$img:latest
+done
+
+# 2. Build the benchmark image (Rosetta via podman)
+podman build --platform linux/amd64 --pull=never \
+  -t ghcr.io/exgentic/benchmarks/<name>:latest containers/benchmarks/<name>
+
+# 3. Build the eval combination (Rosetta via podman, bypassing bake)
+podman build --platform linux/amd64 --pull=never \
+  --build-arg BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/<name>:latest \
+  --build-arg AGENT_IMAGE=ghcr.io/exgentic/agents/codex:latest \
+  --build-arg MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest \
+  --build-arg OTEL_IMAGE=ghcr.io/exgentic/core/otel:latest \
+  --build-arg RUNTIME_BUNDLE_IMAGE=ghcr.io/exgentic/core/runtime-bundle:latest \
+  -t ghcr.io/exgentic/evals/<name>--codex:latest \
+  -f containers/core/combination.Dockerfile containers/core
+
+# 4. Run one task — needs OPENAI_API_KEY + OPENAI_API_BASE in .env
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/azure/gpt-5.4 \
+  docker compose -f containers/benchmarks/<name>/compose.yaml up --abort-on-container-exit
+
+# 5. Extract the trajectory from the named volume (NOT a host path)
+docker run --rm -v <name>_output:/output:ro alpine \
+  cat /output/traces.jsonl > tests/replay/fixtures/<name>-0-codex.trajectory.jsonl
+
+# 6. Register the fixture in tests/replay/test.rs (replay_test! macro) and ship
+```
+
+The named volume is the gotcha — `find output/` returns nothing because compose
+mounts `output:/output` (declared in `compose/services.yaml`), not a bind
+mount. Use `docker run -v <name>_output:/output:ro` to read it.
 
 ### BuildKit garbage collection
 
