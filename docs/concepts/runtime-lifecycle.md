@@ -12,12 +12,11 @@ places where benchmarks diverge.
 
 ### 1. Setup — "what should the agent do?"
 
-The benchmark's entrypoint (`/entrypoint.sh`) picks the current task
-and exports a `TASK` environment variable — the plain-text prompt the
-agent will see. Most benchmarks store all tasks in a single file and
-unpack the one matching `EVAL_TASK_ID` at runtime; a few (swe-bench,
-terminal-bench) bake one task per image at build time. Either way, the
-only requirement is that `TASK` is set by the time the agent starts.
+Before the agent starts, `TASK` must be set — a plain-text environment
+variable containing the prompt the agent will see. Most benchmarks do
+this in an `/entrypoint.sh` script that unpacks the task matching
+`EVAL_TASK_ID` from a bundled task file; a few (swe-bench,
+terminal-bench) bake one task per image at build time instead.
 
 Some benchmarks also set grader-specific variables here (e.g.
 `EXPECTED_ANSWER` for exact-match graders). These are conventions of
@@ -132,9 +131,10 @@ result) still happen.
 | Grading script | `/grade.sh` | You (benchmark Dockerfile) |
 | Result writer | `/usr/local/bin/write-result` | Framework |
 
-If you're writing a benchmark, you provide `/entrypoint.sh` and
-`/grade.sh`. If you're writing an agent, you provide `/run.sh`.
-Everything else comes from the framework.
+If you're writing a standard benchmark, you provide `/entrypoint.sh`
+and `/grade.sh`. If you're writing an agent, you provide `/run.sh`.
+Everything else comes from the framework. Benchmarks with custom
+topology can override any of these (see above).
 
 ## Where to go next
 
