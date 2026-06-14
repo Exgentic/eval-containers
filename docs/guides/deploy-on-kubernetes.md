@@ -1,6 +1,6 @@
 # Deploy on Kubernetes
 
-*Guide · for operators · derives from [`README.md`](../../README.md), [`doctrine/src/RULES.md`](../../doctrine/src/RULES.md), [`concepts/the-helm-chart.md`](../concepts/the-helm-chart.md).*
+*Guide · for operators · derives from [`README.md`](../../README.md), [`.agents/src/RULES.md`](../../.agents/src/RULES.md), [`concepts/the-helm-chart.md`](../concepts/the-helm-chart.md).*
 
 In `job` mode an evaluation runs as a Kubernetes Job rendered from the shared
 Helm chart. See [The Helm chart](../concepts/the-helm-chart.md) for the model.
@@ -21,7 +21,7 @@ kubectl create secret generic eval-secrets \
 Plain Helm — no CLI required:
 
 ```bash
-helm template aime benchmarks/_chart --set benchmark=aime \
+helm template aime containers/benchmarks/_chart --set benchmark=aime \
   --set agent=claude-code --set task=0 | kubectl apply -f -
 ```
 

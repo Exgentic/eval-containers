@@ -41,6 +41,11 @@ const ALLOWLIST: &[(&str, &str, &str)] = &[
         "ghcr.io/stonybrooknlp/appworld:latest",
         "upstream publishes only :latest — no version tags exist (confirmed via the GHCR tags API)",
     ),
+    (
+        "skills-bench",
+        "skills-bench-base:latest",
+        "locally-built shared base: skills-bench builds one heavy base image once and reuses it across all 86 tasks (see the Dockerfile header) — a local build artifact, not a pinnable registry image (cf. mle-bench's mlebench-env:latest)",
+    ),
 ];
 
 /// Image tokens a Dockerfile references via `FROM` / `COPY --from=`, as
@@ -90,6 +95,10 @@ fn allowlisted(dir_name: &str, image: &str) -> bool {
 
 #[test]
 fn external_images_are_pinned_not_latest() {
+    // bake::artifact_dirs_with_dockerfile reads `containers/<category>` relative
+    // to cwd; cargo runs this crate's tests from the crate dir, so anchor at the
+    // repo root first or the sweep silently finds zero Dockerfiles.
+    eval_containers_tests::enter_repo_root();
     let mut failures: Vec<String> = Vec::new();
     for dir in bake::artifact_dirs_with_dockerfile() {
         let dir_name = dir.file_name().and_then(|s| s.to_str()).unwrap_or("");

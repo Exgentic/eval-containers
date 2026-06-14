@@ -1,6 +1,6 @@
 # Run your first eval
 
-*Guide · for operators · derives from [`README.md`](../../README.md), [`doctrine/src/RULES.md`](../../doctrine/src/RULES.md).*
+*Guide · for operators · derives from [`README.md`](../../README.md), [`.agents/src/RULES.md`](../../.agents/src/RULES.md).*
 
 This runs one AIME task with the Codex agent against `gpt-5.4`, locally.
 
@@ -25,7 +25,7 @@ This maps to a plain Docker command — print it without running via `--dry-run`
 ```bash
 eval-containers run aime --task-id 0 --agent codex --model gpt-5.4 --local --dry-run
 # → EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
-#     docker compose -f ./benchmarks/aime/compose.yaml up --abort-on-container-exit
+#     docker compose -f ./containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 ```
 
 You can run that `docker compose` line yourself — the CLI is just a reminder of
