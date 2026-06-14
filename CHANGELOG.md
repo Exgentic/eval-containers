@@ -10,6 +10,10 @@ applied to the image fleet: the major version is bumped on breaking
 changes to the rule catalogs; the minor on a benchmark or agent
 addition; the patch on a bug fix that doesn't change the rule surface.
 
+Maintenance policy: this file is curated by the release owner at tag time and
+is not edited per pull request — see [`.agents/delivery/RULES.md`](.agents/delivery/RULES.md)
+principles 8–10.
+
 ## [Unreleased]
 
 ### Added
@@ -133,54 +137,3 @@ addition; the patch on a bug fix that doesn't change the rule surface.
   needs them (the `model` service). Dummy `ANTHROPIC_API_KEY=sk-proxy`
   and `OPENAI_API_KEY=sk-proxy` populated in `services.yaml` for SDK
   initialization.
-
-### Test infrastructure
-
-- **New Dockerfile lint `from_arg_not_global`.** Flags any `FROM` that
-  interpolates an `ARG` not declared in the global scope (before the
-  first `FROM`) — Docker expands it to empty and silently corrupts the
-  image tag (the class of bug that broke the `plandex` build). Added to
-  the `dockerfile_inspection` catalog with bad/good unit tests; offline.
-- `cargo fmt --check` — green.
-- `cargo clippy --all-targets -- -D warnings` — green.
-- `cargo test` — green (12 rule-catalog + 19 trajectory + 4 upstream +
-  6 sanity = 41 mechanical tests).
-- `cargo test --test check` — green (structural / compose / Dockerfile /
-  trajectory / counts / README).
-- `cargo test --test upstream -- --ignored` — green (first-party filter).
-- `cargo test --test build build_every_agent -- --ignored
-  --test-threads=1 EVAL_BUILD_FILTER=claude-code,aider` — **2/2 green**.
-- `cargo test --test fleet -- --ignored` — yellow (mechanical all
-  green, procedural yellow from upstream-base tag-pinning debt).
-- `hadolint` — 0 errors, 25 review warnings (117 heredoc false-positives
-  from hadolint 2.14 parser limitation).
-- `gitleaks detect --source .` — 0 findings after config.
-- **Live smoke end-to-end validated**: eval-combo build → model
-  container healthcheck → agent exec → LiteLLM trajectory → grader →
-  `result.json`. LLM backend itself (`litellm.internal.invalid`)
-  is VPC-internal and unreachable without IBM network access — code
-  path 100% validated, runtime blocker is environmental.
-
-### CI-side follow-ups (not blocked on code)
-
-- Full 100-benchmark + 20-agent build sweep (`cargo test --test build --
-  --ignored --test-threads=1 EVAL_BUILD_PARALLEL=4`) — expected clean
-  on Linux Docker in CI; podman-on-macOS saturates the VM network
-  under high concurrency.
-- Live fleet sweep — requires reachable LLM backend (IBM VPN, or
-  alternative provider). Existing `tests/live/checkpoint.json` carries
-  471 prior-run entries for resume.
-- Replay re-run against fresh eval-combo images built under the new
-  bases — deferred to CI.
-
-### Known gaps (yellow, documented, non-blocking)
-
-- `hadolint` 2.14 heredoc parser can't handle `RUN python3 <<'PYEOF'`
-  — 117 false-positive parse errors. Upstream issue.
-- 3 benchmark bases `COPY --from=quay.io/eval-containers/core/entrypoint:latest`
-  with mutable `:latest` tag. Acceptable while the core/* images are
-  pre-registry; tighten to a digest once published.
-- `core/agent-base-rust` label is `eval.base.runtime="rust"` but also
-  hosts Go-based agents (`crush`). Documented in its Dockerfile
-  header comment; split into `core/agent-base-go/` if a Go-only base
-  becomes worthwhile.
