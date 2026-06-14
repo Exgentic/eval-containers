@@ -1,6 +1,6 @@
 # EnterpriseOps-Gym
 
-**Status:** released — fixture `tests/replay/fixtures/enterpriseops-gym-0-codex.trajectory.jsonl` from a real codex+gpt-5.4 run (calendar task 0, scored 0.667 / 3 verifiers).
+**Status:** released — fixture `tests/replay/fixtures/enterpriseops-gym-0-codex.trajectory.jsonl` from a real codex+gpt-5.4 run on task 0 (calendar), 3/3 verifiers pass, reward 1.0.
 
 **Paper:** [EnterpriseOps-Gym](https://arxiv.org/abs/2603.13594) (Malay, Nayak et al., ServiceNow AI Research, 2026)
 **Upstream:** [ServiceNow/EnterpriseOps-Gym](https://github.com/ServiceNow/EnterpriseOps-Gym) @ `09593147`
@@ -78,11 +78,10 @@ The agent receives only `TASK` and the model `*_BASE_URL`s (per [RULES.md](RULES
 
 `verify_task.py` (root, post-agent) queries final state and writes `reward = passed/total` plus the full `verifier_report.json`.
 
-## What's still missing
+## Follow-ups
 
-1. **Replay fixture** under `tests/fixtures/` for a small task. Once it lands and the replay sweep is green, flip `LABEL eval.benchmark.released="true"`.
-2. **`response_check` and `tool_execution` verifier types.** Both need extra plumbing; `verify_task.py` skips them today.
-3. **Supply-chain debt.** The 7 MCP service images are `:latest` tags from a third-party Docker Hub account. `tests/FLEET.md` question 6 flags this yellow until mirrored to `ghcr.io/exgentic/backends/` by digest.
+1. **`response_check` and `tool_execution` verifier types.** Both need extra plumbing; `verify_task.py` skips them today.
+2. **Supply-chain debt.** The 7 MCP service images are `:latest` tags from a third-party Docker Hub account. `tests/FLEET.md` question 6 flags this yellow until mirrored to `ghcr.io/exgentic/backends/` by digest.
 
 ## Why `EVAL_AGENT` is meaningful here
 
