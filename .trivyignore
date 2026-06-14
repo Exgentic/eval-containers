@@ -36,15 +36,3 @@ AVD-DS-0002
 #   - Leaked secret *values* are covered by gitleaks (verify step 22); this is a
 #     different, complementary check, and the value here is intentionally absent.
 AVD-DS-0031
-
-# --- DS-0029  "'apt-get' missing '--no-install-recommends'"  (FIXABLE) -------
-# Fires on 8 leaf benchmark Dockerfiles whose `apt-get install` predates this
-# gate (aider-polyglot, appworld, code-contests, gdpval, livecodebench,
-# longbench, socialiqa, swe-bench, usaco — the shared base
-# core/benchmark-base-hf already uses the flag). This is REAL hygiene, not by
-# design: it is the same rule as hadolint DL3015, which is NOT in the
-# .pre-commit-config.yaml ignore list. Ignored here only to land the trivy
-# wiring green without rewriting 8 unrelated Dockerfiles in the same change;
-# REMOVE this entry once those `apt-get install` lines gain
-# `--no-install-recommends` (tracked as a follow-up).
-AVD-DS-0029
