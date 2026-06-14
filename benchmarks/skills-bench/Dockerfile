@@ -90,7 +90,7 @@ COPY --from=entrypoint /eval-materialize-task /usr/local/bin/eval-materialize-ta
 RUN chmod +x /usr/local/bin/eval-materialize-task
 
 # ── Per-task image ────────────────────────────────────────────────────────────
-FROM skills-bench-base AS final
+FROM skills-bench-base:latest AS final
 
 ARG EVAL_TASK_ID
 
