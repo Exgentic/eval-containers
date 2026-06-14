@@ -57,7 +57,7 @@ repos:
       - id: check-yaml
         args: [--allow-multiple-documents]   # k8s manifest bundles (e.g. deploy/kueue.yaml)
         # Helm templates are Go-templated, not valid YAML; helm-lint covers them.
-        exclude: ^benchmarks/_chart/templates/
+        exclude: ^containers/benchmarks/_chart/templates/
       - id: check-json
 
   # --- Dockerfiles: hadolint ---
@@ -79,7 +79,7 @@ repos:
           - --ignore=DL3008
           - --ignore=DL3018
           - --ignore=DL3029
-        exclude: ^benchmarks/(aider-polyglot|bigcodebench|humaneval|humanevalplus|mbpp|mbppplus|skills-bench)/Dockerfile$
+        exclude: ^containers/benchmarks/(aider-polyglot|bigcodebench|humaneval|humanevalplus|mbpp|mbppplus|skills-bench)/Dockerfile$
 
   # --- Compose files: schema-validate against the Compose spec (no daemon) ---
   - repo: https://github.com/python-jsonschema/check-jsonschema
@@ -93,9 +93,9 @@ repos:
     hooks:
       - id: helm-lint
         name: helm lint (_chart)
-        entry: helm lint benchmarks/_chart
+        entry: helm lint containers/benchmarks/_chart
         language: system
-        files: ^benchmarks/_chart/
+        files: ^containers/benchmarks/_chart/
         pass_filenames: false
 
   # --- Shell ---

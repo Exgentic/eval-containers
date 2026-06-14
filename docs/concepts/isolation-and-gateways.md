@@ -1,6 +1,6 @@
 # Isolation & gateways
 
-*Concept · for operators & contributors · derives from [`doctrine/RULES.md`](../../doctrine/RULES.md) (principle 5), [`doctrine/gateways/RULES.md`](../../doctrine/gateways/RULES.md).*
+*Concept · for operators & contributors · derives from [`.agents/RULES.md`](../../.agents/RULES.md) (principle 5), [`.agents/gateways/RULES.md`](../../.agents/gateways/RULES.md).*
 
 An evaluation is only trustworthy if the trajectory is honest. Eval Containers
 guarantees that by keeping the model proxy out of the agent's reach.

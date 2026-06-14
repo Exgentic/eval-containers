@@ -1,0 +1,7 @@
+target "benchmark-code-contests" {
+  context = "containers/benchmarks/code-contests"
+  contexts = {
+    "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
+  }
+  tags = ["${REGISTRY}/benchmarks/code-contests:${TAG}"]
+}

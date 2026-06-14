@@ -75,7 +75,7 @@ fn eval_image_uses_double_dash_separator() {
 ## References
 
 - [Testing Policy](../RULES.md)
-- [CLI Rules](../../src/RULES.md)
+- [CLI Rules](../../.agents/src/RULES.md)
 
 ## Changelog
 

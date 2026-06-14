@@ -20,6 +20,6 @@ install-path = "CARGO_HOME"
 hosting = "github"
 # Whether to install an updater program
 install-updater = false
-# Publish the crate to crates.io as part of the release (doctrine/delivery/RULES.md:2).
+# Publish the crate to crates.io as part of the release (.agents/delivery/RULES.md:2).
 # Custom job in .github/workflows/publish-crate.yml; needs a CARGO_REGISTRY_TOKEN secret.
 publish-jobs = ["./publish-crate"]
