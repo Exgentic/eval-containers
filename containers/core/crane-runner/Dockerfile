@@ -1,7 +1,7 @@
 # The crane runner -- ONE generic image that materializes any (benchmark, agent)
 # eval at run time, instead of pulling a pre-built evals/<b>--<a> combination
 # image. It crane-exports the per-axis images to a rootfs and fuses them with
-# bwrap/chroot: no Docker daemon, no DinD (proven daemonless -- see crane-poc.sh).
+# chroot/bwrap: no Docker daemon, no DinD (crane just downloads a filesystem).
 #
 # STATUS: first cut. The fusion ([1]/[2] in `materialize`) is proven; wiring the
 # in-rootfs gateway/otel via process-compose and the root-only grader perms is
