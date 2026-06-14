@@ -1,15 +1,24 @@
-//! Dockerfile health inspection: does every benchmark and agent
-//! Dockerfile follow the rules and conventions?
+//! Dockerfile health inspection — the residual lints with no standard tool.
 //!
-//! See tests/DOCKERFILE.md for the signal catalog and the manual
-//! audit procedure. This file is the mechanical layer: a data-driven
-//! rule catalog applied to the raw text of every Dockerfile under
-//! `benchmarks/*/Dockerfile` and `agents/*/Dockerfile`.
+//! Most of this catalog migrated to standard tools for issue #114:
+//!   - LABEL contract, pins, eval-domain hygiene/inspection rules → conftest/OPA
+//!     (tests/policy/dockerfile/{labels,pins,hygiene,inspection}.rego), swept by
+//!     tests/policy/dockerfile/run.sh;
+//!   - generic image hygiene (apt cleanup, pip --no-cache) → hadolint;
+//!   - hardcoded secrets → gitleaks.
 //!
-//! Same pattern as tests/task_inspection.rs — rules as a const array
-//! of (id, severity, why, test fn) rows. Adding a rule is one line.
-//! Rule IDs match the signal catalog in DOCKERFILE.md so the doc and
-//! the code can't drift.
+//! What stays here is the pair of rules that does NOT fit a standard tool: a
+//! left-to-right token walk over a `pip install` / `npm i -g` segment with
+//! `break` stop-token semantics (`\`, `&&`, `||`, `;`, `uninstall`) plus the
+//! transient-pip-uninstall, `-r requirements`, `git+…@rev`/`#egg`, and
+//! `.whl`/`.tgz`/`.tar.gz` exemptions. Expressing that procedural scan in Rego
+//! risks silent divergence (see the inspection.rego migration note), so it
+//! stays a slim Rust lint over the raw text of every Dockerfile under
+//! `containers/{benchmarks,agents,models}/*/Dockerfile`.
+//!
+//! Same data-driven shape as before: rules as a const array of (id, severity,
+//! why, test fn) rows, applied by the engine, swept over the fleet, and failing
+//! loud (panic) on any Red finding.
 //!
 //! Run: cargo test --test dockerfile_inspection
 
@@ -43,66 +52,9 @@ impl Rule {
             test,
         }
     }
-    const fn yellow(id: &'static str, why: &'static str, test: fn(&str, &str) -> bool) -> Self {
-        Self {
-            id,
-            severity: Severity::Yellow,
-            why,
-            test,
-        }
-    }
 }
 
 // ─── Small rule helpers ────────────────────────────────────────────
-
-fn contains_hardcoded_api_key(t: &str) -> bool {
-    // Real-looking keys only — avoid false positives on documentation
-    // that mentions `sk-proxy` as a placeholder or `sk-...` in examples.
-    for line in t.lines() {
-        // Skip comment lines
-        if line.trim_start().starts_with('#') {
-            continue;
-        }
-        // OpenAI: sk-[A-Za-z0-9]{40+}
-        if let Some(i) = line.find("sk-") {
-            let tail = &line[i + 3..];
-            let alnum: String = tail
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric())
-                .collect();
-            if alnum.len() >= 40 {
-                return true;
-            }
-        }
-        // GitHub PAT: ghp_[A-Za-z0-9]{36}
-        if line.contains("ghp_")
-            && let Some(i) = line.find("ghp_")
-        {
-            let tail = &line[i + 4..];
-            let alnum: String = tail
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric())
-                .collect();
-            if alnum.len() >= 36 {
-                return true;
-            }
-        }
-        // AWS: AKIA[0-9A-Z]{16}
-        if line.contains("AKIA")
-            && let Some(i) = line.find("AKIA")
-        {
-            let tail = &line[i + 4..];
-            let caps: String = tail
-                .chars()
-                .take_while(|c| c.is_ascii_digit() || c.is_ascii_uppercase())
-                .collect();
-            if caps.len() == 16 {
-                return true;
-            }
-        }
-    }
-    false
-}
 
 fn has_unpinned_pip(t: &str) -> bool {
     // Helper: is this package uninstalled later in the same file? If so,
@@ -217,568 +169,9 @@ fn has_unpinned_npm(t: &str) -> bool {
     false
 }
 
-fn has_untagged_from(t: &str) -> bool {
-    for line in t.lines() {
-        let line = line.trim_start();
-        // Dockerfile directive convention is UPPERCASE. Lowercase `from`
-        // inside Python heredocs (`from huggingface_hub import ...`) would
-        // otherwise false-positive.
-        if !line.starts_with("FROM ") {
-            continue;
-        }
-        let rest = line[5..].trim();
-        if rest.is_empty() || rest.starts_with("scratch") || rest.starts_with('$') {
-            continue;
-        }
-        // Skip FROM flags (`--platform=…`, `--chmod=…`) to reach the image ref.
-        let image = rest
-            .split_whitespace()
-            .find(|tok| !tok.starts_with("--"))
-            .unwrap_or("");
-        let last_slash = image.rfind('/').map(|i| i + 1).unwrap_or(0);
-        let tail = &image[last_slash..];
-        if !tail.contains(':') && !tail.contains('@') {
-            return true;
-        }
-    }
-    false
-}
-
-/// Variable names interpolated as `$VAR` or `${VAR}` (incl. `${VAR:-x}`)
-/// in a string — used to vet what a FROM expands.
-fn interpolated_vars(s: &str) -> Vec<String> {
-    let b = s.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] != b'$' {
-            i += 1;
-            continue;
-        }
-        let braced = i + 1 < b.len() && b[i + 1] == b'{';
-        let start = if braced { i + 2 } else { i + 1 };
-        let mut j = start;
-        while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_') {
-            j += 1;
-        }
-        if j > start {
-            out.push(s[start..j].to_string());
-        }
-        // For `${...}` skip past the closing brace so a `:-default` modifier
-        // isn't rescanned as another variable.
-        if braced {
-            while j < b.len() && b[j] != b'}' {
-                j += 1;
-            }
-            j += 1;
-        }
-        i = j.max(start);
-    }
-    out
-}
-
-/// A FROM may only interpolate an ARG declared in the GLOBAL scope — before
-/// the first FROM. An ARG declared inside a build stage (after a FROM) is
-/// invisible to FROM: Docker expands it to the empty string and silently
-/// corrupts the image ref (e.g. `plandex-server:server-v${AGENT_VERSION}` ->
-/// `server-v`, manifest-unknown at build time). Flag any FROM that expands a
-/// name that is neither a global ARG nor a Docker predefined build arg
-/// (TARGETARCH / BUILDPLATFORM / …, which need no ARG declaration).
-fn from_interpolates_nonglobal_arg(t: &str, _dir: &str) -> bool {
-    const PREDEFINED: &[&str] = &[
-        "TARGETPLATFORM",
-        "TARGETOS",
-        "TARGETARCH",
-        "TARGETVARIANT",
-        "BUILDPLATFORM",
-        "BUILDOS",
-        "BUILDARCH",
-        "BUILDVARIANT",
-    ];
-    // Global ARG names = those declared before the first FROM.
-    let mut global_args: Vec<&str> = Vec::new();
-    let mut seen_from = false;
-    for line in t.lines() {
-        let l = line.trim();
-        if l.starts_with("FROM ") {
-            seen_from = true;
-        } else if !seen_from
-            && l.starts_with("ARG ")
-            && let Some(name) = l[4..]
-                .trim()
-                .split(|c: char| c == '=' || c.is_whitespace())
-                .next()
-            && !name.is_empty()
-        {
-            global_args.push(name);
-        }
-    }
-    // Every variable a FROM expands must be a global ARG or predefined.
-    for line in t.lines() {
-        let l = line.trim_start();
-        if !l.starts_with("FROM ") {
-            continue;
-        }
-        for var in interpolated_vars(l) {
-            if !PREDEFINED.contains(&var.as_str()) && !global_args.contains(&var.as_str()) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn has_legacy_env_var(t: &str) -> bool {
-    // Find references to unprefixed $TASK_ID / $BENCHMARK. Must NOT
-    // match $EVAL_TASK_ID / $EVAL_BENCHMARK (prefixed), and must not
-    // match longer identifiers like $TASK_ID_STR (substring false
-    // positive). Whole-identifier match: the character after the
-    // needle must not be an identifier continuation character.
-    let ident_char = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    for needle in ["$TASK_ID", "${TASK_ID", "$BENCHMARK", "${BENCHMARK"] {
-        let mut rest = t;
-        while let Some(i) = rest.find(needle) {
-            let before = &rest[..i];
-            // Skip if preceded by EVAL_ (e.g. $EVAL_TASK_ID)
-            let prefixed = before.ends_with("EVAL_");
-            // Skip if followed by an identifier char (e.g. $TASK_ID_STR)
-            let after = &rest[i + needle.len()..];
-            let extended = after.chars().next().map(ident_char).unwrap_or(false);
-            if !prefixed && !extended {
-                return true;
-            }
-            rest = &rest[i + 1..];
-        }
-    }
-    false
-}
-
-fn has_todo_or_fixme(t: &str) -> bool {
-    for line in t.lines() {
-        let trimmed = line.trim_start();
-        if !trimmed.starts_with('#') {
-            continue;
-        }
-        // Allow a documented FUTURE: block
-        if trimmed.contains("FUTURE:") {
-            continue;
-        }
-        for tok in ["TODO", "FIXME", "XXX"] {
-            // standalone token check
-            if trimmed
-                .split(|c: char| !c.is_alphanumeric())
-                .any(|w| w == tok)
-            {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn strip_heredocs(t: &str) -> String {
-    // Dockerfiles often write install scripts via `cat > file <<'NAME'`
-    // heredocs. The body of those heredocs is not a RUN command — it's
-    // content being written to a file. Installation rules (apt cleanup,
-    // pip pinning, etc.) should skip heredoc bodies.
-    let mut out = String::with_capacity(t.len());
-    let mut in_heredoc: Option<String> = None;
-    for line in t.lines() {
-        if let Some(tag) = &in_heredoc {
-            if line.trim() == tag {
-                in_heredoc = None;
-            }
-            out.push('\n');
-            continue;
-        }
-        // Detect `<<'TAG'` or `<<TAG` or `<<"TAG"`
-        if let Some(i) = line.find("<<") {
-            let after = &line[i + 2..];
-            let after = after.trim_start_matches('-');
-            let tag: String = after
-                .trim_start_matches('\'')
-                .trim_start_matches('"')
-                .chars()
-                .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-                .collect();
-            if !tag.is_empty() {
-                in_heredoc = Some(tag);
-                out.push_str(line);
-                out.push('\n');
-                continue;
-            }
-        }
-        out.push_str(line);
-        out.push('\n');
-    }
-    out
-}
-
-fn apt_install_without_cleanup(t: &str) -> bool {
-    // Skip heredoc bodies, then join multi-line RUN continuations.
-    let stripped = strip_heredocs(t);
-    let joined = stripped.replace("\\\r\n", " ").replace("\\\n", " ");
-    for line in joined.lines() {
-        let line = line.trim();
-        if line.starts_with('#') {
-            continue;
-        }
-        if !line.contains("apt-get install") {
-            continue;
-        }
-        if !line.contains("rm -rf /var/lib/apt/lists") {
-            return true;
-        }
-    }
-    false
-}
-
-fn pip_install_without_no_cache(t: &str) -> bool {
-    let stripped = strip_heredocs(t);
-    let joined = stripped.replace("\\\r\n", " ").replace("\\\n", " ");
-    for line in joined.lines() {
-        let line = line.trim();
-        if line.starts_with('#') {
-            continue;
-        }
-        if !line.contains("pip install") && !line.contains("pip3 install") {
-            continue;
-        }
-        if line.contains("pip uninstall") {
-            continue;
-        }
-        // `pip install` wants --no-cache-dir; `uv pip install` wants --no-cache
-        // (uv's spelling, as used by core/benchmark-base-*). Either disables the
-        // package cache, so accept whichever is present.
-        if !line.contains("--no-cache-dir") && !line.contains("--no-cache") {
-            return true;
-        }
-    }
-    false
-}
-
-fn label_name_matches_dir(t: &str, dir: &str) -> bool {
-    // Look for eval.benchmark.name or eval.agent.name and compare to dir.
-    for line in t.lines() {
-        let l = line.trim();
-        if !l.starts_with("LABEL ") {
-            continue;
-        }
-        for key in ["eval.benchmark.name=", "eval.agent.name="] {
-            if let Some(i) = l.find(key) {
-                let rest = &l[i + key.len()..];
-                // Extract value between quotes if quoted
-                let val = rest
-                    .trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())
-                    .split(|c: char| c == '"' || c == '\'' || c.is_whitespace())
-                    .next()
-                    .unwrap_or("");
-                return val == dir;
-            }
-        }
-    }
-    // No name label found — caller treats this as a separate check
-    true
-}
-
-fn missing_dock_type(t: &str) -> bool {
-    !t.contains(r#"LABEL eval.type="#)
-}
-
-// ─── New rules from the 2026-04-15 dockerfile audit walk ───────────
-
-fn todo_string_literal(t: &str) -> bool {
-    // Flag literal "TODO" or 'TODO' inside RUN steps — cybench /
-    // mle-bench / swe-lancer write the word "TODO" as actual task
-    // content when upstream JSON lacks required fields, so the image
-    // then grades the agent against placeholder text. The existing
-    // todo_or_fixme rule only looks at `#` comments and misses this.
-    // Skip lines that are pure comments.
-    for line in t.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') {
-            continue;
-        }
-        // Must be inside a RUN (best-effort: only look at lines
-        // containing `"TODO"` or `'TODO'` as a quoted literal) to
-        // avoid matching the word `TODO` in unrelated positions.
-        if trimmed.contains("\"TODO\"") || trimmed.contains("'TODO'") {
-            return true;
-        }
-    }
-    false
-}
-
-fn silent_pip_fallback(t: &str) -> bool {
-    // `pip install ... 2>/dev/null || pip3 install ...` swallows
-    // stderr and falls back silently. If both fail, the dependency
-    // is missing at runtime and grade.py raises ImportError which
-    // test.sh converts to reward=0 — silent false negative.
-    for line in t.lines() {
-        let lc = line.to_lowercase();
-        if (lc.contains("pip install") || lc.contains("pip3 install")) && lc.contains("2>/dev/null")
-        {
-            return true;
-        }
-        if (lc.contains("pip install") || lc.contains("pip3 install")) && lc.contains("|| true") {
-            return true;
-        }
-    }
-    false
-}
-
-fn install_order_pip_before_apt(t: &str) -> bool {
-    // Layer-cache smell: pip install runs BEFORE apt-get install in
-    // the file. pip layers are more volatile (frequent upgrades),
-    // apt-get install is usually stable — running apt first lets the
-    // stable layer cache while pip churns.
-    let mut saw_pip_first = None;
-    for (i, line) in t.lines().enumerate() {
-        let lc = line.trim().to_lowercase();
-        if lc.starts_with('#') {
-            continue;
-        }
-        // Only consider top-level RUN lines
-        if !lc.starts_with("run ") {
-            continue;
-        }
-        if lc.contains("pip install") || lc.contains("pip3 install") {
-            saw_pip_first.get_or_insert(i);
-        } else if lc.contains("apt-get install")
-            && let Some(pip_idx) = saw_pip_first
-            && pip_idx < i
-        {
-            return true;
-        }
-    }
-    false
-}
-
-fn phantom_pip_uninstall_in_separate_run(t: &str) -> bool {
-    // `pip uninstall pyarrow` in its own RUN layer after a prior RUN
-    // that installed it reclaims zero space — the install layer still
-    // holds the files. The uninstall must be in the same RUN as the
-    // install to actually shrink the image. Heuristic: a RUN line that
-    // contains `pip uninstall` and no matching `pip install` on the
-    // same line.
-    for line in t.lines() {
-        let lc = line.trim().to_lowercase();
-        if lc.starts_with('#') {
-            continue;
-        }
-        if !lc.starts_with("run ") {
-            continue;
-        }
-        if lc.contains("pip uninstall") && !lc.contains("pip install") {
-            return true;
-        }
-    }
-    false
-}
-
-fn missing_data_revision_when_fetching_mutable_ref(t: &str) -> bool {
-    // If a RUN step pulls from a mutable HuggingFace/GitHub ref
-    // (refs/convert/parquet, main, master, HEAD) AND the image lacks
-    // a eval.benchmark.data_revision label, upstream can silently
-    // change the dataset under us.
-    //
-    // Only inspect RUN steps — LABEL values can contain "/main/"
-    // innocuously (doc links, inspect_impl URLs). We can't just grep
-    // the whole file.
-    let joined = strip_heredocs(t)
-        .replace("\\\r\n", " ")
-        .replace("\\\n", " ");
-    let mut has_mutable_fetch = false;
-    for line in joined.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') || !trimmed.to_lowercase().starts_with("run ") {
-            continue;
-        }
-        if trimmed.contains("refs/convert/parquet")
-            || trimmed.contains("?revision=main")
-            || trimmed.contains("?revision=master")
-            // github raw URL with a branch name in the path
-            || trimmed.contains("raw.githubusercontent.com/") && (trimmed.contains("/main/") || trimmed.contains("/master/"))
-        {
-            has_mutable_fetch = true;
-            break;
-        }
-    }
-    if !has_mutable_fetch {
-        return false;
-    }
-    // Allow if there's a data_revision label with a non-mutable value
-    for line in t.lines() {
-        if line.contains("eval.benchmark.data_revision=") {
-            let rest = &line[line.find('=').unwrap() + 1..];
-            let val = rest.trim_matches(['"', '\'', ' ', '\t']);
-            if !val.is_empty()
-                && val != "latest"
-                && val != "main"
-                && val != "master"
-                && val != "HEAD"
-            {
-                return false;
-            }
-        }
-    }
-    true
-}
-
-fn upstream_base_unpinned(t: &str) -> bool {
-    // Yellow signal: `eval.benchmark.upstream_base` label pins to :latest
-    // (or leaves the tag unset, which is equivalent). Per benchmarks/RULES.md
-    // principle 21b, third-party bases are legal but MUST be flagged as
-    // supply-chain debt until mirrored or pinned by digest.
-    for line in t.lines() {
-        if let Some(i) = line.find("eval.benchmark.upstream_base=") {
-            let rest = &line[i + "eval.benchmark.upstream_base=".len()..];
-            let val = rest
-                .trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())
-                .split(['"', '\''])
-                .next()
-                .unwrap_or("");
-            // Strip any variable substitution before tag analysis.
-            if val.ends_with(":latest") || (!val.contains(':') && !val.contains('@')) {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-fn data_revision_is_stale_pointer(t: &str) -> bool {
-    // eval.benchmark.data_revision="latest|main|master|HEAD|''"
-    for line in t.lines() {
-        if let Some(i) = line.find("eval.benchmark.data_revision=") {
-            let rest = &line[i + "eval.benchmark.data_revision=".len()..];
-            let val = rest
-                .trim_matches(|c: char| c == '"' || c == '\'' || c.is_whitespace())
-                .split(|c: char| c == '"' || c == '\'' || c.is_whitespace())
-                .next()
-                .unwrap_or("");
-            return val.is_empty()
-                || val == "latest"
-                || val == "main"
-                || val == "master"
-                || val == "HEAD";
-        }
-    }
-    false
-}
-
-fn uses_full_python_when_slim_exists(t: &str) -> bool {
-    // `FROM python:3.X` without -slim suffix (and not pointing at a
-    // known-needs-headers variant like `-dev`). Uppercase-only match
-    // to avoid catching Python heredoc `from ... import ...` lines.
-    for line in t.lines() {
-        let l = line.trim_start();
-        if !l.starts_with("FROM ") {
-            continue;
-        }
-        if let Some(rest) = l.get(5..) {
-            let image = rest.split_whitespace().next().unwrap_or("");
-            if image.starts_with("python:")
-                && !image.contains("-slim")
-                && !image.contains("-alpine")
-                && !image.contains("-dev")
-            {
-                return true;
-            }
-        }
-    }
-    false
-}
-
-// ─── Type predicates (RULES.md principle 9: version-override axis) ─
-
-fn is_agent(t: &str) -> bool {
-    t.contains(r#"LABEL eval.type="agent""#)
-}
-fn is_model(t: &str) -> bool {
-    t.contains(r#"LABEL eval.type="model""#)
-}
-
-// Exemption: models/replay is the in-repo replay stub that does NOT
-// wrap the real LiteLLM proxy — it implements its own minimal HTTP
-// server. It has no litellm_version to record.
-fn is_replay_model(_t: &str, dir: &str) -> bool {
-    dir == "replay"
-}
-
-// Version is a build-time axis (principle 9): an agent pins its upstream CLI
-// version as `ARG AGENT_VERSION=<x>`, used to drive the install AND the
-// `eval.agent.version` label, so `build agent --agent-version` overrides it and
-// the label can never disagree with what was installed. (Benchmarks pin the
-// dataset revision similarly via the data_revision label; only those that fetch
-// by revision additionally take an ARG, so that is not lint-enforced.)
-fn agent_missing_version_arg(t: &str, _dir: &str) -> bool {
-    is_agent(t) && !t.contains("ARG AGENT_VERSION")
-}
-// Gateway-flavor model images (LABEL gateway.kind=…) are thin wrappers
-// over gateways/{bifrost,litellm,portkey}; they don't ship litellm
-// themselves, so the EVAL_LITELLM_VERSION axis doesn't apply.
-fn is_gateway_flavor_model(t: &str) -> bool {
-    t.contains("LABEL gateway.kind=")
-}
-fn model_missing_litellm_version_label(t: &str, dir: &str) -> bool {
-    is_model(t)
-        && !is_replay_model(t, dir)
-        && !is_gateway_flavor_model(t)
-        && !t.contains("LABEL eval.model.litellm_version=")
-}
-fn model_missing_litellm_version_default(t: &str, dir: &str) -> bool {
-    is_model(t)
-        && !is_replay_model(t, dir)
-        && !is_gateway_flavor_model(t)
-        && !t.contains("ENV EVAL_LITELLM_VERSION_DEFAULT=")
-}
-
 // ─── Rule catalog (data, not code) ─────────────────────────────────
 
 const RULES: &[Rule] = &[
-    // ── Red ─────────────────────────────────────────────────────────
-    Rule::red(
-        "missing_dock_type",
-        "Dockerfile is missing a LABEL eval.type= declaration",
-        |t, _| missing_dock_type(t),
-    ),
-    Rule::red(
-        "hardcoded_secret",
-        "Dockerfile contains a literal API key or credential",
-        |t, _| contains_hardcoded_api_key(t),
-    ),
-    Rule::red(
-        "untagged_from",
-        "FROM without a tag — image is not reproducible",
-        |t, _| has_untagged_from(t),
-    ),
-    Rule::red(
-        "from_arg_not_global",
-        "FROM interpolates an ARG not declared in the global scope (before any FROM) — \
-         Docker expands it to empty and silently corrupts the image tag",
-        from_interpolates_nonglobal_arg,
-    ),
-    Rule::red(
-        "legacy_env_var",
-        "references $TASK_ID or $BENCHMARK — must use $EVAL_TASK_ID / $EVAL_BENCHMARK",
-        |t, _| has_legacy_env_var(t),
-    ),
-    Rule::red(
-        "label_dir_mismatch",
-        "eval.benchmark.name / eval.agent.name label does not match directory name",
-        |t, dir| !label_name_matches_dir(t, dir),
-    ),
-    Rule::red(
-        "apt_no_cleanup",
-        "apt-get install without rm -rf /var/lib/apt/lists/* on the same RUN (RULES.md 10b)",
-        |t, _| apt_install_without_cleanup(t),
-    ),
-    Rule::red(
-        "pip_no_cache_flag",
-        "pip install without --no-cache-dir (RULES.md 10b)",
-        |t, _| pip_install_without_no_cache(t),
-    ),
     Rule::red(
         "unpinned_pip",
         "pip install without ==version pin",
@@ -788,71 +181,6 @@ const RULES: &[Rule] = &[
         "unpinned_npm",
         "npm install -g without @version pin",
         |t, _| has_unpinned_npm(t),
-    ),
-    Rule::red(
-        "todo_or_fixme",
-        "Dockerfile comment contains TODO/FIXME/XXX (use FUTURE: for explicit future work)",
-        |t, _| has_todo_or_fixme(t),
-    ),
-    // ── Yellow ──────────────────────────────────────────────────────
-    Rule::yellow(
-        "stale_data_revision",
-        "eval.benchmark.data_revision is empty, latest, main, master, or HEAD",
-        |t, _| data_revision_is_stale_pointer(t),
-    ),
-    Rule::yellow(
-        "python_full_base",
-        "FROM python:X without -slim suffix (RULES.md 10a)",
-        |t, _| uses_full_python_when_slim_exists(t),
-    ),
-    Rule::yellow(
-        "upstream_base_unpinned",
-        "eval.benchmark.upstream_base pins :latest — third-party registry, supply-chain debt (benchmarks/RULES.md 21b)",
-        |t, _| upstream_base_unpinned(t),
-    ),
-    // ── New rules from the 2026-04-15 dockerfile audit walk ────────
-    Rule::red(
-        "todo_string_literal",
-        "Dockerfile writes the literal string \"TODO\" as task data (silent placeholder grading)",
-        |t, _| todo_string_literal(t),
-    ),
-    Rule::red(
-        "silent_pip_fallback",
-        "pip install with 2>/dev/null or || true fallback — errors are swallowed, grade.py will silently fail",
-        |t, _| silent_pip_fallback(t),
-    ),
-    Rule::yellow(
-        "install_order_pip_before_apt",
-        "pip install runs before apt-get install — reverse the order so the stable apt layer can cache",
-        |t, _| install_order_pip_before_apt(t),
-    ),
-    Rule::yellow(
-        "phantom_pip_uninstall",
-        "pip uninstall in its own RUN layer reclaims no space (RULES.md 10b) — combine with the install",
-        |t, _| phantom_pip_uninstall_in_separate_run(t),
-    ),
-    Rule::yellow(
-        "missing_data_revision_when_fetching_mutable_ref",
-        "Dockerfile fetches from a mutable ref (refs/convert/parquet, main, master) without pinning eval.benchmark.data_revision",
-        |t, _| missing_data_revision_when_fetching_mutable_ref(t),
-    ),
-    // ── Version is a build-time axis (RULES.md principle 9) ───────
-    // An agent pins its upstream CLI version as `ARG AGENT_VERSION`, which
-    // drives both the install and the eval.agent.version label.
-    Rule::red(
-        "agent_missing_version_arg",
-        "agent Dockerfile is missing `ARG AGENT_VERSION` (RULES.md 9 — version is a build arg)",
-        agent_missing_version_arg,
-    ),
-    Rule::red(
-        "model_missing_litellm_version_label",
-        "model Dockerfile is missing LABEL eval.model.litellm_version (models/RULES.md 15)",
-        model_missing_litellm_version_label,
-    ),
-    Rule::red(
-        "model_missing_litellm_version_default",
-        "model Dockerfile is missing ENV EVAL_LITELLM_VERSION_DEFAULT (RULES.md 9)",
-        model_missing_litellm_version_default,
     ),
 ];
 
@@ -913,106 +241,43 @@ fn walk_dockerfiles() -> Vec<(PathBuf, String)> {
 // ─── Unit tests (always run, no --ignored) ─────────────────────────
 
 #[test]
-fn rule_missing_dock_type_fires() {
-    let bad = "FROM alpine:3\nRUN echo hi\n";
+fn rule_unpinned_pip_fires() {
+    let bad = "FROM python:3.12-slim\nLABEL eval.type=\"agent\"\nRUN pip install requests\n";
     let fs = inspect_dockerfile(Path::new("t"), bad, "t");
-    assert!(fs.iter().any(|f| f.rule == "missing_dock_type"));
+    assert!(fs.iter().any(|f| f.rule == "unpinned_pip"));
 }
 
 #[test]
-fn rule_hardcoded_secret_fires() {
-    let bad = "FROM alpine:3\nENV OPENAI_KEY=sk-REDACTED\nLABEL eval.type=\"agent\"\n";
-    let fs = inspect_dockerfile(Path::new("t"), bad, "t");
-    assert!(fs.iter().any(|f| f.rule == "hardcoded_secret"));
-}
-
-#[test]
-fn rule_untagged_from_fires() {
-    let bad = "FROM ubuntu\nLABEL eval.type=\"agent\"\n";
-    let fs = inspect_dockerfile(Path::new("t"), bad, "t");
-    assert!(fs.iter().any(|f| f.rule == "untagged_from"));
-}
-
-#[test]
-fn rule_untagged_from_allows_scratch() {
-    let ok = "FROM scratch\nLABEL eval.type=\"agent\"\n";
+fn rule_unpinned_pip_allows_pinned_version() {
+    let ok = "FROM python:3.12-slim\nLABEL eval.type=\"agent\"\nRUN pip install requests==2.32.3\n";
     let fs = inspect_dockerfile(Path::new("t"), ok, "t");
-    assert!(!fs.iter().any(|f| f.rule == "untagged_from"));
+    assert!(!fs.iter().any(|f| f.rule == "unpinned_pip"));
 }
 
 #[test]
-fn rule_from_arg_not_global_fires() {
-    // AGENT_VERSION declared AFTER the FROM that interpolates it — Docker
-    // expands it to empty at the FROM (the plandex bug).
-    let bad = "FROM up:v${AGENT_VERSION} AS src\nFROM alpine:3\nARG AGENT_VERSION=1.2.3\nLABEL eval.type=\"agent\"\n";
+fn rule_unpinned_pip_exempts_transient_uninstalled_tool() {
+    // pyarrow installed unpinned to extract parquet at build time, then
+    // uninstalled in the same file — a transient build tool that never ships.
+    let ok = "FROM python:3.12-slim\nLABEL eval.type=\"benchmark\"\n\
+        RUN pip install pyarrow && python extract.py && pip uninstall -y pyarrow\n";
+    let fs = inspect_dockerfile(Path::new("t"), ok, "t");
+    assert!(!fs.iter().any(|f| f.rule == "unpinned_pip"));
+}
+
+#[test]
+fn rule_unpinned_npm_fires() {
+    let bad = "FROM node:20-alpine\nLABEL eval.type=\"agent\"\nRUN npm install -g some-cli\n";
     let fs = inspect_dockerfile(Path::new("t"), bad, "t");
-    assert!(fs.iter().any(|f| f.rule == "from_arg_not_global"));
+    assert!(fs.iter().any(|f| f.rule == "unpinned_npm"));
 }
 
 #[test]
-fn rule_from_arg_not_global_allows_global_decl() {
-    // Declared globally (before any FROM), then re-declared in-stage for the
-    // LABEL/RUN uses — the standard multi-stage pattern (swe-bench, compilebench).
-    let ok = "ARG AGENT_VERSION=1.2.3\nFROM up:v${AGENT_VERSION} AS src\nFROM alpine:3\nARG AGENT_VERSION=1.2.3\nLABEL eval.type=\"agent\"\n";
+fn rule_unpinned_npm_allows_pinned_version() {
+    // Both a scoped pin (`@scope/pkg@ver`) and a bare pin (`pkg@ver`) are exempt.
+    let ok = "FROM node:20-alpine\nLABEL eval.type=\"agent\"\n\
+        RUN npm install -g @anthropic-ai/claude-code@2.1.104 openclaw@2026.4.11\n";
     let fs = inspect_dockerfile(Path::new("t"), ok, "t");
-    assert!(!fs.iter().any(|f| f.rule == "from_arg_not_global"));
-}
-
-#[test]
-fn rule_from_arg_not_global_allows_predefined_buildarg() {
-    // Docker auto-provides TARGETARCH — a FROM may interpolate it with no ARG.
-    let ok = "FROM --platform=linux/${TARGETARCH} alpine:3\nLABEL eval.type=\"agent\"\n";
-    let fs = inspect_dockerfile(Path::new("t"), ok, "t");
-    assert!(!fs.iter().any(|f| f.rule == "from_arg_not_global"));
-}
-
-#[test]
-fn rule_legacy_env_var_fires() {
-    let bad = "FROM alpine:3\nLABEL eval.type=\"benchmark\"\nRUN echo $TASK_ID\n";
-    let fs = inspect_dockerfile(Path::new("t"), bad, "t");
-    assert!(fs.iter().any(|f| f.rule == "legacy_env_var"));
-}
-
-#[test]
-fn rule_legacy_env_var_allows_dock_prefix() {
-    let ok = "FROM alpine:3\nLABEL eval.type=\"benchmark\"\nRUN echo $EVAL_TASK_ID\n";
-    let fs = inspect_dockerfile(Path::new("t"), ok, "t");
-    assert!(!fs.iter().any(|f| f.rule == "legacy_env_var"));
-}
-
-#[test]
-fn rule_label_dir_mismatch_fires() {
-    let bad = "FROM alpine:3\nLABEL eval.type=\"benchmark\"\nLABEL eval.benchmark.name=\"other\"\n";
-    let fs = inspect_dockerfile(Path::new("t"), bad, "mybench");
-    assert!(fs.iter().any(|f| f.rule == "label_dir_mismatch"));
-}
-
-#[test]
-fn rule_apt_cleanup_fires() {
-    let bad = "FROM ubuntu:24.04\nLABEL eval.type=\"agent\"\nRUN apt-get update && apt-get install -y curl\n";
-    let fs = inspect_dockerfile(Path::new("t"), bad, "t");
-    assert!(fs.iter().any(|f| f.rule == "apt_no_cleanup"));
-}
-
-#[test]
-fn rule_apt_cleanup_allows_inline_rm() {
-    let ok = "FROM ubuntu:24.04\nLABEL eval.type=\"agent\"\nRUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*\n";
-    let fs = inspect_dockerfile(Path::new("t"), ok, "t");
-    assert!(!fs.iter().any(|f| f.rule == "apt_no_cleanup"));
-}
-
-#[test]
-fn rule_todo_or_fixme_fires() {
-    let bad = "FROM alpine:3\nLABEL eval.type=\"agent\"\n# TODO: fix this\n";
-    let fs = inspect_dockerfile(Path::new("t"), bad, "t");
-    assert!(fs.iter().any(|f| f.rule == "todo_or_fixme"));
-}
-
-#[test]
-fn rule_todo_allows_future_block() {
-    let ok = "FROM alpine:3\nLABEL eval.type=\"agent\"\n# FUTURE: consider swapping to alpine\n";
-    let fs = inspect_dockerfile(Path::new("t"), ok, "t");
-    assert!(!fs.iter().any(|f| f.rule == "todo_or_fixme"));
+    assert!(!fs.iter().any(|f| f.rule == "unpinned_npm"));
 }
 
 // ─── Fleet sweep (always runs — it's pure file I/O, <100ms) ────────

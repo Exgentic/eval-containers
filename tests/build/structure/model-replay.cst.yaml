@@ -1,0 +1,11 @@
+schemaVersion: '2.0.0'
+# Built-image label contract for the replay model — moved from
+# tests/build/test.rs (build_replay_model). The replay model is the only model
+# image built in contribution/release verification (no credentials), so its
+# label contract is pinned here.
+metadataTest:
+  labels:
+    - key: eval.type
+      value: model
+    - key: eval.model.name
+      value: replay

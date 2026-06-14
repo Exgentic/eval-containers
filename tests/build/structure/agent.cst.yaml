@@ -1,0 +1,18 @@
+schemaVersion: '2.0.0'
+# Built-image label contract for agent images — the assertions moved from
+# tests/build/test.rs (build_every_agent's check_labels). container-structure-test
+# inspects the REAL built image, so this supersedes reading the Dockerfile text:
+# the image is what ships, and the image is what we assert.
+metadataTest:
+  labels:
+    - key: eval.type
+      value: agent
+    - key: eval.agent.name
+      value: '.+'
+      isRegex: true
+    - key: eval.agent.description
+      value: '.+'
+      isRegex: true
+    - key: eval.agent.version
+      value: '.+'
+      isRegex: true
