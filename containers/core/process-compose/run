@@ -1,36 +1,38 @@
 #!/bin/bash
-# Eval entrypoint — preps env/dirs/output, then exec's process-compose.
+# Eval entrypoint — preps env/dirs/output, then drives the three-phase eval
+# (agent → verifier → result, benchmarks/RULES.md rule 12).
 #
-# Picks one of two orchestration files based on whether the caller
-# pre-set ANTHROPIC_BASE_URL:
+# Two execution paths, selected by whether the caller pre-set ANTHROPIC_BASE_URL:
 #
-#   unset (single-image mode)  → /etc/process-compose.yaml
-#       runs otelcol → gateway → agent → verifier → result locally.
+#   set (compose / k8s "runner" mode)  → the lean eval base.
+#       otelcol + gateway are sibling containers/pods the orchestrator already
+#       started and health-gated, so by the time this container runs the agent
+#       can reach them immediately. There is nothing to orchestrate in-container:
+#       the three phases run as a plain shell sequence — no process-compose.
 #
-#   set (compose / k8s mode)   → /etc/process-compose-runner.yaml
-#       runs only agent → verifier → result; otelcol+gateway are
-#       sibling containers/pods that the orchestrator started.
+#   unset (single-container mode)      → the -standalone bundle.
+#       otelcol + gateway run in-process, so process-compose brings up all five
+#       units (otelcol → gateway → agent → verifier → result) with readiness
+#       gating. process-compose + /etc/process-compose.yaml ship ONLY in the
+#       bundle (core/standalone.Dockerfile); the lean base has neither.
 #
-# Same image, same script, same agent/verifier/result semantics in
-# both modes. Mode-specific bits are which YAML and whether the URLs
-# point at 127.0.0.1 (single-image) or at the gateway service name
-# (compose/k8s).
+# Same agent/verifier/result semantics in both paths; the agent launch itself is
+# shared via /usr/local/bin/run-agent so rule 7's env allow-list has one home.
 #
-# Env-var contract (set by /root/entrypoint.sh wrapper):
+# Env-var contract (set by /entrypoint.sh wrapper / the orchestrator):
 #   TASK              agent's task prompt
 #   EXPECTED_ANSWER   verifier's ground truth (NOT visible to agent)
-#   TASK_ID           task identifier
+#   TASK_ID           task identifier (verifier/result only — never the agent)
 #   BENCHMARK         benchmark name (for result.json)
 #   AGENT             agent name (for result.json)
 #   MODEL             model name (for result.json)
 #   TIMEOUT           agent wall-clock timeout in seconds
-#   OPENAI_API_KEY    read by the in-container gateway in single-image mode
+#   OPENAI_API_KEY    read by the in-container gateway in single-container mode
 set -euo pipefail
 
 # Resolve from the EVAL_* canonical axis first (what the CLI sets in container
 # mode), falling back to the bare legacy names (set by compose/k8s), then a
-# default. process-compose.yaml's agent command reads these from the env at run
-# time (the values are $$-escaped there, not substituted at parse time).
+# default. run-agent reads these from the env it inherits.
 export TIMEOUT="${TIMEOUT:-${EVAL_TIMEOUT:-300}}"
 export TASK_ID="${TASK_ID:-${EVAL_TASK_ID:-}}"
 export MODEL="${MODEL:-${EVAL_MODEL:-}}"
@@ -38,34 +40,8 @@ export BENCHMARK="${BENCHMARK:-${EVAL_BENCHMARK:-unknown}}"
 export AGENT="${AGENT:-${EVAL_AGENT:-unknown}}"
 export TASK="${TASK:-}"
 
-# Mode detection: external gateway iff ANTHROPIC_BASE_URL was set by
-# the caller. In single-image mode we set it ourselves AFTER this check.
-PC_FLAGS=(--config /etc/process-compose.yaml)
-if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
-  # Overlay disables the in-container otelcol+gateway. Agent/verifier/
-  # result blocks come from the base file unchanged.
-  PC_FLAGS+=(--config /etc/process-compose-runner.yaml)
-fi
-export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://127.0.0.1:4000/anthropic}"
-export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai}"
-export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://127.0.0.1:4000/genai}"
-# litellm's OTel callback honors this env var. bifrost reads its
-# collector_url from config.json (the model image bakes in `otelcol`),
-# so this is litellm-specific. Setting it unconditionally is harmless
-# for bifrost.
-export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
-
 # Defensive fallback (agent uid baked into image at build time).
 id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
-
-# Resolve `otelcol` to loopback if nothing else does. The bifrost/litellm
-# config hardcodes the hostname `otelcol` so the same config works in
-# compose mode (docker DNS resolves the service name) and single-image
-# mode (no DNS — we add a /etc/hosts entry). getent checks both
-# /etc/hosts and DNS — only patch when neither has it.
-if ! getent hosts otelcol >/dev/null 2>&1; then
-  echo "127.0.0.1 otelcol" >> /etc/hosts
-fi
 
 # Output dirs.
 mkdir -p /output/{model,agent,task} /logs/verifier
@@ -75,8 +51,36 @@ chmod 0755 /output /output/agent /output/task /output/model
 # Capture run start time for the result writer.
 date -u +%Y-%m-%dT%H:%M:%SZ > /output/agent/.started-at
 
-# Hand off to process-compose.
+# ─── Runner mode (lean base) ──────────────────────────────────────────
+# External gateway iff ANTHROPIC_BASE_URL was set by the caller. The gateway +
+# otelcol are siblings the orchestrator health-gated, so run the three phases
+# directly. Each phase runs regardless of the previous one's exit status
+# (process-compose's `process_completed` semantics): the verifier always grades
+# whatever the agent produced — even on a timeout or crash — and a result.json
+# is always written.
+if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
+  /usr/local/bin/run-agent || true
+  bash /grade.sh || true
+  exec /usr/local/bin/write-result
+fi
+
+# ─── Single-container mode (bundle) ───────────────────────────────────
+# We own the whole pipeline. Point the agent + gateway at loopback and let
+# process-compose bring up otelcol → gateway → agent → verifier → result.
+export ANTHROPIC_BASE_URL="http://127.0.0.1:4000/anthropic"
+export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai}"
+export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://127.0.0.1:4000/genai}"
+# litellm's OTel callback honors this env var; bifrost reads its collector_url
+# from config.json. Setting it unconditionally is harmless for bifrost.
+export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
+
+# The gateway config hardcodes the hostname `otelcol`; in-process there is no
+# DNS, so map it to loopback (only when nothing else already resolves it).
+if ! getent hosts otelcol >/dev/null 2>&1; then
+  echo "127.0.0.1 otelcol" >> /etc/hosts
+fi
+
 exec /usr/local/bin/process-compose up \
-  "${PC_FLAGS[@]}" \
+  --config /etc/process-compose.yaml \
   --disable-dotenv \
   --tui=false

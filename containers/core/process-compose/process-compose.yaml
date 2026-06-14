@@ -1,20 +1,22 @@
-# Eval orchestration. Five processes:
+# Single-container pipeline. Five processes:
 #   otelcol → gateway → agent → verifier → result.
 #
-# Compose / k8s mode applies process-compose-runner.yaml as an overlay
-# (process-compose merges multiple -f configs); the overlay sets
-# `disabled: true` on otelcol+gateway, leaving agent+verifier+result
-# active. Single source for the agent/verifier/result definitions.
+# This is the SINGLE-CONTAINER mode only — the in-process orchestrator for the
+# -standalone bundle, where otelcol + gateway run in-process alongside the eval.
+# It ships ONLY in core/standalone.Dockerfile; the lean eval base has neither
+# process-compose nor this file. In compose / k8s, otelcol + gateway are sibling
+# containers/pods the orchestrator started, so /usr/local/bin/run runs the
+# agent → verifier → result sequence directly there — no in-container supervisor.
 #
-# URL contract (resolved by /usr/local/bin/run BEFORE process-compose
-# starts, so plain $VAR refs in commands work uniformly):
-#   ANTHROPIC_BASE_URL  default http://127.0.0.1:4000/anthropic
-#   OPENAI_BASE_URL     default http://127.0.0.1:4000/openai
+# URL contract (resolved by /usr/local/bin/run BEFORE process-compose starts, so
+# plain $VAR refs in commands work uniformly):
+#   ANTHROPIC_BASE_URL  http://127.0.0.1:4000/anthropic
+#   OPENAI_BASE_URL     http://127.0.0.1:4000/openai
 #
-# Mirrored per-benchmark in benchmarks/<name>/compose.yaml (compose mode)
-# and benchmarks/<name>/job.yaml (k8s mode) — same five units, same
-# dependency edges. processes:→services:/containers:, command:→image:,
-# readiness_probe:→healthcheck:, 127.0.0.1→service-name DNS / Pod loopback.
+# The compose / k8s surfaces mirror the same five units across separate
+# services/containers — compose/services.yaml and benchmarks/_chart — with the
+# same dependency edges: command:→image:, readiness_probe:→healthcheck:/probe,
+# 127.0.0.1→service-name DNS / Pod loopback.
 
 version: "0.5"
 
@@ -55,24 +57,10 @@ processes:
     log_location: /output/model/gateway.log
 
   agent:
-    # Stdout/stderr write directly to /output/agent/{stdout,stderr}.log
-    # via shell redirection rather than process-compose's `log_location`,
-    # which wraps lines in a {level,process,replica,message} JSON envelope
-    # that breaks verifiers reading raw stdout.
-    #
-    # $$VAR escapes process-compose's parse-time variable substitution so the
-    # values expand in the command shell at run time instead. This is required
-    # for $$TASK — the problem prompt is multi-line, and substituting it into
-    # this YAML scalar at parse time corrupts the document ("could not find
-    # expected ':'"). run exports all of these into the env process-compose
-    # inherits, so the shell still resolves them.
-    #
-    # `env -i` is an allow-list: the agent gets ONLY the problem text ($$TASK)
-    # and the gateway endpoints — never the task IDENTITY ($$TASK_ID). A model
-    # that recognizes a benchmark instance id (e.g. SWE-bench's) can recall a
-    # memorized fix and inflate the score; the verifier/result steps read the id
-    # from the inherited env, so grading is unaffected. (benchmarks/RULES.md 7.)
-    command: timeout $$TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$$TASK" MODEL="$$MODEL" TIMEOUT="$$TIMEOUT" OPENAI_BASE_URL="$$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
+    # The agent launch (non-root gosu, timeout, scrubbed env -i allow-list, raw
+    # stdout/stderr redirection) lives in /usr/local/bin/run-agent — shared with
+    # the lean base's runner sequence so rule 7's allow-list has one home.
+    command: /usr/local/bin/run-agent
     depends_on:
       gateway:
         condition: process_healthy

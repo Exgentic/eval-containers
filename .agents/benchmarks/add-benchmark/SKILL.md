@@ -49,13 +49,15 @@ answer, and any attached files from `EVAL_TASK_ID` alone
 
 1. **Create the benchmark directory.** Make `benchmarks/<name>/` and copy
    [`assets/TEMPLATE.md`](assets/TEMPLATE.md) as your scaffold. Every benchmark
-   ships four authored files: `Dockerfile` (builds the base image with
-   tasks + verifier), the per-benchmark deploy files `container.Dockerfile` +
-   `compose.yaml`, and `README.md`. The k8s surface is the shared chart selected
-   with `--set benchmark=<name>` — author a `benchmarks/_chart/presets/<name>.yaml`
-   only if the benchmark needs bespoke topology. *Why:* the directory is the
-   unit a CI test walks; missing `container.Dockerfile` or `compose.yaml` makes
-   the benchmark incomplete (`.agents/benchmarks/RULES.md:24`, `.agents/benchmarks/RULES.md:29`).
+   ships three authored files: `Dockerfile` (builds the base image with
+   tasks + verifier), the per-benchmark deploy file `compose.yaml`, and
+   `README.md`. The single-container surface (the standalone bundle) renders
+   from the one generic `core/standalone.Dockerfile`, and the k8s surface from the
+   shared chart selected with `--set benchmark=<name>` — neither needs a
+   per-benchmark file (author a `benchmarks/_chart/presets/<name>.yaml` only for
+   bespoke topology). *Why:* the directory is the unit a CI test walks; a missing
+   `compose.yaml` makes the benchmark incomplete
+   (`.agents/benchmarks/RULES.md:24`, `.agents/benchmarks/RULES.md:29`).
 
 2. **Write the `Dockerfile` to materialize tasks as flat files.** Fetch the
    dataset and write each task as `/tasks/<id>/problem.txt` + `answer.txt`
@@ -152,15 +154,15 @@ answer, and any attached files from `EVAL_TASK_ID` alone
    surfaces MUST share the same env contract (`EVAL_MODEL`, `EVAL_TASK_ID`,
    upstream credentials) and produce byte-equivalent `task/result.json` for the
    same inputs (`.agents/benchmarks/RULES.md:24`):
-   - `container.Dockerfile` (**single**) — a *single-line* registry pin
-     `FROM <registry>/evals/<name>--<agent>:<tag>`, nothing more (shared-env). A
-     **per-task** benchmark instead writes exactly two lines — `ARG EVAL_TASK_ID`
-     then `FROM <registry>/evals/<name>-${EVAL_TASK_ID}--<agent>:<tag>` — so the
-     pin resolves per task; never hardcode one task's name in the `FROM`. Record
-     the canonical build args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`,
-     `MODEL_IMAGE`) in the `README.md` so CI can rebuild via
-     `core/combination.Dockerfile`. Inert `ARG` lines the `FROM` does not
-     consume are forbidden (`.agents/benchmarks/RULES.md:24a`).
+   - **single** — no per-benchmark file. The single-container standalone bundle
+     renders from the one generic `core/standalone.Dockerfile` (`FROM eval-base` +
+     the in-process gateway/otelcol/process-compose); the lean base is the
+     `eval-base` build context (bake `target:eval` / `--build-context`), and
+     per-task resolution lives in that context ref — so there is no per-benchmark
+     stub and no `ARG EVAL_TASK_ID` indirection. Record the lean base's canonical build
+     args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`) in the `README.md` so
+     CI can rebuild via `core/combination.Dockerfile`
+     (`.agents/benchmarks/RULES.md:24a`).
    - `compose.yaml` (**compose**) — pull in `compose/services.yaml` via
      `include:` and only declare overrides; do NOT inline a service, network, or
      volume that already exists there
@@ -190,8 +192,8 @@ answer, and any attached files from `EVAL_TASK_ID` alone
       matching modulo k8s unit syntax
       (`.agents/benchmarks/RULES.md:10`, `.agents/benchmarks/RULES.md:24e`).
     - Network: enforce no-agent-internet per surface — `internal: true` in
-      compose, `iptables --uid-owner` in single mode, credential isolation
-      (rule 8) in k8s. If the benchmark *requires* internet, declare
+      compose, `iptables --uid-owner` in the standalone bundle (single mode),
+      credential isolation (rule 8) in k8s. If the benchmark *requires* internet, declare
       `eval.benchmark.internet=true` and remove the isolation in every surface;
       asymmetry is forbidden (`.agents/benchmarks/RULES.md:24d`).
 
