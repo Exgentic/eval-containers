@@ -113,6 +113,18 @@ addition; the patch on a bug fix that doesn't change the rule surface.
 - **Stale text in `tests/build/known-broken.md`** ("81/96 pass") replaced
   with the 100-benchmark baseline plus a note on local podman
   concurrent-network saturation.
+- **`plandex` agent didn't build, and didn't run even when built.** Two
+  bugs: (1) `ARG AGENT_VERSION` was declared *after* the version-pinned
+  `FROM plandexai/plandex-server:server-v${AGENT_VERSION}`, so the tag
+  resolved to `server-v` and the build failed with `manifest unknown` —
+  the `ARG` is now global (before any `FROM`). (2) The `eval-mock` model
+  pack in `custom-models.json` lacked the schema-required roles (`names`,
+  `commitMessages`, `autoContinue`, `wholeFileBuilder`), so `plandex
+  models custom --save` silently failed validation, the pack never
+  registered, and `tell` fell back to the Anthropic default and blocked
+  on the subscription prompt. With the pack completed, plandex reaches
+  the gateway and graduates from `tests/agents/broken.md` into the agent
+  smoke suite.
 
 ### Security
 
