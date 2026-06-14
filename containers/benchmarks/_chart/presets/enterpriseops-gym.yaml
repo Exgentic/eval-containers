@@ -1,0 +1,40 @@
+activeDeadlineSeconds: 2100
+timeout: '1800'
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: '4'
+    memory: 8Gi
+
+# Website / MCP service sidecars. The chart renders a Deployment+Service for
+# each entry the current task needs (RULES.md 24h) — keyed by the DNS-1123
+# service name in task-profiles/enterpriseops-gym.json, which the chart
+# self-resolves via Files.Get. Each entry must declare image + port; the
+# runner's wait-sidecars init container probes those ports before starting.
+# The same names are used by compose's inline service definitions, the
+# task-profiles map, and the runner's setup_task.py URL builder — one naming
+# convention end to end.
+sidecars:
+  csm:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-csm:latest
+    port: 8005
+  teams:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-teams:latest
+    port: 8005
+  calendar:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-calendar:latest
+    port: 8003
+  email:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-email:latest
+    port: 8005
+  itsm:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-itsm:latest
+    port: 8005
+  drive:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-drive:latest
+    port: 8005
+  hr:
+    image: shivakrishnareddyma225/enterpriseops-gym-mcp-hr:latest
+    port: 8005
