@@ -21,7 +21,7 @@ LABEL eval.benchmark.data_revision="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
 LABEL eval.benchmark.url="https://leaderboard.allenai.org/socialiqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1904.09728"
 
-RUN apt-get update && apt-get install -y curl unzip && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl unzip && rm -rf /var/lib/apt/lists/*
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.

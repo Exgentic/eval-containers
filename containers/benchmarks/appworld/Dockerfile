@@ -21,7 +21,7 @@ LABEL eval.benchmark.data_revision="refs/convert/parquet"
 LABEL eval.benchmark.url="https://github.com/stonybrooknlp/appworld"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.18901"
 
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
 
 ENV EVAL_BENCHMARK=appworld
 
