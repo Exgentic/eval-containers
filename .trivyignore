@@ -1,0 +1,50 @@
+# .trivyignore — accepted/by-design trivy findings for the fleet (issue #114).
+#
+# Used by tests/security/trivy.sh (config lane). Every entry MUST be justified
+# here. trivy keys ignores by the AVD id (the "AVD-DS-NNNN" / "AVD-KSV-NNNN"
+# shown under each finding); the bare "DS-NNNN" in the report maps to it 1:1.
+#
+# Verify after edits:
+#   tests/security/trivy.sh            # expect: clean, exit 0
+#   trivy config containers --severity HIGH,CRITICAL   # eyeball what remains
+
+# --- DS-0002  "Image user should not be 'root'"  (by design) ----------------
+# Fires on ~all fleet Dockerfiles (no top-level `USER` line). This is the
+# fleet's deliberate model, not an oversight:
+#   - Benchmark/core/model/gateway images run the EVALUATION/test phase, which
+#     ".agents/benchmarks/RULES.md:46" explicitly permits to run as root
+#     ("Agent as non-root … The test phase MAY run as root").
+#   - The agent — the one process that MUST be unprivileged
+#     (".agents/agents/RULES.md:42") — is constrained at RUNTIME (compose/k8s
+#     securityContext + the agent-nonroot audit), which a Dockerfile `USER`
+#     line cannot express and trivy cannot see.
+# A blanket "every image needs USER" is wrong for this fleet; hadolint's
+# equivalent is likewise not enforced (.pre-commit-config.yaml). Runtime non-root
+# is the real control and lives elsewhere.
+AVD-DS-0002
+
+# --- DS-0031  "Secrets passed via build-args/env"  (by design) --------------
+# Fires twice on containers/core/benchmark-base-hf/Dockerfile: `ARG HF_TOKEN=""`
+# and the `ENV HF_TOKEN=$HF_TOKEN` bridge. This is the sanctioned build-time
+# secret pattern, not a leak:
+#   - ".agents/RULES.md:86" (15.e): build-time secrets go through `args` with
+#     empty defaults — `args = { HF_TOKEN = HF_TOKEN }`.
+#   - The default is EMPTY; the production/CI path injects the value via
+#     `--mount=type=secret,id=HF_TOKEN` (see the Dockerfile comment), so no
+#     token is baked into image history. DS-0031 flags the *shape* (a secret-
+#     named ARG/ENV), not a committed value.
+#   - Leaked secret *values* are covered by gitleaks (verify step 22); this is a
+#     different, complementary check, and the value here is intentionally absent.
+AVD-DS-0031
+
+# --- DS-0029  "'apt-get' missing '--no-install-recommends'"  (FIXABLE) -------
+# Fires on 8 leaf benchmark Dockerfiles whose `apt-get install` predates this
+# gate (aider-polyglot, appworld, code-contests, gdpval, livecodebench,
+# longbench, socialiqa, swe-bench, usaco — the shared base
+# core/benchmark-base-hf already uses the flag). This is REAL hygiene, not by
+# design: it is the same rule as hadolint DL3015, which is NOT in the
+# .pre-commit-config.yaml ignore list. Ignored here only to land the trivy
+# wiring green without rewriting 8 unrelated Dockerfiles in the same change;
+# REMOVE this entry once those `apt-get install` lines gain
+# `--no-install-recommends` (tracked as a follow-up).
+AVD-DS-0029
