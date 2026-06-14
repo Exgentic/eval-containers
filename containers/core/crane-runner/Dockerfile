@@ -9,10 +9,11 @@
 # repo depends on this image -- `--mode crane` opts in.
 FROM debian:stable-slim
 
-# Userspace image tool (no daemon) + the sandbox. crane exports an image's
-# filesystem; bwrap/chroot runs a process inside it.
+# crane (a daemonless registry client) downloads an image's filesystem; curl +
+# CA certs fetch crane itself at build time. tar and chroot are already in the
+# base image; bwrap (hardened isolation) lands with the [3] build-out when used.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl bubblewrap tar \
+      ca-certificates curl \
  && rm -rf /var/lib/apt/lists/*
 
 # Pin crane for reproducibility (override with --build-arg CRANE_VERSION=...).
