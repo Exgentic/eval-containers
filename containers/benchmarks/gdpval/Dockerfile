@@ -25,7 +25,7 @@ LABEL eval.benchmark.data_revision="auto-parquet-ref"
 # reference docx/xlsx/pptx files downloaded via reference_urls.json in
 # /entrypoint.sh, and the agent needs libreoffice (via `soffice`) to
 # open and convert them. Nothing in this Dockerfile invokes it directly.
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libreoffice curl wget \
     && rm -rf /var/lib/apt/lists/*
 

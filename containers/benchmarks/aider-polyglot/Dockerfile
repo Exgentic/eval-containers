@@ -22,7 +22,7 @@ LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-data
 ENV DEBIAN_FRONTEND=noninteractive
 
 # --- Language toolchains ---
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git python3 python3-pip ca-certificates gnupg \
     gcc g++ cmake make \
     golang-go \
@@ -33,7 +33,7 @@ RUN apt-get update && apt-get install -y \
 
 # Node.js 20 (Ubuntu 22.04 ships v12 which is too old for Jest)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-  && apt-get install -y nodejs \
+  && apt-get install -y --no-install-recommends nodejs \
   && rm -rf /var/lib/apt/lists/*
 
 # Python test deps

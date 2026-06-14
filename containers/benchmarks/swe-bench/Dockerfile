@@ -40,7 +40,7 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2310.06770"
 ENV EVAL_BENCHMARK=swe-bench
 
 # System deps first (stable layer — cache-friendly)
-RUN apt-get update && apt-get install -y curl jq && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl jq && rm -rf /var/lib/apt/lists/*
 
 # Install grading deps to root-only path (agent cannot access or tamper)
 RUN (command -v pip3 >/dev/null && pip3 install --no-cache-dir --target /tests/deps swebench==3.0.17) \
