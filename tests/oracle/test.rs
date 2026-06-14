@@ -31,8 +31,10 @@ const SPECIAL: &[(&str, &str)] = &[
     ),
     // per-task built from source (rule 24g); gold = reverse the bug_reintroduce patch
     ("swe-lancer", "12155_1"),
-    // per-task; solution.sh writes the correct answer.json for each task
+    // per-task; solution.sh writes the correct output for each task
     ("skills-bench", "citation-check"),
+    ("skills-bench", "bike-rebalance"),
+    ("skills-bench", "civ6-adjacency-optimizer"),
     // Code benchmarks — gold solution = the dataset's reference, written to stdout.
     ("humaneval", "0"),
     ("humanevalplus", "0"),
