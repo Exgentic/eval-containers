@@ -21,6 +21,7 @@ ARG BENCHMARK_VERSION=c8e538eae8a6205294f0a86675fefdc1fac408f6
 ARG UPSTREAM_REPO_SHA=09593147ac79cf722cf2111ac6d4b10b9a6d5a58
 
 LABEL eval.type="benchmark"
+LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.name="enterpriseops-gym"
 LABEL eval.benchmark.description="EnterpriseOps-Gym - stateful enterprise agent tasks over MCP, SQL-verified"
 LABEL eval.benchmark.tasks="649"
@@ -112,11 +113,11 @@ COPY verify_task.py /app/verify_task.py
 RUN chmod 755 /app/setup_task.py /app/verify_task.py
 
 # Replace the inherited reward=-1 grader with the real verifier runner.
-RUN cat > /tests/test.sh <<'TEST'
+RUN cat > /grade.sh <<'TEST'
 #!/bin/bash
 python3 /app/verify_task.py
 TEST
-RUN chmod +x /tests/test.sh
+RUN chmod +x /grade.sh
 
 # Entrypoint: materialize task → create per-task DBs and build TASK string → exec the shared eval entrypoint.
 RUN cat > /entrypoint.sh <<'ENTRY'
@@ -125,7 +126,7 @@ set -e
 /eval-materialize-task
 python3 /app/setup_task.py
 export TASK="$(cat /var/eval-state/task.txt)"
-exec /eval-entrypoint.sh
+exec "$@"
 ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
