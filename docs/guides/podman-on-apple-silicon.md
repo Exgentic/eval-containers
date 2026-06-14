@@ -119,7 +119,7 @@ cargo build          # produces target/debug/eval-containers
 ## 5. Running the tests
 
 Structural / lint / unit tests need no containers — see [the local testing
-guide](../../tests/LOCAL.md). The **container suites** (replay, agents, build,
+guide](running-tests-locally.md). The **container suites** (replay, agents, build,
 gateways) run via testcontainers and need two extra env vars on podman:
 
 ```bash
@@ -146,7 +146,7 @@ the test's own `Drop` handlers.
 
 ## 6. Building images / `--local`
 
-For day-to-day dev, build only what you touched (see [LOCAL.md](../../tests/LOCAL.md)).
+For day-to-day dev, build only what you touched (see [running tests locally](running-tests-locally.md)).
 Two podman-specific notes:
 
 - **Bare `docker build` of an in-repo Dockerfile can 401 — and bake won't save
@@ -256,4 +256,4 @@ QEMU and segfaults Python builds, so for bake use real Docker.
 ## See also
 
 - [install.md](install.md) — Docker Desktop (recommended) setup
-- [../../tests/LOCAL.md](../../tests/LOCAL.md) — what to build/test locally and at which level
+- [running-tests-locally.md](running-tests-locally.md) — what to build/test locally and at which level

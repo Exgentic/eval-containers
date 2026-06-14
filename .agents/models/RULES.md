@@ -61,6 +61,10 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 16. **Hard budget cap.** The proxy MUST enforce a per-run hard cap on spend via `EVAL_MODEL_MAX_BUDGET` (USD). When crossed, the proxy MUST reject further requests with `BudgetExceededError` so the agent's next call fails fast. Default cap is `$1`. Configurable via `.env` or `eval-containers run --max-budget <N>`; no model-specific value MAY be hardcoded in image config (per [.agents/compose/RULES.md](../compose/RULES.md) rule 10). The enforcement entrypoint lives in `containers/core/litellm/eval-litellm-entrypoint.sh` and rewrites `/app/config.yaml`'s `max_budget` at container start from the env var.
 
+### Replay
+
+17. **Replay model serves recorded trajectories.** The `replay` model image (`containers/models/replay/`) MUST serve the provider API endpoints from a recorded trajectory instead of calling any upstream LLM, require no API keys, and be indistinguishable to the eval container from a live model service. It is contribution verification's only LLM backend (see [verification](../verification/RULES.md) rule 7); recorded fixtures live under `tests/run/replay/fixtures/`.
+
 ## References
 
 - [Process](../RULES.md)
@@ -72,4 +76,5 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 |------|--------|
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Added versioning section (rules 12-13): reproducible LiteLLM version pinned at build time, runtime override via `EVAL_LITELLM_VERSION`, container tag selection via `EVAL_MODEL_TAG`. Added `eval.model.litellm_version` to required labels (rule 15). Renumbered Image rules 14-15. |
+| 2026-06-14 | Added rule 17 (Replay): the replay model serves recorded trajectories with no API keys, indistinguishable from a live service. Absorbed from the retired `tests/containers/RULES.md` (rules 5–6) during the test-governance heal. |
 | 2026-04-15 | Added rule 16: `EVAL_MODEL_MAX_BUDGET` hard-cap (default $1) enforced by the shared core/litellm entrypoint wrapper. |
