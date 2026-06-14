@@ -6,7 +6,7 @@ This list is tracked by commit. Update the status snapshot below with every rele
 
 ## Prerequisites for a full local sweep on Apple Silicon
 
-1. **Podman with Rosetta** — x86_64 benchmarks use Rosetta native translation, not qemu. ~10× faster, no pyarrow / numpy segfaults. Enable via `podman machine ssh "sudo touch /etc/containers/enable-rosetta"` then restart the machine. See [tests/LOCAL.md](../LOCAL.md) for the full setup.
+1. **Podman with Rosetta** — x86_64 benchmarks use Rosetta native translation, not qemu. ~10× faster, no pyarrow / numpy segfaults. Enable via `podman machine ssh "sudo touch /etc/containers/enable-rosetta"` then restart the machine. See [running tests locally](../../docs/guides/running-tests-locally.md) for the full setup.
 2. **`HF_TOKEN` in `.env`** — required for HuggingFace gated datasets. Get one at https://huggingface.co/settings/tokens (read scope).
 3. **Accepted gated-dataset licenses** on HuggingFace for:
    - https://huggingface.co/datasets/cais/hle
@@ -27,7 +27,7 @@ saturates the VM's network stack and produces non-deterministic
 `curl`/`pip`/`apt-get` timeout storms (observed 2026-04-17). For local
 full-fleet sweeps use `EVAL_BUILD_PARALLEL=2` or fewer; CI under real
 Docker runs them reliably at higher concurrency. See
-[tests/LOCAL.md](../LOCAL.md) Level 2b.
+[running tests locally](../../docs/guides/running-tests-locally.md) Level 2b.
 
 ## Upstream data-reachability failures
 
@@ -76,7 +76,7 @@ ahead-of-time mirror in the release registry. See release runbook.
 
 | Benchmark | Root cause | Fix |
 |---|---|---|
-| `appworld` | we were running under qemu-user-static; pyarrow segfaulted | Enable Rosetta on podman machine (see [tests/LOCAL.md](../LOCAL.md)) |
+| `appworld` | we were running under qemu-user-static; pyarrow segfaulted | Enable Rosetta on podman machine (see [running tests locally](../../docs/guides/running-tests-locally.md)) |
 | `swe-bench` | `swebench==3.0.18` was yanked from PyPI; package jumps 3.0.17 → 4.0.0 | Bumped pin to `swebench==3.0.17` |
 
 Both verified locally. Deleting from the "failures" section above once the next round confirms green.
@@ -91,5 +91,5 @@ Both verified locally. Deleting from the "failures" section above once the next 
 
 - [tests/run/replay/fixtures/broken.json](../replay/fixtures/broken.json) — broken trajectory fixtures (run-time axis, not build-time).
 - [tests/VERIFY.md](../VERIFY.md) steps 12-13 — where the build sweep lives in the release checklist.
-- [tests/LOCAL.md](../LOCAL.md) — local podman + Rosetta + BuildKit GC setup.
+- [running tests locally](../../docs/guides/running-tests-locally.md) — local podman + Rosetta + BuildKit GC setup.
 - [.github/workflows/build-sweep.yml](../../.github/workflows/build-sweep.yml) — the CI sweep that is the authoritative green/red for these benchmarks.

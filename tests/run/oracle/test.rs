@@ -10,7 +10,7 @@
 //! `benchmarks/<name>/solution.sh` (auto-discovered by the CLI).
 //!
 //! `benchmarks_are_oracle_solvable` is a container test → `#[ignore]` per
-//! tests/containers/RULES.md; run on the daemon lane:
+//! .agents/verification/RULES.md; run on the daemon lane:
 //!   cargo test --test oracle -- --ignored
 //! `oracle_solutions_are_never_baked` is daemon-free and runs on every PR.
 
