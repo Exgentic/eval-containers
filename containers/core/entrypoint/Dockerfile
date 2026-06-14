@@ -12,3 +12,4 @@ LABEL eval.core.description="Shared evaluation entrypoint + network-resilience h
 # subclass on next rebuild without touching any benchmark/agent file.
 COPY eval-materialize-task /eval-materialize-task
 COPY eval-sitecustomize.py /eval-sitecustomize.py
+COPY eval-grade /eval-grade

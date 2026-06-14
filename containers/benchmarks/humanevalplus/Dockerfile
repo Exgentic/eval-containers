@@ -46,34 +46,21 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=humanevalplus
 
-# Test: combine agent code with EvalPlus test harness and run
+# Test: pipe prompt + completion + EvalPlus test (ending in `check(<entry>)`) into
+# the shared grader /eval-grade (benchmarks/RULES.md 22). Reward is the harness's
+# verdict, never the candidate's exit code (rule 5): grade.sh seeds reward.txt
+# with a fail and /eval-grade overwrites it with 1.0 only if the program runs to
+# completion with no exception. See /eval-grade for the guarantee and residuals.
 RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier
+echo 0.0 > /logs/verifier/reward.txt          # default-fail (rule 18)
 TASK_DIR="/tasks/$EVAL_TASK_ID"
-SOLUTION=$(cat /output/agent/stdout.log 2>/dev/null)
-PROMPT=$(cat $TASK_DIR/prompt.txt)
-TEST_CODE=$(cat $TASK_DIR/test.txt)
-ENTRY_POINT=$(cat $TASK_DIR/entry_point.txt)
-
-# Build the full program: prompt + agent completion + test harness + check call
-TMPDIR=$(mktemp -d)
-cat > $TMPDIR/test_solution.py <<PYEOF
-$PROMPT
-$SOLUTION
-
-$TEST_CODE
-
-check($ENTRY_POINT)
-PYEOF
-
-# Run with timeout; pass = 1.0, fail = 0.0
-if timeout 60 python3 $TMPDIR/test_solution.py >/dev/null 2>&1; then
-  echo 1.0 > /logs/verifier/reward.txt
-else
-  echo 0.0 > /logs/verifier/reward.txt
-fi
-rm -rf $TMPDIR
+{ cat "$TASK_DIR/prompt.txt"; echo
+  cat /output/agent/stdout.log 2>/dev/null; echo
+  cat "$TASK_DIR/test.txt"; echo
+  echo "check($(cat "$TASK_DIR/entry_point.txt"))"
+} | timeout 60 /eval-grade exec /logs/verifier/reward.txt >/dev/null 2>&1 || true
 TEST
 
 RUN chmod +x /grade.sh
