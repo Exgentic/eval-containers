@@ -13,15 +13,16 @@ echo
 echo "[setup] fetch crane + bwrap (userspace tools, no daemon)..."
 apt-get update -qq >/dev/null 2>&1
 apt-get install -y -qq --no-install-recommends ca-certificates curl bubblewrap >/dev/null 2>&1
-curl -sSL https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Linux_arm64.tar.gz \
+case "$(uname -m)" in x86_64) ca=x86_64; pa=amd64 ;; aarch64|arm64) ca=arm64; pa=arm64 ;; *) ca="$(uname -m)"; pa="$ca" ;; esac
+curl -sSL "https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Linux_${ca}.tar.gz" \
   | tar -xz -C /usr/local/bin crane
-echo "  crane=$(crane version 2>/dev/null || echo ok)  bwrap=$(command -v bwrap)"
+echo "  crane=$(crane version 2>/dev/null || echo ok)  bwrap=$(command -v bwrap)  arch=${pa}"
 echo
 
 echo "[1] DAEMONLESS PULL  (this is the part DinD would otherwise do)"
 echo "    crane export docker://alpine  ->  a root filesystem, just download+untar"
 mkdir -p /bench
-crane export --platform linux/arm64 alpine:latest - | tar -x -C /bench
+crane export --platform "linux/${pa}" alpine:latest - | tar -x -C /bench
 echo "    got rootfs: $(du -sh /bench 2>/dev/null | cut -f1),  top: $(ls /bench | tr '\n' ' ')"
 echo
 
