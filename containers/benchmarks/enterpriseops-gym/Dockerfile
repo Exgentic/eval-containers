@@ -122,6 +122,7 @@ RUN cat > /grade.sh <<'TEST'
 #!/bin/bash
 python3 /app/verify_task.py
 TEST
+
 RUN chmod +x /grade.sh
 
 # Entrypoint: materialize task → create per-task DBs and build TASK string → exec the shared eval entrypoint.
@@ -133,5 +134,6 @@ python3 /app/setup_task.py
 export TASK="$(cat /var/eval-state/task.txt)"
 exec "$@"
 ENTRY
+
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
