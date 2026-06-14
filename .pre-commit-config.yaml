@@ -81,6 +81,23 @@ repos:
           - --ignore=DL3029
         exclude: ^containers/benchmarks/(aider-polyglot|bigcodebench|humaneval|humanevalplus|mbpp|mbppplus|skills-bench)/Dockerfile$
 
+  # --- Dockerfiles: no floating third-party :latest (issue #110) ---
+  # hadolint's DL3007 (above) is *ignored* because the fleet's OWN images
+  # legitimately float on :latest (pinned per release via the bake TAG); a blunt
+  # DL3007 can't tell own-registry from third-party. This hook is the targeted
+  # rule hadolint can't express: an EXTERNAL image on :latest is an error unless
+  # it's on the reasoned ALLOWLIST in the script. Sweeps the whole fleet (the
+  # allowlist is fleet-wide), so pass_filenames is off; runs whenever any
+  # artifact Dockerfile — or the script/allowlist itself — changes.
+  - repo: local
+    hooks:
+      - id: no-floating-latest
+        name: no floating third-party :latest in artifact Dockerfiles
+        entry: tests/sanity/no-floating-latest.sh
+        language: script
+        pass_filenames: false
+        files: ^(containers/(core|agents|benchmarks|models|gateways)/[^/]+/Dockerfile|tests/sanity/no-floating-latest\.sh)$
+
   # --- Compose files: schema-validate against the Compose spec (no daemon) ---
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 0.37.2
