@@ -1,6 +1,6 @@
 # Runtime lifecycle
 
-*Concept · for benchmark and agent authors · derives from [`doctrine/benchmarks/RULES.md`](../../doctrine/benchmarks/RULES.md) rule 12.*
+*Concept · for benchmark and agent authors · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rule 12.*
 
 When an evaluation runs, four things happen in order. Every mode
 (container, compose, job) runs the same sequence — the mode only changes
@@ -9,17 +9,18 @@ who orchestrates it.
 ## The sequence
 
 ```
-/entrypoint.sh       benchmark setup (Docker ENTRYPOINT)
-  └─ exec "$@"       hands off to the default command
+/entrypoint.sh            benchmark setup (Docker ENTRYPOINT)
+  └─ exec "$@"            hands off to CMD
        │
        ▼
-/run.sh              agent solves the task
+/usr/local/bin/run        framework launcher (CMD in the combination image)
+  └─ process-compose      orchestrates the three steps below
        │
-       ▼
-/grade.sh            verifier grades the agent's output
+       ├─ /run.sh         agent solves the task
        │
-       ▼
-result.json          final reward written to /output/task/
+       ├─ /grade.sh       verifier grades the agent's output
+       │
+       └─ write-result    writes /output/{task,agent,model}/result.json
 ```
 
 ## Step by step
@@ -33,11 +34,28 @@ The benchmark's `ENTRYPOINT`. Runs as root before anything else.
 - Sets `TASK` (the prompt the agent sees) and `EXPECTED_ANSWER`.
 - Ends with `exec "$@"` — this is what connects ENTRYPOINT to CMD.
 
-Every benchmark Dockerfile must set:
+Every benchmark Dockerfile sets:
 ```dockerfile
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]
 ```
+
+The combination layer (which stitches benchmark + agent + gateway into one
+image) overrides CMD to `/usr/local/bin/run` — the framework launcher that
+starts process-compose. The benchmark's `CMD ["/grade.sh"]` only fires if
+you run the bare benchmark image without the combination layer.
+
+### 1b. `/usr/local/bin/run` — framework launcher
+
+Invoked by `exec "$@"` as the combination image's CMD. Prepares the
+environment (output dirs, agent user, mode detection) then execs
+process-compose, which runs the agent, verifier, and result writer in
+dependency order. See `core/process-compose/run` for the full script.
+
+In **single-image mode** (no external gateway), process-compose runs all
+five processes: otelcol → gateway → agent → verifier → result. In
+**compose/k8s mode** (ANTHROPIC_BASE_URL already set), it runs only the
+last three — otelcol and gateway are sibling containers.
 
 ### 2. `/run.sh` — agent
 
@@ -71,22 +89,31 @@ Most benchmarks copy a shared grader:
 COPY --from=test-exact-match /test.sh /grade.sh
 ```
 
-### 4. `result.json` — output
+### 4. `write-result` — output
 
-The framework reads `/logs/verifier/reward.txt` and writes the final
-`/output/task/result.json` with `task_id`, `benchmark`, `reward`, and
-`passed`. When this completes, the container exits.
+The `write-result` script reads `/logs/verifier/reward.txt` and writes
+three files:
 
-## The two path conventions
+- `/output/task/result.json` — `task_id`, `benchmark`, `reward`, `passed`
+- `/output/agent/result.json` — `agent`, `started_at`, `ended_at`
+- `/output/model/result.json` — `model`
+
+When write-result finishes, process-compose exits (via `exit_on_end: true`),
+which exits the container.
+
+## Key paths
 
 | Role | Path | Set by |
 |------|------|--------|
+| Benchmark setup | `/entrypoint.sh` | Benchmark Dockerfile (ENTRYPOINT) |
+| Framework launcher | `/usr/local/bin/run` | Combination layer (CMD) |
 | Agent entrypoint | `/run.sh` | Agent Dockerfile |
 | Grading script | `/grade.sh` | Benchmark Dockerfile |
+| Result writer | `/usr/local/bin/write-result` | Framework (core/process-compose) |
 
-These are the only paths a benchmark or agent author needs to know.
-Everything else (`/entrypoint.sh`, the framework launcher, result
-writing) is provided by the framework and inherited automatically.
+Benchmark and agent authors only need to care about `/entrypoint.sh`,
+`/run.sh`, and `/grade.sh`. The framework launcher, process-compose,
+and result writing are provided by the combination layer automatically.
 
 ## Where to go next
 
