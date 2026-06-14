@@ -3,7 +3,7 @@
 **Status:** Practical guide
 **Date:** April 2026
 
-This document is the practical counterpart to [RULES.md](RULES.md). RULES defines what tests MUST do; this doc explains how to run them on your machine without drowning in disk usage or OOMing your VM.
+This document is the practical counterpart to [RULES.md](../../.agents/verification/RULES.md). RULES defines what tests MUST do; this doc explains how to run them on your machine without drowning in disk usage or OOMing your VM.
 
 ## Principle
 
@@ -17,7 +17,7 @@ Eval Containers is a **Docker-first** project. Everything — Dockerfiles, compo
 
 - **Docker Desktop** — the canonical path, what CI uses. Easiest if you're on Mac or Windows and don't have a strong preference.
 - **Docker Engine** (Linux) — what the release pipeline runs against. Identical to Docker Desktop for our purposes.
-- **Podman** with the `docker` compatibility CLI — works if you already have Podman installed; the Apple-Silicon setup has a few gotchas, all collected in [Run with Podman on Apple Silicon](../docs/guides/podman-on-apple-silicon.md).
+- **Podman** with the `docker` compatibility CLI — works if you already have Podman installed; the Apple-Silicon setup has a few gotchas, all collected in [Run with Podman on Apple Silicon](podman-on-apple-silicon.md).
 - **Colima / OrbStack / Rancher Desktop** — also work; same Docker-compatible API.
 
 **You interact with Docker through the `docker` command and nothing else.** `docker build`, `docker compose`, `docker buildx bake`. The underlying engine doesn't matter. If you find yourself typing `podman` directly, you're off the happy path — fix your setup and use `docker` instead.
@@ -69,7 +69,7 @@ Podman-only features — but the Apple-Silicon setup has several gotchas (Rosett
 machine-image pinning, the compose plugin, `DOCKER_HOST` for both the CLI **and**
 the test harness, Ryuk under podman). They're all collected in one place:
 
-**→ [Running with Podman on Apple Silicon](../docs/guides/podman-on-apple-silicon.md)**
+**→ [Running with Podman on Apple Silicon](podman-on-apple-silicon.md)**
 
 Once set up, use `docker` for everything — never invoke `podman` directly.
 
@@ -101,7 +101,7 @@ docker build -t local/claude-code agents/claude-code/
 eval-containers build eval aime --agent codex
 ```
 
-That's it. Don't try to build the fleet locally — CI does that via [release pipeline](../.agents/delivery/release/SKILL.md).
+That's it. Don't try to build the fleet locally — CI does that via [release pipeline](../../.agents/delivery/release/SKILL.md).
 
 ### Level 2b: Full-fleet build sweep (local)
 
@@ -205,7 +205,7 @@ docker build containers/benchmarks/aime/                # only the ones you chan
 cargo test --test replay -- --ignored        # only the ones you changed
 ```
 
-Everything else — full fleet build, registry push, multi-arch — is CI's job. See [release pipeline](../.agents/delivery/release/SKILL.md).
+Everything else — full fleet build, registry push, multi-arch — is CI's job. See [release pipeline](../../.agents/delivery/release/SKILL.md).
 
 **Reclaim a weekend's worth of builds:**
 ```bash
@@ -232,7 +232,6 @@ No local builds needed. CI builds once; everyone pulls.
 
 ## References
 
-- [Testing Policy](RULES.md) — normative spec
-- [CLI](../.agents/src/RULES.md) — CLI design rules
-- [Containers](containers/RULES.md) — container test rules
-- [Release pipeline](../.agents/delivery/release/SKILL.md) — how CI builds and pushes the fleet
+- [Testing Policy](../../.agents/verification/RULES.md) — normative spec
+- [CLI](../../.agents/src/RULES.md) — CLI design rules
+- [Release pipeline](../../.agents/delivery/release/SKILL.md) — how CI builds and pushes the fleet
