@@ -26,7 +26,10 @@ are [`.agents/delivery/RULES.md`](../RULES.md). Because the tag *is* the
 version (`.agents/RULES.md:9`), bump `Cargo.toml`,
 `benchmarks/_chart/Chart.yaml`, and `CHANGELOG.md` to the release version
 **before** tagging, or the release aborts on the version-agreement gate
-(`.agents/delivery/RULES.md:6`).
+(`.agents/delivery/RULES.md:6`). Curate `CHANGELOG.md`'s `[Unreleased]`
+section here — drawn from the commit log, in the Keep a Changelog sections,
+for consumer-visible changes only; it is release-owner-curated, never edited
+per PR (`.agents/delivery/RULES.md:8`–`10`).
 
 Serves: `.agents/RULES.md:1` (the image is the product),
 `.agents/RULES.md:2` (standalone artifacts),
