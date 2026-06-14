@@ -22,6 +22,16 @@ Each task is an environment plus an instruction. The instruction is the task's
 `instruction.md`, copied to `/task/instruction.md` and passed to the agent via the
 `TASK` env var. Task input files come from the task's own `environment/Dockerfile`.
 
+**Skills.** SkillsBench's defining feature: each task ships `environment/skills/`
+(expert `SKILL.md` knowledge + scripts + references). They are copied to
+`./.claude/skills/` in the agent's working directory, where claude-code
+auto-discovers them as project skills in `-p` mode — no agent or launcher change
+needed, because `claude` runs in the eval image's `WORKDIR` (the benchmark is the
+`FROM` base) and never `cd`s. Verified end-to-end on `citation-check`: the agent
+invoked the `Skill` tool for `citation-management`, ran its scripts, and solved
+the task. (Skill discovery is claude-code-specific; the no-skills baseline is the
+benchmark built without this copy.)
+
 ## How it's graded
 
 `/grade.sh` runs the task's upstream `tests/test_outputs.py` with pytest
