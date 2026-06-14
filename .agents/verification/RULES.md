@@ -5,7 +5,7 @@
 
 ## Abstract
 
-Eval Containers's product is Docker images, Compose files, and the evaluations they produce. This document defines the overall testing strategy — what testing *means* in this repo, regardless of which specific category of test is being written. Per-category rules live next door in `tests/<category>/RULES.md`.
+Eval Containers's product is Docker images, Compose files, and the evaluations they produce. This document defines the overall testing strategy — what testing *means* in this repo, regardless of which specific category of test is being written. Per-category rules live next door in `tests/<stage>/<category>/RULES.md` (the suite is grouped into stage crates — see rule 3).
 
 ## Terminology
 
@@ -33,7 +33,7 @@ The **procedure** for executing each process — exact commands, order, gates �
 
 ## Test category organization
 
-3. **One subfolder per test category.** Every test lives under `tests/<category>/` with a local `RULES.md`, one or more `*.rs` integration test files, and any category-local data (fixtures, known-broken manifests, reports). The Cargo integration-test target is registered via `[[test]]` in `Cargo.toml` so `cargo test --test <name>` keeps working.
+3. **Tests are grouped by stage, one Cargo crate per stage.** Every test lives under `tests/<stage>/`, where `<stage>` is `static` (daemon-free, every-PR, dependency-light), `build` (image builds), or `run` (live container/cluster). A category is a subfolder within its stage (`tests/run/<category>/`; the `static` category's files sit directly under `tests/static/`) with a local `RULES.md`, its `*.rs` test file(s), and any category-local data (fixtures, known-broken manifests, reports). Each target is registered via `[[test]]` in its stage crate's `Cargo.toml`, with names unique across the workspace so `cargo test --test <name>` keeps working. Shared repo-root helpers live in `tests/support`. The `static` crate is the per-PR gate and MUST NOT depend on the testcontainers/tokio/reqwest stack; that stack belongs only to `build` and `run`.
 
 4. **Subfolder rules are local.** A rule that applies only to build tests lives in `tests/build/RULES.md`. A rule that applies across every test category lives here.
 
@@ -120,3 +120,4 @@ tests rather than moving into `.agents/`.
 | 2026-04-13 | Replace mock model with replay model |
 | 2026-04-15 | Narrow rule 2 to runtime tests; add carve-out 2a for static validation |
 | 2026-04-15 | Rewrite as testing strategy. Two verification processes; subfolder organization; known-broken manifests; fixture provenance; mechanical > procedural > aspirational precedence. |
+| 2026-06-14 | Rule 3: split the suite into per-stage Cargo crates (`tests/static` / `tests/build` / `tests/run` + shared `tests/support`). The dependency-light `static` crate is the per-PR gate and excludes the testcontainers/tokio/reqwest stack. Test target names preserved, so `cargo test --test <name>` is unchanged. |
