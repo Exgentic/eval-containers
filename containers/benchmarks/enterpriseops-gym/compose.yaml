@@ -25,7 +25,8 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/enterpriseops-gym--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: enterpriseops-gym
-      TIMEOUT: "1800"
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
+      TIMEOUT: ${EVAL_TIMEOUT:-1800}
     deploy:
       resources:
         limits:
