@@ -62,11 +62,17 @@ pub fn eval_task_image(
     )
 }
 
-/// `{registry}/evaluate` — the single published evaluation compose artifact.
-/// `run --mode compose` consumes it as `oci://{registry}/evaluate`; one generic,
-/// `EVAL_BENCHMARK`-parameterized artifact, not one per benchmark.
-pub fn compose_artifact(registry: &str) -> String {
-    format!("{registry}/evaluate")
+/// `{registry}/eval-<benchmark>` — the per-benchmark published compose artifact.
+/// `run --mode compose` consumes it as `oci://{registry}/eval-<benchmark>` (one
+/// `-f`, registry-only). Each is the benchmark's `compose.yaml` flattened at
+/// publish: the shared `compose/services.yaml` (gateway + otelcol + runner)
+/// resolved in via that benchmark's `include:`, plus its sidecars. The shared
+/// shape lives in exactly one source file (`services.yaml`) and is baked into
+/// every per-benchmark artifact at build, so a consumer never chases a second
+/// include — the layering is compose's own merge, done once at publish
+/// (`src/RULES.md` principle 3 — no magic in the CLI).
+pub fn compose_artifact(registry: &str, benchmark: &str) -> String {
+    format!("{registry}/eval-{benchmark}")
 }
 
 /// The canonical source repository for every fleet image, emitted as the
@@ -244,10 +250,10 @@ mod tests {
     }
 
     #[test]
-    fn compose_artifact_is_the_single_evaluate_ref() {
-        // The publish target (`build compose`) MUST equal what `run --mode
-        // compose` consumes as oci://{registry}/evaluate — one shared helper,
-        // so the two sides can't drift apart again.
-        assert_eq!(compose_artifact(REG), format!("{REG}/evaluate"));
+    fn compose_artifact_is_the_per_benchmark_eval_ref() {
+        // The publish target (`build compose --benchmark X`) MUST equal what
+        // `run --mode compose` consumes as oci://{registry}/eval-X — one shared
+        // helper, so the two sides can't drift apart.
+        assert_eq!(compose_artifact(REG, "aime"), format!("{REG}/eval-aime"));
     }
 }

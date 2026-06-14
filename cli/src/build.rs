@@ -97,10 +97,19 @@ pub enum BuildTarget {
         #[arg(long, default_value = "gpt-5.4--bifrost")]
         model: String,
     },
-    /// Publish the generic evaluation compose file (compose/services.yaml) as
-    /// the single `oci://<registry>/evaluate` artifact that `run --mode compose`
-    /// consumes. Parameterized at run time by EVAL_BENCHMARK / EVAL_AGENT.
-    Compose,
+    /// Publish a benchmark's compose stack as `oci://<registry>/eval-<x>`.
+    ///
+    /// Flattens `containers/benchmarks/<x>/compose.yaml` (resolves its
+    /// `include:` of the shared `compose/services.yaml` and bakes in the
+    /// benchmark's sidecars) into one self-contained artifact, so `run --mode
+    /// compose` consumes it with a single `-f`, registry-only. The shared shape
+    /// stays single-sourced in `services.yaml`; flattening happens here at
+    /// publish, not in the consumer. Run in a release CI matrix over every
+    /// benchmark.
+    Compose {
+        #[arg(long)]
+        benchmark: String,
+    },
 }
 
 pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
@@ -211,23 +220,15 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             }
             bake_with_env(registry, "eval", &overrides, &bake_env, builder, dry_run)
         }
-        BuildTarget::Compose => {
+        BuildTarget::Compose { benchmark } => {
             if builder.is_some() {
                 return Err("--builder does not apply to `build compose` \
                             (it publishes a compose file, not an image)"
                     .into());
             }
-            // The `evaluate` artifact is the self-contained generic eval topology
-            // (compose/services.yaml — no `include:`, so `docker compose publish`
-            // accepts it; the runner image is parameterized by EVAL_BENCHMARK /
-            // EVAL_AGENT). One artifact, consumed by `run --mode compose` as
-            // `oci://{registry}/evaluate`. Per-benchmark compose.yaml files keep
-            // their `include:` for `--local` runs (compose/RULES.md rule 8).
-            docker_compose_publish(
-                "containers/compose/services.yaml",
-                &compose_artifact(registry),
-                dry_run,
-            )
+            let compose_file = format!("containers/benchmarks/{benchmark}/compose.yaml");
+            let tag = compose_artifact(registry, &benchmark);
+            docker_compose_publish(&compose_file, &tag, dry_run)
         }
     }
 }
@@ -309,14 +310,21 @@ fn ensure_builder(name: &str) -> Result<(), String> {
     ))
 }
 
-/// Publish a self-contained compose file as the `evaluate` OCI artifact.
+/// Flatten a benchmark's `compose.yaml` and publish it as the `eval-<benchmark>`
+/// OCI artifact.
 ///
-/// `docker compose publish` interpolates the model to validate it, so the
-/// gateway's required `${OPENAI_API_KEY:?}` / `${OPENAI_API_BASE:?}` must be set
-/// at publish time. They are NOT written into the artifact — the published file
-/// keeps the `${...}` placeholders for the consumer to fill at `up` time — so we
-/// pass inert placeholders and print them, keeping the command hand-runnable
-/// (src/RULES.md principle 2). `-y` skips the interactive confirmation.
+/// `docker compose publish` rejects files with local `include:` directives, and
+/// every benchmark's `compose.yaml` includes the shared `compose/services.yaml`.
+/// So we first flatten with `docker compose config --no-interpolate` (resolves
+/// the include into one self-contained document, preserving the `${VAR}`
+/// placeholders for the consumer to fill at `up` time), write it to a temp file,
+/// then publish that.
+///
+/// `publish` interpolates the model to validate it, so the gateway's required
+/// `${OPENAI_API_KEY:?}` / `${OPENAI_API_BASE:?}` must be set at publish time.
+/// They are NOT written into the artifact — `--no-interpolate` keeps the
+/// placeholders — so we pass inert values and print every step, keeping the
+/// commands hand-runnable (src/RULES.md principle 2). `-y` skips the prompt.
 fn docker_compose_publish(compose_file: &str, tag: &str, dry_run: bool) -> Result<(), String> {
     let publish_env = [
         ("OPENAI_API_KEY", "unused-at-publish"),
@@ -327,12 +335,35 @@ fn docker_compose_publish(compose_file: &str, tag: &str, dry_run: bool) -> Resul
         .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<_>>()
         .join(" ");
-    eprintln!("$ {env_str} docker compose -f {compose_file} publish -y {tag}");
+    // The self-contained document publish actually consumes, named after the
+    // artifact so concurrent CI-matrix publishes don't clobber each other.
+    let artifact = tag.rsplit('/').next().unwrap_or("eval");
+    let flat = std::env::temp_dir().join(format!("{artifact}.compose.yaml"));
+    let flat = flat
+        .to_str()
+        .ok_or_else(|| "temp dir path is not valid UTF-8".to_string())?;
+    eprintln!("$ docker compose -f {compose_file} config --no-interpolate > {flat}");
+    eprintln!("$ {env_str} docker compose -f {flat} publish -y {tag}");
     if dry_run {
         return Ok(());
     }
+
+    // Flatten: resolve the local include into one document, keep ${VAR}s.
+    let out = Command::new("docker")
+        .args(["compose", "-f", compose_file, "config", "--no-interpolate"])
+        .output()
+        .map_err(|e| format!("failed to run docker compose config: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "docker compose config failed with {}: {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    std::fs::write(flat, &out.stdout).map_err(|e| format!("failed to write {flat}: {e}"))?;
+
     let mut cmd = Command::new("docker");
-    cmd.args(["compose", "-f", compose_file, "publish", "-y", tag]);
+    cmd.args(["compose", "-f", flat, "publish", "-y", tag]);
     for (k, v) in publish_env {
         cmd.env(k, v);
     }
@@ -586,7 +617,7 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
             let env = vec![("EVAL_BENCHMARK", benchmark), ("EVAL_AGENT", agent)];
             ("eval".to_string(), overrides, env)
         }
-        BuildTarget::Compose => {
+        BuildTarget::Compose { .. } => {
             return Err("--builder oc does not apply to `build compose`".into());
         }
     };

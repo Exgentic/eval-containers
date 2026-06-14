@@ -64,9 +64,12 @@ See [Environment variables](env-vars.md) for the full `EVAL_*` namespace.
 
 `eval-containers build <agent|bench|model|eval> <name> [flags]`
 
-`eval-containers build compose` takes no name — it publishes the generic
-compose artifact to `oci://<registry>/evaluate`, parameterized at run time by
-`EVAL_BENCHMARK` / `EVAL_AGENT`.
+`eval-containers build compose --benchmark <x>` publishes that benchmark's
+compose stack to `oci://<registry>/eval-<x>` — the benchmark's `compose.yaml`
+flattened (shared `services.yaml` resolved in via its `include:`, plus the
+benchmark's sidecars) so `run --mode compose` consumes it with a single `-f`.
+The runner image and env stay parameterized at run time by `EVAL_AGENT` /
+`EVAL_TASK_ID`. Run once per benchmark (the release CI does this in a loop).
 
 | Flag | Notes |
 |---|---|
