@@ -65,7 +65,13 @@ warned_files=0
 for dockerfile in "${files[@]}"; do
 	total=$((total + 1))
 	dir=$(basename "$(dirname "${dockerfile}")")
-	printf '{"params":{"dir":"%s"}}\n' "${dir}" >"${params_file}"
+	# Category = the artifact root (benchmarks|agents|models|gateways|core). Some
+	# eval-domain rules (e.g. missing_dock_type, phantom_pip_uninstall) are scoped
+	# to benchmarks/agents/models in dockerfile_inspection.rs, which sweeps only
+	# those three roots; gateways/core are out of that domain. conftest cannot see
+	# the path, so inject the category alongside dir so the policy can match scope.
+	category=$(basename "$(dirname "$(dirname "${dockerfile}")")")
+	printf '{"params":{"dir":"%s","category":"%s"}}\n' "${dir}" "${category}" >"${params_file}"
 
 	# Capture conftest output so we can both show it and inspect the tallies.
 	# `conftest test` exits non-zero on any failure; --no-fail keeps the loop
