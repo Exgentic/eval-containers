@@ -55,5 +55,6 @@ Casual users never touch these; power users pin. Full list in
 
 ## Where to go next
 
+- [Build and runtime lifecycle](runtime-lifecycle.md) — how the image is assembled and what happens when you run it
 - [Triple-mode](triple-mode.md) — the three runtimes for the same eval
 - [Run your first eval](../guides/run-your-first-eval.md) — hands-on
