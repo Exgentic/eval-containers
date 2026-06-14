@@ -34,11 +34,18 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 7. **Immutable crate versions.** A published crates.io version MUST NOT be reused or republished.
 
+8. **Release-curated changelog.** `CHANGELOG.md` MUST be updated only when cutting a release tag.
+
+9. **Standard sections only.** `CHANGELOG.md` MUST contain only the Keep a Changelog sections: Added, Changed, Deprecated, Removed, Fixed, and Security.
+
+10. **Consumer-visible entries only.** A `CHANGELOG.md` entry MUST record a change visible to a consumer of a release.
+
 ## References
 
 - [Process](../RULES.md) — principle 9 (the one-version policy and version knobs); principle 13 (self-contained repo).
 - [Repository, Naming & Output](../compose/RULES.md) — rule 5 (version tags).
 - [`release` skill](release/SKILL.md) — the procedure these outcomes constrain.
+- [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) — the format principles 10–11 constrain `CHANGELOG.md` to.
 
 ## Changelog
 
@@ -46,3 +53,4 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 |------|--------|
 | 2026-06-11 | Initial version. Lifts the unified fleet + CLI release outcomes out of the root `RELEASE.md` into the delivery topic, which had skills but no `RULES.md`. |
 | 2026-06-11 | Rule 5: permit an explicit `workflow_dispatch` (manual re-run with a version input) alongside a tag push — the fleet workflow's escape hatch; still forbids branch-push publishes. |
+| 2026-06-14 | Added principles 8–10: the changelog is edited only when cutting a release tag, restricted to the Keep a Changelog sections, and limited to consumer-visible changes. |

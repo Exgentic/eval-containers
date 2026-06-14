@@ -14,6 +14,8 @@ For PRs that modify existing code, fill in the sections below.
 -->
 
 > This repo is governed by [`AGENTS.md`](../AGENTS.md) and [`.agents/`](../.agents/). Check your change against the rules for the area you touched; for a release, follow [`.agents/verification/verify/SKILL.md`](../.agents/verification/verify/SKILL.md).
+>
+> **Do not edit `CHANGELOG.md`** — it is release-curated, not per-PR ([`.agents/delivery/RULES.md`](../.agents/delivery/RULES.md) 8–10).
 
 ## Summary
 
