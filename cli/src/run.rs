@@ -217,7 +217,7 @@ fn run_compose(
     let compose_ref = if local {
         format!("./containers/benchmarks/{benchmark}/compose.yaml")
     } else {
-        format!("oci://{}", compose_artifact(registry))
+        format!("oci://{}", compose_artifact(registry, benchmark))
     };
     let env_str = envs
         .iter()

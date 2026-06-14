@@ -1,8 +1,9 @@
 name: Release the fleet
 
 # On a `vX.Y.Z` tag, build + push the ENTIRE base fleet (core, agents,
-# benchmarks, models, gateways) to GHCR at `:<tag>`, then publish the `evaluate`
-# compose artifact + the `charts/eval` Helm chart at the same version.
+# benchmarks, models, gateways) to GHCR at `:<tag>`, then publish the
+# per-benchmark `eval-<benchmark>` compose artifacts + the `charts/eval` Helm
+# chart at the same version.
 # (Crate releases — `cargo install eval-containers` — live separately in
 # release.yml / cargo-dist; this workflow is the container/chart fleet only.)
 #
@@ -90,11 +91,24 @@ jobs:
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             "${TARGETS[@]}" --push
 
-      - name: Publish the evaluate compose artifact
+      - name: Publish per-benchmark compose artifacts
         env:
           EVAL_REGISTRY: ${{ env.REGISTRY }}
           TAG: ${{ steps.ver.outputs.tag }}
-        run: cargo run -p eval-containers --quiet -- build compose
+        run: |
+          # One self-contained oci://<registry>/eval-<benchmark> per benchmark
+          # (naming::compose_artifact): each is the benchmark's compose.yaml
+          # flattened (shared services.yaml resolved in via its include: + the
+          # benchmark's sidecars), so `run --mode compose` consumes it with a
+          # single -f. Artifacts are tiny YAML — publish covers every benchmark.
+          cargo build -p eval-containers --quiet
+          for d in containers/benchmarks/*/; do
+            b=$(basename "$d")
+            [ -f "${d}compose.yaml" ] || continue
+            echo "::group::publish eval-${b}"
+            target/debug/eval-containers build compose --benchmark "$b"
+            echo "::endgroup::"
+          done
 
       - name: Publish the Helm chart at the tag
         run: |
