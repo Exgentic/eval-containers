@@ -8,7 +8,7 @@ name: Release the fleet
 #
 # Fleet-version policy (RULES.md principle 9): the git tag IS the one release
 # version; Cargo.toml and benchmarks/_chart/Chart.yaml MUST equal it (guarded
-# below + by tests/sanity/check.rs). Eval combination images (evals/<b>--<a>)
+# below + by tests/static/check.rs). Eval combination images (evals/<b>--<a>)
 # are built on demand by the CLI, not pre-published, so they are not in the
 # fleet build (RELEASE skill: "every benchmark, agent, model, gateway, core").
 #

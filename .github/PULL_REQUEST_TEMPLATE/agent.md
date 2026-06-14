@@ -81,13 +81,13 @@ eval-containers run <second-benchmark> --agent <name> --model gpt-5.4 --task-id 
 ```
 
 - [ ] Same three checks as above
-- [ ] Trace inspected using the [tests/live/RULES.md trace inspection checklist](../../tests/live/RULES.md#trace-inspection-checklist) (categories A-E). Verdict per benchmark:
+- [ ] Trace inspected using the [tests/run/live/RULES.md trace inspection checklist](../../tests/run/live/RULES.md#trace-inspection-checklist) (categories A-E). Verdict per benchmark:
   - Benchmark 1 — A/B/C/D/E: <!-- green / yellow / red per category + notes -->
   - Benchmark 2 — A/B/C/D/E: <!-- green / yellow / red per category + notes -->
 
 ### Replay fixture
 
-- [ ] One of the two runs above (the greenest one) is promoted to `tests/replay/fixtures/<benchmark>-0-<name>.trajectory.jsonl`
+- [ ] One of the two runs above (the greenest one) is promoted to `tests/run/replay/fixtures/<benchmark>-0-<name>.trajectory.jsonl`
 - [ ] `fixtures/provenance.json` records the model, timestamp, and release tag
 - [ ] `cargo test --test replay -- --ignored` passes including your new fixture
 

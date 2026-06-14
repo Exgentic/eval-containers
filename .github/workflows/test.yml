@@ -47,39 +47,39 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      # Lint exactly the daemon-free surface this gate builds — the shipping
-      # crate plus the fast test targets. The container/e2e suites (build,
-      # live, gateways, …) are linted in their own workflow where they run.
+      # Lint exactly the daemon-free surface this gate builds: the shipping CLI
+      # crate (lib + bins + cli_conformance) and the static-stage gate crate
+      # (check / dockerfile_inspection / task_inspection). Scoping by package
+      # keeps the testcontainers/tokio/reqwest stack — declared only by the
+      # build/run crates, which are linted where they run — off this path.
       - name: cargo clippy -D warnings
         run: |
-          cargo clippy --lib --bins \
-            --test check \
-            --test dockerfile_inspection \
-            --test task_inspection \
-            --test cli_conformance \
+          cargo clippy \
+            -p eval-containers \
+            -p eval-containers-tests-static \
+            --all-targets \
             -- -D warnings
 
-      # Pure file I/O, no daemon. ~10s of work, dominated by the Rust compile
-      # (cached above).
-      #   - lib/bins        : naming + gen_bake unit tests
-      #   - check           : triple-mode file presence, count reconciliation,
-      #                       READMEs, + the bespoke repo-meta invariants
-      #   - dockerfile_*    : the residual unpinned-pip/npm Dockerfile sweep
-      #   - task_inspection : trajectory rule UNIT tests (fixture audit skipped)
-      #   - cli_conformance : every benchmark/agent/model matches CLI naming
+      # Pure file I/O, no daemon. Dominated by the Rust compile (cached above).
+      #   eval-containers              : naming + gen_bake unit tests (lib/bins)
+      #                                  + cli_conformance (every benchmark/agent/
+      #                                    model matches CLI naming)
+      #   eval-containers-tests-static :
+      #     - check            : triple-mode file presence, count reconciliation,
+      #                          READMEs, + the bespoke repo-meta invariants
+      #     - dockerfile_*     : the residual unpinned-pip/npm Dockerfile sweep
+      #     - task_inspection  : trajectory rule UNIT tests (fixture audit skipped)
       #
       # The Dockerfile LABEL/pin/hygiene contract and the compose markers +
       # tag-axis rule moved to conftest for issue #114 — run by the
       # conftest-dockerfile / conftest-compose pre-commit hooks (pre-commit.yml).
       # compose schema validation is the check-compose-spec hook. The Rust helm
-      # test became tests/helm.sweep.sh (the helm-render job below).
+      # test became tests/static/helm.sweep.sh (the helm-render job below).
       - name: cargo test (daemon-free)
         run: |
-          cargo test --lib --bins \
-            --test check \
-            --test dockerfile_inspection \
-            --test task_inspection \
-            --test cli_conformance \
+          cargo test \
+            -p eval-containers \
+            -p eval-containers-tests-static \
             -- --skip inspect_every_existing_fixture
 
   # Daemon-free, and fast now that the ~100 renders run in parallel (~10s), but
@@ -87,8 +87,8 @@ jobs:
   # those installs don't sit on the lint-and-test critical path. Validates rule
   # 29(d): every benchmark renders through the shared chart, validates against
   # the k8s schema (kubeconform), and satisfies the gateway-readiness policy
-  # (conftest, tests/policy/helm/). The Rust tests/helm.rs was replaced by the
-  # standard-tool sweep tests/helm.sweep.sh for issue #114, so no toolchain here.
+  # (conftest, tests/static/policy/helm/). The Rust tests/helm.rs was replaced by the
+  # standard-tool sweep tests/static/helm.sweep.sh for issue #114, so no toolchain here.
   helm-render:
     name: helm render (every benchmark)
     runs-on: ubuntu-latest
@@ -111,4 +111,4 @@ jobs:
             | sudo tar -xz -C /usr/local/bin conftest
 
       - name: helm render + schema validate + readiness policy
-        run: tests/helm.sweep.sh
+        run: tests/static/helm.sweep.sh

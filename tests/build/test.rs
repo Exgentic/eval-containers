@@ -701,7 +701,7 @@ async fn build_every_agent() {
 #[ignore]
 async fn build_replay_model() {
     let tag = tc_build(
-        &eval_containers_tests::repo_root().join("containers/models/replay"),
+        &test_support::repo_root().join("containers/models/replay"),
         "replay-model",
         None,
     )

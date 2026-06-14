@@ -212,9 +212,9 @@ EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/azure/gpt-5.4 \
 
 # 5. Extract the trajectory from the named volume (NOT a host path)
 docker run --rm -v <name>_output:/output:ro alpine \
-  cat /output/traces.jsonl > tests/replay/fixtures/<name>-0-codex.trajectory.jsonl
+  cat /output/traces.jsonl > tests/run/replay/fixtures/<name>-0-codex.trajectory.jsonl
 
-# 6. Register the fixture in tests/replay/test.rs (replay_test! macro) and ship
+# 6. Register the fixture in tests/run/replay/test.rs (replay_test! macro) and ship
 ```
 
 The named volume is the gotcha — `find output/` returns nothing because compose

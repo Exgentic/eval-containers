@@ -89,7 +89,7 @@ Both verified locally. Deleting from the "failures" section above once the next 
 
 ## Cross-reference
 
-- [tests/replay/fixtures/broken.json](../replay/fixtures/broken.json) — broken trajectory fixtures (run-time axis, not build-time).
+- [tests/run/replay/fixtures/broken.json](../replay/fixtures/broken.json) — broken trajectory fixtures (run-time axis, not build-time).
 - [tests/VERIFY.md](../VERIFY.md) steps 12-13 — where the build sweep lives in the release checklist.
 - [tests/LOCAL.md](../LOCAL.md) — local podman + Rosetta + BuildKit GC setup.
 - [.github/workflows/build-sweep.yml](../../.github/workflows/build-sweep.yml) — the CI sweep that is the authoritative green/red for these benchmarks.

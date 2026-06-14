@@ -19,7 +19,7 @@ fleet health report.
   been run.
 - **Missing fixture for a released benchmark.** A benchmark whose
   `eval.benchmark.*` labels declare it ready, but no replay fixture exists under
-  `tests/replay/fixtures/`. Cannot be end-to-end verified.
+  `tests/run/replay/fixtures/`. Cannot be end-to-end verified.
 - **Documentation drift.** README claims a count (e.g. "96 benchmarks, 17
   agents") but the filesystem has a different count.
 - **Convention drift.** A benchmark uses a pattern that RULES forbids (e.g.
@@ -66,7 +66,7 @@ elif any yellow:       fleet verdict = yellow  # ship with known gaps documented
 else:                  fleet verdict = green   # clean release
 ```
 
-Mapped to the ten questions (per `tests/fleet/RULES.md:4`): any
+Mapped to the ten questions (per `tests/run/fleet/RULES.md:4`): any
 **no** on questions 1–5 or 9 is red; any **no** on 6–8 is yellow; question 10 is
 informational but mandatory before shipping. A build failure that is inside
 `tests/build/known-broken.md` is yellow, not red.
@@ -75,7 +75,7 @@ informational but mandatory before shipping. A build failure that is inside
 
 **Layer 1 — mechanical counts and cross-references.** Scripted checks: walk
 `benchmarks/` and `agents/`, count, compare against the README, diff against
-`tests/replay/fixtures/`, compare label values with directory names, walk the
+`tests/run/replay/fixtures/`, compare label values with directory names, walk the
 Dockerfile `FROM` graph and check every referenced image exists. Deterministic
 and cheap — a shell script or a Rust test.
 
@@ -89,7 +89,7 @@ revision, fetch the manifest from the upstream registry and verify it still
 resolves; for every agent's upstream package, query the registry for the latest
 stable version and compare against the pin. Not a CI gate — needs network and is
 slow — but a valuable pre-release check. This is the `upstream` test category
-(`tests/upstream/RULES.md`).
+(`tests/run/upstream/RULES.md`).
 
 ## Output format
 
@@ -142,5 +142,5 @@ A single markdown report:
   per-fixture runtime health spec.
 - `.agents/verification/audit-dockerfile/references/checklist.md` —
   per-Dockerfile static health spec.
-- `tests/fleet/RULES.md` — the aggregator rules.
+- `tests/run/fleet/RULES.md` — the aggregator rules.
 - `.agents/delivery/RULES.md` — how CI builds and publishes the fleet.
