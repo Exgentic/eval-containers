@@ -105,6 +105,20 @@ composition hooks there — `initContainers`, `runnerExtraEnv`, `runnerArgs`, an
 `benchmarks/_chart/presets/osworld.yaml` (a desktop `Deployment`/`Service`) or
 `benchmarks/_chart/presets/webarena.yaml` (proxy + 6 site `Deployment`s) for examples.
 
+## Per-task, built-from-source Benchmark (Harbor task format)
+
+Use this when each task ships its own `environment/Dockerfile` and **no** per-task upstream image exists. There is nothing to scaffold by hand — **copy `benchmarks/terminal-bench/` wholesale**; it already ships `build.sh` (the two-step build), the `FROM ${TASK_BASE}` overlay `Dockerfile`, the fetch-the-gold `solution.sh`, and the per-task `container.Dockerfile`. Change only the benchmark name + labels, `REF`/`REPO` in `build.sh`, and `{ORG}`/`{REPO}` in `solution.sh`.
+
+The doctrine points to keep right when you adapt it:
+
+- Bake the task name into an `ENV` and have `solution.sh` read *that*, not `EVAL_TASK_ID` (the oracle overrides it to `0`) — `RULES.md:24i`.
+- The overlay adds only the instruction plus a **root-only** `/tests` (`chmod 700`); it never bakes the upstream repo, which would leak every task's gold and tests — `RULES.md:5`, `RULES.md:9`.
+- The oracle *derives* the gold; it never hardcodes or copies an answer — `RULES.md:20a`.
+- The per-task `container.Dockerfile` is two lines (`ARG EVAL_TASK_ID` + a task-parameterised `FROM`) — `RULES.md:24a`.
+- If the task's upstream `tests/test.sh` needs network at grade time, install its test deps at build and run `tests/test_outputs.py` from `/grade.sh` instead, to keep grading offline.
+
+Validate: `eval-containers oracle <name> --task-id <task> --local` — gold MUST score `1.0`, no-op `< 1.0`.
+
 ## Blanks to fill
 
 | Placeholder | Example | Description |
@@ -154,4 +168,5 @@ helm template {name} benchmarks/_chart \
 - If the dataset is gated (needs token), use `huggingface_hub.snapshot_download` with `ARG HF_TOKEN` instead of parquet URL.
 - If tasks have attached files (PDFs, images), copy them to `/app/` in the entrypoint so the agent can read them. Never loosen `/tasks/` permissions.
 - For custom scoring (not exact match), replace the `test-exact-match` COPY with a custom `/grade.sh`.
-- For per-task benchmarks (like SWE-bench), see `benchmarks/swe-bench/Dockerfile` — `EVAL_TASK_ID` is a build-time `ARG` and each image bakes one task.
+- For per-task benchmarks with a prebuilt upstream base, see `benchmarks/swe-bench/Dockerfile` — `EVAL_TASK_ID` is a build-time `ARG` and each image bakes one task.
+- For per-task benchmarks **built from source** (Harbor format — no upstream image, each task has its own `environment/Dockerfile`), see the built-from-source section above.
