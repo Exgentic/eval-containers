@@ -923,6 +923,15 @@ replay_test!(
 );
 
 replay_test!(
+    replay_enterpriseops_gym_0_codex,
+    "containers/benchmarks/enterpriseops-gym/compose.yaml",
+    "tests/replay/fixtures/enterpriseops-gym-0-codex.trajectory.jsonl",
+    "enterpriseops-gym",
+    "codex",
+    "0"
+);
+
+replay_test!(
     replay_gaia_0_crush,
     "containers/benchmarks/gaia/compose.yaml",
     "tests/replay/fixtures/gaia-0-crush.trajectory.jsonl",
