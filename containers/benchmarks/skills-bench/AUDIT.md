@@ -11,10 +11,10 @@ commit: d58e20e
 
 | Check | Status | Evidence |
 |-------|:------:|----------|
-| building | ✓ | build.sh builds the task env (upstream environment/Dockerfile) + overlays the pipeline; citation-check built locally (podman+Rosetta, ~3 min incl. oracle) |
+| building | ✓ | build.sh builds the task env (upstream environment/Dockerfile) + overlays the pipeline; citation-check, bike-rebalance, civ6 built locally (podman+Rosetta); bike-rebalance compiles pyscipopt/SCIP (slow under emulation) |
 | running | ✓ | verifier path re-confirmed on the new build via the oracle below; full gateway → agent → verifier run still on the pre-refactor build |
 | isolation | ? | improved — tests root-only (chmod 700, root-owned) and the upstream repo is no longer baked into the image (removes the prior agent-readable gold/tests leak); full per-benchmark egress/secret audit still pending |
-| oracle | ✓ | citation-check gold=1 / no-op=0 (manual podman run of the oracle gold+grade flow); other tasks (esp. bike-rebalance, civ6) via `eval-containers oracle skills-bench --task-id <t> --local` pending |
+| oracle | ✓ | 3/3 verified gold=1 / no-op<1 (manual podman oracle flow): citation-check, bike-rebalance (SCIP solver), civ6-adjacency-optimizer. civ6 needed solution.sh to stage the whole upstream solution/ tree (its solve.sh reads sibling ground_truths/) via a tool-agnostic fetch (its env lacks curl). Remaining 83 tasks unswept. |
 | traces-reviewed | ? | |
 | replicate-official | ? | |
 
