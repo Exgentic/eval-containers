@@ -96,8 +96,6 @@ keeps its rules beside the Rust that enforces them, grouped by **stage** under
 - [upstream](../../tests/run/upstream/RULES.md) — network reachability
 - [live](../../tests/run/live/RULES.md) — live-inference sweep
 - [fleet](../../tests/run/fleet/RULES.md) — aggregator and report
-- [cli](../../tests/cli/RULES.md) — CLI unit tests
-- [containers](../../tests/containers/RULES.md) — container runtime tests
 - [gateways](../../tests/run/gateways/RULES.md) — gateway tests
 - [agents](../../tests/run/agents/RULES.md) — agent test rules
 
@@ -121,3 +119,4 @@ tests rather than moving into `.agents/`.
 | 2026-04-15 | Narrow rule 2 to runtime tests; add carve-out 2a for static validation |
 | 2026-04-15 | Rewrite as testing strategy. Two verification processes; subfolder organization; known-broken manifests; fixture provenance; mechanical > procedural > aspirational precedence. |
 | 2026-06-14 | Rule 3: split the suite into per-stage Cargo crates (`tests/static` / `tests/build` / `tests/run` + shared `tests/support`). The dependency-light `static` crate is the per-PR gate and excludes the testcontainers/tokio/reqwest stack. Test target names preserved, so `cargo test --test <name>` is unchanged. |
+| 2026-06-14 | Dissolved the two pre-`.agents` test-doctrine relics (`tests/cli/RULES.md`, `tests/containers/RULES.md`): ~70% duplicated this strategy + the per-category rules. The one unique contract (replay-model serve behavior) moved to [models](../models/RULES.md) rule 17; the unused local-registry rule was dropped (no push test binds it); the rest was redundant. Removed both from the category index above. |

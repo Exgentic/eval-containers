@@ -269,5 +269,5 @@ Full human-facing docs — concepts, guides, and reference — live in
 
 ## Setup
 
-- [tests/LOCAL.md](tests/LOCAL.md) — local dev loop (Docker Desktop, Podman, Rosetta)
+- [docs/guides/running-tests-locally.md](docs/guides/running-tests-locally.md) — local dev loop (Docker Desktop, Podman, Rosetta)
 - [.agents/delivery/release/SKILL.md](.agents/delivery/release/SKILL.md) — how CI builds and publishes the fleet
