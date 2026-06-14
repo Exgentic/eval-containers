@@ -134,15 +134,23 @@ Rule of thumb: `--test-threads = VM_GB / 4` (each replay stack uses ~4 GB peak).
 One-time. Runs a real task with a real model, saves the trajectory as a fixture.
 
 ```bash
-# Record one combination
-TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-4.1-mini \
+# Record one combination — uses the shared `output` named volume from
+# compose/services.yaml (the runner writes to /output inside the container).
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
-cp output/aime/0/model/trajectory.jsonl \
-   tests/fixtures/aime-0-codex.trajectory.jsonl
+# The output lives in the named volume, not on the host filesystem.
+# Extract via a one-shot alpine container that mounts it read-only.
+docker run --rm -v aime_output:/output:ro alpine \
+  cat /output/traces.jsonl > tests/replay/fixtures/aime-0-codex.trajectory.jsonl
 ```
 
-Use `gpt-4.1-mini` — cheapest model that works. One fixture per combination forever.
+The volume name follows `<benchmark>_output` (compose project + the `output` declared in `compose/services.yaml`). Sanity-check the result:
+```bash
+docker run --rm -v aime_output:/output:ro alpine cat /output/task/result.json
+```
+
+Use `gpt-5.4` — the cheap-but-capable default. One fixture per combination forever.
 
 ## Exploring What's Built
 
