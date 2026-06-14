@@ -3,17 +3,21 @@
 *Concept · for benchmark and agent authors · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rule 12.*
 
 An evaluation answers one question: *"How well does this agent solve
-this benchmark using this model?"* To answer it, the framework gives
-the agent a task, lets it work, then checks the result. This page
-explains exactly how that happens inside the container.
+this benchmark using this model?"* To answer it, the framework spins up
+a container that acts as a self-contained work environment — with files,
+software, and any services the task needs (websites, databases,
+sidecars). The agent works inside that environment, isolated from
+everything outside it. This page explains exactly how that works.
 
 ## The three pieces
 
 You don't ship one big image. You ship small, independent images that
 each do one thing:
 
-- A **benchmark image** knows how to pose a problem and grade the
-  answer. It contains tasks, a setup script, and a grading script.
+- A **benchmark image** sets up the work environment and knows how to
+  grade the result. It contains the task data, any software or services
+  the agent will need, a setup script that prepares the environment, and
+  a grading script that scores the agent's work.
 - An **agent image** knows how to solve problems. It contains the
   agent's code and dependencies.
 - A **model image** contains a gateway proxy that sits between the agent
@@ -22,21 +26,25 @@ each do one thing:
 At build time, these three images (plus some runtime tooling) are
 combined into a single **evaluation image**. Think of it as layering
 transparencies on an overhead projector — each image contributes its
-files, and the result has everything needed to run one evaluation.
+files, and the result is a container that has everything needed to run
+one evaluation in isolation.
 
 ## What happens when you run an eval
 
-The evaluation image starts, and four things happen in order:
+The container starts, and four things happen in order:
 
-### 1. Setup — prepare the task
+### 1. Setup — prepare the work environment
 
-The benchmark's setup script (`/entrypoint.sh`) runs first. Its job is
-to pick the current task and set a `TASK` environment variable — this is
-the plain-text prompt the agent will see. Most benchmarks ship a file
-with all their tasks and unpack the one matching `EVAL_TASK_ID`; some
-bake one task per image at build time instead.
+The benchmark's setup script (`/entrypoint.sh`) runs first. It prepares
+the environment the agent will work in — installing files, starting
+services, seeding databases, or whatever the task requires. It also sets
+a `TASK` environment variable: the plain-text prompt the agent will see.
+Most benchmarks ship a file with all their tasks and unpack the one
+matching `EVAL_TASK_ID`; some bake one task per image at build time
+instead.
 
-Once `TASK` is set, the setup script hands control to the framework.
+Once the environment is ready and `TASK` is set, the setup script hands
+control to the framework.
 
 ### 2. Agent — solve the task
 
