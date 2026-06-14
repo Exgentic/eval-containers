@@ -1,5 +1,11 @@
 package main
 
+# Explicit Rego v1 — conftest 0.56.0 (the pinned CI version) defaults to Rego v0,
+# where `deny contains msg if` is a parse error; the import opts into v1 so the
+# policy is identical on CI (0.56.0) and newer local conftest. The dockerfile/helm
+# policies already declare it.
+import rego.v1
+
 # Benchmark compose.yaml structural contract (issue #114). Replaces the
 # eval-specific assertions in tests/sanity/compose.rs (the EVAL_*_VERSION
 # image-axis rule) and the compose markers in tests/sanity/check.rs. The
