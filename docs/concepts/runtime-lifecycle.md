@@ -2,97 +2,67 @@
 
 *Concept · for benchmark and agent authors · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rule 12.*
 
-When you launch an evaluation, four things happen in sequence: the task
-is prepared, the agent works on it, a grader scores the work, and the
-result is written out. This page walks you through that sequence — first
-the common path, then how each runtime mode implements it, then the
-places where benchmarks diverge.
+An evaluation image is built by stitching a benchmark image, an agent
+image, a gateway, and runtime tooling into a single container
+(`combination.Dockerfile`). What each image must provide at that
+boundary is the contract. Everything else — how the pipeline runs, how
+processes are orchestrated — is framework plumbing that the combination
+layer adds.
 
-## What happens when an eval runs
+## The contract
 
-### 1. Setup — "what should the agent do?"
+The combination Dockerfile copies specific paths from each source image.
+If your image is missing one of these, the build or the run breaks.
 
-Before the agent starts, `TASK` must be set — a plain-text environment
-variable containing the prompt the agent will see. Most benchmarks do
-this in an `/entrypoint.sh` script that unpacks the task matching
-`EVAL_TASK_ID` from a bundled task file; a few (swe-bench,
-terminal-bench) bake one task per image at build time instead.
+**From the benchmark image:**
 
-Some benchmarks also set grader-specific variables here (e.g.
-`EXPECTED_ANSWER` for exact-match graders). These are conventions of
-individual graders, not part of the contract.
+| Path | Role |
+|------|------|
+| `/entrypoint.sh` | ENTRYPOINT — runs before anything else; must set `TASK` |
+| `/grade.sh` | Scores the agent's output; writes reward to `/logs/verifier/reward.txt` |
 
-### 2. Agent — "solve this"
+**From the agent image:**
 
-The agent runs as an unprivileged `agent` user. (The framework creates
-this user with uid 1002 as a fallback if the image didn't already have
-one.) It gets a minimal environment:
+| Path | Role |
+|------|------|
+| `/run.sh` | Agent launch script — the code that solves the task |
+| `/opt/agent/` | Agent installation directory (with `install.sh`) |
 
-- `TASK` — the problem to solve
-- `OPENAI_BASE_URL` / `ANTHROPIC_BASE_URL` / `GOOGLE_GEMINI_BASE_URL`
-  — model endpoints, always pointing at the gateway proxy, never at a
-  provider directly
-- `MODEL` — which model to request
-- `TIMEOUT` — wall-clock limit
+That's the interface. The combination layer inherits the benchmark's
+`ENTRYPOINT ["/entrypoint.sh"]` and overrides its `CMD` from `/grade.sh`
+to `/usr/local/bin/run` — the framework launcher.
 
-The agent cannot see the answers. Benchmarks protect their test data
-(`/tests/`, root-owned, mode 0700) and the combination layer protects
-gateway config (`/opt/gateway/`). The scripts `/grade.sh` and
-`/entrypoint.sh` are world-executable but reading them is usually
-harmless — the secrets are in the data, not the scripts.
+## What happens at runtime
 
-The agent's code lives at `/run.sh`, provided by the agent's Dockerfile.
+Once the stitched image starts, the sequence is:
 
-### 3. Grade — "how did it do?"
+1. **Setup** — `/entrypoint.sh` runs, sets `TASK` (the prompt the agent
+   will see), then `exec "$@"` hands off to the framework launcher.
+2. **Agent** — `/run.sh` runs as an unprivileged `agent` user with a
+   minimal environment: `TASK`, model endpoints (`OPENAI_BASE_URL`,
+   `ANTHROPIC_BASE_URL`, `GOOGLE_GEMINI_BASE_URL`), `MODEL`, `TIMEOUT`.
+3. **Grade** — `/grade.sh` scores the agent's output and writes a number
+   (0, 1, or a fraction) to `/logs/verifier/reward.txt`.
+4. **Result** — `/usr/local/bin/write-result` reads the reward and writes
+   structured output to `/output/`.
 
-The grader scores the agent's output and writes a number to
-`/logs/verifier/reward.txt` — an integer (0 or 1) or a fraction. How it
-scores is benchmark-specific: compare against `EXPECTED_ANSWER`, call a
-judge LLM, run a test suite, or something entirely custom.
+How these four steps are orchestrated depends on the runtime mode.
 
-The grading script lives at `/grade.sh`. Most benchmarks copy a shared
-grader image:
-```dockerfile
-COPY --from=test-exact-match /test.sh /grade.sh
-```
-
-### 4. Result — "write it down"
-
-`/usr/local/bin/write-result` reads `/logs/verifier/reward.txt` and
-writes three structured files:
-
-- `/output/task/result.json` — `task_id`, `benchmark`, `reward`, `passed`
-- `/output/agent/result.json` — `agent`, `started_at`, `ended_at`
-- `/output/model/result.json` — `model`
-
-This is what the outside world reads to know what happened.
-
-## How each runtime mode wires the sequence
-
-The four steps are always the same. What changes is who starts each step
-and where the processes live.
+## How each mode runs the sequence
 
 ### Single-image (container mode)
 
-Everything runs in one container. The Docker image's ENTRYPOINT and CMD
-chain the whole sequence:
-
-```
-ENTRYPOINT ["/entrypoint.sh"]  →  exec "$@"  →  CMD ["/usr/local/bin/run"]
-```
-
-`/entrypoint.sh` does setup (step 1), then hands off to
-`/usr/local/bin/run` — the **framework launcher**. It starts
-**process-compose**, an in-container orchestrator that runs five
-processes in dependency order: otelcol → gateway → agent (`/run.sh`) →
-verifier (`/grade.sh`) → result (`write-result`).
+The framework launcher (`/usr/local/bin/run`) starts **process-compose**,
+an in-container orchestrator that runs five processes in dependency
+order: otelcol → gateway → agent (`/run.sh`) → verifier (`/grade.sh`) →
+result (`write-result`).
 
 ### Compose mode
 
 Three containers: `otelcol`, `gateway`, `runner`. The runner still uses
 `/entrypoint.sh` → `/usr/local/bin/run` → process-compose, but with an
 overlay that disables the in-container otelcol and gateway (they have
-their own containers now). Only agent → verifier → result run inside
+their own containers). Only agent → verifier → result run inside
 process-compose.
 
 ### Kubernetes (Helm Job)
@@ -104,12 +74,20 @@ command: ["/bin/bash", "-c"]
 args: ["/entrypoint.sh /usr/local/bin/run; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"]
 ```
 
-otelcol and gateway run as native Kubernetes sidecars (init containers
-with `restartPolicy: Always`). The runner goes through the same
-`/entrypoint.sh` → `/usr/local/bin/run` → process-compose chain. After
-the pipeline exits, `reap-sidecars` tears down the sidecars.
+otelcol and gateway run as native Kubernetes sidecars. The runner goes
+through the same `/entrypoint.sh` → `/usr/local/bin/run` →
+process-compose chain. After the pipeline exits, `reap-sidecars` tears
+down the sidecars.
 
-## Benchmarks that skip the standard flow
+## Isolation
+
+The agent cannot see the answers. Benchmarks protect their test data
+(`/tests/`, root-owned, mode 0700) and the combination layer protects
+gateway config (`/opt/gateway/`). The agent process runs via `env -i`
+with an explicit allow-list of variables — it never sees `TASK_ID`,
+`EXPECTED_ANSWER`, or anything outside its sandbox.
+
+## Benchmarks that override the flow
 
 The standard flow (entrypoint → framework launcher → process-compose) is
 the default, not a requirement. A benchmark with bespoke topology can
@@ -120,21 +98,6 @@ entrypoint with `python3 /app/agent.py` and adds a separate harness
 container. In k8s it overrides `runnerArgs` in its Helm preset. Neither
 path uses process-compose — but the four steps (setup → agent → grade →
 result) still happen.
-
-## Key paths at a glance
-
-| What | Path | Who provides it |
-|------|------|-----------------|
-| Benchmark entrypoint | `/entrypoint.sh` | You (benchmark Dockerfile) |
-| Framework launcher | `/usr/local/bin/run` | Framework (combination layer) |
-| Agent code | `/run.sh` | You (agent Dockerfile) |
-| Grading script | `/grade.sh` | You (benchmark Dockerfile) |
-| Result writer | `/usr/local/bin/write-result` | Framework |
-
-If you're writing a standard benchmark, you provide `/entrypoint.sh`
-and `/grade.sh`. If you're writing an agent, you provide `/run.sh`.
-Everything else comes from the framework. Benchmarks with custom
-topology can override any of these (see above).
 
 ## Where to go next
 
