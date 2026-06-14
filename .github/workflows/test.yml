@@ -57,22 +57,22 @@ jobs:
             --test dockerfile_inspection \
             --test task_inspection \
             --test cli_conformance \
-            --test helm \
             -- -D warnings
 
       # Pure file I/O, no daemon. ~10s of work, dominated by the Rust compile
       # (cached above).
       #   - lib/bins        : naming + gen_bake unit tests
-      #   - check           : structural validation, count reconciliation, READMEs
-      #   - dockerfile_*    : 100+-file Dockerfile rule sweep
+      #   - check           : triple-mode file presence, count reconciliation,
+      #                       READMEs, + the bespoke repo-meta invariants
+      #   - dockerfile_*    : the residual unpinned-pip/npm Dockerfile sweep
       #   - task_inspection : trajectory rule UNIT tests (fixture audit skipped)
       #   - cli_conformance : every benchmark/agent/model matches CLI naming
       #
-      # compose.yaml validation is owned by the compose-schema pre-commit hook
-      # (pre-commit.yml): it is daemon-free and version-robust, whereas
-      # `tests/compose.rs` shells to `docker compose config`, whose include/
-      # override merging is sensitive to the runner's compose CLI version. That
-      # test stays runnable locally; it is just not part of this gate.
+      # The Dockerfile LABEL/pin/hygiene contract and the compose markers +
+      # tag-axis rule moved to conftest for issue #114 — run by the
+      # conftest-dockerfile / conftest-compose pre-commit hooks (pre-commit.yml).
+      # compose schema validation is the check-compose-spec hook. The Rust helm
+      # test became tests/helm.sweep.sh (the helm-render job below).
       - name: cargo test (daemon-free)
         run: |
           cargo test --lib --bins \
@@ -83,22 +83,18 @@ jobs:
             -- --skip inspect_every_existing_fixture
 
   # Daemon-free, and fast now that the ~100 renders run in parallel (~10s), but
-  # it needs the helm + kubeconform binaries — kept as its own job so those
-  # installs don't sit on the lint-and-test critical path. Validates rule 29(d):
-  # every benchmark renders through the shared chart and validates against the
-  # k8s schema (kubeconform when present).
+  # it needs the helm + kubeconform + conftest binaries — kept as its own job so
+  # those installs don't sit on the lint-and-test critical path. Validates rule
+  # 29(d): every benchmark renders through the shared chart, validates against
+  # the k8s schema (kubeconform), and satisfies the gateway-readiness policy
+  # (conftest, tests/policy/helm/). The Rust tests/helm.rs was replaced by the
+  # standard-tool sweep tests/helm.sweep.sh for issue #114, so no toolchain here.
   helm-render:
     name: helm render (every benchmark)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
 
       - name: Install helm
         uses: azure/setup-helm@v4
@@ -108,5 +104,11 @@ jobs:
           curl -sSLf https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
             | tar -xz -C /usr/local/bin kubeconform
 
-      - name: helm render + schema validate
-        run: cargo test --test helm
+      - name: Install conftest
+        run: |
+          CONFTEST_VERSION=0.56.0
+          curl -sSLf "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin conftest
+
+      - name: helm render + schema validate + readiness policy
+        run: tests/helm.sweep.sh
