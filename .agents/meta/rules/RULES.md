@@ -36,7 +36,7 @@ grouping the rules and skills for one area.
    cross-cutting rule and every skill **MUST** live under `.agents/`, not
    beside the code. The exception: a rule that is the human-readable half of a
    code-paired catalog — a per-test-category rule whose entries pair
-   one-to-one with the enforcing Rust under `tests/<category>/` and must not
+   one-to-one with the enforcing Rust under `tests/` and must not
    drift from it — **MUST** stay beside that code and be linked from
    `.agents/verification/RULES.md`. This refines the repository's former
    "rules live next to the code" principle rather than discarding it.
@@ -91,3 +91,4 @@ grouping the rules and skills for one area.
 |------------|-------------------------------------------------------------------------|
 | 2026-05-31 | Initial version. Centralizes the former distributed rules graph under `.agents/`, adds the rule/skill split, and replaces the "rules live next to the code" principle. |
 | 2026-06-03 | Added principles 11–14 (Concise, Atomic, Example-free, Bounded abstract) to cap rule length and verbosity. Pre-existing principles 1–10 and sibling `RULES.md` files predate these and need a follow-up tightening pass. |
+| 2026-06-14 | Principle 3: generalized the code-paired-rule path from `tests/<category>/` to `tests/` after the test suite was split into per-stage crates (`tests/{static,build,run}/...`). |
