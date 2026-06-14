@@ -244,6 +244,90 @@ fn has_untagged_from(t: &str) -> bool {
     false
 }
 
+/// Variable names interpolated as `$VAR` or `${VAR}` (incl. `${VAR:-x}`)
+/// in a string — used to vet what a FROM expands.
+fn interpolated_vars(s: &str) -> Vec<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'$' {
+            i += 1;
+            continue;
+        }
+        let braced = i + 1 < b.len() && b[i + 1] == b'{';
+        let start = if braced { i + 2 } else { i + 1 };
+        let mut j = start;
+        while j < b.len() && (b[j].is_ascii_alphanumeric() || b[j] == b'_') {
+            j += 1;
+        }
+        if j > start {
+            out.push(s[start..j].to_string());
+        }
+        // For `${...}` skip past the closing brace so a `:-default` modifier
+        // isn't rescanned as another variable.
+        if braced {
+            while j < b.len() && b[j] != b'}' {
+                j += 1;
+            }
+            j += 1;
+        }
+        i = j.max(start);
+    }
+    out
+}
+
+/// A FROM may only interpolate an ARG declared in the GLOBAL scope — before
+/// the first FROM. An ARG declared inside a build stage (after a FROM) is
+/// invisible to FROM: Docker expands it to the empty string and silently
+/// corrupts the image ref (e.g. `plandex-server:server-v${AGENT_VERSION}` ->
+/// `server-v`, manifest-unknown at build time). Flag any FROM that expands a
+/// name that is neither a global ARG nor a Docker predefined build arg
+/// (TARGETARCH / BUILDPLATFORM / …, which need no ARG declaration).
+fn from_interpolates_nonglobal_arg(t: &str, _dir: &str) -> bool {
+    const PREDEFINED: &[&str] = &[
+        "TARGETPLATFORM",
+        "TARGETOS",
+        "TARGETARCH",
+        "TARGETVARIANT",
+        "BUILDPLATFORM",
+        "BUILDOS",
+        "BUILDARCH",
+        "BUILDVARIANT",
+    ];
+    // Global ARG names = those declared before the first FROM.
+    let mut global_args: Vec<&str> = Vec::new();
+    let mut seen_from = false;
+    for line in t.lines() {
+        let l = line.trim();
+        if l.starts_with("FROM ") {
+            seen_from = true;
+        } else if !seen_from
+            && l.starts_with("ARG ")
+            && let Some(name) = l[4..]
+                .trim()
+                .split(|c: char| c == '=' || c.is_whitespace())
+                .next()
+            && !name.is_empty()
+        {
+            global_args.push(name);
+        }
+    }
+    // Every variable a FROM expands must be a global ARG or predefined.
+    for line in t.lines() {
+        let l = line.trim_start();
+        if !l.starts_with("FROM ") {
+            continue;
+        }
+        for var in interpolated_vars(l) {
+            if !PREDEFINED.contains(&var.as_str()) && !global_args.contains(&var.as_str()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn has_legacy_env_var(t: &str) -> bool {
     // Find references to unprefixed $TASK_ID / $BENCHMARK. Must NOT
     // match $EVAL_TASK_ID / $EVAL_BENCHMARK (prefixed), and must not
@@ -670,6 +754,12 @@ const RULES: &[Rule] = &[
         |t, _| has_untagged_from(t),
     ),
     Rule::red(
+        "from_arg_not_global",
+        "FROM interpolates an ARG not declared in the global scope (before any FROM) — \
+         Docker expands it to empty and silently corrupts the image tag",
+        from_interpolates_nonglobal_arg,
+    ),
+    Rule::red(
         "legacy_env_var",
         "references $TASK_ID or $BENCHMARK — must use $EVAL_TASK_ID / $EVAL_BENCHMARK",
         |t, _| has_legacy_env_var(t),
@@ -848,6 +938,32 @@ fn rule_untagged_from_allows_scratch() {
     let ok = "FROM scratch\nLABEL eval.type=\"agent\"\n";
     let fs = inspect_dockerfile(Path::new("t"), ok, "t");
     assert!(!fs.iter().any(|f| f.rule == "untagged_from"));
+}
+
+#[test]
+fn rule_from_arg_not_global_fires() {
+    // AGENT_VERSION declared AFTER the FROM that interpolates it — Docker
+    // expands it to empty at the FROM (the plandex bug).
+    let bad = "FROM up:v${AGENT_VERSION} AS src\nFROM alpine:3\nARG AGENT_VERSION=1.2.3\nLABEL eval.type=\"agent\"\n";
+    let fs = inspect_dockerfile(Path::new("t"), bad, "t");
+    assert!(fs.iter().any(|f| f.rule == "from_arg_not_global"));
+}
+
+#[test]
+fn rule_from_arg_not_global_allows_global_decl() {
+    // Declared globally (before any FROM), then re-declared in-stage for the
+    // LABEL/RUN uses — the standard multi-stage pattern (swe-bench, compilebench).
+    let ok = "ARG AGENT_VERSION=1.2.3\nFROM up:v${AGENT_VERSION} AS src\nFROM alpine:3\nARG AGENT_VERSION=1.2.3\nLABEL eval.type=\"agent\"\n";
+    let fs = inspect_dockerfile(Path::new("t"), ok, "t");
+    assert!(!fs.iter().any(|f| f.rule == "from_arg_not_global"));
+}
+
+#[test]
+fn rule_from_arg_not_global_allows_predefined_buildarg() {
+    // Docker auto-provides TARGETARCH — a FROM may interpolate it with no ARG.
+    let ok = "FROM --platform=linux/${TARGETARCH} alpine:3\nLABEL eval.type=\"agent\"\n";
+    let fs = inspect_dockerfile(Path::new("t"), ok, "t");
+    assert!(!fs.iter().any(|f| f.rule == "from_arg_not_global"));
 }
 
 #[test]
