@@ -39,9 +39,10 @@ Parent: [../RULES.md](../RULES.md)
    Plus: no compose `image:` field MUST use `EVAL_*_VERSION` as a
    placeholder (use `EVAL_*_TAG` per [/RULES.md](/RULES.md) rule 9).
 
-8. **Shared entrypoint contract** — `core/entrypoint/eval-entrypoint.sh`
-   MUST reference `EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, and
-   write `/output/task/version.json` + `/output/agent/version.json`.
+8. **Shared entrypoint contract** — `core/process-compose/run` (the
+   framework launcher) MUST reference `EVAL_BENCHMARK_VERSION`,
+   `EVAL_AGENT_VERSION`, and write `/output/task/version.json` +
+   `/output/agent/version.json`.
 
 ## Adding a new rule
 
