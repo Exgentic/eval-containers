@@ -1,0 +1,82 @@
+# Golden finding set for the trajectory fixture audit (release-only).
+# Columns: severity<TAB>source<TAB>rule  (sorted, deduped).
+# Regenerate after an intentional rule/fixture change with:
+#   for f in tests/replay/fixtures/*.trajectory.jsonl; do \
+#     jq -rR --slurp --arg mode findings --arg source "$(basename "$f")" \
+#       -f tests/sanity/task_inspection.jq "$f"; done \
+#     | cut -f1-3 | sort -u >> task_inspection_audit.golden.tsv
+# It must equal the Rust audit's reported finding set (parity gate).
+red	advbench-103-codex.trajectory.jsonl	refusal_final_response
+red	ai2d-0-gemini-cli.trajectory.jsonl	refusal_final_response
+red	assistantbench-0-claude-code.trajectory.jsonl	refusal_final_response
+red	global-mmlu-0-gemini-cli.trajectory.jsonl	refusal_final_response
+red	gpqa-diamond-0-codex.trajectory.jsonl	refusal_final_response
+red	longbench-2249-opencode.trajectory.jsonl	refusal_final_response
+red	longbench-2249-opencode.trajectory.jsonl	task_delegates_to_external_file
+red	longbench-749-codex.trajectory.jsonl	task_delegates_to_external_file
+red	mbpp-0-claude-code.trajectory.jsonl	refusal_final_response
+red	mgsm-0-codex.trajectory.jsonl	refusal_final_response
+red	mrcr-1439-claude-code.trajectory.jsonl	task_delegates_to_external_file
+red	mrcr-479-claude-code.trajectory.jsonl	task_delegates_to_external_file
+red	niah-12-codex.trajectory.jsonl	task_delegates_to_external_file
+red	niah-37-cline.trajectory.jsonl	task_delegates_to_external_file
+red	niah-49-continue-cli.trajectory.jsonl	task_delegates_to_external_file
+red	ruler-159-terminus-2.trajectory.jsonl	task_delegates_to_external_file
+red	ruler-39-claude-code.trajectory.jsonl	task_delegates_to_external_file
+red	simpleqa-0-codex.trajectory.jsonl	refusal_final_response
+red	usaco-61-claude-code.trajectory.jsonl	todo_or_fixme
+red	webarena-486-plandex.trajectory.jsonl	fetch_failed
+yellow	advbench-103-codex.trajectory.jsonl	content_filter_refusal
+yellow	advbench-103-codex.trajectory.jsonl	retry_storm
+yellow	agentcompany-139-crush.trajectory.jsonl	retry_storm
+yellow	agentcompany-34-codex.trajectory.jsonl	high_turn_count
+yellow	agentcompany-34-codex.trajectory.jsonl	retry_storm
+yellow	agentharm-0-claude-code.trajectory.jsonl	content_filter_refusal
+yellow	ai2d-0-gemini-cli.trajectory.jsonl	content_filter_refusal
+yellow	aider-polyglot-0-codex.trajectory.jsonl	content_filter_refusal
+yellow	aider-polyglot-0-codex.trajectory.jsonl	high_turn_count
+yellow	aider-polyglot-0-codex.trajectory.jsonl	retry_storm
+yellow	aider-polyglot-134-openhands.trajectory.jsonl	high_turn_count
+yellow	appworld-292-terminus-2.trajectory.jsonl	no_instruction_verb
+yellow	appworld-584-claude-code.trajectory.jsonl	no_instruction_verb
+yellow	assistantbench-0-claude-code.trajectory.jsonl	content_filter_refusal
+yellow	assistantbench-0-claude-code.trajectory.jsonl	high_turn_count
+yellow	assistantbench-0-claude-code.trajectory.jsonl	retry_storm
+yellow	assistantbench-19-continue-cli.trajectory.jsonl	high_turn_count
+yellow	assistantbench-19-continue-cli.trajectory.jsonl	token_runaway
+yellow	browsecomp-759-openhands.trajectory.jsonl	high_turn_count
+yellow	browsecomp-759-openhands.trajectory.jsonl	token_runaway
+yellow	code-contests-32-gemini-cli.trajectory.jsonl	high_turn_count
+yellow	code-contests-32-gemini-cli.trajectory.jsonl	retry_storm
+yellow	code-contests-32-gemini-cli.trajectory.jsonl	token_runaway
+yellow	core-bench-26-bob.trajectory.jsonl	retry_storm
+yellow	core-bench-35-cline.trajectory.jsonl	high_turn_count
+yellow	core-bench-35-cline.trajectory.jsonl	retry_storm
+yellow	core-bench-35-cline.trajectory.jsonl	token_runaway
+yellow	core-bench-8-codex.trajectory.jsonl	retry_storm
+yellow	gaia-0-crush.trajectory.jsonl	token_runaway
+yellow	gdpval-131-goose.trajectory.jsonl	high_turn_count
+yellow	gdpval-43-claude-code.trajectory.jsonl	attachment_referenced_but_not_provided
+yellow	gdpval-43-claude-code.trajectory.jsonl	high_turn_count
+yellow	gdpval-43-claude-code.trajectory.jsonl	no_instruction_verb
+yellow	gdpval-43-claude-code.trajectory.jsonl	retry_storm
+yellow	gdpval-43-claude-code.trajectory.jsonl	token_runaway
+yellow	gdpval-87-mini-swe-agent.trajectory.jsonl	attachment_referenced_but_not_provided
+yellow	global-mmlu-0-gemini-cli.trajectory.jsonl	content_filter_refusal
+yellow	gpqa-diamond-0-codex.trajectory.jsonl	content_filter_refusal
+yellow	harmbench-0-claude-code.trajectory.jsonl	content_filter_refusal
+yellow	longbench-2249-opencode.trajectory.jsonl	content_filter_refusal
+yellow	mbpp-0-claude-code.trajectory.jsonl	content_filter_refusal
+yellow	mgsm-0-codex.trajectory.jsonl	content_filter_refusal
+yellow	mrcr-0-codex.trajectory.jsonl	retry_storm
+yellow	mrcr-0-codex.trajectory.jsonl	token_runaway
+yellow	mrcr-479-claude-code.trajectory.jsonl	retry_storm
+yellow	ruler-0-codex.trajectory.jsonl	retry_storm
+yellow	simpleqa-0-codex.trajectory.jsonl	content_filter_refusal
+yellow	simpleqa-865-codex.trajectory.jsonl	content_filter_refusal
+yellow	simpleqa-865-codex.trajectory.jsonl	retry_storm
+yellow	usaco-61-claude-code.trajectory.jsonl	retry_storm
+yellow	webarena-0-gemini-cli.trajectory.jsonl	retry_storm
+yellow	webarena-162-codex.trajectory.jsonl	retry_storm
+yellow	webarena-162-codex.trajectory.jsonl	token_runaway
+yellow	webarena-648-qwen-code.trajectory.jsonl	retry_storm
