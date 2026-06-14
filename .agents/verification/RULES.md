@@ -5,88 +5,108 @@
 
 ## Abstract
 
-Eval Containers's product is Docker images, Compose files, and the evaluations they produce. This document defines the overall testing strategy — what testing *means* in this repo, regardless of which specific category of test is being written. Per-category rules live next door in `tests/<category>/RULES.md`.
+Eval Containers's product is Docker images, Compose files, and the evaluations
+they produce. This document defines what testing means in this repo, regardless
+of which category of test is written, and the form runtime tests take.
+Per-category rules live beside the checks under `tests/<category>/`.
 
 ## Terminology
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
+"SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" are to be interpreted as
+described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
+A *runtime test* starts, runs, or stops a container. A *linter* only reads
+files. An *oracle* is a service in a compose file whose exit code reports a
+test's verdict. The *suite runner* is `tests/run`, which executes every check
+and aggregates results as *TAP* (the Test Anything Protocol). The *contribution
+lane* runs on every pull request; the *release lane* runs before a release tag.
 
 ## Two verification processes
 
-Testing exists to answer two separate questions, triggered at different points in the lifecycle. Never conflate them.
+Testing answers two separate questions at two points in the lifecycle; a test
+belongs to exactly one lane.
 
-1. **Contribution verification** — triggered on every PR. MUST pass before merging to main.
-   - MUST run offline
-   - MUST NOT require API keys
-   - MUST complete under 2 hours total (sanity + build + replay)
-   - MUST be fully reproducible by any contributor on a clean clone
-   - MUST NOT include audits, live inference, or human inspection
+1. Contribution verification **MUST** pass before a pull request merges to main.
 
-2. **Release verification** — triggered before cutting a release tag. MUST pass before tagging.
-   - MUST include every contribution verification gate
-   - MUST include the **live fleet sweep**: every buildable benchmark, ≥3 tasks each, against the live model of record
-   - MUST include procedural audits (Dockerfile, trajectory, fleet)
-   - MUST include the upstream reachability check
-   - MAY take hours; runs rarely
+   1a. Contribution verification **MUST** run offline.
 
-The **procedure** for executing each process — exact commands, order, gates — lives in [VERIFY.md](verify/SKILL.md). The procedure cites rule IDs from this file and its siblings; it does not restate them.
+   1b. Contribution verification **MUST NOT** read a provider credential.
+
+   1c. Contribution verification **MUST** complete within two hours.
+
+   1d. Contribution verification **MUST** be reproducible on a clean clone.
+
+   1e. Contribution verification **MUST** exclude audits, live inference, and human inspection.
+
+2. Release verification **MUST** pass before a release tag is cut.
+
+   2a. Release verification **MUST** include every contribution-verification gate.
+
+   2b. Release verification **MUST** include a live sweep of every buildable benchmark, at least three tasks each, against the model of record.
+
+   2c. Release verification **MUST** include the Dockerfile, trajectory, and fleet audits.
+
+   2d. Release verification **MUST** include an upstream-reachability check.
+
+The procedures that execute these lanes live in the `verify` and `audit-*`
+skills; they cite these requirements rather than restating them.
 
 ## Test category organization
 
-3. **One subfolder per test category.** Every test lives under `tests/<category>/` with a local `RULES.md`, one or more `*.rs` integration test files, and any category-local data (fixtures, known-broken manifests, reports). The Cargo integration-test target is registered via `[[test]]` in `Cargo.toml` so `cargo test --test <name>` keeps working.
+3. Every test **MUST** live under `tests/<category>/` beside a local `RULES.md`.
 
-4. **Subfolder rules are local.** A rule that applies only to build tests lives in `tests/build/RULES.md`. A rule that applies across every test category lives here.
+4. A category-specific rule **MUST** live in that category's `RULES.md`.
 
-5. **No parallel audit files.** If a rule is mechanically checkable, it lives in Rust test code. If it can only be walked, it lives as a procedural rule in the appropriate `RULES.md` with a walked-audit instruction. There are NO standalone checklist `.md` files that duplicate rule text. The old `DOCKERFILE.md` / `TRAJECTORY.md` / `FLEET.md` pattern is deprecated; their content is absorbed into the relevant subfolder's `RULES.md` and its Rust rule catalog.
+5. A mechanically checkable rule **MUST** be enforced by a check rather than duplicated in a standalone checklist document.
 
 ## Runtime rules
 
-6. **Container runtime tests MUST use testcontainers-rs.** Tests that BUILD, RUN, START, STOP, or otherwise materialize a container MUST go through [testcontainers-rs](https://rust.testcontainers.org/). Raw `Command::new("docker").arg("build"|"run"|"up"|...)` is forbidden for any operation that creates, starts, or removes a container or image. The library handles build-context assembly, daemon connection, lifecycle, and `Drop` cleanup.
+6. A runtime test **MUST** be expressed as a compose file with an oracle service whose exit code is its verdict.
 
-6a. **Static validation is exempt.** Tests that only READ files — Dockerfile text, compose YAML, trajectory JSON — and never build, run, or materialize a container are NOT container runtime tests. They are linters. They MAY use any tool. `docker compose config` (YAML parse), `docker manifest inspect` (metadata-only pull check), and `curl -I` (HTTP HEAD) are all static validation.
+   6a. A linter **MAY** use any standard tool.
 
-6b. **Testcontainers-rs API gaps.** Two narrow carve-outs are permitted where testcontainers-rs 0.27 has no first-class API:
-   - Reading labels off a built image via `docker image inspect` (container-level metadata only in the library).
-   - Removing a built image via `docker rmi -f` (library auto-cleans containers, not images).
-   Both carve-outs MUST be called out in the test file's doc comment with a reference to this rule.
+   6b. *[deprecated 2026-06-14 — the testcontainers-rs API-gap carve-out is superseded by 6e.]*
 
-6c. **Builds go through `docker buildx bake`.** Per top-level RULES.md principle 15, the framework's build graph lives in `docker-bake.hcl` files. Tests that need to materialize an image MUST shell to `docker buildx bake <target> --load` (via the helper in `tests/common/mod.rs`) rather than using testcontainers-rs's `GenericBuildableImage`. This keeps tests, the CLI, and any out-of-process consumer (OC in-cluster builds, bakah) on the same canonical build invocation. RUN/START/STOP of containers still goes through testcontainers-rs per rule 6 — only BUILD is exempt.
+   6c. A test that builds an image **MUST** invoke `docker buildx bake`.
 
-7. **No API keys in contribution verification.** The `replay` model is the only LLM backend in contribution-verification tests. Any test that reads `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or any other provider credential MUST be gated behind `#[ignore]` and live under `tests/live/`, NOT in any continuous-verification category.
+   6d. Lifecycle and readiness ordering in a runtime test **MUST** come from compose dependency conditions.
 
-8. **Fail loud over fail silent.** Test code MUST NOT use `|| true`, `2>/dev/null`, or any other error swallowing. Known failures are documented in explicit `known-broken.md` / `broken.json` manifests per category; undocumented failures panic the run.
+   6e. The structure of a built image **MUST** be asserted with container-structure-test.
+
+   6f. A runtime test **MUST** remove its containers and volumes when it finishes.
+
+   6g. A runtime test **MUST NOT** drive container lifecycle outside compose.
+
+7. A test that reads a provider credential **MUST** run only in the release lane.
+
+   7a. The replay model **MUST** be the only model backend in contribution verification.
+
+8. Test code **MUST NOT** swallow errors.
 
 ## Fixture lifecycle
 
-9. **Fixtures are immutable ground truth.** Recorded trajectories under `tests/replay/fixtures/` are PRODUCED by release verification's live sweep and feed contribution verification's replay sweep. Contributors MUST NOT hand-edit fixtures.
+9. A recorded fixture **MUST NOT** be hand-edited.
 
-10. **Every fixture has a provenance record.** Filename convention `{benchmark}-{task-id}-{agent}.trajectory.jsonl`. A sibling `tests/replay/fixtures/provenance.json` records the model, timestamp, and release tag under which each fixture was captured.
+10. Every fixture **MUST** carry a provenance record.
 
-11. **Broken fixtures are documented, not deleted.** `tests/replay/fixtures/broken.json` marks fixtures whose recorded run is known-bad (refusals, wrong answers, content filter hits, max-tokens truncation). Mechanical findings on these are reported but do NOT fail the continuous tests — they are re-recorded in the next release verification cycle.
+11. A known-bad fixture **MUST** be recorded in a broken manifest rather than deleted.
 
 ## Known-broken manifests
 
-12. **Every test category that can have expected failures ships a known-broken manifest.**
-   - `tests/build/known-broken.md` — platform/upstream build failures (qemu segfaults, gated datasets).
-   - `tests/replay/fixtures/broken.json` — broken recorded trajectories.
-   - `tests/live/known-broken.md` — benchmarks that cannot run live (require secrets the release runner lacks).
+12. Every category that can have expected failures **MUST** ship a known-broken manifest.
 
-   The test probe for each category MUST compare actual failures to its manifest. Any excess failure is red; failures within the manifest are yellow, not red.
+    12a. A category's failure probe **MUST** compare actual failures against its known-broken manifest.
 
 ## Rule precedence
 
-13. **Mechanical > procedural > aspirational.** If the same rule can be enforced three ways, prefer the most automated one:
-   - **Mechanical**: a Rust rule in a `test.rs` catalog. Runs on every `cargo test`. Preferred.
-   - **Procedural**: a walked audit. Documented in `RULES.md` with a step-by-step audit procedure. Runs in release verification only.
-   - **Aspirational**: prose in `RULES.md` with no mechanical check and no walked audit. Carries no weight. Discouraged.
-
-   A rule stated only aspirationally is a comment, not a rule. If it matters, write the check.
+13. A rule that can be enforced mechanically **MUST** be enforced by a check the suite runner executes rather than left procedural.
 
 ## Layout
 
-The verification **strategy** (this file) and the **procedures** (the `verify`
-and `audit-*` skills) live in `.agents/verification/`. Each test **category**
-keeps its rules beside the Rust that enforces them, under `tests/<category>/`:
+The verification strategy (this file) and the procedures (the `verify` and
+`audit-*` skills) live in `.agents/verification/`. Each test category keeps its
+rules beside the checks that enforce them, under `tests/<category>/`:
 
 - [sanity](../../tests/sanity/RULES.md) — fast mechanical gates
 - [build](../../tests/build/RULES.md) — build sweep
@@ -94,21 +114,20 @@ keeps its rules beside the Rust that enforces them, under `tests/<category>/`:
 - [upstream](../../tests/upstream/RULES.md) — network reachability
 - [live](../../tests/live/RULES.md) — live-inference sweep
 - [fleet](../../tests/fleet/RULES.md) — aggregator and report
-- [cli](../../tests/cli/RULES.md) — CLI unit tests
-- [containers](../../tests/containers/RULES.md) — container runtime tests
+- [cli](../../cli/tests/RULES.md) — CLI unit and integration tests (Rust)
+- [containers](../../tests/containers/RULES.md) — runtime container tests
 - [gateways](../../tests/gateways/RULES.md) — gateway tests
 - [agents](../../tests/agents/RULES.md) — agent test rules
 
-A category's `RULES.md` is the markdown half of a catalog whose entries pair
-one-to-one with the `const RULES: &[Rule]` arrays in its sibling `*.rs`; the
-two MUST NOT drift. That pairing is why per-category rules stay beside their
-tests rather than moving into `.agents/`.
+A category's `RULES.md` pairs with the checks in its sibling `*.bats`,
+`compose.yaml`, and `*.sweep.sh` files; the two **MUST NOT** drift. The CLI is
+the one exception: it keeps its Rust tests in `cli/tests/`.
 
 ## References
 
 - [Top-level process rules](../RULES.md)
 - [the verify skill](verify/SKILL.md) — the procedure that executes these rules
-- [testcontainers-rs](https://github.com/testcontainers/testcontainers-rs)
+- [container-structure-test](https://github.com/GoogleContainerTools/container-structure-test)
 
 ## Changelog
 
@@ -118,3 +137,4 @@ tests rather than moving into `.agents/`.
 | 2026-04-13 | Replace mock model with replay model |
 | 2026-04-15 | Narrow rule 2 to runtime tests; add carve-out 2a for static validation |
 | 2026-04-15 | Rewrite as testing strategy. Two verification processes; subfolder organization; known-broken manifests; fixture provenance; mechanical > procedural > aspirational precedence. |
+| 2026-06-14 | Tightening pass to meta rules 11–14 (concise, atomic, example-free): every requirement rewritten to one example-free sentence. Rule 6 revised from the testcontainers-rs mandate to the compose-oracle model; added 6d–6g (compose lifecycle/ordering/teardown, container-structure-test); 6b deprecated in place (superseded by 6e); rule 7 scoped to the release lane and the lane vocabulary (oracle, TAP, suite runner) added to Terminology. Folds the absorbed no-credentials rule into 1b. (#114) |

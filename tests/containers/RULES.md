@@ -5,79 +5,93 @@
 
 ## Abstract
 
-Container tests verify that Docker images and Compose files produced by Eval Containers actually work. This document defines how container tests are written.
+Container tests verify that the Docker images, Compose files, and charts Eval
+Containers produces actually run. This document defines the levels of container
+test, the modes a composition is tested in, and the replay model they depend on.
+Runtime tests follow the compose-oracle form in `.agents/verification/RULES.md`.
 
 ## Terminology
 
-The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
+"SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
+interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+
+A *build test* verifies an image builds and is labelled. A *composition test*
+verifies a benchmark is correctly composed in each of its three *modes*: *single*
+(one image run with `docker run`; CLI `--mode container`), *compose*
+(`docker compose up`), and *job* (a chart rendered and applied on Kubernetes). A
+*replay test* runs the full evaluation against the replay model. An *oracle* is a
+service whose exit code is the test's verdict.
 
 ## Principles
 
-### Three Test Levels
+### Levels
 
-1. **Build tests.** Every image (benchmark, agent, model) MUST have a build test that verifies `docker build` succeeds and the image has correct `eval-containers.*` labels. Build tests MAY shell out to `docker build` and `docker inspect` — testcontainers does not cover image builds.
+1. Every image **MUST** have a build test that verifies it builds and carries its required labels.
 
-2. **Compose tests.** Every benchmark MUST have a compose validation test that verifies `docker compose config` succeeds. These tests MAY shell out to `docker compose config` — they validate the YAML, not runtime behavior.
+2. Every benchmark **MUST** have a composition test covering its single, compose, and job modes.
 
-3. **Replay tests.** Every benchmark and every agent MUST participate in at least one replay test that runs the full evaluation pipeline with a replay model. Replay tests MUST use [testcontainers-rs](https://rust.testcontainers.org/) with the [Docker Compose module](https://rust.testcontainers.org/features/docker_compose/) for container lifecycle management. Tests MUST NOT shell out to `docker run` or `docker compose up` directly. testcontainers handles startup, readiness, and cleanup — including when tests panic.
+3. Every benchmark and agent **MUST** participate in at least one replay test run as a compose oracle.
 
-4. **Async runtime.** Replay tests MUST use an async runtime (`tokio`). The testcontainers Docker Compose module requires async.
+4. *[deprecated 2026-06-14 — superseded by the compose-oracle form in rule 3; no async runtime applies.]*
 
-### Replay Model
+### Replay model
 
-5. **Replay model image.** A `replay` model image MUST exist under `models/replay/`. It MUST:
-   - Listen on port 4000.
-   - Respond to `GET /health` with `200 OK`.
-   - Serve responses from a recorded trajectory file at all API endpoints (`/v1/chat/completions`, `/v1/messages`, `/v1/responses`).
-   - Skip failed calls in the trajectory (the agent will retry).
-   - Require no API keys or environment variables.
+5. A `replay` model image **MUST** exist under `containers/models/replay/`.
 
-6. **Replay over mock.** The replay model MUST be indistinguishable from the real model service. The eval container MUST NOT know it is talking to a replay. This means real agent code runs against real model responses — the highest fidelity test possible without calling an LLM.
+   5a. The replay model **MUST** listen on port 4000.
 
-7. **Recording fixtures.** Each test fixture is a `trajectory.jsonl` recorded from a real evaluation run. Fixtures are stored in `tests/fixtures/` and named `{benchmark}-{task-id}-{agent}.trajectory.jsonl`. To create a new fixture, run a real evaluation once with real API keys and copy the resulting trajectory file.
+   5b. The replay model **MUST** serve recorded responses at every model API endpoint.
 
-8. **Replay divergence.** If the agent sends a request that doesn't match the next recorded request, the replay model SHOULD still serve the next response in sequence. The test SHOULD verify the final output, not the intermediate requests. If the output changes, the fixture needs re-recording.
+   5c. The replay model **MUST** require no credentials.
 
-### What to Test
+   5d. The replay model **MUST** report readiness on a health endpoint.
 
-9. **Image structure.** Build tests MUST verify that built images have required `eval-containers.*` labels (type, name, description).
+6. The replay model **MUST** be indistinguishable from a real model service to the eval container.
 
-10. **Compose validity.** Compose tests MUST verify that compose files parse without errors (`docker compose config`).
+7. Each replay fixture **MUST** be a trajectory recorded from a real evaluation run.
 
-11. **Output contract.** E2E tests MUST verify that a complete evaluation produces `/output/{benchmark}/{task-id}/task/result.json` with required fields (`task_id`, `benchmark`, `reward`, `passed`) and agent output in `/output/{benchmark}/{task-id}/agent/stdout.log`.
+8. On a request absent from the recording, the replay model **SHOULD** serve the next recorded response.
 
-12. **Entrypoint phases.** E2E tests MUST verify the three-phase execution: agent runs and produces output, test runs after agent completes, result files are written after test completes.
+### Assertions
 
-### Local Registry
+9. A build test **MUST** assert the image's required `eval.*` labels.
 
-13. **Local registry.** Tests that exercise `eval-containers push` or registry interactions MUST start a local `registry:2` container via testcontainers. The test MUST set `EVAL_REGISTRY=localhost:{port}`.
+10. A composition test **MUST** assert that each mode's artifact is valid.
 
-14. **No remote registry.** Tests MUST NOT push to or pull from `ghcr.io` or any remote registry. All registry operations MUST be local.
+11. An end-to-end test **MUST** assert the evaluation writes a result file carrying its required fields.
 
-### Test Organization
+12. An end-to-end test **MUST** assert the agent, test, and result phases run in order.
 
-15. **One test per contract.** Each test SHOULD verify one aspect of the contract. `output_contains_task_result` not `test_everything`. Prefer many focused tests over few broad ones.
+### Registry
 
-16. **Ignored by default.** Container tests MUST be annotated with `#[ignore]` so that `cargo test` runs fast. The full suite runs with `cargo test -- --ignored`.
+13. A test that exercises registry interactions **MUST** use a local registry service.
 
-17. **Shared setup.** Container tests MAY share image builds across tests using `once_cell` or equivalent. Building the same image in every test is wasteful.
+14. A test **MUST NOT** reach a remote registry.
 
-18. **Cleanup.** testcontainers handles cleanup for E2E tests automatically. Tests MUST NOT add manual cleanup logic. Build tests are stateless.
+### Organization
 
-### Test Matrix
+15. Each test **SHOULD** verify one aspect of the contract.
 
-19. **Full coverage.** Every benchmark MUST appear in at least one E2E test. Every agent MUST appear in at least one E2E test. The remaining combinations SHOULD be spread evenly so each agent is tested 2–3 times.
+16. *[deprecated 2026-06-14 — lane assignment is governed by `.agents/verification/RULES.md`:1–2,7; the `#[ignore]` mechanism is retired.]*
 
-20. **One test per combination.** Each E2E test exercises one benchmark × agent pair with a replay fixture. The test matrix MUST be defined in `tests/MATRIX.md` and kept in sync with the test code.
+17. Container tests **MAY** share built images across tests.
 
-21. **Recording fixtures.** Each fixture is recorded from one real evaluation run with real API keys. The resulting `trajectory.jsonl` is committed to `tests/fixtures/`. This is a one-time cost per combination. To re-record: `TASK_ID=0 EVAL_AGENT={agent} EVAL_MODEL={model} docker compose -f benchmarks/{benchmark}/compose.yaml up --abort-on-container-exit`, then copy `output/{benchmark}/0/model/trajectory.jsonl` to `tests/fixtures/{benchmark}-0-{agent}.trajectory.jsonl`.
+18. *[deprecated 2026-06-14 — superseded by `.agents/verification/RULES.md`:6f (compose teardown).]*
+
+### Matrix
+
+19. Every benchmark and every agent **MUST** appear in at least one end-to-end test.
+
+20. The end-to-end test matrix **MUST** be declared in a single matrix file.
+
+21. *[deprecated 2026-06-14 — duplicate of rule 7.]*
 
 ## References
 
-- [Testing Policy](../RULES.md)
+- [Testing strategy](../../.agents/verification/RULES.md)
 - [Benchmarks](../../.agents/benchmarks/RULES.md)
 - [Agents](../../.agents/agents/RULES.md)
-- [testcontainers-rs](https://github.com/testcontainers/testcontainers-rs)
 
 ## Changelog
 
@@ -86,3 +100,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-13 | Initial version |
 | 2026-04-13 | Replace mock model with replay model |
 | 2026-04-13 | Three test levels: build, compose, E2E |
+| 2026-06-14 | Tightening pass to meta rules 11–14 (atomic, example-free). Renamed level 2 "compose tests" → "composition tests" covering all three modes (single, compose, job; defined in Terminology). Rule 3 revised from the testcontainers-rs mandate to the compose-oracle form; rule 4 (async runtime) deprecated. Deprecated 16 (`#[ignore]` → verification lanes), 18 (cleanup → verification 6f), 21 (fixture recording, duplicate of 7). (#114) |
