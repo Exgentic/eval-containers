@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Materialize one eval by fusing per-axis images at run time, then run it.
+# Proven primitive: crane export (daemonless pull) + bwrap/chroot (run in rootfs).
+set -euo pipefail
+: "${EVAL_REGISTRY:?}" "${EVAL_BENCHMARK:?}" "${EVAL_AGENT:?}"
+btag="${EVAL_BENCHMARK_TAG:-latest}"
+atag="${EVAL_AGENT_TAG:-latest}"
+root=/run/eval
+mkdir -p "$root"
+
+echo "crane-runner: fusing ${EVAL_BENCHMARK} x ${EVAL_AGENT} at run time (no combination image)"
+
+# [1] Benchmark filesystem (testbed + tasks + grader + entrypoint). Per-task
+#     benchmarks resolve to benchmarks/<b>-<task>; shared-env to benchmarks/<b>.
+if [ "${EVAL_BENCHMARK_ENV:-shared-env}" = "per-task" ]; then
+  bench="${EVAL_REGISTRY}/benchmarks/${EVAL_BENCHMARK}-${EVAL_TASK_ID:?per-task needs EVAL_TASK_ID}:${btag}"
+else
+  bench="${EVAL_REGISTRY}/benchmarks/${EVAL_BENCHMARK}:${btag}"
+fi
+echo "  [1] crane export ${bench}"
+crane export "$bench" - | tar -x -C "$root"
+
+# [2] Overlay the agent into the benchmark rootfs (mirrors the combination
+#     Dockerfile's `COPY --from=agent /opt/agent`).
+agent="${EVAL_REGISTRY}/agents/${EVAL_AGENT}:${atag}"
+echo "  [2] crane export ${agent} -> overlay"
+crane export "$agent" - | tar -x -C "$root"
+
+# ---------------------------------------------------------------------------
+# BUILD-OUT ([3], see README): wire the EXISTING runtime into the fused rootfs --
+# bake otelcol/process-compose/gosu/run, pull the gateway axis, extract as root,
+# then `exec /entrypoint.sh /usr/local/bin/run` (the 5-process pipeline). `export`
+# preserves root-only perms, so answer-isolation holds by reuse. This first cut
+# proves the FUSION ([1]/[2]); end-to-end is the remaining work.
+# ---------------------------------------------------------------------------
+echo "  [3] fused rootfs ready at ${root} ($(du -sh "$root" 2>/dev/null | cut -f1))"
+echo "      build-out: bake core + pull gateway + exec /entrypoint.sh /usr/local/bin/run"

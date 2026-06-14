@@ -52,6 +52,12 @@ pub enum Mode {
     /// One k8s `Job` + one Pod + three containers (NetworkPolicy on runner).
     /// Invocation: `kubectl apply`. Production k8s surface.
     Job,
+    /// One generic runner container that materializes the eval at run time: it
+    /// crane-pulls the per-axis `benchmarks/<b>` + `agents/<a>` images and fuses
+    /// them in-container (bwrap/chroot, no daemon, no DinD), so no
+    /// `evals/<b>--<a>` combination image is needed. Invocation: `docker run`
+    /// the `core/crane-runner` image. Additive — the modes above are untouched.
+    Crane,
 }
 
 #[derive(Args)]
@@ -203,6 +209,14 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
             args.dry_run,
         ),
         Mode::Job => run_job(registry, &benchmark, &args, &envs),
+        Mode::Crane => run_crane(
+            registry,
+            &benchmark,
+            &args.agent,
+            &envs,
+            args.local,
+            args.dry_run,
+        ),
     }
 }
 
@@ -335,6 +349,53 @@ fn run_container(
         eval_containers::naming::eval_image(registry, benchmark, &agent, "latest")
     };
 
+    docker_run_eval(&image, envs, dry_run)
+}
+
+/// `--mode crane` → docker run -e EVAL_* <core/crane-runner image>
+///
+/// Unlike `--mode container` (which runs the pre-built `evals/<b>--<a>` image),
+/// crane mode runs ONE generic runner that materializes the eval at run time: it
+/// crane-pulls the per-axis `benchmarks/<b>` + `agents/<a>` images and fuses
+/// them in-container — no combination image, no DinD. `EVAL_BENCHMARK`,
+/// `EVAL_AGENT`, and `EVAL_TASK_ID` (already in `envs`) tell the runner what to
+/// assemble; for a per-task benchmark we also pass `EVAL_BENCHMARK_ENV=per-task`
+/// so it materializes the per-task rootfs. This is the single-container analog
+/// of the generic compose file, one better: it composes the axes at run time, so
+/// the combination matrix is optional.
+fn run_crane(
+    registry: &str,
+    benchmark: &str,
+    agent: &Option<String>,
+    envs: &[(&str, String)],
+    local: bool,
+    dry_run: bool,
+) -> Result<(), String> {
+    if agent.is_none() {
+        return Err("--agent is required in crane mode".to_string());
+    }
+    if local {
+        // The runner pulls published per-axis images at run time; there is no
+        // local combination image to build (that is the whole point).
+        return Err("--local is not supported in crane mode".to_string());
+    }
+    let image = eval_containers::naming::crane_runner_image(registry, "latest");
+
+    // Per-task benchmarks materialize `benchmarks/<b>-<task>`; tell the runner.
+    let mut env_list: Vec<(&str, String)> = envs.to_vec();
+    if eval_containers::benchmark::is_per_task_by_name(benchmark) {
+        env_list.push(("EVAL_BENCHMARK_ENV", "per-task".to_string()));
+    }
+
+    docker_run_eval(&image, &env_list, dry_run)
+}
+
+/// `docker run --rm -e EVAL_* [-e <cred>…] -v output:/output <image>` — or print it
+/// for `--dry-run`. Shared by the single-image surfaces (`--mode container` and
+/// `--mode crane`), which run the gateway in-container and so forward the upstream
+/// credentials (`OPENAI_API_*`) it proxies to — skipped when the caller didn't set
+/// them, so it's a no-op otherwise.
+fn docker_run_eval(image: &str, envs: &[(&str, String)], dry_run: bool) -> Result<(), String> {
     let env_str = envs
         .iter()
         .map(|(k, v)| format!("-e {k}={v}"))
@@ -345,24 +406,17 @@ fn run_container(
         eprintln!("(--dry-run: stopping before docker run)");
         return Ok(());
     }
-
     let mut cmd = Command::new("docker");
     cmd.arg("run").arg("--rm");
     for (k, v) in envs {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
-    // Single-image mode runs the gateway in-container, so it needs the upstream
-    // credentials the gateway service gets from `eval-secrets` (k8s) or the
-    // shell env (compose). Forward them from the caller's environment with
-    // docker's `-e NAME` passthrough (no value → not rendered into logs); unset
-    // vars are skipped, so this is a no-op when the caller didn't provide them.
     for var in GATEWAY_CRED_VARS {
         if std::env::var_os(var).is_some() {
             cmd.arg("-e").arg(var);
         }
     }
-    cmd.arg("-v").arg("output:/output");
-    cmd.arg(&image);
+    cmd.arg("-v").arg("output:/output").arg(image);
     let status = cmd
         .status()
         .map_err(|e| format!("failed to docker run: {e}"))?;
