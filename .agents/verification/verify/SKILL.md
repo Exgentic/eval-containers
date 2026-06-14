@@ -41,23 +41,23 @@ skills: the procedural audits in steps 23–25 are the `audit-dockerfile`,
 - `.agents/verification/RULES.md:13` — mechanical > procedural > aspirational;
   this walk runs mechanical gates first and only spends judgment where rules
   cannot reach.
-- `tests/sanity/RULES.md:1-7` — the fast offline gates in
+- `tests/static/RULES.md:1-7` — the fast offline gates in
   steps 4–10.
 - `tests/build/RULES.md:3-6` — core-first build order, per-task
   skips, and known-broken diffing in steps 11–14.
-- `tests/replay/RULES.md:7,10` — broken-fixture handling and
+- `tests/run/replay/RULES.md:7,10` — broken-fixture handling and
   core-image dependency in step 15.
-- `tests/live/RULES.md:1-12` — the live smoke and sweep in
+- `tests/run/live/RULES.md:1-12` — the live smoke and sweep in
   steps 16–17.
-- `tests/upstream/RULES.md:4-10` — pinned-reference probes and
+- `tests/run/upstream/RULES.md:4-10` — pinned-reference probes and
   the 404-is-red / auth-is-yellow policy in steps 18–20.
-- `tests/fleet/RULES.md:3-8` — regenerate the report
+- `tests/run/fleet/RULES.md:3-8` — regenerate the report
   mechanically, classify the verdict, commit it under the tag (steps 35–37, 43).
 
 ## Procedure
 
 Walk the steps in order. Record each step's artifact or pass mark in
-`tests/fleet/report.md` (the generated release artifact). A release is **not
+`tests/run/fleet/report.md` (the generated release artifact). A release is **not
 ready** until every step below has been executed and recorded.
 
 ### Phase 1 — Preflight (steps 1–3)
@@ -67,14 +67,14 @@ is shipping now, and a dirty tree makes the verdict irreproducible.
 
 1. Confirm a **clean working tree** on the release branch — `git status` shows
    no untracked or modified files.
-2. **Read the last release report** (`tests/fleet/report.md`) so you know what
+2. **Read the last release report** (`tests/run/fleet/report.md`) so you know what
    was flagged previously and can diff against it.
 3. **Read the release notes draft** (`CHANGELOG.md`) so you know
    the user-visible surface you are signing off.
 
 ### Phase 2 — Sanity gates (steps 4–10, fast, offline)
 
-WHY: these are the cheap mechanical gates (`tests/sanity/RULES.md`)
+WHY: these are the cheap mechanical gates (`tests/static/RULES.md`)
 that must pass in seconds before any slow work; they gate every PR, not just
 releases.
 
@@ -111,12 +111,12 @@ first because benchmarks `COPY --from=` them
 ### Phase 4 — Replay and end-to-end (steps 15–17)
 
 WHY: replay proves the recorded fixtures still reproduce
-(`tests/replay/RULES.md`); the live smoke proves a fresh run
-works end-to-end (`tests/live/RULES.md`).
+(`tests/run/replay/RULES.md`); the live smoke proves a fresh run
+works end-to-end (`tests/run/live/RULES.md`).
 
 15. **Replay every fixture:** `cargo test --test replay -- --ignored`. Pass =
     every trajectory reproduces the same score. Fixtures in
-    `tests/replay/fixtures/broken.json` are informational, not blocking.
+    `tests/run/replay/fixtures/broken.json` are informational, not blocking.
 16. **One fresh live smoke:** `cargo test --test run smoke -- --ignored`. Pass =
     a score file exists with score in [0, 1].
 17. **Eyeball the smoke trajectory** — read `/tmp/eval-smoke/trajectory.jsonl`.
@@ -127,7 +127,7 @@ works end-to-end (`tests/live/RULES.md`).
 
 WHY: a pinned reference that has rotted, or a leaked secret, silently breaks the
 release; these run only at release time because they need the network
-(`tests/upstream/RULES.md:1`).
+(`tests/run/upstream/RULES.md:1`).
 
 18. **Dataset revisions resolve:** `cargo test --test upstream datasets -- --ignored`.
     Pass = no 404s on HuggingFace / GitHub raw URLs. Any 404 is red; a 401/403
@@ -194,14 +194,14 @@ on `main`.
 
 WHY: the report is the single artifact a release manager reads to classify the
 verdict; it MUST be regenerated mechanically, never hand-edited between runs
-(`tests/fleet/RULES.md:7`).
+(`tests/run/fleet/RULES.md:7`).
 
 35. **Generate the mechanical half:** `cargo test --test fleet -- --ignored`.
-    Produces the auto section of `tests/fleet/report.md`.
+    Produces the auto section of `tests/run/fleet/report.md`.
 36. **Paste the audit answers** from steps 23–27 into the manual section of the
     report.
 37. **Classify the overall verdict** — apply the fleet classification
-    (`tests/fleet/RULES.md:4`): green = every gate and audit
+    (`tests/run/fleet/RULES.md:4`): green = every gate and audit
     green; yellow = some yellows, no reds; red = any red. Red is not
     ship-ready.
 
@@ -209,7 +209,7 @@ verdict; it MUST be regenerated mechanically, never hand-edited between runs
 
 WHY: tagging, publishing, and verifying the published artifacts is the act of
 shipping; the report is committed under the tag so the release carries its own
-verification record (`tests/fleet/RULES.md:8`).
+verification record (`tests/run/fleet/RULES.md:8`).
 
 38. **Tag the commit:** `git tag -s eval-vX.Y.Z` (signed). *(Do not run git in a
     dry verification; this is the live release step.)*
@@ -220,7 +220,7 @@ verification record (`tests/fleet/RULES.md:8`).
 42. **Smoke test one image from a clean machine** — pull + run from a different
     host. Pass = end-to-end works from nothing.
 43. **Attach the report to the GitHub release** —
-    `gh release create ... --notes-file tests/fleet/report.md`, and commit the
+    `gh release create ... --notes-file tests/run/fleet/report.md`, and commit the
     final `report.md` alongside the tag.
 
 ### Phase 11 — Post-release (steps 44–46)
