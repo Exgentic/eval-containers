@@ -7,8 +7,9 @@
 
 How Eval Containers is published — the delivery-specific outcomes that refine the
 one-version policy for the moment of release. One SemVer, set by the git tag,
-already spans every image, the `evaluate` compose, the Helm chart, and the Rust
-CLI (top-level principle 9). These rules govern how a single tag releases the
+already spans every image, the per-benchmark `eval-<benchmark>` compose
+artifacts, the Helm chart, and the Rust CLI (top-level principle 9). These rules
+govern how a single tag releases the
 image fleet and the CLI together, which workflow owns which artifact, and the
 gates that keep a release honest.
 
@@ -24,7 +25,7 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 2. **CLI release home.** The CLI release — binaries, installers, and the crates.io publish — MUST be produced by `.github/workflows/release.yml`.
 
-3. **Fleet release home.** The image-fleet release — every fleet image and the `evaluate` compose artifact — MUST be produced by `.github/workflows/release-images.yml`.
+3. **Fleet release home.** The image-fleet release — every fleet image and the per-benchmark `eval-<benchmark>` compose artifacts (one per benchmark) — MUST be produced by `.github/workflows/release-images.yml`.
 
 4. **One Release owner.** A tag's GitHub Release object MUST be created and owned solely by the CLI release workflow.
 
@@ -54,3 +55,4 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 | 2026-06-11 | Initial version. Lifts the unified fleet + CLI release outcomes out of the root `RELEASE.md` into the delivery topic, which had skills but no `RULES.md`. |
 | 2026-06-11 | Rule 5: permit an explicit `workflow_dispatch` (manual re-run with a version input) alongside a tag push — the fleet workflow's escape hatch; still forbids branch-push publishes. |
 | 2026-06-14 | Added principles 8–10: the changelog is edited only when cutting a release tag, restricted to the Keep a Changelog sections, and limited to consumer-visible changes. |
+| 2026-06-14 | Rule 3 + Abstract: the single shared `evaluate` compose artifact is replaced by per-benchmark `eval-<benchmark>` artifacts (one self-contained compose per benchmark, flattened at publish). A published artifact can't carry a dynamic per-benchmark `include:` (publish flattens includes), so per-benchmark sidecars (EnterpriseOps-Gym, WebArena, …) are baked in at publish and consumed with a single `-f`. |
