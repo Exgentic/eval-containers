@@ -43,6 +43,14 @@ ENV EVAL_BENCHMARK=skills-bench \
 # The instruction the agent sees (TASK) — agent-readable by design.
 COPY instruction.md /task/instruction.md
 
+# Skills — SkillsBench's whole point. The task's environment/skills/ is dropped at
+# the agent's working directory (the inherited WORKDIR, where /run.sh runs `claude`
+# without cd'ing) so claude-code auto-discovers them as project skills
+# (./.claude/skills) in -p mode. Agent-READABLE by design, unlike /tests: these are
+# the expert knowledge the agent is meant to leverage. Every upstream task ships
+# environment/skills/.
+COPY environment/skills ./.claude/skills
+
 # Root-only tests — never agent-readable (the agent must not see the tests/answers).
 COPY tests /tests
 RUN chmod -R 700 /tests && chown -R root:root /tests
