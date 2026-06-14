@@ -349,41 +349,7 @@ fn run_container(
         eval_containers::naming::eval_image(registry, benchmark, &agent, "latest")
     };
 
-    let env_str = envs
-        .iter()
-        .map(|(k, v)| format!("-e {k}={v}"))
-        .collect::<Vec<_>>()
-        .join(" ");
-    eprintln!("$ docker run --rm {env_str} -v output:/output {image}");
-    if dry_run {
-        eprintln!("(--dry-run: stopping before docker run)");
-        return Ok(());
-    }
-
-    let mut cmd = Command::new("docker");
-    cmd.arg("run").arg("--rm");
-    for (k, v) in envs {
-        cmd.arg("-e").arg(format!("{k}={v}"));
-    }
-    // Single-image mode runs the gateway in-container, so it needs the upstream
-    // credentials the gateway service gets from `eval-secrets` (k8s) or the
-    // shell env (compose). Forward them from the caller's environment with
-    // docker's `-e NAME` passthrough (no value → not rendered into logs); unset
-    // vars are skipped, so this is a no-op when the caller didn't provide them.
-    for var in GATEWAY_CRED_VARS {
-        if std::env::var_os(var).is_some() {
-            cmd.arg("-e").arg(var);
-        }
-    }
-    cmd.arg("-v").arg("output:/output");
-    cmd.arg(&image);
-    let status = cmd
-        .status()
-        .map_err(|e| format!("failed to docker run: {e}"))?;
-    if !status.success() {
-        return Err(format!("docker run failed with {status}"));
-    }
-    Ok(())
+    docker_run_eval(&image, envs, dry_run)
 }
 
 /// `--mode crane` → docker run -e EVAL_* <core/crane-runner image>
@@ -421,7 +387,16 @@ fn run_crane(
         env_list.push(("EVAL_BENCHMARK_ENV", "per-task".to_string()));
     }
 
-    let env_str = env_list
+    docker_run_eval(&image, &env_list, dry_run)
+}
+
+/// `docker run --rm -e EVAL_* [-e <cred>…] -v output:/output <image>` — or print it
+/// for `--dry-run`. Shared by the single-image surfaces (`--mode container` and
+/// `--mode crane`), which run the gateway in-container and so forward the upstream
+/// credentials (`OPENAI_API_*`) it proxies to — skipped when the caller didn't set
+/// them, so it's a no-op otherwise.
+fn docker_run_eval(image: &str, envs: &[(&str, String)], dry_run: bool) -> Result<(), String> {
+    let env_str = envs
         .iter()
         .map(|(k, v)| format!("-e {k}={v}"))
         .collect::<Vec<_>>()
@@ -431,21 +406,17 @@ fn run_crane(
         eprintln!("(--dry-run: stopping before docker run)");
         return Ok(());
     }
-
     let mut cmd = Command::new("docker");
     cmd.arg("run").arg("--rm");
-    for (k, v) in &env_list {
+    for (k, v) in envs {
         cmd.arg("-e").arg(format!("{k}={v}"));
     }
-    // Same in-container gateway as `--mode container`, so forward the upstream
-    // credentials it proxies to (skipped when the caller didn't set them).
     for var in GATEWAY_CRED_VARS {
         if std::env::var_os(var).is_some() {
             cmd.arg("-e").arg(var);
         }
     }
-    cmd.arg("-v").arg("output:/output");
-    cmd.arg(&image);
+    cmd.arg("-v").arg("output:/output").arg(image);
     let status = cmd
         .status()
         .map_err(|e| format!("failed to docker run: {e}"))?;

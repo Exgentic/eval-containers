@@ -12,7 +12,7 @@ FROM debian:stable-slim
 # Userspace image tool (no daemon) + the sandbox. crane exports an image's
 # filesystem; bwrap/chroot runs a process inside it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ca-certificates curl bubblewrap jq tar \
+      ca-certificates curl bubblewrap tar \
  && rm -rf /var/lib/apt/lists/*
 
 # Pin crane for reproducibility (override with --build-arg CRANE_VERSION=...).
