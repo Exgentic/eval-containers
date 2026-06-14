@@ -462,14 +462,14 @@ fn render_report(gates: &[Gate], verdict: Verdict) -> String {
     s.push('\n');
 
     // Counts
-    let bench = fs::read_dir("benchmarks")
+    let bench = fs::read_dir(eval_containers_tests::repo_root().join("containers/benchmarks"))
         .map(|d| {
             d.filter_map(Result::ok)
                 .filter(|e| e.path().is_dir())
                 .count()
         })
         .unwrap_or(0);
-    let agents = fs::read_dir("agents")
+    let agents = fs::read_dir(eval_containers_tests::repo_root().join("containers/agents"))
         .map(|d| {
             d.filter_map(Result::ok)
                 .filter(|e| e.path().is_dir())

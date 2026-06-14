@@ -1,18 +1,18 @@
 # Add a benchmark
 
-*Guide · for contributors · the canonical procedure is [`doctrine/benchmarks/add-benchmark/SKILL.md`](../../doctrine/benchmarks/add-benchmark/SKILL.md).*
+*Guide · for contributors · the canonical procedure is [`.agents/benchmarks/add-benchmark/SKILL.md`](../../.agents/benchmarks/add-benchmark/SKILL.md).*
 
 Adding a benchmark is governed by doctrine. This page is a map, not a
 replacement — follow the skill and the rules it links.
 
-1. **Read the rules** — [`doctrine/benchmarks/RULES.md`](../../doctrine/benchmarks/RULES.md)
+1. **Read the rules** — [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md)
    (what a finished benchmark must be).
-2. **Follow the skill** — [`doctrine/benchmarks/add-benchmark/SKILL.md`](../../doctrine/benchmarks/add-benchmark/SKILL.md)
+2. **Follow the skill** — [`.agents/benchmarks/add-benchmark/SKILL.md`](../../.agents/benchmarks/add-benchmark/SKILL.md)
    (the step-by-step procedure, with a template).
 3. **Ship the deploy artifacts** — every benchmark needs `container.Dockerfile`
    and `compose.yaml` (the single-container and compose surfaces;
    `tests/sanity/check.rs` enforces it). The k8s surface is the shared chart
-   selected with `--set benchmark=<x>` — add a `benchmarks/_chart/presets/<x>.yaml`
+   selected with `--set benchmark=<x>` — add a `containers/benchmarks/_chart/presets/<x>.yaml`
    only if the benchmark needs bespoke topology. See
    [Triple-mode](../concepts/triple-mode.md).
 4. **Open the PR** using the
@@ -20,4 +20,4 @@ replacement — follow the skill and the rules it links.
    which lists every required label, env var, and evidence step.
 
 For the conventions that keep images thin and bake files valid, see
-[`doctrine/delivery/build/SKILL.md`](../../doctrine/delivery/build/SKILL.md).
+[`.agents/delivery/build/SKILL.md`](../../.agents/delivery/build/SKILL.md).

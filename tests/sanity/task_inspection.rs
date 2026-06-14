@@ -839,7 +839,7 @@ fn summarize_run(path: &Path) -> Result<RunSummary, String> {
 }
 
 fn fixture_paths() -> Vec<PathBuf> {
-    let dir = PathBuf::from("tests/replay/fixtures");
+    let dir = eval_containers_tests::repo_root().join("tests/replay/fixtures");
     let mut out = Vec::new();
     let Ok(entries) = fs::read_dir(&dir) else {
         return out;
@@ -1037,7 +1037,9 @@ fn clean_task_produces_no_findings() {
 /// regressions are visible, but they don't block CI.
 fn broken_fixture_set() -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
-    let Ok(raw) = fs::read_to_string("tests/replay/fixtures/broken.json") else {
+    let Ok(raw) = fs::read_to_string(
+        eval_containers_tests::repo_root().join("tests/replay/fixtures/broken.json"),
+    ) else {
         return out;
     };
     let Ok(v) = serde_json::from_str::<Value>(&raw) else {

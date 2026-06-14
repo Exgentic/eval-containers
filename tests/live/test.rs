@@ -87,7 +87,8 @@ fn list_benchmarks() -> Vec<Benchmark> {
         .map(|s| s.split(',').map(|x| x.trim().to_string()).collect());
     let mut out = Vec::new();
     let known_broken = load_known_broken_builds();
-    let entries = fs::read_dir("benchmarks").expect("benchmarks/ missing");
+    let entries = fs::read_dir(eval_containers_tests::repo_root().join("containers/benchmarks"))
+        .expect("benchmarks/ missing");
     for entry in entries.flatten() {
         let path = entry.path();
         if !path.is_dir() {

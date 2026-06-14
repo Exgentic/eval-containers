@@ -1,15 +1,15 @@
 # The Helm chart
 
-*Concept · for operators · derives from [`doctrine/benchmarks/RULES.md`](../../doctrine/benchmarks/RULES.md) rules 24/29, [`doctrine/src/RULES.md`](../../doctrine/src/RULES.md).*
+*Concept · for operators · derives from [`.agents/benchmarks/RULES.md`](../../.agents/benchmarks/RULES.md) rules 24/29, [`.agents/src/RULES.md`](../../.agents/src/RULES.md).*
 
 In `job` mode, every benchmark deploys through **one shared Helm chart**,
-`benchmarks/_chart`. A benchmark is selected by name (`--set benchmark=<x>`);
+`containers/benchmarks/_chart`. A benchmark is selected by name (`--set benchmark=<x>`);
 the chart renders the otelcol + gateway + runner Job. A benchmark with bespoke
 topology adds an optional preset file inside the chart — standard benchmarks
 contribute nothing, so the published chart is self-contained.
 
 ```
-benchmarks/
+containers/benchmarks/
   _chart/                 # the one chart — pod shape, defined once
     Chart.yaml
     values.yaml           # defaults for every benchmark
@@ -44,7 +44,7 @@ Full field list: [Chart values reference](../reference/chart-values.md).
 ## Rendering it
 
 ```bash
-helm template aime benchmarks/_chart --set benchmark=aime \
+helm template aime containers/benchmarks/_chart --set benchmark=aime \
   --set agent=claude-code --set task=0 | kubectl apply -f -
 ```
 

@@ -700,9 +700,13 @@ async fn build_every_agent() {
 #[tokio::test]
 #[ignore]
 async fn build_replay_model() {
-    let tag = tc_build(Path::new("models/replay"), "replay-model", None)
-        .await
-        .unwrap_or_else(|e| panic!("replay model failed to build:\n{e}"));
+    let tag = tc_build(
+        &eval_containers_tests::repo_root().join("containers/models/replay"),
+        "replay-model",
+        None,
+    )
+    .await
+    .unwrap_or_else(|e| panic!("replay model failed to build:\n{e}"));
     let _image = ImageGuard(tag.clone());
     assert_eq!(
         docker_label(&tag, "eval.type").as_deref(),

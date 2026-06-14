@@ -2,9 +2,9 @@
 
 Human-facing docs for running, deploying, and extending Eval Containers.
 
-> This is the *explanation*. The binding rules live in [`doctrine/`](../doctrine/);
+> This is the *explanation*. The binding rules live in [`.agents/`](../.agents/);
 > when docs and doctrine disagree, doctrine wins. See
-> [`doctrine/docs/RULES.md`](../doctrine/docs/RULES.md) for what governs these pages.
+> [`.agents/docs/RULES.md`](../.agents/docs/RULES.md) for what governs these pages.
 
 Eval Containers runs AI-agent evaluations as plain container artifacts. One
 evaluation is **one benchmark + one agent + one model**, and it runs the same
@@ -40,4 +40,4 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 
 - [CLI](reference/cli.md) — `eval-containers` commands and flags
 - [Environment variables](reference/env-vars.md) — the `EVAL_*` namespace
-- [Chart values](reference/chart-values.md) — `benchmarks/_chart` values
+- [Chart values](reference/chart-values.md) — `containers/benchmarks/_chart` values
