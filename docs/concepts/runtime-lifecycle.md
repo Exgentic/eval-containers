@@ -12,20 +12,16 @@ places where benchmarks diverge.
 
 ### 1. Setup — "what should the agent do?"
 
-The benchmark's entrypoint (`/entrypoint.sh`) prepares the task. In the
-common case it calls `/eval-materialize-task`, which reads the task list
-at `/tasks/all.jsonl`, unpacks the row matching `EVAL_TASK_ID` into
-`/tasks/$EVAL_TASK_ID/`, and exports a `TASK` environment variable —
-the plain-text prompt the agent will see.
+The benchmark's entrypoint (`/entrypoint.sh`) picks the current task
+and exports a `TASK` environment variable — the plain-text prompt the
+agent will see. Most benchmarks store all tasks in a single file and
+unpack the one matching `EVAL_TASK_ID` at runtime; a few (swe-bench,
+terminal-bench) bake one task per image at build time. Either way, the
+only requirement is that `TASK` is set by the time the agent starts.
 
 Some benchmarks also set grader-specific variables here (e.g.
 `EXPECTED_ANSWER` for exact-match graders). These are conventions of
 individual graders, not part of the contract.
-
-Not every benchmark works this way. Per-task benchmarks like swe-bench
-and terminal-bench bake one task per image at build time — their
-entrypoint sets `TASK` directly and never calls `/eval-materialize-task`.
-The only requirement is that `TASK` is set by the time the agent starts.
 
 ### 2. Agent — "solve this"
 
@@ -122,16 +118,15 @@ replace it.
 
 **tau-bench** is the main example: in compose mode it replaces the runner
 entrypoint with `python3 /app/agent.py` and adds a separate harness
-container that calls `/eval-materialize-task` itself. In k8s it overrides
-`runnerArgs` in its Helm preset. Neither path uses process-compose — but
-the four steps (setup → agent → grade → result) still happen.
+container. In k8s it overrides `runnerArgs` in its Helm preset. Neither
+path uses process-compose — but the four steps (setup → agent → grade →
+result) still happen.
 
 ## Key paths at a glance
 
 | What | Path | Who provides it |
 |------|------|-----------------|
 | Benchmark entrypoint | `/entrypoint.sh` | You (benchmark Dockerfile) |
-| Task unpacker | `/eval-materialize-task` | Framework — most benchmarks use it |
 | Framework launcher | `/usr/local/bin/run` | Framework (combination layer) |
 | Agent code | `/run.sh` | You (agent Dockerfile) |
 | Grading script | `/grade.sh` | You (benchmark Dockerfile) |
