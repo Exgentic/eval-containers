@@ -4,7 +4,7 @@
 //! Three modes (per benchmarks/RULES.md rule 24 — the triple-mode contract):
 //!
 //!   --mode compose    (default) → docker compose -f containers/benchmarks/<x>/compose.yaml up
-//!   --mode container            → docker run -e EVAL_MODEL=... <eval-image>
+//!   --mode container            → docker run -e EVAL_MODEL=... <eval-image>-standalone (the standalone bundle)
 //!   --mode job                  → helm template oci://<registry>/charts/eval | kubectl apply -f -  (--local: ./containers/benchmarks/_chart)
 //!
 //! Mapping flags → manifest, by mode:
@@ -33,8 +33,10 @@
 //! container prints the resolved `docker run` line, job forwards
 //! `--dry-run=server` to `kubectl apply` (exercises admission, no state).
 //!
-//! With `--local`, uses the in-repo `containers/benchmarks/<name>/{compose.yaml,
-//! container.Dockerfile}` and the local chart instead of the registry artifact.
+//! With `--local`, uses the in-repo `containers/benchmarks/<name>/compose.yaml`
+//! (compose), the generic `containers/core/standalone.Dockerfile` built onto the
+//! local lean base (container), and the local chart (job) instead of the
+//! registry artifacts.
 
 use clap::{Args, ValueEnum};
 use eval_containers::naming::compose_artifact;
@@ -261,11 +263,17 @@ fn run_compose(
     Ok(())
 }
 
-/// `--mode container` → docker run -e ... <eval-image>
+/// `--mode container` → docker run -e ... <eval-image>-standalone
 ///
-/// In `--local` mode the image is built first from
-/// `containers/benchmarks/<x>/container.Dockerfile`. Otherwise the registry-published
-/// `evals/<benchmark>--<agent>:<tag>` image is pulled.
+/// Container mode runs the single-container **standalone bundle**
+/// (`evals/<b>--<a>-standalone:<version>`): the lean eval base + the in-process
+/// gateway/otelcol/process-compose. The variant is a name suffix, not a tag (the
+/// tag is the version). Non-local pulls the registry-published `-standalone`
+/// image; `--local` builds it from the one generic `core/standalone.Dockerfile`,
+/// layering onto the lean base (`evals/<b>--<a>:latest`, produced by `build eval`)
+/// supplied as the `eval-base` build context
+/// (`--build-context eval-base=docker-image://…`). There is no per-benchmark
+/// Dockerfile.
 fn run_container(
     registry: &str,
     benchmark: &str,
@@ -277,10 +285,10 @@ fn run_container(
     let agent = agent
         .clone()
         .ok_or_else(|| "--agent is required in container mode".to_string())?;
-    // Per-task benchmarks bake one eval image per task: address it by the
-    // task-aware name (evals/<b>-<task>--<a>) and build container.Dockerfile with
-    // EVAL_TASK_ID so its ARG/FROM resolve. Shared-env benchmarks ignore the
-    // (harmless) build-arg. (benchmarks/RULES.md — eval-image naming.)
+    // Per-task benchmarks bake one eval image per task: the bundle layers onto the
+    // task-aware lean base (evals/<b>-<task>--<a>). Shared-env benchmarks use the
+    // task-less name. Per-task resolution lives in the eval-base build context,
+    // not a per-benchmark stub. (benchmarks/RULES.md 24a / 24f.)
     let task_id = envs
         .iter()
         .find(|(k, _)| *k == "EVAL_TASK_ID")
@@ -291,49 +299,47 @@ fn run_container(
             "{benchmark} is a per-task benchmark — pass --task-id <id> in container mode"
         ));
     }
-    let local_tag = match (per_task, task_id.as_deref()) {
-        (true, Some(t)) => format!("evals/{benchmark}-{t}--{agent}:local"),
-        _ => format!("evals/{benchmark}--{agent}:local"),
+    // The single-container standalone bundle image — what `docker run` launches,
+    // the same name whether built locally or pulled. Per-task gets the task-aware
+    // name (the helper lowercases the task id for Docker). (benchmarks/RULES.md 24f.)
+    let image = match (per_task, task_id.as_deref()) {
+        (true, Some(t)) => eval_containers::naming::eval_task_standalone_image(
+            registry, benchmark, t, &agent, "latest",
+        ),
+        _ => eval_containers::naming::eval_standalone_image(registry, benchmark, &agent, "latest"),
     };
-    let image = if local {
-        // Build from the per-benchmark container.Dockerfile, then run.
-        // The build context is the benchmark's own dir, not the repo root:
-        // container.Dockerfile is FROM-only, so a small, scoped context is all
-        // it needs — and scoping it here is what lets us drop a root
-        // `.dockerignore` whose sole job was keeping target/, .git/, etc. out of
-        // an otherwise repo-sized context for this one dev-mode build.
-        let context = format!("./containers/benchmarks/{benchmark}");
-        let dockerfile = format!("{context}/container.Dockerfile");
-        let shown_arg = task_id
-            .as_deref()
-            .map(|t| format!(" --build-arg EVAL_TASK_ID={t}"))
-            .unwrap_or_default();
-        eprintln!("$ docker build -f {dockerfile}{shown_arg} -t {local_tag} {context}");
+    if local {
+        // Build the bundle from the ONE generic core/standalone.Dockerfile, layering
+        // the in-process gateway/otelcol/process-compose onto the lean base that
+        // `build eval` produced. The lean base is supplied as the `eval-base` build
+        // CONTEXT (standalone.Dockerfile is `FROM eval-base`) — a named context binds
+        // `FROM eval-base` to a concrete image where an ARG-based FROM does not;
+        // per-task resolution lives in that ref. Build context dir is containers/core
+        // (standalone.Dockerfile COPYs process-compose/…).
+        let combination = match (per_task, task_id.as_deref()) {
+            (true, Some(t)) => {
+                eval_containers::naming::eval_task_image(registry, benchmark, t, &agent, "latest")
+            }
+            _ => eval_containers::naming::eval_image(registry, benchmark, &agent, "latest"),
+        };
+        let context = "containers/core";
+        let dockerfile = "containers/core/standalone.Dockerfile";
+        eprintln!(
+            "$ docker build -f {dockerfile} --build-context eval-base=docker-image://{combination} -t {image} {context}"
+        );
         let mut build = Command::new("docker");
-        build.arg("build").arg("-f").arg(&dockerfile);
-        if let Some(t) = task_id.as_deref() {
-            build.arg("--build-arg").arg(format!("EVAL_TASK_ID={t}"));
-        }
-        build.arg("-t").arg(&local_tag).arg(&context);
+        build.arg("build").arg("-f").arg(dockerfile);
+        build
+            .arg("--build-context")
+            .arg(format!("eval-base=docker-image://{combination}"));
+        build.arg("-t").arg(&image).arg(context);
         let status = build
             .status()
             .map_err(|e| format!("failed to docker build: {e}"))?;
         if !status.success() {
             return Err(format!("docker build failed with {status}"));
         }
-        local_tag
-    } else if per_task {
-        // task_id is guaranteed Some by the per_task check above.
-        eval_containers::naming::eval_task_image(
-            registry,
-            benchmark,
-            task_id.as_deref().unwrap(),
-            &agent,
-            "latest",
-        )
-    } else {
-        eval_containers::naming::eval_image(registry, benchmark, &agent, "latest")
-    };
+    }
 
     let env_str = envs
         .iter()

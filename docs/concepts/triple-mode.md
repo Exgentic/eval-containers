@@ -8,7 +8,7 @@ environment — the benchmark, agent, and model are identical across all three.
 | Mode | Wraps | Use it for |
 |---|---|---|
 | `compose` *(default)* | `docker compose -f containers/benchmarks/<x>/compose.yaml up` | Laptop, full stack (gateway + OTel), fastest iteration |
-| `container` | `docker run -e EVAL_MODEL=… <eval-image>` | CI smoke tests, one-shot runs, minimal footprint |
+| `container` | `docker run -e EVAL_MODEL=… <eval-image>-standalone` | CI smoke tests, one-shot runs, single-container footprint |
 | `job` | `helm template containers/benchmarks/_chart --set benchmark=<x> \| kubectl apply -f -` | Kubernetes, production-scale parallel runs |
 
 Select the mode with `--mode`:
@@ -21,16 +21,21 @@ eval-containers run aime --task-id 0 --agent codex --mode job
 
 ## Artifacts per benchmark
 
-The container and compose modes each need one file in the benchmark's dir
+Only the compose mode needs a per-benchmark file
 ([rule 24](../../.agents/benchmarks/RULES.md), enforced by `tests/static/check.rs`):
 
-- `container.Dockerfile` — the single-container image (`container` mode)
 - `compose.yaml` — the compose stack (`compose` mode)
 
-The `job` mode renders one shared Helm chart, selected with `--set benchmark=<x>`
-— no per-benchmark file required. A benchmark with bespoke topology adds an
-optional `containers/benchmarks/_chart/presets/<x>.yaml`. See
-[The Helm chart](the-helm-chart.md).
+The `container` and `job` modes both render from a **shared** recipe — no
+per-benchmark file:
+
+- `container` mode builds the standalone bundle from the one generic
+  `containers/core/standalone.Dockerfile` (`FROM` the lean base + the in-process
+  gateway/otelcol/process-compose). The lean base `:latest` is the eval; the
+  bundle is the single-container convenience.
+- `job` mode renders the shared Helm chart, selected with `--set benchmark=<x>`.
+  A benchmark with bespoke topology adds an optional
+  `containers/benchmarks/_chart/presets/<x>.yaml`. See [The Helm chart](the-helm-chart.md).
 
 ## The mental model
 

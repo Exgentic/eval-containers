@@ -1,16 +1,15 @@
 # Adding a Benchmark
 
-Read `RULES.md` first. Every benchmark ships three authored files plus the Dockerfile (and, only for bespoke k8s topology, a chart preset):
+Read `RULES.md` first. Every benchmark ships two authored files plus the Dockerfile (and, only for bespoke k8s topology, a chart preset):
 
 | File | Purpose | Shape |
 |------|---------|-------|
 | `Dockerfile` | Build the benchmark base image (tasks + verifier) | Per-benchmark |
-| `container.Dockerfile` | Single-mode deployment artifact | 1 line — `FROM <registry>/evals/<name>--<agent>:<tag>` |
 | `compose.yaml` | Compose-mode deployment artifact | ~7 lines — `include:` shared base + benchmark overrides |
 | `README.md` | Docs | At-a-glance table + agent contract + grading + run examples |
 | `benchmarks/_chart/presets/<name>.yaml` *(optional)* | k8s bespoke topology | Only for complex benchmarks — adds sidecars/Deployments/Services via the chart's composition hooks |
 
-The k8s surface is the shared chart `benchmarks/_chart`, selected with `--set benchmark=<name>` — a simple benchmark needs no per-benchmark k8s file. So the per-benchmark files (`container.Dockerfile`, `compose.yaml`) are uniform across simple benchmarks — copy `benchmarks/aime/` and substitute the name. Complex benchmarks (with bespoke services) diverge in `compose.yaml` (extra services after the `include:`) and add a `benchmarks/_chart/presets/<name>.yaml` (Deployments/Services via the chart's `extraManifests` and other hooks). See `benchmarks/aime/` for the canonical reference and `benchmarks/_chart/` for the shared k8s chart.
+The **single-container** surface (the standalone bundle) renders from the one generic `core/standalone.Dockerfile` and the **k8s** surface from the shared chart `benchmarks/_chart` (`--set benchmark=<name>`) — neither needs a per-benchmark file. So `compose.yaml` is the only per-benchmark deploy file, and it's uniform across simple benchmarks — copy `benchmarks/aime/` and substitute the name. Complex benchmarks (with bespoke services) diverge in `compose.yaml` (extra services after the `include:`) and add a `benchmarks/_chart/presets/<name>.yaml` (Deployments/Services via the chart's `extraManifests` and other hooks). See `benchmarks/aime/` for the canonical reference and `benchmarks/_chart/` for the shared k8s chart.
 
 ## Shared-env Benchmark (one image, many tasks)
 
@@ -73,11 +72,13 @@ ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]
 ```
 
-### container.Dockerfile
+### single-container surface
 
-```dockerfile
-FROM ghcr.io/exgentic/evals/{name}--claude-code:latest
-```
+No per-benchmark file. The standalone bundle renders from the one generic
+`core/standalone.Dockerfile` (`FROM` the lean base + the in-process
+gateway/otelcol/process-compose); `run --mode container` / `build eval --standalone`
+build it. Record the lean base's build args (`BENCHMARK_IMAGE`, `AGENT_IMAGE`,
+`AGENT_VERSION`) in `README.md`.
 
 ### compose.yaml
 
@@ -107,14 +108,14 @@ composition hooks there — `initContainers`, `runnerExtraEnv`, `runnerArgs`, an
 
 ## Per-task, built-from-source Benchmark (Harbor task format)
 
-Use this when each task ships its own `environment/Dockerfile` and **no** per-task upstream image exists. There is nothing to scaffold by hand — **copy `benchmarks/terminal-bench/` wholesale**; it already ships `build.sh` (the two-step build), the `FROM ${TASK_BASE}` overlay `Dockerfile`, the fetch-the-gold `solution.sh`, and the per-task `container.Dockerfile`. Change only the benchmark name + labels, `REF`/`REPO` in `build.sh`, and `{ORG}`/`{REPO}` in `solution.sh`.
+Use this when each task ships its own `environment/Dockerfile` and **no** per-task upstream image exists. There is nothing to scaffold by hand — **copy `benchmarks/terminal-bench/` wholesale**; it already ships `build.sh` (the two-step build), the `FROM ${TASK_BASE}` overlay `Dockerfile`, and the fetch-the-gold `solution.sh`. Change only the benchmark name + labels, `REF`/`REPO` in `build.sh`, and `{ORG}`/`{REPO}` in `solution.sh`.
 
 The doctrine points to keep right when you adapt it:
 
 - Bake the task name into an `ENV` and have `solution.sh` read *that*, not `EVAL_TASK_ID` (the oracle overrides it to `0`) — `RULES.md:24i`.
 - The overlay adds only the instruction plus a **root-only** `/tests` (`chmod 700`); it never bakes the upstream repo, which would leak every task's gold and tests — `RULES.md:5`, `RULES.md:9`.
 - The oracle *derives* the gold; it never hardcodes or copies an answer — `RULES.md:20a`.
-- The per-task `container.Dockerfile` is two lines (`ARG EVAL_TASK_ID` + a task-parameterised `FROM`) — `RULES.md:24a`.
+- Per-task single mode uses the generic `core/standalone.Dockerfile` with the `eval-base` build context = the task-aware lean base (`evals/<name>-<task>--<agent>:latest`); there is no per-benchmark stub — `RULES.md:24a`.
 - If the task's upstream `tests/test.sh` needs network at grade time, install its test deps at build and run `tests/test_outputs.py` from `/grade.sh` instead, to keep grading offline.
 
 Validate: `eval-containers oracle <name> --task-id <task> --local` — gold MUST score `1.0`, no-op `< 1.0`.
