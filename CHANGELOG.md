@@ -136,6 +136,11 @@ addition; the patch on a bug fix that doesn't change the rule surface.
 
 ### Test infrastructure
 
+- **New Dockerfile lint `from_arg_not_global`.** Flags any `FROM` that
+  interpolates an `ARG` not declared in the global scope (before the
+  first `FROM`) — Docker expands it to empty and silently corrupts the
+  image tag (the class of bug that broke the `plandex` build). Added to
+  the `dockerfile_inspection` catalog with bad/good unit tests; offline.
 - `cargo fmt --check` — green.
 - `cargo clippy --all-targets -- -D warnings` — green.
 - `cargo test` — green (12 rule-catalog + 19 trajectory + 4 upstream +
