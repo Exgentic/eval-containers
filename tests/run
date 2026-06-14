@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# tests/run — the single entry point for the framework-free fleet test suite.
+#
+# Discovers every check under tests/, runs each in its natural standard tool,
+# normalizes the result to TAP (one line per check-unit), aggregates, and exits
+# non-zero if any unit fails. This is the "protocol, not framework" glue from
+# issue #114: bats, compose oracles, and sweep scripts all report through TAP.
+#
+#   tests/run            # contribution lane — offline, no credentials
+#   tests/run --release  # also run the release lane (creds / network / live)
+#
+# Mechanisms (discovered by convention):
+#   *.bats          -> bats           (a bespoke static-contract catalog)
+#   */compose.yaml  -> compose oracle  (`up --exit-code-from <oracle|tester>`)
+#   *.sweep.sh      -> a fleet sweep   (exit 0 = pass)
+# Any path containing `/release/` or `.release.` runs only under --release.
+set -uo pipefail
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd) || exit 2
+# shellcheck source=tests/lib.sh
+. "$ROOT/tests/lib.sh"
+
+release=0
+[ "${1:-}" = "--release" ] && release=1
+
+in_lane() { # skip release-only units unless --release
+  case "$1" in
+    */release/*|*.release.*) [ "$release" -eq 1 ] ;;
+    *) true ;;
+  esac
+}
+
+n=0 fail=0
+unit() { # <name> <command...> : run, emit one TAP line, show output on failure
+  local name=$1 out rc
+  shift
+  out=$("$@" 2>&1)
+  rc=$?
+  n=$((n + 1))
+  if [ "$rc" -eq 0 ]; then
+    tap_ok "$n" "$name"
+  else
+    tap_not_ok "$n" "$name"
+    fail=$((fail + 1))
+    printf '%s\n' "$out" | sed 's/^/# /'
+  fi
+}
+
+echo "TAP version 13"
+
+# bats catalogs (bespoke static contracts)
+while IFS= read -r f; do
+  in_lane "$f" || continue
+  unit "${f#"$ROOT"/}" bats "$f"
+done < <(find "$ROOT/tests" -name '*.bats' -type f | sort)
+
+# compose oracles (runtime behavior — the test is a container)
+while IFS= read -r f; do
+  in_lane "$f" || continue
+  svc=$(awk -F: '/^[[:space:]]+(oracle|tester):/{gsub(/[[:space:]]/,"",$1);print $1;exit}' "$f")
+  [ -n "$svc" ] || continue
+  unit "${f#"$ROOT"/} (oracle)" compose_oracle "$f" "$svc"
+done < <(find "$ROOT/tests" -name 'compose.yaml' -type f | sort)
+
+# fleet sweeps (render/build loops over standard tools)
+while IFS= read -r f; do
+  in_lane "$f" || continue
+  unit "${f#"$ROOT"/}" bash "$f"
+done < <(find "$ROOT/tests" -name '*.sweep.sh' -type f | sort)
+
+tap_plan "$n"
+if [ "$fail" -ne 0 ]; then
+  tap_diag "$fail/$n units failed"
+  exit 1
+fi
+tap_diag "$n/$n units passed"

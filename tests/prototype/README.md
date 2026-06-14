@@ -4,12 +4,12 @@ Gauges the feel of replacing the Rust `eval-containers-tests` crate with
 standard, framework-free tooling, per issue #114. Throwaway/alongside — does
 **not** delete the Rust suite or change any rule yet.
 
-## `helm` gate — `helm.sh`
+## `helm` gate — `helm.sweep.sh`
 
 Faithful port of `tests/helm.rs` (both tests: every-benchmark render+validate,
 and the `#18`/`#21` gateway-readiness ordering check).
 
-| | Rust (`helm.rs`) | shell (`helm.sh`) |
+| | Rust (`helm.rs`) | shell (`helm.sweep.sh`) |
 |---|---|---|
 | Lines | 185 | 60 |
 | New deps | testcontainers + tokio + reqwest + bollard (compiled, unused — the test only shells to `helm`) | none (`helm`, `kubeconform`, `xargs` already required) |
@@ -21,7 +21,7 @@ of the Rust container stack, yet building it drags the whole testcontainers /
 tokio / reqwest tree through the compiler. That is issue #114's thesis in one
 gate: a `helm template` loop wearing a Rust integration-test crate.
 
-Run: `tests/prototype/helm.sh`
+Run: `tests/prototype/helm.sweep.sh`
 
 ## `check` gate — `check.bats`
 
