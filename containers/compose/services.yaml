@@ -44,13 +44,20 @@ services:
   runner:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/${EVAL_BENCHMARK:-aime}--${EVAL_AGENT:-claude-code}:latest
     environment:
-      # Pass framework axes through as both EVAL_* (canonical — what
+      # Pass the runtime axes through as both EVAL_* (canonical — what
       # /entrypoint.sh and /usr/local/bin/run read) and bare names
       # (legacy — what process-compose.yaml + write-result read
       # internally). Until those internals migrate to EVAL_*, we set
       # both so the run is consistent regardless of which path produces
       # result.json.
-      EVAL_BENCHMARK: ${EVAL_BENCHMARK:-aime}
+      #
+      # EVAL_BENCHMARK is deliberately NOT set here: the benchmark is fixed
+      # by the image (every benchmark Dockerfile bakes `ENV
+      # EVAL_BENCHMARK=<name>`, and the eval image is `FROM` it), so it is
+      # not a runtime axis like agent/task/model. Setting it would clobber
+      # the image's correct value with a generic default — and it is what
+      # let a per-benchmark `oci://…/eval-<benchmark>` artifact stay
+      # self-describing without the consumer repeating the benchmark.
       EVAL_AGENT: ${EVAL_AGENT:-claude-code}
       EVAL_MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
       EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
