@@ -46,6 +46,20 @@ jobs:
           sudo chmod +x /usr/local/bin/hadolint
       - uses: azure/setup-helm@v4
 
+      # conftest powers the conftest-dockerfile + conftest-compose hooks (the
+      # eval LABEL/pin/hygiene + compose markers/tag-axis policy, migrated from
+      # the Rust suite for #114).
+      - name: Install conftest
+        run: |
+          CONFTEST_VERSION=0.56.0
+          curl -sSLf "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin conftest
+
+      # trivy powers the trivy-config hook (IaC/misconfig + secret-in-build-arg
+      # over containers/, net-new for #114).
+      - name: Install trivy
+        uses: aquasecurity/setup-trivy@v0.3.1
+
       # PRs: scope to changed files. main/manual: full check (no PR diff exists).
       - name: Run pre-commit (PR)
         if: github.event_name == 'pull_request'

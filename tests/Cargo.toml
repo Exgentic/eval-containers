@@ -59,9 +59,10 @@ path = "oracle/test.rs"
 # tests — the idiomatic Cargo home for a crate's integration tests — not in
 # the fleet's framework-free suite. Run: cargo test -p eval-containers --test cli_conformance
 
-[[test]]
-name = "compose"
-path = "sanity/compose.rs"
+# compose moved to standard tools: the compose-schema check is the
+# check-jsonschema (check-compose-spec) pre-commit hook, and the eval-specific
+# markers + image-tag-axis rule are conftest (tests/policy/compose/) run via
+# tests/compose.sweep.sh. (#114)
 
 [[test]]
 name = "dockerfile_inspection"
@@ -71,9 +72,8 @@ path = "sanity/dockerfile_inspection.rs"
 name = "task_inspection"
 path = "sanity/task_inspection.rs"
 
-[[test]]
-name = "upstream_pins"
-path = "sanity/upstream_pins.rs"
+# upstream_pins moved to conftest (tests/policy/dockerfile/pins.rego), swept by
+# tests/policy/dockerfile/run.sh. (#114)
 
 [[test]]
 name = "build"
@@ -103,6 +103,6 @@ path = "gateways/test.rs"
 name = "agents"
 path = "agents/test.rs"
 
-[[test]]
-name = "helm"
-path = "helm.rs"
+# helm moved to standard tools: tests/helm.sweep.sh renders every benchmark
+# through the shared chart and validates with kubeconform + conftest
+# (tests/policy/helm/). (#114)

@@ -1,24 +1,25 @@
 //! Mechanical fast checks — always run on `cargo test`.
 //!
 //! This test file collects the cheap, pure-file-I/O gates that belong
-//! in the "sanity" phase of [VERIFY.md](VERIFY.md):
+//! in the "sanity" phase of [VERIFY.md](VERIFY.md) AND have no standard
+//! tool — bespoke repo-meta invariants:
 //!
-//! - step 6: structural validation (files present, required labels)
+//! - step 6: structural validation (triple-mode files present)
 //! - step 10: count reconciliation (README claims vs. filesystem)
-//! - step 30: every benchmark has a README.md
-//! - step 31: every agent has a README.md
+//! - step 30/31: every benchmark / agent has a README.md
+//! - the OpenShift overlay, otelcol health gate, eval-image launch,
+//!   agent-env task-id exclusion, and Cargo/Chart version-alignment gates.
 //!
-//! The compose parse (step 7), Dockerfile health (step 8), and
-//! trajectory health (step 9) live in their own test files next to
-//! their rule catalogs:
+//! The structural checks that DO have a standard tool moved out for issue #114:
+//!   - Dockerfile LABEL contract → conftest (tests/policy/dockerfile/labels.rego)
+//!     plus the built image's labels via container-structure-test
+//!     (tests/build/structure.release.sweep.sh);
+//!   - compose markers + image-tag-axis → conftest (tests/policy/compose/), swept
+//!     by tests/compose.sweep.sh;
+//!   - Dockerfile health → conftest/hadolint/gitleaks (see dockerfile_inspection.rs);
+//!   - trajectory health → tests/task_inspection.rs.
 //!
-//! - [tests/compose.rs](compose.rs)
-//! - [tests/dockerfile_inspection.rs](dockerfile_inspection.rs)
-//! - [tests/task_inspection.rs](task_inspection.rs)
-//!
-//! All four test files run on plain `cargo test` (no --ignored) and
-//! together cover VERIFY.md steps 5–10. None of them need the docker
-//! daemon; `docker compose config` parses YAML locally.
+//! What stays here is pure file I/O, no docker daemon.
 //!
 //! Run just this file: `cargo test --test check`
 //! Run a single gate:  `cargo test --test check structural`
@@ -63,28 +64,11 @@ fn contains_line(path: &Path, needle: &str) -> bool {
 }
 
 // ─── step 6: structural validation ────────────────────────────────
-
-const REQUIRED_BENCHMARK_LABELS: &[&str] = &[
-    r#"LABEL eval.type="benchmark""#,
-    "LABEL eval.benchmark.name=",
-    "LABEL eval.benchmark.env=",
-    "LABEL eval.benchmark.tasks=",
-    "LABEL eval.benchmark.internet=",
-];
-
-const REQUIRED_AGENT_LABELS: &[&str] = &[
-    r#"LABEL eval.type="agent""#,
-    "LABEL eval.agent.name=",
-    "LABEL eval.agent.version=",
-];
-
-const REQUIRED_COMPOSE_MARKERS: &[&str] = &[
-    "include:",
-    "compose/services.yaml",
-    "services:",
-    "  runner:",
-    "BENCHMARK:",
-];
+//
+// File-presence only. The Dockerfile LABEL contract and the compose markers
+// that this gate used to assert moved to standard tools for issue #114 (conftest
+// tests/policy/dockerfile/labels.rego + tests/policy/compose/, and the built
+// image's labels via container-structure-test) — see the module header.
 
 // Rule 24 (triple-mode contract): every benchmark ships container.Dockerfile
 // and compose.yaml — the single-container and compose surfaces. The k8s surface
@@ -109,7 +93,6 @@ fn is_test_benchmark(dir: &Path) -> bool {
 fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
     let mut issues = Vec::new();
     let dockerfile = dir.join("Dockerfile");
-    let compose = dir.join("compose.yaml");
 
     if !dockerfile.is_file() {
         issues.push(format!("{name}: no Dockerfile"));
@@ -127,20 +110,6 @@ fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
         }
     }
 
-    for label in REQUIRED_BENCHMARK_LABELS {
-        if !contains_line(&dockerfile, label) {
-            issues.push(format!("{name}: missing {label}"));
-        }
-    }
-
-    if compose.is_file() {
-        for marker in REQUIRED_COMPOSE_MARKERS {
-            if !contains_line(&compose, marker) {
-                issues.push(format!("{name}: compose missing `{marker}`"));
-            }
-        }
-    }
-
     issues
 }
 
@@ -149,15 +118,6 @@ fn check_agent_structure(name: &str, dir: &Path) -> Vec<String> {
     let dockerfile = dir.join("Dockerfile");
     if !dockerfile.is_file() {
         issues.push(format!("{name}: no Dockerfile"));
-        return issues;
-    }
-    for label in REQUIRED_AGENT_LABELS {
-        if !contains_line(&dockerfile, label) {
-            issues.push(format!("{name}: missing {label}"));
-        }
-    }
-    if contains_line(&dockerfile, r#"LABEL eval.agent.version="latest""#) {
-        issues.push(format!("{name}: eval.agent.version is `latest` — must pin"));
     }
     issues
 }
