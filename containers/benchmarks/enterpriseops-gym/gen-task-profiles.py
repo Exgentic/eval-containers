@@ -36,6 +36,7 @@ GYM_TO_SIDECAR = {
 }
 
 profiles: dict[str, list[str]] = {}
+index = 0
 for domain in DOMAINS:
     url = f"{BASE}{domain}-00000-of-00001.parquet"
     table = pq.read_table(io.BytesIO(urllib.request.urlopen(url).read()))  # noqa: S310
@@ -44,9 +45,14 @@ for domain in DOMAINS:
         names = sorted(
             {GYM_TO_SIDECAR[s["mcp_server_name"]] for s in servers if s.get("mcp_server_name") in GYM_TO_SIDECAR}
         )
-        profiles[str(row["task_id"])] = names
+        # Sequential integer keys: same iteration order as the Dockerfile's
+        # /tasks/all.jsonl materialization, so EVAL_TASK_ID = line index.
+        # The upstream task_id is preserved in /tasks/<n>/id.txt at runtime
+        # (RULES.md §15).
+        profiles[str(index)] = names
+        index += 1
 
-items = sorted(profiles.items(), key=lambda kv: kv[0])
+items = sorted(profiles.items(), key=lambda kv: int(kv[0]))
 body = (
     "{\n"
     + ",\n".join(f"  {json.dumps(k)}: {json.dumps(v)}" for k, v in items)

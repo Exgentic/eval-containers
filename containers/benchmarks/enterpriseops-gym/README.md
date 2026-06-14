@@ -1,6 +1,6 @@
 # EnterpriseOps-Gym
 
-**Status:** unreleased — no `eval.benchmark.released` label until a replay fixture lands per [RULES.md](RULES.md) §21a.
+**Status:** released — fixture `tests/replay/fixtures/enterpriseops-gym-0-codex.trajectory.jsonl` from a real codex+gpt-5.4 run (calendar task 0, scored 0.667 / 3 verifiers).
 
 **Paper:** [EnterpriseOps-Gym](https://arxiv.org/abs/2603.13594) (Malay, Nayak et al., ServiceNow AI Research, 2026)
 **Upstream:** [ServiceNow/EnterpriseOps-Gym](https://github.com/ServiceNow/EnterpriseOps-Gym) @ `09593147`
@@ -49,16 +49,16 @@ One agent, one chart, one reward — the standard shape.
 helm template containers/benchmarks/_chart \
   --set benchmark=enterpriseops-gym \
   --set agent=claude-code \
-  --set task=task_20251121_102744_757_7ebc1127_dadb0c94 | kubectl apply -f -
+  --set task=0 | kubectl apply -f -
 ```
 
 **compose (bare = full set; lean = name the task's sidecars from the same map):**
 ```bash
 # Full set (the standalone default, rule 1)
-EVAL_TASK_ID=task_20251121_102744_757_7ebc1127_dadb0c94 docker compose up
+EVAL_TASK_ID=0 docker compose up
 
 # Lean (only the task's sidecars; runner waits on gateway, not on the rest)
-EVAL_TASK_ID=task_20251121_102744_757_7ebc1127_dadb0c94 docker compose up runner gateway otelcol \
+EVAL_TASK_ID=0 docker compose up runner gateway otelcol \
   $(jq -r --arg t "$EVAL_TASK_ID" '.[$t][]' ../_chart/task-profiles/enterpriseops-gym.json)
 ```
 
