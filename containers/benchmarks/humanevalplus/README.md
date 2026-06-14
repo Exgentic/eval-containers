@@ -20,7 +20,14 @@ The agent receives a task of the form: "Complete the following Python function. 
 
 ## How it's graded
 
-Custom `/grade.sh` defined inline in the Dockerfile.
+`/grade.sh` (inline in the Dockerfile) assembles the agent's stdout + the task's
+upstream test and grades them with the shared `/eval-grade` harness
+(`benchmarks/RULES.md` 22). The reward is decided by the harness, not by the
+candidate process's exit code: the reward file is seeded to `0.0` and `/eval-grade`
+overwrites it with `1.0` only if the assembled program runs to completion with no
+exception, so a completion cannot self-pass by exiting cleanly or crashing
+(rule 5). The test is `0600` root-only and the agent runs unprivileged, so the
+agent cannot read it.
 
 ## Files
 

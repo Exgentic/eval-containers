@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+"""Shared grader for code-execution benchmarks (benchmarks/RULES.md 22).
+
+Reads an assembled program (solution + test [+ check call]) on stdin and decides
+the reward WITHOUT trusting the program's exit code: grade.sh pre-seeds the
+reward file with a fail and this overwrites it with "1.0" only on a genuine pass.
+So a completion that calls exit()/quit()/sys.exit()/os._exit(), crashes, hangs,
+or runs zero tests cannot self-pass.
+
+  argv: <mode> <reward-path>
+  exec      pass iff the program runs to completion with no exception
+            (HumanEval/MBPP assert- and check(<entry>)-style tests).
+  unittest  load TestCases and run it; pass iff testsRun>0 and no failures/errors
+            — success read from TestResult, not the monkeypatchable runner
+            (BigCodeBench).
+
+Only exit()/quit() are neutralized — the minimum to stop a trivial self-pass.
+The completion still runs as root in the verifier, so it can damage the
+(ephemeral) container or forge the reward; closing that needs a low-privilege
+sandbox, not a same-process trick. Mirrors openai/human-eval execution.py, which
+BigCodeBench inherits.
+"""
+import sys
+
+mode, reward = sys.argv[1], sys.argv[2]
+
+import builtins
+builtins.exit = builtins.quit = None
+
+g = {"__name__": "__main__" if mode == "exec" else "__eval__"}
+try:
+    exec(compile(sys.stdin.read(), "prog.py", "exec"), g)
+    ok = True
+    if mode == "unittest":
+        import unittest
+        res = unittest.TestResult()
+        unittest.TestLoader().loadTestsFromTestCase(g["TestCases"]).run(res)
+        ok = res.testsRun > 0 and not res.failures and not res.errors
+    if ok:
+        open(reward, "w").write("1.0")
+except BaseException:
+    pass
