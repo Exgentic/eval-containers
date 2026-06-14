@@ -1,0 +1,42 @@
+# Framework-free port of the no-creds runtime slice of tests/gateways/test.rs
+# (issue #114) — the "hard part": start a gateway container and POST the
+# protocol matrix. Expressed as a compose-native oracle service, so
+# `docker compose up --exit-code-from tester` IS the test.
+#
+# Covers, with no credentials and no network (Caddy short-circuits /anthropic
+# + /genai before any upstream call):
+#   - boot_portkey                          → tester waits on service_healthy
+#   - portkey_anthropic_returns_501_*       → tester.sh
+#   - portkey_genai_returns_501_*           → tester.sh
+#
+# The tester reuses the gateway image (it already ships curl + sh), so the gate
+# pulls no extra image and stays offline. Upstream-credentialed + OTel cells
+# stay out of scope here (they are release-only / #[ignore]).
+services:
+  portkey:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/gpt-5.4--portkey:latest
+    environment:
+      EVAL_MODEL: openai/azure/gpt-5.4
+      OPENAI_API_KEY: sk-bogus
+      OPENAI_API_BASE: http://127.0.0.1:9999/v1
+      HOST: 0.0.0.0
+    healthcheck:
+      test: ["CMD", "/opt/gateway/health"]
+      interval: 1s
+      timeout: 2s
+      retries: 60
+      start_period: 2s
+    networks: [gw]
+
+  tester:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/gpt-5.4--portkey:latest
+    depends_on:
+      portkey:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/tester.sh"]
+    volumes:
+      - ./tester.sh:/tester.sh:ro
+    networks: [gw]
+
+networks:
+  gw:
