@@ -1,0 +1,5 @@
+# The task-profiles generator (`*.gen.py`) is a maintenance tool that lives beside
+# the map it produces — it is NOT chart content, so keep it out of the packaged
+# (OCI-published) chart. The generated `task-profiles/*.json` map IS shipped: the
+# chart reads it via `Files.Get` to self-resolve per-task sidecars.
+*.py

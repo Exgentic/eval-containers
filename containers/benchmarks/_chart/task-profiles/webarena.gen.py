@@ -7,7 +7,7 @@ Service per active site); compose reads the same map to name the task's services
 Site labels are emitted as DNS-1123 service names. See .agents/benchmarks/RULES.md
 24h. Re-run when DATASET_REV changes:
 
-    python3 containers/benchmarks/webarena/gen-task-profiles.py
+    python3 containers/benchmarks/_chart/task-profiles/webarena.gen.py
 """
 
 import json
@@ -37,8 +37,8 @@ body = (
     + "\n}\n"
 )
 
-# Output lives in the chart so Helm's `Files.Get` can read it and self-resolve the
-# task's sidecars (containers/benchmarks/_chart/templates/job.yaml). Run from repo root.
+# The map is written beside this script; the chart reads it via `Files.Get` to
+# self-resolve the task's sidecars (templates/job.yaml). Run from the repo root.
 with open("containers/benchmarks/_chart/task-profiles/webarena.json", "w") as f:
     f.write(body)
 print(f"wrote {len(items)} tasks from webarena-verified@{DATASET_REV[:7]}")

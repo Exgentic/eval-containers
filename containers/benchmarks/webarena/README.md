@@ -27,7 +27,7 @@ Custom `/grade.sh` defined inline in the Dockerfile.
 Each task touches only a subset of the six websites (most just one). The benchmark
 declares a sidecar catalog in `benchmarks/_chart/presets/webarena.yaml` and a
 committed task→sites map at `benchmarks/_chart/task-profiles/webarena.json`
-(regenerate with `gen-task-profiles.py`). Both surfaces select from that one map —
+(regenerate with `benchmarks/_chart/task-profiles/webarena.gen.py`). Both surfaces select from that one map —
 no CLI (rule 1):
 
 - **k8s / job:** the chart self-resolves — `helm template --set benchmark=webarena --set task=<id>` (or `eval-containers run webarena --task-id <id> --mode job`) brings up only that task's site(s).
@@ -43,7 +43,7 @@ compose has no templating, so the shell supplies the list; the chart does the sa
 
 - `Dockerfile` — builds the benchmark image
 - `compose.yaml` — compose file for `eval-containers run webarena` (full site set; see Per-task sites)
-- `gen-task-profiles.py` — regenerate the task→sites map from the pinned dataset
 - `benchmarks/_chart/presets/webarena.yaml` — the sidecar catalog + always-on proxy, overlaid on the shared chart via `--set benchmark=webarena`
 - `benchmarks/_chart/task-profiles/webarena.json` — task→sites map; the chart self-resolves the per-task sidecars from it
+- `benchmarks/_chart/task-profiles/webarena.gen.py` — regenerates that map from the pinned dataset (maintenance tool; kept out of the packaged chart via `.helmignore`)
 - `README.md` — this file
