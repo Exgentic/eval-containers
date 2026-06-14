@@ -1,7 +1,7 @@
 ---
 benchmark: skills-bench
-host: local Docker+Rosetta
-commit: 1090431
+host: local podman+Rosetta
+commit: d58e20e
 ---
 # Audit — skills-bench
 
@@ -11,10 +11,10 @@ commit: 1090431
 
 | Check | Status | Evidence |
 |-------|:------:|----------|
-| building | ✓ | built locally (Docker+Rosetta, citation-check task) |
-| running | ✓ | citation-check ran end-to-end: gateway → codex → pytest verifier |
-| isolation | ? | not audited per-benchmark |
-| oracle | ? | solution.sh written; oracle not yet run (`eval-containers oracle skills-bench --task-id citation-check --local`) |
+| building | ✓ | build.sh builds the task env (upstream environment/Dockerfile) + overlays the pipeline; citation-check built locally (podman+Rosetta, ~3 min incl. oracle) |
+| running | ✓ | verifier path re-confirmed on the new build via the oracle below; full gateway → agent → verifier run still on the pre-refactor build |
+| isolation | ? | improved — tests root-only (chmod 700, root-owned) and the upstream repo is no longer baked into the image (removes the prior agent-readable gold/tests leak); full per-benchmark egress/secret audit still pending |
+| oracle | ✓ | citation-check gold=1 / no-op=0 (manual podman run of the oracle gold+grade flow); other tasks (esp. bike-rebalance, civ6) via `eval-containers oracle skills-bench --task-id <t> --local` pending |
 | traces-reviewed | ? | |
 | replicate-official | ? | |
 
@@ -32,13 +32,13 @@ commit: 1090431
 | Metric | Value |
 |--------|-------|
 | image | ? |
-| per-task multiplier | per-task (×94) |
+| per-task multiplier | per-task (×86) |
 
 ## Speed
 
 | Metric | Value |
 |--------|-------|
-| build | ? |
+| build | ~2–3 min (citation-check: task env + overlay; podman+Rosetta, amd64 emulation) |
 | grade | ? |
 | end-to-end | ? |
 

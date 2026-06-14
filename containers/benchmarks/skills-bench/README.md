@@ -1,60 +1,67 @@
-# SkillsBench
+# skills-bench
 
-94 expert tasks across 11 domains (software engineering, mathematics, cybersecurity,
-office/white-collar, industrial systems, and more). Evaluates how well agents handle
-realistic, high-value tasks that require domain expertise.
+SkillsBench (benchflow-ai/skillsbench) — 86 expert tasks across 11 domains
+(software engineering, mathematics, cybersecurity, office/white-collar, industrial
+systems, and more), built from upstream source.
 
-- **Paper:** https://arxiv.org/abs/2602.12670
-- **Website / Leaderboard:** https://www.skillsbench.ai/
-- **Upstream repo:** https://github.com/benchflow-ai/skillsbench
+## At a glance
 
-## Task model
+| Field | Value |
+|-------|-------|
+| Tasks | 86 (`tasks/<task>` upstream) |
+| Environment | per-task |
+| Internet required | false (agent) · true (build) |
+| Released | no |
+| Upstream | [github.com/benchflow-ai/skillsbench](https://github.com/benchflow-ai/skillsbench) |
+| Paper | [arxiv.org/abs/2602.12670](https://arxiv.org/abs/2602.12670) |
+| Leaderboard | [skillsbench.ai](https://www.skillsbench.ai/) |
 
-Per-task images: `EVAL_TASK_ID` is a build ARG set to the task name (e.g. `citation-check`).
-Each image bakes one task's input files, instruction, and test suite.
+## What the agent sees
 
-Currently supported tasks: `citation-check`
+Each task is an environment plus an instruction. The instruction is the task's
+`instruction.md`, copied to `/task/instruction.md` and passed to the agent via the
+`TASK` env var. Task input files come from the task's own `environment/Dockerfile`.
 
-## Agent contract
+## How it's graded
 
-- Input: `$TASK` env var — the full task instruction from `instruction.md`
-- Working directory: `/root` — task input files are present here at start
-- Output: agent writes results to `/root/` per the instruction (e.g. `/root/answer.json`)
-- Scoring: custom pytest verifier per task; reward is `1.0` (pass) or `0.0` (fail)
+`/grade.sh` runs the task's upstream `tests/test_outputs.py` with pytest
+(pre-installed at build, so grading needs no network) and writes `1`/`0` to
+`/logs/verifier/reward.txt`; a task that emits a continuous score (civ6) writes it
+to `scores/` and that value becomes the reward. The tests live in a **root-only**
+`/tests` (chmod 700) — the agent can read neither the tests nor any solution
+(benchmarks/RULES.md rule 9 / eval integrity).
 
-## Build
+Upstream's `tests/test.sh` fetches pytest via `uvx` at run time; we install it at
+build instead, to keep grading offline and reproducible.
+
+## Per-task build (built from source)
+
+No per-task upstream images exist, and each task ships its own
+`environment/Dockerfile` (heterogeneous base + setup). So `build.sh` builds each
+per-task image in two steps (benchmarks/RULES.md 24g):
+
+1. build the task's **own** `environment/Dockerfile` → the task env;
+2. overlay our eval pipeline (`Dockerfile`, `FROM ${TASK_BASE}`) → instruction,
+   root-only tests, grader, entrypoint.
+
+Both steps fetch the upstream task dir at the pinned `SB_REF` (in `build.sh`)
+directly from the builder — no local checkout.
+
+## Oracle
+
+`solution.sh` fetches **this task's** upstream `solution/solve.sh` at `SB_REF` and
+runs it — derived, never hardcoded, and fetched fresh at oracle run time (never
+baked into the agent image). Verify:
 
 ```bash
-# Build the benchmark base image for citation-check
-docker build --build-arg EVAL_TASK_ID=citation-check \
-  -t local/benchmark-skills-bench:citation-check benchmarks/skills-bench/
-
-# Build the eval combination (benchmark + agent + model)
-eval-containers build eval skills-bench-citation-check --agent claude-code
+eval-containers oracle skills-bench --task-id citation-check --local
 ```
 
-## Run
+## Files
 
-```bash
-# Compose mode (local dev)
-EVAL_TASK_ID=citation-check EVAL_AGENT=claude-code EVAL_MODEL=claude-sonnet-4-6 \
-  docker compose -f benchmarks/skills-bench/compose.yaml up --abort-on-container-exit
-
-# Check result
-cat output/skills-bench/citation-check/task/result.json
-```
-
-## Leaderboard reference (without skills)
-
-| Agent + Model | Pass rate |
-|---|---|
-| OpenHands / GPT-5.5 | 37.9% |
-| Claude Code / Opus 4.7 | 29.8% |
-| OpenHands / Sonnet 4.6 | 19.7% |
-
-## Adding a new task
-
-1. Check the task's `environment/Dockerfile` in the upstream repo for its apt and pip deps
-2. Add those deps to the `Dockerfile` in this directory (in the per-task deps section)
-3. Update `eval.benchmark.tasks` label comment and this README
-4. Build and test: `docker build --build-arg EVAL_TASK_ID=<new-task> ...`
+- `Dockerfile` — the eval overlay (`FROM ${TASK_BASE}`); not built directly, see `build.sh`
+- `build.sh` — the two-step per-task build (task env → overlay)
+- `solution.sh` — oracle gold (fetches the per-task upstream `solve.sh`)
+- `container.Dockerfile` — single-image pin (`evals/skills-bench-<task>--<agent>`)
+- `compose.yaml` — compose file for `eval-containers run skills-bench`
+- `README.md` — this file
