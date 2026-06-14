@@ -10,7 +10,7 @@ covers.
 
 For each benchmark-agent combination, one trajectory is inspected:
 
-- **Input:** one `tests/replay/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`
+- **Input:** one `tests/run/replay/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`
   file, or a live inspector run under `/output/<bench>/<task>/inspector/`. A
   trajectory is an ordered sequence of LiteLLM `StandardLoggingPayload` rows,
   one per LLM call the agent made.
@@ -154,7 +154,7 @@ Output lands at `output/aime/0/inspector/first_request.json`.
 
 **Layer 1 — mechanical rules (automated, free, always on).** Every signal in
 both catalogs above is a regex, length, or sum check. The sanity trajectory rule
-catalog (`tests/sanity/RULES.md:6`) walks trajectory records and
+catalog (`tests/static/RULES.md:6`) walks trajectory records and
 applies two rule sets — one for the task half (first user message), one for the
 run half (every row). Runs in milliseconds on every `cargo test`. Catches the
 90% of breakage that is mechanical: template leaks, unresolved env vars, fetch
@@ -200,9 +200,9 @@ Followed by a summary count and 3 suggested fixes (if any).
 ## References
 
 - `benchmarks/RULES.md` — what a benchmark must produce.
-- `tests/replay/RULES.md` — fixture lifecycle, the broken
+- `tests/run/replay/RULES.md` — fixture lifecycle, the broken
   manifest, provenance.
-- `tests/live/RULES.md:13-33` — the live trace-inspection
+- `tests/run/live/RULES.md:13-33` — the live trace-inspection
   checklist this audit mirrors.
 - `models/inspector/` — the collection mechanism.
 - `.agents/verification/audit-dockerfile/references/checklist.md` — parallel

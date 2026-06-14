@@ -31,16 +31,16 @@ questions so you know what the mechanical layer already covers.
 
 ## Rules this skill serves
 
-- `tests/sanity/RULES.md:5` — the data-driven Dockerfile rule
+- `tests/static/RULES.md:5` — the data-driven Dockerfile rule
   catalog (one ID, severity, why, and predicate per rule) is the mechanical
   layer this audit sits on top of; the audit finds what those rules miss.
-- `tests/sanity/RULES.md:9` — prefer mechanical over procedural:
+- `tests/static/RULES.md:9` — prefer mechanical over procedural:
   any pattern this walk surfaces that *could* be a text check should be proposed
   as a new catalog rule, not left as a recurring manual finding.
 - `.agents/verification/RULES.md:13` — mechanical > procedural > aspirational;
   this is the procedural tier, run in release verification, not a substitute for
   the mechanical catalog.
-- `tests/agents/RULES.md` and `benchmarks/RULES.md` — the
+- `tests/run/agents/RULES.md` and `benchmarks/RULES.md` — the
   required-label sets (agent `eval.agent.version`, benchmark `eval.benchmark.*`)
   that question 5 checks the image against.
 
@@ -56,7 +56,7 @@ For each Dockerfile under `benchmarks/*/` or `agents/*/`:
 
 2. **Run the mechanical catalog first.** `cargo test --test check dockerfile`.
    Note what it found. WHY: the audit's job is to find what the rules *missed*,
-   not to duplicate them (`tests/sanity/RULES.md:5`).
+   not to duplicate them (`tests/static/RULES.md:5`).
 
 3. **Read the Dockerfile end to end** and answer the seven questions, marking
    each yes / no / n.a. with a one-line reason. WHY: each question targets a
@@ -101,7 +101,7 @@ For each Dockerfile under `benchmarks/*/` or `agents/*/`:
    phantom `pip uninstall` in a separate layer, an `ARG`/`LABEL` version
    mismatch, a missing `data_revision` when fetching a mutable ref), record it
    as a proposed new rule for the catalog. WHY: this is the mechanical >
-   procedural escalation (`tests/sanity/RULES.md:9`) — a manual
+   procedural escalation (`tests/static/RULES.md:9`) — a manual
    finding that keeps recurring belongs in code.
 
 ## When to run
@@ -116,7 +116,7 @@ For each Dockerfile under `benchmarks/*/` or `agents/*/`:
 
 - `references/checklist.md` — the full red / yellow / green signal catalog,
   classification rules, layered-checking model, and output format.
-- `tests/sanity/RULES.md` — the mechanical Dockerfile rule
+- `tests/static/RULES.md` — the mechanical Dockerfile rule
   catalog this audit complements.
 - `.agents/verification/audit-trajectory/SKILL.md` — the parallel per-fixture
   runtime-health audit.

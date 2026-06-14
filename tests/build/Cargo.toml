@@ -1,0 +1,24 @@
+[package]
+name = "eval-containers-tests-build"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+autotests = false
+
+# BUILD stage — materializes every fleet image and asserts on the built result
+# (see tests/build/RULES.md). Heavy crate: it drives image builds via
+# testcontainers, so it is gated `#[ignore]` and runs off the per-PR path
+# (release CI). The built-image label/file assertions that don't need a build
+# run live beside it as container-structure-test (`structure/`).
+[dependencies]
+eval-containers = { path = "../../cli" }
+test-support = { package = "eval-containers-test-support", path = "../support" }
+
+[dev-dependencies]
+testcontainers = { version = "0.27", features = ["docker-compose", "http_wait"] }
+tokio = { version = "1", features = ["full"] }
+
+[[test]]
+name = "build"
+path = "test.rs"

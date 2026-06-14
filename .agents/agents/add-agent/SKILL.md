@@ -102,12 +102,12 @@ below tell you how to use it and why each piece exists.
     (Dockerfile builds + correct labels, `.agents/agents/RULES.md:16`) and join
     at least one end-to-end replay test with a recorded fixture so the agent runs
     against real model responses without API keys
-    (`.agents/agents/RULES.md:17`). The agent MUST pass `tests/agents/test.rs`:
+    (`.agents/agents/RULES.md:17`). The agent MUST pass `tests/run/agents/test.rs`:
     boot from the `evals/agents-smoke--<name>` carrier and make at least one LLM
     call to the protocol-namespaced gateway endpoint within `FIRST_CALL_TIMEOUT`
     seconds (the smoke test uses a `models/replay` mock LLM, so no upstream
     credentials are needed). *Why:* `.agents/agents/RULES.md:18`. If the agent
-    cannot satisfy this contract, list it in `tests/agents/broken.md` with the
+    cannot satisfy this contract, list it in `tests/run/agents/broken.md` with the
     root cause and smallest viable fix; removing it from `broken.md` is the
     success condition.
 

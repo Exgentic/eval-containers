@@ -108,7 +108,7 @@ eval-containers run <name> --agent claude-code --model gpt-5.4 --task-id 0 --loc
 - [ ] `output/<name>/0/task/result.json` exists with a valid reward
 - [ ] `output/<name>/0/model/trajectory.jsonl` is non-empty with real LLM calls
 - [ ] `output/<name>/0/task/input/problem.txt` is populated (sanity: what the agent actually saw)
-- [ ] Trace inspected using the [tests/live/RULES.md trace inspection checklist](../../tests/live/RULES.md#trace-inspection-checklist) (categories A-E). Verdict per category:
+- [ ] Trace inspected using the [tests/run/live/RULES.md trace inspection checklist](../../tests/run/live/RULES.md#trace-inspection-checklist) (categories A-E). Verdict per category:
   - A. Task delivered: <!-- green / yellow / red + note -->
   - B. Model engaged: <!-- green / yellow / red + note -->
   - C. Environment understood: <!-- green / yellow / red + note -->
@@ -119,7 +119,7 @@ eval-containers run <name> --agent claude-code --model gpt-5.4 --task-id 0 --loc
 
 If you're setting `eval.benchmark.released="true"`, you MUST also:
 
-- [ ] Ship a replay fixture at `tests/replay/fixtures/<name>-0-<agent>.trajectory.jsonl`
+- [ ] Ship a replay fixture at `tests/run/replay/fixtures/<name>-0-<agent>.trajectory.jsonl`
 - [ ] Add a `provenance.json` entry recording the model, timestamp, and release tag
 - [ ] `cargo test --test replay -- --ignored` passes including your new fixture
 

@@ -643,17 +643,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "eval-containers-tests"
+name = "eval-containers-test-support"
+version = "0.0.0"
+
+[[package]]
+name = "eval-containers-tests-build"
+version = "0.0.0"
+dependencies = [
+ "eval-containers",
+ "eval-containers-test-support",
+ "testcontainers",
+ "tokio",
+]
+
+[[package]]
+name = "eval-containers-tests-run"
 version = "0.0.0"
 dependencies = [
  "dotenvy",
  "eval-containers",
+ "eval-containers-test-support",
  "reqwest 0.12.28",
- "serde",
  "serde_json",
  "tempfile",
  "testcontainers",
  "tokio",
+]
+
+[[package]]
+name = "eval-containers-tests-static"
+version = "0.0.0"
+dependencies = [
+ "eval-containers-test-support",
+ "serde_json",
 ]
 
 [[package]]

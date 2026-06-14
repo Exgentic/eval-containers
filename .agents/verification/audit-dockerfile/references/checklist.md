@@ -94,7 +94,7 @@ Parallel structure to the trajectory health reference
 (`.agents/verification/audit-trajectory/references/checklist.md`).
 
 **Layer 1 — mechanical rules.** Automated by the Dockerfile rule catalog in the
-sanity tests (`tests/sanity/RULES.md:5`). Every red and yellow
+sanity tests (`tests/static/RULES.md:5`). Every red and yellow
 signal above is a regex, substring, or line-count check. Runs in seconds across
 every Dockerfile. Rule IDs match the signal names so the spec and the engine
 cannot drift.

@@ -12,7 +12,7 @@ the report; it explains how to read its verdict.
 ## Verdict classification
 
 Matches `.agents/RULES.md:14` (the fleet report's red/yellow/green
-verdict) and `tests/fleet/RULES.md:4`:
+verdict) and `tests/run/fleet/RULES.md:4`:
 
 - **GREEN** — every mechanical gate green AND every procedural audit
   green. Ship.
@@ -51,12 +51,12 @@ step numbers are the procedural steps each gate corresponds to.
 | 35 | Fleet report rendered | mechanical (fleet) |
 
 Gate authorities by category:
-`tests/sanity/RULES.md` (steps 4–10, 30–31),
+`tests/static/RULES.md` (steps 4–10, 30–31),
 `tests/build/RULES.md` (11–14),
-`tests/replay/RULES.md` (15),
-`tests/live/RULES.md` (16–17),
-`tests/upstream/RULES.md` (18–20),
-`tests/fleet/RULES.md` (35).
+`tests/run/replay/RULES.md` (15),
+`tests/run/live/RULES.md` (16–17),
+`tests/run/upstream/RULES.md` (18–20),
+`tests/run/fleet/RULES.md` (35).
 
 ## Outstanding-findings policy
 
@@ -85,7 +85,7 @@ standing waiver — re-justify each release):
   registry is live — tighten to a digest once published.
 - **Cost tracking reading 0** on certain LiteLLM API paths — noted in
   the live known-broken manifest; does not fail a run on its own
-  (`tests/live/RULES.md`, trace-inspection rule 27).
+  (`tests/run/live/RULES.md`, trace-inspection rule 27).
 
 ## Recommendation form
 

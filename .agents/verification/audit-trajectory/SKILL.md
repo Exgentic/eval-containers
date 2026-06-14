@@ -42,24 +42,24 @@ already covers.
 
 ## Rules this skill serves
 
-- `tests/sanity/RULES.md:6` — the data-driven trajectory rule
+- `tests/static/RULES.md:6` — the data-driven trajectory rule
   catalog applied to every fixture is the mechanical layer this audit sits on
   top of; the audit finds what those rules miss.
-- `tests/replay/RULES.md:7` — `fixtures/broken.json` marks
+- `tests/run/replay/RULES.md:7` — `fixtures/broken.json` marks
   fixtures whose recorded run is known-bad (refusals, wrong answers, content
   filter, max-tokens truncation); findings on those are reported but do not
   fail. This audit is how a fixture earns a broken-manifest entry.
-- `tests/live/RULES.md:9-12` — every live run must pass the
+- `tests/run/live/RULES.md:9-12` — every live run must pass the
   trajectory rule catalog before its fixture is promoted; a red finding blocks
   promotion and a yellow annotates it. This audit is the human/agent half of
   that gate, and its red/yellow split mirrors the live trace-inspection
-  checklist (`tests/live/RULES.md:13-33`).
+  checklist (`tests/run/live/RULES.md:13-33`).
 - `.agents/verification/RULES.md:13` — mechanical > procedural > aspirational;
   this is the procedural tier, not a substitute for the mechanical catalog.
 
 ## Procedure
 
-For each `tests/replay/fixtures/*.trajectory.jsonl` (or a directory of live
+For each `tests/run/replay/fixtures/*.trajectory.jsonl` (or a directory of live
 `inspector` outputs):
 
 1. **Gather context.** Note the benchmark name, its
@@ -75,7 +75,7 @@ For each `tests/replay/fixtures/*.trajectory.jsonl` (or a directory of live
 3. **Run the mechanical catalog first.** `cargo test --test check trajectory`
    (or the live `inspect_trajectory` driver). Note any findings. WHY: the
    audit's job is to find what the rules missed
-   (`tests/sanity/RULES.md:6`).
+   (`tests/static/RULES.md:6`).
 
 4. **Walk the task half** — five questions about the first user message, each
    yes / no / n.a. with a one-line reason. WHY: a malformed prompt makes any
@@ -132,11 +132,11 @@ For each `tests/replay/fixtures/*.trajectory.jsonl` (or a directory of live
    ```
 
 8. **Record broken fixtures in the manifest.** A fixture that comes up broken is
-   recorded in `tests/replay/fixtures/broken.json` (not deleted); a fixture from
+   recorded in `tests/run/replay/fixtures/broken.json` (not deleted); a fixture from
    a live run that fails an inspection rule is not promoted and goes to
-   `tests/live/known-broken.md` with the rule that tripped. WHY: this is the
-   broken-fixture contract (`tests/replay/RULES.md:7`,
-   `tests/live/RULES.md:12`) — known-bad fixtures are documented
+   `tests/run/live/known-broken.md` with the rule that tripped. WHY: this is the
+   broken-fixture contract (`tests/run/replay/RULES.md:7`,
+   `tests/run/live/RULES.md:12`) — known-bad fixtures are documented
    and re-recorded next cycle, not silently dropped.
 
 9. **Propose catalog rules for any mechanical-shaped finding.** If a smell
@@ -145,7 +145,7 @@ For each `tests/replay/fixtures/*.trajectory.jsonl` (or a directory of live
    message under 150 chars pointing at `/app/*.txt`, a task that names an
    attachment whose path never appears in a tool call), record it as a proposed
    new rule for the catalog. WHY: a recurring manual finding belongs in code
-   (`tests/sanity/RULES.md:9`).
+   (`tests/static/RULES.md:9`).
 
 ## When to run
 
@@ -153,7 +153,7 @@ For each `tests/replay/fixtures/*.trajectory.jsonl` (or a directory of live
 - When the mechanical trajectory catalog flags a yellow that needs judgment.
 - When a new benchmark batch lands.
 - After each live run, as the human/agent half of fixture promotion
-  (`tests/live/RULES.md:9`).
+  (`tests/run/live/RULES.md:9`).
 - Quarterly, as a health check.
 
 ## References
@@ -161,9 +161,9 @@ For each `tests/replay/fixtures/*.trajectory.jsonl` (or a directory of live
 - `references/checklist.md` — the full task-half and run-half signal catalogs,
   classification rules, collection mechanism (the inspector model), layered
   model, and output format.
-- `tests/sanity/RULES.md` — the mechanical trajectory rule
+- `tests/static/RULES.md` — the mechanical trajectory rule
   catalog this audit complements.
-- `tests/live/RULES.md:13-33` — the live trace-inspection
+- `tests/run/live/RULES.md:13-33` — the live trace-inspection
   checklist whose red/yellow split this audit mirrors.
 - `.agents/verification/audit-dockerfile/SKILL.md` — the parallel per-file
   static-health audit.
