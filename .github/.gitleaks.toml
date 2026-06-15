@@ -16,11 +16,13 @@ useDefault = true
 # Recorded LLM trajectories are immutable ground truth (tests/run/replay/RULES.md)
 # and carry observability fields — user_api_key_hash / api_key_hash (one-way
 # LiteLLM hashes), prompt_cache_key, client-request-id (cache/trace UUIDs) — that
-# trip `generic-api-key` but are not credentials. Real secrets are kept OUT of
-# fixtures at RECORD time (replay RULES rule 11 / the env-dump scrub from #152),
-# which is the control here; gitleaks therefore trusts the recorded-trajectory
-# tree wholesale. (If you'd rather gitleaks also enforce per-line, switch this to
-# condition="AND" + regexTarget="line" scoped to the field names above.)
+# trip `generic-api-key` but are not credentials. This allowlist trusts the
+# recorded-trajectory tree wholesale: keeping real secrets out of trajectories is
+# an UPSTREAM concern — a token must not be in the eval container's environment to
+# get captured in the first place (hardened separately) — not this scanner's job.
+# The one HF-token that did leak this way was redacted + the history purged.
+# (For stricter per-line enforcement, switch to condition="AND" +
+# regexTarget="line" scoped to the field names above.)
 [[allowlists]]
 description = "Recorded trajectory fixtures hold observability IDs, not credentials"
 paths = [
