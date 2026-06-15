@@ -9,13 +9,10 @@
 #   - `prompt_cache_key`: an OpenAI / Anthropic cache routing UUID. Not
 #     a credential.
 #
-# Both live only inside `tests/run/replay/fixtures/*.trajectory.jsonl` (replay
+# Both live only inside `tests/fixtures/*.trajectory.jsonl` (replay
 # fixtures recorded from release-verification live sweeps — see
-# tests/run/replay/RULES.md). NOTE: a `paths` allowlist is a WHOLESALE FILE
-# BYPASS — every rule is skipped for a matching file, so this scanner CANNOT
-# catch a real key that lands in a fixture. The safety net is at RECORD time:
-# the secret scrub in docs/guides/running-tests-locally.md "Level 4" masks
-# token shapes before a capture is written (replay RULES.md rule 11).
+# tests/replay/RULES.md). Allowlist is scoped to that path prefix so a
+# real key leaking into a fixture would still fail the scan.
 #
 # Verify after edits:
 #   gitleaks detect --source . --report-format json --report-path /tmp/gitleaks.json
@@ -27,7 +24,7 @@ useDefault = true
 [[allowlists]]
 description = "Trajectory fixture observability IDs are not credentials"
 paths = [
-  '''tests/run/replay/fixtures/.*\.trajectory\.jsonl$''',
+  '''tests/fixtures/.*\.trajectory\.jsonl$''',
 ]
 regexes = [
   '''user_api_key_hash''',
