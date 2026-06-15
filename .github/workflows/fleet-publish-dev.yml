@@ -76,7 +76,10 @@ jobs:
       - id: l
         run: |
           if [ -n "$ONLY" ]; then
-            targets=$(jq -nc --arg t "$ONLY" '[$t]')
+            # ONLY may be a space-separated list of leaf targets (for re-running
+            # the fixable failures without rebuilding the whole fleet).
+            read -ra _only <<< "$ONLY"
+            targets=$(printf '%s\n' "${_only[@]}" | jq -R . | jq -sc 'map(select(length>0))')
           else
             # leaf = all bake targets, minus core (built in stage 1), minus per-task
             # benchmarks (canonical label), minus the parameterized combination.

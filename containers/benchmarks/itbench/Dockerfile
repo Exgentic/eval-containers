@@ -33,7 +33,7 @@ LABEL eval.benchmark.paper="https://research.ibm.com/publications/developing-ai-
 # cluster/app telemetry and are deferred until the sidecar harness exists.
 RUN python3 <<'PYEOF'
 import urllib.request, os, json
-REV = "3c36485964b059621d439343009ec0e7b4d2354b"
+REV = "d0916b08ba421ce5e672e9ad68aa947d938dfef0"
 api = f'https://huggingface.co/api/datasets/ibm-research/ITBench-Lite/tree/{REV}/snapshots/ciso/v0.1?recursive=false'
 with urllib.request.urlopen(api) as r:
     entries = json.load(r)
