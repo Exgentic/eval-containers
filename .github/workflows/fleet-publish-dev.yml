@@ -43,23 +43,27 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bake + push core bases (cache-to shared cache)
+      - name: Bake + push shared deps — core + gateways (cache-to shared cache)
         env:
           TAG: ${{ env.TAG }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
-          mapfile -t CORE < <(find containers/core -name docker-bake.hcl -exec grep -hoE '^target "[^"]+"' {} + \
+          # Build EVERY shared dependency once: core (bases) + gateways. Models
+          # FROM gateways (leaf->leaf), so gateways must be in the cache too, else
+          # each model leaf would rebuild its gateway. Nothing else is FROM'd by
+          # another image (verified: only core/ + gateways/ prefixes appear).
+          mapfile -t DEPS < <(find containers/core containers/gateways -name docker-bake.hcl -exec grep -hoE '^target "[^"]+"' {} + \
             | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
-          echo "Building ${#CORE[@]} core bases: ${CORE[*]}"
+          echo "Building ${#DEPS[@]} shared deps: ${DEPS[*]}"
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.cache-to=type=registry,ref=${CACHE},mode=max" \
             --set "*.cache-from=type=registry,ref=${CACHE}" \
             --provenance=mode=max --sbom=true \
-            "${CORE[@]}" --push
+            "${DEPS[@]}" --push
 
   enumerate:
     name: Enumerate leaf targets
@@ -78,11 +82,12 @@ jobs:
             # benchmarks (canonical label), minus the parameterized combination.
             all=$(find containers -name docker-bake.hcl -not -name 'combination*' -exec grep -hoE '^target "[^"]+"' {} + \
               | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
-            core=$(find containers/core -name docker-bake.hcl -exec grep -hoE '^target "[^"]+"' {} + \
+            # deps (core + gateways) build in stage 1; exclude them from leaves.
+            deps=$(find containers/core containers/gateways -name docker-bake.hcl -exec grep -hoE '^target "[^"]+"' {} + \
               | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
             pertask=$(grep -rl 'eval.benchmark.env="per-task"' containers/benchmarks/*/Dockerfile \
               | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#benchmark-\1#' | sort -u)
-            leaves=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$core" "$pertask" | sort -u))
+            leaves=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$deps" "$pertask" | sort -u))
             targets=$(printf '%s\n' "$leaves" | jq -R . | jq -sc 'map(select(length>0))')
           fi
           n=$(printf '%s' "$targets" | jq 'length')
