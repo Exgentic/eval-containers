@@ -64,7 +64,11 @@ repos:
     hooks:
       - id: detect-secrets
         args: [--baseline, .github/.secrets.baseline]
-        exclude: ^\.github/\.secrets\.baseline$
+        # Exclude both scanners' own config files: the detect-secrets baseline
+        # (hashed findings) and the gitleaks config (full of secret-SHAPED regex
+        # patterns + keywords by design — gitleaks scans it, and the two scanners
+        # ignore each other's config, as the gitleaks allowlist notes symmetrically).
+        exclude: ^\.github/\.(secrets\.baseline|gitleaks\.toml)$
 
   # --- Generic hygiene ---
   - repo: https://github.com/pre-commit/pre-commit-hooks

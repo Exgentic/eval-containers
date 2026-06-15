@@ -35,6 +35,20 @@ Parent: [../RULES.md](../RULES.md)
    (benchmark, task, agent, model) combination actually produced
    under a specific release tag.
 
+4a. **No live secrets or internal endpoints in a fixture.** A
+   `*.trajectory.jsonl` MUST NOT contain a live credential (API key, token,
+   OAuth token, password) or an internal-only endpoint (e.g. a
+   `*.vpc-int.res.ibm.com` gateway host). The live sweep (rule 4) captures the
+   eval container's environment, so it MUST redact these at capture. The secret
+   scanner is the enforced backstop: `.github/.gitleaks.toml` scans the fixture
+   tree for credential shapes (it does NOT trust the tree wholesale) and
+   suppresses only the benign one-way observability hashes (`user_api_key_hash`,
+   `prompt_cache_key`) and the base image's public `GPG_KEY` fingerprint — a real
+   `sk-`/`ya29.`/internal-host value fails the scan. This is rule 1 (no API keys)
+   extended from the replay runtime to the recorded artifact. A wholesale
+   trust-the-tree allowlist once blinded this scan and let a live HF token, a
+   LiteLLM key, and Google OAuth tokens through.
+
 5. **Filename convention.** `{benchmark}-{task-id}-{agent}.trajectory.jsonl`.
    One fixture per (benchmark, task, agent) combination. The model
    is fixed per release and recorded in `fixtures/provenance.json`.

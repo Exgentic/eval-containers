@@ -13,20 +13,42 @@
 [extend]
 useDefault = true
 
-# Recorded LLM trajectories are immutable ground truth (tests/run/replay/RULES.md)
-# and carry observability fields — user_api_key_hash / api_key_hash (one-way
-# LiteLLM hashes), prompt_cache_key, client-request-id (cache/trace UUIDs) — that
-# trip `generic-api-key` but are not credentials. This allowlist trusts the
-# recorded-trajectory tree wholesale: keeping real secrets out of trajectories is
-# an UPSTREAM concern — a token must not be in the eval container's environment to
-# get captured in the first place (hardened separately) — not this scanner's job.
-# The one HF-token that did leak this way was redacted + the history purged.
-# (For stricter per-line enforcement, switch to condition="AND" +
-# regexTarget="line" scoped to the field names above.)
+# ── Custom detections — shapes the default ruleset under-matches ─────
+# Recorded trajectories capture the live sweep's environment, so these are the
+# credential/endpoint forms that actually showed up there and the defaults miss.
+[[rules]]
+id = "sk-virtual-key"
+description = "sk- API/virtual key, incl. short hyphenated LiteLLM keys the 48-char default openai rule misses"
+regex = '''(^|[^A-Za-z0-9])sk-[A-Za-z0-9]{2,}[-_][A-Za-z0-9_-]{10,}'''
+keywords = ["sk-"]
+
+[[rules]]
+id = "google-oauth-token"
+description = "Google OAuth access token (ya29.) — multi-segment, may contain dots"
+regex = '''ya29\.[A-Za-z0-9._-]{20,}'''
+keywords = ["ya29."]
+
+[[rules]]
+id = "ibm-internal-vpc-host"
+description = "Internal IBM VPC hostname — infrastructure disclosure, not for public release"
+regex = '''[A-Za-z0-9_.-]+\.vpc-int\.res\.ibm\.com'''
+keywords = ["vpc-int.res.ibm.com"]
+
+# Recorded LLM trajectories (tests/run/replay/RULES.md rule 4a) are SCANNED for real
+# credentials — NOT trusted wholesale. They do carry benign observability fields that
+# trip `generic-api-key` but are not secrets: one-way LiteLLM hashes (user_api_key_hash),
+# cache/trace IDs (prompt_cache_key), and the base image's PUBLIC GPG_KEY fingerprint.
+# Suppress ONLY those, matched per-finding, so a real sk-/ya29./internal-host value on
+# any other line in the same tree is still reported. The previous wholesale path-allowlist
+# blinded this tree entirely and let a live HF token, a LiteLLM key, and Google OAuth
+# tokens through.
 [[allowlists]]
-description = "Recorded trajectory fixtures hold observability IDs, not credentials"
-paths = [
-  '''tests/run/replay/fixtures/.*\.trajectory\.jsonl$''',
+description = "Trajectory observability hashes/IDs (one-way hashes + public fingerprint), not credentials"
+regexTarget = "match"
+regexes = [
+  '''user_api_key_hash''',
+  '''prompt_cache_key''',
+  '''GPG_KEY=[0-9A-F]''',
 ]
 
 # The detect-secrets baseline (.github/.secrets.baseline) records one-way *hashes*
