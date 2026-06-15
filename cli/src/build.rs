@@ -34,8 +34,8 @@ use clap::{Args, Subcommand};
 use eval_containers::bake;
 use eval_containers::naming::{
     OCI_SOURCE, REPO_URL, agent_bake_target, agent_image, benchmark_bake_target, benchmark_image,
-    benchmark_task_image, compose_artifact, eval_task_image, flatten_imagestream,
-    model_bake_target, model_image,
+    benchmark_task_image, compose_artifact, eval_task_image, eval_task_standalone_image,
+    flatten_imagestream, model_bake_target, model_image,
 };
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -96,6 +96,15 @@ pub enum BuildTarget {
         agent_version: String,
         #[arg(long, default_value = "gpt-5.4--bifrost")]
         model: String,
+        /// Also build the single-container standalone bundle
+        /// (`evals/<b>--<a>-standalone:<tag>`) — FROM the lean base + the
+        /// in-process gateway/otelcol/process-compose — via the `eval-standalone`
+        /// bake target (which builds the lean `eval` base first as a wired
+        /// dependency). Without this only the lean `evals/<b>--<a>` base is built;
+        /// the gateway only matters for the bundle. The variant is a name suffix,
+        /// not a tag (the tag is the version). (benchmarks/RULES.md 24f.)
+        #[arg(long)]
+        standalone: bool,
     },
     /// Publish a benchmark's compose stack as `oci://<registry>/eval-<x>`.
     ///
@@ -185,6 +194,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             task_id,
             agent_version,
             model,
+            standalone,
         } => {
             let tag = std::env::var("TAG").unwrap_or_else(|_| "latest".to_string());
             let bench_tag = if let Some(ref tid) = task_id {
@@ -193,24 +203,23 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 benchmark_image(registry, &benchmark, &tag)
             };
             let agent_tag = agent_image(registry, &agent, &tag);
-            let model_tag = model_image(registry, &model, &tag);
             let bake_env = vec![
                 ("EVAL_BENCHMARK", benchmark.clone()),
                 ("EVAL_AGENT", agent.clone()),
             ];
+            // The lean `eval` base's two source images. (When --standalone layers
+            // the bundle on top, the `eval-standalone` target builds `eval` first
+            // as a wired dependency via the `eval-base` context, so these still apply.)
             let mut overrides = vec![
                 format!("eval.args.BENCHMARK_IMAGE={bench_tag}"),
                 format!("eval.args.AGENT_IMAGE={agent_tag}"),
-                format!("eval.args.MODEL_IMAGE={model_tag}"),
             ];
-            // Per-task: tag the eval image evals/<b>-<task>--<a> (what compose,
+            // Per-task: tag the lean base evals/<b>-<task>--<a> (what compose,
             // container, and the chart all address), overriding the bake file's
             // shared-env default — else `build` and `run` disagree (RULES.md 24f).
             if let Some(ref tid) = task_id {
-                overrides.push(format!(
-                    "eval.tags={}",
-                    eval_task_image(registry, &benchmark, tid, &agent, &tag)
-                ));
+                let lean_tag = eval_task_image(registry, &benchmark, tid, &agent, &tag);
+                overrides.push(format!("eval.tags={lean_tag}"));
             }
             // Version is a build arg (RULES.md principle 9). Empty => the
             // combination defaults to the agent image's pinned /opt/agent/VERSION;
@@ -218,7 +227,32 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             if !agent_version.is_empty() {
                 overrides.push(format!("eval.args.AGENT_VERSION={agent_version}"));
             }
-            bake_with_env(registry, "eval", &overrides, &bake_env, builder, dry_run)
+            if !standalone {
+                // Lean base only (the gateway image is irrelevant — no in-process
+                // gateway here; the model is selected at run time as a sidecar).
+                return bake_with_env(registry, "eval", &overrides, &bake_env, builder, dry_run);
+            }
+            // Standalone bundle: bake `eval-standalone`. It builds the lean `eval`
+            // target in-graph (wired via the `eval-base` context in the bake file)
+            // and layers onto its output directly, so the only extra input here is
+            // the gateway — MODEL_IMAGE lives ONLY in the bundle.
+            let model_tag = model_image(registry, &model, &tag);
+            overrides.push(format!("eval-standalone.args.MODEL_IMAGE={model_tag}"));
+            // Per-task: override the shared-env default with the task-aware
+            // standalone name, mirroring the lean `eval.tags` override above.
+            if let Some(ref tid) = task_id {
+                let bundle_tag =
+                    eval_task_standalone_image(registry, &benchmark, tid, &agent, &tag);
+                overrides.push(format!("eval-standalone.tags={bundle_tag}"));
+            }
+            bake_with_env(
+                registry,
+                "eval-standalone",
+                &overrides,
+                &bake_env,
+                builder,
+                dry_run,
+            )
         }
         BuildTarget::Compose { benchmark } => {
             if builder.is_some() {
@@ -646,14 +680,23 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
             agent,
             task_id,
             agent_version,
-            model,
+            model: _,
+            standalone,
         } => {
             if task_id.is_some() {
                 return Err("--builder oc does not support --task-id".into());
             }
-            // Derive flat imagestream names for the three bases, applying the
+            if standalone {
+                return Err("--builder oc builds the lean eval base for k8s (job mode \
+                            runs it with the gateway + otelcol as sidecars); the \
+                            standalone bundle is the single-container / laptop artifact \
+                            — build it with the default buildx backend, not --builder oc"
+                    .into());
+            }
+            // Derive flat imagestream names for the two lean bases, applying the
             // suffix so a --imagestream-suffix -test build pulls from *-test
-            // imagestreams rather than the production ones.
+            // imagestreams rather than the production ones. The gateway (MODEL_IMAGE)
+            // is not a lean-base input — it ships only in the standalone bundle.
             let bench_is = format!(
                 "{}{is_suffix}",
                 flatten_imagestream(&format!("benchmarks/{benchmark}"))
@@ -662,14 +705,9 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
                 "{}{is_suffix}",
                 flatten_imagestream(&format!("agents/{agent}"))
             );
-            let model_is = format!(
-                "{}{is_suffix}",
-                flatten_imagestream(&format!("models/{model}"))
-            );
             let mut overrides = vec![
                 format!("eval.args.BENCHMARK_IMAGE={ir}/{bench_is}:latest"),
                 format!("eval.args.AGENT_IMAGE={ir}/{agent_is}:latest"),
-                format!("eval.args.MODEL_IMAGE={ir}/{model_is}:latest"),
             ];
             if !agent_version.is_empty() {
                 overrides.push(format!("eval.args.AGENT_VERSION={agent_version}"));

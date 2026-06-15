@@ -70,19 +70,20 @@ fn contains_line(path: &Path, needle: &str) -> bool {
 // tests/static/policy/dockerfile/labels.rego + tests/static/policy/compose/, and the built
 // image's labels via container-structure-test) — see the module header.
 
-// Rule 24 (triple-mode contract): every benchmark ships container.Dockerfile
-// and compose.yaml — the single-container and compose surfaces. The k8s surface
-// is the shared Helm chart (benchmarks/_chart), selected with `--set
-// benchmark=<name>`; a benchmark with bespoke topology adds an optional
-// `benchmarks/_chart/presets/<name>.yaml` (no per-benchmark file required, so it
-// is not part of the triple-mode contract).
-const REQUIRED_TRIPLE_MODE_FILES: &[&str] = &["container.Dockerfile", "compose.yaml"];
+// Rule 24 (triple-mode contract): every benchmark ships compose.yaml — the
+// compose surface, and the only per-benchmark deployment file. The
+// single-container surface is the ONE generic core/standalone.Dockerfile (the
+// standalone bundle, FROM the lean base — no per-benchmark stub, rule 24a). The
+// k8s surface is the shared Helm chart (benchmarks/_chart), selected with `--set
+// benchmark=<name>` plus an optional `presets/<name>.yaml` for bespoke topology.
+// Neither the single nor the k8s surface needs a per-benchmark file.
+const REQUIRED_TRIPLE_MODE_FILES: &[&str] = &["compose.yaml"];
 
 /// A test-only carrier benchmark (`eval.benchmark.env="test"`, e.g. agents-smoke)
-/// is internal: it exists to drive tests/run/agents/ and runs ONLY via compose. It is
-/// not a catalog entry, so it is exempt from the single-container surface of the
-/// triple-mode contract (container.Dockerfile) and from the human-facing README.
-/// The compose.yaml is still required — that is the surface its tests use.
+/// is internal: it exists to drive tests/run/agents/ and runs ONLY via compose. It
+/// is not a catalog entry, so it is exempt from the human-facing README. It still
+/// ships compose.yaml (the surface its tests use), so its required-file set is the
+/// same as everyone's; the distinction matters only for the README gate below.
 fn is_test_benchmark(dir: &Path) -> bool {
     contains_line(
         &dir.join("Dockerfile"),
@@ -99,12 +100,7 @@ fn check_benchmark_structure(name: &str, dir: &Path) -> Vec<String> {
         return issues;
     }
 
-    let required: &[&str] = if is_test_benchmark(dir) {
-        &["compose.yaml"]
-    } else {
-        REQUIRED_TRIPLE_MODE_FILES
-    };
-    for file in required {
+    for file in REQUIRED_TRIPLE_MODE_FILES {
         if !dir.join(file).is_file() {
             issues.push(format!("{name}: no {file} (rule 24 triple-mode contract)"));
         }
@@ -502,22 +498,80 @@ fn eval_image_launches_the_pipeline() {
 /// allow-list must not pass TASK_ID/EVAL_TASK_ID — a model that recognizes a
 /// benchmark instance id can recall a memorized solution and inflate the score.
 /// The verifier/result steps read the id from the inherited container env, not
-/// the agent's, so grading is unaffected.
+/// the agent's, so grading is unaffected. The launch (and its allow-list) lives
+/// in run-agent now — the single home shared by process-compose.yaml (the
+/// single-container bundle) and the runner sequence in `run` (compose/k8s).
 #[test]
 fn agent_env_excludes_the_task_id() {
-    let pc = fs::read_to_string(
-        repo_root().join("containers/core/process-compose/process-compose.yaml"),
-    )
-    .expect("read process-compose.yaml");
-    let agent_cmd = pc
-        .lines()
-        .find(|l| l.contains("gosu agent") && l.contains("env -i"))
-        .expect("agent command (`gosu agent env -i`) not found in process-compose.yaml");
+    let ra = fs::read_to_string(repo_root().join("containers/core/process-compose/run-agent"))
+        .expect("read run-agent");
     assert!(
-        !agent_cmd.contains("TASK_ID="),
-        "agent env -i allow-list leaks the task id to the agent process:\n{agent_cmd}"
+        ra.contains("gosu agent") && ra.contains("env -i"),
+        "run-agent must launch the agent via `gosu agent env -i <allow-list>` (rules 13, 7)"
     );
-    eprintln!("✓ agent env -i allow-list excludes the task id (rule 7)");
+    // Scan the actual allow-list (non-comment lines): no TASK_ID may be passed in.
+    for line in ra.lines() {
+        if line.trim_start().starts_with('#') {
+            continue;
+        }
+        assert!(
+            !line.contains("TASK_ID="),
+            "run-agent's env -i allow-list leaks the task id to the agent process:\n{line}"
+        );
+    }
+    eprintln!("✓ run-agent env -i allow-list excludes the task id (rule 7)");
+}
+
+/// The lean/standalone split (benchmarks/RULES.md 24a/24f). The lean base
+/// (combination.Dockerfile → evals/<b>--<a>) is glue-free: no in-process gateway,
+/// otelcol, or process-compose — that is what compose/job/k8s run, with those as
+/// sidecars. The single-container standalone bundle (standalone.Dockerfile →
+/// evals/<b>--<a>-standalone) is `FROM` the lean base and layers exactly that glue.
+#[test]
+fn lean_base_is_glue_free_and_standalone_adds_the_glue() {
+    // Scan the lean base's INSTRUCTION lines only — comments narrate the split and
+    // legitimately name the glue. The framework scripts live under a
+    // `process-compose/` dir, so match precise glue paths, not the bare substring.
+    let lean = fs::read_to_string(repo_root().join("containers/core/combination.Dockerfile"))
+        .expect("read combination.Dockerfile");
+    let lean_instr: String = lean
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for glue in [
+        "/opt/gateway",
+        "otelcol",
+        "bin/process-compose",
+        "process-compose.yaml",
+    ] {
+        assert!(
+            !lean_instr.contains(glue),
+            "lean base combination.Dockerfile must NOT ship `{glue}` — that is the \
+             standalone bundle (benchmarks/RULES.md 24f)"
+        );
+    }
+
+    // The standalone bundle is FROM the lean base and adds exactly that glue.
+    let bundle = fs::read_to_string(repo_root().join("containers/core/standalone.Dockerfile"))
+        .expect("missing containers/core/standalone.Dockerfile (the standalone bundle, rule 24a)");
+    assert!(
+        bundle.contains("FROM eval-base"),
+        "standalone.Dockerfile must be `FROM eval-base` (the lean base, supplied as a named \
+         build context — bake `target:eval` / --build-context — which binds where `FROM ${{ARG}}` does not)"
+    );
+    for glue in [
+        "/opt/gateway",
+        "otelcol",
+        "bin/process-compose",
+        "/etc/process-compose.yaml",
+    ] {
+        assert!(
+            bundle.contains(glue),
+            "standalone.Dockerfile must add `{glue}` (the single-container serving glue)"
+        );
+    }
+    eprintln!("✓ lean base is glue-free; the standalone bundle adds gateway+otel+process-compose");
 }
 
 /// Fleet versioning (RULES.md principle 9): the image tag is the Eval Containers

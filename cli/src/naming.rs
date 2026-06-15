@@ -62,6 +62,32 @@ pub fn eval_task_image(
     )
 }
 
+/// `{registry}/evals/<benchmark>--<agent>-standalone:<tag>` — the single-container
+/// **standalone** bundle (lean base + the in-process gateway/otelcol/process-compose),
+/// what `--mode container` runs. The variant lives in the NAME (a `-standalone`
+/// suffix), never the tag: the `:tag` is reserved for the release version
+/// (RULES.md principle 9), so the lean base and its standalone bundle share a tag
+/// and differ only by name.
+pub fn eval_standalone_image(registry: &str, benchmark: &str, agent: &str, tag: &str) -> String {
+    format!("{registry}/evals/{benchmark}--{agent}-standalone:{tag}")
+}
+
+/// `{registry}/evals/<benchmark>-<task>--<agent>-standalone:<tag>` — the standalone
+/// bundle for a **per-task** benchmark (sibling of [`eval_task_image`]). The task id
+/// is lowercased for the same Docker-tag reason as [`eval_task_image`].
+pub fn eval_task_standalone_image(
+    registry: &str,
+    benchmark: &str,
+    task_id: &str,
+    agent: &str,
+    tag: &str,
+) -> String {
+    format!(
+        "{registry}/evals/{benchmark}-{}--{agent}-standalone:{tag}",
+        task_id.to_lowercase()
+    )
+}
+
 /// `{registry}/eval-<benchmark>` — the per-benchmark published compose artifact.
 /// `run --mode compose` consumes it as `oci://{registry}/eval-<benchmark>` (one
 /// `-f`, registry-only). Each is the benchmark's `compose.yaml` flattened at
@@ -213,6 +239,25 @@ mod tests {
                 "latest"
             ),
             "ghcr.io/exgentic/evals/swe-bench-sympy__sympy-24066--claude-code:latest"
+        );
+    }
+
+    #[test]
+    fn standalone_image_suffixes_the_name_not_the_tag() {
+        // The `-standalone` variant lives in the name; the tag stays the version.
+        assert_eq!(
+            eval_standalone_image(REG, "aime", "claude-code", "0.1.0"),
+            "ghcr.io/exgentic/evals/aime--claude-code-standalone:0.1.0"
+        );
+        assert_eq!(
+            eval_task_standalone_image(
+                REG,
+                "swe-bench",
+                "sympy__sympy-24066",
+                "claude-code",
+                "latest"
+            ),
+            "ghcr.io/exgentic/evals/swe-bench-sympy__sympy-24066--claude-code-standalone:latest"
         );
     }
 

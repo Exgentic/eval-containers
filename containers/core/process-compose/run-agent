@@ -1,0 +1,27 @@
+#!/bin/bash
+# Launch the agent under the eval's isolation contract. Shared by BOTH
+# orchestration paths so the env allow-list has exactly one home:
+#   - single-container bundle: process-compose.yaml's `agent` process execs this;
+#   - compose/k8s lean base:   the runner sequence in /usr/local/bin/run execs this.
+#
+# Contract enforced here:
+#   - non-root: `gosu agent` drops to the unprivileged agent uid (rule 13);
+#   - bounded:  `timeout $TIMEOUT` caps the agent's wall-clock (rule 14);
+#   - scrubbed: `env -i <allow-list>` hands the agent ONLY the problem text and
+#     the gateway endpoints — never the task IDENTITY (TASK_ID). A model that
+#     recognizes a benchmark instance id can recall a memorized solution and
+#     inflate the score; the verifier/result steps read the id from the
+#     inherited container env, so grading is unaffected (rule 7).
+#
+# stdout/stderr go straight to /output/agent/{stdout,stderr}.log (raw, not via
+# process-compose's JSON log envelope, which breaks verifiers reading stdout).
+# Every value is read from the inherited environment — exported by
+# /usr/local/bin/run (single-container) or set by the orchestrator (compose/k8s).
+exec timeout "${TIMEOUT:-300}" gosu agent env -i \
+  PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+  HOME=/home/agent USER=agent LANG=C.UTF-8 \
+  TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
+  OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" OPENAI_API_KEY=sk-proxy \
+  ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}" ANTHROPIC_API_KEY=sk-proxy \
+  GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \
+  /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log

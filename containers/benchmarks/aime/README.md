@@ -31,16 +31,18 @@ Uses the shared `core/test-exact-match` scorer: the agent's stdout is compared a
 ## Files
 
 - `Dockerfile` — builds the benchmark base image (tasks data + verifier).
-- `container.Dockerfile` — single-mode deployment artifact (1-line registry pin).
 - `compose.yaml` — compose-mode deployment artifact (`include:` shared base + aime overrides).
+- single — the standalone bundle, rendered from the generic `core/standalone.Dockerfile` (no per-benchmark file).
 - k8s — the shared chart `benchmarks/_chart`, selected with `--set benchmark=aime` (no per-benchmark file; aime has no bespoke topology).
 - `README.md` — this file.
+
+Lean-base build args (for CI to rebuild via `core/combination.Dockerfile`): `BENCHMARK_IMAGE`, `AGENT_IMAGE`, `AGENT_VERSION`.
 
 ## Running — three deployment surfaces
 
 | Mode | File | Invocation |
 |------|------|------------|
-| **single** | `container.Dockerfile` | `docker run -e OPENAI_API_KEY=… -e OPENAI_API_BASE=… <image>` |
+| **single** | `core/standalone.Dockerfile` (the standalone bundle) | `docker run -e OPENAI_API_KEY=… -e OPENAI_API_BASE=… <image>-standalone` |
 | **compose** | `compose.yaml` | `docker compose -f benchmarks/aime/compose.yaml up` |
 | **k8s** | shared chart | `helm template aime benchmarks/_chart --set benchmark=aime \| kubectl apply -f -` (needs `eval-secrets`) |
 
