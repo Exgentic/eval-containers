@@ -54,6 +54,9 @@ repos:
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1024]
+        # Replay fixtures are large recorded trajectories (committed ground
+        # truth, some tens of MB) — not accidental large files.
+        exclude: '\.(jsonl|lock)$'
       - id: check-yaml
         args: [--allow-multiple-documents]   # k8s manifest bundles (e.g. deploy/kueue.yaml)
         # Helm templates are Go-templated, not valid YAML; helm-lint covers them.

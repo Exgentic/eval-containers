@@ -257,17 +257,61 @@ async fn bootstrap_core_bases() {
 /// `--secret id=HF_TOKEN,env=HF_TOKEN` when the env has it). The test
 /// inherits this behavior for free by shelling out to the CLI — no
 /// test-specific env-loading code lives here.
-async fn ensure_images(benchmark: &str, agent: &str) {
+async fn ensure_images(benchmark: &str, agent: &str, task_id: &str) {
     bootstrap_core_bases().await;
 
+    // Per-task benchmarks bake one eval image per task; the eval build's
+    // `FROM ${BENCHMARK_IMAGE}` resolves against the per-task BASE, which lands
+    // only in the local image store, so build the base first, then the eval image
+    // with the same --task-id (the tag compose.yaml's runner addresses). Skip when
+    // the eval image already exists: per-task bases are costly to rebuild and the
+    // build sweep already verifies builds — replay only needs the image present.
+    // (A pre-existing image can be stale on a dev box; fresh CI has none, so it
+    // always builds there.)
+    if eval_containers::benchmark::is_per_task_by_name(benchmark) {
+        let eval_img = eval_containers::naming::eval_task_image(
+            eval_containers::bake::REGISTRY,
+            benchmark,
+            task_id,
+            agent,
+            "latest",
+        );
+        if !image_exists(&eval_img) {
+            cargo_build(&["bench", benchmark, "--task-id", task_id]);
+            cargo_build(&["eval", benchmark, "--agent", agent, "--task-id", task_id]);
+        }
+        return;
+    }
+
+    cargo_build(&["eval", benchmark, "--agent", agent]);
+}
+
+/// Run `cargo run -- build <args...>` and assert success. The replay harness
+/// builds images through the CLI (a black-box test of `build`), so the
+/// docker/podman invocations live in the CLI under test, not here.
+fn cargo_build(args: &[&str]) {
     let status = Command::new("cargo")
-        .args(["run", "--", "build", "eval", benchmark, "--agent", agent])
+        .args(["run", "--", "build"])
+        .args(args)
         .status()
-        .expect("failed to run cargo run -- build eval");
+        .expect("failed to run cargo run -- build");
     assert!(
         status.success(),
-        "failed to build eval image for {benchmark}--{agent}"
+        "cargo run -- build {} failed",
+        args.join(" ")
     );
+}
+
+/// True if an image tag exists in the local image store. Read-only metadata
+/// probe via `docker image inspect` (verification RULES.md rule 6b carve-out).
+fn image_exists(tag: &str) -> bool {
+    Command::new("docker")
+        .args(["image", "inspect", tag])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
 /// Macro for replay tests. Each test follows the same pattern:
@@ -284,7 +328,7 @@ macro_rules! replay_test {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            ensure_images($benchmark, $agent).await;
+            ensure_images($benchmark, $agent, $task_id).await;
 
             let _compose = replay_compose(
                 $compose,
@@ -2513,4 +2557,27 @@ replay_test!(
     "xstory-cloze",
     "opencode",
     "9972"
+);
+
+// ── Per-task / built-from-source benchmarks ────────────────────────────
+// First replay coverage for per-task benchmarks: ensure_images builds the
+// per-task base + eval image (the eval build falls back to `podman build` when
+// the local builder can't resolve the base — see src/build.rs / src/RULES.md
+// principle 11). See benchmarks/RULES.md 24f/24g.
+replay_test!(
+    replay_terminal_bench_configure_git_webserver_claude_code,
+    "containers/benchmarks/terminal-bench/compose.yaml",
+    "tests/run/replay/fixtures/terminal-bench-configure-git-webserver-claude-code.trajectory.jsonl",
+    "terminal-bench",
+    "claude-code",
+    "configure-git-webserver"
+);
+
+replay_test!(
+    replay_skills_bench_citation_check_claude_code,
+    "containers/benchmarks/skills-bench/compose.yaml",
+    "tests/run/replay/fixtures/skills-bench-citation-check-claude-code.trajectory.jsonl",
+    "skills-bench",
+    "claude-code",
+    "citation-check"
 );

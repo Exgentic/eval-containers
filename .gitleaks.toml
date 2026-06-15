@@ -1,18 +1,21 @@
 # Gitleaks config for Eval Containers.
 #
-# Extends the default ruleset with an allowlist for two patterns that
-# repeatedly trip `generic-api-key` inside recorded LLM trajectories:
+# Recorded LLM trajectory fixtures (tests/run/replay/fixtures/*.trajectory.jsonl)
+# are captured dumps of real agent runs. They legitimately contain high-entropy
+# observability IDs that trip the default `generic-api-key` rule — e.g.
+# `user_api_key_hash` (a one-way hash LiteLLM emits; derived from a key but not
+# the key) and `prompt_cache_key` (a cache-routing UUID). Neither is a credential.
 #
-#   - `user_api_key_hash`: a one-way hash LiteLLM emits for
-#     observability. It is *derived from* a real key but is not the
-#     key itself. Harmless to commit.
-#   - `prompt_cache_key`: an OpenAI / Anthropic cache routing UUID. Not
-#     a credential.
+# The pinned pre-commit hook is gitleaks v8.18.4, which cannot scope an allowlist
+# to "this path AND only these field names": the AND-condition / `[[allowlists]]`
+# forms arrived in 8.19+, and these are JSONL (one large object per line), so a
+# line-target regex matches the whole record anyway. The only mechanism available
+# on 8.18.4 is a `paths` allowlist — which exempts the matched files WHOLESALE.
 #
-# Both live only inside `tests/fixtures/*.trajectory.jsonl` (replay
-# fixtures recorded from release-verification live sweeps — see
-# tests/replay/RULES.md). Allowlist is scoped to that path prefix so a
-# real key leaking into a fixture would still fail the scan.
+# Consequence: this scanner does NOT inspect inside the fixture tree. A trajectory
+# MUST therefore be vetted credential-free *when it is recorded* (see
+# tests/run/replay/RULES.md + provenance.json); gitleaks will not catch a live key
+# committed under this path. Never commit a fixture you have not confirmed clean.
 #
 # Verify after edits:
 #   gitleaks detect --source . --report-format json --report-path /tmp/gitleaks.json
@@ -21,12 +24,13 @@
 [extend]
 useDefault = true
 
-[[allowlists]]
-description = "Trajectory fixture observability IDs are not credentials"
+# Whole-file exemption for the vetted fixture tree (see header). On gitleaks
+# 8.18.4 a `paths` allowlist is a wholesale bypass — intentional here, and the
+# only form available; the safety guarantee is the record-time vetting above,
+# not this scanner. (A bare `regexes` filter cannot narrow it: paths OR regexes
+# are combined, and these single-line JSON records defeat a line-target regex.)
+[allowlist]
+description = "Recorded trajectory fixtures are vetted credential-free at record time"
 paths = [
-  '''tests/fixtures/.*\.trajectory\.jsonl$''',
-]
-regexes = [
-  '''user_api_key_hash''',
-  '''prompt_cache_key''',
+  '''tests/run/replay/fixtures/.*\.trajectory\.jsonl$''',
 ]

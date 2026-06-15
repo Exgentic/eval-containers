@@ -131,26 +131,40 @@ Rule of thumb: `--test-threads = VM_GB / 4` (each replay stack uses ~4 GB peak).
 
 ### Level 4: Recording fixtures (costs API calls)
 
-One-time. Runs a real task with a real model, saves the trajectory as a fixture.
+One-time. Runs a real task with a real model and saves the model trajectory as a
+fixture for the replay sweep.
+
+**Record with the litellm gateway.** The replay model (`models/replay`) consumes
+LiteLLM **StandardLoggingPayload** (`trajectory.jsonl`), written by the litellm
+gateway's `eval_logger`. The default **bifrost** gateway emits only OTel
+`traces.jsonl`, which the replay model does NOT parse — so select litellm with
+`EVAL_GATEWAY_IMAGE=gpt-5.4--litellm`.
 
 ```bash
-# Record one combination — uses the shared `output` named volume from
-# compose/services.yaml (the runner writes to /output inside the container).
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
+# Record one combination (-p names the compose project, used below).
+OPENAI_API_KEY=… OPENAI_API_BASE=… \
+EVAL_GATEWAY_IMAGE=gpt-5.4--litellm EVAL_MODEL=openai/azure/gpt-5.4 \
+EVAL_TASK_ID=0 EVAL_AGENT=codex \
+  docker compose -p rec -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
-# The output lives in the named volume, not on the host filesystem.
-# Extract via a one-shot alpine container that mounts it read-only.
-docker run --rm -v aime_output:/output:ro alpine \
-  cat /output/traces.jsonl > tests/run/replay/fixtures/aime-0-codex.trajectory.jsonl
+# litellm writes /output/trajectory.jsonl inside the gateway container (the runner
+# has its own output volume). The container persists after `up` exits — copy it out:
+docker cp rec-gateway-1:/output/trajectory.jsonl \
+  tests/run/replay/fixtures/aime-0-codex.trajectory.jsonl
+
+# Sanity-check the run graded:
+docker run --rm -v rec_output:/output:ro alpine cat /output/task/result.json
 ```
 
-The volume name follows `<benchmark>_output` (compose project + the `output` declared in `compose/services.yaml`). Sanity-check the result:
-```bash
-docker run --rm -v aime_output:/output:ro alpine cat /output/task/result.json
-```
+**Per-task / built-from-source benchmarks** (terminal-bench, skills-bench, swe-*):
+build the per-task base + eval image first — `eval-containers build bench <b>
+--task-id <t>` then `eval-containers build eval <b> --agent <a> --task-id <t>` (the
+eval build falls back to `podman build` on a container-driver host; see
+[`.agents/src/RULES.md`](../../.agents/src/RULES.md) principle 11) — then record as
+above with `EVAL_TASK_ID=<t>`.
 
-Use `gpt-5.4` — the cheap-but-capable default. One fixture per combination forever.
+Use `gpt-5.4` — the cheap-but-capable model of record. One fixture per combination
+forever; then add a `replay_test!` entry in `tests/run/replay/test.rs`.
 
 ## Exploring What's Built
 
