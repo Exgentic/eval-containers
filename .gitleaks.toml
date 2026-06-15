@@ -30,3 +30,19 @@ regexes = [
   '''user_api_key_hash''',
   '''prompt_cache_key''',
 ]
+
+# The detect-secrets baseline (.secrets.baseline) records one-way *hashes* of
+# already-reviewed findings plus line metadata — never a live credential — so
+# gitleaks must not re-scan it as source. (detect-secrets likewise excludes its
+# own baseline; the two scanners ignore each other's bookkeeping.)
+#
+# NOTE: this uses the *singular* [allowlist] table on purpose. The pinned
+# gitleaks (v8.18.4) does NOT honor the [[allowlists]] *array* syntax used by
+# the fixture block above — it is silently ignored, so that block currently has
+# no effect (a real gap, tracked with the fixture/secret-scan cleanup). When
+# that lands (singular merge, or a gitleaks bump to >=8.19), fold this entry in.
+[allowlist]
+description = "detect-secrets baseline holds hashed findings, not live secrets"
+paths = [
+  '''\.secrets\.baseline$''',
+]

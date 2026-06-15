@@ -78,10 +78,13 @@ entering the CLI's Rust tree, an image's base/packages, or the build itself.
 
 ### Images and build
 
-- **Secrets never enter images or history.** `gitleaks` (config:
-  [`.gitleaks.toml`](.gitleaks.toml)) scans the repo; `trivy config`
-  ([`tests/static/security/trivy.sh`](tests/static/security/trivy.sh)) flags
-  secrets in build args and IaC misconfigurations. Build-time credentials use
+- **Secrets never enter the tree, images, or history.** Three independent
+  layers scan every PR, each with a different strategy so a miss in one is
+  caught by another: `gitleaks` (rule-based, config
+  [`.gitleaks.toml`](.gitleaks.toml)); `detect-secrets` (entropy + per-vendor
+  keyword plugins, baseline [`.secrets.baseline`](.secrets.baseline)); and
+  `trivy config` ([`tests/static/security/trivy.sh`](tests/static/security/trivy.sh))
+  for build-arg secrets and IaC misconfiguration. Build-time credentials use
   `--mount=type=secret`, never `COPY` ([`.agents/RULES.md`](.agents/RULES.md)
   principle 10c).
 - **Dockerfile policy.** `hadolint` (generic hygiene) plus a conftest/OPA policy

@@ -43,6 +43,25 @@ repos:
     hooks:
       - id: gitleaks
 
+  # --- Secrets: detect-secrets (entropy + keyword baseline scanner) ---
+  # A second, independent layer beside gitleaks (rule-based) and trivy
+  # (build-arg secrets): detect-secrets leans on entropy + per-vendor keyword
+  # plugins, so it catches shapes a pure ruleset can miss. New findings are
+  # diffed against .secrets.baseline; the baseline's own filters exclude the
+  # recorded trajectory fixtures (.jsonl), lockfiles, and the two pure-false-
+  # positive idioms in this repo — 40-char git-SHA upstream pins and
+  # `os.environ/...` LiteLLM key references. The 6 baselined findings are
+  # reviewed non-secrets (sk-proxy placeholders, `secrets: inherit`, a CTF
+  # repo path). Regenerate + re-audit when a real new finding appears:
+  #   detect-secrets scan --baseline .secrets.baseline && \
+  #     detect-secrets audit .secrets.baseline
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .secrets.baseline]
+        exclude: ^\.secrets\.baseline$
+
   # --- Generic hygiene ---
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
