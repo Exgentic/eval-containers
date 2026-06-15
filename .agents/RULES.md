@@ -134,7 +134,7 @@ not as issues. The issue tracker is for tracked work only.
 ## References
 
 - [RFC 2119: Key words for use in RFCs](https://www.rfc-editor.org/rfc/rfc2119)
-- [Contributing](../CONTRIBUTING.md)
+- [Contributing](contributing/RULES.md) — what an issue or pull request must satisfy.
 - [Security Policy](../SECURITY.md) — vulnerability reporting and supply-chain standards
 
 ## Changelog
@@ -158,3 +158,4 @@ not as issues. The issue tracker is for tracked work only.
 | 2026-06-10 | Principle 15.b: default registry changed from `quay.io/eval-containers` to `ghcr.io/exgentic` — the fleet's canonical home is now GHCR (Exgentic org). `REGISTRY` / `EVAL_REGISTRY` still select any OCI registry (principle 20); only the default moved. Swept across the bake root variable, Dockerfile `ARG`s, compose files, the chart, the CLI default, and docs. |
 | 2026-06-11 | Principle 15.f: clarified that provenance labels (`org.opencontainers.image.*`) are out of scope for the per-artifact bake files — they're stamped at build time (src/RULES.md principle 11), keeping these files to targets/contexts/args/tags. No change to bake-file content. |
 | 2026-06-14 | Principle 9: the fleet-version default now spans the per-benchmark `eval-<benchmark>` compose artifacts (one self-contained compose per benchmark, flattened at publish) rather than a single shared `evaluate` artifact. A published OCI compose can't carry a dynamic per-benchmark `include:` — `docker compose publish` flattens includes — so per-benchmark sidecars are baked in at publish and `run --mode compose` consumes one artifact with a single `-f`. See [delivery/RULES.md](delivery/RULES.md) rule 3. |
+| 2026-06-14 | Added the `contributing/` topic: the normative core of the root `CONTRIBUTING.md` moved into [`contributing/RULES.md`](contributing/RULES.md), and the References pointer now targets that doctrine. `CONTRIBUTING.md` becomes the human-facing guide; the issue taxonomy ("Issue vocabulary") stays here. No principle in this file changed. |

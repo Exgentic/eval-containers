@@ -251,7 +251,7 @@ See [Oracle](containers/core/oracle/README.md) for how it works and how to add a
 
 ## Rules
 
-All work is governed by RULES documents. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full index.
+All work is governed by RULES documents under [`.agents/`](.agents/); [`AGENTS.md`](AGENTS.md) is the full map. New contributors should start with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 | Rules | Scope |
 |-------|-------|

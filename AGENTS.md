@@ -23,6 +23,7 @@ active rule must not merge.
 
 **Rules — the *what***
 - [`.agents/RULES.md`](.agents/RULES.md) — project principles
+- [`.agents/contributing/RULES.md`](.agents/contributing/RULES.md) — what an issue or pull request must satisfy: contribution shape, PR scope, declared rules.
 - [`.agents/benchmarks/RULES.md`](.agents/benchmarks/RULES.md) · [`.agents/agents/RULES.md`](.agents/agents/RULES.md) · [`.agents/models/RULES.md`](.agents/models/RULES.md)
 - [`.agents/compose/RULES.md`](.agents/compose/RULES.md) · [`.agents/gateways/RULES.md`](.agents/gateways/RULES.md) · [`.agents/src/RULES.md`](.agents/src/RULES.md)
 - [`.agents/verification/RULES.md`](.agents/verification/RULES.md) — testing strategy; per-category rules live beside their tests in `tests/<category>/RULES.md` (paired with the enforcing Rust) and are indexed from the strategy.
