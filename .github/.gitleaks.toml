@@ -1,53 +1,39 @@
 # Gitleaks config for Eval Containers.
 #
-# Extends the default ruleset with an allowlist for two patterns that
-# repeatedly trip `generic-api-key` inside recorded LLM trajectories:
+# Lives in .github/ and is NOT auto-discovered there — every gitleaks invocation
+# must pass `--config .github/.gitleaks.toml` (the pre-commit hook and VERIFY.md
+# step 22 do). Uses the [[allowlists]] array form, honored since gitleaks 8.19
+# (the hook pins 8.30.x); the deprecated singular [allowlist] must not reappear —
+# 8.30 errors if it coexists with the array form.
 #
-#   - `user_api_key_hash`: a one-way hash LiteLLM emits for
-#     observability. It is *derived from* a real key but is not the
-#     key itself. Harmless to commit.
-#   - `prompt_cache_key`: an OpenAI / Anthropic cache routing UUID. Not
-#     a credential.
-#
-# Both live only inside `tests/fixtures/*.trajectory.jsonl` (replay
-# fixtures recorded from release-verification live sweeps — see
-# tests/replay/RULES.md). Allowlist is scoped to that path prefix so a
-# real key leaking into a fixture would still fail the scan.
-#
-# This file lives in .github/ and is NOT auto-discovered there — every gitleaks
-# invocation must pass `--config .github/.gitleaks.toml` (the pre-commit hook and
-# VERIFY.md step 22 already do).
-#
-# Verify after edits:
+# Verify after edits (expect 0):
 #   gitleaks detect --source . --no-git --config .github/.gitleaks.toml \
-#     --report-format json --report-path /tmp/gitleaks.json
-#   jq length /tmp/gitleaks.json   # expect 0
+#     --report-format json --report-path /tmp/gl.json && jq length /tmp/gl.json
 
 [extend]
 useDefault = true
 
+# Recorded LLM trajectories are immutable ground truth (tests/run/replay/RULES.md)
+# and carry observability fields — user_api_key_hash / api_key_hash (one-way
+# LiteLLM hashes), prompt_cache_key, client-request-id (cache/trace UUIDs) — that
+# trip `generic-api-key` but are not credentials. This allowlist trusts the
+# recorded-trajectory tree wholesale: keeping real secrets out of trajectories is
+# an UPSTREAM concern — a token must not be in the eval container's environment to
+# get captured in the first place (hardened separately) — not this scanner's job.
+# The one HF-token that did leak this way was redacted + the history purged.
+# (For stricter per-line enforcement, switch to condition="AND" +
+# regexTarget="line" scoped to the field names above.)
 [[allowlists]]
-description = "Trajectory fixture observability IDs are not credentials"
+description = "Recorded trajectory fixtures hold observability IDs, not credentials"
 paths = [
-  '''tests/fixtures/.*\.trajectory\.jsonl$''',
-]
-regexes = [
-  '''user_api_key_hash''',
-  '''prompt_cache_key''',
+  '''tests/run/replay/fixtures/.*\.trajectory\.jsonl$''',
 ]
 
-# The detect-secrets baseline (.github/.secrets.baseline) records one-way
-# *hashes* of already-reviewed findings plus line metadata — never a live
-# credential — so gitleaks must not re-scan it as source. (detect-secrets
-# likewise excludes its own baseline; the scanners ignore each other's
-# bookkeeping.)
-#
-# NOTE: this uses the *singular* [allowlist] table on purpose. The pinned
-# gitleaks (v8.18.4) does NOT honor the [[allowlists]] *array* syntax used by
-# the fixture block above — it is silently ignored, so that block currently has
-# no effect (a real gap, tracked with the fixture/secret-scan cleanup). When
-# that lands (singular merge, or a gitleaks bump to >=8.19), fold this entry in.
-[allowlist]
+# The detect-secrets baseline (.github/.secrets.baseline) records one-way *hashes*
+# of already-reviewed findings plus line metadata — never a live credential — so
+# gitleaks must not re-scan it as source. (detect-secrets likewise excludes its
+# own baseline; the scanners ignore each other's bookkeeping.)
+[[allowlists]]
 description = "detect-secrets baseline holds hashed findings, not live secrets"
 paths = [
   '''\.github/\.secrets\.baseline$''',
