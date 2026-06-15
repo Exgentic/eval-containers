@@ -25,7 +25,7 @@ RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN --mount=type=secret,id=HF_TOKEN \
-    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && \
+    HF_TOKEN=$(cat /run/secrets/HF_TOKEN) && \
     export HF_TOKEN && \
     python3 <<'PYEOF'
 import os, glob, json, pyarrow.parquet as pq

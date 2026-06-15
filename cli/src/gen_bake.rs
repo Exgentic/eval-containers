@@ -32,8 +32,10 @@ pub fn execute(args: GenBakeArgs) -> Result<(), String> {
     let dockerfile_text = std::fs::read_to_string(&dockerfile)
         .map_err(|e| format!("read {}: {e}", dockerfile.display()))?;
     let deps = bake::dockerfile_in_repo_deps(&dockerfile_text);
-    let takes_hf = dockerfile_text.contains("HF_TOKEN");
-    let content = render(&category, name, &deps, takes_hf);
+    // Needs the HF_TOKEN build secret iff a `--mount=type=secret,id=HF_TOKEN` RUN
+    // fetches gated data (rule 8a).
+    let needs_hf_secret = dockerfile_text.contains("--mount=type=secret,id=HF_TOKEN");
+    let content = render(&category, name, &deps, needs_hf_secret);
 
     let out = dir.join("docker-bake.hcl");
     if out.exists() && !args.force {
@@ -85,12 +87,9 @@ fn ref_to_target(image_ref: &str) -> String {
     target_name_for(cat, n)
 }
 
-fn render(category: &str, name: &str, deps: &[String], takes_hf: bool) -> String {
+fn render(category: &str, name: &str, deps: &[String], needs_hf_secret: bool) -> String {
     let target_name = target_name_for(category, name);
     let mut out = String::new();
-    if takes_hf {
-        out.push_str("variable \"HF_TOKEN\" { default = \"\" }\n\n");
-    }
     out.push_str(&format!("target \"{target_name}\" {{\n"));
     out.push_str(&format!("  context = \"containers/{category}/{name}\"\n"));
     if !deps.is_empty() {
@@ -104,8 +103,8 @@ fn render(category: &str, name: &str, deps: &[String], takes_hf: bool) -> String
         }
         out.push_str("  }\n");
     }
-    if takes_hf {
-        out.push_str("  args = { HF_TOKEN = HF_TOKEN }\n");
+    if needs_hf_secret {
+        out.push_str("  secret = [\"id=HF_TOKEN,env=HF_TOKEN\"]\n");
     }
     out.push_str(&format!(
         "  tags = [\"${{REGISTRY}}/{category}/{name}:${{TAG}}\"]\n"
@@ -131,16 +130,14 @@ mod tests {
     }
 
     #[test]
-    fn benchmark_with_hf_and_deps() {
-        // Real benchmark convention (cf. benchmarks/hle): parameterized
-        // in-repo FROMs — the form gen-bake must recognize; a literal
-        // `ghcr.io/...` FROM no longer appears in any Dockerfile — plus an
-        // HF_TOKEN build secret. End-to-end guard for the contexts block.
+    fn benchmark_with_hf_secret_and_deps() {
+        // In-repo parameterized FROMs + a gated fetch (HF_TOKEN secret): guards the
+        // contexts block AND that the token is emitted as a `secret`, not a build-arg.
         let text = "ARG REGISTRY=ghcr.io/exgentic\n\
             ARG REGISTRY_SUFFIX=/\n\
             FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match\n\
             FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest\n\
-            ARG HF_TOKEN\nRUN curl ... $HF_TOKEN\n";
+            RUN --mount=type=secret,id=HF_TOKEN HF_TOKEN=$(cat /run/secrets/HF_TOKEN) curl ...\n";
         let deps = bake::dockerfile_in_repo_deps(text);
         assert_eq!(
             deps,
@@ -149,16 +146,17 @@ mod tests {
                 "ghcr.io/exgentic/core/test-exact-match".to_string(),
             ]
         );
-        let takes_hf = text.contains("HF_TOKEN");
-        let out = render("benchmarks", "hle", &deps, takes_hf);
-        assert!(out.contains("variable \"HF_TOKEN\""));
+        let needs_hf_secret = text.contains("--mount=type=secret,id=HF_TOKEN");
+        let out = render("benchmarks", "hle", &deps, needs_hf_secret);
         assert!(
             out.contains("\"${REGISTRY}/core/benchmark-base-hf\" = \"target:benchmark-base-hf\"")
         );
         assert!(
             out.contains("\"${REGISTRY}/core/test-exact-match\" = \"target:test-exact-match\"")
         );
-        assert!(out.contains("args = { HF_TOKEN = HF_TOKEN }"));
+        assert!(out.contains("secret = [\"id=HF_TOKEN,env=HF_TOKEN\"]"));
+        assert!(!out.contains("args = { HF_TOKEN"));
+        assert!(!out.contains("variable \"HF_TOKEN\""));
     }
 
     #[test]
