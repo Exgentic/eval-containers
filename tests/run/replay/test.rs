@@ -8,6 +8,8 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+
+use eval_containers::naming;
 use testcontainers::compose::DockerCompose;
 use testcontainers::core::WaitFor;
 use testcontainers::core::wait::ExitWaitStrategy;
@@ -99,10 +101,20 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     // the replay_test! macro). No image override required — compose
     // interpolation picks the right `evals/<bench>--<agent>:latest`.
     let fixture_abs = cwd.join(fixture);
+    // Classic (podman) path: the bootstrap built models/replay + the runner under a
+    // local-only registry (overridable via EVAL_REGISTRY), so point compose there. The
+    // Docker/Linux path is left byte-identical to before — the published gateway image
+    // below, and compose's own `${EVAL_REGISTRY:-ghcr.io/exgentic}` default for the runner.
+    let classic = common::classic_build();
+    let replay_registry = if classic {
+        std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| common::LOCAL_REGISTRY.to_string())
+    } else {
+        "ghcr.io/exgentic".to_string()
+    };
     let override_content = format!(
         "services:\n\
          \x20 gateway:\n\
-         \x20   image: ghcr.io/exgentic/models/replay:latest\n\
+         \x20   image: {replay_registry}/models/replay:latest\n\
          \x20   volumes:\n\
          \x20     - {fixture_abs}:/data/trajectory.jsonl:ro\n\
          volumes:\n\
@@ -136,6 +148,12 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
 
     for (key, val) in env {
         compose = compose.with_env(*key, *val);
+    }
+    // Classic path only: the runner image is `${EVAL_REGISTRY}/evals/<b>--<a>`, so point
+    // compose at the registry the images were built under. Docker/Linux keeps compose's
+    // own EVAL_REGISTRY default/inheritance (unchanged).
+    if classic {
+        compose = compose.with_env("EVAL_REGISTRY", replay_registry.as_str());
     }
 
     compose = compose
@@ -245,21 +263,63 @@ async fn bootstrap_core_bases() {
         .await;
 }
 
-/// Build the eval image for a specific (benchmark, agent) pair.
+/// Build the eval image (and the benchmark/agent it FROMs) for a (benchmark,
+/// agent) pair.
 ///
-/// Shells out to `cargo run -- build eval` — a legitimate CLI black-box
-/// test of the framework's own `build eval` subcommand. The docker
-/// invocations happen inside the CLI under test, not inside this file
-/// (RULES.md principle 2 — container tests go through the library).
+/// **Docker path:** shells `cargo run -- build …` — a legitimate CLI black-box
+/// test of the framework's own `build` subcommand (RULES.md principle 2; the
+/// docker calls happen inside the CLI under test, not here). `.env`/`HF_TOKEN`
+/// handling lives in the CLI (`src/main.rs` dotenv + `src/build.rs` `--secret`),
+/// inherited for free by shelling out — no test-specific env code here.
 ///
-/// `.env` loading and `HF_TOKEN` propagation live in the CLI itself
-/// (`src/main.rs` calls `dotenvy::dotenv()`, `src/build.rs` adds
-/// `--secret id=HF_TOKEN,env=HF_TOKEN` when the env has it). The test
-/// inherits this behavior for free by shelling out to the CLI — no
-/// test-specific env-loading code lives here.
+/// **Podman/classic path (`DOCKER_BUILDKIT=0`):** `docker buildx bake` can't build
+/// here (BuildKit QEMUs Python — docs/guides/podman-on-apple-silicon.md §5b), so
+/// the CLI's bake-based `build` can't run; the harness builds the same targets
+/// directly with `common::build_target_classic` (→ buildah → Rosetta), under a
+/// local-only registry so nothing stale is force-pulled. The eval inputs mirror the
+/// CLI's own `build eval` overrides for the lean combination.
 async fn ensure_images(benchmark: &str, agent: &str) {
     bootstrap_core_bases().await;
 
+    if common::classic_build() {
+        // Bases are built above; these add only the benchmark, agent, and lean eval
+        // layers — each one artifact, deps already local. The lean `eval` target needs
+        // exactly two overrides (BENCHMARK_IMAGE/AGENT_IMAGE — the CLI's Eval arm);
+        // EVAL_BENCHMARK/EVAL_AGENT drive its tag. Models are runtime sidecars, not
+        // baked into the lean eval, so they aren't needed here.
+        let reg =
+            std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| common::LOCAL_REGISTRY.to_string());
+        let base_env = [("REGISTRY", reg.as_str())];
+        common::build_target_classic(&naming::benchmark_bake_target(benchmark), &[], &base_env);
+        common::build_target_classic(&naming::agent_bake_target(agent), &[], &base_env);
+
+        let bench_ov = format!(
+            "eval.args.BENCHMARK_IMAGE={}",
+            naming::benchmark_image(&reg, benchmark, "latest")
+        );
+        let agent_ov = format!(
+            "eval.args.AGENT_IMAGE={}",
+            naming::agent_image(&reg, agent, "latest")
+        );
+        common::build_target_classic(
+            "eval",
+            &[&bench_ov, &agent_ov],
+            &[
+                ("REGISTRY", reg.as_str()),
+                ("EVAL_BENCHMARK", benchmark),
+                ("EVAL_AGENT", agent),
+            ],
+        );
+        return;
+    }
+
+    for (kind, name) in [("bench", benchmark), ("agent", agent)] {
+        let status = Command::new("cargo")
+            .args(["run", "--", "build", kind, name])
+            .status()
+            .unwrap_or_else(|e| panic!("failed to run cargo run -- build {kind}: {e}"));
+        assert!(status.success(), "failed to build {kind} image for {name}");
+    }
     let status = Command::new("cargo")
         .args(["run", "--", "build", "eval", benchmark, "--agent", agent])
         .status()
