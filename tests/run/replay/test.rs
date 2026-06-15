@@ -57,6 +57,7 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 struct ReplayHandle {
     compose: DockerCompose,
     _override: tempfile::NamedTempFile,
+    _flat: tempfile::NamedTempFile,
 }
 
 async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> ReplayHandle {
@@ -131,8 +132,35 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     let compose_str = compose_abs.to_str().unwrap().to_string();
     let override_str = override_file.path().to_str().unwrap().to_string();
 
-    let mut compose =
-        DockerCompose::with_local_client(&[compose_str.as_str(), override_str.as_str()]);
+    // Flatten the benchmark compose (resolve its `include:` of
+    // compose/services.yaml) BEFORE layering our override. docker compose's
+    // `include` treats the per-benchmark `runner` re-declaration as a conflict
+    // with the imported `runner` once a second `-f` is layered on top
+    // ("services.runner conflicts with imported resource"). `config
+    // --no-interpolate` resolves the include into one merged compose — the same
+    // flatten `build eval` does at publish (build.rs) — after which the override
+    // applies as a plain `-f` override. `--no-interpolate` leaves `${VAR:?}`
+    // unevaluated, so this needs no real creds; interpolation happens at `up`.
+    let flat = Command::new("docker")
+        .args(["compose", "-f", &compose_str, "config", "--no-interpolate"])
+        .output()
+        .expect("run docker compose config to flatten benchmark compose");
+    assert!(
+        flat.status.success(),
+        "docker compose config (flatten) failed for {compose_str}:\n{}",
+        String::from_utf8_lossy(&flat.stderr)
+    );
+    let mut flat_file = tempfile::Builder::new()
+        .prefix("eval-replay-flat-")
+        .suffix(".yaml")
+        .tempfile()
+        .expect("create flattened compose tempfile");
+    flat_file
+        .write_all(&flat.stdout)
+        .expect("write flattened compose");
+    let flat_str = flat_file.path().to_str().unwrap().to_string();
+
+    let mut compose = DockerCompose::with_local_client(&[flat_str.as_str(), override_str.as_str()]);
 
     for (key, val) in env {
         compose = compose.with_env(*key, *val);
@@ -174,6 +202,7 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     ReplayHandle {
         compose,
         _override: override_file,
+        _flat: flat_file,
     }
 }
 
