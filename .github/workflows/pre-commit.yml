@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0   # base history for the PR diff
 
@@ -27,14 +27,14 @@ jobs:
       - name: Verify rustfmt is available
         run: rustfmt --version
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.x'
 
       - run: pip install pre-commit
 
       - name: Cache pre-commit environments
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -44,7 +44,7 @@ jobs:
           sudo curl -fsSL -o /usr/local/bin/hadolint \
             https://github.com/hadolint/hadolint/releases/download/v2.14.0/hadolint-Linux-x86_64
           sudo chmod +x /usr/local/bin/hadolint
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
 
       # conftest powers the conftest-dockerfile + conftest-compose hooks (the
       # eval LABEL/pin/hygiene + compose markers/tag-axis policy, migrated from
