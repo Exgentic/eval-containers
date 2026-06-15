@@ -69,3 +69,28 @@ Parent: [../RULES.md](../RULES.md)
     and `models/replay` before any replay test runs. The build sweep's
     `ImageGuard::Drop` deletes them after a prior sweep, so replay
     cannot assume they exist.
+
+## Secret hygiene
+
+11. **Scrub credentials at record time; redaction is the one allowed edit.**
+    Captures come from live agent runs whose environment dumps can contain
+    real provider tokens. A fixture MUST be written through the record-time
+    secret scrub (the `sed` redaction in
+    [docs/guides/running-tests-locally.md](../../../docs/guides/running-tests-locally.md)
+    "Level 4"), which masks known token shapes (`hf_`, `AKIA`,
+    `ghp_`/`gho_`/`github_pat_`, `xoxb-`, `sk-ant-`, `AIza`). The gitleaks
+    fixture allowlist is a wholesale file bypass (`.gitleaks.toml`), so the
+    scanner cannot be the safety net. If a credential is nonetheless found in a
+    committed fixture, redacting the value in place is the **sole** permitted
+    exception to rule 4's immutability — replay is unaffected because the model
+    serves only the recorded `response`, never `messages`; a redaction is not a
+    re-recording and the provenance record is unchanged. Rotate any token that
+    was ever live.
+
+## Changelog
+
+- 2026-06-15: Added rule 11 (record-time secret scrub; redaction as the sole
+  permitted exception to fixture immutability) after a HuggingFace access token
+  was found committed in four fixtures. See
+  [docs/guides/running-tests-locally.md](../../../docs/guides/running-tests-locally.md)
+  "Level 4" and `.gitleaks.toml`.
