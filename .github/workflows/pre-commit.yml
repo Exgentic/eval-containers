@@ -62,7 +62,7 @@ jobs:
         # install.sh exits 1 writing to the cache BINARY_DIR), so the binary is
         # downloaded each run (~seconds). Caching trivy's misconfig checks DB is a
         # follow-up (a manual actions/cache on ~/.cache/trivy), not this action's option.
-        uses: aquasecurity/setup-trivy@v0.3.1
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
 
       # PRs: scope to changed files. main/manual: full check (no PR diff exists).
       - name: Run pre-commit (PR)

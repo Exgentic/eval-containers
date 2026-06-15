@@ -33,7 +33,7 @@ principles 8–10.
     `itbench` (10 CISO scenarios, skeleton).
   - New agents: `cline` (plan/act + MCP), `continue-cli`
     (`cn`, multi-model CLI), `open-interpreter` (NL code exec).
-- **Rule 11: "Reuse over repetition"** in [`RULES.md`](RULES.md).
+- **Rule 11: "Reuse over repetition"** in [`.agents/RULES.md`](.agents/RULES.md).
   Any infrastructure concern shared by more than two images MUST be
   factored into a shared base image or helper. Consequences:
   `core/agent-base-{node,python,rust}` and

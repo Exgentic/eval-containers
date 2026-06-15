@@ -56,7 +56,7 @@ Skipping any step is not acceptable.
 
 | Document | Location | Scope |
 |----------|----------|-------|
-| [Process](RULES.md) | `RULES.md` | How rules work |
+| [Process](.agents/RULES.md) | `.agents/RULES.md` | How rules work |
 | [Benchmarks](.agents/benchmarks/RULES.md) | `.agents/benchmarks/RULES.md` | Building benchmark images |
 | [Agents](.agents/agents/RULES.md) | `.agents/agents/RULES.md` | Building agent images |
 | [Models](.agents/models/RULES.md) | `.agents/models/RULES.md` | Building model images |

@@ -255,7 +255,7 @@ All work is governed by RULES documents. See [CONTRIBUTING.md](CONTRIBUTING.md) 
 
 | Rules | Scope |
 |-------|-------|
-| [RULES.md](RULES.md) | Core principles |
+| [.agents/RULES.md](.agents/RULES.md) | Core principles |
 | [.agents/benchmarks/RULES.md](.agents/benchmarks/RULES.md) | Building benchmarks |
 | [.agents/agents/RULES.md](.agents/agents/RULES.md) | Building agents |
 | [.agents/models/RULES.md](.agents/models/RULES.md) | Building models |
