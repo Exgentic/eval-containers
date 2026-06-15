@@ -1,0 +1,46 @@
+name: Security audit
+
+# Rust dependency CVE scan against the RustSec advisory database (cargo audit).
+# Runs when the dependency graph changes — the only way a new advisory enters on
+# a PR — and weekly to catch advisories published against already-pinned
+# versions. This is the same scan as the release walk's VERIFY.md Phase 5,
+# step 22a. Image-side scanning (gitleaks, trivy, hadolint, conftest) lives in
+# pre-commit.yml; this workflow owns the Rust tree.
+
+on:
+  pull_request:
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/audit.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+  schedule:
+    - cron: '17 4 * * 1'   # Mondays 04:17 UTC — weekly drift check
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Prebuilt binary — no source compile, unlike `cargo install cargo-audit`.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      # Default behavior fails on a vulnerability advisory. Unmaintained/yanked
+      # warnings stay advisory (not --deny) so they don't block on a transitive
+      # dep we can't immediately move off.
+      - name: cargo audit
+        run: cargo audit
