@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # Prebuilt binary — no source compile, unlike `cargo install cargo-audit`.
       - name: Install cargo-audit
