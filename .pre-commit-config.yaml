@@ -37,11 +37,34 @@ repos:
         types: [rust]
         pass_filenames: false
 
-  # --- Secrets: uses the repo's .gitleaks.toml allowlist ---
+  # --- Secrets: uses the repo's .github/.gitleaks.toml allowlist ---
+  # gitleaks only auto-discovers .gitleaks.toml at the repo root, so point it
+  # at the relocated config explicitly. Anyone running gitleaks by hand must
+  # pass the same `--config .github/.gitleaks.toml`.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.18.4
     hooks:
       - id: gitleaks
+        args: [--config, .github/.gitleaks.toml]
+
+  # --- Secrets: detect-secrets (entropy + keyword baseline scanner) ---
+  # A second, independent layer beside gitleaks (rule-based) and trivy
+  # (build-arg secrets): detect-secrets leans on entropy + per-vendor keyword
+  # plugins, so it catches shapes a pure ruleset can miss. New findings are
+  # diffed against .github/.secrets.baseline; the baseline's own filters exclude
+  # the recorded trajectory fixtures (.jsonl), lockfiles, and the two pure-false-
+  # positive idioms in this repo — 40-char git-SHA upstream pins and
+  # `os.environ/...` LiteLLM key references. The 6 baselined findings are
+  # reviewed non-secrets (sk-proxy placeholders, `secrets: inherit`, a CTF
+  # repo path). Regenerate + re-audit when a real new finding appears:
+  #   detect-secrets scan --baseline .github/.secrets.baseline && \
+  #     detect-secrets audit .github/.secrets.baseline
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: [--baseline, .github/.secrets.baseline]
+        exclude: ^\.github/\.secrets\.baseline$
 
   # --- Generic hygiene ---
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -132,7 +155,7 @@ repos:
         name: trivy config (IaC/misconfig over containers/)
         entry: tests/static/security/trivy.sh config
         language: system
-        files: (^containers/.*\.ya?ml$|^containers/.*/Dockerfile$|^\.trivyignore$)
+        files: (^containers/.*\.ya?ml$|^containers/.*/Dockerfile$|^\.github/\.trivyignore$)
         pass_filenames: false
 
   # --- Shell ---
@@ -150,3 +173,23 @@ repos:
     hooks:
       - id: ruff
       - id: ruff-format
+
+  # --- Spelling ---
+  # Generic, fast, deterministic — fits the fast-hooks-only principle above.
+  # Skips lockfiles and recorded JSONL fixtures (replay trajectories), which
+  # carry verbatim tool output that isn't ours to spell-correct.
+  # Ignore list is all domain terms, not typos:
+  #   ans/fo      — Python locals in benchmark Dockerfiles (`ans = t['answer']`, `as fo:`)
+  #   froms/copys — plural Dockerfile FROM/COPY instructions in prose & tests
+  #   rouge       — the ROUGE metric (codespell reads it as "rogue")
+  #   xdescribe   — the Jest/Jasmine API, named in an aider-polyglot transform
+  #   auxillary   — verbatim in Rosetta's own error string; "fixing" it breaks the match
+  #   re-declare* — valid hyphenation in a rego test + Dockerfiles (this codespell
+  #                 pin still flags it; newer releases dropped several such entries)
+  #   crate       — Rust's compilation unit, everywhere in cli/ and tests/
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args: [-L, "ans,froms,copys,fo,auxillary,xdescribe,rouge,re-declare,re-declared,re-declaring,crate"]
+        exclude: '\.(jsonl|lock)$'
