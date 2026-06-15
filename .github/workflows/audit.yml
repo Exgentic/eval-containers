@@ -35,7 +35,7 @@ jobs:
 
       # Prebuilt binary — no source compile, unlike `cargo install cargo-audit`.
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@7a79fe8c3a13344501c80d99cae481c1c9085912 # v2
         with:
           tool: cargo-audit
 
