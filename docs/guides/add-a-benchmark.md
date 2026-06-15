@@ -9,12 +9,13 @@ replacement — follow the skill and the rules it links.
    (what a finished benchmark must be).
 2. **Follow the skill** — [`.agents/benchmarks/add-benchmark/SKILL.md`](../../.agents/benchmarks/add-benchmark/SKILL.md)
    (the step-by-step procedure, with a template).
-3. **Ship the deploy artifacts** — every benchmark needs `container.Dockerfile`
-   and `compose.yaml` (the single-container and compose surfaces;
-   `tests/static/check.rs` enforces it). The k8s surface is the shared chart
-   selected with `--set benchmark=<x>` — add a `containers/benchmarks/_chart/presets/<x>.yaml`
-   only if the benchmark needs bespoke topology. See
-   [Triple-mode](../concepts/triple-mode.md).
+3. **Ship the deploy artifact** — every benchmark needs `compose.yaml` (the
+   compose surface; `tests/static/check.rs` enforces it). The single-container
+   surface (the standalone bundle) renders from the one generic
+   `containers/core/standalone.Dockerfile`, and the k8s surface from the shared
+   chart selected with `--set benchmark=<x>` — neither needs a per-benchmark
+   file (add a `containers/benchmarks/_chart/presets/<x>.yaml` only for bespoke
+   topology). See [Triple-mode](../concepts/triple-mode.md).
 4. **Open the PR** using the
    [benchmark PR template](../../.github/PULL_REQUEST_TEMPLATE/benchmark.md),
    which lists every required label, env var, and evidence step.
