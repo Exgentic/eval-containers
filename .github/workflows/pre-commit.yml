@@ -37,7 +37,16 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          # pythonLocation is in the key because python-version '3.x' floats the
+          # patch — a runner Python bump must rebuild the venvs. restore-keys is
+          # the real lever: without it, ANY config edit (a hook add, a Dependabot
+          # rev bump) misses the exact key, restores nothing, and pre-commit
+          # cold-builds every hook environment (~520s vs ~60s warm). With it, the
+          # previous cache is restored and only the changed hook is rebuilt.
+          key: pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-${{ env.pythonLocation }}-
+            pre-commit-${{ runner.os }}-
 
       - name: Install hadolint
         run: |
@@ -60,9 +69,18 @@ jobs:
       - name: Install trivy
         # NOTE: setup-trivy@v0.3.1's `cache: true` breaks the install (its
         # install.sh exits 1 writing to the cache BINARY_DIR), so the binary is
-        # downloaded each run (~seconds). Caching trivy's misconfig checks DB is a
-        # follow-up (a manual actions/cache on ~/.cache/trivy), not this action's option.
+        # downloaded each run (~seconds).
         uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+      # Cache trivy's checks bundle (misconfig policies). trivy pulls it from a
+      # registry on first use each run — slow and occasionally rate-limited; this
+      # serves it from disk. trivy still self-refreshes the bundle when it ages
+      # out, so a static key is safe for config/misconfig checks.
+      - name: Cache trivy checks DB
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/trivy
+          key: trivy-${{ runner.os }}
+          restore-keys: trivy-
 
       # PRs: scope to changed files. main/manual: full check (no PR diff exists).
       - name: Run pre-commit (PR)
