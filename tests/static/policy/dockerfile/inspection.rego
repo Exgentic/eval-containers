@@ -59,6 +59,28 @@ inspection_categories := {"benchmarks", "agents", "models"}
 
 in_scope if inspection_categories[data.params.category]
 
+# secret_in_arg_or_env (red): a credential-shaped ARG/ENV bakes a secret into the
+# image (history/config + inherited by children — the HF_TOKEN leak). Fires on EVERY
+# artifact. `_KEY`/`APIKEY` not bare `KEY`, so `PORTKEY_VERSION` is spared. (rule 8a)
+secret_name_pattern := `(?i)(TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|_KEY|APIKEY)`
+
+deny contains msg if {
+	some instr in input
+	instr.Cmd == "arg"
+	name := split(instr.Value[0], "=")[0]
+	regex.match(secret_name_pattern, name)
+	msg := sprintf("ARG %q is credential-shaped — build args persist in image history; never BAKE a secret. To USE one during the build, mount it with `--mount=type=secret`; otherwise pass it as a runtime env var (dockerfile_inspection secret_in_arg_or_env, benchmarks/RULES.md).", [name])
+}
+
+deny contains msg if {
+	some instr in input
+	instr.Cmd == "env"
+	some idx, key in instr.Value
+	idx % 3 == 0
+	regex.match(secret_name_pattern, key)
+	msg := sprintf("ENV %q is credential-shaped — it persists in the image config and is inherited by every child image; never BAKE a secret (mount it with `--mount=type=secret` to use one at build, otherwise a runtime env var) (dockerfile_inspection secret_in_arg_or_env, benchmarks/RULES.md).", [key])
+}
+
 # ── type classification (eval.type label, reusing main.label_value) ──
 is_agent if main.label_value("eval.type") == `"agent"`
 

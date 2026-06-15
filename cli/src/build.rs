@@ -486,8 +486,9 @@ fn docker_build(
     for (k, v) in labels {
         shown.push_str(&format!(" --label {k}={v}"));
     }
+    // HF_TOKEN as an ephemeral build secret, never a --build-arg (rule 8a).
     if std::env::var("HF_TOKEN").is_ok() {
-        shown.push_str(" --build-arg HF_TOKEN=$HF_TOKEN");
+        shown.push_str(" --secret id=HF_TOKEN,env=HF_TOKEN");
     }
     shown.push_str(&format!(" {context}"));
     eprintln!("$ {shown}");
@@ -504,7 +505,7 @@ fn docker_build(
         cmd.arg("--label").arg(format!("{k}={v}"));
     }
     if std::env::var("HF_TOKEN").is_ok() {
-        cmd.arg("--build-arg").arg("HF_TOKEN");
+        cmd.arg("--secret").arg("id=HF_TOKEN,env=HF_TOKEN");
     }
     cmd.arg(context);
 
