@@ -27,7 +27,7 @@ env:
   TAG: latest
   CACHE: ghcr.io/exgentic/buildcache
   # smoke knob: one leaf target = build just that leaf (bases still build); empty = all
-  ONLY: ""
+  ONLY: "benchmark-itbench"
 
 jobs:
   bases:
