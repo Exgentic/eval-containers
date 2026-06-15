@@ -1,0 +1,93 @@
+name: Nightly replay E2E
+
+# Real builds + a real replay run — the daemon-backed end-to-end that the
+# per-PR test.yml (daemon-free) deliberately can't do. Builds the ~15 core base
+# images + the per-benchmark eval images, then runs the #[ignore]d replay tests
+# in tests/run/replay: each stands up the benchmark's compose stack with the
+# models/replay gateway serving a recorded OTLP fixture, and asserts the
+# runner's result.json.
+#
+# Why CI and not a dev laptop: ubuntu-latest is native x86_64, so the
+# linux/amd64 images build without QEMU — the emulation that segfaults the
+# pyarrow install on arm64 dev hosts (so benchmark-base-hf can't build there).
+#
+# Replay needs NO model API keys — the fixtures are recorded responses, and the
+# tests inject dummy creds. Benchmark dataset builds need HF_TOKEN (repo secret).
+# The tests self-bootstrap their images: bootstrap_core_bases() bakes the core
+# targets; ensure_images() runs `cargo run -- build eval <bench> --agent <agent>`.
+
+on:
+  schedule:
+    - cron: '17 3 * * *' # nightly, 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: >-
+          Space-separated cargo-test name filters for tests/run/replay
+          (substring match, e.g. "replay_aime" or a full name like
+          "replay_aime_17_claude_code"). Empty = the nightly canary set.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: read # pull upstream base images (e.g. ghcr.io/berriai/litellm) without anonymous rate limits
+
+concurrency:
+  group: nightly-replay-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  replay:
+    name: build + replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v6
+
+      # The replay E2E builds ~15 base images + per-benchmark eval images, which
+      # overruns the runner's default ~14 GB free. Reclaim toolchains this job
+      # never uses.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost \
+                      /usr/local/lib/node_modules
+          docker image prune -af || true
+          df -h /
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build images + run replay E2E
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          FILTER: ${{ github.event.inputs.filter }}
+        run: |
+          # Nightly canary: a representative spread (math/HF, safety, agentic)
+          # across agents. Override with the `filter` dispatch input. Run serial
+          # (--test-threads=1) so only one compose stack is up at a time.
+          read -ra CASES <<< "${FILTER:-replay_aime_17_claude_code replay_advbench_103_codex replay_agentbench_119_bob}"
+          echo "replay cases: ${CASES[*]}"
+          set +e
+          cargo test -p eval-containers-tests-run --test replay "${CASES[@]}" \
+            -- --ignored --nocapture --test-threads=1 2>&1 | tee replay.log
+          rc=${PIPESTATUS[0]}
+          if grep -qE "running 0 tests" replay.log; then
+            echo "::error::no replay test matched filter: ${CASES[*]}"
+            exit 1
+          fi
+          exit "$rc"
