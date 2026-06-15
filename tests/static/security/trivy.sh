@@ -15,15 +15,22 @@
 #                       (gitleaks can't see an empty-valued secret-named ARG).
 #                       Fails on HIGH,CRITICAL.
 #
-#   image             — RELEASE lane. `trivy image` CVE scan of whatever fleet
-#                       images are present locally (a smoke check; release CI
-#                       builds the fleet first, so it scans the lot there). Slow,
-#                       needs the vuln DB + built images — opt-in, never on a PR.
+#   image             — RELEASE lane. `trivy image` CVE scan of the fleet. By
+#                       default scans whatever images are present locally (a
+#                       contributor smoke check). Release CI sets the env knobs
+#                       below to scan the just-pushed images straight from the
+#                       registry. Slow, needs the vuln DB — opt-in, never on a PR.
 #
 # Usage:
 #   tests/static/security/trivy.sh            # config lane (default)
 #   tests/static/security/trivy.sh config     # same, explicit
-#   tests/static/security/trivy.sh image      # image-CVE lane (release; built images)
+#   tests/static/security/trivy.sh image      # image-CVE lane (local :latest images)
+#
+# image-lane env knobs (release CI; all optional — defaults = local contributor scan):
+#   EVAL_TRIVY_TAG=<tag>           image tag to scan (default: latest)
+#   EVAL_TRIVY_KINDS="core ..."    space-separated categories (default: all five)
+#   EVAL_TRIVY_FROM_REGISTRY=1     scan registry refs directly (trivy pulls),
+#                                  dropping the local-presence gate
 #
 # Severity gate is HIGH,CRITICAL for both lanes; override with EVAL_TRIVY_SEVERITY.
 # Accepted/by-design misconfig findings live in .github/.trivyignore (each
@@ -71,10 +78,20 @@ image_lane() {
     DOCKER_HOST=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null) && export DOCKER_HOST
   fi
 
+  # Release CI overrides these to scan the just-pushed fleet from the registry;
+  # unset (the contributor default) = scan local :latest images only.
+  local tag=${EVAL_TRIVY_TAG:-latest}
+  local from_registry=${EVAL_TRIVY_FROM_REGISTRY:-0}
+  read -ra kinds <<< "${EVAL_TRIVY_KINDS:-core agents benchmarks models gateways}"
+
   local checked=0 skipped=0 fail=0
   scan_one() {
     local img=$1
-    docker image inspect "$img" >/dev/null 2>&1 || { skipped=$((skipped + 1)); return; }
+    # Local lane gates on daemon presence (a contributor rarely has all ~150);
+    # the from-registry lane lets trivy pull the ref itself, so scan every one.
+    if [ "$from_registry" != 1 ]; then
+      docker image inspect "$img" >/dev/null 2>&1 || { skipped=$((skipped + 1)); return; }
+    fi
     checked=$((checked + 1))
     echo "── trivy image $img ──"
     # --pkg-types os,library covers both distro packages and language deps.
@@ -85,20 +102,24 @@ image_lane() {
   }
 
   # Enumerate the same fleet the release build pushes (core, agents, benchmarks,
-  # models, gateways) at :latest; scan whichever are present locally.
-  for kind in core agents benchmarks models gateways; do
+  # models, gateways); scan whichever are present (local) or all of them (registry).
+  for kind in "${kinds[@]}"; do
     for d in "$ROOT"/containers/"$kind"/*/; do
       [ -d "$d" ] || continue
       name=$(basename "$d"); case $name in _*|.*) continue ;; esac
-      scan_one "$REG/$kind/$name:latest"
+      # Only dirs with a bake target are published images — skip helper dirs like
+      # core/oracle and core/process-compose (no docker-bake.hcl → never pushed),
+      # which would otherwise be phantom refs in the from-registry lane.
+      [ -f "${d}docker-bake.hcl" ] || continue
+      scan_one "$REG/$kind/$name:$tag"
     done
   done
 
-  echo "trivy image: $checked checked, $skipped skipped (not built locally), $fail failed"
+  echo "trivy image: $checked checked, $skipped skipped, $fail failed"
   [ "$fail" -eq 0 ] ||
     { echo "trivy image: FAIL — fix the base/package pins (a CVE bump is a patch release, RULES.md principle 9) or add a documented .trivyignore entry"; exit 1; }
   [ "$checked" -gt 0 ] ||
-    { echo "trivy image: no fleet images present locally to scan — build the fleet first (release lane)"; exit 1; }
+    { echo "trivy image: no fleet images to scan — build the fleet first (release lane), or set EVAL_TRIVY_FROM_REGISTRY=1 to scan the registry"; exit 1; }
 }
 
 case "${1:-config}" in
