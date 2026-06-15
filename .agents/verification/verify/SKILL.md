@@ -123,11 +123,11 @@ works end-to-end (`tests/run/live/RULES.md`).
     Pass = the agent saw a real task and the response looks sane (this is the
     manual half of the end-to-end check).
 
-### Phase 5 — Upstream + security (steps 18–22)
+### Phase 5 — Upstream + security (steps 18–22a)
 
-WHY: a pinned reference that has rotted, or a leaked secret, silently breaks the
-release; these run only at release time because they need the network
-(`tests/run/upstream/RULES.md:1`).
+WHY: a pinned reference that has rotted, a leaked secret, or a dependency with a
+fresh CVE silently breaks the release; these run only at release time because
+they need the network (`tests/run/upstream/RULES.md:1`).
 
 18. **Dataset revisions resolve:** `cargo test --test upstream datasets -- --ignored`.
     Pass = no 404s on HuggingFace / GitHub raw URLs. Any 404 is red; a 401/403
@@ -138,8 +138,13 @@ release; these run only at release time because they need the network
     Pass = no dangling base refs.
 21. **hadolint scan (optional external linter):** `hadolint $(find . -name Dockerfile)`.
     Pass = zero errors; review warnings.
-22. **Secret scan:** `gitleaks detect --source . --no-git`. Pass = zero
-    findings.
+22. **Secret scan:** `gitleaks detect --source . --no-git --config .github/.gitleaks.toml`
+    (config lives in `.github/`, not auto-discovered). Pass = zero findings.
+22a. **Rust dependency CVE scan:** `cargo audit`. Pass = zero advisories against
+    the RustSec database. A finding is fixed by bumping the dependency (a patch
+    release per `.agents/RULES.md` principle 9). CI runs the same scan on every
+    Cargo-graph change and weekly (`.github/workflows/audit.yml`), so at release
+    time this is usually already green.
 
 ### Phase 6 — Procedural audits (steps 23–27)
 
@@ -237,7 +242,7 @@ the next diff.
 ## Executor and frequency summary
 
 - **`cargo test` (machine):** steps 4–16, 18–20, 30, 31, 35.
-- **External tools:** step 21 (hadolint), step 22 (gitleaks).
+- **External tools:** step 21 (hadolint), step 22 (gitleaks), step 22a (cargo audit).
 - **Procedural audit (human or sub-agent):** steps 23–25 via the audit skills.
 - **Human only:** steps 1–3, 17, 26–29, 32–34, 36–46.
 

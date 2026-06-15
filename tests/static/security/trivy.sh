@@ -26,7 +26,7 @@
 #   tests/static/security/trivy.sh image      # image-CVE lane (release; built images)
 #
 # Severity gate is HIGH,CRITICAL for both lanes; override with EVAL_TRIVY_SEVERITY.
-# Accepted/by-design misconfig findings live in the repo-root .trivyignore (each
+# Accepted/by-design misconfig findings live in .github/.trivyignore (each
 # documented there). Fail loud: no `|| true`, no `2>/dev/null` swallowing
 # (.agents/verification/RULES.md:57).
 set -uo pipefail
@@ -40,7 +40,7 @@ command -v trivy >/dev/null ||
 # --skip-version-check silences the "new trivy released" notice so the gate's
 # output is deterministic; it does NOT skip the vuln-DB refresh (image lane).
 COMMON=(--severity "$SEVERITY" --exit-code 1 --skip-version-check
-        --ignorefile "$ROOT/.trivyignore")
+        --ignorefile "$ROOT/.github/.trivyignore")
 
 # config lane: misconfig (+ DS-0031 secret-arg) over every Dockerfile + compose
 # file. Scoped to containers/ — that is the fleet (the issue's "Dockerfiles and
@@ -53,7 +53,7 @@ config_lane() {
   if [ "$rc" -ne 0 ]; then
     echo "trivy config: FAIL — HIGH/CRITICAL misconfiguration(s) above. Fix the"
     echo "  Dockerfile/compose, or — only if accepted/by-design — add a documented"
-    echo "  AVD-* entry to $ROOT/.trivyignore."
+    echo "  AVD-* entry to $ROOT/.github/.trivyignore."
     exit 1
   fi
   echo "trivy config: clean (no HIGH/CRITICAL outside .trivyignore)"
