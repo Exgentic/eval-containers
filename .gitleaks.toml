@@ -31,10 +31,11 @@ regexes = [
   '''prompt_cache_key''',
 ]
 
-# The detect-secrets baseline (.secrets.baseline) records one-way *hashes* of
-# already-reviewed findings plus line metadata — never a live credential — so
-# gitleaks must not re-scan it as source. (detect-secrets likewise excludes its
-# own baseline; the two scanners ignore each other's bookkeeping.)
+# The detect-secrets baseline (.github/.secrets.baseline) records one-way
+# *hashes* of already-reviewed findings plus line metadata — never a live
+# credential — so gitleaks must not re-scan it as source. (detect-secrets
+# likewise excludes its own baseline; the scanners ignore each other's
+# bookkeeping.)
 #
 # NOTE: this uses the *singular* [allowlist] table on purpose. The pinned
 # gitleaks (v8.18.4) does NOT honor the [[allowlists]] *array* syntax used by
@@ -44,5 +45,5 @@ regexes = [
 [allowlist]
 description = "detect-secrets baseline holds hashed findings, not live secrets"
 paths = [
-  '''\.secrets\.baseline$''',
+  '''\.github/\.secrets\.baseline$''',
 ]
