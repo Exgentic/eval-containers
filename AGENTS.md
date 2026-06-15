@@ -22,7 +22,7 @@ active rule must not merge.
 - [`.agents/meta/skills/RULES.md`](.agents/meta/skills/RULES.md) — what a skill is, and how skills are written.
 
 **Rules — the *what***
-- [`.agents/RULES.md`](.agents/RULES.md) — project principles · [`.agents/MANIFESTO.md`](.agents/MANIFESTO.md)
+- [`.agents/RULES.md`](.agents/RULES.md) — project principles
 - [`.agents/benchmarks/RULES.md`](.agents/benchmarks/RULES.md) · [`.agents/agents/RULES.md`](.agents/agents/RULES.md) · [`.agents/models/RULES.md`](.agents/models/RULES.md)
 - [`.agents/compose/RULES.md`](.agents/compose/RULES.md) · [`.agents/gateways/RULES.md`](.agents/gateways/RULES.md) · [`.agents/src/RULES.md`](.agents/src/RULES.md)
 - [`.agents/verification/RULES.md`](.agents/verification/RULES.md) — testing strategy; per-category rules live beside their tests in `tests/<category>/RULES.md` (paired with the enforcing Rust) and are indexed from the strategy.

@@ -1,6 +1,6 @@
 # Overview
 
-*Concept · for everyone · derives from [`.agents/RULES.md`](../../.agents/RULES.md), [`.agents/MANIFESTO.md`](../../.agents/MANIFESTO.md).*
+*Concept · for everyone · derives from [`.agents/RULES.md`](../../.agents/RULES.md).*
 
 Eval Containers is a build system for AI-agent evaluations. It turns each
 benchmark, agent, and model into a versioned container image, and runs an
