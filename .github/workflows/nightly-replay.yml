@@ -17,15 +17,18 @@ name: Nightly replay E2E
 # targets; ensure_images() runs `cargo run -- build eval <bench> --agent <agent>`.
 
 on:
-  schedule:
-    - cron: '17 3 * * *' # nightly, 03:17 UTC
+  # TEMPORARY (bring-up phase): run on every push to this branch so we can
+  # iterate on GitHub Actions. Once it's green + fast, swap this for the nightly
+  # `schedule: - cron: '17 3 * * *'` and drop the push trigger.
+  push:
+    branches: [elron/replay-otel-traces]
   workflow_dispatch:
     inputs:
       filter:
         description: >-
           Space-separated cargo-test name filters for tests/run/replay
           (substring match, e.g. "replay_aime" or a full name like
-          "replay_aime_17_claude_code"). Empty = the nightly canary set.
+          "replay_aime_17_claude_code"). Empty = the canary set.
         required: false
         default: ''
 
@@ -77,10 +80,11 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           FILTER: ${{ github.event.inputs.filter }}
         run: |
-          # Nightly canary: a representative spread (math/HF, safety, agentic)
-          # across agents. Override with the `filter` dispatch input. Run serial
+          # Bring-up: a single light case (aime/HF x claude-code) for fast
+          # feedback. Expand to the canary spread once it's green + fast.
+          # Override with the `filter` dispatch input. Run serial
           # (--test-threads=1) so only one compose stack is up at a time.
-          read -ra CASES <<< "${FILTER:-replay_aime_17_claude_code replay_advbench_103_codex replay_agentbench_119_bob}"
+          read -ra CASES <<< "${FILTER:-replay_aime_17_claude_code}"
           echo "replay cases: ${CASES[*]}"
           set +e
           cargo test -p eval-containers-tests-run --test replay "${CASES[@]}" \
