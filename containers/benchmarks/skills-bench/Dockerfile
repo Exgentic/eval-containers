@@ -38,6 +38,10 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2602.12670"
 # Record the pinned upstream revision (rule 3/4) — driven by the same SB_REF that
 # build.sh fetches from, so the label can never disagree with the baked data.
 LABEL eval.benchmark.data_revision="${SB_REF}"
+# Released: proven end-to-end with a recorded replay fixture
+# (tests/run/replay/fixtures/skills-bench-citation-check-claude-code.trajectory.jsonl),
+# benchmarks/RULES.md rule 21a.
+LABEL eval.benchmark.released="true"
 
 ENV EVAL_BENCHMARK=skills-bench \
     EVAL_TASK_ID=${EVAL_TASK_ID} \

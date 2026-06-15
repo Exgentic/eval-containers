@@ -1,0 +1,28 @@
+{
+  "_comment": "Provenance for replay fixtures (tests/run/replay/RULES.md rules 5-7). Only fixtures captured out-of-band per rule 9 are recorded here; the older fixtures predate this file and remain unprovenanced (a fleet-wide backfill is tracked separately). Keys are the fixture filename without the .trajectory.jsonl suffix.",
+  "terminal-bench-configure-git-webserver-claude-code": {
+    "benchmark": "terminal-bench",
+    "task_id": "configure-git-webserver",
+    "agent": "claude-code",
+    "agent_version": "latest (npm-installed at eval-image build time; not pinned)",
+    "model": "openai/azure/gpt-5.4",
+    "gateway": "gpt-5.4--litellm",
+    "benchmark_data_revision": "c5ee500c185224c97cd6caff7866a990a0057f41",
+    "captured": "2026-06-15",
+    "release_tag": "out-of-band (replay RULES.md rule 9 emergency capture for #149)",
+    "reward": 0
+  },
+  "skills-bench-citation-check-claude-code": {
+    "benchmark": "skills-bench",
+    "task_id": "citation-check",
+    "agent": "claude-code",
+    "agent_version": "latest (npm-installed at eval-image build time; not pinned)",
+    "model": "openai/azure/gpt-5.4",
+    "gateway": "gpt-5.4--litellm",
+    "benchmark_data_revision": "312d07e15e5398f6eda32ee1bb86e492ab18edd1",
+    "eval_skills": "on",
+    "captured": "2026-06-15",
+    "release_tag": "out-of-band (replay RULES.md rule 9 emergency capture for #149)",
+    "reward": 1
+  }
+}

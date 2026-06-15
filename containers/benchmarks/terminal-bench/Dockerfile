@@ -20,6 +20,11 @@ LABEL eval.benchmark.tasks="89"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/harbor-framework/terminal-bench-2-1"
+LABEL eval.benchmark.description="Terminal-Bench 2.1 (Harbor): real-world terminal tasks, each with its own environment and upstream test suite"
+# Released: proven end-to-end with a recorded replay fixture
+# (tests/run/replay/fixtures/terminal-bench-configure-git-webserver-claude-code.trajectory.jsonl),
+# benchmarks/RULES.md rule 21a.
+LABEL eval.benchmark.released="true"
 # EVAL_TASK_ID is consumed here (the per-task marker, benchmarks/RULES.md 24a/24f).
 # TBENCH_TASK pins the real task name for solution.sh: the oracle/runner override
 # EVAL_TASK_ID at run time (their /tasks index), so the gold fetcher can't rely on
@@ -30,6 +35,9 @@ ENV EVAL_BENCHMARK=tbench \
     EVAL_TASK_ID=${EVAL_TASK_ID} \
     TBENCH_TASK=${EVAL_TASK_ID} \
     TBENCH_REF=${TBENCH_REF}
+# Record the pinned upstream revision (rule 3/4) — driven by the same TBENCH_REF
+# build.sh fetches from, so the label can never disagree with the baked data.
+LABEL eval.benchmark.data_revision="${TBENCH_REF}"
 
 # The instruction the agent sees (TASK) — agent-readable by design.
 COPY instruction.md /task/instruction.md

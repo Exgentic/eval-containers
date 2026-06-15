@@ -218,6 +218,38 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             if !agent_version.is_empty() {
                 overrides.push(format!("eval.args.AGENT_VERSION={agent_version}"));
             }
+            // Per-task eval images are stitched FROM a per-task BASE that lives
+            // only in the LOCAL image store (build.sh's `podman build`, or the
+            // per-task `docker build` — both outside bake's static graph, loaded to
+            // no registry). buildx bake resolves `FROM` from the local store only
+            // with the `docker` driver (a real Docker daemon, e.g. CI); the
+            // `docker-container` driver (a podman-backed Docker, or a remote
+            // BuildKit) can't. Fall back to `podman build`, which reads the local
+            // store natively (as build.sh does), driving the *same* spec
+            // `bake --print` resolves so bake stays the source of truth (principle
+            // 3). Shared-env evals and remote `--builder` runs keep the bake path.
+            if task_id.is_some() && builder.is_none() {
+                // --dry-run prints BOTH the bake attempt and the podman fallback,
+                // since the fallback is what actually runs on a container-driver
+                // host (principle 2 — print the command it would run).
+                if dry_run {
+                    bake_with_env(registry, "eval", &overrides, &bake_env, builder, true)?;
+                    eprintln!("# …or, when buildx can't resolve the local base, instead:");
+                    let spec = bake_print("eval", &overrides, registry, &bake_env)?;
+                    return podman_build_eval(&spec, true);
+                }
+                if let Err(bake_err) =
+                    bake_with_env(registry, "eval", &overrides, &bake_env, builder, false)
+                {
+                    eprintln!(
+                        "eval: `docker buildx bake` failed ({bake_err}); retrying with \
+                         `podman build` (reads the local image store)"
+                    );
+                    let spec = bake_print("eval", &overrides, registry, &bake_env)?;
+                    return podman_build_eval(&spec, false);
+                }
+                return Ok(());
+            }
             bake_with_env(registry, "eval", &overrides, &bake_env, builder, dry_run)
         }
         BuildTarget::Compose { benchmark } => {
@@ -508,6 +540,55 @@ fn run_build_script(script: &str, image: &str, task_id: &str, dry_run: bool) -> 
     } else {
         Err(format!("{script} failed with {status}"))
     }
+}
+
+/// Build a per-task eval combination with `podman build` from the bake-resolved
+/// spec — the fallback when `docker buildx bake` can't resolve the per-task base
+/// because the active builder (a `docker-container`/remote BuildKit) doesn't read
+/// the local image store. `podman build` reads it natively (the same reason
+/// build.sh uses podman). bake stays the single source of truth: `spec` comes
+/// from `docker buildx bake --print` (src/RULES.md principle 3), so this never
+/// re-derives the build graph. amd64 matches the per-task base + the fleet.
+fn podman_build_eval(spec: &BakeTargetSpec, dry_run: bool) -> Result<(), String> {
+    let context = spec.context.clone().unwrap_or_else(|| ".".into());
+    let dockerfile = spec
+        .dockerfile
+        .clone()
+        .unwrap_or_else(|| "Dockerfile".into());
+    // bake emits `dockerfile` relative to `context`; podman's `-f` is relative to cwd.
+    let dockerfile_path = format!("{}/{}", context.trim_end_matches('/'), dockerfile);
+    let tag = spec
+        .tags
+        .as_ref()
+        .and_then(|t| t.first())
+        .ok_or("bake target 'eval' has no tags")?;
+
+    let mut cmd = Command::new("podman");
+    cmd.args(["build", "--platform", "linux/amd64", "-t"])
+        .arg(tag)
+        .arg("-f")
+        .arg(&dockerfile_path);
+    let mut shown = format!("podman build --platform linux/amd64 -t {tag} -f {dockerfile_path}");
+    for (k, v) in spec.args.iter().flatten() {
+        if v.is_empty() {
+            continue;
+        }
+        cmd.arg("--build-arg").arg(format!("{k}={v}"));
+        shown.push_str(&format!(" --build-arg {k}={v}"));
+    }
+    cmd.arg(&context);
+    eprintln!("$ {shown} {context}");
+    if dry_run {
+        return Ok(());
+    }
+
+    let status = cmd
+        .status()
+        .map_err(|e| format!("failed to run podman build: {e}"))?;
+    if !status.success() {
+        return Err(format!("podman build failed with {status}"));
+    }
+    Ok(())
 }
 
 // ─── OpenShift BuildConfig backend (`--builder oc`) ──────────────────────────
