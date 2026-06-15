@@ -81,7 +81,7 @@ entering the CLI's Rust tree, an image's base/packages, or the build itself.
 - **Secrets never enter the tree, images, or history.** Three independent
   layers scan every PR, each with a different strategy so a miss in one is
   caught by another: `gitleaks` (rule-based, config
-  [`.gitleaks.toml`](.gitleaks.toml)); `detect-secrets` (entropy + per-vendor
+  [`.github/.gitleaks.toml`](.github/.gitleaks.toml)); `detect-secrets` (entropy + per-vendor
   keyword plugins, baseline [`.github/.secrets.baseline`](.github/.secrets.baseline)); and
   `trivy config` ([`tests/static/security/trivy.sh`](tests/static/security/trivy.sh))
   for build-arg secrets and IaC misconfiguration. Build-time credentials use

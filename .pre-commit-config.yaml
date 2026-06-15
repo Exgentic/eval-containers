@@ -37,11 +37,15 @@ repos:
         types: [rust]
         pass_filenames: false
 
-  # --- Secrets: uses the repo's .gitleaks.toml allowlist ---
+  # --- Secrets: uses the repo's .github/.gitleaks.toml allowlist ---
+  # gitleaks only auto-discovers .gitleaks.toml at the repo root, so point it
+  # at the relocated config explicitly. Anyone running gitleaks by hand must
+  # pass the same `--config .github/.gitleaks.toml`.
   - repo: https://github.com/gitleaks/gitleaks
     rev: v8.18.4
     hooks:
       - id: gitleaks
+        args: [--config, .github/.gitleaks.toml]
 
   # --- Secrets: detect-secrets (entropy + keyword baseline scanner) ---
   # A second, independent layer beside gitleaks (rule-based) and trivy
@@ -151,7 +155,7 @@ repos:
         name: trivy config (IaC/misconfig over containers/)
         entry: tests/static/security/trivy.sh config
         language: system
-        files: (^containers/.*\.ya?ml$|^containers/.*/Dockerfile$|^\.trivyignore$)
+        files: (^containers/.*\.ya?ml$|^containers/.*/Dockerfile$|^\.github/\.trivyignore$)
         pass_filenames: false
 
   # --- Shell ---

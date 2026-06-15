@@ -14,8 +14,13 @@
 # tests/replay/RULES.md). Allowlist is scoped to that path prefix so a
 # real key leaking into a fixture would still fail the scan.
 #
+# This file lives in .github/ and is NOT auto-discovered there — every gitleaks
+# invocation must pass `--config .github/.gitleaks.toml` (the pre-commit hook and
+# VERIFY.md step 22 already do).
+#
 # Verify after edits:
-#   gitleaks detect --source . --report-format json --report-path /tmp/gitleaks.json
+#   gitleaks detect --source . --no-git --config .github/.gitleaks.toml \
+#     --report-format json --report-path /tmp/gitleaks.json
 #   jq length /tmp/gitleaks.json   # expect 0
 
 [extend]

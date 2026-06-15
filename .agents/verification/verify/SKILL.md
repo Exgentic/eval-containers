@@ -138,8 +138,8 @@ they need the network (`tests/run/upstream/RULES.md:1`).
     Pass = no dangling base refs.
 21. **hadolint scan (optional external linter):** `hadolint $(find . -name Dockerfile)`.
     Pass = zero errors; review warnings.
-22. **Secret scan:** `gitleaks detect --source . --no-git`. Pass = zero
-    findings.
+22. **Secret scan:** `gitleaks detect --source . --no-git --config .github/.gitleaks.toml`
+    (config lives in `.github/`, not auto-discovered). Pass = zero findings.
 22a. **Rust dependency CVE scan:** `cargo audit`. Pass = zero advisories against
     the RustSec database. A finding is fixed by bumping the dependency (a patch
     release per `.agents/RULES.md` principle 9). CI runs the same scan on every
