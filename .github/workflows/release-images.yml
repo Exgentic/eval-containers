@@ -71,6 +71,7 @@ jobs:
       - name: Build + push the fleet at the tag
         env:
           TAG: ${{ steps.ver.outputs.tag }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # GH Actions secret ref → build secret for the 4 HF-gated benchmarks
         run: |
           # Load every artifact bake file — they carry the `contexts` that let one
           # bake call build the whole graph in dependency order (core → bases →
@@ -92,9 +93,13 @@ jobs:
           # syft SBOM to every pushed image (BuildKit-native, authed with the GHCR
           # push creds — no extra OIDC perms). Read them back with `cosign
           # verify-attestation` or `docker buildx imagetools inspect <img>`.
+          # --set '*.secrets=…HF_TOKEN' feeds the 4 HF-gated benchmarks' build-time
+          # `RUN --mount=type=secret,id=HF_TOKEN` from the HF_TOKEN env (repo secret);
+          # other targets ignore it, and type=secret never lands in a layer.
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
+            --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
             --provenance=mode=max --sbom=true \
             "${TARGETS[@]}" --push
 
@@ -117,6 +122,26 @@ jobs:
           # in the build-sweep fan-out (follow-up PR), where each matrix job scans
           # its own image cheaply rather than 147 serial pulls on one runner.
           tests/static/security/trivy.sh image
+
+      - name: Tag the fleet :latest (alias of the released version)
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          # Runtime + Dockerfiles reference images at :latest, but the bake pushes
+          # :$TAG only. Promote each published image's :$TAG to :latest WITHOUT
+          # rebuilding — imagetools copies the full manifest incl. the provenance/
+          # SBOM attestations. Runs AFTER the CVE gate, so :latest only moves once
+          # the bases pass scan. Same dirs-with-a-bake-target enumeration the build
+          # uses (skips helper dirs like core/oracle, core/process-compose).
+          for kind in core agents benchmarks models gateways; do
+            for d in containers/"$kind"/*/; do
+              name=$(basename "$d"); case $name in _*) continue ;; esac
+              [ -f "${d}docker-bake.hcl" ] || continue
+              ref="${REGISTRY}/${kind}/${name}"
+              echo "alias ${ref}:${TAG} -> ${ref}:latest"
+              docker buildx imagetools create --tag "${ref}:latest" "${ref}:${TAG}"
+            done
+          done
 
       - name: Publish per-benchmark compose artifacts
         env:
