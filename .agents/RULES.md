@@ -135,6 +135,7 @@ not as issues. The issue tracker is for tracked work only.
 
 - [RFC 2119: Key words for use in RFCs](https://www.rfc-editor.org/rfc/rfc2119)
 - [Contributing](../CONTRIBUTING.md)
+- [Security Policy](../SECURITY.md) — vulnerability reporting and supply-chain standards
 
 ## Changelog
 

@@ -1,0 +1,33 @@
+version: 2
+
+# Automated dependency updates with a release-age cooldown: a new version is not
+# proposed until it has been public long enough for a malicious or broken
+# publish to be caught and yanked. This is the day-zero supply-chain mitigation
+# documented in SECURITY.md. `cargo audit` (audit.yml) is the complementary
+# detective control — dependabot keeps deps current, audit fails on known CVEs.
+updates:
+  # Rust crates — the CLI and the test workspace. One root Cargo.lock.
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    open-pull-requests-limit: 5
+    # Batch the low-risk bumps into one PR; majors come individually for review.
+    groups:
+      cargo-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # GitHub Actions pinned in .github/workflows/.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns: ["*"]

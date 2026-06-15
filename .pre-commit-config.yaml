@@ -150,3 +150,23 @@ repos:
     hooks:
       - id: ruff
       - id: ruff-format
+
+  # --- Spelling ---
+  # Generic, fast, deterministic — fits the fast-hooks-only principle above.
+  # Skips lockfiles and recorded JSONL fixtures (replay trajectories), which
+  # carry verbatim tool output that isn't ours to spell-correct.
+  # Ignore list is all domain terms, not typos:
+  #   ans/fo      — Python locals in benchmark Dockerfiles (`ans = t['answer']`, `as fo:`)
+  #   froms/copys — plural Dockerfile FROM/COPY instructions in prose & tests
+  #   rouge       — the ROUGE metric (codespell reads it as "rogue")
+  #   xdescribe   — the Jest/Jasmine API, named in an aider-polyglot transform
+  #   auxillary   — verbatim in Rosetta's own error string; "fixing" it breaks the match
+  #   re-declare* — valid hyphenation in a rego test + Dockerfiles (this codespell
+  #                 pin still flags it; newer releases dropped several such entries)
+  #   crate       — Rust's compilation unit, everywhere in cli/ and tests/
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        args: [-L, "ans,froms,copys,fo,auxillary,xdescribe,rouge,re-declare,re-declared,re-declaring,crate"]
+        exclude: '\.(jsonl|lock)$'
