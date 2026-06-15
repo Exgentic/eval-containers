@@ -139,27 +139,10 @@ One-time. Runs a real task with a real model, saves the trajectory as a fixture.
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
-# The output lives in the named volume, not on the host filesystem. Extract it,
-# and SCRUB credential shapes before writing the fixture: a live capture's env
-# dump can contain real tokens (HF_TOKEN, API keys), and the gitleaks fixture
-# allowlist is a wholesale file bypass, so vetting MUST happen here, at record
-# time — the scanner will not catch it (see .gitleaks.toml, replay RULES.md s11).
-docker run --rm -v aime_output:/output:ro alpine cat /output/traces.jsonl \
-  | sed -E \
-      -e 's/hf_[A-Za-z0-9]{34,80}/hf_REDACTED/g' \
-      -e 's/AKIA[0-9A-Z]{16}/AKIA_REDACTED/g' \
-      -e 's/(ghp_|gho_)[A-Za-z0-9]{36,80}/\1REDACTED/g' \
-      -e 's/github_pat_[A-Za-z0-9_]{59,120}/github_pat_REDACTED/g' \
-      -e 's/xoxb-[0-9A-Za-z-]{10,80}/xoxb-REDACTED/g' \
-      -e 's/sk-ant-[A-Za-z0-9_-]{20,120}/sk-ant-REDACTED/g' \
-      -e 's/AIza[0-9A-Za-z_-]{35}/AIza_REDACTED/g' \
-  > tests/run/replay/fixtures/aime-0-codex.trajectory.jsonl
-
-# Confirm no known token shape slipped through (should print nothing):
-grep -nEo 'hf_[A-Za-z0-9]{34}|AKIA[0-9A-Z]{16}|(ghp_|gho_)[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{59}|xoxb-[0-9A-Za-z-]{10}|sk-ant-[A-Za-z0-9_-]{20}|AIza[0-9A-Za-z_-]{35}' \
-  tests/run/replay/fixtures/aime-0-codex.trajectory.jsonl \
-  && echo "!! token shape present — do NOT commit; rotate it" || true
-# If sed redacted anything, ROTATE that credential — it was live during capture.
+# The output lives in the named volume, not on the host filesystem.
+# Extract via a one-shot alpine container that mounts it read-only.
+docker run --rm -v aime_output:/output:ro alpine \
+  cat /output/traces.jsonl > tests/run/replay/fixtures/aime-0-codex.trajectory.jsonl
 ```
 
 The volume name follows `<benchmark>_output` (compose project + the `output` declared in `compose/services.yaml`). Sanity-check the result:

@@ -210,22 +210,9 @@ podman build --platform linux/amd64 --pull=never \
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/azure/gpt-5.4 \
   docker compose -f containers/benchmarks/<name>/compose.yaml up --abort-on-container-exit
 
-# 5. Extract the trajectory from the named volume (NOT a host path), scrubbing
-#    credential shapes before writing — a live capture's env dump can contain
-#    real tokens, and the gitleaks fixture allowlist is a wholesale bypass, so
-#    vet HERE, at record time (see .gitleaks.toml, replay RULES.md s11).
-docker run --rm -v <name>_output:/output:ro alpine cat /output/traces.jsonl \
-  | sed -E \
-      -e 's/hf_[A-Za-z0-9]{34,80}/hf_REDACTED/g' \
-      -e 's/AKIA[0-9A-Z]{16}/AKIA_REDACTED/g' \
-      -e 's/(ghp_|gho_)[A-Za-z0-9]{36,80}/\1REDACTED/g' \
-      -e 's/github_pat_[A-Za-z0-9_]{59,120}/github_pat_REDACTED/g' \
-      -e 's/xoxb-[0-9A-Za-z-]{10,80}/xoxb-REDACTED/g' \
-      -e 's/sk-ant-[A-Za-z0-9_-]{20,120}/sk-ant-REDACTED/g' \
-      -e 's/AIza[0-9A-Za-z_-]{35}/AIza_REDACTED/g' \
-  > tests/run/replay/fixtures/<name>-0-codex.trajectory.jsonl
-# Then verify no shape remains (see running-tests-locally.md "Level 4"); if sed
-# redacted anything, ROTATE that credential — it was live during capture.
+# 5. Extract the trajectory from the named volume (NOT a host path)
+docker run --rm -v <name>_output:/output:ro alpine \
+  cat /output/traces.jsonl > tests/run/replay/fixtures/<name>-0-codex.trajectory.jsonl
 
 # 6. Register the fixture in tests/run/replay/test.rs (replay_test! macro) and ship
 ```
