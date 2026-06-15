@@ -1,0 +1,4 @@
+#!/bin/sh
+# Gateway entrypoint for the standalone bundle (which has a shell and execs this
+# in-process). The compose/k8s sidecar image runs the binary via its CMD instead.
+exec /opt/gateway/server
