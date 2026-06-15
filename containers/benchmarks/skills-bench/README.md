@@ -74,6 +74,6 @@ eval-containers oracle skills-bench --task-id citation-check --local
 - `Dockerfile` — the eval overlay (`FROM ${TASK_BASE}`); not built directly, see `build.sh`
 - `build.sh` — the two-step per-task build (task env → overlay)
 - `solution.sh` — oracle gold (fetches the per-task upstream `solve.sh`)
-- `container.Dockerfile` — single-image pin (`evals/skills-bench-<task>--<agent>`)
+- single — the standalone bundle, rendered from the generic `core/standalone.Dockerfile` with the `eval-base` build context = `evals/skills-bench-<task>--<agent>:latest` (no per-benchmark file)
 - `compose.yaml` — compose file for `eval-containers run skills-bench`
 - `README.md` — this file
