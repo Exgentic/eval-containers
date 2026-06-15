@@ -57,7 +57,6 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 struct ReplayHandle {
     compose: DockerCompose,
     _override: tempfile::NamedTempFile,
-    _flat: tempfile::NamedTempFile,
 }
 
 async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> ReplayHandle {
@@ -100,10 +99,18 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     // the replay_test! macro). No image override required — compose
     // interpolation picks the right `evals/<bench>--<agent>:latest`.
     let fixture_abs = cwd.join(fixture);
+    // Override the gateway: swap to the distroless models/replay image, point
+    // its healthcheck at the binary's own `health` mode (services.yaml uses
+    // `/opt/gateway/health`, a shell script — the distroless replay image has
+    // no shell to run it), and mount the recorded fixture read-only. Also
+    // rebind the named `output` volume to a host dir so the test reads
+    // result.json.
     let override_content = format!(
         "services:\n\
          \x20 gateway:\n\
          \x20   image: ghcr.io/exgentic/models/replay:latest\n\
+         \x20   healthcheck:\n\
+         \x20     test: [\"CMD\", \"/opt/gateway/server\", \"health\"]\n\
          \x20   volumes:\n\
          \x20     - {fixture_abs}:/data/traces.jsonl:ro\n\
          volumes:\n\
@@ -128,39 +135,27 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
         .write_all(override_content.as_bytes())
         .expect("write compose override");
 
-    let compose_abs = cwd.join(compose_file);
-    let compose_str = compose_abs.to_str().unwrap().to_string();
     let override_str = override_file.path().to_str().unwrap().to_string();
 
-    // Flatten the benchmark compose (resolve its `include:` of
-    // compose/services.yaml) BEFORE layering our override. docker compose's
-    // `include` treats the per-benchmark `runner` re-declaration as a conflict
-    // with the imported `runner` once a second `-f` is layered on top
-    // ("services.runner conflicts with imported resource"). `config
-    // --no-interpolate` resolves the include into one merged compose — the same
-    // flatten `build eval` does at publish (build.rs) — after which the override
-    // applies as a plain `-f` override. `--no-interpolate` leaves `${VAR:?}`
-    // unevaluated, so this needs no real creds; interpolation happens at `up`.
-    let flat = Command::new("docker")
-        .args(["compose", "-f", &compose_str, "config", "--no-interpolate"])
-        .output()
-        .expect("run docker compose config to flatten benchmark compose");
-    assert!(
-        flat.status.success(),
-        "docker compose config (flatten) failed for {compose_str}:\n{}",
-        String::from_utf8_lossy(&flat.stderr)
-    );
-    let mut flat_file = tempfile::Builder::new()
-        .prefix("eval-replay-flat-")
-        .suffix(".yaml")
-        .tempfile()
-        .expect("create flattened compose tempfile");
-    flat_file
-        .write_all(&flat.stdout)
-        .expect("write flattened compose");
-    let flat_str = flat_file.path().to_str().unwrap().to_string();
+    // Compose the shared topology (compose/services.yaml: otelcol + gateway +
+    // runner) directly, NOT the per-benchmark compose.yaml. That file does
+    // `include: ../../compose/services.yaml` AND redeclares `runner` (image +
+    // BENCHMARK), which docker compose rejects at load time as "services.runner
+    // conflicts with imported resource" — its `include` forbids overriding an
+    // imported service (unlike `-f` merge). services.yaml parameterizes the
+    // runner image by ${EVAL_BENCHMARK} (set per test) and the gateway image by
+    // ${EVAL_GATEWAY_IMAGE}; our override swaps the gateway to models/replay, so
+    // this stands up the same stack the artifact would, the docker-native way.
+    // (The per-benchmark compose.yaml is itself broken on docker compose —
+    // podman tolerates it; tracked as a separate fix.)
+    let services_str = cwd
+        .join("containers/compose/services.yaml")
+        .to_str()
+        .unwrap()
+        .to_string();
 
-    let mut compose = DockerCompose::with_local_client(&[flat_str.as_str(), override_str.as_str()]);
+    let mut compose =
+        DockerCompose::with_local_client(&[services_str.as_str(), override_str.as_str()]);
 
     for (key, val) in env {
         compose = compose.with_env(*key, *val);
@@ -202,7 +197,6 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     ReplayHandle {
         compose,
         _override: override_file,
-        _flat: flat_file,
     }
 }
 
