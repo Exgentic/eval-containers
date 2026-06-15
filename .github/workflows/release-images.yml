@@ -28,6 +28,8 @@ on:
 permissions:
   contents: read
   packages: write # push to GHCR; Actions-pushed packages auto-link to this repo
+  # BuildKit attaches the provenance/SBOM attestations with the GHCR push creds
+  # below, so no id-token/attestations (OIDC) perms are needed — least privilege.
 
 env:
   REGISTRY: ghcr.io/exgentic
@@ -86,10 +88,35 @@ jobs:
           # resolves to GHCR (the bake context keys already use ${REGISTRY}).
           # --set '*.labels.…source=' stamps the OCI provenance label on every
           # image, matching the CLI build path (naming::REPO_URL / bake::base_args).
+          # --provenance/--sbom attach a SLSA build-provenance attestation and a
+          # syft SBOM to every pushed image (BuildKit-native, authed with the GHCR
+          # push creds — no extra OIDC perms). Read them back with `cosign
+          # verify-attestation` or `docker buildx imagetools inspect <img>`.
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
+            --provenance=mode=max --sbom=true \
             "${TARGETS[@]}" --push
+
+      - name: Install trivy
+        # SHA-pinned (third-party action, per #157). `cache: true` is broken on
+        # v0.3.1 (see pre-commit.yml) so the binary downloads each run (~secs).
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+
+      - name: CVE gate — scan the base images (trivy)
+        env:
+          EVAL_REGISTRY: ${{ env.REGISTRY }}
+          EVAL_TRIVY_TAG: ${{ steps.ver.outputs.tag }}
+          EVAL_TRIVY_KINDS: core
+          EVAL_TRIVY_FROM_REGISTRY: "1"
+        run: |
+          # The core bases are the shared layers every leaf inherits (rule 11), so
+          # a base CVE propagates fleet-wide — gate the release on them. Scans the
+          # just-pushed images straight from the registry (trivy pulls), reusing
+          # the curated .github/.trivyignore. The full per-leaf scan parallelizes
+          # in the build-sweep fan-out (follow-up PR), where each matrix job scans
+          # its own image cheaply rather than 147 serial pulls on one runner.
+          tests/static/security/trivy.sh image
 
       - name: Publish per-benchmark compose artifacts
         env:
