@@ -1,6 +1,6 @@
 # livecodebench
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/livecodebench-0-codex.trajectory.jsonl`](../../tests/fixtures/livecodebench-0-codex.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/livecodebench-0-codex.traces.jsonl`](../../tests/fixtures/livecodebench-0-codex.traces.jsonl)
 
 
 LiveCodeBench - competitive programming from recent contests

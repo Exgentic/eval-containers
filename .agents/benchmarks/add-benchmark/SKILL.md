@@ -207,7 +207,7 @@ answer, and any attached files from `EVAL_TASK_ID` alone
     parse, the chart renders for the benchmark, and all surfaces share one env
     contract. Once the benchmark is proven end-to-end against
     at least one agent with a replay fixture at
-    `tests/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`, add
+    `tests/fixtures/<benchmark>-<task>-<agent>.traces.jsonl`, add
     `LABEL eval.benchmark.released="true"` (`.agents/benchmarks/RULES.md:21a`).
 
 ## Rules served

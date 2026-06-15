@@ -87,7 +87,7 @@ Walked by: procedural audit per [FLEET.md](FLEET.md)
 
 - benchmarks on disk: 96 (`ls benchmarks/` shows 98 entries; `RULES.md` and `TEMPLATE.md` are not benchmarks)
 - agents on disk: 17 (`ls agents/` shows 19 entries; `RULES.md` and `TEMPLATE.md` are not agents)
-- fixtures: 23 (`ls tests/fixtures/*.trajectory.jsonl`)
+- fixtures: 23 (`ls tests/fixtures/*.traces.jsonl`)
 - README claims: 96 benchmarks, 17 agents (README.md line 3)
 
 ## Fleet questions

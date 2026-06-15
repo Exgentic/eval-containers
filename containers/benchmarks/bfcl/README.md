@@ -1,6 +1,6 @@
 # bfcl
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/bfcl-0-codex.trajectory.jsonl`](../../tests/fixtures/bfcl-0-codex.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/bfcl-0-codex.traces.jsonl`](../../tests/fixtures/bfcl-0-codex.traces.jsonl)
 
 
 Berkeley Function Calling Leaderboard

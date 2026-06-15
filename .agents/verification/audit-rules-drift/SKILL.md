@@ -83,7 +83,7 @@ report (what was flagged last time).
    "assert every `models/*/Dockerfile` contains `LABEL eval.model.litellm_version=`";
    "assert no benchmark `compose.yaml` uses `EVAL_*_VERSION` as a Docker image
    tag"; "assert every file under `tests/run/replay/fixtures/` ends in
-   `.trajectory.jsonl`"). WHY: this is the mechanical > procedural escalation
+   `.traces.jsonl`"). WHY: this is the mechanical > procedural escalation
    (`tests/static/RULES.md:9`) — a drift that recurs belongs in
    code, not in a quarterly manual walk.
 

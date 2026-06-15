@@ -1,6 +1,6 @@
 # EnterpriseOps-Gym
 
-**Status:** released — fixture `tests/replay/fixtures/enterpriseops-gym-0-codex.trajectory.jsonl` from a real codex+gpt-5.4 run on task 0 (calendar), 3/3 verifiers pass, reward 1.0.
+**Status:** released — fixture `tests/replay/fixtures/enterpriseops-gym-0-codex.traces.jsonl` from a real codex+gpt-5.4 run on task 0 (calendar), 3/3 verifiers pass, reward 1.0.
 
 **Paper:** [EnterpriseOps-Gym](https://arxiv.org/abs/2603.13594) (Malay, Nayak et al., ServiceNow AI Research, 2026)
 **Upstream:** [ServiceNow/EnterpriseOps-Gym](https://github.com/ServiceNow/EnterpriseOps-Gym) @ `09593147`

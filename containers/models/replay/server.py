@@ -1,13 +1,18 @@
 """Replay model: serves recorded LLM responses for deterministic testing.
 
-Reads a trajectory.jsonl file (LiteLLM StandardLoggingPayload format) and
-serves the responses in order. From the eval container's perspective, this
-is indistinguishable from a real LiteLLM proxy.
+Reads an OpenTelemetry trace file (OTLP/JSON, one ExportTraceServiceRequest per
+line — exactly what an otelcol `file` exporter writes) and serves the recorded
+gen_ai responses in order. From the eval container's perspective this is
+indistinguishable from a real LiteLLM proxy.
 
-The trajectory file may contain responses in any of three formats:
-  - OpenAI Chat Completions (response.choices[].message.content)
-  - OpenAI Responses API   (response.output[].content[].text)
-  - Anthropic Messages      (response.content[].text)
+Input contract — native OTel gen_ai semconv (OTEL GenAI 1.38):
+  Each LLM call is a span carrying `gen_ai.output.messages` (a JSON *string* of
+  `[{role, parts:[{type,content}], tool_calls, finish_reason}]`) plus
+  `gen_ai.response.model`. Spans are flattened across resourceSpans/scopeSpans,
+  ordered by startTimeUnixNano, and ERROR spans (status.code == 2) are skipped —
+  leaving the run's successful turns, in order. Because the input is plain OTLP,
+  ANY otel-collected trace that captured gen_ai content can be replayed, not
+  just traces produced by this repo's gateway.
 
 The agent calling us may want any of four formats:
   - OpenAI Chat Completions   (POST /v1/chat/completions, /openai/v1/chat/completions)
@@ -17,16 +22,14 @@ The agent calling us may want any of four formats:
                                /genai/v1beta/models/...)
 
 This module's job is to:
-  1. Extract the text + tool-call payload from the recorded response (whatever
-     format it was originally in).
+  1. Extract canonical text + tool-call payload from each recorded gen_ai span.
   2. Re-emit it in the format the calling route expects.
 
-This lets us replay any agent against any recorded fixture. Tool calls and
-streaming are best-effort: text content always round-trips; tool_calls are
-forwarded when the recorded format had them and the target format supports
-them.
+Tool calls round-trip (LiteLLM copies the OpenAI tool_calls shape verbatim into
+gen_ai.output.messages); text content always round-trips. Streaming is not
+modeled — one whole response per call.
 
-Mount the trajectory file at /data/trajectory.jsonl.
+Mount the trace file at /data/traces.jsonl (override with REPLAY_TRACES).
 """
 
 from __future__ import annotations
@@ -42,126 +45,151 @@ from typing import Any
 app = Flask(__name__)
 
 
-# ── Trajectory loading ─────────────────────────────────────────────────
+# ── OTLP parsing helpers ───────────────────────────────────────────────
 
-responses: list[dict[str, Any]] = []
-trajectory_path = os.environ.get("REPLAY_TRAJECTORY", "/data/trajectory.jsonl")
+# opentelemetry.proto.trace.v1.Status.StatusCode: 0=UNSET, 1=OK, 2=ERROR.
+_STATUS_ERROR = 2
 
-if os.path.exists(trajectory_path):
-    with open(trajectory_path) as f:
+
+def _attr_map(span: dict[str, Any]) -> dict[str, Any]:
+    """Flatten a span's [{key, value:{<type>Value: ...}}] list into a dict.
+
+    OTLP encodes attribute values as type-tagged objects; intValue is a
+    *string*-encoded int64, doubleValue a number, boolValue a bool.
+    """
+    out: dict[str, Any] = {}
+    for a in span.get("attributes", []) or []:
+        key = a.get("key")
+        if key is None:
+            continue
+        v = a.get("value", {}) or {}
+        if "stringValue" in v:
+            out[key] = v["stringValue"]
+        elif "intValue" in v:
+            try:
+                out[key] = int(v["intValue"])
+            except (TypeError, ValueError):
+                out[key] = v["intValue"]
+        elif "doubleValue" in v:
+            out[key] = v["doubleValue"]
+        elif "boolValue" in v:
+            out[key] = v["boolValue"]
+    return out
+
+
+def _iter_spans(req: dict[str, Any]):
+    """Flatten one ExportTraceServiceRequest into its spans."""
+    for rs in req.get("resourceSpans", []) or []:
+        for ss in rs.get("scopeSpans", []) or []:
+            for span in ss.get("spans", []) or []:
+                yield span
+
+
+# ── Canonicalization: OTel gen_ai span → canonical turn ────────────────
+# Canonical turn: {"text", "tool_calls", "finish_reason", "model"}.
+# The emitters below map that into whatever wire format the route expects.
+
+
+def _canonicalize_span(attrs: dict[str, Any]) -> dict[str, Any]:
+    """Extract canonical text + tool_calls from a gen_ai span's attributes.
+
+    `gen_ai.output.messages` is a JSON *string* (OTEL GenAI 1.38 shape):
+        [{"role": "assistant",
+          "parts": [{"type": "text", "content": "..."}],
+          "tool_calls": [{"id","type","function":{"name","arguments"}}],
+          "finish_reason": "stop"}]
+    """
+    text_parts: list[str] = []
+    tool_calls: list[dict[str, Any]] = []
+    finish_reason = "stop"
+
+    raw = attrs.get("gen_ai.output.messages")
+    messages: Any = []
+    if isinstance(raw, str) and raw:
+        try:
+            messages = json.loads(raw)
+        except json.JSONDecodeError:
+            messages = []
+    elif isinstance(raw, list):
+        messages = raw
+
+    for msg in messages:
+        if not isinstance(msg, dict):
+            continue
+        for part in msg.get("parts", []) or []:
+            if (
+                isinstance(part, dict)
+                and part.get("type") == "text"
+                and part.get("content")
+            ):
+                text_parts.append(part["content"])
+        for tc in msg.get("tool_calls", []) or []:
+            tool_calls.append(tc)  # already OpenAI {id,type,function:{name,arguments}}
+        if msg.get("finish_reason"):
+            finish_reason = msg["finish_reason"]
+
+    model = (
+        attrs.get("gen_ai.response.model")
+        or attrs.get("gen_ai.request.model")
+        or "replay"
+    )
+    return {
+        "text": "".join(text_parts),
+        "tool_calls": tool_calls,
+        "finish_reason": finish_reason,
+        "model": model,
+    }
+
+
+# ── Trace loading ──────────────────────────────────────────────────────
+
+
+def _load_turns(path: str) -> list[dict[str, Any]]:
+    """Parse an OTLP/JSON trace file into ordered canonical turns.
+
+    Only spans that recorded an LLM response (carry gen_ai.output.messages) and
+    did not error are replayable. Spans are ordered by startTimeUnixNano so the
+    turns play back in the sequence the agent originally made them — even when
+    the collector batched them across lines or out of order.
+    """
+    collected: list[tuple[int, dict[str, Any]]] = []
+    with open(path) as f:
         for line in f:
             line = line.strip()
             if not line:
                 continue
-            entry = json.loads(line)
-            if entry.get("status") == "failure":
+            try:
+                req = json.loads(line)
+            except json.JSONDecodeError:
                 continue
-            resp = entry.get("response")
-            if resp:
-                if isinstance(resp, str):
-                    resp = json.loads(resp)
-                responses.append(resp)
+            for span in _iter_spans(req):
+                attrs = _attr_map(span)
+                if "gen_ai.output.messages" not in attrs:
+                    continue
+                if (span.get("status", {}) or {}).get("code") == _STATUS_ERROR:
+                    continue
+                try:
+                    start = int(span.get("startTimeUnixNano", "0"))
+                except (TypeError, ValueError):
+                    start = 0
+                collected.append((start, _canonicalize_span(attrs)))
+    collected.sort(key=lambda t: t[0])
+    return [canon for _, canon in collected]
+
+
+traces_path = os.environ.get("REPLAY_TRACES", "/data/traces.jsonl")
+
+if os.path.exists(traces_path):
+    turns: list[dict[str, Any]] = _load_turns(traces_path)
     print(
-        f"[replay] loaded {len(responses)} responses from {trajectory_path}",
+        f"[replay] loaded {len(turns)} gen_ai turns from {traces_path}",
         file=sys.stderr,
     )
 else:
-    print(f"[replay] WARNING: no trajectory at {trajectory_path}", file=sys.stderr)
+    turns = []
+    print(f"[replay] WARNING: no trace file at {traces_path}", file=sys.stderr)
 
 call_index = 0
-
-
-# ── Canonicalization ──────────────────────────────────────────────────
-# Each recorded response gets normalized into a small dict:
-#   {"text": "...", "tool_calls": [...], "finish_reason": "stop"}
-# Translation then maps that into whatever format the route expects.
-
-
-def _canonicalize(resp: dict[str, Any]) -> dict[str, Any]:
-    """Extract canonical text + tool_calls from any of the three recorded formats."""
-    text_parts: list[str] = []
-    tool_calls: list[dict[str, Any]] = []
-
-    # OpenAI Chat Completions
-    if "choices" in resp and isinstance(resp["choices"], list):
-        for ch in resp["choices"]:
-            msg = ch.get("message") or {}
-            if isinstance(msg.get("content"), str) and msg["content"]:
-                text_parts.append(msg["content"])
-            elif isinstance(msg.get("content"), list):
-                for part in msg["content"]:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text_parts.append(part.get("text", ""))
-            for tc in msg.get("tool_calls", []) or []:
-                tool_calls.append(tc)
-
-    # OpenAI Responses API
-    if "output" in resp and isinstance(resp["output"], list):
-        for item in resp["output"]:
-            if not isinstance(item, dict):
-                continue
-            content = item.get("content")
-            if isinstance(content, list):
-                for part in content:
-                    if not isinstance(part, dict):
-                        continue
-                    t = part.get("text") or part.get("output_text")
-                    if t:
-                        text_parts.append(t)
-            if item.get("type") == "function_call":
-                tool_calls.append(
-                    {
-                        "id": item.get("call_id")
-                        or item.get("id")
-                        or f"call_{uuid.uuid4().hex[:8]}",
-                        "type": "function",
-                        "function": {
-                            "name": item.get("name", ""),
-                            "arguments": item.get("arguments", "{}"),
-                        },
-                    }
-                )
-
-    # Anthropic Messages
-    if "content" in resp and isinstance(resp["content"], list):
-        for part in resp["content"]:
-            if not isinstance(part, dict):
-                continue
-            if part.get("type") == "text":
-                text_parts.append(part.get("text", ""))
-            elif part.get("type") == "tool_use":
-                tool_calls.append(
-                    {
-                        "id": part.get("id") or f"call_{uuid.uuid4().hex[:8]}",
-                        "type": "function",
-                        "function": {
-                            "name": part.get("name", ""),
-                            "arguments": json.dumps(part.get("input", {})),
-                        },
-                    }
-                )
-
-    return {
-        "text": "".join(text_parts),
-        "tool_calls": tool_calls,
-        "finish_reason": _extract_finish_reason(resp),
-        "model": resp.get("model", "replay"),
-    }
-
-
-def _extract_finish_reason(resp: dict[str, Any]) -> str:
-    """Best-effort extraction of finish_reason from any of the three formats."""
-    if "choices" in resp and resp["choices"]:
-        fr = resp["choices"][0].get("finish_reason")
-        if fr:
-            return fr
-    if "stop_reason" in resp:
-        return {
-            "end_turn": "stop",
-            "max_tokens": "length",
-            "tool_use": "tool_calls",
-        }.get(resp["stop_reason"], "stop")
-    return "stop"
 
 
 # ── Emitters: canonical → wire format per route ────────────────────────
@@ -282,17 +310,16 @@ def _emit_gemini(canon: dict[str, Any]) -> dict[str, Any]:
 
 
 def _next(emit_fn) -> Any:
-    """Pull the next recorded response, canonicalize it, emit in the
-    requested format. On exhaustion serve a benign empty-ish response so
-    the agent doesn't blow up on a missing reply.
+    """Pull the next recorded turn and emit it in the requested format. On
+    exhaustion serve a benign empty-ish response so the agent doesn't blow up
+    on a missing reply.
     """
     global call_index
-    if call_index < len(responses):
-        resp = responses[call_index]
+    if call_index < len(turns):
+        canon = turns[call_index]
         call_index += 1
-        canon = _canonicalize(resp)
         print(
-            f"[replay] {call_index}/{len(responses)}: {len(canon['text'])} chars, "
+            f"[replay] {call_index}/{len(turns)}: {len(canon['text'])} chars, "
             f"{len(canon['tool_calls'])} tool_calls → {emit_fn.__name__}",
             file=sys.stderr,
         )

@@ -1,6 +1,6 @@
 # humaneval
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/humaneval-0-claude-code.trajectory.jsonl`](../../tests/fixtures/humaneval-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/humaneval-0-claude-code.traces.jsonl`](../../tests/fixtures/humaneval-0-claude-code.traces.jsonl)
 
 
 HumanEval - Python code generation

@@ -53,11 +53,12 @@ Parent: [../RULES.md](../RULES.md)
 ## Trajectory inspection
 
 9. **Every live run MUST pass the trajectory rule catalog.** After each
-   run, the driver MUST invoke
-   `tests/static/test.rs::inspect_trajectory()` against the fresh
-   `trajectory.jsonl`. Any red rule (refusal, max-tokens truncation,
-   no substantive output, wrong-answer format) blocks promotion of
-   that fixture.
+   run, the driver MUST invoke the inspection rule catalog
+   (`tests/static/task_inspection.rs`) against the run's OTLP
+   `traces.jsonl` — converted from the recorded `model/trajectory.jsonl`
+   until recording emits OTLP natively. Any red rule (refusal, max-tokens
+   truncation, no substantive output, wrong-answer format) blocks
+   promotion of that fixture.
 
 10. **Yellow rules annotate the fixture, not block it.** A yellow
     finding (e.g. moderate retry count, one content filter warning)
@@ -66,11 +67,12 @@ Parent: [../RULES.md](../RULES.md)
 
 ## Fixture promotion
 
-11. **Pass fixture → `tests/run/replay/fixtures/`.** Rename
-    `output/<bench>/<task>/model/trajectory.jsonl` →
-    `tests/run/replay/fixtures/<bench>-<task>-claude-code.trajectory.jsonl`
-    and add an entry to `fixtures/provenance.json`. The promotion is
-    a single commit for auditability.
+11. **Pass fixture → `tests/run/replay/fixtures/`.** Convert
+    `output/<bench>/<task>/model/trajectory.jsonl` to OTLP and write
+    `tests/run/replay/fixtures/<bench>-<task>-claude-code.traces.jsonl`
+    (once recording emits OTLP natively this is a plain copy), then add
+    an entry to `fixtures/provenance.json`. The promotion is a single
+    commit for auditability.
 
 12. **Fail fixture → `known-broken.md`.** A run that fails an
     inspection rule is not promoted to fixtures. Instead, its failure

@@ -1,6 +1,6 @@
 # math-500
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/math-500-0-aider.trajectory.jsonl`](../../tests/fixtures/math-500-0-aider.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/math-500-0-aider.traces.jsonl`](../../tests/fixtures/math-500-0-aider.traces.jsonl)
 
 
 MATH-500 - competition-level math problems

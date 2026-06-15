@@ -1,6 +1,6 @@
 # mmmu
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mmmu-0-claude-code.trajectory.jsonl`](../../tests/fixtures/mmmu-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mmmu-0-claude-code.traces.jsonl`](../../tests/fixtures/mmmu-0-claude-code.traces.jsonl)
 
 
 MMMU - massive multi-discipline multimodal understanding

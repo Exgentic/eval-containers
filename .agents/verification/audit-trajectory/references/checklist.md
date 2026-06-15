@@ -10,10 +10,10 @@ covers.
 
 For each benchmark-agent combination, one trajectory is inspected:
 
-- **Input:** one `tests/run/replay/fixtures/<benchmark>-<task>-<agent>.trajectory.jsonl`
+- **Input:** one `tests/run/replay/fixtures/<benchmark>-<task>-<agent>.traces.jsonl`
   file, or a live inspector run under `/output/<bench>/<task>/inspector/`. A
-  trajectory is an ordered sequence of LiteLLM `StandardLoggingPayload` rows,
-  one per LLM call the agent made.
+  trajectory is an OTLP/JSON trace — an ordered sequence of OpenTelemetry
+  `gen_ai` semconv spans, one per LLM call the agent made.
 - **Context:** the benchmark name, task ID, expected task shape from the
   benchmark's `eval.benchmark.*` labels, the agent name.
 - **Output:** two verdicts (task-half and run-half), each

@@ -13,20 +13,21 @@
 //!
 //! Run sources:
 //!
-//!   - Existing fixtures at tests/run/replay/fixtures/*.trajectory.jsonl are
-//!     LiteLLM StandardLoggingPayload JSONL. Each row is one LLM call;
-//!     the user message inside the first row contains the task as the
-//!     agent saw it. Running the rules against these fixtures is how
-//!     we validate the rule catalog itself and spot-check existing
-//!     benchmarks without standing up containers.
+//!   - Fixtures at tests/run/replay/fixtures/*.traces.jsonl are native OTLP
+//!     traces (OTLP/JSON, one ExportTraceServiceRequest per line — what an
+//!     otelcol `file` exporter writes). Each gen_ai span is one LLM call;
+//!     the first user turn (gen_ai.input.messages) is the task as the agent
+//!     saw it. Running the rules against these fixtures validates the rule
+//!     catalog itself and spot-checks benchmarks without standing up
+//!     containers.
 //!
-//!   - Future: output from models/inspector/ runs, which writes the
-//!     first request body to /output/<bench>/<task>/inspector/. Same
-//!     extraction logic, different source path.
+//!   - Any OTel-collected trace that captured gen_ai content can be inspected
+//!     by the same code — the rules read OTel semconv, not a bespoke format.
 //!
 //! Run: cargo test --test task_inspection -- --ignored
 
 use serde_json::Value;
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -232,9 +233,9 @@ const RULES: &[Rule] = &[
 
 // ─── Run-level rule catalog (data, not code) ───────────────────────
 //
-// Run rules look at the whole trajectory (every row). A row is a
-// LiteLLM `StandardLoggingPayload`. The catalog IDs MUST match the
-// entries in tests/TRAJECTORY.md "Run-half signal catalog".
+// Run rules look at the whole trajectory (every row). A row is one gen_ai
+// span from the OTLP trace. The catalog IDs MUST match the entries in
+// tests/TRAJECTORY.md "Run-half signal catalog".
 
 /// Pre-computed summary of the run — cheaper than re-walking rows in
 /// every rule. Computed once per fixture.
@@ -436,65 +437,214 @@ fn inspect_run(source: &str, summary: &RunSummary) -> Vec<Finding> {
         .collect()
 }
 
-// ─── Task extraction from LiteLLM StandardLoggingPayload ───────────
+// ─── Trajectory parsing from native OTLP traces ────────────────────
 //
-// A LiteLLM log row has a `messages` array. Content can be:
-//   - a string
-//   - a list of parts, each { "text": ... } or { "input_text": ... }
+// A fixture is OTLP/JSON: one ExportTraceServiceRequest per line (what an
+// otelcol `file` exporter writes). Each LLM call is a span carrying OTel
+// gen_ai semconv attributes. We flatten every span across
+// resourceSpans/scopeSpans, order by startTimeUnixNano (the order the agent
+// made the calls), and treat each span as one "row".
 //
-// Some agents (Claude Code, Codex) send an initial schema probe call
-// with empty or noise messages before the real task, so we walk rows
-// in order and return the text from the first row that has non-empty
-// user content. "First legitimate user turn" is the task.
+// Content lives in two JSON-string attributes (OTEL GenAI 1.38 shape):
+//   - gen_ai.input.messages  : [{role, parts:[{type,content}], tool_calls?}]
+//   - gen_ai.output.messages : [{role, parts:[{type,content}], tool_calls?, finish_reason}]
+// Failures are span status ERROR (code 2) + error.* attrs + an `exception`
+// event. Tokens/cost are gen_ai.usage.* / gen_ai.cost.*.
 
-fn extract_user_text_from_row(row: &Value) -> String {
-    let Some(messages) = row.get("messages").and_then(Value::as_array) else {
-        return String::new();
+/// One LLM call, parsed from an OTLP span.
+struct SpanCall {
+    start_ns: u128,
+    status_code: i64, // 0 unset, 1 ok, 2 error (opentelemetry StatusCode)
+    status_message: String,
+    attrs: HashMap<String, Value>,
+    events: Vec<Value>,
+}
+
+/// Flatten a span's `attributes: [{key, value:{<type>Value: ...}}]` list into
+/// a key->Value map. intValue arrives as a string-encoded int64.
+fn flatten_attrs(span: &Value) -> HashMap<String, Value> {
+    let mut m = HashMap::new();
+    let Some(arr) = span.get("attributes").and_then(Value::as_array) else {
+        return m;
     };
-    let mut parts: Vec<String> = Vec::new();
-    for msg in messages {
-        let role = msg.get("role").and_then(Value::as_str).unwrap_or("");
-        if role != "user" {
+    for a in arr {
+        let Some(k) = a.get("key").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(v) = a.get("value") else { continue };
+        if let Some(s) = v.get("stringValue").and_then(Value::as_str) {
+            m.insert(k.to_string(), Value::String(s.to_string()));
+        } else if let Some(iv) = v.get("intValue") {
+            if let Some(n) = iv
+                .as_str()
+                .and_then(|s| s.parse::<i64>().ok())
+                .or_else(|| iv.as_i64())
+            {
+                m.insert(k.to_string(), Value::from(n));
+            }
+        } else if let Some(d) = v.get("doubleValue").and_then(Value::as_f64) {
+            m.insert(k.to_string(), Value::from(d));
+        } else if let Some(b) = v.get("boolValue").and_then(Value::as_bool) {
+            m.insert(k.to_string(), Value::Bool(b));
+        }
+    }
+    m
+}
+
+/// status.code may be numeric (1/2) or the proto-JSON string form.
+fn status_code_of(status: Option<&Value>) -> i64 {
+    let Some(code) = status.and_then(|s| s.get("code")) else {
+        return 0;
+    };
+    if let Some(n) = code.as_i64() {
+        return n;
+    }
+    match code.as_str() {
+        Some("STATUS_CODE_ERROR") => 2,
+        Some("STATUS_CODE_OK") => 1,
+        _ => 0,
+    }
+}
+
+/// Load every span from an OTLP/JSON fixture, ordered by start time.
+fn load_spans(path: &Path) -> Result<Vec<SpanCall>, String> {
+    let raw = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let mut calls: Vec<SpanCall> = Vec::new();
+    for line in raw.lines() {
+        if line.trim().is_empty() {
             continue;
         }
-        let content = match msg.get("content") {
-            Some(c) => c,
-            None => continue,
+        let req: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(_) => continue,
         };
-        match content {
-            Value::String(s) => parts.push(s.clone()),
-            Value::Array(items) => {
-                for item in items {
-                    if let Some(s) = item.get("text").and_then(Value::as_str) {
-                        parts.push(s.to_string());
-                    } else if let Some(s) = item.get("input_text").and_then(Value::as_str) {
-                        parts.push(s.to_string());
-                    }
+        for rs in req
+            .get("resourceSpans")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            for ss in rs
+                .get("scopeSpans")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                for span in ss
+                    .get("spans")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                {
+                    let start_ns = span
+                        .get("startTimeUnixNano")
+                        .and_then(|v| {
+                            v.as_str()
+                                .and_then(|s| s.parse::<u128>().ok())
+                                .or_else(|| v.as_u64().map(u128::from))
+                        })
+                        .unwrap_or(0);
+                    calls.push(SpanCall {
+                        start_ns,
+                        status_code: status_code_of(span.get("status")),
+                        status_message: span
+                            .get("status")
+                            .and_then(|s| s.get("message"))
+                            .and_then(Value::as_str)
+                            .unwrap_or("")
+                            .to_string(),
+                        attrs: flatten_attrs(span),
+                        events: span
+                            .get("events")
+                            .and_then(Value::as_array)
+                            .cloned()
+                            .unwrap_or_default(),
+                    });
                 }
             }
-            _ => {}
         }
+    }
+    calls.sort_by_key(|c| c.start_ns);
+    Ok(calls)
+}
+
+fn attr_str<'a>(call: &'a SpanCall, key: &str) -> Option<&'a str> {
+    call.attrs.get(key).and_then(Value::as_str)
+}
+
+/// Parse a gen_ai.*.messages JSON-string attribute into its message array.
+fn parse_messages(call: &SpanCall, key: &str) -> Vec<Value> {
+    attr_str(call, key)
+        .and_then(|raw| serde_json::from_str::<Value>(raw).ok())
+        .and_then(|v| v.as_array().cloned())
+        .unwrap_or_default()
+}
+
+/// Text content of a message's `parts` array. List-content messages pass
+/// their original parts through verbatim, so a text part carries `text`
+/// (OpenAI chat) or `input_text` (Responses input); string-content messages
+/// use the OTEL 1.38 wrapping `{type:text, content:...}`. We read `text` /
+/// `input_text` first and only fall back to `content` when `type == "text"`
+/// — so tool_result / image blocks (which carry a `content` field but no
+/// text) are skipped, matching the original row extraction and keeping
+/// per-call tool output out of the user-prompt text.
+fn parts_text(msg: &Value) -> Vec<String> {
+    let mut out = Vec::new();
+    for p in msg
+        .get("parts")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+    {
+        let t = p
+            .get("text")
+            .and_then(Value::as_str)
+            .or_else(|| p.get("input_text").and_then(Value::as_str))
+            .or_else(|| {
+                (p.get("type").and_then(Value::as_str) == Some("text"))
+                    .then(|| p.get("content").and_then(Value::as_str))
+                    .flatten()
+            });
+        if let Some(t) = t {
+            if !t.is_empty() {
+                out.push(t.to_string());
+            }
+        }
+    }
+    out
+}
+
+fn msg_has_tool_calls(msg: &Value) -> bool {
+    msg.get("tool_calls")
+        .and_then(Value::as_array)
+        .map(|tc| !tc.is_empty())
+        .unwrap_or(false)
+}
+
+// The first non-empty user turn the agent saw is the task. Some agents send a
+// schema-probe call first, so we walk spans in order and take the first span
+// whose gen_ai.input.messages has non-empty user content.
+
+fn span_user_text(call: &SpanCall) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    for msg in parse_messages(call, "gen_ai.input.messages") {
+        if msg.get("role").and_then(Value::as_str) != Some("user") {
+            continue;
+        }
+        parts.extend(parts_text(&msg));
     }
     parts.join("\n\n")
 }
 
 fn extract_user_text_from_fixture(path: &Path) -> Result<String, String> {
-    let raw = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    for line in raw.lines() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let row: Value = match serde_json::from_str(line) {
-            Ok(v) => v,
-            Err(_) => continue, // skip malformed lines, try next
-        };
-        let text = extract_user_text_from_row(&row);
+    for call in &load_spans(path)? {
+        let text = span_user_text(call);
         if !text.trim().is_empty() {
             return Ok(text);
         }
     }
     Err(format!(
-        "{}: no row had a non-empty user message",
+        "{}: no span had a non-empty user message",
         path.display()
     ))
 }
@@ -505,87 +655,54 @@ fn extract_user_text_from_fixture(path: &Path) -> Result<String, String> {
 // rules need. A run rule is just a closure over RunSummary, so the
 // expensive work happens once per fixture instead of once per rule.
 
-fn extract_assistant_content(row: &Value) -> String {
-    // Two shapes in the wild:
-    //
-    // 1. OpenAI Responses API: response.output[].content[].text
-    // 2. Chat Completions: response.choices[0].message.content  +
-    //    response.choices[0].message.tool_calls
-    //
-    // We fold both into a single "did the assistant say anything
-    // substantive?" string. If the string is non-empty after trim,
-    // we count it as substantive.
-    let Some(response) = row.get("response") else {
-        return String::new();
-    };
-
+fn span_assistant_content(call: &SpanCall) -> String {
+    // "Did the assistant say anything substantive?" — text from the
+    // output.messages parts plus a marker for any tool call. Non-empty after
+    // trim => substantive.
     let mut parts: Vec<String> = Vec::new();
-
-    // Shape 1: Responses API
-    if let Some(output) = response.get("output").and_then(Value::as_array) {
-        for item in output {
-            if let Some(content) = item.get("content").and_then(Value::as_array) {
-                for c in content {
-                    if let Some(t) = c.get("text").and_then(Value::as_str) {
-                        parts.push(t.to_string());
-                    }
-                }
-            }
-            // Some providers put the text directly on the output item.
-            if let Some(t) = item.get("text").and_then(Value::as_str) {
-                parts.push(t.to_string());
-            }
+    for msg in parse_messages(call, "gen_ai.output.messages") {
+        parts.extend(parts_text(&msg));
+        if msg_has_tool_calls(&msg) {
+            parts.push("<tool_calls>".into());
         }
     }
-
-    // Shape 2: Chat Completions
-    if let Some(choices) = response.get("choices").and_then(Value::as_array) {
-        for choice in choices {
-            if let Some(msg) = choice.get("message") {
-                if let Some(s) = msg.get("content").and_then(Value::as_str) {
-                    parts.push(s.to_string());
-                }
-                // Tool calls also count as substantive output.
-                if let Some(tc) = msg.get("tool_calls").and_then(Value::as_array)
-                    && !tc.is_empty()
-                {
-                    parts.push("<tool_calls>".into());
-                }
-            }
-        }
-    }
-
     parts.join("\n")
 }
 
-fn row_error_message(row: &Value) -> String {
-    // Collect every error signal LiteLLM records on a row.
+fn span_error_message(call: &SpanCall) -> String {
+    // Every error signal on the span: status message, error.* attributes, and
+    // the type/message of any `exception` event.
     let mut parts: Vec<String> = Vec::new();
-    if let Some(s) = row.get("error_str").and_then(Value::as_str)
-        && !s.is_empty()
-        && s != "None"
-    {
-        parts.push(s.to_string());
+    if !call.status_message.is_empty() {
+        parts.push(call.status_message.clone());
     }
-    if let Some(err_info) = row.get("error_information") {
-        for key in ["error_code", "error_class", "error_message", "traceback"] {
-            if let Some(v) = err_info.get(key).and_then(Value::as_str)
-                && !v.is_empty()
-            {
-                parts.push(v.to_string());
-            }
+    for key in ["error.type", "error.message"] {
+        if let Some(s) = attr_str(call, key)
+            && !s.is_empty()
+        {
+            parts.push(s.to_string());
         }
     }
-    // Responses API sometimes puts errors under response.error.
-    if let Some(resp) = row.get("response") {
-        if let Some(err) = resp.get("error").and_then(Value::as_str) {
-            if !err.is_empty() {
-                parts.push(err.to_string());
-            }
-        } else if let Some(err) = resp.get("error")
-            && !err.is_null()
+    for ev in &call.events {
+        if ev.get("name").and_then(Value::as_str) != Some("exception") {
+            continue;
+        }
+        for a in ev
+            .get("attributes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
         {
-            parts.push(err.to_string());
+            let k = a.get("key").and_then(Value::as_str).unwrap_or("");
+            if (k == "exception.message" || k == "exception.type")
+                && let Some(m) = a
+                    .get("value")
+                    .and_then(|v| v.get("stringValue"))
+                    .and_then(Value::as_str)
+                && !m.is_empty()
+            {
+                parts.push(m.to_string());
+            }
         }
     }
     parts.join(" | ")
@@ -613,63 +730,33 @@ fn content_is_refusal(content: &str) -> bool {
     REFUSAL_PHRASES.iter().any(|p| lc.contains(p))
 }
 
-fn row_hit_max_tokens(row: &Value) -> bool {
-    let Some(response) = row.get("response") else {
-        return false;
-    };
-    // OpenAI Responses API: response.incomplete_details.reason == "max_output_tokens"
-    if let Some(r) = response
-        .get("incomplete_details")
-        .and_then(|d| d.get("reason"))
-        .and_then(Value::as_str)
-        && (r == "max_output_tokens" || r == "max_tokens" || r == "length")
+fn span_hit_max_tokens(call: &SpanCall) -> bool {
+    // Truncation, from gen_ai.response.finish_reasons or the per-message
+    // finish_reason inside output.messages.
+    let is_trunc = |s: &str| s == "length" || s == "max_tokens" || s == "max_output_tokens";
+    if let Some(raw) = attr_str(call, "gen_ai.response.finish_reasons")
+        && let Ok(arr) = serde_json::from_str::<Value>(raw)
     {
-        return true;
-    }
-    // Chat Completions: choices[].finish_reason == "length"
-    if let Some(choices) = response.get("choices").and_then(Value::as_array) {
-        for choice in choices {
-            if let Some(fr) = choice.get("finish_reason").and_then(Value::as_str)
-                && fr == "length"
-            {
+        for fr in arr.as_array().into_iter().flatten() {
+            if fr.as_str().map(is_trunc).unwrap_or(false) {
                 return true;
             }
         }
     }
-    // Anthropic: response.stop_reason == "max_tokens"
-    if let Some(sr) = response.get("stop_reason").and_then(Value::as_str)
-        && sr == "max_tokens"
-    {
-        return true;
-    }
-    false
+    parse_messages(call, "gen_ai.output.messages")
+        .iter()
+        .any(|msg| {
+            msg.get("finish_reason")
+                .and_then(Value::as_str)
+                .map(is_trunc)
+                .unwrap_or(false)
+        })
 }
 
-fn row_has_tool_calls(row: &Value) -> bool {
-    let Some(response) = row.get("response") else {
-        return false;
-    };
-    if let Some(choices) = response.get("choices").and_then(Value::as_array) {
-        for choice in choices {
-            if let Some(msg) = choice.get("message")
-                && let Some(tc) = msg.get("tool_calls").and_then(Value::as_array)
-                && !tc.is_empty()
-            {
-                return true;
-            }
-        }
-    }
-    // OpenAI Responses API: output[].type == "function_call" or "tool_use"
-    if let Some(output) = response.get("output").and_then(Value::as_array) {
-        for item in output {
-            if let Some(t) = item.get("type").and_then(Value::as_str)
-                && (t == "function_call" || t == "tool_use" || t == "tool_call")
-            {
-                return true;
-            }
-        }
-    }
-    false
+fn span_has_tool_calls(call: &SpanCall) -> bool {
+    parse_messages(call, "gen_ai.output.messages")
+        .iter()
+        .any(msg_has_tool_calls)
 }
 
 fn task_delegates_to_file_heuristic(task: &str) -> bool {
@@ -726,12 +813,7 @@ fn task_requires_fetching_heuristic(task: &str) -> bool {
 }
 
 fn summarize_run(path: &Path) -> Result<RunSummary, String> {
-    let raw = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    let rows: Vec<Value> = raw
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str(l).ok())
-        .collect();
+    let calls = load_spans(path)?;
 
     let mut n_substantive_rows = 0usize;
     let mut n_failure_rows = 0usize;
@@ -745,7 +827,7 @@ fn summarize_run(path: &Path) -> Result<RunSummary, String> {
     let mut total_cost: f64 = 0.0;
     let mut any_error_message = String::new();
 
-    // Retry-storm detection: walk adjacent rows' user prompts and
+    // Retry-storm detection: walk adjacent spans' user prompts and
     // track the longest run of identical ones.
     let mut last_prompt = String::new();
     let mut current_streak = 1usize;
@@ -754,40 +836,55 @@ fn summarize_run(path: &Path) -> Result<RunSummary, String> {
     // First user prompt for task-level delegation / attachment checks.
     let mut first_user_text = String::new();
 
-    for row in &rows {
-        let status = row
-            .get("status")
-            .and_then(Value::as_str)
-            .unwrap_or("")
-            .to_string();
+    for call in &calls {
+        // OTel StatusCode: 2 = ERROR (a failed call); anything else = ok.
+        let status = if call.status_code == 2 {
+            "failure"
+        } else {
+            "success"
+        };
 
-        if let Some(t) = row.get("total_tokens").and_then(Value::as_u64) {
+        if let Some(t) = call
+            .attrs
+            .get("gen_ai.usage.total_tokens")
+            .and_then(Value::as_u64)
+        {
             total_tokens += t;
         }
-        if let Some(c) = row.get("response_cost").and_then(Value::as_f64) {
-            total_cost += c;
-        }
+        // Prefer the rolled-up gen_ai.cost.total_cost; otherwise sum the
+        // per-component gen_ai.cost.* attributes.
+        total_cost += call
+            .attrs
+            .get("gen_ai.cost.total_cost")
+            .and_then(Value::as_f64)
+            .unwrap_or_else(|| {
+                call.attrs
+                    .iter()
+                    .filter(|(k, _)| k.starts_with("gen_ai.cost."))
+                    .filter_map(|(_, v)| v.as_f64())
+                    .sum()
+            });
 
-        let err = row_error_message(row);
+        let err = span_error_message(call);
         if !err.is_empty() && any_error_message.is_empty() {
             any_error_message = err;
         }
 
-        if row_hit_max_tokens(row) {
+        if span_hit_max_tokens(call) {
             n_max_tokens_rows += 1;
         }
-        if row_has_tool_calls(row) {
+        if span_has_tool_calls(call) {
             any_tool_calls = true;
         }
 
-        let assistant = extract_assistant_content(row);
+        let assistant = span_assistant_content(call);
         let substantive = !assistant.trim().is_empty();
         if substantive {
             n_substantive_rows += 1;
             any_assistant_nonempty = true;
-            last_substantive_status = status.clone();
+            last_substantive_status = status.to_string();
             last_substantive_content = assistant.clone();
-            if status != "success" && !status.is_empty() {
+            if status != "success" {
                 n_failure_rows += 1;
             }
             if content_is_refusal(&assistant) {
@@ -795,7 +892,7 @@ fn summarize_run(path: &Path) -> Result<RunSummary, String> {
             }
         }
 
-        let prompt = extract_user_text_from_row(row);
+        let prompt = span_user_text(call);
         if first_user_text.is_empty() && !prompt.trim().is_empty() {
             first_user_text = prompt.clone();
         }
@@ -820,7 +917,7 @@ fn summarize_run(path: &Path) -> Result<RunSummary, String> {
         task_requires_fetching_heuristic(&first_user_text) && !any_tool_calls;
 
     Ok(RunSummary {
-        n_rows: rows.len(),
+        n_rows: calls.len(),
         n_substantive_rows,
         n_failure_rows,
         last_substantive_status,
@@ -850,7 +947,7 @@ fn fixture_paths() -> Vec<PathBuf> {
             && path
                 .file_name()
                 .and_then(|s| s.to_str())
-                .map(|n| n.ends_with(".trajectory.jsonl"))
+                .map(|n| n.ends_with(".traces.jsonl"))
                 .unwrap_or(false)
         {
             out.push(path);

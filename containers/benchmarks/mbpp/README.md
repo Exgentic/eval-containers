@@ -1,6 +1,6 @@
 # mbpp
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mbpp-0-claude-code.trajectory.jsonl`](../../tests/fixtures/mbpp-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mbpp-0-claude-code.traces.jsonl`](../../tests/fixtures/mbpp-0-claude-code.traces.jsonl)
 
 
 MBPP - mostly basic Python problems

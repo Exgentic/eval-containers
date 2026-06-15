@@ -1,6 +1,6 @@
 # mgsm
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mgsm-0-codex.trajectory.jsonl`](../../tests/fixtures/mgsm-0-codex.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mgsm-0-codex.traces.jsonl`](../../tests/fixtures/mgsm-0-codex.traces.jsonl)
 
 
 MGSM - multilingual grade school math reasoning across 11 languages

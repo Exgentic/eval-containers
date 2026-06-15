@@ -1,6 +1,6 @@
 # healthbench
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/healthbench-0-claude-code.trajectory.jsonl`](../../tests/fixtures/healthbench-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/healthbench-0-claude-code.traces.jsonl`](../../tests/fixtures/healthbench-0-claude-code.traces.jsonl)
 
 
 HealthBench - medical/health AI evaluation with physician rubrics

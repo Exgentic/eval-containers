@@ -75,9 +75,10 @@ COPY health   /opt/gateway/health
 COPY Caddyfile /opt/gateway/Caddyfile
 
 # eval_logger.py is the LiteLLM custom callback that writes
-# /output/trajectory.jsonl in StandardLoggingPayload format —
-# the input contract of `models/replay`. Without this callback the
-# gateway only emits OTel spans (no replay-consumable trajectory).
+# /output/result.json (aggregated cost) and /output/trajectory.jsonl
+# (StandardLoggingPayload — the legacy recording from which OTLP fixtures
+# are converted). models/replay's actual input is the OTLP traces.jsonl
+# the otelcol sidecar writes from the gateway's `otel` callback.
 COPY eval_logger.py /opt/gateway/eval_logger.py
 
 RUN chmod +x /opt/gateway/start /opt/gateway/health

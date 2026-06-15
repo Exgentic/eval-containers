@@ -87,7 +87,7 @@ eval-containers run <second-benchmark> --agent <name> --model gpt-5.4 --task-id 
 
 ### Replay fixture
 
-- [ ] One of the two runs above (the greenest one) is promoted to `tests/run/replay/fixtures/<benchmark>-0-<name>.trajectory.jsonl`
+- [ ] One of the two runs above (the greenest one) is promoted to `tests/run/replay/fixtures/<benchmark>-0-<name>.traces.jsonl`
 - [ ] `fixtures/provenance.json` records the model, timestamp, and release tag
 - [ ] `cargo test --test replay -- --ignored` passes including your new fixture
 

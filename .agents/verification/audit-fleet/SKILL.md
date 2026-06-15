@@ -73,7 +73,7 @@ and the current RULES.
    - `ls benchmarks/ | wc -l` vs the README claim (excluding `RULES.md` /
      `TEMPLATE.md`).
    - `ls agents/ | wc -l` vs the README claim (same exclusions).
-   - `ls tests/run/replay/fixtures/*.trajectory.jsonl | wc -l` vs how many
+   - `ls tests/run/replay/fixtures/*.traces.jsonl | wc -l` vs how many
      benchmarks have fixtures.
 
 3. **Walk the ten fleet questions**, each yes / no / n.a. with a one-line

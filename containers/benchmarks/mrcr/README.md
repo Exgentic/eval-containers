@@ -1,6 +1,6 @@
 # mrcr
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mrcr-0-claude-code.trajectory.jsonl`](../../tests/fixtures/mrcr-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mrcr-0-claude-code.traces.jsonl`](../../tests/fixtures/mrcr-0-claude-code.traces.jsonl)
 
 
 MRCR v2 - Multi-Round Coreference Resolution (long-context retrieval)

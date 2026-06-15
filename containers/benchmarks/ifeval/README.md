@@ -1,6 +1,6 @@
 # ifeval
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/ifeval-0-claude-code.trajectory.jsonl`](../../tests/fixtures/ifeval-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/ifeval-0-claude-code.traces.jsonl`](../../tests/fixtures/ifeval-0-claude-code.traces.jsonl)
 
 
 IFEval - instruction following with verifiable constraints

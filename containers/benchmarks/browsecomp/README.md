@@ -1,6 +1,6 @@
 # browsecomp
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/browsecomp-0-codex.trajectory.jsonl`](../../tests/fixtures/browsecomp-0-codex.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/browsecomp-0-codex.traces.jsonl`](../../tests/fixtures/browsecomp-0-codex.traces.jsonl)
 
 
 BrowseComp - web browsing QA

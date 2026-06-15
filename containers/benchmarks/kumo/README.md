@@ -1,6 +1,6 @@
 # kumo
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/kumo-0-codex.trajectory.jsonl`](../../tests/fixtures/kumo-0-codex.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/kumo-0-codex.traces.jsonl`](../../tests/fixtures/kumo-0-codex.traces.jsonl)
 
 
 Kumo - diagnostic reasoning

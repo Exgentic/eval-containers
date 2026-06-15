@@ -44,7 +44,7 @@ Parent: [../RULES.md](../RULES.md)
    and a unit test.
 
 6. **Trajectory rule catalog** — data-driven rules applied to every
-   fixture under `tests/run/replay/fixtures/*.trajectory.jsonl` as JSONL.
+   fixture under `tests/run/replay/fixtures/*.traces.jsonl` as OTLP/JSON.
    Same shape as the Dockerfile catalog.
 
 7. **Compose contract** — every `benchmarks/*/compose.yaml` MUST schema-validate
