@@ -84,6 +84,19 @@ jobs:
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           mapfile -t TARGETS < <(grep -hoE '^target "[^"]+"' "${FILES[@]}" \
             | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+          # Drop per-task benchmarks (`FROM ${TASK_BASE}`): they have no standalone
+          # image — each task is its own image, published by publish-per-task.yml.
+          # A blank TASK_BASE aborts the whole bake (this is what failed the first
+          # v0.1.0 republish on benchmark-skills-bench).
+          mapfile -t PERTASK < <(grep -rlE '^FROM[[:space:]]+\$\{TASK_BASE\}' containers/benchmarks/*/Dockerfile \
+            | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#benchmark-\1#')
+          if [ "${#PERTASK[@]}" -gt 0 ]; then
+            echo "Excluding ${#PERTASK[@]} per-task benchmark(s) (see publish-per-task.yml): ${PERTASK[*]}"
+            for x in "${PERTASK[@]}"; do
+              for i in "${!TARGETS[@]}"; do [ "${TARGETS[$i]}" = "$x" ] && unset 'TARGETS[$i]'; done
+            done
+            TARGETS=("${TARGETS[@]}")
+          fi
           echo "Building ${#TARGETS[@]} targets at ${REGISTRY}:${TAG}"
           # --set '*.args.REGISTRY=' so every Dockerfile's `FROM ${REGISTRY}/...`
           # resolves to GHCR (the bake context keys already use ${REGISTRY}).
@@ -137,6 +150,9 @@ jobs:
             for d in containers/"$kind"/*/; do
               name=$(basename "$d"); case $name in _*) continue ;; esac
               [ -f "${d}docker-bake.hcl" ] || continue
+              # Skip per-task benchmarks — not pushed by the bake above (no
+              # standalone image), so there's no :$TAG to alias.
+              grep -qE '^FROM[[:space:]]+\$\{TASK_BASE\}' "${d}Dockerfile" 2>/dev/null && continue
               ref="${REGISTRY}/${kind}/${name}"
               echo "alias ${ref}:${TAG} -> ${ref}:latest"
               docker buildx imagetools create --tag "${ref}:latest" "${ref}:${TAG}"
