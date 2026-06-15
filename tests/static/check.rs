@@ -261,6 +261,14 @@ fn released_benchmarks() -> Vec<String> {
 }
 
 fn fixture_benchmarks() -> Vec<String> {
+    // Known benchmark names, longest first so the longest matching prefix wins
+    // (e.g. "math-500" before "math").
+    let mut benches: Vec<String> = sibling_dirs("benchmarks")
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    benches.sort_by_key(|b| std::cmp::Reverse(b.len()));
+
     let mut out = Vec::new();
     let Ok(entries) = fs::read_dir(repo_root().join("tests/run/replay/fixtures")) else {
         return out;
@@ -270,33 +278,18 @@ fn fixture_benchmarks() -> Vec<String> {
         if !name.ends_with(".trajectory.jsonl") {
             continue;
         }
-        // Filename convention: <benchmark>-<task>-<agent>.trajectory.jsonl
-        // The benchmark name is everything before the first "-<digit>-"
-        // (task ids are typically "0", "1", ...). Fall back to everything
-        // before the last "-" pair if that doesn't match.
+        // Filename convention: <benchmark>-<task>-<agent>.trajectory.jsonl. The
+        // task id may be numeric (shared-env: "0", "1", …) or a task name
+        // (per-task: "configure-git-webserver", "citation-check"), so derive the
+        // benchmark by matching the stem against the known benchmark names — the
+        // longest one that prefixes the stem followed by '-'.
         let stem = name.trim_end_matches(".trajectory.jsonl");
-        // Find "<benchmark>-<task>-<agent>" by scanning for "-\d+-" first.
-        let bench = stem
-            .find('-')
-            .and_then(|_| {
-                // Greedy: take the longest prefix such that the remainder
-                // starts with "<digit>-<agent>"
-                let mut best = None;
-                for (i, c) in stem.char_indices() {
-                    if c != '-' {
-                        continue;
-                    }
-                    let rest = &stem[i + 1..];
-                    let after_digit: String =
-                        rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-                    if !after_digit.is_empty() && rest[after_digit.len()..].starts_with('-') {
-                        best = Some(stem[..i].to_string());
-                    }
-                }
-                best
-            })
-            .unwrap_or_else(|| stem.to_string());
-        out.push(bench);
+        if let Some(bench) = benches.iter().find(|b| {
+            stem.strip_prefix(b.as_str())
+                .is_some_and(|r| r.starts_with('-'))
+        }) {
+            out.push(bench.clone());
+        }
     }
     out.sort();
     out.dedup();
