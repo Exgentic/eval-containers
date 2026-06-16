@@ -1,3 +1,10 @@
+# Shared compose topology that per-benchmark `compose.yaml` files pull in
+# verbatim with `include:` — the parts no benchmark overrides: the `otelcol`
+# and `gateway` services, the `internal`/`upstream` networks, and the `output`
+# volume. The `runner` service is NOT here: every benchmark must override its
+# image and `BENCHMARK` env, and Compose forbids overriding an `include:`d
+# service, so the runner template lives in `runner.yaml` and is pulled via
+# `extends:` instead. See `.agents/compose/RULES.md` rule 8.
 services:
   otelcol:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/otel:latest
@@ -40,55 +47,6 @@ services:
     networks:
       - internal
       - upstream
-
-  runner:
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/${EVAL_BENCHMARK:-aime}--${EVAL_AGENT:-claude-code}:latest
-    environment:
-      # Pass the runtime axes through as both EVAL_* (canonical — what
-      # /entrypoint.sh and /usr/local/bin/run read) and bare names
-      # (legacy — what process-compose.yaml + write-result read
-      # internally). Until those internals migrate to EVAL_*, we set
-      # both so the run is consistent regardless of which path produces
-      # result.json.
-      #
-      # EVAL_BENCHMARK is deliberately NOT set here: the benchmark is fixed
-      # by the image (every benchmark Dockerfile bakes `ENV
-      # EVAL_BENCHMARK=<name>`, and the eval image is `FROM` it), so it is
-      # not a runtime axis like agent/task/model. Setting it would clobber
-      # the image's correct value with a generic default — and it is what
-      # let a per-benchmark `oci://…/eval-<benchmark>` artifact stay
-      # self-describing without the consumer repeating the benchmark.
-      EVAL_AGENT: ${EVAL_AGENT:-claude-code}
-      EVAL_MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
-      EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
-      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-300}
-      BENCHMARK: ${EVAL_BENCHMARK:-aime}
-      AGENT: ${EVAL_AGENT:-claude-code}
-      MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
-      TASK_ID: ${EVAL_TASK_ID:-0}
-      TIMEOUT: ${EVAL_TIMEOUT:-300}
-      ANTHROPIC_BASE_URL: http://gateway:4000/anthropic
-      OPENAI_BASE_URL: http://gateway:4000/openai/v1
-      GOOGLE_GEMINI_BASE_URL: http://gateway:4000/genai
-      GEMINI_API_KEY: sk-proxy
-      OPENAI_API_KEY: sk-proxy
-      ANTHROPIC_API_KEY: sk-proxy
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
-    depends_on:
-      gateway:
-        condition: service_healthy
-    volumes:
-      - output:/output
-    networks:
-      - internal
-    tmpfs:
-      - /tmp:size=1G
-      - /logs:size=100M
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: 2G
 
 networks:
   internal:

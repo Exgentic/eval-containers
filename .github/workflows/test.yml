@@ -1,18 +1,20 @@
 name: Tests
 
-# The compile-based gate: clippy + the daemon-free test suite. Runs on every
-# push and PR.
+# The static gate: clippy + the daemon-free test suite + static composition
+# (every benchmark's deploy artifact loads in all three run modes). Runs on
+# every push and PR.
 #
 # Split of responsibilities with pre-commit.yml: the pre-commit hooks own the
 # instant hygiene checks (fmt, hadolint, compose-schema, helm lint, secrets,
-# …); this workflow owns everything that invokes the compiler, which is too
-# slow/toolchain-dependent for a git hook. So fmt is NOT repeated here.
+# …); this workflow owns everything heavier but still daemon-free — the
+# compiler-based Rust gate and the per-mode "does the deploy artifact load"
+# sweeps. So fmt is NOT repeated here.
 #
-# Everything below is pure Rust + file I/O (no daemon). It exercises the rule
-# engine, the catalog structure, and the CLI's naming/build assumptions — NOT
-# live containers, images, or API calls. The container/e2e suites (build,
-# replay, live, gateways, agents, fleet) need a docker daemon or a cluster and
-# run elsewhere (release-images.yml on tag/main; oc-connectivity.yml on PR).
+# Everything here is daemon-free: pure Rust + file I/O for lint-and-test, and
+# parse/render-only tool sweeps for static composition (no images, no cluster).
+# The container/e2e suites (build, replay, live, gateways, agents, fleet) need a
+# docker daemon or a cluster and run elsewhere (release-images.yml on tag/main;
+# oc-connectivity.yml on PR).
 #
 # Excluded on purpose:
 #   - task_inspection::inspect_every_existing_fixture — an audit of recorded
@@ -74,7 +76,7 @@ jobs:
       # tag-axis rule moved to conftest for issue #114 — run by the
       # conftest-dockerfile / conftest-compose pre-commit hooks (pre-commit.yml).
       # compose schema validation is the check-compose-spec hook. The Rust helm
-      # test became tests/static/helm.sweep.sh (the helm-render job below).
+      # test became tests/static/helm.sweep.sh (run by Static composition below).
       - name: cargo test (daemon-free)
         run: |
           cargo test \
@@ -82,15 +84,18 @@ jobs:
             -p eval-containers-tests-static \
             -- --skip inspect_every_existing_fixture
 
-  # Daemon-free, and fast now that the ~100 renders run in parallel (~10s), but
-  # it needs the helm + kubeconform + conftest binaries — kept as its own job so
-  # those installs don't sit on the lint-and-test critical path. Validates rule
-  # 29(d): every benchmark renders through the shared chart, validates against
-  # the k8s schema (kubeconform), and satisfies the gateway-readiness policy
-  # (conftest, tests/static/policy/helm/). The Rust tests/helm.rs was replaced by the
-  # standard-tool sweep tests/static/helm.sweep.sh for issue #114, so no toolchain here.
-  helm-render:
-    name: helm render (every benchmark)
+  # Static composition: every benchmark's deploy artifact must LOAD in all three
+  # run modes. The pre-commit hooks do text/schema hygiene; this hands each
+  # artifact to the REAL tool for its mode and fails if it won't load — the class
+  # of bug text/schema checks miss (e.g. a compose include/extends merge conflict
+  # Podman tolerates but Docker rejects). All daemon-free (parse/render only): no
+  # images, no cluster. One job, one check; each mode is a step (sweep logic in
+  # tests/static/):
+  #   compose          → docker compose config              (compose.config.sweep.sh)
+  #   single-container → conftest over process-compose.yaml (standalone.sweep.sh)
+  #   k8s              → helm template + kubeconform + conftest (helm.sweep.sh)
+  static-composition:
+    name: Static composition
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -99,16 +104,33 @@ jobs:
       - name: Install helm
         uses: azure/setup-helm@v5
 
-      - name: Install kubeconform
+      # Pin a strict Compose: the "conflicts with imported resource" rule the
+      # compose step catches is version-dependent — newer Compose merges the
+      # override silently; v2.32.4 enforces it. conftest pinned to match the
+      # pre-commit hooks; kubeconform validates the helm renders.
+      - name: Install compose (pinned strict), conftest, kubeconform
         run: |
-          curl -sSLf https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
-            | tar -xz -C /usr/local/bin kubeconform
-
-      - name: Install conftest
-        run: |
+          mkdir -p ~/.docker/cli-plugins
+          curl -sSLf -o ~/.docker/cli-plugins/docker-compose \
+            https://github.com/docker/compose/releases/download/v2.32.4/docker-compose-linux-x86_64
+          chmod +x ~/.docker/cli-plugins/docker-compose
+          docker compose version
           CONFTEST_VERSION=0.56.0
           curl -sSLf "https://github.com/open-policy-agent/conftest/releases/download/v${CONFTEST_VERSION}/conftest_${CONFTEST_VERSION}_Linux_x86_64.tar.gz" \
             | sudo tar -xz -C /usr/local/bin conftest
+          curl -sSLf https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | sudo tar -xz -C /usr/local/bin kubeconform
 
-      - name: helm render + schema validate + readiness policy
+      # Each mode is its own step so the failing mode is obvious; `if: always()`
+      # on the later steps runs all three even when an earlier one fails, so one
+      # CI run surfaces every broken mode rather than just the first.
+      - name: compose — docker compose config (every benchmark)
+        run: tests/static/compose.config.sweep.sh
+
+      - name: single-container — process-compose wiring
+        if: ${{ !cancelled() }}
+        run: tests/static/standalone.sweep.sh
+
+      - name: k8s — helm render (every benchmark)
+        if: ${{ !cancelled() }}
         run: tests/static/helm.sweep.sh

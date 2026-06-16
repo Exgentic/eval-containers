@@ -5,6 +5,9 @@ services:
   # Agent runner — pass-through that polls bridge and forwards to gateway.
   # Built locally (custom Dockerfile), not the pre-built eval image.
   runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/tau-bench--${EVAL_AGENT:-claude-code}:latest
     build:
       context: .
@@ -15,6 +18,8 @@ services:
       OPENAI_BASE_URL: http://gateway:4000
       OPENAI_API_KEY: sk-proxy
     depends_on:
+      gateway:
+        condition: service_healthy
       bridge:
         condition: service_healthy
 

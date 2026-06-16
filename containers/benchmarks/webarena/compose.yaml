@@ -3,6 +3,9 @@ include:
 
 services:
   runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/webarena--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: webarena
@@ -19,6 +22,8 @@ services:
       WIKIPEDIA_URL: http://wikipedia:8080
       MAP_URL: http://map:8080
     depends_on:
+      gateway:
+        condition: service_healthy
       proxy:
         condition: service_started
     deploy:

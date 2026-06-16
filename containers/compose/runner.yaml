@@ -1,0 +1,63 @@
+# Shared `runner` service template.
+#
+# Per-benchmark `compose.yaml` files pull this in with `extends:` (NOT
+# `include:`): every benchmark must override the runner's image (to pin its
+# self-describing `evals/<benchmark>--<agent>` artifact) and its `BENCHMARK`
+# env, and Docker Compose forbids overriding a service that arrived through
+# `include:` ("services.runner conflicts with imported resource"). `extends:`
+# is the merge-friendly path — the benchmark file declares its own `runner`
+# and grafts this template onto it. The rest of the shared topology
+# (`otelcol`, `gateway`, networks, volumes) still comes from `services.yaml`
+# via `include:`, since benchmarks never override those.
+#
+# IMPORTANT: `extends:` does NOT carry `depends_on` (Compose spec). Each
+# benchmark `compose.yaml` therefore redeclares
+# `depends_on: {gateway: {condition: service_healthy}}` (plus any sidecar it
+# adds) so the runner still waits for a healthy gateway.
+services:
+  runner:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/${EVAL_BENCHMARK:-aime}--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      # Pass the runtime axes through as both EVAL_* (canonical — what
+      # /entrypoint.sh and /usr/local/bin/run read) and bare names
+      # (legacy — what process-compose.yaml + write-result read
+      # internally). Until those internals migrate to EVAL_*, we set
+      # both so the run is consistent regardless of which path produces
+      # result.json.
+      #
+      # EVAL_BENCHMARK is deliberately NOT set as its own key: the benchmark is
+      # fixed by the image (every benchmark Dockerfile bakes `ENV
+      # EVAL_BENCHMARK=<name>`, and the eval image is `FROM` it), so it is not a
+      # runtime axis like agent/task/model. `BENCHMARK` defaults to the same
+      # axis only so this template renders standalone; every per-benchmark
+      # `compose.yaml` overrides `BENCHMARK: <name>` with its own literal, which
+      # is what keeps the per-benchmark `oci://…/eval-<benchmark>` artifact
+      # self-describing without the consumer repeating the benchmark.
+      EVAL_AGENT: ${EVAL_AGENT:-claude-code}
+      EVAL_MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
+      EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-300}
+      BENCHMARK: ${EVAL_BENCHMARK:-aime}
+      AGENT: ${EVAL_AGENT:-claude-code}
+      MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
+      TASK_ID: ${EVAL_TASK_ID:-0}
+      TIMEOUT: ${EVAL_TIMEOUT:-300}
+      ANTHROPIC_BASE_URL: http://gateway:4000/anthropic
+      OPENAI_BASE_URL: http://gateway:4000/openai/v1
+      GOOGLE_GEMINI_BASE_URL: http://gateway:4000/genai
+      GEMINI_API_KEY: sk-proxy
+      OPENAI_API_KEY: sk-proxy
+      ANTHROPIC_API_KEY: sk-proxy
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
+    volumes:
+      - output:/output
+    networks:
+      - internal
+    tmpfs:
+      - /tmp:size=1G
+      - /logs:size=100M
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G

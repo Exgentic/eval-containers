@@ -3,6 +3,9 @@ include:
 
 services:
   runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/visualwebarena--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: visualwebarena
@@ -14,6 +17,8 @@ services:
       REDDIT_URL: http://reddit:80
       SHOPPING_URL: http://shopping:80
     depends_on:
+      gateway:
+        condition: service_healthy
       proxy:
         condition: service_started
     deploy:
