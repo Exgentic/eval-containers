@@ -1,22 +1,19 @@
-name: fleet-publish-dev (fan-out + pull, branch-only)
+name: fleet-publish-dev (fan-out + pull + report, branch-only)
 
-# DEV/iteration workflow — branch-only (never runs on main). FAST + ROBUST +
-# GUARANTEED no-double-build standalone-fleet publish:
+# DEV/iteration workflow — branch-only (never runs on main). FAST + SLIM +
+# GUARANTEED no-double-build standalone-fleet publish, with a build report.
 #   - PARALLEL: one matrix job per leaf (fail-fast:false).
 #   - BASE-ONCE (GUARANTEED): stage 1 builds the shared deps (core + gateways)
-#     exactly once and pushes them. Leaves are built with plain `docker build`,
-#     so their `FROM ${REGISTRY}/core|gateways/...:latest` PULLS the pre-built
-#     image from the registry — never an in-graph rebuild. (cache-from was only
-#     best-effort: a key mismatch silently re-ran pyarrow/apt per leaf.)
+#     once and pushes them; leaves `docker build` with FROM pulling the pre-built
+#     image — never an in-graph rebuild. (deduped to a single base blob → slim.)
 #   - SLIM + WARM: leaves use INLINE cache (cache rides inside the image) +
-#     cache-from their own :latest, so re-publishes reuse a leaf's layers (incl.
-#     its dataset-download RUN) with ZERO separate buildcache/* packages.
+#     cache-from their own :latest → cross-run reuse, ZERO buildcache/* packages.
+#   - REPORT: every job emits {build_s, size} as an artifact; the `report` job
+#     aggregates them into the run summary (build time own/+deps, registry size).
 # Per-task benchmarks (LABEL eval.benchmark.env="per-task") are EXCLUDED; they're
-# published by publish-per-task.yml. Folds into release-images.yml/build-sweep.yml
-# at the end, then deleted.
+# published by publish-per-task.yml. Folds into release-images.yml at the end.
 #
-# Iterate: set ONLY to a space-separated list of leaf dirs (e.g. "benchmarks/aime
-# agents/codex"); empty = all leaves.
+# Iterate: ONLY = space-separated leaf dirs (e.g. "benchmarks/aime agents/codex").
 
 on:
   push:
@@ -30,7 +27,7 @@ env:
   REGISTRY: ghcr.io/exgentic
   TAG: latest
   CACHE: ghcr.io/exgentic/buildcache
-  ONLY: ""
+  ONLY: "benchmarks/aime agents/codex"
 
 jobs:
   bases:
@@ -46,17 +43,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bake + push deps (built once; leaves PULL these)
+      - name: Bake + push deps (built once; leaves PULL these) + measure
         env:
           TAG: ${{ env.TAG }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
-          # core + gateways are the ONLY images FROM'd by other images (verified).
           mapfile -t DEPS < <(find containers/core containers/gateways -name docker-bake.hcl -exec grep -hoE '^target "[^"]+"' {} + \
             | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
           echo "Building ${#DEPS[@]} shared deps once: ${DEPS[*]}"
+          t0=$SECONDS
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
@@ -65,6 +62,27 @@ jobs:
             --set "*.cache-from=type=registry,ref=${CACHE}" \
             --provenance=mode=max --sbom=true \
             "${DEPS[@]}" --push
+          bases_build_s=$((SECONDS - t0))
+          # registry size per base (sum of amd64 manifest layer sizes)
+          mkdir -p rpt
+          : > /tmp/bases_sizes
+          for d in $(find containers/core containers/gateways -mindepth 1 -maxdepth 1 -type d | sed -E 's#containers/##' | sort); do
+            [ -f "containers/$d/Dockerfile" ] || continue
+            ref="${REGISTRY}/${d}:${TAG}"
+            dig=$(docker buildx imagetools inspect "$ref" --raw 2>/dev/null | jq -r '(.manifests // []) | map(select(.platform.architecture=="amd64")) | .[0].digest // empty')
+            if [ -n "$dig" ]; then
+              sz=$(docker buildx imagetools inspect "${ref}@${dig}" --raw 2>/dev/null | jq '[.layers[]?.size] | add // 0')
+            else
+              sz=$(docker buildx imagetools inspect "$ref" --raw 2>/dev/null | jq '[.layers[]?.size] | add // 0')
+            fi
+            printf '%s\t%s\n' "$d" "${sz:-0}" >> /tmp/bases_sizes
+          done
+          jq -Rn --arg t "$bases_build_s" '[inputs|split("\t")|{name:.[0],size:(.[1]|tonumber)}] | {bases_build_s:($t|tonumber), bases:.}' /tmp/bases_sizes > rpt/_bases.json
+          echo "bases built in ${bases_build_s}s"; cat rpt/_bases.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpt-bases
+          path: rpt/_bases.json
 
   enumerate:
     name: Enumerate leaf dirs
@@ -80,9 +98,6 @@ jobs:
             read -ra _only <<< "$ONLY"
             dirs=$(printf '%s\n' "${_only[@]}" | jq -R . | jq -sc 'map(select(length>0))')
           else
-            # leaf dirs = agents/* + benchmarks/* + models/* with a Dockerfile,
-            # minus per-task benchmarks (canonical LABEL). core + gateways are deps
-            # (stage 1), not leaves.
             pertask=$(grep -rl 'eval.benchmark.env="per-task"' containers/benchmarks/*/Dockerfile \
               | sed -E 's#containers/(benchmarks/[^/]+)/Dockerfile#\1#' | sort -u)
             all=$(find containers/agents containers/benchmarks containers/models -mindepth 1 -maxdepth 1 -type d \
@@ -94,10 +109,7 @@ jobs:
           n=$(printf '%s' "$dirs" | jq 'length')
           echo "leaf dirs: $n"
           [ "$n" -gt 0 ] && [ "$n" -le 256 ] || { echo "::error::leaf count $n out of range (1-256)"; exit 1; }
-          {
-            echo "dirs=$dirs"
-            echo "count=$n"
-          } >> "$GITHUB_OUTPUT"
+          { echo "dirs=$dirs"; echo "count=$n"; } >> "$GITHUB_OUTPUT"
 
   leaves:
     name: ${{ matrix.dir }}
@@ -118,37 +130,84 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build + push leaf (FROM pulls the pre-built base — no rebuild)
+      - name: Build + push leaf (FROM pulls the base) + measure
         env:
           DIR: ${{ matrix.dir }}
           TAG: ${{ env.TAG }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
-          # Plain `docker build`: FROM ${REGISTRY}/core|gateways/...:latest resolves
-          # via the ARG defaults and PULLS the stage-1 image — GUARANTEED no in-graph
-          # base/gateway rebuild.
-          # Cross-run cache WITHOUT bloat: cache-from the leaf's own published image
-          # + cache-to=inline (the cache metadata rides inside the image), so a
-          # re-publish reuses this leaf's layers (incl. its dataset-download RUN)
-          # with ZERO separate buildcache/* packages.
+          # docker build: FROM ${REGISTRY}/...:latest PULLS the stage-1 image (no
+          # rebuild). Inline cache-from own image → cross-run reuse, no extra pkgs.
+          ref="${REGISTRY}/${DIR}:${TAG}"
+          t0=$SECONDS
           docker buildx build "containers/${DIR}" \
-            --tag "${REGISTRY}/${DIR}:${TAG}" \
+            --tag "$ref" \
             --label "org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --secret "id=HF_TOKEN,env=HF_TOKEN" \
-            --cache-from "type=registry,ref=${REGISTRY}/${DIR}:${TAG}" \
+            --cache-from "type=registry,ref=${ref}" \
             --cache-to "type=inline" \
             --provenance=mode=max --sbom=true \
             --push
+          build_s=$((SECONDS - t0))
+          dig=$(docker buildx imagetools inspect "$ref" --raw 2>/dev/null | jq -r '(.manifests // []) | map(select(.platform.architecture=="amd64")) | .[0].digest // empty')
+          if [ -n "$dig" ]; then
+            size=$(docker buildx imagetools inspect "${ref}@${dig}" --raw 2>/dev/null | jq '[.layers[]?.size] | add // 0')
+          else
+            size=$(docker buildx imagetools inspect "$ref" --raw 2>/dev/null | jq '[.layers[]?.size] | add // 0')
+          fi
+          mkdir -p rpt
+          jq -n --arg n "$DIR" --argjson b "$build_s" --argjson s "${size:-0}" '{name:$n,build_s:$b,size:$s}' > "rpt/leaf.json"
+          echo "::notice title=${DIR}::built in ${build_s}s, registry ${size:-0} bytes"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rpt-leaf-${{ strategy.job-index }}
+          path: rpt/leaf.json
 
-  summary:
-    name: Summary
+  report:
+    name: Build report
     needs: [bases, enumerate, leaves]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: |
-          echo "bases  : ${{ needs.bases.result }}"
-          echo "leaves : ${{ needs.leaves.result }} (${{ needs.enumerate.outputs.count }} dirs)"
-          if [ "${{ needs.leaves.result }}" != success ] || [ "${{ needs.bases.result }}" != success ]; then
-            echo "::warning::some leaves failed — fail-fast:false isolated them; see the matrix"
-          fi
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: rpt-*
+          path: rpt
+          merge-multiple: true
+      - name: Render report
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, glob, os
+          def human(n):
+              n=float(n)
+              for u in ("B","KB","MB","GB"):
+                  if n<1024: return f"{n:.1f} {u}"
+                  n/=1024
+              return f"{n:.1f} TB"
+          bases={}
+          bsec=0
+          if os.path.exists("rpt/_bases.json"):
+              d=json.load(open("rpt/_bases.json")); bsec=d.get("bases_build_s",0)
+              for b in d.get("bases",[]): bases[b["name"]]=b
+          leaves=[]
+          for f in glob.glob("rpt/leaf*.json"):
+              try: leaves.append(json.load(open(f)))
+              except Exception: pass
+          leaves.sort(key=lambda x:-x.get("size",0))
+          print("## Fleet build report\n")
+          print(f"Shared deps (core+gateways) built **once** in **{bsec}s**; each leaf's *+deps* time adds that (build-from-scratch cost). Sizes are **compressed (registry)**; uncompressed/RAM needs a pull (omitted).\n")
+          tot=sum(b.get("size",0) for b in bases.values())+sum(l.get("size",0) for l in leaves)
+          print(f"**{len(leaves)} leaves + {len(bases)} shared deps**, total registry **{human(tot)}**\n")
+          print("### Shared deps")
+          print("| Base | Build (shared) | Registry size |")
+          print("|---|--:|--:|")
+          for n,b in sorted(bases.items()):
+              print(f"| {n} | {bsec}s (all deps) | {human(b.get('size',0))} |")
+          print("\n### Leaves")
+          print("| Image | Build (own) | Build (+deps) | Registry size |")
+          print("|---|--:|--:|--:|")
+          for l in leaves:
+              o=l.get("build_s",0)
+              print(f"| {l['name']} | {o}s | {o+bsec}s | {human(l.get('size',0))} |")
+          PY
+          echo "report written to the run summary"
