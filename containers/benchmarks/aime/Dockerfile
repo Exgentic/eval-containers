@@ -18,7 +18,9 @@ LABEL eval.benchmark.url="https://huggingface.co/datasets/AI-MO/aimo-validation-
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aime"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/aime2024"
 
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve('https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet', '/tmp/data.parquet')
 t = pq.read_table('/tmp/data.parquet')

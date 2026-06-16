@@ -19,7 +19,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/1809.05053"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 
 LANGUAGES = ['ar', 'bg', 'de', 'el', 'en', 'es', 'fr', 'hi', 'ru', 'sw', 'th', 'tr', 'ur', 'vi', 'zh']

@@ -25,7 +25,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.21139"
 
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/api/datasets/SWE-Gym/SWE-Gym/parquet/default/train/0.parquet',

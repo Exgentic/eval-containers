@@ -24,7 +24,9 @@ RUN pip install --no-cache-dir numpy==2.0.2 scipy==1.14.1 h5py==3.12.1 sympy==1.
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 # sub_steps and general_tests are stored as JSON strings so that when the
 # materializer writes them to <field>.txt the file contains valid JSON text.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/SciCode1/SciCode/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',

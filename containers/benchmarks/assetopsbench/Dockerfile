@@ -21,7 +21,9 @@ LABEL eval.benchmark.paper="https://huggingface.co/blog/ibm-research/assetopsben
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # Uses the scenario utterances file which contains the full 152-task set.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, os, json
 REV = "c4a2ebd52436580723bf2c52b3aff87aa53bf999"
 url = f'https://huggingface.co/datasets/ibm-research/AssetOpsBench/resolve/{REV}/data/scenarios/all_utterance.jsonl'

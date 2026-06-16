@@ -20,7 +20,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/1705.03551"
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
 # Note: aliases is written as JSON (to aliases.json) to preserve list structure
 # for the custom grader.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/mandarjoshi/trivia_qa/resolve/refs%2Fconvert%2Fparquet/rc.nocontext/validation/0000.parquet',

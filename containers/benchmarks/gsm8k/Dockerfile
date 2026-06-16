@@ -19,7 +19,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2110.14168"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). One line per task,
 # /eval-materialize-task materializes only the requested row at runtime.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 os.makedirs('/tasks', exist_ok=True)
 urllib.request.urlretrieve(

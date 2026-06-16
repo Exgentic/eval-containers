@@ -19,7 +19,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.01210"
 RUN pip install --no-cache-dir pyarrow==18.1.0 numpy==2.0.2
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 os.makedirs('/tasks', exist_ok=True)
 urllib.request.urlretrieve(

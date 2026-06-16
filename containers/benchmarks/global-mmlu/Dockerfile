@@ -24,7 +24,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.03304"
 # This pattern replaces the old "one directory per task" layout that did not
 # scale past ~10k tasks (global-mmlu at 589k created 2.4M filesystem entries
 # and took 21 minutes to build under podman's VM-translated filesystem).
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 
 LANGUAGES = [
@@ -76,7 +78,9 @@ RUN chmod +x /grade.sh
 # /usr/local/bin/run invokes /eval-refetch-data <revision>
 # when EVAL_BENCHMARK_VERSION is set and differs from the build-time default.
 # This is the first benchmark to ship the hook; the pattern is copyable.
-RUN cat > /eval-refetch-data <<'RELOAD' && chmod +x /eval-refetch-data
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    cat > /eval-refetch-data <<'RELOAD' && chmod +x /eval-refetch-data
 #!/bin/bash
 set -euo pipefail
 REVISION="${1:?usage: /eval-refetch-data <revision>}"

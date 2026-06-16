@@ -17,7 +17,9 @@ LABEL eval.benchmark.data_revision="94630fe30dad47192a8546eb75f094926d47e155"
 LABEL eval.benchmark.url="https://www.tau-nlp.sites.tau.ac.il/commonsenseqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1811.00937"
 
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/tau/commonsense_qa/resolve/94630fe30dad47192a8546eb75f094926d47e155/data/validation-00000-of-00001.parquet',

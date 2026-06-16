@@ -21,7 +21,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.16502"
 
 # Single-JSONL task layout. One line per task. Images base64-encoded inline;
 # runtime entrypoint decodes only the requested task's images.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os, base64
 
 SUBJECTS = [

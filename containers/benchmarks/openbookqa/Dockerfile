@@ -20,7 +20,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/1809.02789"
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
 # fields into /tasks/$EVAL_TASK_ID/.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/allenai/openbookqa/resolve/388097ea7776314e93a529163e0fea805b8a6454/main/test-00000-of-00001.parquet',

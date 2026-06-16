@@ -24,7 +24,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gcc g++ &&
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Private test cases
 # are stored as a JSON array under the tests_json field; entrypoint decodes
 # them into /tasks/$EVAL_TASK_ID/tests/{k}.in and .out after materialization.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, json, os, base64, zlib, pickle
 
 revision = "0fe84c3912ea0c4d4a78037083943e8f0c4dd505"

@@ -17,7 +17,9 @@ LABEL eval.benchmark.url="https://github.com/hendrycks/apps"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2105.09938"
 
 # Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
 tables = []
 for part in (0, 1):

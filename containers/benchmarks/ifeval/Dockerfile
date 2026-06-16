@@ -21,7 +21,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.07911"
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # instruction_ids and kwargs are stored as JSON strings (field names
 # instruction_ids_json, kwargs_json); the verifier parses them.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 os.makedirs('/tasks', exist_ok=True)
 urllib.request.urlretrieve(

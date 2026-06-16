@@ -19,7 +19,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.05669"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # Use the MCQ splits (boolean/generative are graded differently and deferred).
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 REV = "05e5883d9afbcfa3bdc8f270cb345ef0b9526d4a"
 GROUPS = [

@@ -21,7 +21,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.11462"
 # Known 83 classification subtasks with uniform (index, answer, text) / (index, text, answer) schema.
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, csv, os, io, json
 
 REVISION = 'daec8237410aa23e3faf4bc41ad8b3a7e1696826'

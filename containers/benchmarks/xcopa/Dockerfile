@@ -20,7 +20,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2005.00333"
 # Write every task to a single JSONL file. One line per task. Agent never
 # sees this file (root-only). Runtime entrypoint materializes just the
 # requested task's fields into /tasks/$EVAL_TASK_ID/.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 
 LANGUAGES = ['et', 'ht', 'id', 'it', 'qu', 'sw', 'ta', 'th', 'tr', 'vi', 'zh']

@@ -17,7 +17,9 @@ LABEL eval.benchmark.data_revision="95cda593fae71b60b5b19f82de3fcf3298c1239c"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/ucinlp/drop"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1903.00161"
 
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/ucinlp/drop/resolve/95cda593fae71b60b5b19f82de3fcf3298c1239c/data/validation-00000-of-00001.parquet',

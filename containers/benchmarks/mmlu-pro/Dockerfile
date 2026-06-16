@@ -21,7 +21,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.01574"
 
 # Single-JSONL task layout. Root-only; runtime entrypoint materializes the
 # requested task's fields into /tasks/$EVAL_TASK_ID/ on demand.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, string, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/TIGER-Lab/MMLU-Pro/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',

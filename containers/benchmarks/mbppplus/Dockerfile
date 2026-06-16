@@ -20,7 +20,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.01210"
 # (root-only). Runtime entrypoint materializes just the requested task's
 # fields into /tasks/$EVAL_TASK_ID/.
 RUN pip install --no-cache-dir pyarrow==18.1.0 numpy==2.0.2
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/evalplus/mbppplus/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',

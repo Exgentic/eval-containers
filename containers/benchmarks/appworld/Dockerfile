@@ -27,7 +27,9 @@ ENV EVAL_BENCHMARK=appworld
 
 # Fetch task metadata from HuggingFace and write to a single JSONL file.
 RUN pip install --no-cache-dir pyarrow==18.1.0
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/LukaszTP/AppWorld-Tasks/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet',

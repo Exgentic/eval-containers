@@ -21,7 +21,9 @@ LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Image bytes are
 # base64-encoded inline; entrypoint decodes back to image.png at runtime.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json, base64
 os.makedirs('/tasks', exist_ok=True)
 url = "https://huggingface.co/api/datasets/AI4Math/MathVista/parquet/default/testmini/0.parquet"
