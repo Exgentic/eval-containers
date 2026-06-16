@@ -85,11 +85,12 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           FILTER: ${{ github.event.inputs.filter }}
         run: |
-          # Bring-up: a single light case (aime/HF x claude-code) for fast
-          # feedback. Expand to the canary spread once it's green + fast.
-          # Override with the `filter` dispatch input. Run serial
-          # (--test-threads=1) so only one compose stack is up at a time.
-          read -ra CASES <<< "${FILTER:-replay_aime_17_claude_code}"
+          # Canary: a representative spread — math/HF (aime x claude-code),
+          # safety (advbench x codex), agentic (agentbench x bob) — across
+          # benchmark bases and agent SDKs/protocols. Override with the
+          # `filter` dispatch input. Run serial (--test-threads=1) so only one
+          # compose stack is up at a time.
+          read -ra CASES <<< "${FILTER:-replay_aime_17_claude_code replay_advbench_103_codex replay_agentbench_119_bob}"
           echo "replay cases: ${CASES[*]}"
           set +e
           cargo test -p eval-containers-tests-run --test replay "${CASES[@]}" \
