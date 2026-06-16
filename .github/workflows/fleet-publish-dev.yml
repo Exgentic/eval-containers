@@ -106,6 +106,7 @@ jobs:
       - name: Bake this group (pull frozen base, no rebuild)
         env:
           GRP: ${{ matrix.idx }}
+          GIDX: ${{ strategy.job-index }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
@@ -123,8 +124,8 @@ jobs:
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
-            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/grp,mode=max" \
-            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/grp" \
+            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/grp-${GIDX},mode=max" \
+            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/grp-${GIDX}" \
             --provenance=mode=max --sbom=true \
             "${TGTS[@]}" --push
           echo "::notice title=group ${ckey}::${#TGTS[@]} targets in $(( $(date +%s) - t0 ))s"
