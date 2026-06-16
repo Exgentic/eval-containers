@@ -93,8 +93,12 @@ jobs:
           read -ra CASES <<< "${FILTER:-replay_aime_17_claude_code replay_advbench_103_codex replay_agentbench_119_bob}"
           echo "replay cases: ${CASES[*]}"
           set +e
-          cargo test -p eval-containers-tests-run --test replay "${CASES[@]}" \
-            -- --ignored --nocapture --test-threads=1 2>&1 | tee replay.log
+          # Test-name filters go AFTER `--` (to libtest, which accepts multiple
+          # and OR-matches them), NOT as cargo's single positional [TESTNAME] —
+          # `cargo test foo bar` errors "unexpected argument". One process so
+          # bootstrap_core_bases() bakes the shared bases just once.
+          cargo test -p eval-containers-tests-run --test replay \
+            -- --ignored --nocapture --test-threads=1 "${CASES[@]}" 2>&1 | tee replay.log
           rc=${PIPESTATUS[0]}
           if grep -qE "running 0 tests" replay.log; then
             echo "::error::no replay test matched filter: ${CASES[*]}"
