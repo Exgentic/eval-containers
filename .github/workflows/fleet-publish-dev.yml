@@ -8,8 +8,9 @@ name: fleet-publish-dev (fan-out + pull, branch-only)
 #     so their `FROM ${REGISTRY}/core|gateways/...:latest` PULLS the pre-built
 #     image from the registry — never an in-graph rebuild. (cache-from was only
 #     best-effort: a key mismatch silently re-ran pyarrow/apt per leaf.)
-#   - NO RE-DOWNLOAD: per-leaf registry cache (mode=max) so a leaf's own layers
-#     incl. its dataset-download RUN are reused across runs.
+#   - SLIM + WARM: leaves use INLINE cache (cache rides inside the image) +
+#     cache-from their own :latest, so re-publishes reuse a leaf's layers (incl.
+#     its dataset-download RUN) with ZERO separate buildcache/* packages.
 # Per-task benchmarks (LABEL eval.benchmark.env="per-task") are EXCLUDED; they're
 # published by publish-per-task.yml. Folds into release-images.yml/build-sweep.yml
 # at the end, then deleted.
@@ -29,7 +30,7 @@ env:
   REGISTRY: ghcr.io/exgentic
   TAG: latest
   CACHE: ghcr.io/exgentic/buildcache
-  ONLY: "benchmarks/apps benchmarks/assetopsbench benchmarks/gpqa-diamond benchmarks/kumo benchmarks/ocrbench"
+  ONLY: ""
 
 jobs:
   bases:
@@ -125,14 +126,17 @@ jobs:
         run: |
           # Plain `docker build`: FROM ${REGISTRY}/core|gateways/...:latest resolves
           # via the ARG defaults and PULLS the stage-1 image — GUARANTEED no in-graph
-          # base/gateway rebuild. Per-leaf cache (mode=max) reuses this leaf's own
-          # layers (incl. its dataset-download RUN) across runs.
+          # base/gateway rebuild.
+          # Cross-run cache WITHOUT bloat: cache-from the leaf's own published image
+          # + cache-to=inline (the cache metadata rides inside the image), so a
+          # re-publish reuses this leaf's layers (incl. its dataset-download RUN)
+          # with ZERO separate buildcache/* packages.
           docker buildx build "containers/${DIR}" \
             --tag "${REGISTRY}/${DIR}:${TAG}" \
             --label "org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --secret "id=HF_TOKEN,env=HF_TOKEN" \
-            --cache-from "type=registry,ref=${CACHE}/${DIR}" \
-            --cache-to "type=registry,ref=${CACHE}/${DIR},mode=max" \
+            --cache-from "type=registry,ref=${REGISTRY}/${DIR}:${TAG}" \
+            --cache-to "type=inline" \
             --provenance=mode=max --sbom=true \
             --push
 
