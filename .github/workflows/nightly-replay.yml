@@ -97,14 +97,17 @@ jobs:
           # bakes the shared bases once; names go AFTER `--` so libtest OR-matches
           # them (cargo's positional [TESTNAME] takes only one).
           ALL=$(cargo test -p eval-containers-tests-run --test replay -- --list | sed -n 's/: test$//p' | sort)
-          # Known-broken fixtures, excluded from the suite (tracked follow-ups):
-          #  - replay_enterpriseops_gym_0_codex: the OTLP conversion dropped this
-          #    fixture's bifrost-shaped output spans, so it serves 0 turns (the
-          #    agent exhausts immediately); regeneration from source pending.
-          #  - replay_alpaca_eval_482_ra_aid: ra-aid retry-loops on
-          #    REPLAY_EXHAUSTED and write-result emits invalid JSON; agent
-          #    exhaustion handling pending.
-          for kb in replay_enterpriseops_gym_0_codex replay_alpaca_eval_482_ra_aid; do
+          # Known-broken fixture, excluded from the suite:
+          #  - replay_enterpriseops_gym_0_codex: sidecar-heavy benchmark. Its
+          #    compose.yaml declares 7 MCP-service sidecars (csm/teams/calendar/
+          #    email/itsm/drive/hr) the agent connects to at init; the replay
+          #    test stands the stack up from compose/services.yaml directly (the
+          #    per-benchmark compose's include + runner-override is rejected by
+          #    real docker compose), so those sidecars are absent, codex makes 0
+          #    LLM calls, and no result.json is written. Blocked on the
+          #    per-benchmark-compose fix. The OTLP fixture itself is repaired
+          #    (9 served turns, restored from the bifrost source).
+          for kb in replay_enterpriseops_gym_0_codex; do
             ALL=$(printf '%s\n' "${ALL}" | grep -vx "${kb}" || true)
           done
           if [ -n "${FILTER}" ]; then
