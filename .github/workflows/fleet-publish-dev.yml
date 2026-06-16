@@ -1,19 +1,15 @@
-name: fleet-publish-dev (fan-out + pull + report, branch-only)
+name: fleet-publish-dev (frozen-base + grouped-bake, branch-only)
 
-# DEV/iteration workflow — branch-only (never runs on main). FAST + SLIM +
-# GUARANTEED no-double-build standalone-fleet publish, with a build report.
-#   - PARALLEL: one matrix job per leaf (fail-fast:false).
-#   - BASE-ONCE (GUARANTEED): stage 1 builds the shared deps (core + gateways)
-#     once and pushes them; leaves `docker build` with FROM pulling the pre-built
-#     image — never an in-graph rebuild. (deduped to a single base blob → slim.)
-#   - SLIM + WARM: leaves use INLINE cache (cache rides inside the image) +
-#     cache-from their own :latest → cross-run reuse, ZERO buildcache/* packages.
-#   - REPORT: every job emits {build_s, size} as an artifact; the `report` job
-#     aggregates them into the run summary (build time own/+deps, registry size).
-# Per-task benchmarks (LABEL eval.benchmark.env="per-task") are EXCLUDED; they're
-# published by publish-per-task.yml. Folds into release-images.yml at the end.
-#
-# Iterate: ONLY = space-separated leaf dirs (e.g. "benchmarks/aime agents/codex").
+# Branch-only. Combines bake + GitHub parallelism for max speed:
+#   - FROZEN BASE: bases (core+gateways) build ONCE, then reused (skip rebuild
+#     unless REBUILD_BASES=1). Stable :latest digest → every leaf's FROM is
+#     stable → leaf layer caches HIT → no re-download → no HF 429 on re-runs.
+#   - GROUPED BAKE: leaves split into N groups; each runner `bake`s its group
+#     (BuildKit parallelism + dedup within the group) with the base context
+#     overridden to docker-image:// so the frozen base is PULLED, never rebuilt.
+#     GitHub runs groups in parallel; MAXPAR throttles concurrent HF load.
+#   - per-group registry cache (mode=max) → re-runs reuse layers.
+# Per-task benchmarks (LABEL eval.benchmark.env="per-task") excluded.
 
 on:
   push:
@@ -26,188 +22,109 @@ permissions:
 env:
   REGISTRY: ghcr.io/exgentic
   TAG: latest
-  CACHE: ghcr.io/exgentic/buildcache
+  REBUILD_BASES: "0"   # set 1 to rebuild the shared bases (else reuse frozen :latest)
+  N_GROUPS: "12"
   ONLY: ""
 
 jobs:
   bases:
-    name: Build shared deps — core + gateways (stage 1)
+    name: Shared deps (frozen unless changed)
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bake + push deps (built once; leaves PULL these) + measure
+      - name: Build bases only if missing or forced (else freeze)
         env:
-          TAG: ${{ env.TAG }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
+          if [ "$REBUILD_BASES" != "1" ] && docker buildx imagetools inspect "${REGISTRY}/core/entrypoint:${TAG}" >/dev/null 2>&1; then
+            echo "Bases already published — FROZEN (skip rebuild; stable digest → leaf caches hit)."
+            exit 0
+          fi
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           mapfile -t DEPS < <(find containers/core containers/gateways -name docker-bake.hcl -exec grep -hoE '^target "[^"]+"' {} + \
             | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
-          echo "Building ${#DEPS[@]} shared deps once: ${DEPS[*]}"
-          t0=$SECONDS
+          echo "Building ${#DEPS[@]} shared deps: ${DEPS[*]}"
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
-            --set "*.cache-to=type=registry,ref=${CACHE},mode=max" \
-            --set "*.cache-from=type=registry,ref=${CACHE}" \
             --provenance=mode=max --sbom=true \
             "${DEPS[@]}" --push
-          bases_build_s=$((SECONDS - t0))
-          # registry size per base (sum of amd64 manifest layer sizes)
-          mkdir -p rpt
-          : > /tmp/bases_sizes
-          for d in $(find containers/core containers/gateways -mindepth 1 -maxdepth 1 -type d | sed -E 's#containers/##' | sort); do
-            [ -f "containers/$d/Dockerfile" ] || continue
-            ref="${REGISTRY}/${d}:${TAG}"
-            dig=$(docker buildx imagetools inspect "$ref" --raw 2>/dev/null | jq -r '(.manifests // []) | map(select(.platform.architecture=="amd64")) | .[0].digest // empty')
-            if [ -n "$dig" ]; then
-              sz=$(docker buildx imagetools inspect "${ref}@${dig}" --raw 2>/dev/null | jq '[.layers[]?.size] | add // 0')
-            else
-              sz=$(docker buildx imagetools inspect "$ref" --raw 2>/dev/null | jq '[.layers[]?.size] | add // 0')
-            fi
-            printf '%s\t%s\n' "$d" "${sz:-0}" >> /tmp/bases_sizes
-          done
-          jq -Rn --arg t "$bases_build_s" '[inputs|split("\t")|{name:.[0],size:(.[1]|tonumber)}] | {bases_build_s:($t|tonumber), bases:.}' /tmp/bases_sizes > rpt/_bases.json
-          echo "bases built in ${bases_build_s}s"; cat rpt/_bases.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rpt-bases
-          path: rpt/_bases.json
 
   enumerate:
-    name: Enumerate leaf dirs
+    name: Split leaves into groups
     runs-on: ubuntu-latest
     outputs:
-      dirs: ${{ steps.l.outputs.dirs }}
+      groups: ${{ steps.l.outputs.groups }}
       count: ${{ steps.l.outputs.count }}
     steps:
       - uses: actions/checkout@v6
       - id: l
         run: |
-          if [ -n "$ONLY" ]; then
-            read -ra _only <<< "$ONLY"
-            dirs=$(printf '%s\n' "${_only[@]}" | jq -R . | jq -sc 'map(select(length>0))')
-          else
-            pertask=$(grep -rl 'eval.benchmark.env="per-task"' containers/benchmarks/*/Dockerfile \
-              | sed -E 's#containers/(benchmarks/[^/]+)/Dockerfile#\1#' | sort -u)
-            all=$(find containers/agents containers/benchmarks containers/models -mindepth 1 -maxdepth 1 -type d \
-              | sed -E 's#containers/##' | sort -u \
-              | while read -r d; do [ -f "containers/$d/Dockerfile" ] && echo "$d"; done)
-            leaves=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$pertask"))
-            dirs=$(printf '%s\n' "$leaves" | jq -R . | jq -sc 'map(select(length>0))')
-          fi
-          n=$(printf '%s' "$dirs" | jq 'length')
-          echo "leaf dirs: $n"
-          [ "$n" -gt 0 ] && [ "$n" -le 256 ] || { echo "::error::leaf count $n out of range (1-256)"; exit 1; }
-          { echo "dirs=$dirs"; echo "count=$n"; } >> "$GITHUB_OUTPUT"
+          # leaf bake targets = all minus core/gateways (deps) minus per-task benchmarks
+          all=$(find containers -name docker-bake.hcl -not -name 'combination*' -exec grep -hoE '^target "[^"]+"' {} + \
+            | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+          deps=$(find containers/core containers/gateways -name docker-bake.hcl -exec grep -hoE '^target "[^"]+"' {} + \
+            | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+          pertask=$(grep -rl 'eval.benchmark.env="per-task"' containers/benchmarks/*/Dockerfile \
+            | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#benchmark-\1#' | sort -u)
+          if [ -n "$ONLY" ]; then read -ra _o <<< "$ONLY"; leaves=$(printf '%s\n' "${_o[@]}")
+          else leaves=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$deps" "$pertask" | sort -u)); fi
+          # round-robin leaves into N_GROUPS buckets; emit JSON array of space-joined target strings
+          groups=$(printf '%s\n' "$leaves" | awk -v n="$N_GROUPS" 'NF{a[NR%n]=a[NR%n]" "$0} END{for(i=0;i<n;i++) if(a[i]!="") print substr(a[i],2)}' \
+            | jq -R . | jq -sc .)
+          echo "groups=$groups" >> "$GITHUB_OUTPUT"
+          echo "count=$(printf '%s' "$groups" | jq 'length')" >> "$GITHUB_OUTPUT"
+          echo "leaves: $(printf '%s\n' "$leaves" | grep -c .) in $(printf '%s' "$groups" | jq 'length') groups"
 
-  leaves:
-    name: ${{ matrix.dir }}
+  groups:
+    name: group ${{ matrix.idx }}
     needs: [bases, enumerate]
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: 20
+      max-parallel: 6
       matrix:
-        dir: ${{ fromJson(needs.enumerate.outputs.dirs) }}
+        idx: ${{ fromJson(needs.enumerate.outputs.groups) }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build + push leaf (FROM pulls the base) + measure
+      - name: Bake this group (pull frozen base, no rebuild)
         env:
-          DIR: ${{ matrix.dir }}
-          TAG: ${{ env.TAG }}
+          GRP: ${{ matrix.idx }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
-          # docker build: FROM ${REGISTRY}/...:latest PULLS the stage-1 image (no
-          # rebuild). Inline cache-from own image → cross-run reuse, no extra pkgs.
-          ref="${REGISTRY}/${DIR}:${TAG}"
-          t0=$SECONDS
-          docker buildx build "containers/${DIR}" \
-            --tag "$ref" \
-            --label "org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
-            --secret "id=HF_TOKEN,env=HF_TOKEN" \
-            --cache-from "type=registry,ref=${ref}" \
-            --cache-to "type=inline" \
+          mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
+          FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
+          # override every base context to PULL the frozen registry image (not in-graph rebuild)
+          OV=()
+          for d in $(find containers/core containers/gateways -mindepth 1 -maxdepth 1 -type d | sed -E 's#containers/##'); do
+            [ -f "containers/$d/Dockerfile" ] || continue
+            OV+=(--set "*.contexts.${REGISTRY}/${d}=docker-image://${REGISTRY}/${d}:${TAG}")
+          done
+          ckey=$(echo "$GRP" | tr ' /' '__')
+          read -ra TGTS <<< "$GRP"
+          t0=$(date +%s)
+          docker buildx bake "${FARGS[@]}" "${OV[@]}" \
+            --set "*.args.REGISTRY=${REGISTRY}" \
+            --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
+            --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
+            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/grp,mode=max" \
+            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/grp" \
             --provenance=mode=max --sbom=true \
-            --push
-          build_s=$((SECONDS - t0))
-          dig=$(docker buildx imagetools inspect "$ref" --raw 2>/dev/null | jq -r '(.manifests // []) | map(select(.platform.architecture=="amd64")) | .[0].digest // empty')
-          if [ -n "$dig" ]; then
-            size=$(docker buildx imagetools inspect "${ref}@${dig}" --raw 2>/dev/null | jq '[.layers[]?.size] | add // 0')
-          else
-            size=$(docker buildx imagetools inspect "$ref" --raw 2>/dev/null | jq '[.layers[]?.size] | add // 0')
-          fi
-          mkdir -p rpt
-          jq -n --arg n "$DIR" --argjson b "$build_s" --argjson s "${size:-0}" '{name:$n,build_s:$b,size:$s}' > "rpt/leaf.json"
-          echo "::notice title=${DIR}::built in ${build_s}s, registry ${size:-0} bytes"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: rpt-leaf-${{ strategy.job-index }}
-          path: rpt/leaf.json
-
-  report:
-    name: Build report
-    needs: [bases, enumerate, leaves]
-    if: always()
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: rpt-*
-          path: rpt
-          merge-multiple: true
-      - name: Render report
-        run: |
-          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
-          import json, glob, os
-          def human(n):
-              n=float(n)
-              for u in ("B","KB","MB","GB"):
-                  if n<1024: return f"{n:.1f} {u}"
-                  n/=1024
-              return f"{n:.1f} TB"
-          bases={}
-          bsec=0
-          if os.path.exists("rpt/_bases.json"):
-              d=json.load(open("rpt/_bases.json")); bsec=d.get("bases_build_s",0)
-              for b in d.get("bases",[]): bases[b["name"]]=b
-          leaves=[]
-          for f in glob.glob("rpt/leaf*.json"):
-              try: leaves.append(json.load(open(f)))
-              except Exception: pass
-          leaves.sort(key=lambda x:-x.get("size",0))
-          print("## Fleet build report\n")
-          print(f"Shared deps (core+gateways) built **once** in **{bsec}s**; each leaf's *+deps* time adds that (build-from-scratch cost). Sizes are **compressed (registry)**; uncompressed/RAM needs a pull (omitted).\n")
-          tot=sum(b.get("size",0) for b in bases.values())+sum(l.get("size",0) for l in leaves)
-          print(f"**{len(leaves)} leaves + {len(bases)} shared deps**, total registry **{human(tot)}**\n")
-          print("### Shared deps")
-          print("| Base | Build (shared) | Registry size |")
-          print("|---|--:|--:|")
-          for n,b in sorted(bases.items()):
-              print(f"| {n} | {bsec}s (all deps) | {human(b.get('size',0))} |")
-          print("\n### Leaves")
-          print("| Image | Build (own) | Build (+deps) | Registry size |")
-          print("|---|--:|--:|--:|")
-          for l in leaves:
-              o=l.get("build_s",0)
-              print(f"| {l['name']} | {o}s | {o+bsec}s | {human(l.get('size',0))} |")
-          PY
-          echo "report written to the run summary"
+            "${TGTS[@]}" --push
+          echo "::notice title=group ${ckey}::${#TGTS[@]} targets in $(( $(date +%s) - t0 ))s"
