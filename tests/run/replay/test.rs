@@ -246,22 +246,25 @@ async fn bootstrap_core_bases() {
     CORE_BASES_BOOTSTRAPPED
         .get_or_init(|| async {
             let _ = dotenvy::dotenv();
+            // Replay always swaps the gateway to models/replay, so the real
+            // gateway/model images are never used — and litellm's base pull was
+            // the single slowest bake step (~55s). Drop litellm, gateway-bifrost,
+            // and model-gpt-5_4--bifrost; nothing else here depends on them (bake
+            // builds the dependency closure, so omitting a target only skips it,
+            // never breaks the build).
             common::bake_targets(&[
                 "entrypoint",
                 "test-exact-match",
-                "litellm",
                 "llm-bridge",
                 "otel",
                 "runtime-bundle",
                 "agent-base-node",
                 "agent-base-python",
                 "agent-base-rust",
-                "gateway-bifrost",
                 "model-replay",
                 "benchmark-base-hf",
                 "benchmark-base-github",
                 "benchmark-base-external",
-                "model-gpt-5_4--bifrost",
             ])
             .await;
         })
