@@ -29,7 +29,6 @@ cybench
 docvqa
 drop
 flores200
-frontiermath
 gaia
 gdpval
 global-mmlu

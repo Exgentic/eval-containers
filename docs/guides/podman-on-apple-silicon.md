@@ -213,7 +213,7 @@ unpublished multi-stage base (`FROM … AS x`) and 401s. Two specifics:
   This is the one spot where you must run `podman` directly; once the registry is
   published, plain `docker build` pulls the bases and the workaround goes away.
 - **Gated benchmarks need a build secret — classic `docker build` can't pass one.**
-  `gaia`, `hle`, `flores200`, and `frontiermath` fetch HuggingFace-gated data via a
+  `gaia`, `hle`, and `flores200` fetch HuggingFace-gated data via a
   BuildKit `--mount=type=secret,id=HF_TOKEN` (never a build arg — #155). The docker
   CLI only accepts `--secret` under BuildKit, so `DOCKER_BUILDKIT=0 docker build`
   (and the cargo suites' classic path) can't build these four on podman — build them
