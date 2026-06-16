@@ -148,25 +148,14 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
 
     let override_str = override_file.path().to_str().unwrap().to_string();
 
-    // Compose the shared topology (compose/services.yaml: otelcol + gateway +
-    // runner) directly, NOT the per-benchmark compose.yaml. That file does
-    // `include: ../../compose/services.yaml` AND redeclares `runner` (image +
-    // BENCHMARK), which docker compose rejects at load time as "services.runner
-    // conflicts with imported resource" — its `include` forbids overriding an
-    // imported service (unlike `-f` merge). services.yaml parameterizes the
-    // runner image by ${EVAL_BENCHMARK} (set per test) and the gateway image by
-    // ${EVAL_GATEWAY_IMAGE}; our override swaps the gateway to models/replay, so
-    // this stands up the same stack the artifact would, the docker-native way.
-    // (The per-benchmark compose.yaml is itself broken on docker compose —
-    // podman tolerates it; tracked as a separate fix.)
-    let services_str = cwd
-        .join("containers/compose/services.yaml")
-        .to_str()
-        .unwrap()
-        .to_string();
+    // Compose the per-benchmark compose.yaml the published artifact ships: it
+    // pulls in the gateway + otelcol via `include:` and defines `runner` via
+    // `extends:`. The `-f` override (below) swaps the gateway to models/replay
+    // and mounts the recorded fixture.
+    let compose_abs = cwd.join(compose_file).to_str().unwrap().to_string();
 
     let mut compose =
-        DockerCompose::with_local_client(&[services_str.as_str(), override_str.as_str()]);
+        DockerCompose::with_local_client(&[compose_abs.as_str(), override_str.as_str()]);
 
     for (key, val) in env {
         compose = compose.with_env(*key, *val);
