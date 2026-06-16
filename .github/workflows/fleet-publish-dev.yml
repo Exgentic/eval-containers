@@ -22,7 +22,7 @@ permissions:
 env:
   REGISTRY: ghcr.io/exgentic
   TAG: latest
-  REBUILD_BASES: "0"   # set 1 to rebuild the shared bases (else reuse frozen :latest)
+  REBUILD_BASES: "1"   # one-shot: rebuild bases so the new HF-auth sitecustomize lands in core/entrypoint (revert to 0 after)
   N_GROUPS: "12"
   ONLY: ""
 
