@@ -27,7 +27,7 @@ env:
   REGISTRY: ghcr.io/exgentic
   TAG: latest
   CACHE: ghcr.io/exgentic/buildcache
-  ONLY: "benchmarks/aime agents/codex"
+  ONLY: ""
 
 jobs:
   bases:
@@ -176,7 +176,7 @@ jobs:
           merge-multiple: true
       - name: Render report
         run: |
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
           import json, glob, os
           def human(n):
               n=float(n)
