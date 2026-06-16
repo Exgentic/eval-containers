@@ -1,10 +1,9 @@
 # AIME (American Invitational Mathematics Examination)
 # 90 tasks. Data: HuggingFace AI-MO/aimo-validation-aime
-# Agent prints answer to stdout. Test compares stdout to expected answer.
+# Agent writes answer to /home/agent/answer.txt. Verifier compares numerically to expected answer.
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
@@ -40,14 +39,25 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=aime
 
-COPY --from=test-exact-match /test.sh /grade.sh
+RUN cat > /grade.sh <<'GRADE'
+#!/bin/bash
+mkdir -p /logs/verifier
+AGENT_ANSWER=$(tr -d '[:space:]' < /home/agent/answer.txt 2>/dev/null)
+EXPECTED=$(echo "$EXPECTED_ANSWER" | tr -d '[:space:]')
+if [[ "$AGENT_ANSWER" =~ ^[0-9]+$ ]] && [ "$((10#$AGENT_ANSWER))" = "$((10#$EXPECTED))" ]; then
+  echo 1 > /logs/verifier/reward.txt
+else
+  echo 0 > /logs/verifier/reward.txt
+fi
+GRADE
+
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 /eval-materialize-task
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Solve this problem. Print only the answer as a single integer.
+  export TASK="Solve the following problem. Reason step by step, create the file /home/agent/answer.txt, and put your final answer there. Your answer should be a single integer from 0 to 999 inclusive.
 
 $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
   export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
