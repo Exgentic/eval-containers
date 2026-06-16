@@ -367,3 +367,43 @@ test_install_order_same_run_ok if {
 	ok := [run("apt-get install -y curl && pip install --no-cache-dir numpy==1.26.0")]
 	count(warn) == 0 with input as ok with data.params.category as "benchmarks"
 }
+
+# ════════════════════════════════════════════════════════════════════
+# secret_in_arg_or_env (red) — credentials must never be baked (rule 8a)
+# Fixtures are otherwise clean (tagged FROM + eval.type) so `count(deny)`
+# isolates the secret rule.
+# ════════════════════════════════════════════════════════════════════
+
+# A credential baked as ENV is denied (the HF_TOKEN leak vector).
+test_secret_env_denied if {
+	bad := [from("python:3.12-slim"), benchmark_type, env("HF_TOKEN", "hf_x")]
+	count(deny) == 1 with input as bad with data.params.category as "benchmarks"
+}
+
+# A credential passed as a build ARG is denied (persists in image history).
+test_secret_arg_denied if {
+	bad := [from("python:3.12-slim"), benchmark_type, arg("OPENAI_API_KEY")]
+	count(deny) == 1 with input as bad with data.params.category as "benchmarks"
+}
+
+# The rule fires fleet-wide, not just the inspection domain (gateways/core too).
+test_secret_env_denied_outside_inspection_domain if {
+	bad := [from("python:3.12-slim"), env("AWS_SECRET_ACCESS_KEY", "x")]
+	count(deny) == 1 with input as bad with data.params.category as "core"
+}
+
+# Version args that merely CONTAIN "key" must NOT trip it (`_KEY`, not bare `KEY`).
+test_version_args_are_not_secrets if {
+	ok := [from("python:3.12-slim"), benchmark_type, arg("PORTKEY_VERSION=1.15.2"), arg("AGENT_VERSION")]
+	count(deny) == 0 with input as ok with data.params.category as "benchmarks"
+}
+
+# A gated fetch via the ephemeral secret mount is the SANCTIONED path — no ARG/ENV,
+# so no finding (the RUN command mentioning HF_TOKEN is not an ARG/ENV instruction).
+test_secret_mount_run_is_clean if {
+	ok := [
+		from("python:3.12-slim"), benchmark_type,
+		run("--mount=type=secret,id=HF_TOKEN HF_TOKEN=$(cat /run/secrets/HF_TOKEN) curl ..."),
+	]
+	count(deny) == 0 with input as ok with data.params.category as "benchmarks"
+}

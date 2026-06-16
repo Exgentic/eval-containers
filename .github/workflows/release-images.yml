@@ -28,6 +28,8 @@ on:
 permissions:
   contents: read
   packages: write # push to GHCR; Actions-pushed packages auto-link to this repo
+  # BuildKit attaches the provenance/SBOM attestations with the GHCR push creds
+  # below, so no id-token/attestations (OIDC) perms are needed — least privilege.
 
 env:
   REGISTRY: ghcr.io/exgentic
@@ -69,6 +71,7 @@ jobs:
       - name: Build + push the fleet at the tag
         env:
           TAG: ${{ steps.ver.outputs.tag }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # GH Actions secret ref → build secret for the 4 HF-gated benchmarks
         run: |
           # Load every artifact bake file — they carry the `contexts` that let one
           # bake call build the whole graph in dependency order (core → bases →
@@ -81,15 +84,80 @@ jobs:
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           mapfile -t TARGETS < <(grep -hoE '^target "[^"]+"' "${FILES[@]}" \
             | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+          # Drop per-task benchmarks (`FROM ${TASK_BASE}`): they have no standalone
+          # image — each task is its own image, published by publish-per-task.yml.
+          # A blank TASK_BASE aborts the whole bake (this is what failed the first
+          # v0.1.0 republish on benchmark-skills-bench).
+          mapfile -t PERTASK < <(grep -rlE '^FROM[[:space:]]+\$\{TASK_BASE\}' containers/benchmarks/*/Dockerfile \
+            | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#benchmark-\1#')
+          if [ "${#PERTASK[@]}" -gt 0 ]; then
+            echo "Excluding ${#PERTASK[@]} per-task benchmark(s) (see publish-per-task.yml): ${PERTASK[*]}"
+            for x in "${PERTASK[@]}"; do
+              for i in "${!TARGETS[@]}"; do [ "${TARGETS[$i]}" = "$x" ] && unset 'TARGETS[$i]'; done
+            done
+            TARGETS=("${TARGETS[@]}")
+          fi
           echo "Building ${#TARGETS[@]} targets at ${REGISTRY}:${TAG}"
           # --set '*.args.REGISTRY=' so every Dockerfile's `FROM ${REGISTRY}/...`
           # resolves to GHCR (the bake context keys already use ${REGISTRY}).
           # --set '*.labels.…source=' stamps the OCI provenance label on every
           # image, matching the CLI build path (naming::REPO_URL / bake::base_args).
+          # --provenance/--sbom attach a SLSA build-provenance attestation and a
+          # syft SBOM to every pushed image (BuildKit-native, authed with the GHCR
+          # push creds — no extra OIDC perms). Read them back with `cosign
+          # verify-attestation` or `docker buildx imagetools inspect <img>`.
+          # --set '*.secrets=…HF_TOKEN' feeds the 4 HF-gated benchmarks' build-time
+          # `RUN --mount=type=secret,id=HF_TOKEN` from the HF_TOKEN env (repo secret);
+          # other targets ignore it, and type=secret never lands in a layer.
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
+            --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
+            --provenance=mode=max --sbom=true \
             "${TARGETS[@]}" --push
+
+      - name: Install trivy
+        # SHA-pinned (third-party action, per #157). `cache: true` is broken on
+        # v0.3.1 (see pre-commit.yml) so the binary downloads each run (~secs).
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+
+      - name: CVE gate — scan the base images (trivy)
+        env:
+          EVAL_REGISTRY: ${{ env.REGISTRY }}
+          EVAL_TRIVY_TAG: ${{ steps.ver.outputs.tag }}
+          EVAL_TRIVY_KINDS: core
+          EVAL_TRIVY_FROM_REGISTRY: "1"
+        run: |
+          # The core bases are the shared layers every leaf inherits (rule 11), so
+          # a base CVE propagates fleet-wide — gate the release on them. Scans the
+          # just-pushed images straight from the registry (trivy pulls), reusing
+          # the curated .github/.trivyignore. The full per-leaf scan parallelizes
+          # in the build-sweep fan-out (follow-up PR), where each matrix job scans
+          # its own image cheaply rather than 147 serial pulls on one runner.
+          tests/static/security/trivy.sh image
+
+      - name: Tag the fleet :latest (alias of the released version)
+        env:
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          # Runtime + Dockerfiles reference images at :latest, but the bake pushes
+          # :$TAG only. Promote each published image's :$TAG to :latest WITHOUT
+          # rebuilding — imagetools copies the full manifest incl. the provenance/
+          # SBOM attestations. Runs AFTER the CVE gate, so :latest only moves once
+          # the bases pass scan. Same dirs-with-a-bake-target enumeration the build
+          # uses (skips helper dirs like core/oracle, core/process-compose).
+          for kind in core agents benchmarks models gateways; do
+            for d in containers/"$kind"/*/; do
+              name=$(basename "$d"); case $name in _*) continue ;; esac
+              [ -f "${d}docker-bake.hcl" ] || continue
+              # Skip per-task benchmarks — not pushed by the bake above (no
+              # standalone image), so there's no :$TAG to alias.
+              grep -qE '^FROM[[:space:]]+\$\{TASK_BASE\}' "${d}Dockerfile" 2>/dev/null && continue
+              ref="${REGISTRY}/${kind}/${name}"
+              echo "alias ${ref}:${TAG} -> ${ref}:latest"
+              docker buildx imagetools create --tag "${ref}:latest" "${ref}:${TAG}"
+            done
+          done
 
       - name: Publish per-benchmark compose artifacts
         env:

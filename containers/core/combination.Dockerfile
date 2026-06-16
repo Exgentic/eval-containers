@@ -69,6 +69,15 @@ RUN AGENT_VERSION="${AGENT_VERSION:-$(cat /opt/agent/VERSION 2>/dev/null)}" \
 # orchestrator and ships only in the -standalone bundle.
 COPY --from=runtime-bundle /bundle/bin/gosu /usr/local/bin/gosu
 
+# Ensure the agent user (uid 1002) and /home/agent exist so benchmarks that
+# ask the agent to write files there (e.g. AIME's answer.txt) work correctly.
+RUN grep -q '^agent:' /etc/passwd || echo 'agent:x:1002:0::/home/agent:/bin/bash' >> /etc/passwd \
+ && grep -q '^agent:' /etc/shadow || echo 'agent:!:19500:0:99999:7:::' >> /etc/shadow \
+ && grep -q '^agent:' /etc/group  || echo 'agent:x:1002:' >> /etc/group \
+ && mkdir -p /home/agent \
+ && chown -R 1002:0 /home/agent \
+ && chmod -R g+rwX /home/agent
+
 # ─── Framework scripts ───────────────────────────────────────────────
 COPY process-compose/run              /usr/local/bin/run
 COPY process-compose/run-agent        /usr/local/bin/run-agent

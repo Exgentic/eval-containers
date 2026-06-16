@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir pyarrow==18.1.0 huggingface_hub==0.26.2
 
 # Public sample set. The full evaluation set is gated and held by Epoch AI.
 RUN --mount=type=secret,id=HF_TOKEN \
-    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && \
+    HF_TOKEN=$(cat /run/secrets/HF_TOKEN) && \
     export HF_TOKEN && \
     python3 <<'PYEOF'
 import os, json

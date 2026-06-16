@@ -1,7 +1,7 @@
 ---
 benchmark: aime
-host: local podman+Rosetta
-commit: 1a344fd
+host: OpenShift (IBM Cloud, amd64)
+commit: f961354
 ---
 # Audit — aime
 
@@ -11,12 +11,18 @@ commit: 1a344fd
 
 | Check | Status | Evidence |
 |-------|:------:|----------|
-| building | ✓ | built on Rosetta (podman, no QEMU) |
-| running | ? | not run with a live agent |
+| building | ✓ | built on OpenShift via OC BuildConfig |
+| running | ✓ | 90-task full run completed (see Score below) |
 | isolation | ? | not audited per-benchmark |
 | oracle | ✓ | gold=1.0 / no-op=0.0 — `eval-containers oracle aime` |
 | traces-reviewed | ? | |
 | replicate-official | ? | |
+
+## Score
+
+| Run | Agent | Model | Tasks | Correct | Score | Notes |
+|-----|-------|-------|------:|--------:|------:|-------|
+| 2026-06-16 | codex v0.120.0 | azure/gpt-5.4 (bifrost) | 90 | 37 | **41.1%** | parallelism=10; 5 rate-limited retried |
 
 ## Safety — can the run harm us or cheat?
 

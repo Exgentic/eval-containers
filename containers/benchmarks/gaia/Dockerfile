@@ -22,11 +22,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.12983"
 
 RUN pip install --no-cache-dir huggingface_hub==0.26.2 pyarrow==18.1.0
 
-# Download dataset files (gated — requires HF_TOKEN). Token plumbing
-# lives in core/benchmark-base-hf: prefer the secret mount (CI); fall
-# back to the inherited ENV HF_TOKEN set via --build-arg (local test).
+# Download the gated dataset files.
 RUN --mount=type=secret,id=HF_TOKEN \
-    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && \
+    HF_TOKEN=$(cat /run/secrets/HF_TOKEN) && \
     python3 -c "from huggingface_hub import snapshot_download; snapshot_download('gaia-benchmark/GAIA', repo_type='dataset', revision='682dd723ee1e1697e00360edccf2366dc8418dd9', allow_patterns=['2023/validation/*'], local_dir='/tmp/gaia', token='$HF_TOKEN')"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Attached files are

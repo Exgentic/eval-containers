@@ -21,7 +21,7 @@
 
 Outcome-based scoring: SQL verifiers query final DB state via each MCP server's `/api/sql-runner` endpoint. Deterministic — no LLM-as-judge in the hot path.
 
-## Per-task sidecar selection ([RULES.md](RULES.md) 24h)
+## Per-task sidecar selection ([RULES.md](../../../.agents/benchmarks/RULES.md) 24h)
 
 Each task's `gym_servers_config` names a subset of the seven sidecars. The chart self-resolves which to render from [`task-profiles/enterpriseops-gym.json`](../_chart/task-profiles/enterpriseops-gym.json); compose reads the same map.
 
@@ -74,7 +74,7 @@ EVAL_TASK_ID=0 docker compose up runner gateway otelcol \
 
 `setup_task.py` (root, pre-agent) reads the task's `gym_servers_config`, POSTs `/api/seed-database` on each referenced server to create a fresh per-task DB, captures the resulting `database_id` + auth context in `/var/eval-state/state.json` (root-only, mode 600), and writes the agent's `TASK`: system policy, MCP endpoints + per-server `database_id` + auth headers, allowed tool list, user request.
 
-The agent receives only `TASK` and the model `*_BASE_URL`s (per [RULES.md](RULES.md) §7). It figures out how to speak MCP on its own.
+The agent receives only `TASK` and the model `*_BASE_URL`s (per [RULES.md](../../../.agents/benchmarks/RULES.md) §7). It figures out how to speak MCP on its own.
 
 `verify_task.py` (root, post-agent) queries final state and writes `reward = passed/total` plus the full `verifier_report.json`.
 

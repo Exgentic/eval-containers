@@ -67,12 +67,4 @@ RUN chmod +x /eval-materialize-task /eval-grade
 RUN mkdir -p /tasks /tests /app
 WORKDIR /app
 
-# HF token plumbing — single home (rule 11) for the 4 HF-gated child
-# Dockerfiles (gaia, flores200, hle, frontiermath). CI passes the token
-# via `--mount=type=secret,id=HF_TOKEN` (preferred, production path).
-# The local test harness lacks `testcontainers` secret support, so it
-# also accepts `--build-arg HF_TOKEN=...` — the ARG→ENV bridge here
-# lets every child image's `echo "$HF_TOKEN"` fallback in their secret-
-# reader see it without per-child ARG declarations.
-ARG HF_TOKEN=""
-ENV HF_TOKEN=$HF_TOKEN
+# No HF_TOKEN ARG/ENV — gated children read it from --mount=type=secret (rule 8a).

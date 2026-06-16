@@ -32,7 +32,7 @@ RUN pip install --no-cache-dir huggingface_hub==0.26.2
 # arb/hin/swh). `Muennighoff/flores200` is a loader script that points back at
 # the dead Meta URL.
 RUN --mount=type=secret,id=HF_TOKEN \
-    HF_TOKEN=$(cat /run/secrets/HF_TOKEN 2>/dev/null || echo "$HF_TOKEN") && \
+    HF_TOKEN=$(cat /run/secrets/HF_TOKEN) && \
     export HF_TOKEN && \
     python3 <<'PYEOF'
 import os, json

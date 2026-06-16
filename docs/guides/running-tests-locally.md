@@ -20,7 +20,19 @@ Eval Containers is a **Docker-first** project. Everything — Dockerfiles, compo
 - **Podman** with the `docker` compatibility CLI — works if you already have Podman installed; the Apple-Silicon setup has a few gotchas, all collected in [Run with Podman on Apple Silicon](podman-on-apple-silicon.md).
 - **Colima / OrbStack / Rancher Desktop** — also work; same Docker-compatible API.
 
-**You interact with Docker through the `docker` command and nothing else.** `docker build`, `docker compose`, `docker buildx bake`. The underlying engine doesn't matter. If you find yourself typing `podman` directly, you're off the happy path — fix your setup and use `docker` instead.
+**Which runtime you're on decides which commands you run.** Pick one:
+
+- **Docker Desktop (Apple Silicon) with Rosetta on** — *recommended; what CI uses.* Everything in this guide works exactly as written (`docker build`, `docker buildx bake`, `eval-containers build`, `cargo test`); Rosetta handles amd64.
+- **Podman (Apple Silicon)** — works, but **`docker buildx bake`'s BuildKit emulates amd64 with QEMU and segfaults on Python-heavy images (pyarrow)**. Fix: prefix **`DOCKER_BUILDKIT=0`** — the cargo suites then build with classic `docker build` → buildah → **Rosetta**, all locally, no `podman` command needed. Details: [Podman on Apple Silicon](podman-on-apple-silicon.md).
+
+| Task | Docker Desktop | Podman (Apple Silicon) |
+|------|----------------|------------------------|
+| Build one image | `docker build` / `eval-containers build` | `DOCKER_BUILDKIT=0 docker build` (classic → Rosetta) |
+| Build the bake graph | `docker buildx bake` / `eval-containers build` | not via the CLI (it bakes → QEMU); the cargo suites build it under `DOCKER_BUILDKIT=0` |
+| Replay / build cargo suites | `cargo test --test replay\|build -- --ignored` | `DOCKER_BUILDKIT=0 cargo test --test replay\|build -- --ignored` |
+| Fast / structural tests | `cargo test --test check …` | identical (no image build) |
+
+**The one rule:** Docker Desktop → `docker`/bake as-is; podman → prefix `DOCKER_BUILDKIT=0` so amd64 builds use classic `docker build` → Rosetta.
 
 ## Disk Budget
 
@@ -71,7 +83,10 @@ the test harness, Ryuk under podman). They're all collected in one place:
 
 **→ [Running with Podman on Apple Silicon](podman-on-apple-silicon.md)**
 
-Once set up, use `docker` for everything — never invoke `podman` directly.
+Day-to-day you'll use `docker`, but on podman **amd64 image builds must be classic**
+(`DOCKER_BUILDKIT=0 docker build` → buildah → **Rosetta**) — `docker buildx bake`
+routes through BuildKit's QEMU and segfaults on Python-heavy images. The cargo test
+suites do this for you under `DOCKER_BUILDKIT=0` (podman guide §5a–§6).
 
 ## Test Levels
 
@@ -103,9 +118,11 @@ eval-containers build eval aime --agent codex
 
 That's it. Don't try to build the fleet locally — CI does that via [release pipeline](../../.agents/delivery/release/SKILL.md).
 
+> **Podman:** `eval-containers build` and `docker buildx bake` bake via BuildKit (QEMU) and won't build Python-heavy images here. Use classic `DOCKER_BUILDKIT=0 docker build` for a single image (its in-repo `FROM` bases must be built first), or let the cargo suites build the stack under `DOCKER_BUILDKIT=0` — see [podman guide §6](podman-on-apple-silicon.md).
+
 ### Level 2b: Full-fleet build sweep (local)
 
-Locally buildable and valid on Mac/Linux with Podman or Docker — the "don't build the fleet locally" warning above is about disk/time cost, not capability. With Rosetta on (see setup above), every image builds fine. The cost is just disk (~150 GB peak before `ImageGuard` cleans each tag) and time.
+On **Docker Desktop** with Rosetta the "don't build the fleet locally" warning above is about disk/time cost, not capability — every image builds fine; the cost is just disk (~150 GB peak before `ImageGuard` cleans each tag) and time. **On podman, prefix `DOCKER_BUILDKIT=0`** so the sweep builds via classic `docker build` → Rosetta instead of bake's QEMU ([podman guide §5a](podman-on-apple-silicon.md)).
 
 ```bash
 # Serial (default) — one image at a time, ~90 min for the full fleet
@@ -128,6 +145,14 @@ cargo test --test replay -- --ignored --test-threads=6
 ```
 
 Rule of thumb: `--test-threads = VM_GB / 4` (each replay stack uses ~4 GB peak).
+
+> On **podman** (Apple Silicon), `docker buildx bake`'s BuildKit emulates amd64
+> with QEMU and segfaults Python builds, so `bootstrap_core_bases()` fails under
+> the default builder. Prefix **`DOCKER_BUILDKIT=0`** — the harness then builds the
+> full stack from source with classic `docker build` → Rosetta (under a local-only
+> registry, so nothing stale is force-pulled), and the suite runs locally:
+> `DOCKER_BUILDKIT=0 cargo test --test replay -- --ignored --test-threads=6`.
+> ([podman guide §5a](podman-on-apple-silicon.md) explains why.)
 
 ### Level 4: Recording fixtures (costs API calls)
 
