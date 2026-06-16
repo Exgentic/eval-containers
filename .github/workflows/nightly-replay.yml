@@ -17,11 +17,10 @@ name: Nightly replay E2E
 # targets; ensure_images() runs `cargo run -- build eval <bench> --agent <agent>`.
 
 on:
-  # TEMP (perf tuning): push trigger so speed changes validate on the branch.
-  # Remove before merge — the nightly is the schedule below. (schedule and
-  # workflow_dispatch only fire when the workflow is on the default branch.)
-  push:
-    branches: [elron/replay-otel-traces]
+  # Nightly. schedule + workflow_dispatch only fire when the workflow is on the
+  # default branch, so the nightly starts once this lands on main. Validated at
+  # bring-up via a temporary push trigger: single case, then the 3-case canary,
+  # all green; tuned from ~5m06s to ~2m49s.
   schedule:
     - cron: '17 3 * * *' # nightly, 03:17 UTC
   workflow_dispatch:
