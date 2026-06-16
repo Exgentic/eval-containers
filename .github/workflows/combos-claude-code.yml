@@ -92,7 +92,7 @@ jobs:
       - name: Oracle — gold solution must score 1.0
         env:
           B: ${{ matrix.b }}
-        run: ./eval-containers oracle --benchmark "$B"
+        run: ./eval-containers oracle "$B"
 
   report:
     name: Summary
