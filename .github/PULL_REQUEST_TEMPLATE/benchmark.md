@@ -119,7 +119,7 @@ eval-containers run <name> --agent claude-code --model gpt-5.4 --task-id 0 --loc
 
 If you're setting `eval.benchmark.released="true"`, you MUST also:
 
-- [ ] Ship a replay fixture at `tests/run/replay/fixtures/<name>-0-<agent>.trajectory.jsonl`
+- [ ] Ship a replay fixture at `tests/run/replay/fixtures/<name>-0-<agent>.traces.jsonl`
 - [ ] Add a `provenance.json` entry recording the model, timestamp, and release tag
 - [ ] `cargo test --test replay -- --ignored` passes including your new fixture
 

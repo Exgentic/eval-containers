@@ -1,6 +1,6 @@
 # appworld
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/appworld-0-claude-code.trajectory.jsonl`](../../tests/fixtures/appworld-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/appworld-0-claude-code.traces.jsonl`](../../tests/fixtures/appworld-0-claude-code.traces.jsonl)
 
 
 AppWorld - 9 simulated apps with 457 APIs

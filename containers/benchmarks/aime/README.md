@@ -1,6 +1,6 @@
 # aime
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/aime-0-claude-code.trajectory.jsonl`](../../tests/fixtures/aime-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/aime-0-claude-code.traces.jsonl`](../../tests/fixtures/aime-0-claude-code.traces.jsonl)
 
 
 American Invitational Mathematics Examination

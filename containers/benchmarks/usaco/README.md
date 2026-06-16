@@ -1,6 +1,6 @@
 # usaco
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/usaco-0-codex.trajectory.jsonl`](../../tests/fixtures/usaco-0-codex.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/usaco-0-codex.traces.jsonl`](../../tests/fixtures/usaco-0-codex.traces.jsonl)
 
 
 USACO - competitive programming

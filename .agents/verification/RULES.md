@@ -60,7 +60,7 @@ The **procedure** for executing each process — exact commands, order, gates �
 
 9. **Fixtures are immutable ground truth.** Recorded trajectories under `tests/run/replay/fixtures/` are PRODUCED by release verification's live sweep and feed contribution verification's replay sweep. Contributors MUST NOT hand-edit fixtures.
 
-10. **Every fixture has a provenance record.** Filename convention `{benchmark}-{task-id}-{agent}.trajectory.jsonl`. A sibling `tests/run/replay/fixtures/provenance.json` records the model, timestamp, and release tag under which each fixture was captured.
+10. **Every fixture has a provenance record.** Filename convention `{benchmark}-{task-id}-{agent}.traces.jsonl` (native OTLP/JSON — OpenTelemetry `gen_ai` spans). A sibling `tests/run/replay/fixtures/provenance.json` records the model, timestamp, and release tag under which each fixture was captured.
 
 11. **Broken fixtures are documented, not deleted.** `tests/run/replay/fixtures/broken.json` marks fixtures whose recorded run is known-bad (refusals, wrong answers, content filter hits, max-tokens truncation). Mechanical findings on these are reported but do NOT fail the continuous tests — they are re-recorded in the next release verification cycle.
 
@@ -120,3 +120,4 @@ tests rather than moving into `.agents/`.
 | 2026-04-15 | Rewrite as testing strategy. Two verification processes; subfolder organization; known-broken manifests; fixture provenance; mechanical > procedural > aspirational precedence. |
 | 2026-06-14 | Rule 3: split the suite into per-stage Cargo crates (`tests/static` / `tests/build` / `tests/run` + shared `tests/support`). The dependency-light `static` crate is the per-PR gate and excludes the testcontainers/tokio/reqwest stack. Test target names preserved, so `cargo test --test <name>` is unchanged. |
 | 2026-06-14 | Dissolved the two pre-`.agents` test-doctrine relics (`tests/cli/RULES.md`, `tests/containers/RULES.md`): ~70% duplicated this strategy + the per-category rules. The one unique contract (replay-model serve behavior) moved to [models](../models/RULES.md) rule 17; the unused local-registry rule was dropped (no push test binds it); the rest was redundant. Removed both from the category index above. |
+| 2026-06-15 | Rule 10: replay fixture format migrated from LiteLLM `StandardLoggingPayload` (`*.trajectory.jsonl`) to native OTLP/JSON (`*.traces.jsonl`, OpenTelemetry `gen_ai` spans). `models/replay` and the `task_inspection` rules now consume OTLP; a stopgap converter bridges the still-`trajectory.jsonl` recording until native OTLP recording lands (see [tests/run/replay/RULES.md](../../tests/run/replay/RULES.md)). |

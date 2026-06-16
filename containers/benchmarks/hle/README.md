@@ -1,6 +1,6 @@
 # hle
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/hle-0-claude-code.trajectory.jsonl`](../../tests/fixtures/hle-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/hle-0-claude-code.traces.jsonl`](../../tests/fixtures/hle-0-claude-code.traces.jsonl)
 
 
 HLE - Humanity's Last Exam, hardest standardized AI evaluation

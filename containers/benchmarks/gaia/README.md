@@ -1,6 +1,6 @@
 # gaia
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/gaia-0-goose.trajectory.jsonl`](../../tests/fixtures/gaia-0-goose.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/gaia-0-goose.traces.jsonl`](../../tests/fixtures/gaia-0-goose.traces.jsonl)
 
 
 GAIA - General AI Assistants

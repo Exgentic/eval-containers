@@ -1,6 +1,6 @@
 # simpleqa
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/simpleqa-0-goose.trajectory.jsonl`](../../tests/fixtures/simpleqa-0-goose.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/simpleqa-0-goose.traces.jsonl`](../../tests/fixtures/simpleqa-0-goose.traces.jsonl)
 
 
 SimpleQA - factual question answering

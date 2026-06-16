@@ -1,6 +1,6 @@
 # aider-polyglot
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/aider-polyglot-0-aider.trajectory.jsonl`](../../tests/fixtures/aider-polyglot-0-aider.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/aider-polyglot-0-aider.traces.jsonl`](../../tests/fixtures/aider-polyglot-0-aider.traces.jsonl)
 
 
 Aider Polyglot - multi-language code editing (Exercism)

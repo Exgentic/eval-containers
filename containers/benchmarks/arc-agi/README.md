@@ -1,6 +1,6 @@
 # arc-agi
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/arc-agi-0-claude-code.trajectory.jsonl`](../../tests/fixtures/arc-agi-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/arc-agi-0-claude-code.traces.jsonl`](../../tests/fixtures/arc-agi-0-claude-code.traces.jsonl)
 
 
 ARC-AGI-2 - Abstract grid reasoning tasks

@@ -90,8 +90,8 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
    live run becomes a replay fixture so contribution verification can
    re-run it at zero cost (`tests/run/live/RULES.md:2`,
    `tests/run/live/RULES.md:11`). Rename
-   `output/<bench>/<task>/model/trajectory.jsonl` →
-   `.agents/verification/replay/fixtures/<bench>-<task>-claude-code.trajectory.jsonl`
+   `output/<bench>/<task>/model/trajectory.jsonl` (converted to OTLP) →
+   `.agents/verification/replay/fixtures/<bench>-<task>-claude-code.traces.jsonl`
    and add a `provenance.json` entry recording model, agent version,
    benchmark data_revision, timestamp, and the release tag
    (`tests/run/replay/RULES.md:6`). A run that fails an

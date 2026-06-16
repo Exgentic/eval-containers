@@ -53,11 +53,14 @@ Parent: [../RULES.md](../RULES.md)
    Wired via the standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var (base
    URL — each flavor derives any provider-specific suffix internally).
 
-7. **litellm trajectory extras** — litellm MUST additionally write
-   `/output/trajectory.jsonl` (LiteLLM StandardLoggingPayload format,
-   consumed by `models/replay`) and `/output/result.json` (aggregated
-   cost). The `eval_logger` callback is the load-bearing dependency
-   here — every replay fixture in the repo originated from it.
+7. **litellm trajectory + result extras** — the `otel` callback MUST emit
+   `gen_ai.*` spans (rule 6) which the otelcol sidecar writes to
+   `/output/traces.jsonl` — the native OTLP/JSON trace that `models/replay`
+   replays and the inspection rules read. litellm MUST additionally write
+   `/output/result.json` (aggregated cost) and `/output/trajectory.jsonl`
+   (LiteLLM StandardLoggingPayload) via the `eval_logger` callback;
+   `trajectory.jsonl` is the legacy recording from which OTLP fixtures are
+   currently converted, until recording emits OTLP natively.
 
 8. **Stripped-component regression guards** — when a component is
    removed from a flavor (e.g. the bifrost sidecar that portkey used to

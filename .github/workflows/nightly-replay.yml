@@ -1,0 +1,131 @@
+name: Nightly replay E2E
+
+# Real builds + a real replay run — the daemon-backed end-to-end that the
+# per-PR test.yml (daemon-free) deliberately can't do. The full ~243-fixture
+# suite is split across a parallel shard matrix; each shard builds the core base
+# images + its slice's per-benchmark eval images, then runs the #[ignore]d
+# replay tests in tests/run/replay: each stands up the benchmark's compose stack
+# with the models/replay gateway serving a recorded OTLP fixture, and asserts the
+# runner's result.json.
+#
+# Why CI and not a dev laptop: ubuntu-latest is native x86_64, so the
+# linux/amd64 images build without QEMU — the emulation that segfaults the
+# pyarrow install on arm64 dev hosts (so benchmark-base-hf can't build there).
+#
+# Replay needs NO model API keys — the fixtures are recorded responses, and the
+# tests inject dummy creds. Benchmark dataset builds need HF_TOKEN (repo secret).
+# The tests self-bootstrap their images: bootstrap_core_bases() bakes the core
+# targets; ensure_images() runs `cargo run -- build eval <bench> --agent <agent>`.
+
+on:
+  # schedule + workflow_dispatch fire only on the default branch, so the nightly
+  # begins once this merges to main. Validated at bring-up via a temporary push
+  # trigger: the full ~243-fixture suite, sharded 16 ways, ran green (241/243,
+  # ~31 min wall) — see the PR for the run links.
+  schedule:
+    - cron: '17 3 * * *' # nightly, 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: >-
+          Space-separated test-name substrings for tests/run/replay (e.g.
+          "replay_aime" or a full name). Empty = the full suite, sharded.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: read # pull GHCR-hosted upstream base images without anonymous rate limits
+
+concurrency:
+  group: nightly-replay-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash # explicit `bash` => `-eo pipefail`; GitHub's implicit default omits pipefail
+
+jobs:
+  replay:
+    name: shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false # one shard's failure must not cancel the others
+      matrix:
+        # N-way shard of the ~243 replay fixtures (~15 each). SHARDS is derived
+        # from strategy.job-total (= this list's length) below, so edit only this
+        # list. Per shard: a one-time ~44s base bake + ~15 x ~34s replays.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v6
+
+      # No "free disk space" step: the runner reports ~108 GB free and the build
+      # uses ~15-20 GB. The old `rm -rf` of dotnet/android/… cost ~1m43s for
+      # nothing. Re-add a reclaim step only if a heavier shard hits ENOSPC.
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: replay # all shards share one cache (same Cargo.lock), not one per shard
+
+      # NB: deliberately NO docker/setup-buildx-action — its docker-container
+      # builder can't see locally-baked bases, so the eval images' `FROM
+      # ghcr.io/exgentic/core/<base>` would miss. The runner's default `docker`
+      # driver (what local dev uses) reads the `bake --load`ed bases.
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run replay shard
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          FILTER: ${{ github.event.inputs.filter }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }} # = matrix length; no hand-maintained coupling
+        run: |
+          # Enumerate every replay test (authoritative names from --list),
+          # optionally narrow by the dispatch FILTER, then take this shard's
+          # round-robin slice. One cargo process per shard => bootstrap_core_bases
+          # bakes the shared bases once; names go AFTER `--` so libtest OR-matches
+          # them (cargo's positional [TESTNAME] takes only one).
+          ALL=$(cargo test -p eval-containers-tests-run --test replay -- --list | sed -n 's/: test$//p' | sort)
+          # Known-broken fixtures, excluded from the suite (tracked follow-ups):
+          #  - replay_enterpriseops_gym_0_codex: the OTLP conversion dropped this
+          #    fixture's bifrost-shaped output spans, so it serves 0 turns (the
+          #    agent exhausts immediately); regeneration from source pending.
+          #  - replay_alpaca_eval_482_ra_aid: ra-aid retry-loops on
+          #    REPLAY_EXHAUSTED and write-result emits invalid JSON; agent
+          #    exhaustion handling pending.
+          for kb in replay_enterpriseops_gym_0_codex replay_alpaca_eval_482_ra_aid; do
+            ALL=$(printf '%s\n' "${ALL}" | grep -vx "${kb}" || true)
+          done
+          if [ -n "${FILTER}" ]; then
+            read -ra PATS <<< "${FILTER}"
+            PAT=$(IFS='|'; printf '%s' "${PATS[*]}")
+            ALL=$(printf '%s\n' "${ALL}" | grep -E "${PAT}" || true)
+          fi
+          TOTAL=$(printf '%s\n' "${ALL}" | grep -c . || true)
+          if [ "${TOTAL}" -eq 0 ]; then
+            if [ -z "${FILTER}" ]; then echo "::error::no replay tests listed (compile failure?)"; exit 1; fi
+            echo "filter '${FILTER}' matched no tests"; exit 0
+          fi
+          mapfile -t CASES < <(printf '%s\n' "${ALL}" | awk -v S="${SHARDS}" -v SH="${SHARD}" 'NF { if (c++ % S == SH) print }')
+          echo "shard ${SHARD}/${SHARDS}: ${#CASES[@]} of ${TOTAL} tests"
+          if [ "${#CASES[@]}" -eq 0 ]; then echo "nothing for this shard"; exit 0; fi
+          printf '  %s\n' "${CASES[@]}"
+          set +e
+          cargo test -p eval-containers-tests-run --test replay \
+            -- --ignored --nocapture --test-threads=1 "${CASES[@]}" 2>&1 | tee replay.log
+          rc=${PIPESTATUS[0]}
+          if grep -qE "running 0 tests" replay.log; then
+            echo "::error::shard ${SHARD} matched names but ran 0 tests"; exit 1
+          fi
+          exit "${rc}"

@@ -1,6 +1,6 @@
 # gpqa-diamond
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/gpqa-diamond-0-codex.trajectory.jsonl`](../../tests/fixtures/gpqa-diamond-0-codex.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/gpqa-diamond-0-codex.traces.jsonl`](../../tests/fixtures/gpqa-diamond-0-codex.traces.jsonl)
 
 
 GPQA Diamond - graduate-level science

@@ -61,7 +61,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
     - `/output/agent/result.json` MUST contain: `agent`, `started_at`, `ended_at`, `exit_code`.
     - `/output/model/result.json` MUST contain: `model`, `provider`, `total_tokens`, `cost_usd`.
 
-17. **Trajectory.** The model service MUST write `/output/model/trajectory.jsonl` containing every LLM request and response (one JSON object per line, LiteLLM StandardLoggingPayload format).
+17. **Trajectory.** The model service MUST write `/output/model/trajectory.jsonl` containing every LLM request and response (one JSON object per line, LiteLLM StandardLoggingPayload format). Replay fixtures derive from this but are stored as native OTLP/JSON `traces.jsonl` (OpenTelemetry `gen_ai` spans, emitted by the gateway's `otel` callback into the otelcol sidecar) — converted from the recording until the gateway emits OTLP natively. See [tests/run/replay/RULES.md](../../tests/run/replay/RULES.md).
 
 18. **Accumulating results.** Results MUST be organized as `output/{benchmark}/{task-id}/`. Running multiple tasks MUST accumulate results without overwriting.
 
@@ -89,3 +89,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-13 | Initial version |
 | 2026-04-16 | Tightened rule 16: every benchmark metric MUST be a named field in `task/result.json`, with `reward` as the primary metric (not just the minimum subset). `test.sh` is the only writer; downstream inspection reads from this file, never from stdout. |
 | 2026-06-10 | Rule 5 (Version tags): retired "agent version as the tag" — it conflicted with top-level principle 9. The tag now encodes the Eval Containers release version (one fleet SemVer from the git tag; `latest` on `main`); upstream software versions live in `eval.*.version` labels. Resolves the principle-9-vs-rule-5 drift flagged by the rules audit. |
+| 2026-06-15 | Rule 17: replay fixtures are now native OTLP/JSON `traces.jsonl` (OpenTelemetry `gen_ai` spans via the otelcol sidecar), not LiteLLM `trajectory.jsonl`. The model still writes `trajectory.jsonl` for recording; OTLP fixtures are converted from it until the gateway emits OTLP natively. |

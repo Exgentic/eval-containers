@@ -56,11 +56,12 @@ model_list:
 
 litellm_settings:
   # Two callbacks:
-  # - "otel" emits gen_ai.* semconv spans to OTEL_EXPORTER_OTLP_ENDPOINT
-  #   for observability and the otelcol sidecar.
-  # - "eval_logger.eval_logger_instance" writes one
-  #   StandardLoggingPayload per request to /output/trajectory.jsonl —
-  #   this is the file `models/replay` consumes to replay a recorded run.
-  #   Loaded from /opt/gateway/eval_logger.py (PYTHONPATH set by the
-  #   gateways/litellm base image).
+  # - "otel" emits gen_ai.* semconv spans to OTEL_EXPORTER_OTLP_ENDPOINT;
+  #   the otelcol sidecar writes them to /output/traces.jsonl — the native
+  #   OTLP trace that `models/replay` replays and the inspection rules read.
+  # - "eval_logger.eval_logger_instance" writes /output/result.json
+  #   (aggregated cost) and /output/trajectory.jsonl (StandardLoggingPayload,
+  #   the legacy recording from which OTLP fixtures are converted until
+  #   recording emits OTLP natively). Loaded from /opt/gateway/eval_logger.py
+  #   (PYTHONPATH set by the gateways/litellm base image).
   callbacks: ["otel", "eval_logger.eval_logger_instance"]

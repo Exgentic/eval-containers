@@ -59,7 +59,7 @@ already covers.
 
 ## Procedure
 
-For each `tests/run/replay/fixtures/*.trajectory.jsonl` (or a directory of live
+For each `tests/run/replay/fixtures/*.traces.jsonl` (or a directory of live
 `inspector` outputs):
 
 1. **Gather context.** Note the benchmark name, its

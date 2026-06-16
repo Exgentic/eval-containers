@@ -139,7 +139,7 @@ async fn start_replay_mock(net: &str, host_name: &str) -> ContainerAsync<Generic
         .with_platform("linux/amd64")
         .with_mount(Mount::bind_mount(
             fixture_path().to_str().expect("utf8 fixture path"),
-            "/data/trajectory.jsonl",
+            "/data/traces.jsonl",
         ))
         .with_network(net)
         .with_container_name(host_name.to_string())

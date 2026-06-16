@@ -158,7 +158,7 @@ shape so findings diff cleanly across releases.
     / n.a. with a one-line reason per question.
 24. **Walk new or changed fixtures** — run the `audit-trajectory` skill (5 task
     + 5 run questions per fixture) over each new/changed
-    `*.trajectory.jsonl`. Output: a written verdict per fixture.
+    `*.traces.jsonl`. Output: a written verdict per fixture.
 25. **Walk the fleet** — run the `audit-fleet` skill (the 10 release questions,
     whole repo). Output: 10 answers and a red / yellow / green verdict.
 26. **Agent roster still representative** — eyeball `agents/` against the current

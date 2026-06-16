@@ -1,6 +1,6 @@
 # gdpval
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/gdpval-0-claude-code.trajectory.jsonl`](../../tests/fixtures/gdpval-0-claude-code.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/gdpval-0-claude-code.traces.jsonl`](../../tests/fixtures/gdpval-0-claude-code.traces.jsonl)
 
 
 GDPval - professional knowledge work

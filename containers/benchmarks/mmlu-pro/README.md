@@ -1,6 +1,6 @@
 # mmlu-pro
 
-**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mmlu-pro-0-openhands.trajectory.jsonl`](../../tests/fixtures/mmlu-pro-0-openhands.trajectory.jsonl)
+**Status:** Released ✓ — sample trajectory: [`tests/fixtures/mmlu-pro-0-openhands.traces.jsonl`](../../tests/fixtures/mmlu-pro-0-openhands.traces.jsonl)
 
 
 MMLU-Pro - graduate-level knowledge, multiple choice
