@@ -1,10 +1,11 @@
 name: Nightly replay E2E
 
 # Real builds + a real replay run — the daemon-backed end-to-end that the
-# per-PR test.yml (daemon-free) deliberately can't do. Builds the ~15 core base
-# images + the per-benchmark eval images, then runs the #[ignore]d replay tests
-# in tests/run/replay: each stands up the benchmark's compose stack with the
-# models/replay gateway serving a recorded OTLP fixture, and asserts the
+# per-PR test.yml (daemon-free) deliberately can't do. The full ~243-fixture
+# suite is split across a parallel shard matrix; each shard builds the core base
+# images + its slice's per-benchmark eval images, then runs the #[ignore]d
+# replay tests in tests/run/replay: each stands up the benchmark's compose stack
+# with the models/replay gateway serving a recorded OTLP fixture, and asserts the
 # runner's result.json.
 #
 # Why CI and not a dev laptop: ubuntu-latest is native x86_64, so the
@@ -17,25 +18,25 @@ name: Nightly replay E2E
 # targets; ensure_images() runs `cargo run -- build eval <bench> --agent <agent>`.
 
 on:
-  # Nightly. schedule + workflow_dispatch only fire when the workflow is on the
-  # default branch, so the nightly starts once this lands on main. Validated at
-  # bring-up via a temporary push trigger: single case, then the 3-case canary,
-  # all green; tuned from ~5m06s to ~2m49s.
+  # TEMP (bring-up): push trigger to validate the sharded matrix on the branch.
+  # Remove before merge — the nightly is the schedule below (schedule and
+  # workflow_dispatch only fire when the workflow is on the default branch).
+  push:
+    branches: [elron/replay-otel-traces]
   schedule:
     - cron: '17 3 * * *' # nightly, 03:17 UTC
   workflow_dispatch:
     inputs:
       filter:
         description: >-
-          Space-separated cargo-test name filters for tests/run/replay
-          (substring match, e.g. "replay_aime" or a full name like
-          "replay_aime_17_claude_code"). Empty = the canary set.
+          Space-separated test-name substrings for tests/run/replay (e.g.
+          "replay_aime" or a full name). Empty = the full suite, sharded.
         required: false
         default: ''
 
 permissions:
   contents: read
-  packages: read # pull upstream base images (e.g. ghcr.io/berriai/litellm) without anonymous rate limits
+  packages: read # pull GHCR-hosted upstream base images without anonymous rate limits
 
 concurrency:
   group: nightly-replay-${{ github.ref }}
@@ -43,30 +44,37 @@ concurrency:
 
 jobs:
   replay:
-    name: build + replay
+    name: shard ${{ matrix.shard }}
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false # one shard's failure must not cancel the others
+      matrix:
+        # N-way shard of the ~243 replay fixtures (~15 each). Keep the SHARDS env
+        # below equal to this list's length. Per shard: a one-time ~44s base bake
+        # + ~15 x ~34s replays => ~10 min, all shards running in parallel.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    env:
+      SHARDS: '16'
     steps:
       - uses: actions/checkout@v6
 
-      # No "free disk space" step: the runner reports ~108 GB free and the
-      # trimmed build (bases + eval images) uses ~15-20 GB. The old `rm -rf` of
-      # dotnet/android/… cost ~1m43s for nothing. Re-add a reclaim step only if a
-      # heavier matrix actually hits ENOSPC.
+      # No "free disk space" step: the runner reports ~108 GB free and the build
+      # uses ~15-20 GB. The old `rm -rf` of dotnet/android/… cost ~1m43s for
+      # nothing. Re-add a reclaim step only if a heavier shard hits ENOSPC.
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: replay # all shards share one cache (same Cargo.lock), not one per shard
 
-      # NB: deliberately NO docker/setup-buildx-action. That action spins up a
-      # `docker-container` builder, which can't see images in the local Docker
-      # image store. The tests build the ~15 core bases locally (`bake --load`)
-      # and the per-benchmark eval images then do `FROM
-      # ghcr.io/exgentic/core/<base>` against those LOCAL tags — so we need the
-      # runner's default `docker` driver (which the eval build can read from),
-      # the same driver local dev uses. buildx ships on ubuntu-latest already.
+      # NB: deliberately NO docker/setup-buildx-action — its docker-container
+      # builder can't see locally-baked bases, so the eval images' `FROM
+      # ghcr.io/exgentic/core/<base>` would miss. The runner's default `docker`
+      # driver (what local dev uses) reads the `bake --load`ed bases.
 
       - name: Log in to GHCR
         uses: docker/login-action@v4
@@ -75,28 +83,37 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build images + run replay E2E
+      - name: Run replay shard
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           FILTER: ${{ github.event.inputs.filter }}
+          SHARD: ${{ matrix.shard }}
         run: |
-          # Canary: a representative spread — math/HF (aime x claude-code),
-          # safety (advbench x codex), agentic (agentbench x bob) — across
-          # benchmark bases and agent SDKs/protocols. Override with the
-          # `filter` dispatch input. Run serial (--test-threads=1) so only one
-          # compose stack is up at a time.
-          read -ra CASES <<< "${FILTER:-replay_aime_17_claude_code replay_advbench_103_codex replay_agentbench_119_bob}"
-          echo "replay cases: ${CASES[*]}"
+          # Enumerate every replay test (authoritative names from --list),
+          # optionally narrow by the dispatch FILTER, then take this shard's
+          # round-robin slice. One cargo process per shard => bootstrap_core_bases
+          # bakes the shared bases once; names go AFTER `--` so libtest OR-matches
+          # them (cargo's positional [TESTNAME] takes only one).
+          ALL=$(cargo test -p eval-containers-tests-run --test replay -- --list | sed -n 's/: test$//p' | sort)
+          if [ -n "${FILTER}" ]; then
+            read -ra PATS <<< "${FILTER}"
+            PAT=$(IFS='|'; printf '%s' "${PATS[*]}")
+            ALL=$(printf '%s\n' "${ALL}" | grep -E "${PAT}" || true)
+          fi
+          TOTAL=$(printf '%s\n' "${ALL}" | grep -c . || true)
+          if [ "${TOTAL}" -eq 0 ]; then
+            if [ -z "${FILTER}" ]; then echo "::error::no replay tests listed (compile failure?)"; exit 1; fi
+            echo "filter '${FILTER}' matched no tests"; exit 0
+          fi
+          mapfile -t CASES < <(printf '%s\n' "${ALL}" | awk -v S="${SHARDS}" -v SH="${SHARD}" 'NF { if (c++ % S == SH) print }')
+          echo "shard ${SHARD}/${SHARDS}: ${#CASES[@]} of ${TOTAL} tests"
+          if [ "${#CASES[@]}" -eq 0 ]; then echo "nothing for this shard"; exit 0; fi
+          printf '  %s\n' "${CASES[@]}"
           set +e
-          # Test-name filters go AFTER `--` (to libtest, which accepts multiple
-          # and OR-matches them), NOT as cargo's single positional [TESTNAME] —
-          # `cargo test foo bar` errors "unexpected argument". One process so
-          # bootstrap_core_bases() bakes the shared bases just once.
           cargo test -p eval-containers-tests-run --test replay \
             -- --ignored --nocapture --test-threads=1 "${CASES[@]}" 2>&1 | tee replay.log
           rc=${PIPESTATUS[0]}
           if grep -qE "running 0 tests" replay.log; then
-            echo "::error::no replay test matched filter: ${CASES[*]}"
-            exit 1
+            echo "::error::shard ${SHARD} matched names but ran 0 tests"; exit 1
           fi
-          exit "$rc"
+          exit "${rc}"
