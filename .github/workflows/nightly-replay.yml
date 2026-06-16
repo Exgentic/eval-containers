@@ -41,6 +41,10 @@ concurrency:
   group: nightly-replay-${{ github.ref }}
   cancel-in-progress: true
 
+defaults:
+  run:
+    shell: bash # explicit `bash` => `-eo pipefail`; GitHub's implicit default omits pipefail
+
 jobs:
   replay:
     name: shard ${{ matrix.shard }}
@@ -49,12 +53,10 @@ jobs:
     strategy:
       fail-fast: false # one shard's failure must not cancel the others
       matrix:
-        # N-way shard of the ~243 replay fixtures (~15 each). Keep the SHARDS env
-        # below equal to this list's length. Per shard: a one-time ~44s base bake
-        # + ~15 x ~34s replays => ~10 min, all shards running in parallel.
+        # N-way shard of the ~243 replay fixtures (~15 each). SHARDS is derived
+        # from strategy.job-total (= this list's length) below, so edit only this
+        # list. Per shard: a one-time ~44s base bake + ~15 x ~34s replays.
         shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
-    env:
-      SHARDS: '16'
     steps:
       - uses: actions/checkout@v6
 
@@ -87,6 +89,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           FILTER: ${{ github.event.inputs.filter }}
           SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }} # = matrix length; no hand-maintained coupling
         run: |
           # Enumerate every replay test (authoritative names from --list),
           # optionally narrow by the dispatch FILTER, then take this shard's
@@ -94,6 +97,16 @@ jobs:
           # bakes the shared bases once; names go AFTER `--` so libtest OR-matches
           # them (cargo's positional [TESTNAME] takes only one).
           ALL=$(cargo test -p eval-containers-tests-run --test replay -- --list | sed -n 's/: test$//p' | sort)
+          # Known-broken fixtures, excluded from the suite (tracked follow-ups):
+          #  - replay_enterpriseops_gym_0_codex: the OTLP conversion dropped this
+          #    fixture's bifrost-shaped output spans, so it serves 0 turns (the
+          #    agent exhausts immediately); regeneration from source pending.
+          #  - replay_alpaca_eval_482_ra_aid: ra-aid retry-loops on
+          #    REPLAY_EXHAUSTED and write-result emits invalid JSON; agent
+          #    exhaustion handling pending.
+          for kb in replay_enterpriseops_gym_0_codex replay_alpaca_eval_482_ra_aid; do
+            ALL=$(printf '%s\n' "${ALL}" | grep -vx "${kb}" || true)
+          done
           if [ -n "${FILTER}" ]; then
             read -ra PATS <<< "${FILTER}"
             PAT=$(IFS='|'; printf '%s' "${PATS[*]}")

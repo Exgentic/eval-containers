@@ -27,6 +27,12 @@ LABEL eval.model.name="replay"
 LABEL eval.model.provider="replay"
 
 COPY --from=build /src/target/release/replay-server /opt/gateway/server
+# start/health are the SHELL entrypoints for the standalone bundle (run under a
+# shell-bearing base). They are NOT runnable on this distroless image (no shell):
+# a compose/k8s healthcheck for the replay gateway must use the binary form
+# `["/opt/gateway/server","health"]` (as tests/run/replay/test.rs overrides) —
+# NOT services.yaml's default `/opt/gateway/health` script, which would never
+# pass here and would leave the gateway permanently unhealthy.
 COPY --chmod=755 start /opt/gateway/start
 COPY --chmod=755 health /opt/gateway/health
 

@@ -611,6 +611,30 @@ fn parts_text(msg: &Value) -> Vec<String> {
             }
         }
     }
+    // bifrost / plain-OpenAI messages have no `parts` — just a top-level `content`
+    // (a string, or an array of content parts). Fall back to it so this consumer
+    // agrees with the replay server's `canonicalize` (which reads both shapes).
+    // No-op on the current all-litellm corpus (those messages carry `parts` and no
+    // top-level `content`); matters once bifrost-recorded fixtures land.
+    if out.is_empty() {
+        match msg.get("content") {
+            Some(Value::String(c)) if !c.is_empty() => out.push(c.clone()),
+            Some(Value::Array(parts)) => {
+                for p in parts {
+                    if let Some(t) = p
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .or_else(|| p.get("input_text").and_then(Value::as_str))
+                    {
+                        if !t.is_empty() {
+                            out.push(t.to_string());
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
     out
 }
 

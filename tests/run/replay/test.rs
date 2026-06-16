@@ -386,6 +386,10 @@ macro_rules! replay_test {
                     ("EVAL_TASK_ID", $task_id),
                     ("EVAL_AGENT", $agent),
                     ("EVAL_MODEL", "replay"),
+                    // services.yaml derives the runner's EVAL_MODEL/MODEL from
+                    // ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}, so set this too —
+                    // otherwise result.json records the stale default model.
+                    ("EVAL_GATEWAY_LABEL", "replay"),
                     // services.yaml's gateway service has OPENAI_API_KEY and
                     // OPENAI_API_BASE marked required (`${VAR:?}`) so the real
                     // gateway flavor fails fast if its upstream creds are

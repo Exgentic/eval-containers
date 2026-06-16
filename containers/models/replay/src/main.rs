@@ -436,13 +436,20 @@ fn serve(port: u16, turns: Vec<Turn>) -> ! {
     // so the recorded turns replay deterministically (FIFO).
     for req in server.incoming_requests() {
         let path = req.url().split('?').next().unwrap_or("").to_string();
-        let body = match route(req.method(), &path) {
-            Some(emit) => serde_json::to_vec(&next_turn(&turns, emit)).unwrap_or_default(),
-            None => b"ok".to_vec(), // /health, /, and anything else
+        let resp = match route(req.method(), &path) {
+            Some(emit) => {
+                let body =
+                    serde_json::to_vec(&next_turn(&turns, emit)).unwrap_or_else(|_| b"{}".to_vec());
+                let ctype =
+                    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
+                        .expect("static header");
+                tiny_http::Response::from_data(body).with_header(ctype)
+            }
+            // /health, /, and any unmatched request: a plain-text "ok" (text/plain
+            // via from_string, NOT application/json — a JSON client must not parse it).
+            None => tiny_http::Response::from_string("ok"),
         };
-        let ctype = tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
-            .expect("static header");
-        let _ = req.respond(tiny_http::Response::from_data(body).with_header(ctype));
+        let _ = req.respond(resp);
     }
     std::process::exit(0);
 }
