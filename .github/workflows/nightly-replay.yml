@@ -17,11 +17,12 @@ name: Nightly replay E2E
 # targets; ensure_images() runs `cargo run -- build eval <bench> --agent <agent>`.
 
 on:
-  # TEMPORARY (bring-up phase): run on every push to this branch so we can
-  # iterate on GitHub Actions. Once it's green + fast, swap this for the nightly
-  # `schedule: - cron: '17 3 * * *'` and drop the push trigger.
-  push:
-    branches: [elron/replay-otel-traces]
+  # Nightly. NB: schedule/workflow_dispatch only fire when this workflow is on
+  # the default branch — so the nightly starts once this lands on main. Validated
+  # at bring-up via a temporary push trigger (replay_aime_17_claude_code, then the
+  # full 3-case canary, all green on GHA).
+  schedule:
+    - cron: '17 3 * * *' # nightly, 03:17 UTC
   workflow_dispatch:
     inputs:
       filter:
