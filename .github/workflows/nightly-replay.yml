@@ -18,11 +18,10 @@ name: Nightly replay E2E
 # targets; ensure_images() runs `cargo run -- build eval <bench> --agent <agent>`.
 
 on:
-  # TEMP (bring-up): push trigger to validate the sharded matrix on the branch.
-  # Remove before merge — the nightly is the schedule below (schedule and
-  # workflow_dispatch only fire when the workflow is on the default branch).
-  push:
-    branches: [elron/replay-otel-traces]
+  # schedule + workflow_dispatch fire only on the default branch, so the nightly
+  # begins once this merges to main. Validated at bring-up via a temporary push
+  # trigger: the full ~243-fixture suite, sharded 16 ways, ran green (241/243,
+  # ~31 min wall) — see the PR for the run links.
   schedule:
     - cron: '17 3 * * *' # nightly, 03:17 UTC
   workflow_dispatch:
