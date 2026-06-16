@@ -20,7 +20,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.10244"
 
 # Single-JSONL task layout. Image bytes are base64-encoded inline; the runtime
 # entrypoint materializes just the requested row and decodes image.png.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json, base64
 url = "https://huggingface.co/api/datasets/HuggingFaceM4/ChartQA/parquet/default/test/0.parquet"
 urllib.request.urlretrieve(url, "/tmp/data.parquet")

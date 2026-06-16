@@ -23,7 +23,9 @@ LABEL eval.benchmark.paper="https://huggingface.co/datasets/ibm-research/VAKRA"
 # 1-3 API chain). The per-domain JSON files each contain one dialogue; we
 # flatten them into one row per domain. The heavier capability_4 (multi-turn,
 # multi-source with policies) is deferred - see FUTURE below.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, os, json
 REV = "1511b3a6ce0bb8df8aca2ae1b578510e150b6b7e"
 API = f'https://huggingface.co/api/datasets/ibm-research/VAKRA/tree/{REV}/train/capability_3_multihop_reasoning/input'

@@ -17,7 +17,9 @@ LABEL eval.benchmark.data_revision="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/google/wmt24pp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.12404"
 
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, json, os
 
 # 10 language pairs from WMT24++ (en -> X)

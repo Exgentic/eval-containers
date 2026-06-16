@@ -24,7 +24,9 @@ LABEL eval.benchmark.paper="https://x.ai/blog/grok-1.5v"
 # Data source: the auto-converted parquet branch on the xai-org repo. This branch
 # is built by the HF dataset-server and is served anonymously even when the main
 # repo requires license acceptance, so no HF_TOKEN is needed at build time.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os, base64, time
 os.makedirs('/tasks', exist_ok=True)
 count = 0

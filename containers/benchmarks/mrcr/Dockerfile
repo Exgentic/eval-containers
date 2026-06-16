@@ -23,7 +23,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.14993"
 # (root-only). Runtime entrypoint materializes just the requested task's
 # fields into /tasks/$EVAL_TASK_ID/. Pre-render prompt.json into problem.txt
 # (flattened conversation text) so the entrypoint stays simple.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow as pa, json, os
 
 tables = []

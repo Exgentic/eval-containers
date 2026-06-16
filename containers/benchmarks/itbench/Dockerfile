@@ -31,7 +31,9 @@ LABEL eval.benchmark.paper="https://research.ibm.com/publications/developing-ai-
 # For the first pass we ingest only CISO k8s-opa-static scenarios from
 # ITBench-Lite (10 tasks). FinOps and SRE scenarios require active
 # cluster/app telemetry and are deferred until the sidecar harness exists.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, os, json
 REV = "d0916b08ba421ce5e672e9ad68aa947d938dfef0"
 api = f'https://huggingface.co/api/datasets/ibm-research/ITBench-Lite/tree/{REV}/snapshots/ciso/v0.1?recursive=false'

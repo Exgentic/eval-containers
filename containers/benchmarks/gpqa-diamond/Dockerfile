@@ -21,7 +21,9 @@ LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.12022"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 os.makedirs('/tasks', exist_ok=True)
 urllib.request.urlretrieve('https://huggingface.co/datasets/fingertap/GPQA-Diamond/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet', '/tmp/data.parquet')

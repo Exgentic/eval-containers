@@ -18,7 +18,9 @@ LABEL eval.benchmark.data_revision="482cbbc0400f6d048438c4021727f21a10cbff49"
 LABEL eval.benchmark.url="https://github.com/oriyor/assistant-bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.15711"
 
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/api/datasets/AssistantBench/AssistantBench/parquet/default/validation/0.parquet',

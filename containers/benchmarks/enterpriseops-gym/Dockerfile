@@ -40,7 +40,9 @@ LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
 # concatenate into /tasks/all.jsonl, and rewrite the upstream gym_server
 # URLs from http://localhost:<host-port> to the in-cluster service names
 # the agent will actually reach.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, json, os, io
 import pyarrow.parquet as pq
 

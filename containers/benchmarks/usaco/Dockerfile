@@ -22,7 +22,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gcc g++ &&
 # Write every task to a single JSONL file (root-only). Runtime entrypoint
 # materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/,
 # then explodes the per-case inputs/outputs dict into /tasks/$EVAL_TASK_ID/tests/.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
 tables = []
 for part in range(3):

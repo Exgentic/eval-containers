@@ -22,7 +22,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2007.00398"
 # are base64-encoded inline so the whole benchmark lives in a single
 # root-only file; the runtime entrypoint materializes just the requested
 # task into /tasks/$EVAL_TASK_ID/ (decoding image back to PNG).
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os, base64
 os.makedirs('/tasks', exist_ok=True)
 count = 0

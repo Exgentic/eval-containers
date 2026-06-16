@@ -20,7 +20,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.07895"
 
 # Single-JSONL task layout. One line per task. Image bytes are base64-encoded
 # inline; runtime entrypoint decodes only the requested task's image.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os, base64
 url = "https://huggingface.co/api/datasets/echo840/OCRBench/parquet/default/test/0.parquet"
 urllib.request.urlretrieve(url, "/tmp/data.parquet")

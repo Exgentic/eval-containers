@@ -18,7 +18,9 @@ LABEL eval.benchmark.url="https://huggingface.co/datasets/EleutherAI/hendrycks_m
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2103.03874"
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 
 SUBJECTS = ['algebra', 'counting_and_probability', 'geometry',

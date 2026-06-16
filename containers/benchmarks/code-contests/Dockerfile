@@ -20,7 +20,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl gcc g++ &&
 
 # Single-JSONL task layout. Merged I/O tests are stored as a JSON array in the
 # "tests_json" field; the entrypoint expands them into /tasks/$EVAL_TASK_ID/tests/.
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/deepmind/code_contests/resolve/refs%2Fconvert%2Fparquet/default/partial-test/0000.parquet',

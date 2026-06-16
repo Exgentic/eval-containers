@@ -17,7 +17,9 @@ LABEL eval.benchmark.data_revision="210d026faf9955653af8916fad021475a3f00453"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/allenai/ai2_arc"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1803.05457"
 
-RUN python3 <<'PYEOF'
+RUN --mount=type=secret,id=HF_TOKEN,required=false \
+    export HF_TOKEN="$(cat /run/secrets/HF_TOKEN 2>/dev/null || true)" && \
+    python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, os, json
 urllib.request.urlretrieve(
     'https://huggingface.co/datasets/allenai/ai2_arc/resolve/210d026faf9955653af8916fad021475a3f00453/ARC-Challenge/test-00000-of-00001.parquet',
