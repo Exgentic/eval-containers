@@ -88,7 +88,16 @@ include:
 
 services:
   runner:
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/{name}--claude-code:latest
+    # `extends:` (NOT an `include:` override): Docker Compose forbids overriding
+    # a service pulled in via `include:`. `extends:` does not carry `depends_on`,
+    # so redeclare the gateway gate below (add any sidecar the runner waits on).
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/{name}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: {name}
 ```

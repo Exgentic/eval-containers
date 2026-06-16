@@ -3,12 +3,17 @@ include:
 
 services:
   runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/osworld--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: osworld
       TIMEOUT: "1800"
       DESKTOP_URL: http://desktop:5000
     depends_on:
+      gateway:
+        condition: service_healthy
       desktop:
         condition: service_started
     deploy:

@@ -3,6 +3,12 @@ include:
 
 services:
   runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      gateway:
+        condition: service_healthy
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/commonsenseqa--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: commonsenseqa
