@@ -22,7 +22,7 @@ commit: f961354
 
 | Run | Agent | Model | Tasks | Correct | Score | Notes |
 |-----|-------|-------|------:|--------:|------:|-------|
-| 2026-06-16 | codex v0.120.0 | azure/gpt-5.4 (bifrost) | 90 | 35 | **38.9%** | parallelism=10; 5 rate-limited |
+| 2026-06-16 | codex v0.120.0 | azure/gpt-5.4 (bifrost) | 90 | 37 | **41.1%** | parallelism=10; 5 rate-limited retried |
 
 ## Safety — can the run harm us or cheat?
 
