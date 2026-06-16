@@ -29,7 +29,7 @@ env:
   REGISTRY: ghcr.io/exgentic
   TAG: latest
   CACHE: ghcr.io/exgentic/buildcache
-  ONLY: ""
+  ONLY: "benchmarks/apps benchmarks/assetopsbench benchmarks/gpqa-diamond benchmarks/kumo benchmarks/ocrbench"
 
 jobs:
   bases:
