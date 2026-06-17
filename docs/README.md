@@ -30,6 +30,7 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 - [Install](guides/install.md)
 - [Run your first eval](guides/run-your-first-eval.md)
 - [Run with Podman on Apple Silicon](guides/podman-on-apple-silicon.md)
+- [Run offline or airgapped](guides/offline-and-airgapped.md)
 - [Run the tests locally](guides/running-tests-locally.md)
 - [Deploy on Kubernetes](guides/deploy-on-kubernetes.md)
 - [Deploy on OpenShift](guides/deploy-on-openshift.md)

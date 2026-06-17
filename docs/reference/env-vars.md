@@ -1,6 +1,6 @@
 # Environment variables
 
-*Reference · for operators · derives from [`README.md`](../../README.md) and `src/run.rs`. The README's "Environment variables" section is the authoritative list.*
+*Reference · for operators · derives from `src/run.rs` and [`.agents/src/RULES.md`](../../.agents/src/RULES.md). This page is the authoritative list of `EVAL_*` variables.*
 
 All Eval Containers variables are prefixed `EVAL_` to avoid collision with CI
 systems, orchestrators, and user scripts. Every variable has a matching

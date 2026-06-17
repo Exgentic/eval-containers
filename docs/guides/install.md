@@ -18,6 +18,9 @@ needs.
 The CLI is optional: everything it does is a plain `docker` / `helm` /
 `kubectl` command you can run yourself (see [CLI reference](../reference/cli.md)).
 
+On Docker Compose older than 2.34, behind a firewall, or fully airgapped? See
+[Run offline or airgapped](offline-and-airgapped.md).
+
 ## Run with no install beyond Docker
 
 Once the registry is public you won't need to clone the repo:
