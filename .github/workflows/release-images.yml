@@ -1,186 +1,579 @@
 name: Release the fleet
 
-# On a `vX.Y.Z` tag, build + push the ENTIRE base fleet (core, agents,
-# benchmarks, models, gateways) to GHCR at `:<tag>`, then publish the
-# per-benchmark `eval-<benchmark>` compose artifacts + the `charts/eval` Helm
-# chart at the same version.
-# (Crate releases — `cargo install eval-containers` — live separately in
-# release.yml / cargo-dist; this workflow is the container/chart fleet only.)
+# ONE workflow to release the ENTIRE fleet to GHCR, as fast as GitHub Actions
+# allows. Consolidates what used to be four workflows (release-images +
+# fleet-publish-dev + combos-claude-code + publish-per-task) into a single
+# pipeline that uses every GitHub-Actions-NATIVE textbook speedup:
 #
-# Fleet-version policy (RULES.md principle 9): the git tag IS the one release
-# version; Cargo.toml and benchmarks/_chart/Chart.yaml MUST equal it (guarded
-# below + by tests/static/check.rs). Eval combination images (evals/<b>--<a>)
-# are built on demand by the CLI, not pre-published, so they are not in the
-# fleet build (RELEASE skill: "every benchmark, agent, model, gateway, core").
+#   * FROZEN BASE       — shared deps (core + gateways) build ONCE; leaves pull
+#                         the frozen :latest by overriding the bake context to
+#                         docker-image:// (stable digest -> leaf caches hit).
+#   * PER-LEAF MATRIX   — one job per leaf (not 10-leaf groups), so the wall
+#                         clock is the slowest SINGLE benchmark, not the slowest
+#                         group, and one leaf's failure can't sink its neighbours
+#                         (fail-fast:false). Re-running retries only the failed
+#                         leaf. (max-parallel + runner size are repo Variables —
+#                         FLEET_MAXPAR / FLEET_RUNNER — tune without editing this.)
+#   * PER-LEAF CACHE    — each leaf has its own registry layer cache (mode=max),
+#                         so editing one Dockerfile rebuilds only that leaf.
+#   * PROVENANCE + SBOM — SLSA provenance + syft SBOM on every pushed image.
+#   * CVE GATE          — trivy scans the shared bases before :latest is promoted.
 #
-# NOTE: only validated by a real `v*` tag push — a ~150-image build runs on a
-# Linux runner, not locally.
+# The registry LAYER cache above is what gives cross-run reuse on ephemeral
+# runners: a benchmark's dataset layer is reused until its Dockerfile changes.
+# The two remaining textbook levers — a persistent WARM builder and `--mount=
+# type=cache` deps that survive across runs — only pay off on a builder whose
+# cache outlives the runner (Depot or self-hosted BuildKit), which is NOT
+# GitHub-Actions-native, so both are deliberately out of scope here.
+#
+# Triggered by a vX.Y.Z tag (full versioned release) or workflow_dispatch (knobs
+# below). Only validated by a real run — the fleet build does not run locally.
 
 on:
   push:
-    tags: ['**[0-9]+.[0-9]+.[0-9]+*']  # match release.yml so one tag fires both (delivery/RULES.md:1)
+    tags: ['**[0-9]+.[0-9]+.[0-9]+*']  # one tag fires this + release.yml (delivery/RULES.md:1)
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version to publish, e.g. v0.1.0"
-        required: true
+        description: "Version to publish (e.g. v0.1.0); blank = build at :latest"
+        default: ""
+      rebuild_bases:
+        description: "Rebuild shared bases (else reuse the frozen :latest digest)"
+        type: boolean
+        default: false
+      combo_agents:
+        description: "Space-separated agents to build eval combos for (blank = skip)"
+        # The 5 most-downloaded agents — also the set a vX.Y.Z tag publishes (a tag
+        # push takes these defaults, so this is the released combo lineup).
+        default: "claude-code codex gemini-cli openclaw zerostack"
+      include_per_task:
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench)"
+        type: boolean
+        default: true
+      dry_run:
+        description: "Validate only — bake --print / echo, nothing built or pushed"
+        type: boolean
+        default: false
+      only:
+        description: "Debug: restrict matrices to these space-separated leaf targets (e.g. 'benchmark-gsm8k agent-claude-code'); blank = whole fleet"
+        default: ""
+
+concurrency:
+  group: fleet-release-${{ github.ref }}
+  cancel-in-progress: false  # never cancel a release mid-flight
 
 permissions:
   contents: read
-  packages: write # push to GHCR; Actions-pushed packages auto-link to this repo
-  # BuildKit attaches the provenance/SBOM attestations with the GHCR push creds
-  # below, so no id-token/attestations (OIDC) perms are needed — least privilege.
+  packages: write  # push to GHCR; Actions-pushed packages auto-link to this repo
 
 env:
   REGISTRY: ghcr.io/exgentic
+  # The git tag, the dispatch input, or 'latest'.
+  TAG: ${{ (github.ref_type == 'tag' && github.ref_name) || inputs.tag || 'latest' }}
 
 jobs:
-  release:
+  # ── version guard (tag / explicit-version releases only) ──────────────────
+  guard:
+    if: github.ref_type == 'tag' || inputs.tag != ''
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: docker/setup-buildx-action@v4
-      - uses: azure/setup-helm@v5
-
-      - name: Resolve version
-        id: ver
+      - name: git tag matches Cargo.toml + Chart.yaml (RULES.md principle 9)
         run: |
-          TAG="${{ github.event.inputs.tag }}"
-          [ -n "$TAG" ] || TAG="${GITHUB_REF#refs/tags/}"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "ver=${TAG#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Guard — git tag matches Cargo.toml and Chart.yaml
-        run: |
-          ver="${{ steps.ver.outputs.ver }}"
+          ver="${TAG#v}"
           cargo_ver=$(grep -m1 '^version = ' cli/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')
           chart_ver=$(grep -m1 '^version: ' containers/benchmarks/_chart/Chart.yaml | awk '{print $2}')
-          echo "tag=$ver  cargo=$cargo_ver  chart=$chart_ver"
+          echo "tag=$ver cargo=$cargo_ver chart=$chart_ver"
           if [ "$ver" != "$cargo_ver" ] || [ "$ver" != "$chart_ver" ]; then
-            echo "::error::fleet-version mismatch — bump cli/Cargo.toml + containers/benchmarks/_chart/Chart.yaml to $ver before tagging"
+            echo "::error::version mismatch — bump cli/Cargo.toml + _chart/Chart.yaml to $ver before tagging"
             exit 1
           fi
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
+  # ── build the CLI once (used by compose + version-stamped builds) ─────────
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build -p eval-containers --release --quiet
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli
+          path: target/release/eval-containers
+
+  # ── frozen base: shared deps (core + gateways) build ONCE ─────────────────
+  bases:
+    runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build + push the fleet at the tag
+      - name: Build bases only if missing or forced (else freeze)
         env:
-          TAG: ${{ steps.ver.outputs.tag }}
-          HF_TOKEN: ${{ secrets.HF_TOKEN }} # GH Actions secret ref → build secret for the 4 HF-gated benchmarks
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
-          # Load every artifact bake file — they carry the `contexts` that let one
-          # bake call build the whole graph in dependency order (core → bases →
-          # leaves). The parameterized eval combination (containers/core/
-          # combination.docker-bake.hcl) is excluded: those images are built on
-          # demand, not published.
-          mapfile -t FILES < <(ls containers/docker-bake.hcl \
-            containers/core/*/docker-bake.hcl containers/agents/*/docker-bake.hcl containers/benchmarks/*/docker-bake.hcl \
-            containers/models/*/docker-bake.hcl containers/gateways/*/docker-bake.hcl)
-          FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
-          mapfile -t TARGETS < <(grep -hoE '^target "[^"]+"' "${FILES[@]}" \
-            | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
-          # Drop per-task benchmarks (`FROM ${TASK_BASE}`): they have no standalone
-          # image — each task is its own image, published by publish-per-task.yml.
-          # A blank TASK_BASE aborts the whole bake (this is what failed the first
-          # v0.1.0 republish on benchmark-skills-bench).
-          mapfile -t PERTASK < <(grep -rlE '^FROM[[:space:]]+\$\{TASK_BASE\}' containers/benchmarks/*/Dockerfile \
-            | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#benchmark-\1#')
-          if [ "${#PERTASK[@]}" -gt 0 ]; then
-            echo "Excluding ${#PERTASK[@]} per-task benchmark(s) (see publish-per-task.yml): ${PERTASK[*]}"
-            for x in "${PERTASK[@]}"; do
-              for i in "${!TARGETS[@]}"; do [ "${TARGETS[$i]}" = "$x" ] && unset 'TARGETS[$i]'; done
-            done
-            TARGETS=("${TARGETS[@]}")
+          if [ "${{ inputs.rebuild_bases }}" != "true" ] && \
+             docker buildx imagetools inspect "${REGISTRY}/core/entrypoint:${TAG}" >/dev/null 2>&1; then
+            echo "Bases present at :${TAG} — FROZEN (skip; stable digest → leaf caches hit)."
+            exit 0
           fi
-          echo "Building ${#TARGETS[@]} targets at ${REGISTRY}:${TAG}"
-          # --set '*.args.REGISTRY=' so every Dockerfile's `FROM ${REGISTRY}/...`
-          # resolves to GHCR (the bake context keys already use ${REGISTRY}).
-          # --set '*.labels.…source=' stamps the OCI provenance label on every
-          # image, matching the CLI build path (naming::REPO_URL / bake::base_args).
-          # --provenance/--sbom attach a SLSA build-provenance attestation and a
-          # syft SBOM to every pushed image (BuildKit-native, authed with the GHCR
-          # push creds — no extra OIDC perms). Read them back with `cosign
-          # verify-attestation` or `docker buildx imagetools inspect <img>`.
-          # --set '*.secrets=…HF_TOKEN' feeds the 4 HF-gated benchmarks' build-time
-          # `RUN --mount=type=secret,id=HF_TOKEN` from the HF_TOKEN env (repo secret);
-          # other targets ignore it, and type=secret never lands in a layer.
+          mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
+          FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
+          mapfile -t DEPS < <(find containers/core containers/gateways -name docker-bake.hcl \
+            -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+          echo "Building ${#DEPS[@]} shared deps: ${DEPS[*]}"
+          ACT=(--provenance=mode=max --sbom=true "${DEPS[@]}" --push)
+          [ "${{ inputs.dry_run }}" = "true" ] && ACT=("${DEPS[@]}" --print)
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
-            --provenance=mode=max --sbom=true \
-            "${TARGETS[@]}" --push
+            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/bases,mode=max" \
+            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/bases" \
+            "${ACT[@]}"
 
-      - name: Install trivy
-        # SHA-pinned (third-party action, per #157). `cache: true` is broken on
-        # v0.3.1 (see pre-commit.yml) so the binary downloads each run (~secs).
-        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+  # ── enumerate everything the matrices fan out over ────────────────────────
+  enumerate:
+    runs-on: ubuntu-latest
+    outputs:
+      leaves: ${{ steps.l.outputs.leaves }}        # bake targets: benchmarks(shared)+agents+models
+      benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
+      combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256
+      pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
+    steps:
+      - uses: actions/checkout@v6
+      - id: l
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMBO_AGENTS: ${{ inputs.combo_agents }}
+          INCLUDE_PER_TASK: ${{ inputs.include_per_task }}
+          ONLY: ${{ inputs.only }}
+        run: |
+          all=$(find containers -name docker-bake.hcl -not -name 'combination*' \
+            -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+          deps=$(find containers/core containers/gateways -name docker-bake.hcl \
+            -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+          pertaskdirs=$(grep -rl 'eval.benchmark.env="per-task"' containers/benchmarks/*/Dockerfile \
+            | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#benchmark-\1#' | sort -u)
+          # Leaves = everything minus shared deps minus per-task (those build below).
+          leaf_list=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$deps" "$pertaskdirs" | sort -u))
+          # Debug: --only restricts every matrix to a handful of named leaf targets.
+          if [ -n "${ONLY:-}" ]; then
+            leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(tr ' ' '\n' <<< "$ONLY" | sort -u))
+            echo "ONLY active -> $(printf '%s\n' "$leaf_list" | grep -c .) leaf target(s)"
+          fi
+          leaves=$(printf '%s\n' "$leaf_list" | jq -R . | jq -sc 'map(select(length>0))')
+          n=$(printf '%s' "$leaves" | jq 'length')
+          if [ "$n" -le 0 ] || [ "$n" -gt 256 ]; then echo "::error::leaf count $n outside 1..256 (matrix cap)"; exit 1; fi
 
-      - name: CVE gate — scan the base images (trivy)
+          # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
+          # --only mode derives them from the restricted leaves; else all shared benchmarks.
+          if [ -n "${ONLY:-}" ]; then
+            bench_src=$(printf '%s\n' "$leaf_list" | sed -n 's/^benchmark-//p')
+          else
+            bench_src=$(comm -23 \
+              <(find containers/benchmarks -mindepth 1 -maxdepth 1 -type d | sed -E 's#.*/##' | sort -u) \
+              <(printf '%s\n' "$pertaskdirs" | sed 's/^benchmark-//' | sort -u))
+          fi
+          benchmarks=$(printf '%s\n' "$bench_src" \
+            | while read -r b; do [ -n "$b" ] && [ -f "containers/benchmarks/$b/compose.yaml" ] && echo "$b"; done \
+            | jq -R . | jq -sc 'map(select(length>0))')
+
+          # ── per-task bases: {b,task,kind} for every per-task benchmark ──
+          # kind=script -> build.sh (podman two-step upstream build; tasks from the
+          # pinned GitHub tree). kind=bake -> docker buildx bake (swe-bench: FROM
+          # the Epoch per-task base + EVAL_TASK_ID; tasks from the in-repo tasks.txt).
+          pertask='[]'
+          if [ "$INCLUDE_PER_TASK" = "true" ]; then
+            acc='[]'
+            for B in terminal-bench skills-bench; do
+              bs="containers/benchmarks/$B/build.sh"; [ -f "$bs" ] || continue
+              repo=$(grep -oE 'github\.com/[A-Za-z0-9_./-]+' "$bs" | head -1 | sed -E 's#github\.com/##; s#\.git$##')
+              ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
+              tks=$(gh api "repos/$repo/contents/tasks?ref=$ref" --paginate \
+                --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
+              acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
+            done
+            for B in swe-bench; do
+              tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
+              tks=$(jq -Rn --arg B "$B" '[inputs | select(length>0) | {b:$B, task:., kind:"bake"}]' < "$tf")
+              acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
+            done
+            pertask="$acc"
+            # --only mode: one task per benchmark as a smoke, not all ~600.
+            [ -n "${ONLY:-}" ] && pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
+          fi
+
+          # ── combos: shared (task="") + per-task, all as {b,a,task,kind} ──
+          # Both build via one downstream bake-eval call (per-task just points at the
+          # per-task base + a task-suffixed name), so they share one shape + matrix.
+          combos='[]'
+          if [ -n "$COMBO_AGENTS" ]; then
+            read -ra _ag <<< "$COMBO_AGENTS"
+            agents=$(printf '%s\n' "${_ag[@]}" | jq -R . | jq -sc 'map(select(length>0))')
+            # Large arrays go through stdin, never argv: a per-task combo list is
+            # >128KB, which exceeds Linux's MAX_ARG_STRLEN (--argjson would E2BIG).
+            # Only the small agents list rides argv.
+            shared=$(printf '%s' "$benchmarks" | jq -c --argjson as "$agents" \
+              '[.[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
+            ptc=$(printf '%s' "$pertask" | jq -c --argjson as "$agents" \
+              '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
+            combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
+          fi
+
+          # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
+          # GitHub caps a matrix at 256 jobs; each shard job loops its items. Chunk
+          # combos by 25 (thin overlays) and per-task bases by 10 (heavier builds).
+          shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
+          combo_shards=$(shard "$combos" 25)
+          pertask_shards=$(shard "$pertask" 10)
+          for kv in "combo_shards=$combo_shards" "pertask_shards=$pertask_shards"; do
+            sn=$(printf '%s' "${kv#*=}" | jq 'length')
+            [ "$sn" -le 256 ] || { echo "::error::${kv%%=*} = $sn shards > 256 — raise the chunk size in enumerate"; exit 1; }
+          done
+
+          {
+            echo "leaves=$leaves"
+            echo "benchmarks=$benchmarks"
+            echo "combo_shards=$combo_shards"
+            echo "pertask_shards=$pertask_shards"
+          } >> "$GITHUB_OUTPUT"
+          echo "leaves=$n  combos=$(printf '%s' "$combos" | jq length) in $(printf '%s' "$combo_shards" | jq length) shards  pertask=$(printf '%s' "$pertask" | jq length) in $(printf '%s' "$pertask_shards" | jq length) shards"
+
+  # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
+  build:
+    name: leaf ${{ matrix.target }}
+    needs: [bases, enumerate]
+    runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      matrix:
+        target: ${{ fromJson(needs.enumerate.outputs.leaves) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bake ${{ matrix.target }} (pull frozen base, per-leaf cache)
+        env:
+          T: ${{ matrix.target }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
+        run: |
+          mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
+          FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
+          # Override every base context to PULL the frozen registry image, so this
+          # leaf builds only its own layers FROM the frozen base (never rebuilds it).
+          OV=()
+          for d in $(find containers/core containers/gateways -mindepth 1 -maxdepth 1 -type d | sed -E 's#containers/##'); do
+            [ -f "containers/$d/Dockerfile" ] || continue
+            OV+=(--set "*.contexts.${REGISTRY}/${d}=docker-image://${REGISTRY}/${d}:${TAG}")
+          done
+          # Retry transient build failures — chiefly HF rate-limiting (429) when a
+          # duckdb leaf materializes its dataset. BuildKit's cache resumes at the
+          # failed layer, and the jittered backoff de-syncs parallel leaves so they
+          # stop hammering HF in lockstep. Real failures still surface after max.
+          retry() {
+            local n=0 max="${BUILD_RETRIES:-4}"
+            until "$@"; do
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; return 1; }
+              echo "::warning::build attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
+            done
+          }
+          # dry_run validates config only (bake --print); else build + attest + push.
+          ACT=(--provenance=mode=max --sbom=true "$T" --push)
+          [ "${{ inputs.dry_run }}" = "true" ] && ACT=("$T" --print)
+          retry docker buildx bake "${FARGS[@]}" "${OV[@]}" \
+            --set "*.args.REGISTRY=${REGISTRY}" \
+            --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
+            --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
+            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/${T},mode=max" \
+            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/${T}" \
+            "${ACT[@]}"
+
+  # ── per-task base images — sharded; each job builds a chunk of (b,task) ───
+  # Two mechanics in one job: kind=script (build.sh via podman, chained through
+  # the local store) and kind=bake (swe-bench via buildx FROM the Epoch base).
+  # >256 (b,task) pairs are sharded; one item failing only fails its own ref.
+  per-task:
+    needs: [bases, enumerate]
+    if: needs.enumerate.outputs.pertask_shards != '[]'
+    runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      matrix:
+        shard: ${{ fromJson(needs.enumerate.outputs.pertask_shards) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4   # kind=bake (swe-bench)
+      - name: Ensure podman                    # kind=script (build.sh)
+        run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to GHCR (podman)
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build + push per-task shard ${{ matrix.shard.idx }}
+        env:
+          ITEMS: ${{ toJson(matrix.shard.items) }}
+          DRY: ${{ inputs.dry_run }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
+        run: |
+          # Tags must be lowercase; upstream task dir names are case-sensitive
+          # (matches the CLI's naming::benchmark_task_image).
+          # retry rides out transient HF rate-limiting (swe-bench fetches task
+          # metadata from HF) + registry blips; jittered backoff de-syncs the shard.
+          retry() {
+            local n=0 max="${BUILD_RETRIES:-4}"
+            until "$@"; do
+              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+              echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
+            done
+          }
+          fails=0
+          while read -r it; do
+            B=$(jq -r .b <<< "$it"); TASK=$(jq -r .task <<< "$it"); KIND=$(jq -r .kind <<< "$it")
+            tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
+            ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
+            cache="${REGISTRY}/buildcache/${B}-${tid}"
+            if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
+            echo "::group::$ref ($KIND)"
+            if [ "$KIND" = "script" ]; then
+              # build.sh turns on podman --cache-to/from when EVAL_BUILD_CACHE is set.
+              if EVAL_BUILD_CACHE="$cache" retry bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK" && retry podman push "$ref"; then :; \
+              else echo "::error::per-task build failed: $ref"; fails=$((fails+1)); fi
+            else
+              # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the frozen entrypoint.
+              if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
+                   --set "benchmark-${B}.args.EVAL_TASK_ID=${TASK}" \
+                   --set "benchmark-${B}.contexts.${REGISTRY}/core/entrypoint=docker-image://${REGISTRY}/core/entrypoint:${TAG}" \
+                   --set "benchmark-${B}.tags=${ref}" \
+                   --set "benchmark-${B}.cache-to=type=registry,ref=${cache},mode=max" \
+                   --set "benchmark-${B}.cache-from=type=registry,ref=${cache}" \
+                   --provenance=mode=max --sbom=true "benchmark-${B}" --push; then :; \
+              else echo "::error::per-task bake failed: $ref"; fails=$((fails+1)); fi
+            fi
+            echo "::endgroup::"
+          done < <(jq -c '.[]' <<< "$ITEMS")
+          [ "$fails" -eq 0 ] || { echo "::error::$fails per-task item(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
+
+  # ── compose artifacts — one self-contained oci://…/eval-<b> per benchmark ──
+  compose:
+    needs: [cli, build, enumerate]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      matrix:
+        benchmark: ${{ fromJson(needs.enumerate.outputs.benchmarks) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with: { name: cli, path: . }
+      - run: chmod +x eval-containers
+      - name: build compose -> push eval-${{ matrix.benchmark }}
         env:
           EVAL_REGISTRY: ${{ env.REGISTRY }}
-          EVAL_TRIVY_TAG: ${{ steps.ver.outputs.tag }}
+          TAG: ${{ env.TAG }}
+          B: ${{ matrix.benchmark }}
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry-run: would publish oci://${EVAL_REGISTRY}/eval-${B}"; exit 0
+          fi
+          ./eval-containers build compose --benchmark "$B"
+
+  # ── eval combos — sharded; each job bakes a chunk of (benchmark, agent) ───
+  # One bake-eval per item: shared (evals/<b>--<a>) or per-task (evals/<b>-<task>
+  # --<a>, pointing at the per-task base). A combo is a thin overlay (FROM the
+  # published benchmark + COPY the agent), so there are no dataset downloads and
+  # no per-combo registry cache (the published parents are the cache). needs
+  # per-task so per-task combos build only after their base exists; always() so
+  # shared combos still run when per-task is skipped/partial.
+  combos:
+    needs: [build, per-task, enumerate]
+    if: always() && needs.build.result == 'success' && needs.enumerate.result == 'success' && needs.enumerate.outputs.combo_shards != '[]'
+    runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      matrix:
+        shard: ${{ fromJson(needs.enumerate.outputs.combo_shards) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bake eval combo shard ${{ matrix.shard.idx }}
+        env:
+          ITEMS: ${{ toJson(matrix.shard.items) }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          # retry rides out transient registry pull/push blips; jittered backoff.
+          retry() {
+            local n=0 max="${BUILD_RETRIES:-4}"
+            until "$@"; do
+              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+              echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
+            done
+          }
+          fails=0
+          while read -r it; do
+            B=$(jq -r .b <<< "$it"); A=$(jq -r .a <<< "$it"); TASK=$(jq -r .task <<< "$it")
+            if [ -n "$TASK" ]; then           # per-task combo: evals/<b>-<task>--<a>
+              tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
+              eb="${B}-${tid}"; bench_img="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
+            else                              # shared combo: evals/<b>--<a>
+              eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
+            fi
+            ACT=(eval --provenance=mode=max --sbom=true --push)
+            [ "$DRY" = "true" ] && ACT=(eval --print)
+            echo "::group::evals/${eb}--${A}"
+            if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
+               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
+               retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
+                 "${ACT[@]}"; then :; \
+            else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
+            echo "::endgroup::"
+          done < <(jq -c '.[]' <<< "$ITEMS")
+          [ "$fails" -eq 0 ] || { echo "::error::$fails combo(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
+
+  # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
+  # Runs for real releases (tag / explicit version) or whenever the bases were
+  # rebuilt — i.e. when there's something new to gate + promote. A frozen-base
+  # dev dispatch re-scanning unchanged bases would only surface CVEs disclosed
+  # since they were last gated at release, so it's skipped (the dev run isn't
+  # publishing :latest anyway — the promotion below is tag-only).
+  release-gate:
+    needs: [build, per-task, compose, combos]
+    if: always() && needs.build.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Install trivy
+        uses: aquasecurity/setup-trivy@81e514348e19b6112ce2a7e3ecbafe19c1e1f567 # v0.3.1
+      - name: CVE gate — scan the shared bases (propagate fleet-wide)
+        env:
+          EVAL_REGISTRY: ${{ env.REGISTRY }}
+          EVAL_TRIVY_TAG: ${{ env.TAG }}
           EVAL_TRIVY_KINDS: core
           EVAL_TRIVY_FROM_REGISTRY: "1"
+        run: tests/static/security/trivy.sh image
+      - name: Promote :${{ env.TAG }} -> :latest (only after the CVE gate)
+        if: env.TAG != 'latest'
         run: |
-          # The core bases are the shared layers every leaf inherits (rule 11), so
-          # a base CVE propagates fleet-wide — gate the release on them. Scans the
-          # just-pushed images straight from the registry (trivy pulls), reusing
-          # the curated .github/.trivyignore. The full per-leaf scan parallelizes
-          # in the build-sweep fan-out (follow-up PR), where each matrix job scans
-          # its own image cheaply rather than 147 serial pulls on one runner.
-          tests/static/security/trivy.sh image
-
-      - name: Tag the fleet :latest (alias of the released version)
-        env:
-          TAG: ${{ steps.ver.outputs.tag }}
-        run: |
-          # Runtime + Dockerfiles reference images at :latest, but the bake pushes
-          # :$TAG only. Promote each published image's :$TAG to :latest WITHOUT
-          # rebuilding — imagetools copies the full manifest incl. the provenance/
-          # SBOM attestations. Runs AFTER the CVE gate, so :latest only moves once
-          # the bases pass scan. Same dirs-with-a-bake-target enumeration the build
-          # uses (skips helper dirs like core/oracle, core/process-compose).
+          # imagetools copies the full manifest incl. provenance/SBOM — no rebuild.
           for kind in core agents benchmarks models gateways; do
             for d in containers/"$kind"/*/; do
               name=$(basename "$d"); case $name in _*) continue ;; esac
               [ -f "${d}docker-bake.hcl" ] || continue
-              # Skip per-task benchmarks — not pushed by the bake above (no
-              # standalone image), so there's no :$TAG to alias.
-              grep -qE '^FROM[[:space:]]+\$\{TASK_BASE\}' "${d}Dockerfile" 2>/dev/null && continue
+              grep -qE 'eval.benchmark.env="per-task"' "${d}Dockerfile" 2>/dev/null && continue
               ref="${REGISTRY}/${kind}/${name}"
-              echo "alias ${ref}:${TAG} -> ${ref}:latest"
+              docker buildx imagetools inspect "${ref}:${TAG}" >/dev/null 2>&1 || continue
               docker buildx imagetools create --tag "${ref}:latest" "${ref}:${TAG}"
             done
           done
 
-      - name: Publish per-benchmark compose artifacts
-        env:
-          EVAL_REGISTRY: ${{ env.REGISTRY }}
-          TAG: ${{ steps.ver.outputs.tag }}
+  # ── Helm chart at the tag (versioned releases only) ───────────────────────
+  chart:
+    needs: [release-gate]
+    if: github.ref_type == 'tag' || inputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: azure/setup-helm@v5
+      - name: Publish charts/eval at the tag
         run: |
-          # One self-contained oci://<registry>/eval-<benchmark> per benchmark
-          # (naming::compose_artifact): each is the benchmark's compose.yaml
-          # flattened (shared services.yaml resolved in via its include: + the
-          # benchmark's sidecars), so `run --mode compose` consumes it with a
-          # single -f. Artifacts are tiny YAML — publish covers every benchmark.
-          cargo build -p eval-containers --quiet
-          for d in containers/benchmarks/*/; do
-            b=$(basename "$d")
-            [ -f "${d}compose.yaml" ] || continue
-            echo "::group::publish eval-${b}"
-            target/debug/eval-containers build compose --benchmark "$b"
-            echo "::endgroup::"
-          done
-
-      - name: Publish the Helm chart at the tag
-        run: |
-          ver="${{ steps.ver.outputs.ver }}"
+          ver="${TAG#v}"
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
           helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
           helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"
+
+  # ── end-of-run report: stages + per-image build time & registry size ──────
+  report:
+    name: Build-time + size report
+    needs: [bases, build, per-task, compose, combos, release-gate, enumerate]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Per-image build time + registry size -> step summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LEAVES: ${{ needs.enumerate.outputs.leaves }}
+        run: |
+          # Compressed registry size: resolve the amd64 manifest, sum its layers.
+          size_of() {
+            local r="$1" d
+            d=$(docker buildx imagetools inspect "$r" --raw 2>/dev/null \
+              | jq -r '(.manifests//[])|map(select(.platform.architecture=="amd64"))|.[0].digest//empty')
+            if [ -n "$d" ]; then
+              docker buildx imagetools inspect "${r%:*}@$d" --raw 2>/dev/null | jq '[.layers[].size]|add // 0'
+            else
+              docker buildx imagetools inspect "$r" --raw 2>/dev/null | jq '[.layers[].size]|add // 0'
+            fi
+          }
+          # Per-leaf build time = its matrix job's duration (job name "leaf <target>").
+          api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs"
+          gh api "$api" --paginate --jq '.jobs[]|select(.name|startswith("leaf "))|[(.name|ltrimstr("leaf ")),(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)]|@tsv' > /tmp/dur.tsv 2>/dev/null || true
+          basedur=$(gh api "$api" --paginate --jq '.jobs[]|select(.name=="bases")|(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)' 2>/dev/null | head -1 || true)
+          # Build the whole report, then append once (single redirect — no SC2129).
+          {
+            echo "## Fleet release \`${TAG}\` — stages"
+            echo "| stage | result |"; echo "|---|---|"
+            echo "| bases | ${{ needs.bases.result }} |"
+            echo "| leaves | ${{ needs.build.result }} |"
+            echo "| per-task | ${{ needs.per-task.result }} |"
+            echo "| compose | ${{ needs.compose.result }} |"
+            echo "| combos | ${{ needs.combos.result }} |"
+            echo "| CVE gate + :latest | ${{ needs.release-gate.result }} |"
+            echo ""
+            echo "## Per-image build time + registry size — leaves, biggest first"
+            echo "_build = the leaf's own time FROM the frozen base; with-deps = build + bases (${basedur:-?}s, amortized once across all leaves)._"
+            echo "| image | build | size |"; echo "|---|--:|--:|"
+            jq -r '.[]?' <<< "${LEAVES:-[]}" | while read -r T; do
+              kind=${T%%-*}; nm=${T#*-}
+              case "$kind" in
+                benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;;
+              esac
+              sz=$(size_of "${REGISTRY}/${dir}/${nm}:${TAG}" || echo 0); sz=${sz:-0}
+              dur=$(awk -F'\t' -v t="$T" '$1==t{print $2}' /tmp/dur.tsv || true)
+              printf '%s\t%s\t%s\n' "$T" "${dur:-0}" "$sz"
+            done | sort -t"$(printf '\t')" -k3 -rn \
+              | awk -F'\t' '{printf "| %s | %ds | %d MB |\n", $1, $2, $3/1048576}'
+            echo ""
+            echo "_Per-image sizes for combos + per-task are omitted (hundreds of images) — query \`ghcr.io/exgentic/evals/*\` / \`benchmarks/*-<task>\`; their build times are per-job in the Actions run view._"
+          } >> "$GITHUB_STEP_SUMMARY"
