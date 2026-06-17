@@ -50,6 +50,11 @@
 //!
 //!   cargo test --test build -- --ignored
 //!
+//! The nightly (a fresh runner, empty registry) instead sets
+//! `AGENTS_SMOKE_BUILD=1`, and the suite bakes the core bases and builds each
+//! agent's `agents-smoke--<name>` eval on demand (`ensure_agent_image`). Unset
+//! — the default for local/PR runs — it stays a pure smoke check, as above.
+//!
 //! Mock LLM (models/replay) is bootstrapped by this suite via
 //! testcontainers — rule 6 doesn't allow shelling to docker build,
 //! and replay is a tiny ~50 MB image so the cost is negligible.
@@ -119,6 +124,55 @@ async fn ensure_mock_built() {
             common::bake_target("model-replay").await;
         })
         .await;
+}
+
+static BASES_BUILT: OnceCell<()> = OnceCell::const_new();
+static SMOKE_BENCH_BUILT: OnceCell<()> = OnceCell::const_new();
+
+/// Nightly-only image bootstrap. When `AGENTS_SMOKE_BUILD` is set, build the
+/// `agents-smoke--<agent>` eval image from local source so a fresh runner (with
+/// an empty registry) can run the suite: bake the core bases once, build the
+/// shared agents-smoke benchmark once, then this agent's image and the combined
+/// eval. Unset — the default for local/PR runs — it is a no-op, preserving this
+/// suite's contract of running against prebuilt images.
+async fn ensure_agent_image(agent: &str) {
+    if std::env::var_os("AGENTS_SMOKE_BUILD").is_none() {
+        return;
+    }
+    BASES_BUILT
+        .get_or_init(|| async {
+            common::bake_targets(&[
+                "entrypoint",
+                "test-exact-match",
+                "llm-bridge",
+                "otel",
+                "runtime-bundle",
+                "agent-base-node",
+                "agent-base-python",
+                "agent-base-rust",
+                "model-replay",
+                "benchmark-base-hf",
+                "benchmark-base-github",
+                "benchmark-base-external",
+            ])
+            .await;
+        })
+        .await;
+    SMOKE_BENCH_BUILT
+        .get_or_init(|| async { cargo_build(&["build", "bench", "agents-smoke"]) })
+        .await;
+    cargo_build(&["build", "agent", agent]);
+    cargo_build(&["build", "eval", "agents-smoke", "--agent", agent]);
+}
+
+/// Shell `cargo run -- <args>` (the framework's own build CLI) and assert success.
+fn cargo_build(args: &[&str]) {
+    let status = std::process::Command::new("cargo")
+        .args(["run", "--"])
+        .args(args)
+        .status()
+        .unwrap_or_else(|e| panic!("cargo run -- {}: {e}", args.join(" ")));
+    assert!(status.success(), "cargo run -- {} failed", args.join(" "));
 }
 
 fn fixture_path() -> PathBuf {
@@ -241,6 +295,7 @@ async fn await_first_call(replay: &ContainerAsync<GenericImage>, timeout: Durati
 }
 
 async fn assert_agent_calls_llm(agent: &str) {
+    ensure_agent_image(agent).await;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system time")
