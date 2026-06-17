@@ -1,11 +1,50 @@
 # XNLI (Cross-lingual Natural Language Inference)
 # 75150 tasks (5010 test examples x 15 languages). Data: HuggingFace facebook/xnli
 # Agent prints entailment/neutral/contradiction. Test compares to expected label.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# The 15 per-language test parquets are read as an explicit path list; filename=true
+# exposes the source path so the language code (parent directory) becomes the
+# `language` field. (The repo also carries an `all_languages/` dir whose
+# `premise`/`hypothesis` columns are STRUCTs, one field per language; a `*/` glob
+# pulls it in and duckdb then fails to cast the per-language VARCHAR files into that
+# struct, and the hf:// filesystem only globs `*` — so the languages are enumerated
+# explicitly instead.) The prior python loop emitted id `<lang>_<i>` (i = 0-based
+# per-language row index in physical file order). file_row_number=true exposes that
+# exact physical position; a window row_number() instead numbers duckdb's parallel
+# scan order, which permutes the parquet row groups and renumbers every id — so the
+# physical file_row_number is used to reproduce `<lang>_<i>` byte-for-byte. Each
+# language is a single file, so file_row_number resets to 0 per language, matching
+# the per-language `i`; label 0/1/2 maps to the NLI classes.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT language || '_' || file_row_number::VARCHAR AS id, \
+            'Premise: ' || premise || E'\nHypothesis: ' || hypothesis AS problem, \
+            CASE label WHEN 0 THEN 'entailment' WHEN 1 THEN 'neutral' WHEN 2 THEN 'contradiction' END AS answer, \
+            language \
+     FROM ( \
+       SELECT regexp_extract(filename, '/([^/]+)/test-00000-of-00001\.parquet\$', 1) AS language, * \
+       FROM read_parquet([ \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/ar/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/bg/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/de/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/el/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/en/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/es/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/fr/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/hi/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/ru/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/sw/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/th/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/tr/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/ur/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/vi/test-00000-of-00001.parquet', \
+         'hf://datasets/facebook/xnli@b8dd5d7af51114dbda02c0e3f6133f332186418e/zh/test-00000-of-00001.parquet' \
+       ], filename=true, file_row_number=true) \
+     )"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="xnli"
@@ -17,57 +56,6 @@ LABEL eval.benchmark.data_revision="b8dd5d7af51114dbda02c0e3f6133f332186418e"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/facebook/xnli"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1809.05053"
 
-# Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-
-LANGUAGES = ['ar', 'bg', 'de', 'el', 'en', 'es', 'fr', 'hi', 'ru', 'sw', 'th', 'tr', 'ur', 'vi', 'zh']
-LABELS = {0: 'entailment', 1: 'neutral', 2: 'contradiction'}
-
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for lang in LANGUAGES:
-        url = f'https://huggingface.co/datasets/facebook/xnli/resolve/b8dd5d7af51114dbda02c0e3f6133f332186418e/{lang}/test-00000-of-00001.parquet'
-        urllib.request.urlretrieve(url, '/tmp/data.parquet')
-        t = pq.read_table('/tmp/data.parquet')
-        for i in range(len(t)):
-            premise = str(t['premise'][i])
-            hypothesis = str(t['hypothesis'][i])
-            label = LABELS[int(str(t['label'][i]))]
-            row = {
-                'id': f'{lang}_{i}',
-                'problem': f'Premise: {premise}\nHypothesis: {hypothesis}',
-                'answer': label,
-                'language': lang,
-            }
-            out.write(json.dumps(row) + '\n')
-            count += 1
-        os.remove('/tmp/data.parquet')
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=xnli
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Given the premise and hypothesis, determine the relationship. Print only one word: entailment, neutral, or contradiction. Do not include any explanation.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Given the premise and hypothesis, determine the relationship. Print only one word: entailment, neutral, or contradiction. Do not include any explanation."

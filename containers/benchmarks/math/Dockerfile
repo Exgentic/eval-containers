@@ -1,11 +1,56 @@
 # MATH (Hendrycks competition mathematics)
 # 5000 tasks (7 subjects x test split). Data: HuggingFace EleutherAI/hendrycks_math
 # Agent prints answer to stdout. Test compares to boxed expected answer.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# All 7 subject parquet files are read in one glob; filename=true exposes the
+# source path so the subject (parent directory) becomes the `subject` field, and
+# file_row_number=true gives the in-file physical row index (the python loader's
+# `for i in range(len(t))`) so the `<subject>_<i>` id matches byte-for-byte.
+# `answer` reproduces the python extract_boxed:
+# the tail after the LAST `\boxed{` is split into characters whose running brace
+# balance (starting at 1, inside the box) locates the matching close, yielding the
+# balanced content even when nested (≈31% of rows nest braces); rows without a box
+# fall back to the trimmed solution.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "WITH base AS ( \
+       SELECT regexp_extract(filename, 'parquet/([^/]+)/test/', 1) AS subject, \
+              file_row_number AS i, \
+              problem, solution, \
+              CASE WHEN solution LIKE '%\boxed{%' \
+                   THEN substr(solution, length(solution) - length(reverse(split_part(reverse(solution), reverse('\boxed{'), 1))) + 1) \
+                   ELSE NULL END AS tail \
+       FROM read_parquet('hf://datasets/EleutherAI/hendrycks_math@~parquet/*/test/*.parquet', filename=true, file_row_number=true) \
+     ), \
+     chars AS ( \
+       SELECT subject, i, problem, tail, \
+              generate_subscripts(string_to_array(tail, ''), 1) AS pos, \
+              unnest(string_to_array(tail, '')) AS ch \
+       FROM base WHERE tail IS NOT NULL \
+     ), \
+     bal AS ( \
+       SELECT subject, i, problem, tail, pos, \
+              1 + sum(CASE WHEN ch='{' THEN 1 WHEN ch='}' THEN -1 ELSE 0 END) \
+                  OVER (PARTITION BY subject, i ORDER BY pos ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS depth \
+       FROM chars \
+     ), \
+     closed AS ( \
+       SELECT subject, i, any_value(problem) AS problem, any_value(tail) AS tail, \
+              min(pos) FILTER (WHERE depth=0) AS close_pos \
+       FROM bal GROUP BY subject, i \
+     ) \
+     SELECT id, problem, answer, subject FROM ( \
+       SELECT subject || '_' || i::VARCHAR AS id, subject, i, problem, \
+              trim(CASE WHEN close_pos IS NULL THEN tail ELSE substr(tail, 1, close_pos-1) END) AS answer \
+       FROM closed \
+       UNION ALL \
+       SELECT subject || '_' || i::VARCHAR AS id, subject, i, problem, trim(solution) AS answer \
+       FROM base WHERE tail IS NULL \
+     ) ORDER BY subject, i"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="math"
@@ -17,75 +62,6 @@ LABEL eval.benchmark.data_revision="21a5633873b6a120296cce3e2df9d5550074f4a3"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/EleutherAI/hendrycks_math"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2103.03874"
 
-# Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-
-SUBJECTS = ['algebra', 'counting_and_probability', 'geometry',
-            'intermediate_algebra', 'number_theory', 'prealgebra', 'precalculus']
-
-def extract_boxed(s):
-    idx = s.rfind('\\boxed{')
-    if idx < 0:
-        return s.strip()
-    i = idx + len('\\boxed{')
-    depth = 1
-    out = []
-    while i < len(s) and depth > 0:
-        c = s[i]
-        if c == '{':
-            depth += 1
-            out.append(c)
-        elif c == '}':
-            depth -= 1
-            if depth == 0:
-                break
-            out.append(c)
-        else:
-            out.append(c)
-        i += 1
-    return ''.join(out).strip()
-
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for subject in SUBJECTS:
-        url = f'https://huggingface.co/api/datasets/EleutherAI/hendrycks_math/parquet/{subject}/test/0.parquet'
-        urllib.request.urlretrieve(url, '/tmp/data.parquet')
-        t = pq.read_table('/tmp/data.parquet')
-        for i in range(len(t)):
-            row = {
-                'id': f'{subject}_{i}',
-                'problem': str(t['problem'][i]),
-                'answer': extract_boxed(str(t['solution'][i])),
-                'subject': subject,
-            }
-            out.write(json.dumps(row) + '\n')
-            count += 1
-        os.remove('/tmp/data.parquet')
-print('total tasks:', count)
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=math
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Solve this math problem. Print only the final answer in its simplest form (a number, fraction, or LaTeX expression as it would appear inside \\boxed{}). Do not include any explanation.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Solve this math problem. Print only the final answer in its simplest form (a number, fraction, or LaTeX expression as it would appear inside \\boxed{}). Do not include any explanation."

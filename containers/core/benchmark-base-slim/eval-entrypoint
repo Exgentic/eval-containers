@@ -1,0 +1,22 @@
+#!/bin/bash
+# Shared benchmark entrypoint: materialize the task, build $TASK from
+# $EVAL_TASK_PROMPT (with {field} placeholders filled from the task's fields)
+# then the problem text, expose $EXPECTED_ANSWER, and exec the grader.
+/eval-materialize-task
+if [ -n "${EVAL_TASK_ID:-}" ] && [ -z "${TASK:-}" ]; then
+  prompt="${EVAL_TASK_PROMPT:-}"
+  for fp in /tasks/"$EVAL_TASK_ID"/*.txt; do
+    f=$(basename "$fp" .txt)
+    prompt="${prompt//\{$f\}/$(cat "$fp")}"
+  done
+  problem=$(cat "/tasks/$EVAL_TASK_ID/problem.txt")
+  if [ -n "$prompt" ]; then
+    export TASK="$prompt
+
+$problem"
+  else
+    export TASK="$problem"
+  fi
+  export EXPECTED_ANSWER=$(cat "/tasks/$EVAL_TASK_ID/answer.txt")
+fi
+exec "$@"
