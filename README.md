@@ -29,24 +29,16 @@ cat output/aime/0/task/result.json
 
 Prefer a CLI? `cargo install eval-containers`, then `eval-containers run aime --task-id 0 --agent codex --model gpt-5.4` prints and runs that exact Docker command — every command is a reminder of a plain `docker`/`kubectl` one (`--dry-run` to just print it).
 
-## Same eval, three runtimes
+## Same eval, on Kubernetes
 
-The identical evaluation runs on a laptop, in CI, or across a cluster — pick the runtime, the benchmark/agent/model don't change:
-
-```bash
-eval-containers run aime --agent codex --task-id 0 --mode compose     # laptop (default)
-eval-containers run aime --agent codex --task-id 0 --mode container   # one-shot / CI
-eval-containers run aime --agent codex --task-id 0 --mode job         # Kubernetes
-```
-
-`--mode job` renders one self-contained Helm chart straight from the registry — no clone — so the same run fans out to thousands of tasks in parallel:
+The exact same evaluation runs at scale on a cluster — the `oci://` Compose reference becomes one `helm | kubectl apply`, with the axes as `--set`s instead of `EVAL_*` vars:
 
 ```bash
-helm template aime oci://ghcr.io/exgentic/charts/eval --version 0.1.0 \
-  --set benchmark=aime --set agent=codex --set task=0 | kubectl apply -f -
+helm template eval-aime oci://ghcr.io/exgentic/charts/eval \
+  --set benchmark=aime --set task=0 --set agent=codex --set model=gpt-5.4 | kubectl apply -f -
 ```
 
-→ [Triple-mode](docs/concepts/triple-mode.md) · [Deploy on Kubernetes](docs/guides/deploy-on-kubernetes.md) · [OpenShift](docs/guides/deploy-on-openshift.md)
+→ [Triple-mode](docs/concepts/triple-mode.md) (compose / container / job) · [Deploy on Kubernetes](docs/guides/deploy-on-kubernetes.md) · [OpenShift](docs/guides/deploy-on-openshift.md)
 
 > **Pre-release.** The `oci://ghcr.io/exgentic/…` artifacts aren't public yet. For now, clone the repo and add `--local`, or run `docker compose -f containers/benchmarks/<name>/compose.yaml up` directly. `oci://` needs Docker Compose ≥ 2.34 — see [Run offline or airgapped](docs/guides/offline-and-airgapped.md) for older Docker.
 
