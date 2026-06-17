@@ -41,13 +41,14 @@ RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
               min(pos) FILTER (WHERE depth=0) AS close_pos \
        FROM bal GROUP BY subject, i \
      ) \
-     SELECT subject || '_' || i::VARCHAR AS id, problem, \
-            trim(CASE WHEN close_pos IS NULL THEN tail ELSE substr(tail, 1, close_pos-1) END) AS answer, \
-            subject \
-     FROM closed \
-     UNION ALL \
-     SELECT subject || '_' || i::VARCHAR AS id, problem, trim(solution) AS answer, subject \
-     FROM base WHERE tail IS NULL"
+     SELECT id, problem, answer, subject FROM ( \
+       SELECT subject || '_' || i::VARCHAR AS id, subject, i, problem, \
+              trim(CASE WHEN close_pos IS NULL THEN tail ELSE substr(tail, 1, close_pos-1) END) AS answer \
+       FROM closed \
+       UNION ALL \
+       SELECT subject || '_' || i::VARCHAR AS id, subject, i, problem, trim(solution) AS answer \
+       FROM base WHERE tail IS NULL \
+     ) ORDER BY subject, i"
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 

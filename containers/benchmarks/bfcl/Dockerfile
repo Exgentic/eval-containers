@@ -20,8 +20,8 @@ FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
     "WITH src AS ( \
        SELECT 0 AS catrank, * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_simple.json',   format='newline_delimited', columns={id:'VARCHAR', question:'JSON', function:'JSON'}) \
-       UNION ALL BY NAME SELECT 1, * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_multiple.json', format='newline_delimited', columns={id:'VARCHAR', question:'JSON', function:'JSON'}) \
-       UNION ALL BY NAME SELECT 2, * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_parallel.json', format='newline_delimited', columns={id:'VARCHAR', question:'JSON', function:'JSON'}) ), \
+       UNION ALL BY NAME SELECT 1 AS catrank, * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_multiple.json', format='newline_delimited', columns={id:'VARCHAR', question:'JSON', function:'JSON'}) \
+       UNION ALL BY NAME SELECT 2 AS catrank, * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_parallel.json', format='newline_delimited', columns={id:'VARCHAR', question:'JSON', function:'JSON'}) ), \
      ans AS ( \
        SELECT * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_simple.json',   format='newline_delimited', columns={id:'VARCHAR', ground_truth:'JSON'}) \
        UNION ALL BY NAME SELECT * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_multiple.json', format='newline_delimited', columns={id:'VARCHAR', ground_truth:'JSON'}) \
