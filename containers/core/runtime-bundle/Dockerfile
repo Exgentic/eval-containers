@@ -6,8 +6,14 @@ FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS gobuild
 ARG GOSU_VERSION=1.19
 ARG PROCESS_COMPOSE_VERSION=v1.116.0
 ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+# go install drops cross-built binaries under /go/bin/<goos>_<goarch>/ but native
+# builds straight into /go/bin/ — normalize both into /out so the COPY is stable
+# whether the runner is amd64 (CI, native) or arm64 (local, cross).
 RUN go install "github.com/tianon/gosu@${GOSU_VERSION}" \
- && go install "github.com/f1bonacc1/process-compose@${PROCESS_COMPOSE_VERSION}"
+ && go install "github.com/f1bonacc1/process-compose@${PROCESS_COMPOSE_VERSION}" \
+ && mkdir -p /out \
+ && find /go/bin -name gosu -type f -exec cp {} /out/gosu \; \
+ && find /go/bin -name process-compose -type f -exec cp {} /out/process-compose \;
 
 FROM --platform=linux/amd64 alpine:3.20 AS source
 
@@ -20,5 +26,5 @@ RUN apk upgrade --no-cache && mkdir -p /bundle/bin
 # gosu: drop-privileges helper the eval entrypoint uses to switch root → agent.
 # process-compose: in-container orchestrator for single-mode (otelcol + gateway
 # + runner + verifier in one container). Consumers COPY /bundle/bin.
-COPY --from=gobuild /go/bin/linux_amd64/gosu /bundle/bin/gosu
-COPY --from=gobuild /go/bin/linux_amd64/process-compose /bundle/bin/process-compose
+COPY --from=gobuild /out/gosu /bundle/bin/gosu
+COPY --from=gobuild /out/process-compose /bundle/bin/process-compose
