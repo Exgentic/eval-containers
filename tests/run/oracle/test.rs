@@ -16,6 +16,9 @@
 
 use std::process::Command;
 
+#[path = "../common/mod.rs"]
+mod common;
+
 /// Benchmarks with a non-exact-match grader, each with a representative task id.
 /// Not auto-covered (auto-coverage is exact-match only). A co-located
 /// `benchmarks/<name>/solution.sh` is used when present, else the default
@@ -60,10 +63,38 @@ fn oracle(args: &[&str]) -> bool {
         .success()
 }
 
-#[test]
+#[tokio::test]
 #[ignore]
-fn benchmarks_are_oracle_solvable() {
-    let mut failures = Vec::new();
+async fn benchmarks_are_oracle_solvable() {
+    // A fresh CI runner has none of the base images this gate builds on, and the
+    // shared registry may be empty, so bake the core bases locally first — the
+    // same bootstrap the replay suite uses. `oracle --local` then builds each
+    // benchmark against these local bases. (Locally, where the bases already
+    // exist, the bake is a fast cache hit.)
+    common::bake_targets(&[
+        "entrypoint",
+        "test-exact-match",
+        "llm-bridge",
+        "otel",
+        "runtime-bundle",
+        "agent-base-node",
+        "agent-base-python",
+        "agent-base-rust",
+        "model-replay",
+        "benchmark-base-hf",
+        "benchmark-base-github",
+        "benchmark-base-external",
+    ])
+    .await;
+
+    // Collect every oracle check as (label, argv) up front so the heavy part —
+    // each check `--local`-builds the benchmark image — can be fanned across a
+    // matrix. ORACLE_SHARDS = matrix size, ORACLE_SHARD = this job's index; each
+    // job runs the round-robin slice `i % SHARDS == SHARD`. ORACLE_ONLY=<substr>
+    // narrows to matching labels (single-benchmark validation). All three unset
+    // (the default) => SHARDS=1, SHARD=0, no filter => every check runs, so a
+    // plain `cargo test --test oracle -- --ignored` is unchanged.
+    let mut checks: Vec<(String, Vec<String>)> = Vec::new();
 
     // Auto-cover every exact-match, shared-env benchmark: the default gold
     // solution (emit EXPECTED_ANSWER) solves them by construction.
@@ -83,15 +114,45 @@ fn benchmarks_are_oracle_solvable() {
         {
             continue; // custom grader / per-task / has its own solution → SPECIAL
         }
-        if !oracle(&[&name, "--local"]) {
-            failures.push(name);
-        }
+        checks.push((name.clone(), vec![name, "--local".to_string()]));
     }
 
     // Per-task / custom-solution benchmarks.
     for (bench, task) in SPECIAL {
-        if !oracle(&[bench, "--task-id", task, "--local"]) {
-            failures.push((*bench).to_string());
+        checks.push((
+            format!("{bench} (task {task})"),
+            vec![
+                (*bench).to_string(),
+                "--task-id".to_string(),
+                (*task).to_string(),
+                "--local".to_string(),
+            ],
+        ));
+    }
+
+    let only = std::env::var("ORACLE_ONLY").unwrap_or_default();
+    if !only.is_empty() {
+        checks.retain(|(label, _)| label.contains(&only));
+    }
+    checks.sort(); // deterministic order so each shard's slice is stable
+    let shard: usize = std::env::var("ORACLE_SHARD")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0);
+    let shards: usize = std::env::var("ORACLE_SHARDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1)
+        .max(1);
+
+    let mut failures = Vec::new();
+    for (i, (label, argv)) in checks.iter().enumerate() {
+        if i % shards != shard {
+            continue;
+        }
+        let args: Vec<&str> = argv.iter().map(String::as_str).collect();
+        if !oracle(&args) {
+            failures.push(label.clone());
         }
     }
 

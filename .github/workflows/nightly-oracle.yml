@@ -1,0 +1,86 @@
+name: Nightly oracle gate
+
+# Grader-integrity gate over every benchmark: a gold solution must score 1.0
+# through the benchmark's REAL grader, and a no-op must score < 1.0 — proving no
+# always-pass / always-fail grader. No agent, no model (`eval-containers oracle`).
+# Each check `--local`-builds the benchmark image, so this is the daemon-backed
+# lane the per-PR test.yml deliberately can't run. The ~78 checks are split
+# across a parallel shard matrix; each shard bakes the core bases once, then
+# `--local`-builds and grades its round-robin slice.
+#
+# Why CI and not a dev laptop: ubuntu-latest is native x86_64, so the linux/amd64
+# images build without QEMU — the emulation that segfaults pyarrow on arm64 dev
+# hosts. HF_TOKEN (repo secret) covers dataset builds. Mirrors nightly-replay.yml.
+
+on:
+  # schedule + workflow_dispatch fire only on the default branch, so the nightly
+  # runs on main. To validate a subset on a branch before merge, trigger
+  # workflow_dispatch with `only`.
+  schedule:
+    - cron: '17 4 * * *' # nightly, 04:17 UTC (after replay's 03:17)
+  workflow_dispatch:
+    inputs:
+      only:
+        description: >-
+          Substring to narrow to matching benchmarks (e.g. "aime" or
+          "humaneval") for a quick check. Empty = the full suite, sharded.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: read # pull GHCR-hosted upstream base images without anonymous rate limits
+
+concurrency:
+  group: nightly-oracle-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash # explicit `bash` => `-eo pipefail`
+
+jobs:
+  oracle:
+    name: shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false # one shard's failure must not cancel the others
+      matrix:
+        # N-way shard of the ~78 oracle checks. ORACLE_SHARDS is derived from
+        # strategy.job-total (= this list's length), so edit only this list.
+        shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: oracle # all shards share one cache (same Cargo.lock)
+
+      # NB: deliberately NO docker/setup-buildx-action — its docker-container
+      # builder can't see locally-baked bases (see nightly-replay.yml). The
+      # runner's default `docker` driver reads the bake --load'ed bases.
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run oracle shard
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          ORACLE_ONLY: ${{ github.event.inputs.only }}
+          ORACLE_SHARD: ${{ matrix.shard }}
+          ORACLE_SHARDS: ${{ strategy.job-total }} # = matrix length; no hand-maintained coupling
+        run: |
+          # The single benchmarks_are_oracle_solvable test bakes the core bases,
+          # then `--local`-builds + grades its ORACLE_SHARD slice of the checks
+          # (narrowed to ORACLE_ONLY when set). One cargo process per shard.
+          cargo test -p eval-containers-tests-run --test oracle \
+            -- --ignored --nocapture benchmarks_are_oracle_solvable
