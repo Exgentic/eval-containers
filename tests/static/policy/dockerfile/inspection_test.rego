@@ -295,7 +295,7 @@ test_model_replay_exempt if {
 # Gateway-flavor models (LABEL gateway.kind=) are thin wrappers — exempt.
 test_model_gateway_flavor_exempt if {
 	gw := [from("alpine:3"), label("eval.type", `"model"`), label("gateway.kind", `"litellm"`)]
-	count(deny) == 0 with input as gw with data.params.dir as "gpt-5.4--litellm"
+	count(deny) == 0 with input as gw with data.params.dir as "litellm"
 }
 
 # ════════════════════════════════════════════════════════════════════

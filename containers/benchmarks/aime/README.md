@@ -16,7 +16,7 @@ American Invitational Mathematics Examination
 | Upstream | [https://huggingface.co/datasets/AI-MO/aimo-validation-aime](https://huggingface.co/datasets/AI-MO/aimo-validation-aime) |
 | Paper | — |
 | Dataset revision | `13f9e12f613e720c2a2b2f345dd04b998a29494d` |
-| Canonical gateway | `gpt-5.4--bifrost` |
+| Canonical gateway | `bifrost` |
 | Canonical model | `openai/azure/gpt-5.4` |
 | Canonical agent | `claude-code` |
 
@@ -88,6 +88,6 @@ docker build -f core/combination.Dockerfile \
   --build-arg BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/aime:latest \
   --build-arg AGENT_IMAGE=ghcr.io/exgentic/agents/claude-code:latest \
   --build-arg AGENT_VERSION=2.1.0 \
-  --build-arg MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest \
+  --build-arg MODEL_IMAGE=ghcr.io/exgentic/models/bifrost:latest \
   -t ghcr.io/exgentic/evals/aime--claude-code:latest .
 ```

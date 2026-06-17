@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fetch.sh — `oc cp` eval output off the PVC (paths read from Job labels).
 #
-#   ./oc/fetch.sh --benchmark aime --agent codex --model gpt-5.4--bifrost   # whole dataset
+#   ./oc/fetch.sh --benchmark aime --agent codex --model bifrost   # whole dataset
 #   ./oc/fetch.sh --sweep-id <id>                                           # every Job in a sweep
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"

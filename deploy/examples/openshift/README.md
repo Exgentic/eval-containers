@@ -48,7 +48,7 @@ a thin loop: [`build-eval.sh`](build-eval.sh).
 
 ```bash
 deploy/examples/openshift/build-eval.sh aime codex            # benchmark agent
-deploy/examples/openshift/build-eval.sh aime codex gpt-5.4--bifrost
+deploy/examples/openshift/build-eval.sh aime codex bifrost
 ```
 
 This builds `aime`, `codex`, the model, and the `aime-codex` combination image

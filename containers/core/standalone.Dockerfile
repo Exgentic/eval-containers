@@ -40,7 +40,7 @@
 # Why root-owned /opt/gateway (mode 0700): agent uid 1002 cannot traverse it, so
 # the gateway config + credentials are unreadable by the agent (model rule 4 met
 # by file perms alone — no Linux capabilities required).
-ARG MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest
+ARG MODEL_IMAGE=ghcr.io/exgentic/models/bifrost:latest
 ARG OTEL_IMAGE=ghcr.io/exgentic/core/otel:latest
 ARG RUNTIME_BUNDLE_IMAGE=ghcr.io/exgentic/core/runtime-bundle:latest
 

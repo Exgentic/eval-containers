@@ -13,7 +13,7 @@ from litellm.integrations.custom_logger import CustomLogger
 class EvalContainersLogger(CustomLogger):
     # Fallback per-token rates when LiteLLM returns response_cost=0 for
     # custom model paths (e.g. openai/azure/gpt-5.4).  These match the
-    # model_info values in models/gpt-5.4/config.yaml so cost accounting
+    # model_info values in the litellm gateway config template so cost accounting
     # stays consistent.
     _FALLBACK_INPUT_COST = float(
         os.environ.get("EVAL_FALLBACK_INPUT_COST_PER_TOKEN", 0.0000025)

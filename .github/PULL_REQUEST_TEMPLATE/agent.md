@@ -66,7 +66,7 @@ Benchmark 1 (recommend `aime` for math reasoning):
 
 ```bash
 eval-containers build eval aime --agent <name>
-eval-containers run aime --agent <name> --model gpt-5.4 --task-id 0 --local --max-budget 1
+eval-containers run aime --agent <name> --model openai/gpt-5.4 --task-id 0 --local --max-budget 1
 ```
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty, has real LLM calls
@@ -77,7 +77,7 @@ Benchmark 2 (recommend `humaneval` for code generation or `gsm8k` for tool-less 
 
 ```bash
 eval-containers build eval <second-benchmark> --agent <name>
-eval-containers run <second-benchmark> --agent <name> --model gpt-5.4 --task-id 0 --local --max-budget 1
+eval-containers run <second-benchmark> --agent <name> --model openai/gpt-5.4 --task-id 0 --local --max-budget 1
 ```
 
 - [ ] Same three checks as above

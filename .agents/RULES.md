@@ -75,7 +75,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 15. **Build graph is data.** Every artifact under `core/`, `agents/`, `benchmarks/`, `models/`, and `gateways/` MUST ship a `docker-bake.hcl` file next to its `Dockerfile`. The bake file is the machine-readable declaration of the artifact's build dependencies — what makes the fleet's build graph an artifact in the tree rather than knowledge trapped in one consumer. Concrete shape:
 
-    a. **One file per artifact, declaring a single target.** Target name is `<category>-<name>` (e.g. `agent-openhands`, `benchmark-aime`, `model-gpt-5_4--bifrost`); leaf `core/` images use their bare directory name (`agent-base-python`, `benchmark-base-hf`). One target per file.
+    a. **One file per artifact, declaring a single target.** Target name is `<category>-<name>` (e.g. `agent-openhands`, `benchmark-aime`, `model-bifrost`); leaf `core/` images use their bare directory name (`agent-base-python`, `benchmark-base-hf`). One target per file.
 
     b. **`REGISTRY` and `TAG` are fleet-wide variables** declared once at the repo root (`./docker-bake.hcl`), defaulting to `ghcr.io/exgentic` and `latest` respectively. Per-artifact files MUST reference `${REGISTRY}/...:${TAG}` in every image reference (tag and context) — no hardcoded registries, no hardcoded tags, no per-artifact redeclaration.
 

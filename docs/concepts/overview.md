@@ -35,8 +35,10 @@ A single problem inside a benchmark is a **task** (selected by `EVAL_TASK_ID`).
 An evaluation runs three units together:
 
 - **runner** — the benchmark + agent; materializes the task, runs the agent, grades the result.
-- **gateway** — a logging proxy in front of the model. Every LLM call is
-  recorded here, independent of the agent (see [Isolation & gateways](isolation-and-gateways.md)).
+- **gateway** — a generic logging proxy in front of the model: it routes whatever
+  `EVAL_MODEL=<provider>/<model>` you set to that provider (any LiteLLM model, no
+  per-model build) and records every call, independent of the agent (see
+  [Isolation & gateways](isolation-and-gateways.md)).
 - **otelcol** — collects telemetry.
 
 The result lands as `result.json`, with the primary metric named `reward`.

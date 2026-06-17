@@ -3,7 +3,7 @@
 # then assert on the PVC output (result written, agent exit 0, gen_ai traces).
 # Exits non-zero on the first failed check.
 #
-#   ./oc/test.sh --benchmark aime --agent codex --model gpt-5.4--bifrost
+#   ./oc/test.sh --benchmark aime --agent codex --model bifrost
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"

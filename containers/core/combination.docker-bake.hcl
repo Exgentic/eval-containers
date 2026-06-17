@@ -3,7 +3,7 @@ variable "EVAL_AGENT"         {}
 variable "EVAL_AGENT_VERSION" { default = "" }
 variable "BENCHMARK_IMAGE"    {}
 variable "AGENT_IMAGE"        {}
-variable "MODEL_IMAGE"        { default = "${REGISTRY}/models/gpt-5.4--bifrost:${TAG}" }
+variable "MODEL_IMAGE"        { default = "${REGISTRY}/models/bifrost:${TAG}" }
 variable "OTEL_IMAGE"         { default = "${REGISTRY}/core/otel:${TAG}" }
 variable "RUNTIME_BUNDLE_IMAGE" { default = "${REGISTRY}/core/runtime-bundle:${TAG}" }
 

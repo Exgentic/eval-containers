@@ -17,7 +17,7 @@ set -euo pipefail
 
 BENCHMARK=${1:?usage: build-eval.sh <benchmark> <agent> [model]}
 AGENT=${2:?usage: build-eval.sh <benchmark> <agent> [model]}
-MODEL=${3:-gpt-5.4--bifrost}
+MODEL=${3:-bifrost}
 
 cd "$(dirname "$0")/../../.."   # repo root (contexts are relative to it)
 

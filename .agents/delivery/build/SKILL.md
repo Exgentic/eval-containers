@@ -41,7 +41,7 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
 
 2. **Build a single target by name.** Target names are
    `<category>-<name>` (`agent-openhands`, `benchmark-aime`,
-   `model-gpt-5_4--bifrost`); leaf `core/` images use their bare
+   `model-bifrost`); leaf `core/` images use their bare
    directory name (`agent-base-python`, `benchmark-base-hf`)
    (`.agents/RULES.md:15`, sub-rule a):
 
@@ -57,7 +57,7 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
    concrete combos are composed at call time by chaining every
    dependency's `-f` file and overriding the image-ref args. Bake merges
    all `-f` files into one graph. Example —
-   `aime × openhands × gpt-5.4--bifrost`:
+   `aime × openhands × bifrost`:
 
    ```bash
    docker buildx bake \
@@ -67,13 +67,13 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
      -f containers/core/otel/docker-bake.hcl \
      -f containers/core/runtime-bundle/docker-bake.hcl \
      -f containers/gateways/bifrost/docker-bake.hcl \
-     -f containers/models/gpt-5.4--bifrost/docker-bake.hcl \
+     -f containers/models/bifrost/docker-bake.hcl \
      -f containers/benchmarks/aime/docker-bake.hcl \
      -f containers/agents/openhands/docker-bake.hcl \
      -f containers/core/combination.docker-bake.hcl \
      --set "eval.args.BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/aime:latest" \
      --set "eval.args.AGENT_IMAGE=ghcr.io/exgentic/agents/openhands:latest" \
-     --set "eval.args.MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest" \
+     --set "eval.args.MODEL_IMAGE=ghcr.io/exgentic/models/bifrost:latest" \
      --load eval
    ```
 
@@ -197,14 +197,14 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
      ```
 
    - **Gateway** (`gateways/bifrost`) and **model**
-     (`models/gpt-5.4--bifrost`) follow the same shape; a model `FROM`s
+     (`models/bifrost`) follow the same shape; a model `FROM`s
      its gateway:
 
      ```hcl
-     target "model-gpt-5_4--bifrost" {
-       context  = "models/gpt-5.4--bifrost"
+     target "model-bifrost" {
+       context  = "models/bifrost"
        contexts = { "${REGISTRY}/gateways/bifrost:${TAG}" = "target:gateway-bifrost" }
-       tags     = ["${REGISTRY}/models/gpt-5.4--bifrost:${TAG}"]
+       tags     = ["${REGISTRY}/models/bifrost:${TAG}"]
      }
      ```
 

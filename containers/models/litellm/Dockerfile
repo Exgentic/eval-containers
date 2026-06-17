@@ -1,8 +1,5 @@
-# Provider-agnostic litellm gateway image. The image name is historical
-# (kept while we transition); the contents are now generic. Will be
-# renamed to models/litellm in a follow-up.
-#
-# Provider, model name, and credentials are resolved at runtime from env:
+# Provider-agnostic litellm gateway image. Provider, model name, and
+# credentials are resolved at runtime from env:
 #   UPSTREAM_MODEL      <provider>/<model> — e.g., openai/gpt-4,
 #                       anthropic/claude-3-5-sonnet, bedrock/anthropic...
 #                       Litellm parses the prefix natively to dispatch

@@ -146,7 +146,7 @@ Validate: `eval-containers oracle <name> --task-id <task> --local` — gold MUST
 
 ## Non-default canonical (different model or agent)
 
-If a benchmark's canonical isn't `gpt-5.4--bifrost` × `claude-code`, override:
+If a benchmark's canonical isn't `bifrost` × `claude-code`, override:
 
 ```yaml
 # compose.yaml — add gateway image + EVAL_MODEL overrides
