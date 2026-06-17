@@ -142,8 +142,8 @@ jobs:
     outputs:
       leaves: ${{ steps.l.outputs.leaves }}        # bake targets: benchmarks(shared)+agents+models
       benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
-      combos: ${{ steps.l.outputs.combos }}         # [{b,a}] benchmark×agent pairs for combo_agents
-      pertask: ${{ steps.l.outputs.pertask }}       # [{b,task}] per-task pairs
+      combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256
+      pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
     steps:
       - uses: actions/checkout@v6
       - id: l
@@ -183,18 +183,10 @@ jobs:
             | while read -r b; do [ -n "$b" ] && [ -f "containers/benchmarks/$b/compose.yaml" ] && echo "$b"; done \
             | jq -R . | jq -sc 'map(select(length>0))')
 
-          # Combo pairs = benchmarks × combo_agents (empty agents -> no combos).
-          combos='[]'
-          if [ -n "$COMBO_AGENTS" ]; then
-            read -ra _ag <<< "$COMBO_AGENTS"
-            agents=$(printf '%s\n' "${_ag[@]}" | jq -R . | jq -sc 'map(select(length>0))')
-            combos=$(jq -cn --argjson bs "$benchmarks" --argjson as "$agents" \
-              '[$bs[] as $b | $as[] as $a | {b:$b, a:$a}]')
-            cn=$(printf '%s' "$combos" | jq 'length')
-            [ "$cn" -le 256 ] || { echo "::error::combo pairs $cn exceed 256 — fewer agents or shard (run-2)"; exit 1; }
-          fi
-
-          # Per-task pairs (terminal-bench, skills-bench enumerate from build.sh GitHub tree).
+          # ── per-task bases: {b,task,kind} for every per-task benchmark ──
+          # kind=script -> build.sh (podman two-step upstream build; tasks from the
+          # pinned GitHub tree). kind=bake -> docker buildx bake (swe-bench: FROM
+          # the Epoch per-task base + EVAL_TASK_ID; tasks from the in-repo tasks.txt).
           pertask='[]'
           if [ "$INCLUDE_PER_TASK" = "true" ]; then
             acc='[]'
@@ -203,23 +195,51 @@ jobs:
               repo=$(grep -oE 'github\.com/[A-Za-z0-9_./-]+' "$bs" | head -1 | sed -E 's#github\.com/##; s#\.git$##')
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
               tks=$(gh api "repos/$repo/contents/tasks?ref=$ref" --paginate \
-                --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name}]" 2>/dev/null || echo '[]')
+                --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
+              acc=$(jq -cn --argjson a "$acc" --argjson b "$tks" '$a + $b')
+            done
+            for B in swe-bench; do
+              tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
+              tks=$(jq -Rn --arg B "$B" '[inputs | select(length>0) | {b:$B, task:., kind:"bake"}]' < "$tf")
               acc=$(jq -cn --argjson a "$acc" --argjson b "$tks" '$a + $b')
             done
             pertask="$acc"
-            # --only mode: one task as a smoke, not all ~176.
-            [ -n "${ONLY:-}" ] && pertask=$(printf '%s' "$pertask" | jq -c '.[0:1]')
-            pn=$(printf '%s' "$pertask" | jq 'length')
-            [ "$pn" -le 256 ] || { echo "::error::per-task pairs $pn exceed 256 — chunk (run-2: swe-bench-pro/swe-lancer)"; exit 1; }
+            # --only mode: one task per benchmark as a smoke, not all ~600.
+            [ -n "${ONLY:-}" ] && pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
           fi
+
+          # ── combos: shared (task="") + per-task, all as {b,a,task,kind} ──
+          # Both build via one downstream bake-eval call (per-task just points at the
+          # per-task base + a task-suffixed name), so they share one shape + matrix.
+          combos='[]'
+          if [ -n "$COMBO_AGENTS" ]; then
+            read -ra _ag <<< "$COMBO_AGENTS"
+            agents=$(printf '%s\n' "${_ag[@]}" | jq -R . | jq -sc 'map(select(length>0))')
+            shared=$(jq -cn --argjson bs "$benchmarks" --argjson as "$agents" \
+              '[$bs[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
+            ptc=$(jq -cn --argjson ps "$pertask" --argjson as "$agents" \
+              '[$ps[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
+            combos=$(jq -cn --argjson s "$shared" --argjson p "$ptc" '$s + $p')
+          fi
+
+          # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
+          # GitHub caps a matrix at 256 jobs; each shard job loops its items. Chunk
+          # combos by 25 (thin overlays) and per-task bases by 10 (heavier builds).
+          shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
+          combo_shards=$(shard "$combos" 25)
+          pertask_shards=$(shard "$pertask" 10)
+          for kv in "combo_shards=$combo_shards" "pertask_shards=$pertask_shards"; do
+            sn=$(printf '%s' "${kv#*=}" | jq 'length')
+            [ "$sn" -le 256 ] || { echo "::error::${kv%%=*} = $sn shards > 256 — raise the chunk size in enumerate"; exit 1; }
+          done
 
           {
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
-            echo "combos=$combos"
-            echo "pertask=$pertask"
+            echo "combo_shards=$combo_shards"
+            echo "pertask_shards=$pertask_shards"
           } >> "$GITHUB_OUTPUT"
-          echo "leaves=$n  combos=$(printf '%s' "$combos" | jq 'length')  pertask=$(printf '%s' "$pertask" | jq 'length')"
+          echo "leaves=$n  combos=$(printf '%s' "$combos" | jq length) in $(printf '%s' "$combo_shards" | jq length) shards  pertask=$(printf '%s' "$pertask" | jq length) in $(printf '%s' "$pertask_shards" | jq length) shards"
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
   build:
@@ -265,41 +285,66 @@ jobs:
             --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/${T}" \
             "${ACT[@]}"
 
-  # ── per-task images — one job per (benchmark, task) ───────────────────────
+  # ── per-task base images — sharded; each job builds a chunk of (b,task) ───
+  # Two mechanics in one job: kind=script (build.sh via podman, chained through
+  # the local store) and kind=bake (swe-bench via buildx FROM the Epoch base).
+  # >256 (b,task) pairs are sharded; one item failing only fails its own ref.
   per-task:
-    needs: [enumerate]
-    if: needs.enumerate.outputs.pertask != '[]'
+    needs: [bases, enumerate]
+    if: needs.enumerate.outputs.pertask_shards != '[]'
     runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 45
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
       matrix:
-        pair: ${{ fromJson(needs.enumerate.outputs.pertask) }}
+        shard: ${{ fromJson(needs.enumerate.outputs.pertask_shards) }}
     steps:
       - uses: actions/checkout@v6
-      - name: Ensure podman
+      - uses: docker/setup-buildx-action@v4   # kind=bake (swe-bench)
+      - name: Ensure podman                    # kind=script (build.sh)
         run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
-      - name: Log in to GHCR
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to GHCR (podman)
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Build + push ${{ matrix.pair.b }} / ${{ matrix.pair.task }}
+      - name: Build + push per-task shard ${{ matrix.shard.idx }}
         env:
-          B: ${{ matrix.pair.b }}
-          TASK: ${{ matrix.pair.task }}
+          ITEMS: ${{ toJson(matrix.shard.items) }}
+          DRY: ${{ inputs.dry_run }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
-          # Image tags must be lowercase; the upstream task dir name is case-sensitive
-          # (matches the CLI's naming::benchmark_task_image). build.sh is a two-step
-          # podman build (fetch upstream task, overlay our pipeline).
-          tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
-          ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            echo "dry-run: would build $ref via containers/benchmarks/$B/build.sh"; exit 0
-          fi
-          # Cross-run registry layer cache — build.sh turns on podman
-          # --cache-to/from when EVAL_BUILD_CACHE is set (no-op on older podman).
-          export EVAL_BUILD_CACHE="${REGISTRY}/buildcache/${B}-${tid}"
-          bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK"
-          podman push "$ref"
+          # Tags must be lowercase; upstream task dir names are case-sensitive
+          # (matches the CLI's naming::benchmark_task_image).
+          fails=0
+          while read -r it; do
+            B=$(jq -r .b <<< "$it"); TASK=$(jq -r .task <<< "$it"); KIND=$(jq -r .kind <<< "$it")
+            tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
+            ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
+            cache="${REGISTRY}/buildcache/${B}-${tid}"
+            if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
+            echo "::group::$ref ($KIND)"
+            if [ "$KIND" = "script" ]; then
+              # build.sh turns on podman --cache-to/from when EVAL_BUILD_CACHE is set.
+              if EVAL_BUILD_CACHE="$cache" bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK" && podman push "$ref"; then :; \
+              else echo "::error::per-task build failed: $ref"; fails=$((fails+1)); fi
+            else
+              # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the frozen entrypoint.
+              if docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
+                   --set "benchmark-${B}.args.EVAL_TASK_ID=${TASK}" \
+                   --set "benchmark-${B}.contexts.${REGISTRY}/core/entrypoint=docker-image://${REGISTRY}/core/entrypoint:${TAG}" \
+                   --set "benchmark-${B}.tags=${ref}" \
+                   --set "benchmark-${B}.cache-to=type=registry,ref=${cache},mode=max" \
+                   --set "benchmark-${B}.cache-from=type=registry,ref=${cache}" \
+                   --provenance=mode=max --sbom=true "benchmark-${B}" --push; then :; \
+              else echo "::error::per-task bake failed: $ref"; fails=$((fails+1)); fi
+            fi
+            echo "::endgroup::"
+          done < <(jq -c '.[]' <<< "$ITEMS")
+          [ "$fails" -eq 0 ] || { echo "::error::$fails per-task item(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
 
   # ── compose artifacts — one self-contained oci://…/eval-<b> per benchmark ──
   compose:
@@ -331,17 +376,23 @@ jobs:
           fi
           ./eval-containers build compose --benchmark "$B"
 
-  # ── eval combos — one job per (benchmark, agent) for combo_agents ─────────
+  # ── eval combos — sharded; each job bakes a chunk of (benchmark, agent) ───
+  # One bake-eval per item: shared (evals/<b>--<a>) or per-task (evals/<b>-<task>
+  # --<a>, pointing at the per-task base). A combo is a thin overlay (FROM the
+  # published benchmark + COPY the agent), so there are no dataset downloads and
+  # no per-combo registry cache (the published parents are the cache). needs
+  # per-task so per-task combos build only after their base exists; always() so
+  # shared combos still run when per-task is skipped/partial.
   combos:
-    needs: [build, enumerate]
-    if: needs.enumerate.outputs.combos != '[]'
+    needs: [build, per-task, enumerate]
+    if: always() && needs.build.result == 'success' && needs.enumerate.result == 'success' && needs.enumerate.outputs.combo_shards != '[]'
     runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
-    timeout-minutes: 45
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
       matrix:
-        combo: ${{ fromJson(needs.enumerate.outputs.combos) }}
+        shard: ${{ fromJson(needs.enumerate.outputs.combo_shards) }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
@@ -350,24 +401,31 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bake eval ${{ matrix.combo.b }}--${{ matrix.combo.a }} (pull published parents)
+      - name: Bake eval combo shard ${{ matrix.shard.idx }}
         env:
-          B: ${{ matrix.combo.b }}
-          A: ${{ matrix.combo.a }}
+          ITEMS: ${{ toJson(matrix.shard.items) }}
+          DRY: ${{ inputs.dry_run }}
         run: |
-          # combo = FROM benchmarks/$B + COPY agents/$A + thin overlay; no dataset
-          # downloads (parents already published), just pull-parents + small delta.
-          ACT=(eval --provenance=mode=max --sbom=true --push)
-          [ "${{ inputs.dry_run }}" = "true" ] && ACT=(eval --print)
-          EVAL_BENCHMARK="$B" EVAL_AGENT="$A" \
-          BENCHMARK_IMAGE="${REGISTRY}/benchmarks/${B}:${TAG}" \
-          AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
-          docker buildx bake \
-            -f containers/docker-bake.hcl \
-            -f containers/core/combination.docker-bake.hcl \
-            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/eval-${B}--${A},mode=max" \
-            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/eval-${B}--${A}" \
-            "${ACT[@]}"
+          fails=0
+          while read -r it; do
+            B=$(jq -r .b <<< "$it"); A=$(jq -r .a <<< "$it"); TASK=$(jq -r .task <<< "$it")
+            if [ -n "$TASK" ]; then           # per-task combo: evals/<b>-<task>--<a>
+              tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
+              eb="${B}-${tid}"; bench_img="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
+            else                              # shared combo: evals/<b>--<a>
+              eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
+            fi
+            ACT=(eval --provenance=mode=max --sbom=true --push)
+            [ "$DRY" = "true" ] && ACT=(eval --print)
+            echo "::group::evals/${eb}--${A}"
+            if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
+               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
+               docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
+                 "${ACT[@]}"; then :; \
+            else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
+            echo "::endgroup::"
+          done < <(jq -c '.[]' <<< "$ITEMS")
+          [ "$fails" -eq 0 ] || { echo "::error::$fails combo(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
   # Runs for real releases (tag / explicit version) or whenever the bases were
