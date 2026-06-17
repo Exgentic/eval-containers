@@ -23,11 +23,15 @@ services:
       - internal
 
   gateway:
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/${EVAL_GATEWAY_IMAGE:-gpt-5.4--bifrost}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/${EVAL_GATEWAY_IMAGE:-bifrost}:latest
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}
-      EVAL_MODEL: ${EVAL_MODEL:-openai/azure/gpt-5.4}
+      # Generic gateways (bifrost/litellm/portkey, the default) read this
+      # <provider>/<model> handle and ERROR if it's unset — no silent fallback
+      # model. A pinned per-model image (EVAL_GATEWAY_IMAGE=<model>) bakes its
+      # own model and ignores this.
+      EVAL_MODEL: ${EVAL_MODEL}
       HOST: 0.0.0.0
       # Both gateway flavors emit OTel: bifrost via its native `otel`
       # plugin (collector_url derived from this in /opt/gateway/start),

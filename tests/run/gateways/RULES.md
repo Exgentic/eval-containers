@@ -9,7 +9,7 @@ Parent: [../RULES.md](../RULES.md)
 ## Scope
 
 1. **Three flavors, three contracts.** This file tests
-   `gateways/<flavor>/` + `models/gpt-5.4--<flavor>/`. Adding a fourth
+   `gateways/<flavor>/` + `models/<flavor>/`. Adding a fourth
    flavor MUST extend the `FLAVORS` constant in `test.rs` and add the
    matching static/runtime invariants.
 

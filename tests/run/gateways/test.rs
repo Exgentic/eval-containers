@@ -87,7 +87,7 @@ fn dockerfile_text(flavor: &str) -> String {
 
 fn gateway_image_ref(flavor: &str) -> (String, String) {
     (
-        format!("ghcr.io/exgentic/models/gpt-5.4--{flavor}"),
+        format!("ghcr.io/exgentic/models/{flavor}"),
         "latest".to_string(),
     )
 }
@@ -102,7 +102,7 @@ static IMAGES_BUILT: OnceCell<()> = OnceCell::const_new();
 
 /// Build every image these tests transitively need, exactly once per
 /// process. Bake handles dep ordering via each artifact's `contexts`
-/// (otelcol is a leaf; gateway/{flavor} is a leaf; model-gpt-5_4--{flavor}
+/// (otelcol is a leaf; gateway/{flavor} is a leaf; model-{flavor}
 /// depends on the matching gateway target).
 async fn ensure_built() {
     IMAGES_BUILT
@@ -111,7 +111,7 @@ async fn ensure_built() {
             let mut targets: Vec<String> = vec!["otel".to_string()];
             for f in FLAVORS {
                 targets.push(format!("gateway-{f}"));
-                targets.push(format!("model-gpt-5_4--{f}"));
+                targets.push(format!("model-{f}"));
             }
             let refs: Vec<&str> = targets.iter().map(String::as_str).collect();
             common::bake_targets(&refs).await;

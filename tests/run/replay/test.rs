@@ -277,7 +277,7 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
 /// transitively needs. Runs once per process via `OnceCell`; parallel
 /// callers await the in-flight bake. Bake itself handles dep ordering
 /// (entrypoint before benchmark-base-hf, bifrost before
-/// gpt-5.4--bifrost, etc.) via the `contexts` blocks in each artifact's
+/// bifrost, etc.) via the `contexts` blocks in each artifact's
 /// `docker-bake.hcl` (RULES.md principle 15).
 static CORE_BASES_BOOTSTRAPPED: OnceCell<()> = OnceCell::const_new();
 
@@ -288,7 +288,7 @@ async fn bootstrap_core_bases() {
             // Replay always swaps the gateway to models/replay, so the real
             // gateway/model images are never used — and litellm's base pull was
             // the single slowest bake step (~55s). Drop litellm, gateway-bifrost,
-            // and model-gpt-5_4--bifrost; nothing else here depends on them (bake
+            // and model-bifrost; nothing else here depends on them (bake
             // builds the dependency closure, so omitting a target only skips it,
             // never breaks the build).
             common::bake_targets(&[

@@ -14,10 +14,12 @@ task: "0"
 # rejected when perTask is true. (benchmarks/RULES.md — eval-image naming.)
 perTask: false
 registry: ghcr.io/exgentic
-# The gateway is a fixed proxy image; `evalModel` is the upstream it proxies to
-# (CLI --model sets evalModel + model). `model` is the runner's logging tag.
-gatewayImage: gpt-5.4--bifrost
-evalModel: openai/azure/gpt-5.4
+# `gatewayImage` picks the proxy: a GENERIC gateway (bifrost/litellm/portkey, the
+# default) routes `evalModel`=<provider>/<model> at runtime and errors if it's
+# empty; a pinned per-model image (e.g. gpt-5.4) bakes its model and ignores it.
+# `model` is the runner's agent-facing label / logging tag (a clean name).
+gatewayImage: bifrost
+evalModel: ""
 model: gpt-5.4-bifrost
 # Image tags (CLI --model-tag → gatewayTag; --agent-tag/--benchmark-tag → runnerTag)
 gatewayTag: latest

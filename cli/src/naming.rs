@@ -191,8 +191,8 @@ mod tests {
             "ghcr.io/exgentic/agents/codex:latest"
         );
         assert_eq!(
-            model_image(REG, "gpt-5.4--bifrost", "latest"),
-            "ghcr.io/exgentic/models/gpt-5.4--bifrost:latest"
+            model_image(REG, "bifrost", "latest"),
+            "ghcr.io/exgentic/models/bifrost:latest"
         );
     }
 
@@ -264,10 +264,7 @@ mod tests {
     #[test]
     fn model_bake_target_replaces_dots() {
         assert_eq!(model_bake_target("gpt-5.4"), "model-gpt-5_4");
-        assert_eq!(
-            model_bake_target("gpt-5.4--bifrost"),
-            "model-gpt-5_4--bifrost"
-        );
+        assert_eq!(model_bake_target("bifrost"), "model-bifrost");
         assert_eq!(model_bake_target("replay"), "model-replay");
     }
 
