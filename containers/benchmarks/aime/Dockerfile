@@ -1,11 +1,15 @@
 # AIME (American Invitational Mathematics Examination)
 # 90 tasks. Data: HuggingFace AI-MO/aimo-validation-aime
 # Agent writes answer to /home/agent/answer.txt. Verifier compares numerically to expected answer.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT id::VARCHAR AS id, problem, answer::VARCHAR AS answer \
+     FROM 'hf://datasets/AI-MO/aimo-validation-aime@~parquet/default/train/0000.parquet'"
 
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="aime"
 LABEL eval.benchmark.released="true"
@@ -18,27 +22,12 @@ LABEL eval.benchmark.url="https://huggingface.co/datasets/AI-MO/aimo-validation-
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aime"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/aime2024"
 
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-urllib.request.urlretrieve('https://huggingface.co/datasets/AI-MO/aimo-validation-aime/resolve/refs%2Fconvert%2Fparquet/default/train/0000.parquet', '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        row = {
-            'id': str(t['id'][i]),
-            'problem': str(t['problem'][i]),
-            'answer': str(t['answer'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-print(f'Wrote {len(t)} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=aime
+ENV EVAL_TASK_PROMPT="Solve the following problem. Reason step by step, create the file /home/agent/answer.txt, and put your final answer there. Your answer should be a single integer from 0 to 999 inclusive."
 
+# Numeric grader (shell, no python): compare the agent's answer.txt to EXPECTED_ANSWER.
 RUN cat > /grade.sh <<'GRADE'
 #!/bin/bash
 mkdir -p /logs/verifier
@@ -50,21 +39,5 @@ else
   echo 0 > /logs/verifier/reward.txt
 fi
 GRADE
-
 RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Solve the following problem. Reason step by step, create the file /home/agent/answer.txt, and put your final answer there. Your answer should be a single integer from 0 to 999 inclusive.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]
