@@ -49,8 +49,19 @@ if [ -f "$TEMPLATE" ]; then
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
   export OTEL_COLLECTOR_URL
 
+  # Per-run hard spend cap (models/RULES.md rule 16). Default $1; must be a
+  # number so it renders as valid JSON into the governance budget in the
+  # template (litellm does the same via core/litellm's entrypoint wrapper).
+  EVAL_MODEL_MAX_BUDGET="${EVAL_MODEL_MAX_BUDGET:-1}"
+  case "$EVAL_MODEL_MAX_BUDGET" in
+    ''|.|*[!0-9.]*|*.*.*)
+      echo "bifrost: EVAL_MODEL_MAX_BUDGET='$EVAL_MODEL_MAX_BUDGET' is not a number" >&2
+      exit 64 ;;
+  esac
+  export EVAL_MODEL_MAX_BUDGET
+
   # Explicit var list so envsubst leaves bifrost's own $schema key alone.
-  envsubst '${PROVIDER} ${MODEL_NAME} ${OPENAI_API_BASE} ${OTEL_COLLECTOR_URL}' \
+  envsubst '${PROVIDER} ${MODEL_NAME} ${OPENAI_API_BASE} ${OTEL_COLLECTOR_URL} ${EVAL_MODEL_MAX_BUDGET}' \
     < "$TEMPLATE" > "$CONFIG"
 fi
 

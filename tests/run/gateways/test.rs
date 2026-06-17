@@ -164,8 +164,17 @@ async fn gateway_port(c: &ContainerAsync<GenericImage>) -> u16 {
 }
 
 fn http() -> Client {
+    // Mirror the agent: every gateway request carries the fixed `sk-proxy` bearer.
+    // For bifrost that token is the governance virtual key, so the per-run budget
+    // applies; litellm/portkey ignore it (they auth upstream from env vars).
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::AUTHORIZATION,
+        reqwest::header::HeaderValue::from_static("Bearer sk-proxy"),
+    );
     Client::builder()
         .timeout(Duration::from_secs(60))
+        .default_headers(headers)
         .build()
         .expect("build reqwest client")
 }
@@ -477,6 +486,92 @@ async fn upstream_litellm_openai() {
 #[ignore]
 async fn upstream_portkey_openai() {
     assert_openai_200("portkey").await
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Spend cap (models/RULES.md rule 16). litellm enforces it via core/litellm's
+// entrypoint; bifrost enforces it via governance — a budget on the `sk-proxy`
+// virtual key, behind the governance plugin, priced by a pricing_override.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// Static: the bifrost path wires the rule-16 cap. The model config must put the
+/// governance plugin in front of a budget fed by `${EVAL_MODEL_MAX_BUDGET}` on the
+/// `sk-proxy` virtual key, and the gateway start must render that env var. Guards
+/// against the cap silently vanishing (the gap that motivated this — the gateways
+/// shipped no budget enforcement while only core/litellm did).
+#[test]
+fn static_bifrost_wires_budget_cap() {
+    let cfg = std::fs::read_to_string(
+        test_support::repo_root().join("containers/models/gpt-5.4--bifrost/config.json.template"),
+    )
+    .expect("read gpt-5.4--bifrost config.json.template");
+    let start = std::fs::read_to_string(
+        test_support::repo_root().join("containers/gateways/bifrost/start"),
+    )
+    .expect("read gateways/bifrost/start");
+
+    assert!(
+        cfg.contains(r#""name": "governance""#),
+        "bifrost config must enable the governance plugin (it enforces the virtual-key budget)"
+    );
+    assert!(
+        cfg.contains("${EVAL_MODEL_MAX_BUDGET}"),
+        "bifrost config governance budget max_limit must come from ${{EVAL_MODEL_MAX_BUDGET}} (rule 16)"
+    );
+    assert!(
+        cfg.contains(r#""value": "sk-proxy""#),
+        "bifrost config must define the `sk-proxy` virtual key the agent presents"
+    );
+    assert!(
+        start.contains("${EVAL_MODEL_MAX_BUDGET}"),
+        "gateways/bifrost/start must render EVAL_MODEL_MAX_BUDGET into the config"
+    );
+    eprintln!("✓ bifrost wires the rule-16 budget cap (governance plugin + sk-proxy VK budget)");
+}
+
+/// Behavioral (#[ignore], real upstream): bifrost MUST stop spend once it crosses
+/// `EVAL_MODEL_MAX_BUDGET`. With a ~zero cap the first costed call pushes accumulated
+/// spend over the limit, so a subsequent call is rejected. This is also the empirical
+/// check that config.json governance enforces in our single-node setup (the silent
+/// no-op bug maximhq/bifrost#2408 is multinode-only). `http()` sends the `sk-proxy`
+/// VK, so the budget applies.
+#[tokio::test]
+#[ignore]
+async fn upstream_bifrost_budget_cap_rejects() {
+    let (key, base) = upstream_creds();
+    let c = start_gateway(
+        "bifrost",
+        &[
+            ("OPENAI_API_KEY", &key),
+            ("OPENAI_API_BASE", &base),
+            ("EVAL_MODEL_MAX_BUDGET", "0.0000001"),
+        ],
+    )
+    .await;
+    let port = gateway_port(&c).await;
+    let url = format!("http://127.0.0.1:{port}/openai/v1/chat/completions");
+
+    let mut last = 0u16;
+    let mut rejected = false;
+    for _ in 0..4 {
+        let status = http()
+            .post(&url)
+            .json(&body_openai())
+            .send()
+            .await
+            .expect("post chat completions")
+            .status();
+        last = status.as_u16();
+        if status.is_client_error() {
+            rejected = true;
+            break;
+        }
+    }
+    assert!(
+        rejected,
+        "bifrost did not reject after exceeding EVAL_MODEL_MAX_BUDGET (last status {last}) — \
+         rule 16 cap not enforced (config.json governance ignored? cf. maximhq/bifrost#2408)"
+    );
 }
 
 async fn assert_anthropic_200(flavor: &str) {

@@ -21,6 +21,22 @@
     }
   },
   "governance": {
+    "budgets": [
+      { "id": "eval-budget", "max_limit": ${EVAL_MODEL_MAX_BUDGET}, "reset_duration": "1Y" }
+    ],
+    "virtual_keys": [
+      { "id": "eval-vk", "value": "sk-proxy", "is_active": true, "budget_id": "eval-budget" }
+    ],
+    "pricing_overrides": [
+      {
+        "id": "eval-pricing",
+        "scope_kind": "global",
+        "match_type": "wildcard",
+        "pattern": "*",
+        "request_types": ["chat_completion"],
+        "pricing_patch": "{\"input_cost_per_token\":0.0000025,\"output_cost_per_token\":0.000010}"
+      }
+    ],
     "routing_rules": [
       {
         "id": "rewrite-to-upstream",
@@ -35,6 +51,7 @@
     ]
   },
   "plugins": [
+    { "enabled": true, "name": "governance", "config": { "is_vk_mandatory": true } },
     {
       "enabled": true,
       "name": "otel",
