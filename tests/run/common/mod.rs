@@ -160,7 +160,7 @@ pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &st
     for (k, v) in spec["args"].as_object().into_iter().flatten() {
         // REGISTRY/SUFFIX are forced above. HF_TOKEN must never travel as a build
         // arg — it would persist in image history (the leak #155 closed). Gated
-        // benchmarks (gaia, hle, flores200, frontiermath) read it from a BuildKit
+        // benchmarks (gaia, hle, flores200) read it from a BuildKit
         // `--mount=type=secret`, which classic `docker build` can't pass on podman,
         // so those four don't build on this path — use Docker Desktop or
         // `podman build --secret` (see docs/guides/podman-on-apple-silicon.md §6).

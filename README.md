@@ -1,6 +1,6 @@
 # Eval Containers
 
-AI agent evaluations in containers. 102 benchmarks, 21 agents — ready to deploy at massive scale on any cloud.
+AI agent evaluations in containers. 101 benchmarks, 21 agents — ready to deploy at massive scale on any cloud.
 
 *An evaluation is **one benchmark + one agent + one model** — three independent axes, swappable without touching each other.* Our goal is agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
 
