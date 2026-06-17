@@ -4,8 +4,6 @@
 # No parquet auto-convert branch — duckdb reads the raw JSON over hf://, pinned by commit.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # categories (simple, multiple, parallel) are read in upstream order and LEFT
@@ -50,25 +48,5 @@ LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_e
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.06840"
 
 COPY --from=data /tasks /tasks
-WORKDIR /app
 ENV EVAL_BENCHMARK=bfcl
-
-# Test: exact match on agent stdout (simplified — full BFCL uses AST comparison)
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Call the correct function(s) based on the conversation. Print ONLY the function call(s) as JSON, nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Call the correct function(s) based on the conversation. Print ONLY the function call(s) as JSON, nothing else."

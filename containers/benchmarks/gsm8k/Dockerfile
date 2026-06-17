@@ -3,8 +3,6 @@
 # Agent prints answer to stdout. Test compares to expected numeric answer.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # `answer` keeps only the text after the `####` marker, trimmed, with thousands
@@ -27,24 +25,5 @@ LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/gsm8k"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2110.14168"
 
 COPY --from=data /tasks /tasks
-WORKDIR /app
 ENV EVAL_BENCHMARK=gsm8k
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Solve this grade school math problem. Print only the final numeric answer as a single number with no units, commas, or explanation.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Solve this grade school math problem. Print only the final numeric answer as a single number with no units, commas, or explanation."

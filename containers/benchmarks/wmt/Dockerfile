@@ -3,13 +3,13 @@
 # Agent prints translation to stdout. Test compares to expected reference translation.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # The 10 selected en->X language-pair JSONL files are read at the pinned commit
 # in one pass; filename=true recovers the pair code from the source path. The
-# VALUES table maps each pair to its display name (the prior python PAIRS list),
+# VALUES table maps each pair to its display name (the prior python PAIRS list)
+# and an ordinal, so `ORDER BY ord, segment_id` reproduces the old loop's order
+# (PAIRS list, then file rows) line-for-line — EVAL_TASK_ID selects by line.
 # is_bad_source is a native boolean so `NOT is_bad_source` reproduces the old
 # string-compare skip, and `<pair>_<segment_id>` matches the prior python ids.
 RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
@@ -31,17 +31,18 @@ RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
      ), \
      names AS ( \
        SELECT * FROM (VALUES \
-         ('en-fr_FR','French (France)'), ('en-de_DE','German (Germany)'), \
-         ('en-es_MX','Spanish (Mexico)'), ('en-ru_RU','Russian (Russia)'), \
-         ('en-zh_CN','Simplified Chinese (Mainland)'), ('en-ja_JP','Japanese (Japan)'), \
-         ('en-ar_EG','Arabic (Egypt)'), ('en-hi_IN','Hindi (India)'), \
-         ('en-pt_BR','Portuguese (Brazil)'), ('en-ko_KR','Korean (South Korea)') \
-       ) AS t(pair, language_name) \
+         ('en-fr_FR','French (France)',1), ('en-de_DE','German (Germany)',2), \
+         ('en-es_MX','Spanish (Mexico)',3), ('en-ru_RU','Russian (Russia)',4), \
+         ('en-zh_CN','Simplified Chinese (Mainland)',5), ('en-ja_JP','Japanese (Japan)',6), \
+         ('en-ar_EG','Arabic (Egypt)',7), ('en-hi_IN','Hindi (India)',8), \
+         ('en-pt_BR','Portuguese (Brazil)',9), ('en-ko_KR','Korean (South Korea)',10) \
+       ) AS t(pair, language_name, ord) \
      ) \
      SELECT r.pair || '_' || r.segment_id::VARCHAR AS id, r.source AS problem, r.target AS answer, \
             r.pair AS language, n.language_name \
      FROM rows r JOIN names n ON n.pair = r.pair \
-     WHERE NOT r.is_bad_source"
+     WHERE NOT r.is_bad_source \
+     ORDER BY n.ord, r.segment_id::BIGINT"
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
@@ -56,25 +57,5 @@ LABEL eval.benchmark.url="https://huggingface.co/datasets/google/wmt24pp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.12404"
 
 COPY --from=data /tasks /tasks
-WORKDIR /app
 ENV EVAL_BENCHMARK=wmt
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  LANG_NAME=$(cat /tasks/$EVAL_TASK_ID/language_name.txt)
-  export TASK="Translate the following English text into ${LANG_NAME}. Print only the translated text with no explanation, quotes, or additional commentary.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Translate the following English text into {language_name}. Print only the translated text with no explanation, quotes, or additional commentary."

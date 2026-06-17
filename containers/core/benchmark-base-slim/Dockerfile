@@ -1,7 +1,10 @@
 # Slim runtime base for shell-graded HF benchmarks: debian-slim + jq, no python.
 # Dataset materialized in a discarded duckdb builder and COPYd into /tasks here.
+# Bundles the shared entrypoint + exact-match grader, so a benchmark supplies
+# only its labels, loader, and EVAL_TASK_PROMPT.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM --platform=linux/amd64 debian:12-slim
 
 LABEL eval.type="core-base"
@@ -17,5 +20,9 @@ RUN set -e; ok=0; \
     rm -rf /var/lib/apt/lists/*
 
 COPY eval-materialize-task /eval-materialize-task
-RUN chmod +x /eval-materialize-task && mkdir -p /tasks /tests /app
+COPY eval-entrypoint /entrypoint.sh
+COPY --from=test-exact-match /test.sh /grade.sh
+RUN chmod +x /eval-materialize-task /entrypoint.sh /grade.sh && mkdir -p /tasks /tests /app
 WORKDIR /app
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/grade.sh"]

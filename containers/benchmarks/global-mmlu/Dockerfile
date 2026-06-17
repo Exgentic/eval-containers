@@ -3,8 +3,6 @@
 # Agent prints letter A/B/C/D. Test compares to expected answer.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # All 42 per-language parquet files are read in one glob; filename=true exposes
@@ -38,25 +36,4 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.03304"
 COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=global-mmlu
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-# Runtime: /eval-materialize-task reads /tasks/all.jsonl and writes just the
-# requested row to /tasks/$EVAL_TASK_ID/{field}.txt. Agent sees the same
-# layout as the old per-directory scheme. See benchmarks/RULES.md #22.
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Answer this multiple choice question. Print only the letter of the correct answer (A, B, C, or D), nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Answer this multiple choice question. Print only the letter of the correct answer (A, B, C, or D), nothing else."

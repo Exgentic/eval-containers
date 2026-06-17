@@ -3,8 +3,6 @@
 # Agent prints a single letter (A/B/C/D). Test compares to expected answer.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # splits (boolean/generative are graded differently and deferred). Each branch reads
@@ -26,7 +24,6 @@ RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
      SELECT 'acp_val_mcq_'||(row_number() OVER ()-1)::VARCHAR AS id, context||chr(10)||chr(10)||question AS problem, trim(answer) AS answer, 'acp_val_mcq' AS \"group\" FROM 'hf://datasets/ibm-research/acp_bench@~parquet/acp_val_mcq/test/*.parquet'"
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
-
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="acpbench"
 LABEL eval.benchmark.description="ACPBench - Action, Change, and Planning reasoning benchmark"
@@ -36,26 +33,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="05e5883d9afbcfa3bdc8f270cb345ef0b9526d4a"
 LABEL eval.benchmark.url="https://ibm.github.io/ACPBench/"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.05669"
-
 COPY --from=data /tasks /tasks
-WORKDIR /app
 ENV EVAL_BENCHMARK=acpbench
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Answer this multiple choice question. Print only the letter (A, B, C, or D), nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Answer this multiple choice question. Print only the letter (A, B, C, or D), nothing else."

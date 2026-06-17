@@ -3,8 +3,6 @@
 # Agent prints answer letter to stdout. Test compares to expected letter.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # `problem` rebuilds the python row: question, a blank line, then one "label. text"
@@ -28,24 +26,5 @@ LABEL eval.benchmark.url="https://huggingface.co/datasets/allenai/ai2_arc"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1803.05457"
 
 COPY --from=data /tasks /tasks
-WORKDIR /app
 ENV EVAL_BENCHMARK=arc
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Answer this science multiple choice question. Print only the label of the correct answer (e.g., A), nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Answer this science multiple choice question. Print only the label of the correct answer (e.g., A), nothing else."

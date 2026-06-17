@@ -4,8 +4,6 @@
 # Agent reads a legal text and prints a classification label. Test compares exact match (case-insensitive).
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # Optional --mount=type=secret,id=HF_TOKEN authenticates; anonymous public otherwise.
@@ -154,24 +152,5 @@ LABEL eval.benchmark.url="https://github.com/HazyResearch/legalbench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.11462"
 
 COPY --from=data /tasks /tasks
-WORKDIR /app
 ENV EVAL_BENCHMARK=legalbench
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="You are a legal reasoning assistant. Read the classification task and legal text below, then print ONLY one of the listed valid answer labels. Print nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="You are a legal reasoning assistant. Read the classification task and legal text below, then print ONLY one of the listed valid answer labels. Print nothing else."

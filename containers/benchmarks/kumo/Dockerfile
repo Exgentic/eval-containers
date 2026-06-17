@@ -3,8 +3,6 @@
 # Agent observes scenario and selects actions. Test compares to ground truth.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # The dataset ships one parquet per environment; the `@~parquet` auto-convert
@@ -27,7 +25,6 @@ RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
      ORDER BY regexp_extract(filename, 'default/([^/]+)/', 1), file_row_number"
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
-
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="kumo"
 LABEL eval.benchmark.released="true"
@@ -38,26 +35,6 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/Haowei-PKU/Kumo"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/kumo"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.08857"
-
 COPY --from=data /tasks /tasks
-WORKDIR /app
 ENV EVAL_BENCHMARK=kumo
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Based on the observation, select the correct action. Print ONLY the action, nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Based on the observation, select the correct action. Print ONLY the action, nothing else."
