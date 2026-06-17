@@ -50,6 +50,10 @@ on:
         description: "Also build per-task benchmark images (terminal-bench, skills-bench)"
         type: boolean
         default: true
+      include_standalone:
+        description: "Also build single-container -standalone bundles for each combo"
+        type: boolean
+        default: true
       dry_run:
         description: "Validate only — bake --print / echo, nothing built or pushed"
         type: boolean
@@ -436,6 +440,7 @@ jobs:
         env:
           ITEMS: ${{ toJson(matrix.shard.items) }}
           DRY: ${{ inputs.dry_run }}
+          STANDALONE: ${{ inputs.include_standalone }}
         run: |
           # retry rides out transient registry pull/push blips; jittered backoff.
           retry() {
@@ -454,8 +459,12 @@ jobs:
             else                              # shared combo: evals/<b>--<a>
               eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
             fi
-            ACT=(eval --provenance=mode=max --sbom=true --push)
-            [ "$DRY" = "true" ] && ACT=(eval --print)
+            # eval = lean base (sidecar mode); eval-standalone = single-container
+            # bundle (gateway+otelcol+process-compose in-image). bake builds eval
+            # once, then layers standalone on it via the eval-base context.
+            TGT=(eval); [ "$STANDALONE" != "false" ] && TGT+=(eval-standalone)
+            ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
+            [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A}"
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
@@ -536,7 +545,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Per-image build time + registry size -> step summary
+      - name: Per-image build time + registry size -> summary + size-report
         env:
           GH_TOKEN: ${{ github.token }}
           LEAVES: ${{ needs.enumerate.outputs.leaves }}
@@ -556,7 +565,32 @@ jobs:
           api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs"
           gh api "$api" --paginate --jq '.jobs[]|select(.name|startswith("leaf "))|[(.name|ltrimstr("leaf ")),(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)]|@tsv' > /tmp/dur.tsv 2>/dev/null || true
           basedur=$(gh api "$api" --paginate --jq '.jobs[]|select(.name=="bases")|(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)' 2>/dev/null | head -1 || true)
-          # Build the whole report, then append once (single redirect — no SC2129).
+          # Measure every leaf ONCE -> TSV (target, image, build_sec, size_bytes),
+          # reused for the durable artifact AND the step-summary table.
+          : > /tmp/sizes.tsv
+          jq -r '.[]?' <<< "${LEAVES:-[]}" | while read -r T; do
+            kind=${T%%-*}; nm=${T#*-}
+            case "$kind" in
+              benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;;
+            esac
+            img="${REGISTRY}/${dir}/${nm}:${TAG}"
+            sz=$(size_of "$img" || echo 0); sz=${sz:-0}
+            dur=$(awk -F'\t' -v t="$T" '$1==t{print $2}' /tmp/dur.tsv || true)
+            printf '%s\t%s\t%s\t%s\n' "$T" "$img" "${dur:-0}" "$sz" >> /tmp/sizes.tsv
+          done
+          # Durable machine-readable report — per-agent/-benchmark size + build time
+          # (amd64 compressed), the input for the AUDIT.md size lane + README tables.
+          jq -Rn --arg tag "$TAG" --arg run "${GITHUB_RUN_ID}" '
+            {tag:$tag, run:$run, arch:"amd64",
+             images:[inputs | split("\t") |
+               {target:.[0], kind:(.[0]|split("-")[0]), name:(.[0]|sub("^[^-]+-";"")),
+                image:.[1], build_seconds:(.[2]|tonumber), size_bytes:(.[3]|tonumber)}]}
+          ' /tmp/sizes.tsv > size-report.json
+          { echo "target,kind,name,image,build_seconds,size_bytes,size_mb"
+            awk -F'\t' '{k=$1; sub("-.*","",k); n=$1; sub("^[^-]*-","",n);
+                         printf "%s,%s,%s,%s,%s,%s,%.1f\n",$1,k,n,$2,$3,$4,$4/1048576}' /tmp/sizes.tsv
+          } > size-report.csv
+          # Step summary (human-readable), appended once (single redirect — no SC2129).
           {
             echo "## Fleet release \`${TAG}\` — stages"
             echo "| stage | result |"; echo "|---|---|"
@@ -568,18 +602,19 @@ jobs:
             echo "| CVE gate + :latest | ${{ needs.release-gate.result }} |"
             echo ""
             echo "## Per-image build time + registry size — leaves, biggest first"
-            echo "_build = the leaf's own time FROM the frozen base; with-deps = build + bases (${basedur:-?}s, amortized once across all leaves)._"
+            echo "_build = the leaf's own time FROM the frozen base; bases add ${basedur:-?}s, amortized once across all leaves._"
             echo "| image | build | size |"; echo "|---|--:|--:|"
-            jq -r '.[]?' <<< "${LEAVES:-[]}" | while read -r T; do
-              kind=${T%%-*}; nm=${T#*-}
-              case "$kind" in
-                benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;;
-              esac
-              sz=$(size_of "${REGISTRY}/${dir}/${nm}:${TAG}" || echo 0); sz=${sz:-0}
-              dur=$(awk -F'\t' -v t="$T" '$1==t{print $2}' /tmp/dur.tsv || true)
-              printf '%s\t%s\t%s\n' "$T" "${dur:-0}" "$sz"
-            done | sort -t"$(printf '\t')" -k3 -rn \
-              | awk -F'\t' '{printf "| %s | %ds | %d MB |\n", $1, $2, $3/1048576}'
+            sort -t"$(printf '\t')" -k4 -rn /tmp/sizes.tsv \
+              | awk -F'\t' '{printf "| %s | %ds | %d MB |\n", $1, $3, $4/1048576}'
             echo ""
-            echo "_Per-image sizes for combos + per-task are omitted (hundreds of images) — query \`ghcr.io/exgentic/evals/*\` / \`benchmarks/*-<task>\`; their build times are per-job in the Actions run view._"
+            echo "_size-report.json / .csv are uploaded as the \`fleet-size-report\` artifact (durable — feeds audits + README). Combos + per-task sizes are omitted here (hundreds) — query \`ghcr.io/exgentic/evals/*\` / \`benchmarks/*-<task>\`._"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload durable size report
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fleet-size-report
+          path: |
+            size-report.json
+            size-report.csv
+          if-no-files-found: ignore
