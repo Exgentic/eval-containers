@@ -1,0 +1,18 @@
+# Custom collector build: only the 3 components our pipeline uses. Pinned to
+# 0.105.0 (the version the contrib image shipped) so the file exporter is the
+# same code and traces.jsonl stays identical for replay/inspection.
+dist:
+  name: otelcol
+  description: "Minimal OTLP-in / file-out OpenTelemetry Collector for eval-containers."
+  output_path: /build   # single new dir under an existing parent: OCB's mkdir is non-recursive
+  version: "0.105.0"
+  otelcol_version: "0.105.0"
+
+# otlpreceiver is core; fileexporter + healthcheckextension are contrib-only
+# (which is why plain otelcol-core can't replace this).
+extensions:
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.105.0
+receivers:
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.105.0
+exporters:
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.105.0

@@ -600,3 +600,81 @@ fn repo_version_aligns_across_cargo_and_chart() {
     );
     eprintln!("✓ fleet version aligned: Cargo.toml == Chart.yaml == {cargo_ver}");
 }
+
+/// core/otel is a *pinned, slim* OpenTelemetry Collector built by OCB
+/// (containers/core/otel/Dockerfile + builder-config.yaml), not the upstream
+/// otelcol-contrib binary. Guards the two assumptions the slim build rests on:
+/// the component set stays exactly {otlp receiver, file exporter, health_check
+/// extension} so nothing re-bloats it, and every version pin agrees — a drifted
+/// pin could change the file exporter and break the traces.jsonl the replay /
+/// task_inspection gates read.
+#[test]
+fn otel_is_a_pinned_slim_ocb_build() {
+    let dockerfile = fs::read_to_string(repo_root().join("containers/core/otel/Dockerfile"))
+        .expect("read core/otel/Dockerfile");
+    let manifest = fs::read_to_string(repo_root().join("containers/core/otel/builder-config.yaml"))
+        .expect("read core/otel/builder-config.yaml");
+
+    // Built via OCB, not by copying a prebuilt collector image.
+    assert!(
+        dockerfile.contains("cmd/builder")
+            && !dockerfile.contains("opentelemetry-collector-contrib:"),
+        "core/otel MUST build the collector with OCB (go install …/cmd/builder), not COPY the \
+         upstream otelcol-contrib image"
+    );
+
+    // Every `- gomod:` component, as (module path, version).
+    let components: Vec<(&str, &str)> = manifest
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("- gomod:"))
+        .map(|spec| {
+            let mut it = spec.split_whitespace();
+            (it.next().unwrap_or(""), it.next().unwrap_or(""))
+        })
+        .collect();
+    let modules: Vec<&str> = components.iter().map(|(m, _)| *m).collect();
+    let expected = [
+        "go.opentelemetry.io/collector/receiver/otlpreceiver",
+        "github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter",
+        "github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension",
+    ];
+    assert_eq!(
+        modules.len(),
+        expected.len(),
+        "core/otel builder-config.yaml must stay slim — exactly {} components, found {modules:?}",
+        expected.len()
+    );
+    for m in expected {
+        assert!(
+            modules.contains(&m),
+            "core/otel builder-config.yaml must include {m}"
+        );
+    }
+
+    // All pins agree: Dockerfile OCB_VERSION == manifest otelcol_version == each gomod vX.
+    let ocb_arg = dockerfile
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("ARG OCB_VERSION="))
+        .map(str::trim)
+        .expect("Dockerfile ARG OCB_VERSION=");
+    let otelcol_version = manifest
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("otelcol_version:"))
+        .map(|v| v.trim().trim_matches('"'))
+        .expect("builder-config.yaml otelcol_version");
+    assert_eq!(
+        ocb_arg, otelcol_version,
+        "core/otel pin drift: Dockerfile OCB_VERSION ({ocb_arg}) != manifest otelcol_version ({otelcol_version})"
+    );
+    for (module, version) in &components {
+        assert_eq!(
+            version.trim_start_matches('v'),
+            otelcol_version,
+            "core/otel pin drift: {module} is {version} but otelcol_version is {otelcol_version} — \
+             all components MUST track one collector version so the file exporter output stays identical"
+        );
+    }
+    eprintln!(
+        "✓ core/otel is a pinned slim OCB build (otlp+file+healthcheck @ v{otelcol_version})"
+    );
+}
