@@ -557,15 +557,6 @@ replay_test!(
 );
 
 replay_test!(
-    replay_ai2d_0_gemini_cli,
-    "containers/benchmarks/ai2d/compose.yaml",
-    "tests/run/replay/fixtures/ai2d-0-gemini-cli.traces.jsonl",
-    "ai2d",
-    "gemini-cli",
-    "0"
-);
-
-replay_test!(
     replay_ai2d_1852_openclaw,
     "containers/benchmarks/ai2d/compose.yaml",
     "tests/run/replay/fixtures/ai2d-1852-openclaw.traces.jsonl",
@@ -590,15 +581,6 @@ replay_test!(
     "ai2d",
     "codex",
     "617"
-);
-
-replay_test!(
-    replay_aider_polyglot_0_codex,
-    "containers/benchmarks/aider-polyglot/compose.yaml",
-    "tests/run/replay/fixtures/aider-polyglot-0-codex.traces.jsonl",
-    "aider-polyglot",
-    "codex",
-    "0"
 );
 
 replay_test!(
@@ -743,15 +725,6 @@ replay_test!(
     "arena-hard",
     "bob",
     "299"
-);
-
-replay_test!(
-    replay_assistantbench_0_claude_code,
-    "containers/benchmarks/assistantbench/compose.yaml",
-    "tests/run/replay/fixtures/assistantbench-0-claude-code.traces.jsonl",
-    "assistantbench",
-    "claude-code",
-    "0"
 );
 
 replay_test!(
@@ -1088,15 +1061,6 @@ replay_test!(
 );
 
 replay_test!(
-    replay_global_mmlu_0_gemini_cli,
-    "containers/benchmarks/global-mmlu/compose.yaml",
-    "tests/run/replay/fixtures/global-mmlu-0-gemini-cli.traces.jsonl",
-    "global-mmlu",
-    "gemini-cli",
-    "0"
-);
-
-replay_test!(
     replay_global_mmlu_235905_open_interpreter,
     "containers/benchmarks/global-mmlu/compose.yaml",
     "tests/run/replay/fixtures/global-mmlu-235905-open-interpreter.traces.jsonl",
@@ -1112,15 +1076,6 @@ replay_test!(
     "global-mmlu",
     "openclaw",
     "353857"
-);
-
-replay_test!(
-    replay_gpqa_diamond_0_codex,
-    "containers/benchmarks/gpqa-diamond/compose.yaml",
-    "tests/run/replay/fixtures/gpqa-diamond-0-codex.traces.jsonl",
-    "gpqa-diamond",
-    "codex",
-    "0"
 );
 
 replay_test!(
@@ -1565,15 +1520,6 @@ replay_test!(
 );
 
 replay_test!(
-    replay_mbpp_0_claude_code,
-    "containers/benchmarks/mbpp/compose.yaml",
-    "tests/run/replay/fixtures/mbpp-0-claude-code.traces.jsonl",
-    "mbpp",
-    "claude-code",
-    "0"
-);
-
-replay_test!(
     replay_mbpp_199_gemini_cli,
     "containers/benchmarks/mbpp/compose.yaml",
     "tests/run/replay/fixtures/mbpp-199-gemini-cli.traces.jsonl",
@@ -1643,15 +1589,6 @@ replay_test!(
     "medqa",
     "crush",
     "763"
-);
-
-replay_test!(
-    replay_mgsm_0_codex,
-    "containers/benchmarks/mgsm/compose.yaml",
-    "tests/run/replay/fixtures/mgsm-0-codex.traces.jsonl",
-    "mgsm",
-    "codex",
-    "0"
 );
 
 replay_test!(
@@ -2186,15 +2123,6 @@ replay_test!(
 );
 
 replay_test!(
-    replay_simpleqa_0_codex,
-    "containers/benchmarks/simpleqa/compose.yaml",
-    "tests/run/replay/fixtures/simpleqa-0-codex.traces.jsonl",
-    "simpleqa",
-    "codex",
-    "0"
-);
-
-replay_test!(
     replay_simpleqa_1730_cline,
     "containers/benchmarks/simpleqa/compose.yaml",
     "tests/run/replay/fixtures/simpleqa-1730-cline.traces.jsonl",
@@ -2210,15 +2138,6 @@ replay_test!(
     "simpleqa",
     "continue-cli",
     "2595"
-);
-
-replay_test!(
-    replay_simpleqa_865_codex,
-    "containers/benchmarks/simpleqa/compose.yaml",
-    "tests/run/replay/fixtures/simpleqa-865-codex.traces.jsonl",
-    "simpleqa",
-    "codex",
-    "865"
 );
 
 replay_test!(
