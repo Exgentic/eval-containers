@@ -836,6 +836,15 @@ replay_test!(
 );
 
 replay_test!(
+    replay_bigcodebench_0_zerostack,
+    "containers/benchmarks/bigcodebench/compose.yaml",
+    "tests/run/replay/fixtures/bigcodebench-0-zerostack.traces.jsonl",
+    "bigcodebench",
+    "zerostack",
+    "0"
+);
+
+replay_test!(
     replay_bigcodebench_455_open_interpreter,
     "containers/benchmarks/bigcodebench/compose.yaml",
     "tests/run/replay/fixtures/bigcodebench-455-open-interpreter.traces.jsonl",
