@@ -5,7 +5,7 @@
 
 ## Abstract
 
-A model image is a pre-configured LLM proxy. It routes API calls to a provider, logs every request and response, and enforces key isolation. This document defines the requirements for model images in Eval Containers.
+A model image is a generic LLM proxy. It routes API calls to the `<provider>/<model>` upstream selected at runtime by `EVAL_MODEL`, logs every request and response, and enforces key isolation. This document defines the requirements for model images in Eval Containers.
 
 ## Terminology
 
@@ -15,9 +15,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Routing
 
-1. **One model per image.** Each model image MUST route to exactly one LLM provider and model. The routing MUST be pre-configured in the image.
+1. **Generic gateway, runtime model.** The model service MUST be a generic LLM proxy whose upstream `<provider>/<model>` is selected at **runtime** from `EVAL_MODEL` (a LiteLLM handle, e.g. `openai/gpt-5.4`, `anthropic/claude-sonnet-4-5`). Any LiteLLM-supported provider and model MUST work with no new image — no build, no publish. A model image MAY pin a fixed upstream only as a deliberate exception (e.g. the `replay` image, or a fixed corporate endpoint).
 
-2. **Wildcard route.** The model image MUST use a wildcard (`*`) model name route so that any model name the agent requests is captured and forwarded to the configured provider.
+2. **Wildcard route.** The proxy MUST route every model name the agent requests to the `EVAL_MODEL` upstream — a wildcard (`*`) route, plus any explicit aliases a proxy backend requires where a provider-native passthrough path bypasses the wildcard.
 
 3. **Pass-through.** The proxy MUST pass all agent-specified parameters (temperature, max_tokens, etc.) through to the provider unmodified. The model image defines *where* calls go, not *how* the agent uses the model.
 
@@ -47,7 +47,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Versioning
 
-12. **Reproducible by default.** The LiteLLM version MUST be pinned at build time as a default (`ARG LITELLM_VERSION=<semver>` or via the `core/litellm` base image tag) and recorded in `eval.model.litellm_version`. The image MUST produce a reproducible routing layer with no environment variables set.
+12. **Reproducible by default.** The LiteLLM version MUST be pinned at build time as a default (`ARG LITELLM_VERSION=<semver>` or via the `core/litellm` base image tag) and recorded in `eval.model.litellm_version`. The routing layer MUST be reproducible from the pinned image tag and version regardless of which upstream `EVAL_MODEL` selects; the resolved upstream model and version MUST be recorded in the run output.
 
 13. **Runtime version override.** The entrypoint MUST read `EVAL_LITELLM_VERSION` and, when set, install or activate that LiteLLM version in place of the default before the proxy starts. The entrypoint MUST write the resolved version to `/output/model/version.json`. When unset, the build-time default applies. `EVAL_MODEL_TAG` selects which container version (image tag) to pull — that's Docker's job, not the entrypoint's.
 
@@ -78,3 +78,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-14 | Added versioning section (rules 12-13): reproducible LiteLLM version pinned at build time, runtime override via `EVAL_LITELLM_VERSION`, container tag selection via `EVAL_MODEL_TAG`. Added `eval.model.litellm_version` to required labels (rule 15). Renumbered Image rules 14-15. |
 | 2026-06-14 | Added rule 17 (Replay): the replay model serves recorded trajectories with no API keys, indistinguishable from a live service. Absorbed from the retired `tests/containers/RULES.md` (rules 5–6) during the test-governance heal. |
 | 2026-04-15 | Added rule 16: `EVAL_MODEL_MAX_BUDGET` hard-cap (default $1) enforced by the shared core/litellm entrypoint wrapper. |
+| 2026-06-17 | Rewrote rule 1 (Routing): the model service is a **generic gateway** that selects `<provider>/<model>` at runtime from `EVAL_MODEL`, so any LiteLLM-supported model works with no new image (no build, no publish) — matching the already-generic `bifrost`/`litellm` gateway images and resolving the contradiction with rule 9 (any provider *without modifying Eval Containers*). Updated the abstract (generic proxy), rule 2 (the wildcard routes the `EVAL_MODEL` upstream), and rule 12 (reproducibility from the pinned image tag + version + recorded resolved upstream, not a baked model). Pinned per-model images are now a deliberate exception (e.g. `replay`). Doctrine half of #187. |
