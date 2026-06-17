@@ -2553,3 +2553,45 @@ replay_test!(
     "opencode",
     "9972"
 );
+
+// ── Bifrost-recorded fixtures (real gpt-5.4 via the bifrost gateway) ──────
+replay_test!(
+    replay_aime_0_claude_code,
+    "containers/benchmarks/aime/compose.yaml",
+    "tests/run/replay/fixtures/aime-0-claude-code.traces.jsonl",
+    "aime",
+    "claude-code",
+    "0"
+);
+replay_test!(
+    replay_aime_0_codex,
+    "containers/benchmarks/aime/compose.yaml",
+    "tests/run/replay/fixtures/aime-0-codex.traces.jsonl",
+    "aime",
+    "codex",
+    "0"
+);
+replay_test!(
+    replay_alpaca_eval_0_ra_aid,
+    "containers/benchmarks/alpaca-eval/compose.yaml",
+    "tests/run/replay/fixtures/alpaca-eval-0-ra-aid.traces.jsonl",
+    "alpaca-eval",
+    "ra-aid",
+    "0"
+);
+replay_test!(
+    replay_bigcodebench_0_claude_code,
+    "containers/benchmarks/bigcodebench/compose.yaml",
+    "tests/run/replay/fixtures/bigcodebench-0-claude-code.traces.jsonl",
+    "bigcodebench",
+    "claude-code",
+    "0"
+);
+replay_test!(
+    replay_gaia_0_claude_code,
+    "containers/benchmarks/gaia/compose.yaml",
+    "tests/run/replay/fixtures/gaia-0-claude-code.traces.jsonl",
+    "gaia",
+    "claude-code",
+    "0"
+);
