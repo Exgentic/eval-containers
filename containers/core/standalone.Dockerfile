@@ -27,7 +27,7 @@
 # Build args:
 #   MODEL_IMAGE           — gateway+config; places files under /opt/gateway/ and
 #                           exposes /opt/gateway/start as entrypoint
-#   OTEL_IMAGE            — core/otel (otelcol-contrib + config)
+#   OTEL_IMAGE            — core/otel (slim OTLP→file collector + config)
 #   RUNTIME_BUNDLE_IMAGE  — core/runtime-bundle (process-compose)
 #
 # Path layout added on top of the lean base:
@@ -62,7 +62,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gettext-base cu
  && rm -rf /var/lib/apt/lists/*
 
 # ─── OTel collector layer ────────────────────────────────────────────
-COPY --from=otel /otelcol-contrib         /usr/local/bin/otelcol
+COPY --from=otel /otelcol                 /usr/local/bin/otelcol
 COPY --from=otel /etc/otelcol/config.yaml /etc/otelcol/config.yaml
 
 # ─── In-container orchestrator + full pipeline ───────────────────────
