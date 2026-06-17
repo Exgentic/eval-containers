@@ -15,11 +15,11 @@ task: "0"
 perTask: false
 registry: ghcr.io/exgentic
 # `gatewayImage` picks the proxy: a generic gateway (bifrost/litellm/portkey)
-# routes `evalModel`=<provider>/<model> at runtime; a pinned image bakes its own.
-# `model` is the runner's label, not the routing handle.
+# routes `model`=<provider>/<model> at runtime; a pinned image bakes its own.
+# REQUIRED, no default — the gateway errors on an empty handle. The runner's clean
+# label is derived from it (last path segment).
 gatewayImage: bifrost
-evalModel: ""
-model: gpt-5.4-bifrost
+model: ""
 # Image tags (CLI --model-tag → gatewayTag; --agent-tag/--benchmark-tag → runnerTag)
 gatewayTag: latest
 runnerTag: latest

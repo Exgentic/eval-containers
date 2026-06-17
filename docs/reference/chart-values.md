@@ -21,8 +21,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `agent` | `claude-code` | `--agent` |
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
-| `evalModel` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes |
-| `model` | `gpt-5.4-bifrost` | runner's agent-facing label / logging tag (a clean name, not the handle) |
+| `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
 | `gatewayImage` | `bifrost` | the proxy backend (`bifrost` / `litellm` / `portkey`) |
 | `gatewayTag` | `latest` | `--model-tag` |
 | `runnerTag` | `latest` | `--agent-tag` / `--benchmark-tag` |

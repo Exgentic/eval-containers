@@ -444,8 +444,8 @@ fn run_job(
     }
 
     // Per-run axes → --set (one each, so values containing commas are safe).
-    // --model maps to EVAL_MODEL (the upstream the fixed gateway proxies to)
-    // plus the runner's MODEL logging tag — matching the prior behavior.
+    // --model is the <provider>/<model> handle → the gateway's EVAL_MODEL; the
+    // chart derives the runner's clean MODEL label from it (last path segment).
     let mut sets: Vec<String> = vec![
         format!("benchmark={benchmark}"),
         format!("registry={registry}"),
@@ -460,7 +460,6 @@ fn run_job(
         sets.push("perTask=true".into());
     }
     if let Some(m) = &args.model {
-        sets.push(format!("evalModel={m}"));
         sets.push(format!("model={m}"));
     }
     if let Some(t) = args.timeout {
