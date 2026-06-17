@@ -1,0 +1,109 @@
+name: Nightly agent smoke
+
+# Smoke-test every agent: build its `agents-smoke--<agent>` eval image and verify
+# the agent boots and makes >=1 LLM call against the models/replay mock (the
+# agent_smoke suite, tests/run/agents). Catches the most common failure mode —
+# "the agent never reaches the LLM" (wrong entrypoint env, broken SDK install) —
+# in ~90s/agent. Self-contained: the mock, NOT a real model, so no API keys and
+# no upstream flakiness. AGENTS_SMOKE_BUILD=1 makes the suite self-build its eval
+# images on the fresh runner (it does not by default — see the suite's header).
+# The ~19 agents are split across a parallel shard matrix.
+#
+# Why CI and not a dev laptop: ubuntu-latest is native x86_64, so the linux/amd64
+# images build without QEMU. Mirrors nightly-replay.yml.
+
+on:
+  # schedule + workflow_dispatch fire only on the default branch, so the nightly
+  # runs on main. To validate a subset on a branch before merge, trigger
+  # workflow_dispatch with a `filter`.
+  schedule:
+    - cron: '17 5 * * *' # nightly, 05:17 UTC
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: >-
+          Space-separated agent test-name substrings (e.g. "agent_codex").
+          Empty = all agents, sharded.
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  packages: read # pull GHCR-hosted upstream base images without anonymous rate limits
+
+concurrency:
+  group: nightly-agents-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash # explicit `bash` => `-eo pipefail`
+
+jobs:
+  agents:
+    name: shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false # one shard's failure must not cancel the others
+      matrix:
+        # ~19 agents, ~4 per shard. SHARDS is derived from strategy.job-total
+        # (= this list's length), so edit only this list.
+        shard: [0, 1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: agents-smoke
+
+      # NB: deliberately NO docker/setup-buildx-action — its docker-container
+      # builder can't see locally-baked bases (see nightly-replay.yml). The
+      # runner's default `docker` driver reads the bake --load'ed bases.
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run agent-smoke shard
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          AGENTS_SMOKE_BUILD: '1' # the suite self-builds its eval images on this fresh runner
+          FILTER: ${{ github.event.inputs.filter }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ strategy.job-total }} # = matrix length; no hand-maintained coupling
+        run: |
+          # Enumerate the agent smoke tests, optionally narrow by FILTER, take
+          # this shard's round-robin slice, then run it. Each test self-builds
+          # its agents-smoke--<agent> image (AGENTS_SMOKE_BUILD set above); names
+          # go AFTER `--` so libtest OR-matches them.
+          ALL=$(cargo test -p eval-containers-tests-run --test agents -- --list | sed -n 's/: test$//p' | sort)
+          if [ -n "${FILTER}" ]; then
+            read -ra PATS <<< "${FILTER}"
+            PAT=$(IFS='|'; printf '%s' "${PATS[*]}")
+            ALL=$(printf '%s\n' "${ALL}" | grep -E "${PAT}" || true)
+          fi
+          TOTAL=$(printf '%s\n' "${ALL}" | grep -c . || true)
+          if [ "${TOTAL}" -eq 0 ]; then
+            if [ -z "${FILTER}" ]; then echo "::error::no agent tests listed (compile failure?)"; exit 1; fi
+            echo "filter '${FILTER}' matched no tests"; exit 0
+          fi
+          mapfile -t CASES < <(printf '%s\n' "${ALL}" | awk -v S="${SHARDS}" -v SH="${SHARD}" 'NF { if (c++ % S == SH) print }')
+          echo "shard ${SHARD}/${SHARDS}: ${#CASES[@]} of ${TOTAL} agents"
+          if [ "${#CASES[@]}" -eq 0 ]; then echo "nothing for this shard"; exit 0; fi
+          printf '  %s\n' "${CASES[@]}"
+          set +e
+          cargo test -p eval-containers-tests-run --test agents \
+            -- --ignored --nocapture --test-threads=1 "${CASES[@]}" 2>&1 | tee agents.log
+          rc=${PIPESTATUS[0]}
+          if grep -qE "running 0 tests" agents.log; then
+            echo "::error::shard ${SHARD} matched names but ran 0 tests"; exit 1
+          fi
+          exit "${rc}"
