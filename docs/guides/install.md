@@ -18,9 +18,12 @@ needs.
 The CLI is optional: everything it does is a plain `docker` / `helm` /
 `kubectl` command you can run yourself (see [CLI reference](../reference/cli.md)).
 
+On Docker Compose older than 2.34, behind a firewall, or fully airgapped? See
+[Run offline or airgapped](offline-and-airgapped.md).
+
 ## Run with no install beyond Docker
 
-Once the registry is public you won't need to clone the repo:
+Run an eval with nothing installed but Docker — no clone needed:
 
 ```bash
 echo "OPENAI_API_KEY=sk-..." > .env
@@ -28,10 +31,8 @@ EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
   docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
 ```
 
-> **Pre-release note.** The `oci://ghcr.io/exgentic/…` registry is the
-> published-future shape; the artifacts aren't public yet. For now, clone the
-> repo and use `--local` (below) or point `docker compose` at a benchmark's
-> `compose.yaml` directly.
+> Prefer to iterate on local changes? Use `--local` to run from a benchmark's
+> on-disk `compose.yaml` instead of the registry (see [Run your first eval](run-your-first-eval.md)).
 
 ## Build and install the CLI
 

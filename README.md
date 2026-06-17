@@ -2,7 +2,7 @@
 
 AI agent evaluations in containers. 102 benchmarks, 21 agents — ready to deploy at massive scale on any cloud.
 
-Our goal is to deliver agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
+*An evaluation is **one benchmark + one agent + one model** — three independent axes, swappable without touching each other.* Our goal is agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
 
 > **Working in this repo (human or AI agent)?** It is governed by [`AGENTS.md`](AGENTS.md) and the [`.agents/`](.agents/) directory — its **rules** (what a result must be) and **skills** (how to produce it). Read the doctrine for the area you touch before changing it.
 
@@ -16,259 +16,42 @@ Our goal is to deliver agent evaluations you can trust: fast to run, thin to shi
 
 ## Quick start
 
-> **Pre-release.** The `oci://ghcr.io/exgentic/…` registry below is the
-> published-future shape — the artifacts aren't public yet. For now, clone the
-> repo and add `--local` to the CLI (see [Local development](#local-development))
-> or use `docker compose -f containers/benchmarks/<name>/compose.yaml up` directly.
+One URL for every evaluation — benchmark, agent, model, and task are all `EVAL_*` env vars, run by plain Docker Compose with no clone and no framework:
 
 ```bash
-# Set your API key
 echo "OPENAI_API_KEY=sk-..." > .env
 
-# Run one task — pure docker, no clone, no CLI  (once registry is published)
-# The benchmark is the artifact name; agent/task/model stay runtime knobs.
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
   docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
 
-# Results
 cat output/aime/0/task/result.json
 ```
 
-One URL for every evaluation. Benchmark, agent, model, and task are all `EVAL_*` env vars.
+Prefer a CLI? `cargo install eval-containers`, then `eval-containers run aime --task-id 0 --agent codex --model gpt-5.4` prints and runs that exact Docker command — every command is a reminder of a plain `docker`/`kubectl` one (`--dry-run` to just print it).
 
-Requires Docker Compose ≥ 2.34 for `oci://` support. See [offline / older Docker](#offline--older-docker) below for alternatives.
+## Same eval, on Kubernetes
 
-## Install the CLI
-
-```bash
-cargo install eval-containers
-```
-
-Or build from source ([Rust](https://rustup.rs)):
+The exact same evaluation runs at scale on a cluster — the `oci://` Compose reference becomes one `helm | kubectl apply`, with the axes as `--set`s instead of `EVAL_*` vars:
 
 ```bash
-git clone https://github.com/Exgentic/eval-containers
-cargo install --path cli
+helm template eval-aime oci://ghcr.io/exgentic/charts/eval \
+  --set benchmark=aime --set task=0 --set agent=codex --set model=gpt-5.4 | kubectl apply -f -
 ```
 
-## Or use the `eval-containers` CLI
+→ [Triple-mode](docs/concepts/triple-mode.md) (compose / container / job) · [Deploy on Kubernetes](docs/guides/deploy-on-kubernetes.md) · [OpenShift](docs/guides/deploy-on-openshift.md)
 
-Same thing, fewer keystrokes:
+> `oci://` references need Docker Compose ≥ 2.34. On older Docker, behind a firewall, or fully airgapped, see [Run offline or airgapped](docs/guides/offline-and-airgapped.md). To iterate on local changes without pulling, add `--local`.
 
-```bash
-eval-containers run aime --task-id 0 --agent codex --model gpt-5.4
-```
-
-→ runs the plain Docker command (the same one shown in Quick start above):
-
-```bash
-EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
-  docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
-```
-
-That's the whole idea: every `eval-containers` command is a reminder of a plain `docker`/`kubectl` command — run any of them with `--dry-run` to print the exact command without executing. Every `EVAL_*` env var has a matching `--kebab-case` flag. Pick whichever you prefer.
-
-## Deployment modes
-
-Same evaluation, three runtimes. Pick whichever matches your environment.
-
-```bash
-eval-containers run aime --task-id 0 --agent codex --mode compose      # default
-eval-containers run aime --task-id 0 --agent codex --mode container
-eval-containers run aime --task-id 0 --agent codex --mode job
-```
-
-| Mode | Wraps | Use it for |
-|---|---|---|
-| `compose` *(default)* | `docker compose -f containers/benchmarks/<x>/compose.yaml up` | Local laptop, full stack with gateway + OTel sidecars, fastest iteration. |
-| `container` | `docker run -e EVAL_MODEL=... <eval-image>` | CI smoke tests, one-shot runs against an existing model proxy, minimal footprint. |
-| `job` | `helm template oci://<registry>/charts/eval --set benchmark=<x> \| kubectl apply -f -` | Kubernetes clusters. Production-scale regressions (1000s of tasks in parallel). |
-
-### Kubernetes (`--mode job`)
-
-Every benchmark renders from one shared [Helm](https://helm.sh/) chart — select it with `--set benchmark=<x>` and apply. The chart is self-contained: each benchmark's bespoke topology ships inside it as a `presets/<x>.yaml` (standard ones need nothing), so it pulls straight from the registry — **no clone**:
-
-```bash
-# From the published chart (see Pre-release note above) — no clone needed:
-helm template aime oci://ghcr.io/exgentic/charts/eval --version 0.1.0 \
-  --set benchmark=aime --set agent=claude-code --set task=0 | kubectl apply -f -
-```
-
-The CLI maps every axis to a `--set` and renders that **published** chart by
-default; add `--local` to render the in-repo `./containers/benchmarks/_chart` instead:
-
-```bash
-eval-containers run aime --agent codex --task-id 42 --mode job
-# → helm template aime-codex-task-42 oci://<registry>/charts/eval --version 0.1.0 \
-#       --set benchmark=aime --set registry=… --set agent=codex --set task=42 | kubectl apply -f -
-
-eval-containers run aime --agent codex --task-id 42 --mode job --local
-# → helm template aime-codex-task-42 ./containers/benchmarks/_chart --set … | kubectl apply -f -
-```
-
-Platform specifics (corp registry, NodeAffinity, NetworkPolicies, a different service account, ...) are a Helm **values file you own**, layered on with `--overlay` (an extra `helm -f`), so the eval axes and your platform settings merge. A ready-to-adapt OpenShift overlay (sets the `anyuid` service account) ships as [`deploy/values-openshift.yaml`](deploy/values-openshift.yaml):
-
-```bash
-eval-containers run aime --agent codex --mode job \
-  --overlay deploy/values-openshift.yaml \
-  --registry image-registry.openshift-image-registry.svc:5000/<namespace>
-# → helm template … --set benchmark=aime -f deploy/values-openshift.yaml … | kubectl apply -f -
-```
-
-On OpenShift, create the service account once and use `oc` in place of `kubectl`:
-
-```bash
-oc apply -f deploy/openshift-service-account.yaml
-oc adm policy add-scc-to-user anyuid -z anyuid-sa
-```
-
-The cluster needs an `eval-secrets` Secret with `OPENAI_API_KEY` and `OPENAI_API_BASE` keys.
-
-### Building in a cluster (`--builder`)
-
-No local Docker? Build the images inside the cluster with buildx's Kubernetes driver — same bake graph, no extra tooling. Create the builder once (after `oc login`, or with `kubectl` pointed at the cluster):
-
-```bash
-docker buildx create --driver kubernetes --name oc --use
-```
-
-Then pass `--builder` to any build — it builds in-cluster and pushes to the registry (`--builder` implies `--push`, since a remote builder can't load into local Docker):
-
-```bash
-eval-containers build eval aime --agent codex --builder oc
-```
-
-→ runs the same bake graph on the in-cluster builder (one `-f` per artifact bake file, abbreviated to `…`):
-
-```bash
-REGISTRY=ghcr.io/exgentic docker buildx bake \
-  -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl -f … \
-  --builder oc --push \
-  --set eval.args.BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/aime:latest \
-  --set eval.args.AGENT_IMAGE=ghcr.io/exgentic/agents/codex:latest \
-  --set eval.args.MODEL_IMAGE=ghcr.io/exgentic/models/gpt-5.4--bifrost:latest \
-  eval
-```
-
-`--dry-run` on any build prints this exact command without running it; if the builder doesn't exist, the CLI fails with the one-line `docker buildx create` to run.
-
-## Environment variables
-
-All Eval Containers env vars are prefixed `EVAL_` to avoid collision with CI systems, orchestrators, and user scripts.
-
-**Axis selection**
-
-| Variable | Meaning | Default |
-|---|---|---|
-| `EVAL_BENCHMARK` | Which benchmark to run | — |
-| `EVAL_AGENT` | Which agent to run | — |
-| `EVAL_MODEL` | Which model to route calls to | — |
-| `EVAL_TASK_ID` | Which task within the benchmark | `0` |
-
-**Container versions** (which image tag to pull)
-
-| Variable | Meaning | Default |
-|---|---|---|
-| `EVAL_BENCHMARK_TAG` | Benchmark container version | `latest` |
-| `EVAL_AGENT_TAG` | Agent container version | `latest` |
-| `EVAL_MODEL_TAG` | Model container version | `latest` |
-
-**Internal software versions** (what runs inside the container)
-
-| Variable | Meaning | Default |
-|---|---|---|
-| `EVAL_BENCHMARK_VERSION` | Dataset revision inside the benchmark | built-in pin |
-| `EVAL_AGENT_VERSION` | Upstream CLI version inside the agent | built-in pin |
-| `EVAL_LITELLM_VERSION` | LiteLLM version inside the model | built-in pin |
-
-**Runtime**
-
-| Variable | Meaning | Default |
-|---|---|---|
-| `EVAL_TIMEOUT` | Agent timeout in seconds | `300` |
-| `EVAL_REGISTRY` | Registry to pull from | `ghcr.io/exgentic` |
-
-Container tags are Docker-native (different tag → different pull). Internal versions are runtime overrides (the entrypoint installs the requested version at container start).
-
-Every image ships with a **reproducible default**, so casual users never touch the version vars. Power users pin.
-
-## Concepts
-
-- **Benchmark** — a collection of tasks (AIME has 90, SWE-bench has 500)
-- **Task** — a single problem within a benchmark
-- **Agent** — the AI system attempting the task (Claude Code, Codex, OpenHands, SWE-agent, Plandex, ...)
-- **Model** — the LLM the agent calls, routed through a logging proxy. Works with any [LiteLLM-supported provider](https://docs.litellm.ai/docs/providers) (OpenAI, Anthropic, Google, Azure, Ollama, and 100+ more).
-- **Evaluation** — one benchmark + one agent + one model, defined by one Compose artifact.
-
-## Offline / older Docker
-
-If you're on Docker < 2.34, airgapped, or just prefer a local file:
-
-```bash
-# Fetch + flatten the compose file once (needs a machine with network)
-EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f oci://ghcr.io/exgentic/eval-aime config > aime.compose.yaml
-
-# Transport aime.compose.yaml anywhere. Run offline:
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
-  docker compose -f aime.compose.yaml up --abort-on-container-exit
-```
-
-Or for fully airgapped deployments, bundle the images too:
-
-```bash
-docker save ghcr.io/exgentic/evals/aime--codex:latest \
-            ghcr.io/exgentic/models/gpt-5.4:latest \
-  | gzip > aime-bundle.tar.gz
-```
-
-## Local development
-
-If you have the repo cloned and want to iterate on a benchmark or agent without pushing to the registry:
-
-```bash
-eval-containers run aime --task-id 0 --agent codex --model gpt-5.4 --local
-```
-
-→ runs:
-
-```bash
-EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
-  docker compose -f ./containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
-```
-
-`--local` points at `containers/benchmarks/<name>/compose.yaml` on disk instead of `oci://...`.
-
-To check that a benchmark's **grading** is sound — a correct solution scores 1.0
-and a non-solution scores less — run the oracle (no agent, no model):
-
-```bash
-eval-containers oracle aime                 # exact-match: default gold solution
-eval-containers oracle humaneval --task-id 0
-```
-
-See [Oracle](containers/core/oracle/README.md) for how it works and how to add a benchmark.
-
-## Rules
-
-All work is governed by RULES documents under [`.agents/`](.agents/); [`AGENTS.md`](AGENTS.md) is the full map. New contributors should start with [CONTRIBUTING.md](CONTRIBUTING.md).
-
-| Rules | Scope |
-|-------|-------|
-| [.agents/RULES.md](.agents/RULES.md) | Core principles |
-| [.agents/benchmarks/RULES.md](.agents/benchmarks/RULES.md) | Building benchmarks |
-| [.agents/agents/RULES.md](.agents/agents/RULES.md) | Building agents |
-| [.agents/models/RULES.md](.agents/models/RULES.md) | Building models |
-| [.agents/src/RULES.md](.agents/src/RULES.md) | CLI |
-| [.agents/compose/RULES.md](.agents/compose/RULES.md) | Naming, compose, output, registry |
+**Full walkthrough:** [Install](docs/guides/install.md) → [Run your first eval](docs/guides/run-your-first-eval.md).
 
 ## Documentation
 
-Full human-facing docs — concepts, guides, and reference — live in
-[`docs/`](docs/README.md). Start with [Install](docs/guides/install.md) and
-[Run your first eval](docs/guides/run-your-first-eval.md).
+Human-facing docs — concepts, guides, and reference — live in [`docs/`](docs/README.md).
 
-## Setup
+- **Concepts** — [Overview](docs/concepts/overview.md) · [Triple-mode](docs/concepts/triple-mode.md) · [Isolation & gateways](docs/concepts/isolation-and-gateways.md) · [The Helm chart](docs/concepts/the-helm-chart.md)
+- **Guides** — [Install](docs/guides/install.md) · [Run your first eval](docs/guides/run-your-first-eval.md) · [Deploy on Kubernetes](docs/guides/deploy-on-kubernetes.md) / [OpenShift](docs/guides/deploy-on-openshift.md) · [Run tests locally](docs/guides/running-tests-locally.md) · Add a [benchmark](docs/guides/add-a-benchmark.md) / [agent](docs/guides/add-an-agent.md) / [model](docs/guides/add-a-model.md)
+- **Reference** — [CLI](docs/reference/cli.md) · [Environment variables](docs/reference/env-vars.md) · [Chart values](docs/reference/chart-values.md)
 
-- [docs/guides/running-tests-locally.md](docs/guides/running-tests-locally.md) — local dev loop (Docker Desktop, Podman, Rosetta)
-- [.agents/delivery/release/SKILL.md](.agents/delivery/release/SKILL.md) — how CI builds and publishes the fleet
+## Contributing & governance
+
+All work is governed by the **rules** and **skills** under [`.agents/`](.agents/); [`AGENTS.md`](AGENTS.md) is the full map. New contributors start with [CONTRIBUTING.md](CONTRIBUTING.md).
