@@ -17,14 +17,14 @@ echo "OPENAI_API_KEY=sk-..." > .env
 With the repo cloned, use `--local` to run from on-disk artifacts:
 
 ```bash
-eval-containers run aime --task-id 0 --agent codex --model gpt-5.4 --local
+eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4 --local
 ```
 
 This maps to a plain Docker command — print it without running via `--dry-run`:
 
 ```bash
-eval-containers run aime --task-id 0 --agent codex --model gpt-5.4 --local --dry-run
-# → EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 EVAL_TASK_ID=0 \
+eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4 --local --dry-run
+# → EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_TASK_ID=0 \
 #     docker compose -f ./containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 ```
 
@@ -49,7 +49,7 @@ cat output/aime/0/model/trajectory.jsonl
 
 ```bash
 # A different agent / model
-eval-containers run aime --task-id 0 --agent claude-code --model gpt-5.4 --local
+eval-containers run aime --task-id 0 --agent claude-code --model openai/gpt-5.4 --local
 
 # Cap spend (USD) and set a timeout
 eval-containers run aime --task-id 0 --agent codex --max-budget 1 --timeout 600 --local

@@ -21,13 +21,13 @@ One URL for every evaluation — benchmark, agent, model, and task are all `EVAL
 ```bash
 echo "OPENAI_API_KEY=sk-..." > .env
 
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
 
 cat output/aime/0/task/result.json
 ```
 
-Prefer a CLI? `cargo install eval-containers`, then `eval-containers run aime --task-id 0 --agent codex --model gpt-5.4` prints and runs that exact Docker command — every command is a reminder of a plain `docker`/`kubectl` one (`--dry-run` to just print it).
+Prefer a CLI? `cargo install eval-containers`, then `eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4` prints and runs that exact Docker command — every command is a reminder of a plain `docker`/`kubectl` one (`--dry-run` to just print it).
 
 ## Same eval, on Kubernetes
 

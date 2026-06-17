@@ -13,7 +13,7 @@ On a machine with network and a recent Docker, resolve the `oci://` reference
 into a plain compose file once:
 
 ```bash
-EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
+EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f oci://ghcr.io/exgentic/eval-aime config > aime.compose.yaml
 ```
 
@@ -21,7 +21,7 @@ Copy `aime.compose.yaml` to the target host and run it with any Compose
 version — no `oci://` support needed:
 
 ```bash
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f aime.compose.yaml up --abort-on-container-exit
 ```
 
@@ -41,7 +41,7 @@ docker save $(docker compose -f aime.compose.yaml config --images) \
 
 # Airgapped host: load the images, then run from the flattened compose file
 docker load < aime-bundle.tar.gz
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f aime.compose.yaml up --abort-on-container-exit
 ```
 

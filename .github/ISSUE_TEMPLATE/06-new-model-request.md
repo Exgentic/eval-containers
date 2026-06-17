@@ -1,59 +1,42 @@
 ---
-name: New canonical model request
-about: Propose a new canonical model to add to the fleet.
-title: "model: <name> — <one-line summary>"
+name: Model won't route / needs a gateway backend
+about: Most models need no issue — just set EVAL_MODEL. Open this only if that fails.
+title: "model: <provider>/<model> — <one-line summary>"
 labels: ["new-model"]
 ---
 
-## Model: `<name>`
+<!--
+The model is a RUNTIME axis: set `EVAL_MODEL=<provider>/<model>` and put the
+provider key in `.env` — any LiteLLM-supported model works with no image, no
+build, no request. See docs/guides/add-a-model.md.
 
-<!-- One paragraph: provider, tier, why it's a good canonical choice.
-Canonical = the model is a genuine option for the "model of record"
-axis of an evaluation, not just a dev convenience. -->
+Open this issue only if that DOESN'T work — e.g. the pinned LiteLLM version
+doesn't support the provider yet, or it needs a new gateway backend beside
+bifrost / litellm / portkey.
+-->
+
+## Model: `<provider>/<model>`
+
+<!-- What you ran (EVAL_MODEL=…, EVAL_GATEWAY_IMAGE=…) and what happened. -->
 
 ## Upstream
 
 | Field | Value |
 |---|---|
 | Provider | openai / anthropic / azure / aws / gcp / custom |
-| Model string for LiteLLM | `<provider>/<model>` |
+| LiteLLM handle | `<provider>/<model>` |
 | API base (if non-default) | `<url or n/a>` |
-| Input price per 1M tokens | `<$X.YY>` |
-| Output price per 1M tokens | `<$X.YY>` |
-| Context window | `<tokens>` |
-| Tool calling | yes / no / partial |
-| Supports Responses API (`/v1/responses`) | yes / no / n/a |
+| Credentials env var | `<PROVIDER>_API_KEY` (+ `_API_BASE` if needed) |
 
-## Why this model
+## What's missing
 
-<!-- What gap does it fill? Cheapest-reliable, highest-quality,
-fastest, largest-context, specific-domain? Be specific. -->
-
-## Fit with existing rules
-
-- [ ] API key can be loaded from `.env` via `<PROVIDER>_API_KEY`
-      (no hardcoded keys in image config — [.agents/models/RULES.md](../../.agents/models/RULES.md) rule 5)
-- [ ] LiteLLM already supports this provider in the current pinned
-      version (`core/litellm` → `main-v<X>-stable`)
-- [ ] Cost tracking populates `response_cost` on the endpoint paths
-      this model uses (if unknown, this will be verified in the PR)
-- [ ] No additional provider SDK install needed beyond what
-      `core/litellm` already bundles
-
-## Impact on existing fixtures
-
-<!-- Adding a new model does NOT invalidate existing replay
-fixtures — each fixture is tied to the model that produced it.
-But if you're proposing this model as a REPLACEMENT for the
-current model-of-record, that's a separate RFC: every released
-benchmark's fixtures need re-recording. Say which case this is. -->
-
-- [ ] Additive — new option, existing fixtures unchanged
-- [ ] Replacement — proposes to change the model-of-record; linked
-      to an RFC issue #…
+- [ ] LiteLLM doesn't support this provider in the pinned `core/litellm` version — link a version bump
+- [ ] Needs a new gateway backend (the existing bifrost / litellm / portkey can't reach it) — describe why
+- [ ] Want a **pinned per-model image** (a shared, custom-configured artifact teams run against via `EVAL_GATEWAY_IMAGE=<name>`) — not just runtime `EVAL_MODEL`
+- [ ] It works already; requesting it be added to the docs / examples
 
 ## Who implements
 
-- [ ] I will open the PR myself
-- [ ] I'm requesting someone else implement it
+- [ ] I'll open the PR
+- [ ] Requesting someone else
 - [ ] I'll help review

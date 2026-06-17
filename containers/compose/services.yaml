@@ -27,10 +27,8 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}
-      # Generic gateways (bifrost/litellm/portkey, the default) read this
-      # <provider>/<model> handle and ERROR if it's unset — no silent fallback
-      # model. A pinned per-model image (EVAL_GATEWAY_IMAGE=<model>) bakes its
-      # own model and ignores this.
+      # No default: a generic gateway errors if this <provider>/<model> handle is
+      # unset; a pinned per-model image bakes its model and ignores it.
       EVAL_MODEL: ${EVAL_MODEL}
       HOST: 0.0.0.0
       # Both gateway flavors emit OTel: bifrost via its native `otel`

@@ -102,7 +102,7 @@ reject PRs that skip this step.
 
 ```bash
 eval-containers build eval <name> --agent claude-code
-eval-containers run <name> --agent claude-code --model gpt-5.4 --task-id 0 --local --max-budget 1
+eval-containers run <name> --agent claude-code --model openai/gpt-5.4 --task-id 0 --local --max-budget 1
 ```
 
 - [ ] `output/<name>/0/task/result.json` exists with a valid reward
