@@ -1,5 +1,9 @@
 # E2E Test Matrix
 
+> **Note:** representative snapshot from an earlier ~22-fixture plan, not the
+> current set — the authoritative list is `tests/run/replay/fixtures/` plus the
+> `replay_test!` entries in `test.rs`. The agent-coverage counts below may lag.
+
 Every benchmark with a fixture appears once. Agents are spread across benchmarks.
 Each row is one replay test with a recorded fixture.
 
@@ -8,15 +12,15 @@ Each row is one replay test with a recorded fixture.
 | Benchmark | Agent | Scoring | Fixture |
 |-----------|-------|---------|---------|
 | aime | claude-code | exact-match | aime-0-claude-code |
-| gpqa-diamond | codex | exact-match | gpqa-diamond-0-codex |
+| gpqa-diamond | opencode | exact-match | gpqa-diamond-118-opencode |
 | simpleqa | goose | exact-match | simpleqa-0-goose |
 | math-500 | aider | exact-match | math-500-0-aider |
-| mgsm | codex | exact-match | mgsm-0-codex |
+| mgsm | codex | exact-match | mgsm-549-codex |
 | mmlu-pro | openhands | exact-match | mmlu-pro-0-openhands |
 | hle | claude-code | exact-match | hle-0-claude-code |
 | mrcr | claude-code | exact-match | mrcr-0-claude-code |
 | humaneval | claude-code | code-execution | humaneval-0-claude-code |
-| mbpp | claude-code | code-execution | mbpp-0-claude-code |
+| mbpp | aider | code-execution | mbpp-299-aider |
 | livecodebench | codex | code-execution | livecodebench-0-codex |
 | usaco | codex | code-execution | usaco-0-codex |
 | ifeval | claude-code | fractional | ifeval-0-claude-code |
