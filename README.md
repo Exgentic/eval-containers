@@ -40,7 +40,7 @@ helm template eval-aime oci://ghcr.io/exgentic/charts/eval \
 
 → [Triple-mode](docs/concepts/triple-mode.md) (compose / container / job) · [Deploy on Kubernetes](docs/guides/deploy-on-kubernetes.md) · [OpenShift](docs/guides/deploy-on-openshift.md)
 
-> **Pre-release.** The `oci://ghcr.io/exgentic/…` artifacts aren't public yet. For now, clone the repo and add `--local`, or run `docker compose -f containers/benchmarks/<name>/compose.yaml up` directly. `oci://` needs Docker Compose ≥ 2.34 — see [Run offline or airgapped](docs/guides/offline-and-airgapped.md) for older Docker.
+> `oci://` references need Docker Compose ≥ 2.34. On older Docker, behind a firewall, or fully airgapped, see [Run offline or airgapped](docs/guides/offline-and-airgapped.md). To iterate on local changes without pulling, add `--local`.
 
 **Full walkthrough:** [Install](docs/guides/install.md) → [Run your first eval](docs/guides/run-your-first-eval.md).
 

@@ -25,10 +25,8 @@ EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
   docker compose -f aime.compose.yaml up --abort-on-container-exit
 ```
 
-> **Pre-release note.** The `oci://ghcr.io/exgentic/…` registry is the
-> published-future shape; the artifacts aren't public yet. Until then, flatten
-> from a clone with `--local`: `docker compose -f
-> containers/benchmarks/aime/compose.yaml config > aime.compose.yaml`.
+> **Tip.** No registry access at all? Flatten from a clone instead: `docker
+> compose -f containers/benchmarks/aime/compose.yaml config > aime.compose.yaml`.
 
 ## Fully airgapped: bundle the images
 
