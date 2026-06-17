@@ -372,8 +372,11 @@ jobs:
           [ "$fails" -eq 0 ] || { echo "::error::$fails per-task item(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
 
   # ── compose artifacts — one self-contained oci://…/eval-<b> per benchmark ──
+  # Per-benchmark matrix (each benchmark isolated); runs on a partial `build` too
+  # (success OR failure) so one failed leaf can't skip every benchmark's bundle.
   compose:
     needs: [cli, build, enumerate]
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure') && needs.cli.result == 'success' && needs.enumerate.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -407,10 +410,13 @@ jobs:
   # published benchmark + COPY the agent), so there are no dataset downloads and
   # no per-combo registry cache (the published parents are the cache). needs
   # per-task so per-task combos build only after their base exists; always() so
-  # shared combos still run when per-task is skipped/partial.
+  # shared combos still run when per-task is skipped/partial. Runs on a partial
+  # `build` too (success OR failure): a single failed leaf among 124 must not skip
+  # every combo — a combo whose parent leaf is missing just fails that one item
+  # (counted below), the rest publish. Only build-cancelled/skipped stops it.
   combos:
     needs: [build, per-task, enumerate]
-    if: always() && needs.build.result == 'success' && needs.enumerate.result == 'success' && needs.enumerate.outputs.combo_shards != '[]'
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure') && needs.enumerate.result == 'success' && needs.enumerate.outputs.combo_shards != '[]'
     runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 120
     strategy:

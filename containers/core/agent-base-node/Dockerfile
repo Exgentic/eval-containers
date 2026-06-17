@@ -50,14 +50,15 @@ RUN npm config set fetch-retries 10 --global && \
     npm config set fetch-timeout 600000 --global
 # CVE remediation for node's bundled npm dependency tree. The npm that ships
 # with this node tarball (npm@10.x) bundles vulnerable minimatch/glob/tar and a
-# transitive picomatch. Upgrading npm to the latest replaces the ENTIRE bundled
-# tree with patched versions — npm@11.17+ bundles minimatch ^10.2.5, glob ^13,
-# tar ^7.5.16, refreshing the transitive picomatch as well. This is the npm
-# tree the trivy `library` scanner walks, so the refresh clears all four:
+# transitive picomatch. A pinned npm@11.17.0 (reproducible per rule 9, and what
+# `@latest` resolves to today) replaces the ENTIRE bundled tree with patched
+# versions — verified to bundle minimatch 10.2.5, glob 13.0.6, tar 7.5.16,
+# refreshing the transitive picomatch as well. This is the npm tree the trivy
+# `library` scanner walks, so the refresh clears all four:
 #   minimatch CVE-2026-26996/27903/27904  (fixed >= 10.2.3)
 #   glob      CVE-2025-64756              (fixed >= 11.1.0)
 #   picomatch CVE-2026-33671              (fixed >= 4.0.4)
 #   tar       CVE-2026-23745/.../31802    (fixed >= 7.5.11)
-RUN npm install -g --fetch-retries 10 npm@latest
+RUN npm install -g --fetch-retries 10 npm@11.17.0
 RUN printf '#!/bin/bash\nset -euo pipefail\n# Default skeleton: subclass agent Dockerfiles overwrite this.\nfor b in node npm npx; do ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b 2>/dev/null || true; done\n' > /opt/agent/install.sh && chmod +x /opt/agent/install.sh && \
     printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /run.sh && chmod +x /run.sh

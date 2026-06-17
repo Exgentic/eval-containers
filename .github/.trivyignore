@@ -38,13 +38,12 @@ AVD-DS-0002
 AVD-DS-0031
 
 # ============================================================================
-# Image-CVE deferrals (image lane: `trivy image … --scanners vuln`).
-# These HIGH/CRITICAL findings have NO upstream/distro fix available yet
-# (trivy reports them as "affected"/"fix_deferred" with an empty fixed
-# version). They cannot be patched by a version bump today; an OS `apt-get
-# upgrade -y` / `apk upgrade` already runs in every base, so they clear
-# automatically the moment Debian/Alpine/upstream ships a fix. Revisit and
-# delete these lines once a fixed version exists. One CVE id per line.
+# Image-CVE deferrals (image lane: `trivy image … --scanners vuln`): HIGH/CRITICAL
+# findings with NO upstream/distro fix yet (trivy reports an empty fixed version),
+# unpatchable by a version bump today. Where a base runs `apt-get upgrade`/`apk
+# upgrade` they clear once the distro ships a fix; the minimal alpine/scratch
+# finals clear on the next base rebuild. Delete each line once a fix exists.
+# One CVE id per line.
 # ============================================================================
 
 # --- perl / perl-base / perl-modules / libperl (Debian, no fix yet) ---------
@@ -80,16 +79,17 @@ CVE-2026-11824
 # libssh2 1.11.1-1 — no fixed Debian package published yet.
 CVE-2026-7598
 
-# --- core/otel OCB collector v0.105.0 transitive modules (pinned, no fix) ----
-# The custom OCB collector is pinned to 0.105.0 for byte-identical traces (#180);
-# its bundled otel/sdk (1.28.0) + grpc (1.65.0) carry CVEs fixed only in later
-# releases the 0.105.0 pin can't take. The Go stdlib is patched via the go1.26.4
-# toolchain bump (core/otel/Dockerfile); these clear when the collector pin moves.
-# (The minimal OCB build excludes docker/docker + golang-jwt, so the old
-# otelcol-contrib deferrals for those are dropped.)
+# --- core/otel OCB collector v0.105.0: otel-sdk 1.28.0 resource detectors -----
+# The custom OCB collector is pinned to 0.105.0 for byte-identical traces (#180).
+# Its bundled otel-sdk 1.28.0 carries two PATH-hijack CVEs in resource detectors
+# that only execute on Darwin (ioreg) / BSD (kenv) — unreachable on this
+# linux/alpine collector — and aren't bumpable without moving the 0.105.0 pin (the
+# collector modules ARE otel-sdk 1.28 consumers). The Go stdlib is CVE-patched via
+# the go1.26.4 toolchain bump. The CRITICAL grpc auth-bypass that 0.105.0 shipped
+# (CVE-2026-33186) is FIXED, not deferred — builder-config.yaml `replaces` grpc to
+# v1.79.3 (transport-only; traces unchanged), so it's gone from this list.
 CVE-2026-24051
 CVE-2026-39883
-CVE-2026-33186
 
 # --- litellm wolfi base: busybox + openssl + py3-pip-wheel (Chainguard) ------
 # The litellm v1.89.1 upstream image ships a Chainguard Wolfi base. A fix exists
