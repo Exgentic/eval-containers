@@ -196,12 +196,12 @@ jobs:
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
               tks=$(gh api "repos/$repo/contents/tasks?ref=$ref" --paginate \
                 --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
-              acc=$(jq -cn --argjson a "$acc" --argjson b "$tks" '$a + $b')
+              acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             for B in swe-bench; do
               tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
               tks=$(jq -Rn --arg B "$B" '[inputs | select(length>0) | {b:$B, task:., kind:"bake"}]' < "$tf")
-              acc=$(jq -cn --argjson a "$acc" --argjson b "$tks" '$a + $b')
+              acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             pertask="$acc"
             # --only mode: one task per benchmark as a smoke, not all ~600.
@@ -215,11 +215,14 @@ jobs:
           if [ -n "$COMBO_AGENTS" ]; then
             read -ra _ag <<< "$COMBO_AGENTS"
             agents=$(printf '%s\n' "${_ag[@]}" | jq -R . | jq -sc 'map(select(length>0))')
-            shared=$(jq -cn --argjson bs "$benchmarks" --argjson as "$agents" \
-              '[$bs[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
-            ptc=$(jq -cn --argjson ps "$pertask" --argjson as "$agents" \
-              '[$ps[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
-            combos=$(jq -cn --argjson s "$shared" --argjson p "$ptc" '$s + $p')
+            # Large arrays go through stdin, never argv: a per-task combo list is
+            # >128KB, which exceeds Linux's MAX_ARG_STRLEN (--argjson would E2BIG).
+            # Only the small agents list rides argv.
+            shared=$(printf '%s' "$benchmarks" | jq -c --argjson as "$agents" \
+              '[.[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
+            ptc=$(printf '%s' "$pertask" | jq -c --argjson as "$agents" \
+              '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
+            combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
           fi
 
           # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──

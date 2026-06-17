@@ -90,13 +90,16 @@ CVE-2026-42306
 # release, so this instance stays deferred until the dep drops v3.
 CVE-2025-30204
 
-# --- litellm wolfi base: busybox + openssl (Chainguard, no installable fix) --
+# --- litellm wolfi base: busybox + openssl + py3-pip-wheel (Chainguard) ------
 # The litellm v1.89.1 upstream image ships a Chainguard Wolfi base. A fix exists
-# upstream (busybox 1.37.0-r58, openssl 3.6.3-r0) but the patched builds are NOT
-# in Chainguard's free apk repo yet, so an `apk upgrade` of these is a no-op
-# (verified) — they clear when litellm rebuilds its base. busybox here is the
-# CPIO/shell applet set, not reachable from the proxy.
+# upstream (busybox 1.37.0-r58, openssl 3.6.3-r0, py3-pip-wheel 26.1.2-r1) but
+# the patched builds are NOT in Chainguard's free apk repo yet, so an `apk
+# upgrade` of these is a no-op (verified) — they clear when litellm rebuilds its
+# base. busybox here is the CPIO/shell applet set and py3-pip-wheel is the system
+# pip's vendored urllib3 — neither is reachable from the proxy, which runs out of
+# a uv venv with urllib3 pinned to the patched 2.7.0.
 CVE-2023-39810
 CVE-2026-26157
 CVE-2026-26158
 CVE-2026-45447
+CVE-2026-44432
