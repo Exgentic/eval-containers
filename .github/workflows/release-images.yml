@@ -18,6 +18,13 @@ name: Release the fleet
 #                         so editing one Dockerfile rebuilds only that leaf.
 #   * PROVENANCE + SBOM — SLSA provenance + syft SBOM on every pushed image.
 #   * CVE GATE          — trivy scans the shared bases before :latest is promoted.
+#   * MULTI-ARCH        — native-per-arch: bases/leaves/per-task build on amd64
+#                         AND arm64 runners (NOT QEMU — pyarrow segfaults under it),
+#                         each pushing :TAG-<arch>; the `merge` job then stitches the
+#                         :TAG manifest list. Combos build multi-arch directly
+#                         (buildx --platform — thin overlays are QEMU-safe). The
+#                         arm64 runner label is the FLEET_RUNNER_ARM repo Variable
+#                         (default ubuntu-24.04-arm).
 #
 # The registry LAYER cache above is what gives cross-run reuse on ephemeral
 # runners: a benchmark's dataset layer is reused until its Dockerfile changes.
@@ -106,9 +113,18 @@ jobs:
           name: cli
           path: target/release/eval-containers
 
-  # ── frozen base: shared deps (core + gateways) build ONCE ─────────────────
+  # ── frozen base: shared deps (core + gateways) build ONCE, per-arch ───────
+  # Native-per-arch: amd64 on a standard runner, arm64 on ubuntu-24.04-arm
+  # (set vars.FLEET_RUNNER_ARM to override). Each arch pushes :TAG-<arch>; the
+  # `merge` job stitches them into the :TAG manifest list. No QEMU — the heavy
+  # builds (pyarrow) only build natively (QEMU segfaults), so every arch builds
+  # on its own metal. Leaves then pull the per-arch base they were built against.
   bases:
-    runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ (matrix.arch == 'arm64' && (vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm')) || (vars.FLEET_RUNNER || 'ubuntu-latest') }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
@@ -118,10 +134,12 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build bases only if missing or forced (else freeze)
+      - name: Build bases (${{ matrix.arch }}) only if missing or forced (else freeze)
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
+          ARCH: ${{ matrix.arch }}
         run: |
+          export TAG="${TAG}-${ARCH}"   # per-arch tag; merge builds the :TAG manifest list
           if [ "${{ inputs.rebuild_bases }}" != "true" ] && \
              docker buildx imagetools inspect "${REGISTRY}/core/entrypoint:${TAG}" >/dev/null 2>&1; then
             echo "Bases present at :${TAG} — FROZEN (skip; stable digest → leaf caches hit)."
@@ -131,15 +149,15 @@ jobs:
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           mapfile -t DEPS < <(find containers/core containers/gateways -name docker-bake.hcl \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
-          echo "Building ${#DEPS[@]} shared deps: ${DEPS[*]}"
+          echo "Building ${#DEPS[@]} shared deps (${ARCH}): ${DEPS[*]}"
           ACT=(--provenance=mode=max --sbom=true "${DEPS[@]}" --push)
           [ "${{ inputs.dry_run }}" = "true" ] && ACT=("${DEPS[@]}" --print)
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
-            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/bases,mode=max" \
-            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/bases" \
+            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/bases-${ARCH},mode=max" \
+            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/bases-${ARCH}" \
             "${ACT[@]}"
 
   # ── enumerate everything the matrices fan out over ────────────────────────
@@ -174,7 +192,7 @@ jobs:
           fi
           leaves=$(printf '%s\n' "$leaf_list" | jq -R . | jq -sc 'map(select(length>0))')
           n=$(printf '%s' "$leaves" | jq 'length')
-          if [ "$n" -le 0 ] || [ "$n" -gt 256 ]; then echo "::error::leaf count $n outside 1..256 (matrix cap)"; exit 1; fi
+          if [ "$n" -le 0 ] || [ "$n" -gt 128 ]; then echo "::error::leaf count $n outside 1..128 (build fans out × 2 arches → must fit GitHub's 256-job matrix cap)"; exit 1; fi
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
           # --only mode derives them from the restricted leaves; else all shared benchmarks.
@@ -237,10 +255,11 @@ jobs:
           shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
           combo_shards=$(shard "$combos" 25)
           pertask_shards=$(shard "$pertask" 10)
-          for kv in "combo_shards=$combo_shards" "pertask_shards=$pertask_shards"; do
-            sn=$(printf '%s' "${kv#*=}" | jq 'length')
-            [ "$sn" -le 256 ] || { echo "::error::${kv%%=*} = $sn shards > 256 — raise the chunk size in enumerate"; exit 1; }
-          done
+          # combos build per shard via buildx --platform (one job/shard) → ≤256;
+          # per-task fans out per shard × 2 arches → its matrix must fit 256.
+          cn=$(printf '%s' "$combo_shards" | jq length); ptn=$(printf '%s' "$pertask_shards" | jq length)
+          [ "$cn" -le 256 ] || { echo "::error::combo_shards = $cn > 256 — raise the combo chunk size in enumerate"; exit 1; }
+          [ "$((ptn * 2))" -le 256 ] || { echo "::error::pertask_shards = $ptn × 2 arch = $((ptn * 2)) > 256 — raise the per-task chunk size in enumerate"; exit 1; }
 
           {
             echo "leaves=$leaves"
@@ -252,15 +271,16 @@ jobs:
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
   build:
-    name: leaf ${{ matrix.target }}
+    name: leaf ${{ matrix.target }} (${{ matrix.arch }})
     needs: [bases, enumerate]
-    runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (matrix.arch == 'arm64' && (vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm')) || (vars.FLEET_RUNNER || 'ubuntu-latest') }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
       matrix:
         target: ${{ fromJson(needs.enumerate.outputs.leaves) }}
+        arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
@@ -269,11 +289,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bake ${{ matrix.target }} (pull frozen base, per-leaf cache)
+      - name: Bake ${{ matrix.target }} (${{ matrix.arch }}; frozen base, per-leaf cache)
         env:
           T: ${{ matrix.target }}
+          ARCH: ${{ matrix.arch }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
+          export TAG="${TAG}-${ARCH}"   # per-arch tag; merge builds the :TAG manifest list
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           # Override every base context to PULL the frozen registry image, so this
@@ -301,8 +323,8 @@ jobs:
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
-            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/${T},mode=max" \
-            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/${T}" \
+            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/${T}-${ARCH},mode=max" \
+            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/${T}-${ARCH}" \
             "${ACT[@]}"
 
   # ── per-task base images — sharded; each job builds a chunk of (b,task) ───
@@ -312,13 +334,14 @@ jobs:
   per-task:
     needs: [bases, enumerate]
     if: needs.enumerate.outputs.pertask_shards != '[]'
-    runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+    runs-on: ${{ (matrix.arch == 'arm64' && (vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm')) || (vars.FLEET_RUNNER || 'ubuntu-latest') }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.pertask_shards) }}
+        arch: [amd64, arm64]
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4   # kind=bake (swe-bench)
@@ -331,12 +354,16 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Log in to GHCR (podman)
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
-      - name: Build + push per-task shard ${{ matrix.shard.idx }}
+      - name: Build + push per-task shard ${{ matrix.shard.idx }} (${{ matrix.arch }})
         env:
           ITEMS: ${{ toJson(matrix.shard.items) }}
           DRY: ${{ inputs.dry_run }}
+          ARCH: ${{ matrix.arch }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
+          export TAG="${TAG}-${ARCH}"   # per-arch tag; merge builds the :TAG manifest list
+          # Epoch's swe-bench bases are named x86_64 / arm64 (kind=bake FROMs this).
+          EPOCH_ARCH=x86_64; [ "$ARCH" = "arm64" ] && EPOCH_ARCH=arm64
           # Tags must be lowercase; upstream task dir names are case-sensitive
           # (matches the CLI's naming::benchmark_task_image).
           # retry rides out transient HF rate-limiting (swe-bench fetches task
@@ -353,7 +380,7 @@ jobs:
             B=$(jq -r .b <<< "$it"); TASK=$(jq -r .task <<< "$it"); KIND=$(jq -r .kind <<< "$it")
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
-            cache="${REGISTRY}/buildcache/${B}-${tid}"
+            cache="${REGISTRY}/buildcache/${B}-${tid}-${ARCH}"
             if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
             echo "::group::$ref ($KIND)"
             if [ "$KIND" = "script" ]; then
@@ -364,6 +391,7 @@ jobs:
               # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the frozen entrypoint.
               if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
                    --set "benchmark-${B}.args.EVAL_TASK_ID=${TASK}" \
+                   --set "benchmark-${B}.args.EVAL_BASE_ARCH=${EPOCH_ARCH}" \
                    --set "benchmark-${B}.contexts.${REGISTRY}/core/entrypoint=docker-image://${REGISTRY}/core/entrypoint:${TAG}" \
                    --set "benchmark-${B}.tags=${ref}" \
                    --set "benchmark-${B}.cache-to=type=registry,ref=${cache},mode=max" \
@@ -375,12 +403,75 @@ jobs:
           done < <(jq -c '.[]' <<< "$ITEMS")
           [ "$fails" -eq 0 ] || { echo "::error::$fails per-task item(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
 
+  # ── merge per-arch tags into :TAG manifest lists ──────────────────────────
+  # Every base / leaf / per-task image was pushed as :TAG-amd64 AND :TAG-arm64 by
+  # its per-arch build job; stitch each into a multi-arch :TAG manifest list with
+  # `imagetools create`. An image with no per-arch tag (a leaf that failed both
+  # arches, or a per-task with no arm64 upstream) is skipped — that isolates the
+  # failure (the image stays absent / single-arch) instead of sinking the merge.
+  # Runs on a PARTIAL build (success OR failure); requires bases (everything FROMs
+  # them). Combos + compose then consume the :TAG manifest lists.
+  merge:
+    needs: [bases, build, per-task, enumerate]
+    if: always() && !inputs.dry_run && needs.bases.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'failure')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      LEAVES: ${{ needs.enumerate.outputs.leaves }}
+      PERTASK_SHARDS: ${{ needs.enumerate.outputs.pertask_shards }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64
+        run: |
+          retry() { local n=0 max="${BUILD_RETRIES:-4}"; until "$@"; do n=$((n+1)); [ "$n" -ge "$max" ] && return 1; sleep $(( n*10 + (RANDOM % 10) )); done; }
+          # Collect every image ref the per-arch jobs pushed: bases (core+gateways
+          # dirs), leaves (target→path), per-task (benchmarks/<b>-<tid>).
+          : > /tmp/refs.txt
+          for kind in core gateways; do
+            for d in containers/"$kind"/*/; do
+              name=$(basename "$d"); case $name in _*) continue ;; esac
+              [ -f "${d}docker-bake.hcl" ] || continue
+              echo "${REGISTRY}/${kind}/${name}" >> /tmp/refs.txt
+            done
+          done
+          jq -r '.[]?' <<< "${LEAVES:-[]}" | while read -r T; do
+            kind=${T%%-*}; nm=${T#*-}
+            case "$kind" in benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;; esac
+            echo "${REGISTRY}/${dir}/${nm}" >> /tmp/refs.txt
+          done
+          jq -r '.[]?|.items[]?|"\(.b)\t\(.task)"' <<< "${PERTASK_SHARDS:-[]}" | while IFS="$(printf '\t')" read -r B TASK; do
+            tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
+            echo "${REGISTRY}/benchmarks/${B}-${tid}" >> /tmp/refs.txt
+          done
+          sort -u /tmp/refs.txt -o /tmp/refs.txt
+          echo "Merging $(wc -l < /tmp/refs.txt) image refs into :${TAG} manifest lists"
+          fails=0; merged=0; skipped=0
+          while read -r ref; do
+            [ -n "$ref" ] || continue
+            srcs=()
+            for a in amd64 arm64; do
+              docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
+            done
+            if [ "${#srcs[@]}" -eq 0 ]; then skipped=$((skipped+1)); continue; fi
+            if retry docker buildx imagetools create --tag "${ref}:${TAG}" "${srcs[@]}"; then merged=$((merged+1)); \
+            else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
+          done < /tmp/refs.txt
+          echo "merged=$merged skipped=$skipped fails=$fails"
+          [ "$fails" -eq 0 ] || { echo "::error::$fails manifest merge(s) failed"; exit 1; }
+
   # ── compose artifacts — one self-contained oci://…/eval-<b> per benchmark ──
-  # Per-benchmark matrix (each benchmark isolated); runs on a partial `build` too
-  # (success OR failure) so one failed leaf can't skip every benchmark's bundle.
+  # Per-benchmark matrix (each benchmark isolated). needs `merge` so each bundle
+  # references the multi-arch :TAG manifest lists; one missing leaf can't skip
+  # every benchmark's bundle.
   compose:
-    needs: [cli, build, enumerate]
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure') && needs.cli.result == 'success' && needs.enumerate.result == 'success'
+    needs: [cli, merge, enumerate]
+    if: always() && (needs.merge.result == 'success' || inputs.dry_run) && needs.cli.result == 'success' && needs.enumerate.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -412,15 +503,15 @@ jobs:
   # One bake-eval per item: shared (evals/<b>--<a>) or per-task (evals/<b>-<task>
   # --<a>, pointing at the per-task base). A combo is a thin overlay (FROM the
   # published benchmark + COPY the agent), so there are no dataset downloads and
-  # no per-combo registry cache (the published parents are the cache). needs
-  # per-task so per-task combos build only after their base exists; always() so
-  # shared combos still run when per-task is skipped/partial. Runs on a partial
-  # `build` too (success OR failure): a single failed leaf among 124 must not skip
-  # every combo — a combo whose parent leaf is missing just fails that one item
-  # (counted below), the rest publish. Only build-cancelled/skipped stops it.
+  # no per-combo registry cache (the published parents are the cache). Combos build
+  # multi-arch directly with buildx --platform (thin overlays → QEMU-safe, no native
+  # split needed): FROM the merged :TAG manifest-list parents, so each platform
+  # selects its own arch. needs `merge` so those manifest lists exist; a combo whose
+  # parent is missing or single-arch just fails that one item (counted below) — the
+  # rest publish, preserving per-leaf isolation through the merge.
   combos:
-    needs: [build, per-task, enumerate]
-    if: always() && (needs.build.result == 'success' || needs.build.result == 'failure') && needs.enumerate.result == 'success' && needs.enumerate.outputs.combo_shards != '[]'
+    needs: [merge, enumerate]
+    if: always() && (needs.merge.result == 'success' || inputs.dry_run) && needs.enumerate.outputs.combo_shards != '[]'
     runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 120
     strategy:
@@ -430,6 +521,7 @@ jobs:
         shard: ${{ fromJson(needs.enumerate.outputs.combo_shards) }}
     steps:
       - uses: actions/checkout@v6
+      - uses: docker/setup-qemu-action@v3   # combos build arm64 via --platform (QEMU) on this amd64 runner
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -469,6 +561,7 @@ jobs:
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
+                 --set "*.platform=linux/amd64,linux/arm64" \
                  "${ACT[@]}"; then :; \
             else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
             echo "::endgroup::"
@@ -482,8 +575,8 @@ jobs:
   # since they were last gated at release, so it's skipped (the dev run isn't
   # publishing :latest anyway — the promotion below is tag-only).
   release-gate:
-    needs: [build, per-task, compose, combos]
-    if: always() && needs.build.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
+    needs: [merge, per-task, compose, combos]
+    if: always() && needs.merge.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -535,7 +628,7 @@ jobs:
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:
     name: Build-time + size report
-    needs: [bases, build, per-task, compose, combos, release-gate, enumerate]
+    needs: [bases, build, per-task, merge, compose, combos, release-gate, enumerate]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -561,10 +654,11 @@ jobs:
               docker buildx imagetools inspect "$r" --raw 2>/dev/null | jq '[.layers[].size]|add // 0'
             fi
           }
-          # Per-leaf build time = its matrix job's duration (job name "leaf <target>").
+          # Per-leaf build time = its amd64 matrix job's duration (job name
+          # "leaf <target> (amd64)"; size below is the amd64 manifest, so pair them).
           api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs"
-          gh api "$api" --paginate --jq '.jobs[]|select(.name|startswith("leaf "))|[(.name|ltrimstr("leaf ")),(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)]|@tsv' > /tmp/dur.tsv 2>/dev/null || true
-          basedur=$(gh api "$api" --paginate --jq '.jobs[]|select(.name=="bases")|(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)' 2>/dev/null | head -1 || true)
+          gh api "$api" --paginate --jq '.jobs[]|select(.name|startswith("leaf ") and endswith("(amd64)"))|[(.name|ltrimstr("leaf ")|rtrimstr(" (amd64)")),(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)]|@tsv' > /tmp/dur.tsv 2>/dev/null || true
+          basedur=$(gh api "$api" --paginate --jq '.jobs[]|select(.name|startswith("bases (amd64)"))|(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)' 2>/dev/null | head -1 || true)
           # Measure every leaf ONCE -> TSV (target, image, build_sec, size_bytes),
           # reused for the durable artifact AND the step-summary table.
           : > /tmp/sizes.tsv
