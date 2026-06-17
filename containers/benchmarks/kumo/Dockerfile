@@ -1,11 +1,32 @@
 # Kumo (diagnostic reasoning)
 # 250 tasks. Data: HuggingFace pkuHaowei/kumo-hard
 # Agent observes scenario and selects actions. Test compares to ground truth.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# The dataset ships one parquet per environment; the `@~parquet` auto-convert
+# branch exposes them as default/<Env>/0000.parquet, read in one glob with
+# filename=true so the env name (parent dir) becomes the `<Env>_<i>` id prefix.
+# `i` is the 0-based parquet row index *in file order* (file_row_number; each
+# env is a single file so it equals the per-env index) — this reproduces the
+# prior python `for i in range(len(t)): id=f'{env}_{i}'` byte-for-byte. The old
+# loop iterated envs alphabetically, so `ORDER BY env, i` matches that order.
+# `problem` concatenates the observation with the action list; `to_json` emits a
+# `["a","b"]` array, and the `replace('","','", "')` re-inserts the comma-space
+# that python's `json.dumps(action_list)` writes between elements (no element
+# contains the literal `","` separator, so the rewrite is exact). `answer` is
+# ground_truth.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT regexp_extract(filename, 'default/([^/]+)/', 1) || '_' || file_row_number::VARCHAR AS id, \
+            observation || E'\n\nAvailable actions:\n' || replace(to_json(action_list), '\",\"', '\", \"') AS problem, \
+            ground_truth AS answer \
+     FROM read_parquet('hf://datasets/pkuHaowei/kumo-hard@~parquet/default/*/0000.parquet', filename=true, file_row_number=true) \
+     ORDER BY regexp_extract(filename, 'default/([^/]+)/', 1), file_row_number"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="kumo"
@@ -18,32 +39,7 @@ LABEL eval.benchmark.url="https://github.com/Haowei-PKU/Kumo"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/kumo"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.08857"
 
-# Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for env in ['ChemicalEnv', 'EducationEnv', 'FantasyEnv', 'MedicalEnv', 'MusicEnv']:
-        url = f'https://huggingface.co/datasets/pkuHaowei/kumo-hard/resolve/main/data/{env}-00000-of-00001.parquet'
-        urllib.request.urlretrieve(url, '/tmp/data.parquet')
-        t = pq.read_table('/tmp/data.parquet')
-        for i in range(len(t)):
-            obs = str(t['observation'][i])
-            actions = json.dumps(t['action_list'][i].as_py())
-            row = {
-                'id': f'{env}_{i}',
-                'problem': f"{obs}\n\nAvailable actions:\n{actions}",
-                'answer': str(t['ground_truth'][i]),
-            }
-            out.write(json.dumps(row) + '\n')
-            count += 1
-        os.remove('/tmp/data.parquet')
-print(f'Extracted {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=kumo
 

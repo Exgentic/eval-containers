@@ -1,11 +1,28 @@
 # XCOPA (Cross-lingual Choice of Plausible Alternatives)
 # 5500 tasks (500 test examples x 11 languages). Data: HuggingFace cambridgeltl/xcopa
 # Agent prints A or B. Test compares to expected choice.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# languages live in per-language parquet dirs (the dataset also ships translation-*
+# configs — excluded by the IN list); the path encodes the language, the in-file
+# idx column (0..499) reproduces the original per-language row index.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT language || '_' || idx::VARCHAR AS id, \
+            premise || chr(10) || (CASE WHEN question='cause' THEN 'What was the cause?' ELSE 'What was the effect?' END) \
+              || chr(10) || 'A. ' || choice1 || chr(10) || 'B. ' || choice2 AS problem, \
+            CASE WHEN label=0 THEN 'A' ELSE 'B' END AS answer, \
+            language \
+     FROM ( \
+       SELECT regexp_extract(filename,'parquet/([a-z]+)/test',1) AS language, * \
+       FROM read_parquet('hf://datasets/cambridgeltl/xcopa@~parquet/*/test/*.parquet', filename=true) \
+       WHERE regexp_extract(filename,'parquet/([a-z]+)/test',1) IN ('et','ht','id','it','qu','sw','ta','th','tr','vi','zh') \
+     )"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="xcopa"
@@ -17,43 +34,7 @@ LABEL eval.benchmark.data_revision="042f78955ba48e6404616762fa6e05e839c3907a"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/cambridgeltl/xcopa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2005.00333"
 
-# Write every task to a single JSONL file. One line per task. Agent never
-# sees this file (root-only). Runtime entrypoint materializes just the
-# requested task's fields into /tasks/$EVAL_TASK_ID/.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, json, os
-
-LANGUAGES = ['et', 'ht', 'id', 'it', 'qu', 'sw', 'ta', 'th', 'tr', 'vi', 'zh']
-
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for lang in LANGUAGES:
-        url = f'https://huggingface.co/datasets/cambridgeltl/xcopa/resolve/042f78955ba48e6404616762fa6e05e839c3907a/{lang}/test-00000-of-00001.parquet'
-        urllib.request.urlretrieve(url, '/tmp/data.parquet')
-        t = pq.read_table('/tmp/data.parquet')
-        for i in range(len(t)):
-            premise = str(t['premise'][i])
-            choice1 = str(t['choice1'][i])
-            choice2 = str(t['choice2'][i])
-            question = str(t['question'][i])
-            label = int(str(t['label'][i]))
-            prompt_q = 'What was the cause?' if question == 'cause' else 'What was the effect?'
-            problem = f'{premise}\n{prompt_q}\nA. {choice1}\nB. {choice2}'
-            row = {
-                'id': f'{lang}_{i}',
-                'problem': problem,
-                'answer': 'A' if label == 0 else 'B',
-                'language': lang,
-            }
-            out.write(json.dumps(row) + '\n')
-            count += 1
-        os.remove('/tmp/data.parquet')
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=xcopa
 

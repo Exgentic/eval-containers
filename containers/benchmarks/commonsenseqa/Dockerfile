@@ -1,11 +1,22 @@
 # CommonsenseQA (tau/commonsense_qa)
 # 1221 tasks. Data: HuggingFace tau/commonsense_qa (validation split; test labels are hidden)
 # Agent prints answer letter to stdout. Test compares stdout to expected letter.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# problem string mirrors the original loader: question, a blank line, then one
+# "<label>. <text>" line per choice (the choices struct holds parallel label/text
+# arrays, zipped and joined).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT id, question || chr(10) || chr(10) || array_to_string( \
+       list_transform(list_zip(choices.label, choices.text), lambda p: p[1] || '. ' || p[2]), \
+       chr(10)) AS problem, answerKey AS answer \
+     FROM 'hf://datasets/tau/commonsense_qa@94630fe30dad47192a8546eb75f094926d47e155/data/validation-00000-of-00001.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="commonsenseqa"
@@ -17,31 +28,7 @@ LABEL eval.benchmark.data_revision="94630fe30dad47192a8546eb75f094926d47e155"
 LABEL eval.benchmark.url="https://www.tau-nlp.sites.tau.ac.il/commonsenseqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1811.00937"
 
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/tau/commonsense_qa/resolve/94630fe30dad47192a8546eb75f094926d47e155/data/validation-00000-of-00001.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        choices = t['choices'][i].as_py()
-        q = t['question'][i].as_py()
-        lines = [q, ""]
-        for label, text in zip(choices['label'], choices['text']):
-            lines.append(f"{label}. {text}")
-        row = {
-            'id': str(t['id'][i]),
-            'problem': "\n".join(lines),
-            'answer': str(t['answerKey'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-print(f'Wrote {len(t)} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=commonsenseqa
 

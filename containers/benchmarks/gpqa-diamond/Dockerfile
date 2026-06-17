@@ -1,11 +1,17 @@
 # GPQA Diamond
 # 198 tasks. Data: HuggingFace fingertap/GPQA-Diamond
 # Agent prints answer to stdout. Test compares stdout to expected answer.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT (row_number() OVER ()-1)::VARCHAR AS id, question AS problem, answer \
+     FROM 'hf://datasets/fingertap/GPQA-Diamond@~parquet/default/test/0000.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="gpqa-diamond"
@@ -20,27 +26,7 @@ LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-data
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gpqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.12022"
 
-# Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-os.makedirs('/tasks', exist_ok=True)
-urllib.request.urlretrieve('https://huggingface.co/datasets/fingertap/GPQA-Diamond/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet', '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        row = {
-            'id': str(i),
-            'problem': str(t['question'][i]),
-            'answer': str(t['answer'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=gpqa-diamond
 

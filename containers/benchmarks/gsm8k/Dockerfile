@@ -1,11 +1,20 @@
 # GSM8K (Grade School Math 8K)
 # 1319 tasks. Data: HuggingFace openai/gsm8k (main/test)
 # Agent prints answer to stdout. Test compares to expected numeric answer.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# `answer` keeps only the text after the `####` marker, trimmed, with thousands
+# separators stripped (mirrors the prior python split('####')[-1].replace(',','')).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT (row_number() OVER ()-1)::VARCHAR AS id, question AS problem, \
+            replace(trim(split_part(answer, '####', 2)), ',', '') AS answer \
+     FROM 'hf://datasets/openai/gsm8k@~parquet/main/test/0000.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="gsm8k"
@@ -17,32 +26,7 @@ LABEL eval.benchmark.data_revision="740312add88f781978c0658806c59bc2815b9866"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/gsm8k"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2110.14168"
 
-# Single-JSONL task layout (see benchmarks/RULES.md #22). One line per task,
-# /eval-materialize-task materializes only the requested row at runtime.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-os.makedirs('/tasks', exist_ok=True)
-urllib.request.urlretrieve(
-    'https://huggingface.co/api/datasets/openai/gsm8k/parquet/main/test/0.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        full_answer = str(t['answer'][i])
-        numeric = full_answer.split('####')[-1].strip().replace(',', '')
-        row = {
-            'id': str(i),
-            'problem': str(t['question'][i]),
-            'answer': numeric,
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=gsm8k
 

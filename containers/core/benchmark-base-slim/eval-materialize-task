@@ -1,0 +1,21 @@
+#!/bin/bash
+# Materialize task $EVAL_TASK_ID from /tasks/all.jsonl into per-field .txt files
+# (jq, no python). No-op if all.jsonl is absent or the id is empty.
+set -euo pipefail
+
+if [ -z "${EVAL_TASK_ID:-}" ] || [ ! -f /tasks/all.jsonl ]; then
+  exit 0
+fi
+
+mkdir -p "/tasks/$EVAL_TASK_ID"
+line=$(sed -n "$((EVAL_TASK_ID + 1))p" /tasks/all.jsonl)
+if [ -z "$line" ]; then
+  echo "eval-materialize-task: task id $EVAL_TASK_ID out of range" >&2
+  exit 1
+fi
+
+printf '%s' "$line" | jq -r 'keys_unsorted[]' | while IFS= read -r k; do
+  printf '%s' "$line" | jq -rj --arg k "$k" '.[$k] | if type=="string" then . else tostring end' \
+    > "/tasks/$EVAL_TASK_ID/$k.txt"
+done
+chmod -R 600 "/tasks/$EVAL_TASK_ID"

@@ -1,11 +1,26 @@
 # HellaSwag
 # 10042 tasks. Data: HuggingFace Rowan/hellaswag (validation)
 # Agent prints the letter of the most plausible continuation. Test compares letters.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# problem string mirrors the original loader: "Activity:", blank line, "Context:",
+# blank line, the prompt, then one "<letter>. <ending>" line per choice (the four
+# endings, zipped with A-D and joined). answer = letter at the label index; id = ind.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT ind::VARCHAR AS id, \
+       'Activity: ' || activity_label || chr(10) || chr(10) || \
+       'Context: ' || ctx || chr(10) || chr(10) || \
+       'Which ending is most likely?' || chr(10) || \
+       array_to_string(list_transform(list_zip(['A','B','C','D'], endings), \
+         lambda p: p[1] || '. ' || p[2]), chr(10)) AS problem, \
+       ['A','B','C','D'][label::INTEGER + 1] AS answer \
+     FROM 'hf://datasets/Rowan/hellaswag@218ec52e09a7e7462a5400043bb9a69a41d06b76/data/validation-00000-of-00001.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="hellaswag"
@@ -17,38 +32,7 @@ LABEL eval.benchmark.data_revision="218ec52e09a7e7462a5400043bb9a69a41d06b76"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/Rowan/hellaswag"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1905.07830"
 
-# Single-JSONL task layout. Root-only; runtime entrypoint materializes the
-# requested task's fields into /tasks/$EVAL_TASK_ID/ on demand.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/Rowan/hellaswag/resolve/218ec52e09a7e7462a5400043bb9a69a41d06b76/data/validation-00000-of-00001.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-letters = ['A', 'B', 'C', 'D']
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        activity = t['activity_label'][i].as_py()
-        ctx = t['ctx'][i].as_py()
-        endings = t['endings'][i].as_py()
-        label_idx = int(t['label'][i].as_py())
-        lines = [f"Activity: {activity}", "", f"Context: {ctx}", "", "Which ending is most likely?"]
-        for j, ending in enumerate(endings):
-            lines.append(f"{letters[j]}. {ending}")
-        row = {
-            'id': str(t['ind'][i].as_py()),
-            'problem': "\n".join(lines),
-            'answer': letters[label_idx],
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=hellaswag
 

@@ -2,11 +2,37 @@
 # 3668 tasks (1273 bio + 408 chem + 1987 cyber). Data: HuggingFace cais/wmdp
 # Multiple-choice proxy measurement of hazardous knowledge in bio/chem/cyber security.
 # Agent prints answer letter. Test compares to expected answer.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# Three configs (bio/chem/cyber) are UNION ALL'd, each with a per-config 0-based
+# row_number() giving the original "<subset>_<i>" id. `problem` reproduces the
+# python row: question, a blank line, then one "<letter>. <choice>" line per
+# choice (the 1-based lambda index maps to A/B/C/…); `answer` maps the 0-based
+# answer index to its letter.
+# trim(...) mirrors the python loader's prompt.strip(): one source row
+# (wmdp-chem_66) has a trailing space in its last choice, which .strip() removed.
+# The char set (\t \n \r \v \f space) is python str.strip()'s default whitespace.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT 'wmdp-bio_'||(row_number() OVER ()-1)::VARCHAR AS id, \
+            trim(question || chr(10) || chr(10) || array_to_string(list_transform(choices, lambda c, i: chr((64+i)::INTEGER) || '. ' || c), chr(10)), chr(9)||chr(10)||chr(13)||chr(11)||chr(12)||' ') AS problem, \
+            chr((65 + answer)::INTEGER) AS answer \
+     FROM 'hf://datasets/cais/wmdp@~parquet/wmdp-bio/test/*.parquet' \
+     UNION ALL \
+     SELECT 'wmdp-chem_'||(row_number() OVER ()-1)::VARCHAR AS id, \
+            trim(question || chr(10) || chr(10) || array_to_string(list_transform(choices, lambda c, i: chr((64+i)::INTEGER) || '. ' || c), chr(10)), chr(9)||chr(10)||chr(13)||chr(11)||chr(12)||' ') AS problem, \
+            chr((65 + answer)::INTEGER) AS answer \
+     FROM 'hf://datasets/cais/wmdp@~parquet/wmdp-chem/test/*.parquet' \
+     UNION ALL \
+     SELECT 'wmdp-cyber_'||(row_number() OVER ()-1)::VARCHAR AS id, \
+            trim(question || chr(10) || chr(10) || array_to_string(list_transform(choices, lambda c, i: chr((64+i)::INTEGER) || '. ' || c), chr(10)), chr(9)||chr(10)||chr(13)||chr(11)||chr(12)||' ') AS problem, \
+            chr((65 + answer)::INTEGER) AS answer \
+     FROM 'hf://datasets/cais/wmdp@~parquet/wmdp-cyber/test/*.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="wmdp"
@@ -18,39 +44,7 @@ LABEL eval.benchmark.data_revision="7125571f22f032c56415e7980f48d877dd830ff8"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/cais/wmdp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.03218"
 
-# Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-
-subsets = ['wmdp-bio', 'wmdp-chem', 'wmdp-cyber']
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for subset in subsets:
-        url = f'https://huggingface.co/datasets/cais/wmdp/resolve/main/{subset}/test-00000-of-00001.parquet'
-        urllib.request.urlretrieve(url, '/tmp/data.parquet')
-        t = pq.read_table('/tmp/data.parquet')
-        for i in range(len(t)):
-            q = str(t['question'][i])
-            choices = t['choices'][i].as_py()
-            answer_idx = int(str(t['answer'][i]))
-            letter = chr(ord('A') + answer_idx)
-            prompt = q + '\n\n'
-            for j, choice in enumerate(choices):
-                prompt += f'{chr(ord("A")+j)}. {choice}\n'
-            row = {
-                'id': f'{subset}_{i}',
-                'problem': prompt.strip(),
-                'answer': letter,
-            }
-            out.write(json.dumps(row) + '\n')
-            count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=wmdp
 
