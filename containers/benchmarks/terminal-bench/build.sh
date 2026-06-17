@@ -33,8 +33,8 @@ ENVIMG="localhost/tbench-env:${TASK}"
 # `${arr[@]+...}` form is empty-array-safe under `set -u` on bash 3.2 (macOS).
 CACHE_ENV=(); CACHE_IMG=()
 if [ -n "${EVAL_BUILD_CACHE:-}" ] && podman build --help 2>/dev/null | grep -q -- '--cache-to'; then
-  CACHE_ENV=(--cache-from "type=registry,ref=${EVAL_BUILD_CACHE}-env" --cache-to "type=registry,ref=${EVAL_BUILD_CACHE}-env,mode=max")
-  CACHE_IMG=(--cache-from "type=registry,ref=${EVAL_BUILD_CACHE}" --cache-to "type=registry,ref=${EVAL_BUILD_CACHE},mode=max")
+  CACHE_ENV=(--cache-from "${EVAL_BUILD_CACHE}-env" --cache-to "${EVAL_BUILD_CACHE}-env")
+  CACHE_IMG=(--cache-from "${EVAL_BUILD_CACHE}" --cache-to "${EVAL_BUILD_CACHE}")
 fi
 
 echo "[terminal-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
