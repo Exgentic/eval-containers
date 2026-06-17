@@ -95,6 +95,7 @@ const AGENTS: &[&str] = &[
     "ra-aid",
     "swe-agent",
     "terminus-2",
+    "zerostack",
     // bob     — IBM-internal: bundled JS hardcodes api.us-east.bob.ibm.com
     //           with no override, only IBM-issued auth accepted. Cannot
     //           be smoke-tested against our mock LLM. See broken.md.
@@ -342,11 +343,12 @@ agent_smoke!(agent_ra_aid, "ra-aid");
 agent_smoke!(agent_swe_agent, "swe-agent");
 agent_smoke!(agent_terminus_2, "terminus-2");
 agent_smoke!(agent_plandex, "plandex");
+agent_smoke!(agent_zerostack, "zerostack");
 // bob — architecturally tied to IBM's backend, see AGENTS const comment.
 
 // Count sanity check: catches "added an agent to AGENTS but forgot the
-// macro invocation" (the assert trips when AGENTS grows past 19 without
+// macro invocation" (the assert trips when AGENTS grows past 20 without
 // also bumping this literal). It does NOT catch the reverse — an
 // agent_smoke! without an AGENTS entry just adds a test. The list above
 // is the documented roster; the macro invocations are the test surface.
-const _: () = assert!(AGENTS.len() == 19);
+const _: () = assert!(AGENTS.len() == 20);
