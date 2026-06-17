@@ -36,3 +36,56 @@ AVD-DS-0002
 #   - Leaked secret *values* are covered by gitleaks (verify step 22); this is a
 #     different, complementary check, and the value here is intentionally absent.
 AVD-DS-0031
+
+# ============================================================================
+# Image-CVE deferrals (image lane: `trivy image … --scanners vuln`).
+# These HIGH/CRITICAL findings have NO upstream/distro fix available yet
+# (trivy reports them as "affected"/"fix_deferred" with an empty fixed
+# version). They cannot be patched by a version bump today; an OS `apt-get
+# upgrade -y` / `apk upgrade` already runs in every base, so they clear
+# automatically the moment Debian/Alpine/upstream ships a fix. Revisit and
+# delete these lines once a fixed version exists. One CVE id per line.
+# ============================================================================
+
+# --- perl / perl-base / perl-modules / libperl (Debian, no fix yet) ---------
+# Debian bookworm/trixie perl 5.40.1-6 has no patched release for these.
+CVE-2026-42496
+CVE-2026-42497
+CVE-2026-48959
+CVE-2026-48962
+CVE-2026-8376
+CVE-2026-9538
+
+# --- curl / libcurl (Debian, no fix yet) ------------------------------------
+# curl 8.14.1-2+deb13u3 — no fixed Debian package published yet.
+CVE-2026-5773
+CVE-2026-6276
+
+# --- libexpat1 (Debian, no fix yet) -----------------------------------------
+# expat 2.7.1-2 — no fixed Debian package published yet.
+CVE-2025-59375
+CVE-2026-25210
+CVE-2026-45186
+
+# --- ncurses / libtinfo6 / libncursesw6 (Debian, no fix yet) ----------------
+# ncurses 6.5+20250216-2 — no fixed Debian package published yet.
+CVE-2025-69720
+
+# --- libsqlite3-0 (Debian, no fix yet) --------------------------------------
+# sqlite3 3.46.1-7+deb13u1 — no fixed Debian package published yet.
+CVE-2026-11822
+CVE-2026-11824
+
+# --- libssh2 (Debian, no fix yet) -------------------------------------------
+# libssh2 1.11.1-1 — no fixed Debian package published yet.
+CVE-2026-7598
+
+# --- bundled Go modules with no fixed release (otelcol-contrib binary) -------
+# github.com/docker/docker — these two CVEs have no fixed module version yet;
+# the otel collector bump (0.105.0 -> 0.154.0) clears every OTHER Go CVE.
+CVE-2026-41567
+CVE-2026-42306
+# github.com/golang-jwt/jwt v3.2.2 (an unmaintained v3 line transitively
+# pulled in); the maintained v4/v5 lines are fixed, but v3 has no fixed
+# release, so this instance stays deferred until the dep drops v3.
+CVE-2025-30204

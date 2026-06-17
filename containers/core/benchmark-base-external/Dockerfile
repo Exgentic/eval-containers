@@ -17,7 +17,9 @@ LABEL eval.base.kind="external"
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
-      if apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+      if apt-get update --fix-missing \
+         && apt-get upgrade -y \
+         && apt-get install -y --no-install-recommends \
            curl ca-certificates git jq; then ok=1; break; fi; \
       echo "apt attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \
@@ -39,7 +41,7 @@ RUN set -e; ok=0; \
 ENV UV_HTTP_TIMEOUT=120
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
-      if uv pip install --system --no-cache pyarrow==18.1.0; then ok=1; break; fi; \
+      if uv pip install --system --no-cache pyarrow==23.0.1; then ok=1; break; fi; \
       echo "uv pip attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \
     [ "$ok" = 1 ] || { echo "uv pip install failed after 5 tries" >&2; exit 1; }
