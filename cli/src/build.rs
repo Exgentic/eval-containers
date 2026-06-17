@@ -94,7 +94,7 @@ pub enum BuildTarget {
         /// + label). Empty uses the agent image's pin. Distinct from `TAG`.
         #[arg(long, default_value = "")]
         agent_version: String,
-        #[arg(long, default_value = "gpt-5.4--bifrost")]
+        #[arg(long, default_value = "bifrost")]
         model: String,
         /// Also build the single-container standalone bundle
         /// (`evals/<b>--<a>-standalone:<tag>`) — FROM the lean base + the

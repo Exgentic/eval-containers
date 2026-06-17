@@ -25,11 +25,11 @@ services:
 
   # Bespoke — second gateway for the user simulator's LLM (not logged).
   user-gateway:
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/gpt-5.4--bifrost:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/bifrost:latest
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}
-      EVAL_MODEL: openai/azure/gpt-5.4
+      EVAL_MODEL: ${EVAL_MODEL}
       HOST: 0.0.0.0
     healthcheck:
       test: ["CMD", "/opt/gateway/health"]

@@ -134,3 +134,7 @@ jobs:
       - name: k8s — helm render (every benchmark)
         if: ${{ !cancelled() }}
         run: tests/static/helm.sweep.sh
+
+      - name: model paths — generic gateway + pinned per-model image
+        if: ${{ !cancelled() }}
+        run: tests/static/model-paths.sweep.sh

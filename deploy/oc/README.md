@@ -33,18 +33,18 @@ every `--builder oc` consumer, not just this script.
 
 ```bash
 # one dataset eval (50 examples, 8 at a time), watch run progress, then results
-./oc/run.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --dataset-size 50 --parallelism 8 --watch
+./oc/run.sh --benchmark aime --agent codex --model bifrost --dataset-size 50 --parallelism 8 --watch
 ./oc/status.sh --benchmark aime                                  # run progress (Jobs)
-./oc/fetch.sh  --benchmark aime --agent codex --model gpt-5.4--bifrost
+./oc/fetch.sh  --benchmark aime --agent codex --model bifrost
 eval-containers report output/                                   # PASS/FAIL, reward, tokens, cost, traces health
 
 # a grid
-./oc/sweep.sh --dataset-size 50 --model gpt-5.4--bifrost
+./oc/sweep.sh --dataset-size 50 --model bifrost
 ./oc/status.sh --sweep-id <printed-id>
 ./oc/fetch.sh  --sweep-id <printed-id> && eval-containers report output/
 
 # single example, for debugging
-./oc/run.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --task 0 --watch
+./oc/run.sh --benchmark aime --agent codex --model bifrost --task 0 --watch
 ```
 
 ## Concurrency: with vs without Kueue
@@ -54,14 +54,14 @@ The per-example cap inside one run is always the Job's `parallelism`. The questi
 **Without Kueue** (default) — `parallelism` is a *per-sweep* cap. Simple, zero infra, but ten concurrent sweeps run up to `10 × parallelism` pods: no global ceiling, so a busy cluster oversubscribes and the scheduler thrashes. Fine for one sweep at a time or a small team.
 
 ```bash
-./oc/sweep.sh --dataset-size 50 --model gpt-5.4--bifrost --parallelism 8
+./oc/sweep.sh --dataset-size 50 --model bifrost --parallelism 8
 ```
 
 **With Kueue** (`--queue eval-queue`) — every Job starts `suspend: true` and joins a queue; the **ClusterQueue's quota is the single global budget**. Kueue admits pods up to quota and *queues the rest* — many sweeps share one budget instead of fighting. You get fair-sharing, borrowing, and no oversubscription, at the cost of installing the operator and an admin defining quotas once.
 
 ```bash
 oc apply -f deploy/kueue.yaml          # one-time, admin: defines the global budget
-./oc/sweep.sh --dataset-size 50 --model gpt-5.4--bifrost --queue eval-queue
+./oc/sweep.sh --dataset-size 50 --model bifrost --queue eval-queue
 ```
 
 |                       | without Kueue          | with Kueue                          |

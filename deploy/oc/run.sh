@@ -2,8 +2,8 @@
 # run.sh — build + run one eval on OpenShift: a single --task, or --dataset
 # (whole dataset → an Indexed Job). Model + flags: oc/README.md and the case below.
 #
-#   ./oc/run.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --dataset
-#   ./oc/run.sh --benchmark aime --agent codex --model gpt-5.4--bifrost --task 0   # single, debug
+#   ./oc/run.sh --benchmark aime --agent codex --model bifrost --dataset
+#   ./oc/run.sh --benchmark aime --agent codex --model bifrost --task 0   # single, debug
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 

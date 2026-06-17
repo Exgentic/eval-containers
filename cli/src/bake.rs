@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn parameterized_gateway_from_resolves() {
-        // A model FROMing its gateway (models/gpt-5.4--litellm): non-core
+        // A model FROMing its gateway (models/litellm): non-core
         // category through the same parameterized form.
         let text = "FROM ${REGISTRY}/gateways${REGISTRY_SUFFIX}litellm:latest\n";
         assert_eq!(

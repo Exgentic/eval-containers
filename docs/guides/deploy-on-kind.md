@@ -49,7 +49,7 @@ uses (eval combination + gateway + otelcol) from your local engine — the chart
 `imagePullPolicy: IfNotPresent` then uses them as-is:
 
 ```bash
-for img in core/otel:latest models/gpt-5.4--bifrost:latest evals/aime--claude-code:latest; do
+for img in core/otel:latest models/bifrost:latest evals/aime--claude-code:latest; do
   kind load docker-image --name eval-local ghcr.io/exgentic/$img
 done
 ```

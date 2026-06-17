@@ -459,6 +459,52 @@ fn otelcol_health_gate_is_consistent_across_modes() {
     eprintln!("✓ otelcol health gate consistent across all three modes (#45)");
 }
 
+/// The model axis supports BOTH paths, with the generic gateway as the default
+/// (models/RULES.md rule 1, #187):
+///   - **Generic** (default): `EVAL_GATEWAY_IMAGE=bifrost` routes whatever
+///     `EVAL_MODEL=<provider>/<model>` you set — any LiteLLM model, zero build.
+///     The generic image errors on an empty handle, so there is no compose-level
+///     default model (no silent fallback).
+///   - **Pinned** (opt-in): a per-model image (`EVAL_GATEWAY_IMAGE=<model>`) bakes
+///     its model + custom config — a shared, versioned artifact. Allowed, not forbidden.
+#[test]
+fn model_axis_generic_default_no_silent_model() {
+    let svc = fs::read_to_string(repo_root().join("containers/compose/services.yaml"))
+        .expect("missing containers/compose/services.yaml");
+
+    // Generic gateway is the DEFAULT proxy.
+    assert!(
+        svc.contains("${EVAL_GATEWAY_IMAGE:-bifrost}"),
+        "services.yaml gateway must default to the generic `bifrost` proxy (#187)"
+    );
+    // No silent fallback model: the compose never bakes a default EVAL_MODEL — an
+    // unset handle surfaces as the generic gateway's own startup error, never a
+    // stale default route. (Pinned per-model images bake their model and ignore it.)
+    assert!(
+        !svc.contains("${EVAL_MODEL:-"),
+        "services.yaml must not default EVAL_MODEL to a baked handle — no silent fallback model (#187)"
+    );
+
+    // Both paths exist. The generic gateways are present…
+    for g in ["bifrost", "litellm", "portkey"] {
+        assert!(
+            repo_root().join("containers/models").join(g).is_dir(),
+            "generic gateway containers/models/{g} must exist (#187)"
+        );
+    }
+    // …and the k8s chart likewise carries no hardcoded default handle.
+    let vals = fs::read_to_string(repo_root().join("containers/benchmarks/_chart/values.yaml"))
+        .expect("missing _chart/values.yaml");
+    assert!(
+        vals.contains("evalModel: \"\""),
+        "_chart/values.yaml must ship `evalModel: \"\"` — no hardcoded default handle (#187)"
+    );
+
+    eprintln!(
+        "✓ generic gateway is the default; no silent fallback model; per-model images allowed (#187)"
+    );
+}
+
 /// The stitched eval image must launch the pipeline (rule 12): the combination
 /// overrides CMD to /usr/local/bin/run and copies the agent's /run.sh (it lives
 /// at the image root, not /opt/agent/); the k8s Job invokes the launcher via

@@ -161,7 +161,7 @@ One-time. Runs a real task with a real model, saves the trajectory as a fixture.
 ```bash
 # Record one combination — uses the shared `output` named volume from
 # compose/services.yaml (the runner writes to /output inside the container).
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-5.4 \
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
 # The output lives in the named volume, not on the host filesystem.
@@ -215,7 +215,7 @@ cargo test --test check structural_validation
 docker build -t local/aime containers/benchmarks/aime/
 
 # 3. Run one task with a real model
-TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=gpt-4.1-mini \
+TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-4.1-mini \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
 # 4. Check the output
@@ -250,7 +250,7 @@ eval-containers build bench swe-bench --task-id sympy__sympy-24066
 Once images are published to the registry, local testing becomes:
 
 ```bash
-eval-containers run aime --task-id 0 --agent codex --model gpt-5.4
+eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4
 ```
 
 No local builds needed. CI builds once; everyone pulls.
