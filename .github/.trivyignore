@@ -89,3 +89,14 @@ CVE-2026-42306
 # pulled in); the maintained v4/v5 lines are fixed, but v3 has no fixed
 # release, so this instance stays deferred until the dep drops v3.
 CVE-2025-30204
+
+# --- litellm wolfi base: busybox + openssl (Chainguard, no installable fix) --
+# The litellm v1.89.1 upstream image ships a Chainguard Wolfi base. A fix exists
+# upstream (busybox 1.37.0-r58, openssl 3.6.3-r0) but the patched builds are NOT
+# in Chainguard's free apk repo yet, so an `apk upgrade` of these is a no-op
+# (verified) — they clear when litellm rebuilds its base. busybox here is the
+# CPIO/shell applet set, not reachable from the proxy.
+CVE-2023-39810
+CVE-2026-26157
+CVE-2026-26158
+CVE-2026-45447
