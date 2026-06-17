@@ -496,8 +496,8 @@ fn model_axis_generic_default_no_silent_model() {
     let vals = fs::read_to_string(repo_root().join("containers/benchmarks/_chart/values.yaml"))
         .expect("missing _chart/values.yaml");
     assert!(
-        vals.contains("evalModel: \"\""),
-        "_chart/values.yaml must ship `evalModel: \"\"` — no hardcoded default handle (#187)"
+        vals.contains("model: \"\""),
+        "_chart/values.yaml must ship `model: \"\"` — the routing handle, no hardcoded default (#187)"
     );
 
     eprintln!(

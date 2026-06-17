@@ -14,12 +14,18 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- mergeOverwrite (deepCopy .Values) $preset | toYaml -}}
 {{- end -}}
 
+{{/* The runner's clean model name: the last segment of the <provider>/<model>
+     handle (openai/gpt-5.4 → gpt-5.4). The agent + k8s labels get this, not the
+     slashed handle (k8s label values forbid `/`; some agent CLIs reject a
+     provider-prefixed name). The gateway gets the full handle for routing. */}}
+{{- define "eval.modelLabel" -}}{{ .model | splitList "/" | last }}{{- end -}}
+
 {{/* Shared labels: benchmark/agent/model, sweep-id + Kueue queue only when set.
      `task` is dropped for a dataset eval (every index shares the Job). */}}
 {{- define "eval.labels" -}}
 benchmark: {{ required "benchmark is required (--set benchmark=<x>)" .Values.benchmark }}
 agent: {{ .Values.agent }}
-model: {{ .Values.model | quote }}
+model: {{ include "eval.modelLabel" .Values | quote }}
 {{- if not .Values.datasetSize }}
 task: {{ .Values.task | quote }}
 {{- end }}

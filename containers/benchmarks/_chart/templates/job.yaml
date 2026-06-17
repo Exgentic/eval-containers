@@ -100,7 +100,7 @@ spec:
             - name: OPENAI_API_BASE
               valueFrom:
                 secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
-            - { name: EVAL_MODEL,                  value: {{ $v.evalModel | quote }} }
+            - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
             - { name: HOST,                        value: "127.0.0.1" }
             # shareProcessNamespace + sidecar pod model puts otelcol on localhost.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://localhost:4318" }
@@ -135,12 +135,12 @@ spec:
             # run works regardless of which internal path produces result.json.
             - { name: EVAL_BENCHMARK,              value: {{ $v.benchmark | quote }} }
             - { name: EVAL_AGENT,                  value: {{ $v.agent | quote }} }
-            - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
+            - { name: EVAL_MODEL,                  value: {{ include "eval.modelLabel" $v | quote }} }
             - { name: EVAL_TASK_ID,                value: {{ $v.task | quote }} }
             - { name: EVAL_TIMEOUT,                value: {{ $v.timeout | quote }} }
             - { name: BENCHMARK,                   value: {{ $v.benchmark | quote }} }
             - { name: AGENT,                       value: {{ $v.agent | quote }} }
-            - { name: MODEL,                       value: {{ $v.model | quote }} }
+            - { name: MODEL,                       value: {{ include "eval.modelLabel" $v | quote }} }
             - { name: TASK_ID,                     value: {{ $v.task | quote }} }
             - { name: TIMEOUT,                     value: {{ $v.timeout | quote }} }
             - { name: ANTHROPIC_BASE_URL,          value: "http://localhost:4000/anthropic" }

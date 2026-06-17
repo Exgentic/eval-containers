@@ -35,7 +35,7 @@ The exact same evaluation runs at scale on a cluster — the `oci://` Compose re
 
 ```bash
 helm template eval-aime oci://ghcr.io/exgentic/charts/eval \
-  --set benchmark=aime --set task=0 --set agent=codex --set model=gpt-5.4 | kubectl apply -f -
+  --set benchmark=aime --set task=0 --set agent=codex --set model=openai/gpt-5.4 | kubectl apply -f -
 ```
 
 → [Triple-mode](docs/concepts/triple-mode.md) (compose / container / job) · [Deploy on Kubernetes](docs/guides/deploy-on-kubernetes.md) · [OpenShift](docs/guides/deploy-on-openshift.md)
