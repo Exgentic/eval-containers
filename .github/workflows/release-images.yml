@@ -370,9 +370,14 @@ jobs:
             "${ACT[@]}"
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
+  # Runs for real releases (tag / explicit version) or whenever the bases were
+  # rebuilt — i.e. when there's something new to gate + promote. A frozen-base
+  # dev dispatch re-scanning unchanged bases would only surface CVEs disclosed
+  # since they were last gated at release, so it's skipped (the dev run isn't
+  # publishing :latest anyway — the promotion below is tag-only).
   release-gate:
     needs: [build, per-task, compose, combos]
-    if: always() && needs.build.result == 'success' && !inputs.dry_run
+    if: always() && needs.build.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
