@@ -48,6 +48,13 @@ on:
         description: "Also build per-task benchmark images (terminal-bench, skills-bench)"
         type: boolean
         default: true
+      dry_run:
+        description: "Validate only — bake --print / echo, nothing built or pushed"
+        type: boolean
+        default: false
+      only:
+        description: "Debug: restrict matrices to these space-separated leaf targets (e.g. 'benchmark-gsm8k agent-claude-code'); blank = whole fleet"
+        default: ""
 
 concurrency:
   group: fleet-release-${{ github.ref }}
@@ -119,14 +126,15 @@ jobs:
           mapfile -t DEPS < <(find containers/core containers/gateways -name docker-bake.hcl \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
           echo "Building ${#DEPS[@]} shared deps: ${DEPS[*]}"
+          ACT=(--provenance=mode=max --sbom=true "${DEPS[@]}" --push)
+          [ "${{ inputs.dry_run }}" = "true" ] && ACT=("${DEPS[@]}" --print)
           docker buildx bake "${FARGS[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
             --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/bases,mode=max" \
             --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/bases" \
-            --provenance=mode=max --sbom=true \
-            "${DEPS[@]}" --push
+            "${ACT[@]}"
 
   # ── enumerate everything the matrices fan out over ────────────────────────
   enumerate:
@@ -143,6 +151,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           COMBO_AGENTS: ${{ inputs.combo_agents }}
           INCLUDE_PER_TASK: ${{ inputs.include_per_task }}
+          ONLY: ${{ inputs.only }}
         run: |
           all=$(find containers -name docker-bake.hcl -not -name 'combination*' \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
@@ -151,16 +160,27 @@ jobs:
           pertaskdirs=$(grep -rl 'eval.benchmark.env="per-task"' containers/benchmarks/*/Dockerfile \
             | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#benchmark-\1#' | sort -u)
           # Leaves = everything minus shared deps minus per-task (those build below).
-          leaves=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$deps" "$pertaskdirs" | sort -u) \
-            | jq -R . | jq -sc 'map(select(length>0))')
+          leaf_list=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$deps" "$pertaskdirs" | sort -u))
+          # Debug: --only restricts every matrix to a handful of named leaf targets.
+          if [ -n "${ONLY:-}" ]; then
+            leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(tr ' ' '\n' <<< "$ONLY" | sort -u))
+            echo "ONLY active -> $(printf '%s\n' "$leaf_list" | grep -c .) leaf target(s)"
+          fi
+          leaves=$(printf '%s\n' "$leaf_list" | jq -R . | jq -sc 'map(select(length>0))')
           n=$(printf '%s' "$leaves" | jq 'length')
           [ "$n" -gt 0 ] && [ "$n" -le 256 ] || { echo "::error::leaf count $n outside 1..256 (matrix cap)"; exit 1; }
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
-          benchmarks=$(comm -23 \
-            <(find containers/benchmarks -mindepth 1 -maxdepth 1 -type d | sed -E 's#.*/##' | sort -u) \
-            <(printf '%s\n' "$pertaskdirs" | sed 's/^benchmark-//' | sort -u) \
-            | while read -r b; do [ -f "containers/benchmarks/$b/compose.yaml" ] && echo "$b"; done \
+          # --only mode derives them from the restricted leaves; else all shared benchmarks.
+          if [ -n "${ONLY:-}" ]; then
+            bench_src=$(printf '%s\n' "$leaf_list" | sed -n 's/^benchmark-//p')
+          else
+            bench_src=$(comm -23 \
+              <(find containers/benchmarks -mindepth 1 -maxdepth 1 -type d | sed -E 's#.*/##' | sort -u) \
+              <(printf '%s\n' "$pertaskdirs" | sed 's/^benchmark-//' | sort -u))
+          fi
+          benchmarks=$(printf '%s\n' "$bench_src" \
+            | while read -r b; do [ -n "$b" ] && [ -f "containers/benchmarks/$b/compose.yaml" ] && echo "$b"; done \
             | jq -R . | jq -sc 'map(select(length>0))')
 
           # Combo pairs = benchmarks × combo_agents (empty agents -> no combos).
@@ -187,6 +207,8 @@ jobs:
               acc=$(jq -cn --argjson a "$acc" --argjson b "$tks" '$a + $b')
             done
             pertask="$acc"
+            # --only mode: one task as a smoke, not all ~176.
+            [ -n "${ONLY:-}" ] && pertask=$(printf '%s' "$pertask" | jq -c '.[0:1]')
             pn=$(printf '%s' "$pertask" | jq 'length')
             [ "$pn" -le 256 ] || { echo "::error::per-task pairs $pn exceed 256 — chunk (run-2: swe-bench-pro/swe-lancer)"; exit 1; }
           fi
@@ -232,14 +254,16 @@ jobs:
             [ -f "containers/$d/Dockerfile" ] || continue
             OV+=(--set "*.contexts.${REGISTRY}/${d}=docker-image://${REGISTRY}/${d}:${TAG}")
           done
+          # dry_run validates config only (bake --print); else build + attest + push.
+          ACT=(--provenance=mode=max --sbom=true "$T" --push)
+          [ "${{ inputs.dry_run }}" = "true" ] && ACT=("$T" --print)
           docker buildx bake "${FARGS[@]}" "${OV[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
             --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/${T},mode=max" \
             --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/${T}" \
-            --provenance=mode=max --sbom=true \
-            "$T" --push
+            "${ACT[@]}"
 
   # ── per-task images — one job per (benchmark, task) ───────────────────────
   per-task:
@@ -268,6 +292,9 @@ jobs:
           # podman build (fetch upstream task, overlay our pipeline).
           tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
           ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry-run: would build $ref via containers/benchmarks/$B/build.sh"; exit 0
+          fi
           # Cross-run registry layer cache — build.sh turns on podman
           # --cache-to/from when EVAL_BUILD_CACHE is set (no-op on older podman).
           export EVAL_BUILD_CACHE="${REGISTRY}/buildcache/${B}-${tid}"
@@ -298,7 +325,11 @@ jobs:
           EVAL_REGISTRY: ${{ env.REGISTRY }}
           TAG: ${{ env.TAG }}
           B: ${{ matrix.benchmark }}
-        run: ./eval-containers build compose --benchmark "$B"
+        run: |
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            echo "dry-run: would publish oci://${EVAL_REGISTRY}/eval-${B}"; exit 0
+          fi
+          ./eval-containers build compose --benchmark "$B"
 
   # ── eval combos — one job per (benchmark, agent) for combo_agents ─────────
   combos:
@@ -326,6 +357,8 @@ jobs:
         run: |
           # combo = FROM benchmarks/$B + COPY agents/$A + thin overlay; no dataset
           # downloads (parents already published), just pull-parents + small delta.
+          ACT=(eval --provenance=mode=max --sbom=true --push)
+          [ "${{ inputs.dry_run }}" = "true" ] && ACT=(eval --print)
           EVAL_BENCHMARK="$B" EVAL_AGENT="$A" \
           BENCHMARK_IMAGE="${REGISTRY}/benchmarks/${B}:${TAG}" \
           AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
@@ -334,12 +367,12 @@ jobs:
             -f containers/core/combination.docker-bake.hcl \
             --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/eval-${B}--${A},mode=max" \
             --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/eval-${B}--${A}" \
-            eval --provenance=mode=max --sbom=true --push
+            "${ACT[@]}"
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
   release-gate:
     needs: [build, per-task, compose, combos]
-    if: always() && needs.build.result == 'success'
+    if: always() && needs.build.result == 'success' && !inputs.dry_run
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
