@@ -1,11 +1,15 @@
 # MATH-500 (Competition-level mathematics)
 # 500 tasks. Data: HuggingFace HuggingFaceH4/MATH-500
 # Agent prints answer to stdout. Test compares to expected answer.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT unique_id AS id, problem, answer \
+     FROM 'hf://datasets/HuggingFaceH4/MATH-500@~parquet/default/test/0000.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="math-500"
@@ -19,47 +23,7 @@ LABEL eval.benchmark.url="https://github.com/hendrycks/math"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/math"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2103.03874"
 
-# Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-os.makedirs('/tasks', exist_ok=True)
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/HuggingFaceH4/MATH-500/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        row = {
-            'id': str(t['unique_id'][i]),
-            'problem': str(t['problem'][i]),
-            'answer': str(t['answer'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=math-500
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Solve this math problem. Print only the final answer in its simplest form (e.g. a number, fraction, or expression). Do not include any explanation.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Solve this math problem. Print only the final answer in its simplest form (e.g. a number, fraction, or expression). Do not include any explanation."

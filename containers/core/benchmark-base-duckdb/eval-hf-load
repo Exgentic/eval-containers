@@ -1,0 +1,25 @@
+#!/bin/bash
+# /eval-hf-load "<SELECT ... FROM '<hf-source>'>" — materialize a HF dataset into
+# /tasks/all.jsonl via duckdb, handling HF auth + httpfs + secret + retry so
+# benchmarks supply only their query.
+set -euo pipefail
+
+QUERY="${1:?usage: eval-hf-load \"<SELECT ... FROM ...>\"}"
+
+if [ -s /run/secrets/HF_TOKEN ]; then
+  install -D -m600 /run/secrets/HF_TOKEN /root/.cache/huggingface/token
+fi
+
+mkdir -p /tasks
+SQL="LOAD httpfs;
+CREATE SECRET hf (TYPE huggingface, PROVIDER credential_chain);
+COPY ( ${QUERY} ) TO '/tasks/all.jsonl' (FORMAT json);"
+attempts="${EVAL_NET_RETRIES:-6}"
+ok=0
+for i in $(seq 1 "$attempts"); do
+  if duckdb -c "$SQL"; then ok=1; break; fi
+  echo "eval-hf-load: attempt $i/$attempts failed; retry in $((i*10))s" >&2
+  sleep $((i * 10))
+done
+[ "$ok" = 1 ] || { echo "eval-hf-load: failed after $attempts attempts" >&2; exit 1; }
+chmod 600 /tasks/all.jsonl

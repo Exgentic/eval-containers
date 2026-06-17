@@ -207,9 +207,10 @@ repos:
   #   re-declare* — valid hyphenation in a rego test + Dockerfiles (this codespell
   #                 pin still flags it; newer releases dropped several such entries)
   #   crate       — Rust's compilation unit, everywhere in cli/ and tests/
+  #   te          — ISO 639 language code (Telugu), in mgsm's ORDER BY language CASE
   - repo: https://github.com/codespell-project/codespell
     rev: v2.3.0
     hooks:
       - id: codespell
-        args: [-L, "ans,froms,copys,fo,auxillary,xdescribe,rouge,re-declare,re-declared,re-declaring,crate"]
+        args: [-L, "ans,froms,copys,fo,auxillary,xdescribe,rouge,re-declare,re-declared,re-declaring,crate,te"]
         exclude: '\.(jsonl|lock)$'

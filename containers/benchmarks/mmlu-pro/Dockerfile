@@ -1,11 +1,19 @@
 # MMLU-Pro (TIGER-Lab/MMLU-Pro)
 # 12032 tasks. Data: HuggingFace TIGER-Lab/MMLU-Pro
 # Agent prints answer to stdout. Test compares stdout to expected answer.
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# `problem` reproduces the python layout: the question, then one lettered choice
+# (A., B., …) per `options` entry, joined by newlines.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT question_id::VARCHAR AS id, \
+            question || chr(10) || chr(10) || array_to_string(list_transform(options, (opt, j) -> chr((64 + j)::INTEGER) || '. ' || opt), chr(10)) AS problem, \
+            answer \
+     FROM 'hf://datasets/TIGER-Lab/MMLU-Pro@~parquet/default/test/0000.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mmlu-pro"
@@ -19,52 +27,7 @@ LABEL eval.benchmark.url="https://github.com/TIGER-AI-Lab/MMLU-Pro"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmlu_pro"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.01574"
 
-# Single-JSONL task layout. Root-only; runtime entrypoint materializes the
-# requested task's fields into /tasks/$EVAL_TASK_ID/ on demand.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, string, json
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/TIGER-Lab/MMLU-Pro/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-letters = list(string.ascii_uppercase)
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        opts = t['options'][i].as_py()
-        choices = '\n'.join(f'{letters[j]}. {opt}' for j, opt in enumerate(opts))
-        problem = f"{t['question'][i]}\n\n{choices}"
-        row = {
-            'id': str(t['question_id'][i]),
-            'problem': problem,
-            'answer': str(t['answer'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
+COPY --from=data /tasks /tasks
 WORKDIR /app
 ENV EVAL_BENCHMARK=mmlu-pro
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Answer this multiple choice question. Print only the letter of the correct answer (A, B, C, D, E, F, G, H, I, or J), nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Answer this multiple choice question. Print only the letter of the correct answer (A, B, C, D, E, F, G, H, I, or J), nothing else."

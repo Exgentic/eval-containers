@@ -1,12 +1,39 @@
-# syntax=docker/dockerfile:1
 # BFCL (Berkeley Function Calling Leaderboard)
 # ~2000 tasks (simple/multiple/parallel categories). Data: HuggingFace gorilla-llm
 # Agent outputs function call(s). Test compares to ground truth.
-
+# No parquet auto-convert branch — duckdb reads the raw JSON over hf://, pinned by commit.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+# categories (simple, multiple, parallel) are read in upstream order and LEFT
+# JOINed to their possible_answer files by id; `id` keeps the upstream string id,
+# `problem` mirrors the function defs + flattened conversation, `answer` is the
+# compact JSON of ground_truth.
+# Benign residual vs the old python loader (verified byte-identical after JSON
+# whitespace normalization, all 800 rows, id/problem/answer): the embedded JSON
+# is compact here, where python used spaced separators in `answer`
+# (json.dumps) and `indent=2` pretty-printing for the function defs in
+# `problem`. Same parsed JSON / same keys+values+escaping+order — only
+# serializer whitespace differs. Not reproduced: matching it in SQL would need a
+# fragile regex/UDF that risks corrupting string-literal contents.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "WITH src AS ( \
+       SELECT 0 AS catrank, * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_simple.json',   format='newline_delimited', columns={id:'VARCHAR', question:'JSON', function:'JSON'}) \
+       UNION ALL BY NAME SELECT 1 AS catrank, * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_multiple.json', format='newline_delimited', columns={id:'VARCHAR', question:'JSON', function:'JSON'}) \
+       UNION ALL BY NAME SELECT 2 AS catrank, * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/BFCL_v3_parallel.json', format='newline_delimited', columns={id:'VARCHAR', question:'JSON', function:'JSON'}) ), \
+     ans AS ( \
+       SELECT * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_simple.json',   format='newline_delimited', columns={id:'VARCHAR', ground_truth:'JSON'}) \
+       UNION ALL BY NAME SELECT * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_multiple.json', format='newline_delimited', columns={id:'VARCHAR', ground_truth:'JSON'}) \
+       UNION ALL BY NAME SELECT * FROM read_json('hf://datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard@61fc0608cfd831fcfbbaa676ebdfef0ed963eeda/possible_answer/BFCL_v3_parallel.json', format='newline_delimited', columns={id:'VARCHAR', ground_truth:'JSON'}) ) \
+     SELECT src.id AS id, \
+       'Given these function definitions:' || chr(10) || CAST(src.function AS VARCHAR) || chr(10) || chr(10) \
+         || COALESCE((SELECT string_agg((m.value ->> 'role') || ': ' || (m.value ->> 'content'), chr(10)) FROM json_each(src.question -> 0) AS m), '') AS problem, \
+       CAST(to_json(COALESCE(ans.ground_truth, '[]'::JSON)) AS VARCHAR) AS answer \
+     FROM src LEFT JOIN ans USING (id) \
+     ORDER BY src.catrank, CAST(regexp_extract(src.id, '([0-9]+)\$', 1) AS INTEGER)"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="bfcl"
@@ -20,63 +47,6 @@ LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-data
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bfcl"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.06840"
 
-# Fetch task and answer files from HuggingFace
-RUN mkdir -p /tmp/bfcl/tasks /tmp/bfcl/answers
-RUN for cat in simple multiple parallel; do \
-      curl -sL "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/main/BFCL_v3_${cat}.json" \
-        -o /tmp/bfcl/tasks/${cat}.json && \
-      curl -sL "https://huggingface.co/datasets/gorilla-llm/Berkeley-Function-Calling-Leaderboard/resolve/main/possible_answer/BFCL_v3_${cat}.json" \
-        -o /tmp/bfcl/answers/${cat}.json; \
-    done
-
-# Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
-RUN python3 <<'PYEOF'
-import json, os
-os.makedirs('/tasks', exist_ok=True)
-idx = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for cat in ['simple', 'multiple', 'parallel']:
-        tasks = [json.loads(l) for l in open(f'/tmp/bfcl/tasks/{cat}.json')]
-        answers = [json.loads(l) for l in open(f'/tmp/bfcl/answers/{cat}.json')]
-        answer_map = {a['id']: a for a in answers}
-        for t in tasks:
-            funcs = json.dumps(t.get('function', []), indent=2)
-            q = t.get('question', [[]])
-            msgs_list = q[0] if q and isinstance(q[0], list) else q
-            msgs = '\n'.join(f"{m['role']}: {m['content']}" for m in msgs_list if isinstance(m, dict))
-            ans = answer_map.get(t['id'], {})
-            row = {
-                'id': t['id'],
-                'problem': f"Given these function definitions:\n{funcs}\n\n{msgs}",
-                'answer': json.dumps(ans.get('ground_truth', [])),
-            }
-            out.write(json.dumps(row) + '\n')
-            idx += 1
-print(f'Extracted {idx} tasks')
-PYEOF
-
-RUN rm -rf /tmp/bfcl
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=bfcl
-
-# Test: exact match on agent stdout (simplified — full BFCL uses AST comparison)
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Call the correct function(s) based on the conversation. Print ONLY the function call(s) as JSON, nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Call the correct function(s) based on the conversation. Print ONLY the function call(s) as JSON, nothing else."

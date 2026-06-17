@@ -1,8 +1,9 @@
 target "benchmark-math" {
   context = "containers/benchmarks/math"
   contexts = {
-    "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
-    "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
+    "${REGISTRY}/core/benchmark-base-duckdb" = "target:benchmark-base-duckdb"
+    "${REGISTRY}/core/benchmark-base-slim" = "target:benchmark-base-slim"
   }
+  secret = ["id=HF_TOKEN,env=HF_TOKEN"]
   tags = ["${REGISTRY}/benchmarks/math:${TAG}"]
 }
