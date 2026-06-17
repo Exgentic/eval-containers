@@ -27,11 +27,21 @@ REF=c5ee500c185224c97cd6caff7866a990a0057f41
 REPO="https://github.com/harbor-framework/terminal-bench-2-1.git"
 ENVIMG="localhost/tbench-env:${TASK}"
 
+# Optional cross-run registry layer cache. CI sets EVAL_BUILD_CACHE to a registry
+# ref; local CLI builds leave it unset (no cache, unchanged). Auto-skipped if this
+# podman predates --cache-to, so there's no hard podman-version dependency. The
+# `${arr[@]+...}` form is empty-array-safe under `set -u` on bash 3.2 (macOS).
+CACHE_ENV=(); CACHE_IMG=()
+if [ -n "${EVAL_BUILD_CACHE:-}" ] && podman build --help 2>/dev/null | grep -q -- '--cache-to'; then
+  CACHE_ENV=(--cache-from "type=registry,ref=${EVAL_BUILD_CACHE}-env" --cache-to "type=registry,ref=${EVAL_BUILD_CACHE}-env,mode=max")
+  CACHE_IMG=(--cache-from "type=registry,ref=${EVAL_BUILD_CACHE}" --cache-to "type=registry,ref=${EVAL_BUILD_CACHE},mode=max")
+fi
+
 echo "[terminal-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
-podman build --platform linux/amd64 -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
+podman build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} --platform linux/amd64 -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
 
 echo "[terminal-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
-podman build --platform linux/amd64 -t "${IMAGE}" \
+podman build ${CACHE_IMG[@]+"${CACHE_IMG[@]}"} --platform linux/amd64 -t "${IMAGE}" \
   --build-arg "TASK_BASE=${ENVIMG}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "TBENCH_REF=${REF}" \

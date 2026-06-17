@@ -267,6 +267,9 @@ jobs:
           # podman build (fetch upstream task, overlay our pipeline).
           tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
           ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
+          # Cross-run registry layer cache — build.sh turns on podman
+          # --cache-to/from when EVAL_BUILD_CACHE is set (no-op on older podman).
+          export EVAL_BUILD_CACHE="${REGISTRY}/buildcache/${B}-${tid}"
           bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK"
           podman push "$ref"
 
@@ -328,6 +331,8 @@ jobs:
           docker buildx bake \
             -f containers/docker-bake.hcl \
             -f containers/core/combination.docker-bake.hcl \
+            --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/eval-${B}--${A},mode=max" \
+            --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/eval-${B}--${A}" \
             eval --provenance=mode=max --sbom=true --push
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
