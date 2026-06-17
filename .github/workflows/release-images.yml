@@ -201,6 +201,7 @@ jobs:
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
   build:
+    name: leaf ${{ matrix.target }}
     needs: [bases, enumerate]
     runs-on: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
     timeout-minutes: 90
@@ -387,20 +388,63 @@ jobs:
           helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
           helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"
 
-  summary:
-    needs: [bases, build, per-task, compose, combos, release-gate]
+  # ── end-of-run report: stages + per-image build time & registry size ──────
+  report:
+    name: Build-time + size report
+    needs: [bases, build, per-task, compose, combos, release-gate, enumerate]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - run: |
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Per-image build time + registry size -> step summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LEAVES: ${{ needs.enumerate.outputs.leaves }}
+        run: |
+          # Compressed registry size: resolve the amd64 manifest, sum its layers.
+          size_of() {
+            local r="$1" d
+            d=$(docker buildx imagetools inspect "$r" --raw 2>/dev/null \
+              | jq -r '(.manifests//[])|map(select(.platform.architecture=="amd64"))|.[0].digest//empty')
+            if [ -n "$d" ]; then
+              docker buildx imagetools inspect "${r%:*}@$d" --raw 2>/dev/null | jq '[.layers[].size]|add // 0'
+            else
+              docker buildx imagetools inspect "$r" --raw 2>/dev/null | jq '[.layers[].size]|add // 0'
+            fi
+          }
+          # Per-leaf build time = its matrix job's duration (job name "leaf <target>").
+          api="repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs"
+          gh api "$api" --paginate --jq '.jobs[]|select(.name|startswith("leaf "))|[(.name|ltrimstr("leaf ")),(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)]|@tsv' > /tmp/dur.tsv 2>/dev/null || true
+          basedur=$(gh api "$api" --paginate --jq '.jobs[]|select(.name=="bases")|(if .completed_at and .started_at then ((.completed_at|fromdateiso8601)-(.started_at|fromdateiso8601)) else 0 end)' 2>/dev/null | head -1 || true)
+          # Build the whole report, then append once (single redirect — no SC2129).
           {
-            echo "## Fleet release — \`${TAG}\`"
-            echo "| stage | result |"
-            echo "|---|---|"
+            echo "## Fleet release \`${TAG}\` — stages"
+            echo "| stage | result |"; echo "|---|---|"
             echo "| bases | ${{ needs.bases.result }} |"
-            echo "| leaves (per-leaf) | ${{ needs.build.result }} |"
+            echo "| leaves | ${{ needs.build.result }} |"
             echo "| per-task | ${{ needs.per-task.result }} |"
-            echo "| compose artifacts | ${{ needs.compose.result }} |"
+            echo "| compose | ${{ needs.compose.result }} |"
             echo "| combos | ${{ needs.combos.result }} |"
             echo "| CVE gate + :latest | ${{ needs.release-gate.result }} |"
+            echo ""
+            echo "## Per-image build time + registry size — leaves, biggest first"
+            echo "_build = the leaf's own time FROM the frozen base; with-deps = build + bases (${basedur:-?}s, amortized once across all leaves)._"
+            echo "| image | build | size |"; echo "|---|--:|--:|"
+            jq -r '.[]?' <<< "${LEAVES:-[]}" | while read -r T; do
+              kind=${T%%-*}; nm=${T#*-}
+              case "$kind" in
+                benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;;
+              esac
+              sz=$(size_of "${REGISTRY}/${dir}/${nm}:${TAG}" || echo 0); sz=${sz:-0}
+              dur=$(awk -F'\t' -v t="$T" '$1==t{print $2}' /tmp/dur.tsv || true)
+              printf '%s\t%s\t%s\n' "$T" "${dur:-0}" "$sz"
+            done | sort -t"$(printf '\t')" -k3 -rn \
+              | awk -F'\t' '{printf "| %s | %ds | %d MB |\n", $1, $2, $3/1048576}'
+            echo ""
+            echo "_Per-image sizes for combos + per-task are omitted (hundreds of images) — query \`ghcr.io/exgentic/evals/*\` / \`benchmarks/*-<task>\`; their build times are per-job in the Actions run view._"
           } >> "$GITHUB_STEP_SUMMARY"
