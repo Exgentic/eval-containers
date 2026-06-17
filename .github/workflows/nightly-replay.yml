@@ -18,10 +18,10 @@ name: Nightly replay E2E
 # targets; ensure_images() runs `cargo run -- build eval <bench> --agent <agent>`.
 
 on:
-  # schedule + workflow_dispatch fire only on the default branch, so the nightly
-  # begins once this merges to main. Validated at bring-up via a temporary push
-  # trigger: the full ~243-fixture suite, sharded 16 ways, ran green (241/243,
-  # ~31 min wall) — see the PR for the run links.
+  # schedule fires only on the default branch, so the nightly runs on main. To
+  # validate a slice on a branch before merge, trigger workflow_dispatch with a
+  # `filter` — that is how the full ~243-fixture suite (sharded 16 ways, ~31 min
+  # wall) is brought up green.
   schedule:
     - cron: '17 3 * * *' # nightly, 03:17 UTC
   workflow_dispatch:
@@ -97,16 +97,6 @@ jobs:
           # bakes the shared bases once; names go AFTER `--` so libtest OR-matches
           # them (cargo's positional [TESTNAME] takes only one).
           ALL=$(cargo test -p eval-containers-tests-run --test replay -- --list | sed -n 's/: test$//p' | sort)
-          # Known-broken fixtures, excluded from the suite (tracked follow-ups):
-          #  - replay_enterpriseops_gym_0_codex: the OTLP conversion dropped this
-          #    fixture's bifrost-shaped output spans, so it serves 0 turns (the
-          #    agent exhausts immediately); regeneration from source pending.
-          #  - replay_alpaca_eval_482_ra_aid: ra-aid retry-loops on
-          #    REPLAY_EXHAUSTED and write-result emits invalid JSON; agent
-          #    exhaustion handling pending.
-          for kb in replay_enterpriseops_gym_0_codex replay_alpaca_eval_482_ra_aid; do
-            ALL=$(printf '%s\n' "${ALL}" | grep -vx "${kb}" || true)
-          done
           if [ -n "${FILTER}" ]; then
             read -ra PATS <<< "${FILTER}"
             PAT=$(IFS='|'; printf '%s' "${PATS[*]}")

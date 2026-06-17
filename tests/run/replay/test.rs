@@ -49,16 +49,18 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 /// use `with_wait_for_service("runner", WaitFor::Exit(_))` to block until
 /// the runner finishes before we assert on `result.json`.
 ///
-/// Returned together: a `DockerCompose` plus the override `NamedTempFile`.
+/// Returned together: a `DockerCompose` plus the two `NamedTempFile`s it reads
+/// from disk — the flattened per-benchmark compose and the replay override.
 /// Declaration order matters — `compose.down()` (called when the
-/// `DockerCompose` field is dropped) runs while the override file is
-/// still on disk; the file drops afterward.
-/// Held by the test only for its `Drop` order (compose down first, then
-/// override file). Neither field is read after construction.
+/// `DockerCompose` field is dropped) runs while both files are still on disk;
+/// they drop afterward.
+/// Held by the test only for its `Drop` order (compose down first, then the
+/// temp files). No field is read after construction.
 #[allow(dead_code)]
 struct ReplayHandle {
     compose: DockerCompose,
     _override: tempfile::NamedTempFile,
+    _flat: tempfile::NamedTempFile,
 }
 
 async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> ReplayHandle {
@@ -148,25 +150,43 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
 
     let override_str = override_file.path().to_str().unwrap().to_string();
 
-    // Compose the shared topology (compose/services.yaml: otelcol + gateway +
-    // runner) directly, NOT the per-benchmark compose.yaml. That file does
-    // `include: ../../compose/services.yaml` AND redeclares `runner` (image +
-    // BENCHMARK), which docker compose rejects at load time as "services.runner
-    // conflicts with imported resource" — its `include` forbids overriding an
-    // imported service (unlike `-f` merge). services.yaml parameterizes the
-    // runner image by ${EVAL_BENCHMARK} (set per test) and the gateway image by
-    // ${EVAL_GATEWAY_IMAGE}; our override swaps the gateway to models/replay, so
-    // this stands up the same stack the artifact would, the docker-native way.
-    // (The per-benchmark compose.yaml is itself broken on docker compose —
-    // podman tolerates it; tracked as a separate fix.)
-    let services_str = cwd
-        .join("containers/compose/services.yaml")
-        .to_str()
-        .unwrap()
-        .to_string();
+    // Stand up the benchmark's own per-benchmark compose.yaml — the same stack
+    // the published artifact runs, including any task sidecars (e.g.
+    // enterpriseops-gym's seven MCP servers, which the agent calls directly and
+    // which therefore must be live, not replayed). That file does
+    // `include: ../../compose/services.yaml` and `extends:` a runner template;
+    // docker compose's `include` forbids a later `-f` override of an *imported*
+    // service ("services.gateway conflicts with imported resource"), so we can't
+    // layer the gateway override straight onto it. Flatten it first with
+    // `docker compose config` — that resolves include + extends + sidecars into
+    // one self-contained model with no `include`, where `gateway` is a plain
+    // service the `-f` merge can override. `--no-interpolate` keeps `${VAR}`
+    // literal, so no upstream creds are needed to flatten; interpolation runs at
+    // `up` (the with_env values below). #171 made every per-benchmark compose
+    // load cleanly on real docker compose — that is what lets this flatten work.
+    let flat = {
+        let out = Command::new("docker")
+            .args(["compose", "-f", compose_file, "config", "--no-interpolate"])
+            .output()
+            .expect("failed to run docker compose config");
+        assert!(
+            out.status.success(),
+            "docker compose config failed for {compose_file}:\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8(out.stdout).expect("docker compose config output not UTF-8")
+    };
+    let mut flat_file = tempfile::Builder::new()
+        .prefix("eval-replay-flat-")
+        .suffix(".yaml")
+        .tempfile()
+        .expect("create flattened compose tempfile");
+    flat_file
+        .write_all(flat.as_bytes())
+        .expect("write flattened compose");
+    let flat_str = flat_file.path().to_str().unwrap().to_string();
 
-    let mut compose =
-        DockerCompose::with_local_client(&[services_str.as_str(), override_str.as_str()]);
+    let mut compose = DockerCompose::with_local_client(&[flat_str.as_str(), override_str.as_str()]);
 
     for (key, val) in env {
         compose = compose.with_env(*key, *val);
@@ -195,10 +215,11 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     // (300s, set by compose/services.yaml). Add 180s of slack after that
     // for verifier + write-result so the runner exits cleanly inside the
     // budget. Sidecar-heavy benchmarks (webarena = 7 web servers + proxy,
-    // osworld = QEMU VM boot, tau-bench = mock services) need 10–15 min
-    // cold-start before the runner can even begin work.
+    // osworld = QEMU VM boot, tau-bench = mock services, enterpriseops-gym =
+    // seven MCP sidecars pulled from Docker Hub) need 10–15 min cold-start
+    // before the runner can even begin work.
     let timeout_secs = match benchmark.as_str() {
-        "webarena" | "visualwebarena" | "osworld" | "tau-bench" => 900,
+        "webarena" | "visualwebarena" | "osworld" | "tau-bench" | "enterpriseops-gym" => 900,
         _ => 480,
     };
     let up_result =
@@ -214,6 +235,7 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     ReplayHandle {
         compose,
         _override: override_file,
+        _flat: flat_file,
     }
 }
 

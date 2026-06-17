@@ -11,7 +11,12 @@
 #   /output/model/result.json   model
 set -euo pipefail
 
-REWARD=$(cat /logs/verifier/reward.txt 2>/dev/null || echo 0)
+# The verifier may not produce a numeric reward (e.g. the agent errored or
+# exhausted its recorded replay turns before grading). Coerce anything missing,
+# empty, or non-numeric to 0 so result.json is ALWAYS valid JSON — the `%s`
+# reward below sits in a JSON number slot, so a stray token would break parsing.
+REWARD=$(head -1 /logs/verifier/reward.txt 2>/dev/null | tr -d '[:space:]' || true)
+[[ "$REWARD" =~ ^-?[0-9]+(\.[0-9]+)?$ ]] || REWARD=0
 PASSED=$(awk -v r="$REWARD" 'BEGIN{print (r+0 >= 1) ? "true" : "false"}')
 ENDED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 STARTED_AT=$(cat /output/agent/.started-at 2>/dev/null || echo "$ENDED_AT")
