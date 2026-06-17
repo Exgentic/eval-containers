@@ -5,7 +5,7 @@
 # drop a prebuilt binary + symlink into /usr/local/bin. If a Go-only base
 # emerges, add a `core/agent-base-go/` and retag then.
 # Provides: apt-retry wrapper with tar/bzip2, /opt/agent skeleton + /opt/agent/bin on PATH.
-FROM --platform=linux/amd64 ubuntu:24.04
+FROM ubuntu:24.04
 LABEL eval.type="core-base"
 LABEL eval.base.runtime="rust"
 RUN set -e; ok=0; \

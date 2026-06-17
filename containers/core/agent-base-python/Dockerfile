@@ -8,7 +8,7 @@
 #     parallel fetch + connection reuse — no subclass edits required
 #   - /opt/agent skeleton (install.sh, entrypoint.sh) that subclasses
 #     override
-FROM --platform=linux/amd64 python:3.12-slim
+FROM python:3.12-slim
 LABEL eval.type="core-base"
 LABEL eval.base.runtime="python"
 

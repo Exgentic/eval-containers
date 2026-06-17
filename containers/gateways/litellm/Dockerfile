@@ -11,7 +11,7 @@
 # Honest size: ~525 MB. litellm[proxy] hard-imports many provider SDKs
 # (boto3, google-cloud, anthropic, ...) at startup so we can only
 # safely strip prisma. The baseline cost of a Python LLM proxy.
-FROM --platform=linux/amd64 python:3.12-slim AS builder
+FROM python:3.12-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /usr/local/bin/uv
 
@@ -35,7 +35,7 @@ RUN /opt/gateway/venv/bin/pip uninstall -y prisma || true \
  && find /opt/gateway/venv -type f -name '*.pyc' -delete 2>/dev/null || true \
  && find /opt/gateway/venv -type d \( -name 'tests' -o -name 'test' \) -exec rm -rf {} + 2>/dev/null || true
 
-FROM --platform=linux/amd64 python:3.12-slim
+FROM python:3.12-slim
 
 LABEL gateway.kind="litellm"
 LABEL gateway.litellm_version="1.83.3"

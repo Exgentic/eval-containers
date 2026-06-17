@@ -13,7 +13,7 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
-FROM --platform=linux/amd64 python:3.12-slim
+FROM python:3.12-slim
 
 LABEL eval.type="core-base"
 LABEL eval.base.kind="hf"

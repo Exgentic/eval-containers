@@ -1,11 +1,12 @@
 # Build gosu + process-compose FROM SOURCE with a current Go toolchain. The
 # upstream release binaries lag a Go patch behind, so their bundled stdlib
 # carries CVEs (incl. CRITICAL CVE-2025-68121); rebuilding with go1.26.4 clears
-# them. Cross-compiled on the native $BUILDPLATFORM (no QEMU) to linux/amd64.
+# them. Cross-compiled on the native $BUILDPLATFORM (no QEMU) to the target arch.
 FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS gobuild
 ARG GOSU_VERSION=1.19
 ARG PROCESS_COMPOSE_VERSION=v1.116.0
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+ARG TARGETARCH
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH
 # go install drops cross-built binaries under /go/bin/<goos>_<goarch>/ but native
 # builds straight into /go/bin/ — normalize both into /out so the COPY is stable
 # whether the runner is amd64 (CI, native) or arm64 (local, cross).
@@ -15,7 +16,7 @@ RUN go install "github.com/tianon/gosu@${GOSU_VERSION}" \
  && find /go/bin -name gosu -type f -exec cp {} /out/gosu \; \
  && find /go/bin -name process-compose -type f -exec cp {} /out/process-compose \;
 
-FROM --platform=linux/amd64 alpine:3.20 AS source
+FROM alpine:3.20 AS source
 
 LABEL eval.type="core-base"
 LABEL eval.base.kind="runtime-bundle"

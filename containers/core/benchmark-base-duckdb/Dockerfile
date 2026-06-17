@@ -2,13 +2,14 @@
 # `FROM ... AS data`, run /eval-hf-load, then a slim stage COPYs /tasks out.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM --platform=linux/amd64 debian:12-slim
+FROM debian:12-slim
 
 LABEL eval.type="core-base"
 LABEL eval.base.kind="duckdb-builder"
 
 # ≥1.5: 1.1.x mis-resolves the @~parquet auto-convert alias.
 ARG DUCKDB_VERSION=1.5.3
+ARG TARGETARCH
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
@@ -21,7 +22,7 @@ RUN set -e; ok=0; \
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
-      if curl -fsSL "https://github.com/duckdb/duckdb/releases/download/v${DUCKDB_VERSION}/duckdb_cli-linux-amd64.zip" -o /tmp/d.zip; then ok=1; break; fi; \
+      if curl -fsSL "https://github.com/duckdb/duckdb/releases/download/v${DUCKDB_VERSION}/duckdb_cli-linux-${TARGETARCH}.zip" -o /tmp/d.zip; then ok=1; break; fi; \
       echo "duckdb download attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \
     [ "$ok" = 1 ] || { echo "duckdb download failed after 5 tries" >&2; exit 1; }; \

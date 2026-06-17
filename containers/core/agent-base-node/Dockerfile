@@ -7,7 +7,7 @@
 # with "cannot execute: required file not found" under Rosetta. CI on
 # Linux amd64 is a no-op; on Apple Silicon, this forces Rosetta-assisted
 # amd64 builds so the produced node binary matches what runs at runtime.
-FROM --platform=linux/amd64 ubuntu:24.04
+FROM ubuntu:24.04
 LABEL eval.type="core-base"
 LABEL eval.base.runtime="node"
 # Bumped 22.11.0 → 22.20.0 (latest LTS Node 22 release):

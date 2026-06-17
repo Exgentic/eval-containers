@@ -1,18 +1,20 @@
 # Slim OpenTelemetry Collector (OTLP receivers → file exporter, health_check on
 # :13133), built from builder-config.yaml with only the components we use.
 
-# Build natively, cross-compile to amd64 with CGO off (static binary, no QEMU).
-# go1.26.4 (not 1.22) so the collector's bundled Go stdlib is CVE-patched — the
-# OCB collector version stays 0.105.0 (byte-identical traces), only the toolchain
-# moves. Residual otel/sdk + grpc module CVEs are pinned by 0.105.0 (deferred).
+# Build on the native $BUILDPLATFORM, cross-compile to the target arch (CGO off,
+# static binary, no QEMU). go1.26.4 (not 1.22) so the collector's bundled Go
+# stdlib is CVE-patched — the OCB collector version stays 0.105.0 (byte-identical
+# traces), only the toolchain moves. Residual otel/sdk + grpc module CVEs are
+# pinned by 0.105.0 (deferred).
 FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS build
 ARG OCB_VERSION=0.105.0
+ARG TARGETARCH
 RUN go install "go.opentelemetry.io/collector/cmd/builder@v${OCB_VERSION}"
 COPY builder-config.yaml /tmp/builder-config.yaml
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 builder --config=/tmp/builder-config.yaml
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=$TARGETARCH builder --config=/tmp/builder-config.yaml
 
 # Alpine, not scratch: the compose healthcheck runs `wget` inside this container.
-FROM --platform=linux/amd64 alpine:3.20
+FROM alpine:3.20
 LABEL eval.type="core-base"
 LABEL eval.base.kind="otel"
 COPY --from=build /build/otelcol /otelcol
