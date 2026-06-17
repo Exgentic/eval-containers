@@ -14,7 +14,9 @@ LABEL eval.base.runtime="python"
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
-      if apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+      if apt-get update --fix-missing \
+         && apt-get upgrade -y \
+         && apt-get install -y --no-install-recommends \
            curl ca-certificates xz-utils git; then ok=1; break; fi; \
       echo "apt attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \

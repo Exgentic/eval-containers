@@ -1,24 +1,30 @@
+# Build gosu + process-compose FROM SOURCE with a current Go toolchain. The
+# upstream release binaries lag a Go patch behind, so their bundled stdlib
+# carries CVEs (incl. CRITICAL CVE-2025-68121); rebuilding with go1.26.4 clears
+# them. Cross-compiled on the native $BUILDPLATFORM (no QEMU) to linux/amd64.
+FROM --platform=$BUILDPLATFORM golang:1.26.4-alpine AS gobuild
+ARG GOSU_VERSION=1.19
+ARG PROCESS_COMPOSE_VERSION=v1.116.0
+ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+# go install drops cross-built binaries under /go/bin/<goos>_<goarch>/ but native
+# builds straight into /go/bin/ — normalize both into /out so the COPY is stable
+# whether the runner is amd64 (CI, native) or arm64 (local, cross).
+RUN go install "github.com/tianon/gosu@${GOSU_VERSION}" \
+ && go install "github.com/f1bonacc1/process-compose@${PROCESS_COMPOSE_VERSION}" \
+ && mkdir -p /out \
+ && find /go/bin -name gosu -type f -exec cp {} /out/gosu \; \
+ && find /go/bin -name process-compose -type f -exec cp {} /out/process-compose \;
+
 FROM --platform=linux/amd64 alpine:3.20 AS source
 
 LABEL eval.type="core-base"
 LABEL eval.base.kind="runtime-bundle"
 
-ARG GOSU_VERSION=1.17
-ARG PROCESS_COMPOSE_VERSION=1.40.1
+# apk upgrade so this image's own alpine packages stay patched (it is gated).
+RUN apk upgrade --no-cache && mkdir -p /bundle/bin
 
-RUN apk add --no-cache curl ca-certificates \
- && mkdir -p /bundle/bin
-
-# gosu: drop-privileges helper used by the eval image entrypoint to switch
-# from root → agent uid before launching the agent.
-RUN curl -fL -o /bundle/bin/gosu \
-      "https://github.com/tianon/gosu/releases/download/${GOSU_VERSION}/gosu-amd64" \
- && chmod +x /bundle/bin/gosu
-
-# process-compose: in-container process orchestrator for single-mode
-# (otelcol + gateway + runner + verifier in one container).
-RUN curl -fL -o /tmp/pc.tar.gz \
-      "https://github.com/F1bonacc1/process-compose/releases/download/v${PROCESS_COMPOSE_VERSION}/process-compose_linux_amd64.tar.gz" \
- && tar -xzf /tmp/pc.tar.gz -C /bundle/bin process-compose \
- && rm /tmp/pc.tar.gz \
- && chmod +x /bundle/bin/process-compose
+# gosu: drop-privileges helper the eval entrypoint uses to switch root → agent.
+# process-compose: in-container orchestrator for single-mode (otelcol + gateway
+# + runner + verifier in one container). Consumers COPY /bundle/bin.
+COPY --from=gobuild /out/gosu /bundle/bin/gosu
+COPY --from=gobuild /out/process-compose /bundle/bin/process-compose
