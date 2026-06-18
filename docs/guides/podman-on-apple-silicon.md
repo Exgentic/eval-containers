@@ -6,19 +6,18 @@ recommended path (see [install.md](install.md)). This guide is the complete
 setup for the **alternative**: running on **Podman** on an Apple-Silicon Mac,
 which works but has a handful of machine-specific gotchas that aren't obvious.
 
-Once set up you drive everything through `docker`. Since #189 removed all
-`FROM --platform=linux/amd64` base-image pins, **`docker buildx bake` builds
-native arm64 by default on Apple Silicon** — no QEMU, no pyarrow segfaults. The
-`DOCKER_BUILDKIT=0` / classic-build workaround is now edge-case-only (§5, §6).
+Once set up you drive everything through `docker`. **`docker buildx bake` builds
+native arm64 on Apple Silicon** — no QEMU, no pyarrow segfaults. The
+`DOCKER_BUILDKIT=0` / classic-build path is only needed for test suites and
+the handful of genuinely amd64-only images (§5, §6).
 
 ## TL;DR
 
 ```bash
-# 1. Machine (pin the image — newer kernels break Rosetta; see below)
-podman machine init --image docker://quay.io/podman/machine-os:5.4
+# 1. Machine
+podman machine init --image docker://quay.io/podman/machine-os:5.4  # pin — see §1
 podman machine set --memory 32768 --cpus 10
-podman machine ssh "sudo touch /etc/containers/enable-rosetta"
-podman machine stop && podman machine start
+podman machine start
 
 # 2. docker CLI + compose plugin (brew gives only the client)
 brew install docker docker-compose
@@ -34,12 +33,6 @@ cargo build
 # Verify
 docker version            # reports a running server
 docker info | grep -i context
-
-# 5. Build an image — native arm64, bake is fine
-docker buildx bake -f containers/docker-bake.hcl \
-  -f containers/core/test-exact-match/docker-bake.hcl test-exact-match --load
-docker image inspect ghcr.io/exgentic/core/test-exact-match:latest \
-  --format '{{.Architecture}}'  # -> arm64
 ```
 
 ## 1. Podman machine
@@ -65,15 +58,16 @@ podman machine init --image docker://quay.io/podman/machine-os:5.4
 podman machine set --memory 32768 --cpus 10   # ~half your RAM/cores
 ```
 
-### Enable Rosetta (for amd64-only images)
+### Enable Rosetta (optional — only needed for amd64 images)
 
-Since #189, most eval images build and run as native arm64. Rosetta is still
-needed for **amd64-only images** — `mle-bench` (upstream amd64-only build in
-`containers/scripts/build-mle-bench.sh`), swe-bench's `EVAL_BASE_ARCH`
-override, or anything you deliberately pull `--platform linux/amd64`.
+Most evals build and run as native arm64 — you don't need Rosetta for normal
+use. Enable it only if you need to run amd64 images: `mle-bench` (upstream
+amd64-only), swe-bench with `EVAL_BASE_ARCH`, the cargo test suites (which
+build linux/amd64 via `DOCKER_BUILDKIT=0` → buildah → Rosetta, §5), or
+anything you explicitly pull `--platform linux/amd64`.
 
-Without Rosetta, amd64 images fall back to QEMU (~10× slower and segfaults on
-Python extensions). Enable it so those exceptions work when you need them:
+Without Rosetta, amd64 images fall back to QEMU (~10× slower, segfaults on
+Python extensions like pyarrow):
 
 ```bash
 podman machine ssh "sudo touch /etc/containers/enable-rosetta"
@@ -145,89 +139,77 @@ cargo test --test replay  -- --ignored --test-threads=6
 (Ryuk), which often can't start under podman; containers are still torn down by
 the test's own `Drop` handlers.
 
-> **On podman the cargo `replay` / `build` / `oracle` suites still need
-> `DOCKER_BUILDKIT=0`.** The test harness pins `*.platform=linux/amd64` for all
-> bake targets because testcontainers runs amd64 containers (`.with_platform("linux/amd64")`),
-> so bake still builds linux/amd64 images — which uses QEMU on arm64 and
-> segfaults pyarrow. Prefix `DOCKER_BUILDKIT=0`:
-> `DOCKER_BUILDKIT=0 cargo test --test replay` (and `--test build`). The fast
-> suites (`check`, `compose`, `dockerfile_inspection`, `task_inspection`, `helm`)
-> need no builder and are unaffected.
+> **The cargo `replay` / `build` / `oracle` suites need `DOCKER_BUILDKIT=0` on
+> podman.** The test harness builds linux/amd64 images (testcontainers runs amd64
+> containers), and bake uses QEMU for that — which segfaults pyarrow. With
+> `DOCKER_BUILDKIT=0` the harness switches to classic `docker build` → buildah →
+> Rosetta. Prefix it: `DOCKER_BUILDKIT=0 cargo test --test replay` (and `--test
+> build`). The fast suites (`check`, `compose`, `dockerfile_inspection`,
+> `task_inspection`, `helm`) need no builder and are unaffected.
 
-## 5a. Why `docker buildx bake` can't use Rosetta on podman (historical)
+## 5a. Why `docker buildx bake` can't use Rosetta for amd64
 
-This section explains the pre-#189 QEMU issue; it is now edge-case-only for the
-test suites above. `docker buildx bake` without a `--platform` override builds
-native arm64 since #189 dropped the `FROM --platform=linux/amd64` base pins.
+When you explicitly request `--platform linux/amd64` (as the test suites do),
+`docker buildx bake` runs the build in a **BuildKit daemon** that injects its
+own bundled QEMU emulator (`/dev/.buildkit_qemu_emulator`) for foreign-arch `RUN`
+steps — it does not use the kernel's binfmt handler. So:
 
-`docker buildx bake` runs the build in a **BuildKit daemon**, and BuildKit does
-**not** use the kernel's binfmt handler for foreign-arch `RUN` steps — it injects
-its own bundled emulator (`/usr/bin/buildkit-qemu-x86_64`, bind-mounted into each
-build sandbox as `/dev/.buildkit_qemu_emulator`). So:
+- Bind-mounting `/mnt/rosetta` or the host `binfmt_misc` into the buildkitd
+  changes nothing — BuildKit ignores them.
+- Replacing `buildkit-qemu-x86_64` with the Rosetta binary gets BuildKit to
+  invoke it, but Rosetta refuses: the runc sandbox strips the vz-environment
+  markers Rosetta requires.
 
-- **Stock containerized BuildKit** emulates amd64 with **QEMU** when the platform
-  is linux/amd64 → pyarrow/numpy segfault. Bind-mounting `/mnt/rosetta` + the host
-  `binfmt_misc` into the buildkitd changes nothing — BuildKit ignores them and uses
-  its own qemu.
-- **Replacing** `buildkit-qemu-x86_64` with the Rosetta interpreter does get
-  BuildKit to invoke Rosetta, but Rosetta then refuses. The sandbox strips what
-  Rosetta needs to detect the vz environment.
-
-The fix (still valid when amd64 is explicitly needed) is to **not use BuildKit**:
-classic `docker build` routes to buildah, which *does* go through the kernel
-`rosetta` handler. The cargo test suites do this under **`DOCKER_BUILDKIT=0`**
-when amd64 images are required: the harness reads the build graph from
-`docker buildx bake --print` and builds each image with classic `docker build` →
-Rosetta (§5, §6).
+The fix is to **not use BuildKit**: classic `docker build` routes to buildah,
+which does go through the kernel `rosetta` binfmt handler. That's what
+`DOCKER_BUILDKIT=0` selects — the test harness reads the build graph from
+`docker buildx bake --print` (HCL→JSON, no build) and rebuilds each image with
+classic `docker build` → Rosetta.
 
 ## 6. Building images / `--local`
 
-Since #189, **`docker buildx bake` is the normal local build on Apple Silicon**.
-It produces native arm64 images with no QEMU involved:
+**`docker buildx bake` is the normal local build on Apple Silicon** — it
+produces native arm64 images:
 
 ```bash
-# Build any target natively (arm64)
 docker buildx bake -f containers/docker-bake.hcl \
   -f containers/core/test-exact-match/docker-bake.hcl test-exact-match --load
 ```
 
 ### Docker Hub rate limits (429)
 
-On first build, the most common friction is Docker Hub pulling base images
-(e.g. `python:3.12-slim`) and hitting the unauthenticated pull limit:
+On first build, the most common friction is hitting Docker Hub's unauthenticated
+pull limit:
 
 ```
 toomanyrequests: You have reached your pull rate limit.
 ```
 
-Fix: log in to Docker Hub (`docker login`), or use the ECR public mirror which
-has no rate limit:
+Fix: log in (`docker login`), or use the ECR public mirror which has no rate
+limit:
 
 ```bash
-# Prefix your build with the ECR mirror (no login required)
 docker pull public.ecr.aws/docker/library/python:3.12-slim
 docker tag  public.ecr.aws/docker/library/python:3.12-slim python:3.12-slim
 ```
 
 ### amd64-only exceptions
 
-A small number of images are genuinely amd64-only and still require the classic
-build path:
+A small number of images are genuinely amd64-only and require the classic build
+path:
 
 - **`containers/scripts/build-mle-bench.sh`** — upstream openai/mle-bench is
   amd64-only; the script already sets `--platform=linux/amd64`.
 - **swe-bench** — uses `EVAL_BASE_ARCH` (default `x86_64`) to select the
   upstream epoch-research base; build with `podman build --platform linux/amd64`.
-- **Anything you pull with `--platform linux/amd64` explicitly** — uses
-  Rosetta (§1) instead of QEMU when built with classic `docker build`.
+- **Anything you pull with `--platform linux/amd64` explicitly** — use classic
+  `docker build` (→ buildah → Rosetta) rather than bake.
 
 For images that `FROM ${REGISTRY}/core/...:latest` where the base is not yet
-published, two podman quirks collide: podman's docker-compat `docker build`
-force-pulls a multi-stage stage base from the registry → `401 UNAUTHORIZED`; and
-bake routes through BuildKit which uses QEMU for amd64. The fallback:
+published, podman's docker-compat `docker build` force-pulls a multi-stage base
+from the registry → `401 UNAUTHORIZED`. The fallback:
 
 ```bash
-# Multi-stage benchmark that needs amd64 and an unpublished base:
 # 1. Build the core base into buildah's local store
 podman build -t ghcr.io/exgentic/core/test-exact-match:latest \
   containers/core/test-exact-match
@@ -252,9 +234,6 @@ podman build --platform linux/amd64 --pull=never \
   ```
 
 ### Recording a replay fixture for a new benchmark
-
-`eval-containers build eval <name> --agent <a>` invokes `docker buildx bake`,
-which on Apple Silicon now builds native arm64. To record a replay fixture:
 
 ```bash
 # 1. Pull deps that are already published
@@ -307,7 +286,7 @@ podman machine stop && podman machine start
 | `docker compose: not found` | client-only install | install + symlink the compose plugin (§2) |
 | `toomanyrequests` / 429 on pull | Docker Hub rate limit | `docker login` or use ECR public mirror (§6) |
 | `401 UNAUTHORIZED` on `docker build` of multi-stage image | podman force-pulls unpublished base | `podman build --platform linux/amd64 --pull=never` (§6) |
-| `cargo test --test replay`/`build` segfaults in `pyarrow` (`bootstrap_core_bases`) | test harness pins linux/amd64, bake uses QEMU for that target | prefix `DOCKER_BUILDKIT=0` (§5) |
+| `cargo test --test replay`/`build` segfaults in `pyarrow` | test harness builds linux/amd64, bake uses QEMU | prefix `DOCKER_BUILDKIT=0` (§5) |
 | `EVAL_MODEL must be of form <provider>/<model>` | bare model name | pass `<provider>/<model>` (§6) |
 
 ## See also
