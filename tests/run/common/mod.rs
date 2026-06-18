@@ -54,14 +54,9 @@ pub async fn bake_targets(targets: &[&str]) {
         }
         return;
     }
-    let platform_override;
-    let platform_overrides: &[&str] = if let Some(p) = test_platform() {
-        platform_override = format!("*.platform={p}");
-        &[platform_override.as_str()]
-    } else {
-        &[]
-    };
-    let args = bake::base_args(targets, platform_overrides, None);
+    let platform_override = test_platform().map(|p| format!("*.platform={p}"));
+    let overrides: Vec<&str> = platform_override.iter().map(|s| s.as_str()).collect();
+    let args = bake::base_args(targets, &overrides, None);
     let mut cmd = Command::new("docker");
     cmd.args(&args);
     if let Ok(t) = std::env::var("HF_TOKEN") {
