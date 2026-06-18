@@ -50,8 +50,9 @@ on:
         default: false
       combo_agents:
         description: "Space-separated agents to build eval combos for (blank = skip)"
-        # The 5 most-downloaded agents — also the set a vX.Y.Z tag publishes (a tag
-        # push takes these defaults, so this is the released combo lineup).
+        # The 5 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
+        # workflow_dispatch inputs are NOT populated on a tag push, so the enumerate
+        # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack"
       include_per_task:
         description: "Also build per-task benchmark images (terminal-bench, skills-bench)"
@@ -181,7 +182,16 @@ jobs:
           COMBO_AGENTS: ${{ inputs.combo_agents }}
           INCLUDE_PER_TASK: ${{ inputs.include_per_task }}
           ONLY: ${{ inputs.only }}
+          IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
         run: |
+          # A tag push does NOT populate workflow_dispatch inputs, so COMBO_AGENTS /
+          # INCLUDE_PER_TASK arrive empty and combos + per-task would be skipped. On
+          # any non-dispatch trigger (the vX.Y.Z release tag) force the full published
+          # lineup; a manual dispatch keeps its inputs (blank combo_agents = skip).
+          if [ "$IS_DISPATCH" != "true" ]; then
+            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack"
+            INCLUDE_PER_TASK=true
+          fi
           all=$(find containers -name docker-bake.hcl -not -name 'combination*' \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
           deps=$(find containers/core containers/gateways -name docker-bake.hcl \
@@ -300,6 +310,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Bake ${{ matrix.target }} (${{ matrix.arch }}; frozen base, per-leaf cache)
+        timeout-minutes: 25  # cap a stalled leaf — a hung download blocked the matrix ~40m; leaves build in <2m
         env:
           T: ${{ matrix.target }}
           ARCH: ${{ matrix.arch }}
