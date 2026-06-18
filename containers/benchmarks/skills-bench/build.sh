@@ -15,6 +15,8 @@
 #
 # Uses `podman build` directly so the two builds chain through the local image
 # store (docker buildx's container driver keeps results only in the build cache).
+# No --platform pin: the per-task job runs this on a native amd64 OR arm64 runner,
+# so pinning a platform would force one arch and break the multi-arch per-task build.
 set -euo pipefail
 
 IMAGE="${1:?usage: build.sh <image> <task-id>}"
@@ -41,10 +43,10 @@ if [ -n "${EVAL_BUILD_CACHE:-}" ] && podman build --help 2>/dev/null | grep -q -
 fi
 
 echo "[skills-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
-podman build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} --platform linux/amd64 -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
+podman build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
 
 echo "[skills-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
-podman build ${CACHE_IMG[@]+"${CACHE_IMG[@]}"} --platform linux/amd64 -t "${IMAGE}" \
+podman build ${CACHE_IMG[@]+"${CACHE_IMG[@]}"} -t "${IMAGE}" \
   --build-arg "TASK_BASE=${ENVIMG}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "SB_REF=${REF}" \
