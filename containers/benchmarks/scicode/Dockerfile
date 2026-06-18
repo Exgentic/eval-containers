@@ -5,7 +5,17 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22). sub_steps/general_tests
+# are JSON strings so the materializer writes valid JSON text to <field>.txt.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT problem_id::VARCHAR AS id, COALESCE(problem_description_main, '') AS problem, \
+            COALESCE(problem_background_main, '') AS background, COALESCE(problem_io, '') AS io, \
+            COALESCE(required_dependencies, '') AS dependencies, \
+            to_json(sub_steps)::VARCHAR AS sub_steps, to_json(general_tests)::VARCHAR AS general_tests \
+     FROM read_parquet('hf://datasets/SciCode1/SciCode@~parquet/default/test/0000.parquet')"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="scicode"
@@ -20,35 +30,7 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.13168"
 # Runtime deps for test execution (tests use numpy/scipy/h5py and call the loader)
 RUN pip install --no-cache-dir numpy==2.0.2 scipy==1.14.1 h5py==3.12.1 sympy==1.13.3
 
-# Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
-# sub_steps and general_tests are stored as JSON strings so that when the
-# materializer writes them to <field>.txt the file contains valid JSON text.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/SciCode1/SciCode/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        sub = t['sub_steps'][i].as_py() or []
-        gen_tests = list(t['general_tests'][i].as_py() or [])
-        row = {
-            'id': str(t['problem_id'][i]),
-            'problem': str(t['problem_description_main'][i] or ''),
-            'background': str(t['problem_background_main'][i] or ''),
-            'io': str(t['problem_io'][i] or ''),
-            'dependencies': str(t['required_dependencies'][i] or ''),
-            'sub_steps': json.dumps(sub),
-            'general_tests': json.dumps(gen_tests),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
+COPY --from=data /tasks /tasks
 
 # Download test_data.h5 from Google Drive (file id 17G_k65N_6yFFZ2O-jQH00Lh6iaw3z-AW, ~1GB)
 # Uses the "confirm" token bypass required for large files.

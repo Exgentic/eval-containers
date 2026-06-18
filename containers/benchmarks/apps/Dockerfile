@@ -4,7 +4,16 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22). fn_name is parsed out of
+# the input_output JSON; the grader json.loads input_output for the I/O test cases.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT problem_id::VARCHAR AS id, question AS problem, CAST(difficulty AS VARCHAR) AS difficulty, \
+            COALESCE(starter_code, '') AS starter_code, COALESCE(input_output, '') AS input_output, \
+            COALESCE(json_extract_string(input_output, '\$.fn_name'), '') AS fn_name \
+     FROM read_parquet('hf://datasets/codeparrot/apps@~parquet/all/test/*.parquet')"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="apps"
@@ -16,42 +25,7 @@ LABEL eval.benchmark.data_revision="21e74ddf8de1a21436da12e3e653065c5213e9d1"
 LABEL eval.benchmark.url="https://github.com/hendrycks/apps"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2105.09938"
 
-# Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
-tables = []
-for part in (0, 1):
-    url = f'https://huggingface.co/datasets/codeparrot/apps/resolve/refs%2Fconvert%2Fparquet/all/test/000{part}.parquet'
-    urllib.request.urlretrieve(url, f'/tmp/data_{part}.parquet')
-    tables.append(pq.read_table(f'/tmp/data_{part}.parquet'))
-t = pyarrow.concat_tables(tables)
-os.makedirs('/tasks', exist_ok=True)
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        starter = str(t['starter_code'][i]) if t['starter_code'][i] else ''
-        io_raw = str(t['input_output'][i]) if t['input_output'][i] else ''
-        fn_name = ''
-        if io_raw:
-            try:
-                io_obj = json.loads(io_raw)
-                fn_name = io_obj.get('fn_name', '') or ''
-            except Exception:
-                pass
-        row = {
-            'id': str(t['problem_id'][i]),
-            'problem': str(t['question'][i]),
-            'difficulty': str(t['difficulty'][i]),
-            'starter_code': starter,
-            'input_output': io_raw,
-            'fn_name': fn_name,
-        }
-        out.write(json.dumps(row) + '\n')
-print(f'Extracted {len(t)} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=apps
 
 # Test: run agent's Python solution against decoded I/O test cases.
