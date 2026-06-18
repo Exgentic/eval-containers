@@ -38,6 +38,10 @@ pub struct OracleArgs {
     /// Build the benchmark image from local source first (else use `:latest`).
     #[arg(long)]
     local: bool,
+
+    /// Override the container platform (e.g. `linux/amd64`). Omit to run natively.
+    #[arg(long)]
+    platform: Option<String>,
 }
 
 pub fn execute(registry: &str, args: OracleArgs) -> Result<(), String> {
@@ -89,8 +93,20 @@ pub fn execute(registry: &str, args: OracleArgs) -> Result<(), String> {
     let solution = format!("{dir}/solution.sh");
     let solution = Path::new(&solution).is_file().then_some(solution);
 
-    let gold = run(&image, &runtime_task, "gold", solution.as_deref())?;
-    let noop = run(&image, &runtime_task, "noop", solution.as_deref())?;
+    let gold = run(
+        &image,
+        &runtime_task,
+        "gold",
+        solution.as_deref(),
+        args.platform.as_deref(),
+    )?;
+    let noop = run(
+        &image,
+        &runtime_task,
+        "noop",
+        solution.as_deref(),
+        args.platform.as_deref(),
+    )?;
     println!("[{bench} task={runtime_task}] gold={gold} no-op={noop}");
 
     if gold.parse::<f64>().unwrap_or(0.0) < 1.0 - 1e-6 {
@@ -110,11 +126,19 @@ pub fn execute(registry: &str, args: OracleArgs) -> Result<(), String> {
 
 /// Run one mode (`gold` | `noop`) in the benchmark image and return the reward
 /// the grader writes — read from the `ORACLE_REWARD=` line, not stdout's tail.
-fn run(image: &str, task: &str, mode: &str, solution: Option<&str>) -> Result<String, String> {
+fn run(
+    image: &str,
+    task: &str,
+    mode: &str,
+    solution: Option<&str>,
+    platform: Option<&str>,
+) -> Result<String, String> {
     let mut cmd = Command::new("docker");
+    cmd.args(["run", "--rm"]);
+    if let Some(p) = platform {
+        cmd.args(["--platform", p]);
+    }
     cmd.args([
-        "run",
-        "--rm",
         "-e",
         &format!("EVAL_TASK_ID={task}"),
         "-e",

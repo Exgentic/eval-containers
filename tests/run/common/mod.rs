@@ -23,6 +23,12 @@ pub fn classic_build() -> bool {
     matches!(std::env::var("DOCKER_BUILDKIT").as_deref(), Ok("0"))
 }
 
+/// Optional platform override for builds and container runs. Set `TEST_PLATFORM`
+/// (e.g. `linux/amd64`) to target a specific architecture; omit for native.
+pub fn test_platform() -> Option<String> {
+    std::env::var("TEST_PLATFORM").ok()
+}
+
 /// Build a single bake target — the target's transitive deps are
 /// resolved automatically via the `contexts` mappings in the merged
 /// bake files. Equivalent to `bake_targets(&[target])`.
@@ -48,7 +54,14 @@ pub async fn bake_targets(targets: &[&str]) {
         }
         return;
     }
-    let args = bake::base_args(targets, &[], None);
+    let platform_override;
+    let platform_overrides: &[&str] = if let Some(p) = test_platform() {
+        platform_override = format!("*.platform={p}");
+        &[platform_override.as_str()]
+    } else {
+        &[]
+    };
+    let args = bake::base_args(targets, platform_overrides, None);
     let mut cmd = Command::new("docker");
     cmd.args(&args);
     if let Ok(t) = std::env::var("HF_TOKEN") {
@@ -115,12 +128,16 @@ pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &st
     let dockerfile = spec["dockerfile"].as_str().unwrap_or("Dockerfile");
 
     // 2. Build that one target with classic docker build (→ buildah).
-    let mut bargs: Vec<String> = vec![
-        "build".into(),
-        // --pull=false: resolve in-repo `FROM` bases from the LOCAL store (the caller
-        // built deps first). Without it podman's docker-compat force-pulls a
-        // multi-stage `FROM <in-repo> AS x` base from the registry — a stale image.
-        // External bases (python:3.12-slim) still pull when absent.
+    let mut bargs: Vec<String> = vec!["build".into()];
+    if let Some(p) = test_platform() {
+        bargs.push("--platform".into());
+        bargs.push(p);
+    }
+    // --pull=false: resolve in-repo `FROM` bases from the LOCAL store (the caller
+    // built deps first). Without it podman's docker-compat force-pulls a
+    // multi-stage `FROM <in-repo> AS x` base from the registry — a stale image.
+    // External bases (python:3.12-slim) still pull when absent.
+    bargs.extend([
         "--pull=false".into(),
         "-f".into(),
         format!("{context}/{dockerfile}"),
@@ -128,7 +145,7 @@ pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &st
         format!("REGISTRY={registry}"),
         "--build-arg".into(),
         "REGISTRY_SUFFIX=/".into(),
-    ];
+    ]);
     for tag in spec["tags"].as_array().into_iter().flatten() {
         if let Some(tag) = tag.as_str() {
             bargs.push("-t".into());
