@@ -124,7 +124,12 @@ jobs:
       fail-fast: false
       matrix:
         arch: [amd64, arm64]
-    runs-on: ${{ (matrix.arch == 'arm64' && (vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm')) || (vars.FLEET_RUNNER || 'ubuntu-latest') }}
+        include:
+          - arch: amd64
+            runner: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+          - arch: arm64
+            runner: ${{ vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm' }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6
@@ -190,7 +195,7 @@ jobs:
             leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(tr ' ' '\n' <<< "$ONLY" | sort -u))
             echo "ONLY active -> $(printf '%s\n' "$leaf_list" | grep -c .) leaf target(s)"
           fi
-          leaves=$(printf '%s\n' "$leaf_list" | jq -R . | jq -sc 'map(select(length>0))')
+          leaves=$(printf '%s\n' "$leaf_list" | jq -Rsc 'split("\n")|map(select(length>0))')
           n=$(printf '%s' "$leaves" | jq 'length')
           if [ "$n" -le 0 ] || [ "$n" -gt 128 ]; then echo "::error::leaf count $n outside 1..128 (build fans out × 2 arches → must fit GitHub's 256-job matrix cap)"; exit 1; fi
 
@@ -205,7 +210,7 @@ jobs:
           fi
           benchmarks=$(printf '%s\n' "$bench_src" \
             | while read -r b; do [ -n "$b" ] && [ -f "containers/benchmarks/$b/compose.yaml" ] && echo "$b"; done \
-            | jq -R . | jq -sc 'map(select(length>0))')
+            | jq -Rsc 'split("\n")|map(select(length>0))')
 
           # ── per-task bases: {b,task,kind} for every per-task benchmark ──
           # kind=script -> build.sh (podman two-step upstream build; tasks from the
@@ -238,7 +243,7 @@ jobs:
           combos='[]'
           if [ -n "$COMBO_AGENTS" ]; then
             read -ra _ag <<< "$COMBO_AGENTS"
-            agents=$(printf '%s\n' "${_ag[@]}" | jq -R . | jq -sc 'map(select(length>0))')
+            agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')
             # Large arrays go through stdin, never argv: a per-task combo list is
             # >128KB, which exceeds Linux's MAX_ARG_STRLEN (--argjson would E2BIG).
             # Only the small agents list rides argv.
@@ -273,7 +278,7 @@ jobs:
   build:
     name: leaf ${{ matrix.target }} (${{ matrix.arch }})
     needs: [bases, enumerate]
-    runs-on: ${{ (matrix.arch == 'arm64' && (vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm')) || (vars.FLEET_RUNNER || 'ubuntu-latest') }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -281,6 +286,11 @@ jobs:
       matrix:
         target: ${{ fromJson(needs.enumerate.outputs.leaves) }}
         arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+          - arch: arm64
+            runner: ${{ vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
@@ -334,7 +344,7 @@ jobs:
   per-task:
     needs: [bases, enumerate]
     if: needs.enumerate.outputs.pertask_shards != '[]'
-    runs-on: ${{ (matrix.arch == 'arm64' && (vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm')) || (vars.FLEET_RUNNER || 'ubuntu-latest') }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -342,6 +352,11 @@ jobs:
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.pertask_shards) }}
         arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+          - arch: arm64
+            runner: ${{ vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm' }}
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4   # kind=bake (swe-bench)
@@ -377,7 +392,7 @@ jobs:
           }
           fails=0
           while read -r it; do
-            B=$(jq -r .b <<< "$it"); TASK=$(jq -r .task <<< "$it"); KIND=$(jq -r .kind <<< "$it")
+            IFS=$'\t' read -r B TASK KIND < <(jq -r '[.b,.task,.kind]|@tsv' <<< "$it")
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
             cache="${REGISTRY}/buildcache/${B}-${tid}-${ARCH}"
@@ -445,7 +460,7 @@ jobs:
             case "$kind" in benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;; esac
             echo "${REGISTRY}/${dir}/${nm}" >> /tmp/refs.txt
           done
-          jq -r '.[]?|.items[]?|"\(.b)\t\(.task)"' <<< "${PERTASK_SHARDS:-[]}" | while IFS="$(printf '\t')" read -r B TASK; do
+          jq -r '.[]?|.items[]?|"\(.b)\t\(.task)"' <<< "${PERTASK_SHARDS:-[]}" | while IFS=$'\t' read -r B TASK; do
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             echo "${REGISTRY}/benchmarks/${B}-${tid}" >> /tmp/refs.txt
           done
@@ -544,7 +559,7 @@ jobs:
           }
           fails=0
           while read -r it; do
-            B=$(jq -r .b <<< "$it"); A=$(jq -r .a <<< "$it"); TASK=$(jq -r .task <<< "$it")
+            IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
             if [ -n "$TASK" ]; then           # per-task combo: evals/<b>-<task>--<a>
               tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
               eb="${B}-${tid}"; bench_img="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
@@ -668,7 +683,7 @@ jobs:
               benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;;
             esac
             img="${REGISTRY}/${dir}/${nm}:${TAG}"
-            sz=$(size_of "$img" || echo 0); sz=${sz:-0}
+            sz=$(size_of "$img" || echo 0)
             dur=$(awk -F'\t' -v t="$T" '$1==t{print $2}' /tmp/dur.tsv || true)
             printf '%s\t%s\t%s\t%s\n' "$T" "$img" "${dur:-0}" "$sz" >> /tmp/sizes.tsv
           done
@@ -680,9 +695,9 @@ jobs:
                {target:.[0], kind:(.[0]|split("-")[0]), name:(.[0]|sub("^[^-]+-";"")),
                 image:.[1], build_seconds:(.[2]|tonumber), size_bytes:(.[3]|tonumber)}]}
           ' /tmp/sizes.tsv > size-report.json
+          # CSV derived from the JSON we just built (single source; @csv quotes fields).
           { echo "target,kind,name,image,build_seconds,size_bytes,size_mb"
-            awk -F'\t' '{k=$1; sub("-.*","",k); n=$1; sub("^[^-]*-","",n);
-                         printf "%s,%s,%s,%s,%s,%s,%.1f\n",$1,k,n,$2,$3,$4,$4/1048576}' /tmp/sizes.tsv
+            jq -r '.images[]|[.target,.kind,.name,.image,.build_seconds,.size_bytes,((.size_bytes/1048576*10|round)/10)]|@csv' size-report.json
           } > size-report.csv
           # Step summary (human-readable), appended once (single redirect — no SC2129).
           {
@@ -698,7 +713,7 @@ jobs:
             echo "## Per-image build time + registry size — leaves, biggest first"
             echo "_build = the leaf's own time FROM the frozen base; bases add ${basedur:-?}s, amortized once across all leaves._"
             echo "| image | build | size |"; echo "|---|--:|--:|"
-            sort -t"$(printf '\t')" -k4 -rn /tmp/sizes.tsv \
+            sort -t$'\t' -k4 -rn /tmp/sizes.tsv \
               | awk -F'\t' '{printf "| %s | %ds | %d MB |\n", $1, $3, $4/1048576}'
             echo ""
             echo "_size-report.json / .csv are uploaded as the \`fleet-size-report\` artifact (durable — feeds audits + README). Combos + per-task sizes are omitted here (hundreds) — query \`ghcr.io/exgentic/evals/*\` / \`benchmarks/*-<task>\`._"
