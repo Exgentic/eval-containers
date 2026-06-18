@@ -4,7 +4,15 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22). tests = a JSON string of
+# {inputs:[...], outputs:[...]}; the entrypoint explodes it into per-case files.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT problem_id::VARCHAR AS id, description AS problem, CAST(num_tests AS VARCHAR) AS num_tests, \
+            to_json({'inputs': input, 'outputs': output})::VARCHAR AS tests \
+     FROM read_parquet('hf://datasets/dapumptu/usaco_benchmark@~parquet/default/train/*.parquet')"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="usaco"
@@ -17,39 +25,9 @@ LABEL eval.benchmark.url="https://huggingface.co/datasets/dapumptu/usaco_benchma
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/usaco"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/usaco"
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl gcc g++ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ && rm -rf /var/lib/apt/lists/*
 
-# Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/,
-# then explodes the per-case inputs/outputs dict into /tasks/$EVAL_TASK_ID/tests/.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, pyarrow, os, json
-tables = []
-for part in range(3):
-    url = f'https://huggingface.co/datasets/dapumptu/usaco_benchmark/resolve/refs%2Fconvert%2Fparquet/default/train/000{part}.parquet'
-    urllib.request.urlretrieve(url, f'/tmp/data_{part}.parquet')
-    tables.append(pq.read_table(f'/tmp/data_{part}.parquet'))
-t = pyarrow.concat_tables(tables)
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        inputs = t['input'][i].as_py()
-        outputs = t['output'][i].as_py()
-        row = {
-            'id': str(t['problem_id'][i]),
-            'problem': str(t['description'][i]),
-            'num_tests': str(t['num_tests'][i]),
-            'tests': json.dumps({'inputs': inputs, 'outputs': outputs}),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=usaco
 
 # Test: compile agent's solution and run against test cases
