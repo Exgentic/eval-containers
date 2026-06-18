@@ -4,7 +4,13 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT task_id AS id, prompt AS problem, prompt, test, entry_point \
+     FROM 'hf://datasets/evalplus/humanevalplus@~parquet/default/test/0000.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="humanevalplus"
@@ -16,34 +22,9 @@ LABEL eval.benchmark.data_revision="d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
 LABEL eval.benchmark.url="https://github.com/evalplus/evalplus"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.01210"
 
-RUN pip install --no-cache-dir pyarrow==18.1.0 numpy==2.0.2
-
-# Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-os.makedirs('/tasks', exist_ok=True)
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/evalplus/humanevalplus/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        row = {
-            'id': str(t['task_id'][i]),
-            'problem': str(t['prompt'][i]),
-            'prompt': str(t['prompt'][i]),
-            'test': str(t['test'][i]),
-            'entry_point': str(t['entry_point'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+# numpy for EvalPlus test execution (pyarrow was loader-only, now in the builder).
+RUN pip install --no-cache-dir numpy==2.0.2
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=humanevalplus
 
 # Test: pipe prompt + completion + EvalPlus test (ending in `check(<entry>)`) into
