@@ -145,11 +145,11 @@ cargo test --test replay  -- --ignored --test-threads=6
 (Ryuk), which often can't start under podman; containers are still torn down by
 the test's own `Drop` handlers.
 
-> **On podman the cargo `replay` / `build` / `oracle` suites may still need
+> **On podman the cargo `replay` / `build` / `oracle` suites still need
 > `DOCKER_BUILDKIT=0`.** The test harness pins `*.platform=linux/amd64` for all
-> bake targets (testcontainers runs amd64 containers), so bake still builds
-> linux/amd64 images, which uses QEMU on arm64. If you see pyarrow segfaults
-> during `bootstrap_core_bases()`, prefix `DOCKER_BUILDKIT=0`:
+> bake targets because testcontainers runs amd64 containers (`.with_platform("linux/amd64")`),
+> so bake still builds linux/amd64 images — which uses QEMU on arm64 and
+> segfaults pyarrow. Prefix `DOCKER_BUILDKIT=0`:
 > `DOCKER_BUILDKIT=0 cargo test --test replay` (and `--test build`). The fast
 > suites (`check`, `compose`, `dockerfile_inspection`, `task_inspection`, `helm`)
 > need no builder and are unaffected.
