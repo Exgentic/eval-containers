@@ -692,7 +692,7 @@ jobs:
               benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;;
             esac
             img="${REGISTRY}/${dir}/${nm}:${TAG}"
-            sz=$(size_of "$img" || echo 0)
+            sz=$(size_of "$img" || echo 0); sz=${sz:-0}   # size_of can emit empty (unmeasurable image) → 0
             dur=$(awk -F'\t' -v t="$T" '$1==t{print $2}' /tmp/dur.tsv || true)
             printf '%s\t%s\t%s\t%s\n' "$T" "$img" "${dur:-0}" "$sz" >> /tmp/sizes.tsv
           done
@@ -702,7 +702,7 @@ jobs:
             {tag:$tag, run:$run, arch:"amd64",
              images:[inputs | split("\t") |
                {target:.[0], kind:(.[0]|split("-")[0]), name:(.[0]|sub("^[^-]+-";"")),
-                image:.[1], build_seconds:(.[2]|tonumber), size_bytes:(.[3]|tonumber)}]}
+                image:.[1], build_seconds:((.[2]|tonumber?)//0), size_bytes:((.[3]|tonumber?)//0)}]}
           ' /tmp/sizes.tsv > size-report.json
           # CSV derived from the JSON we just built (single source; @csv quotes fields).
           { echo "target,kind,name,image,build_seconds,size_bytes,size_mb"
