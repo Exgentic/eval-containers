@@ -5,7 +5,7 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM --platform=linux/amd64 debian:12-slim
+FROM debian:12-slim
 
 LABEL eval.type="core-base"
 LABEL eval.base.kind="slim"

@@ -7,7 +7,7 @@
 # with "cannot execute: required file not found" under Rosetta. CI on
 # Linux amd64 is a no-op; on Apple Silicon, this forces Rosetta-assisted
 # amd64 builds so the produced node binary matches what runs at runtime.
-FROM --platform=linux/amd64 ubuntu:24.04
+FROM ubuntu:24.04
 LABEL eval.type="core-base"
 LABEL eval.base.runtime="node"
 # Bumped 22.11.0 → 22.20.0 (latest LTS Node 22 release):
@@ -19,7 +19,9 @@ LABEL eval.base.runtime="node"
 ARG NODE_VERSION=22.20.0
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
-      if apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+      if apt-get update --fix-missing \
+         && apt-get upgrade -y \
+         && apt-get install -y --no-install-recommends \
            curl ca-certificates xz-utils git; then ok=1; break; fi; \
       echo "apt attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \
@@ -46,5 +48,17 @@ RUN npm config set fetch-retries 10 --global && \
     npm config set fetch-retry-mintimeout 20000 --global && \
     npm config set fetch-retry-maxtimeout 120000 --global && \
     npm config set fetch-timeout 600000 --global
+# CVE remediation for node's bundled npm dependency tree. The npm that ships
+# with this node tarball (npm@10.x) bundles vulnerable minimatch/glob/tar and a
+# transitive picomatch. A pinned npm@11.17.0 (reproducible per rule 9, and what
+# `@latest` resolves to today) replaces the ENTIRE bundled tree with patched
+# versions — verified to bundle minimatch 10.2.5, glob 13.0.6, tar 7.5.16,
+# refreshing the transitive picomatch as well. This is the npm tree the trivy
+# `library` scanner walks, so the refresh clears all four:
+#   minimatch CVE-2026-26996/27903/27904  (fixed >= 10.2.3)
+#   glob      CVE-2025-64756              (fixed >= 11.1.0)
+#   picomatch CVE-2026-33671              (fixed >= 4.0.4)
+#   tar       CVE-2026-23745/.../31802    (fixed >= 7.5.11)
+RUN npm install -g --fetch-retries 10 npm@11.17.0
 RUN printf '#!/bin/bash\nset -euo pipefail\n# Default skeleton: subclass agent Dockerfiles overwrite this.\nfor b in node npm npx; do ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b 2>/dev/null || true; done\n' > /opt/agent/install.sh && chmod +x /opt/agent/install.sh && \
     printf '#!/bin/bash\necho "ERROR: agent-base entrypoint not overridden by subclass" >&2\nexit 1\n' > /run.sh && chmod +x /run.sh

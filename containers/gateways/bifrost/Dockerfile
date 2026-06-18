@@ -23,9 +23,9 @@
 # One ARG drives both the pull and the label so they can't drift (principle 9).
 # Named stage because `COPY --from=` can't take an `${ARG}`.
 ARG BIFROST_VERSION=v1.5.4
-FROM --platform=linux/amd64 docker.io/maximhq/bifrost:${BIFROST_VERSION} AS bifrost-bin
+FROM docker.io/maximhq/bifrost:${BIFROST_VERSION} AS bifrost-bin
 
-FROM --platform=linux/amd64 alpine:3.20
+FROM alpine:3.20
 ARG BIFROST_VERSION
 
 LABEL gateway.kind="bifrost"

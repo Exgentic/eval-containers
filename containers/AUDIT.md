@@ -42,7 +42,6 @@ benchmark changed after that commit, so the row is stale.
 | docvqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | drop | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | flores200 | ✗ | ? | ? | ? | ? | ? | ? | ✗ | 2026-06-10 |
-| frontiermath | ✗ | ? | ? | ? | ? | ? | ? | ✗ | 2026-06-10 |
 | gaia | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | gdpval | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | global-mmlu | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |

@@ -289,7 +289,7 @@ async fn tc_build(
     }
 
     // Collect build args from caller + ambient `HF_TOKEN` env var so
-    // HF-gated benchmarks (gaia, flores200, hle, frontiermath) can pull
+    // HF-gated benchmarks (gaia, flores200, hle) can pull
     // their datasets during the build. These Dockerfiles declare
     // `ARG HF_TOKEN=""` with a `--mount=type=secret,id=HF_TOKEN` fallback;
     // the secret mount is preferred (CI uses `docker buildx --secret`),

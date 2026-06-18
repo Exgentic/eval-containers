@@ -1,6 +1,6 @@
 # Pinned amd64 so COPY --from= queries from amd64-pinned benchmark bases
 # find a matching platform variant (podman otherwise tries to pull).
-FROM --platform=linux/amd64 scratch
+FROM scratch
 
 LABEL eval.type="core"
 LABEL eval.core.component="entrypoint"

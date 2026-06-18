@@ -1,5 +1,5 @@
 # Pinned amd64 — see core/entrypoint/Dockerfile for rationale.
-FROM --platform=linux/amd64 scratch
+FROM scratch
 
 LABEL eval.type="core"
 LABEL eval.core.component="test-exact-match"

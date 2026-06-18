@@ -8,13 +8,15 @@
 #     parallel fetch + connection reuse — no subclass edits required
 #   - /opt/agent skeleton (install.sh, entrypoint.sh) that subclasses
 #     override
-FROM --platform=linux/amd64 python:3.12-slim
+FROM python:3.12-slim
 LABEL eval.type="core-base"
 LABEL eval.base.runtime="python"
 
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
-      if apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+      if apt-get update --fix-missing \
+         && apt-get upgrade -y \
+         && apt-get install -y --no-install-recommends \
            curl ca-certificates xz-utils git; then ok=1; break; fi; \
       echo "apt attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \

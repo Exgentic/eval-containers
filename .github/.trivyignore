@@ -36,3 +36,82 @@ AVD-DS-0002
 #   - Leaked secret *values* are covered by gitleaks (verify step 22); this is a
 #     different, complementary check, and the value here is intentionally absent.
 AVD-DS-0031
+
+# ============================================================================
+# Image-CVE deferrals (image lane: `trivy image … --scanners vuln`): HIGH/CRITICAL
+# findings with NO upstream/distro fix yet (trivy reports an empty fixed version),
+# unpatchable by a version bump today. Where a base runs `apt-get upgrade`/`apk
+# upgrade` they clear once the distro ships a fix; the minimal alpine/scratch
+# finals clear on the next base rebuild. Delete each line once a fix exists.
+# One CVE id per line.
+# ============================================================================
+
+# --- perl / perl-base / perl-modules / libperl (Debian, no fix yet) ---------
+# Debian bookworm/trixie perl 5.40.1-6 has no patched release for these.
+CVE-2026-42496
+CVE-2026-42497
+CVE-2026-48959
+CVE-2026-48962
+CVE-2026-8376
+CVE-2026-9538
+
+# --- curl / libcurl (Debian, no fix yet) ------------------------------------
+# curl 8.14.1-2+deb13u3 — no fixed Debian package published yet.
+CVE-2026-5773
+CVE-2026-6276
+
+# --- libexpat1 (Debian, no fix yet) -----------------------------------------
+# expat 2.7.1-2 — no fixed Debian package published yet.
+CVE-2025-59375
+CVE-2026-25210
+CVE-2026-45186
+
+# --- ncurses / libtinfo6 / libncursesw6 (Debian, no fix yet) ----------------
+# ncurses 6.5+20250216-2 — no fixed Debian package published yet.
+CVE-2025-69720
+
+# --- libsqlite3-0 (Debian, no fix yet) --------------------------------------
+# sqlite3 3.46.1-7+deb13u1 — no fixed Debian package published yet.
+CVE-2026-11822
+CVE-2026-11824
+
+# --- libssh2 (Debian, no fix yet) -------------------------------------------
+# libssh2 1.11.1-1 — no fixed Debian package published yet.
+CVE-2026-7598
+
+# --- core/otel OCB collector v0.105.0: otel-sdk 1.28.0 resource detectors -----
+# The custom OCB collector is pinned to 0.105.0 for byte-identical traces (#180).
+# Its bundled otel-sdk 1.28.0 carries two PATH-hijack CVEs in resource detectors
+# that only execute on Darwin (ioreg) / BSD (kenv) — unreachable on this
+# linux/alpine collector — and aren't bumpable without moving the 0.105.0 pin (the
+# collector modules ARE otel-sdk 1.28 consumers). The Go stdlib is CVE-patched via
+# the go1.26.4 toolchain bump. The CRITICAL grpc auth-bypass that 0.105.0 shipped
+# (CVE-2026-33186) is FIXED, not deferred — builder-config.yaml `replaces` grpc to
+# v1.79.3 (transport-only; traces unchanged), so it's gone from this list.
+CVE-2026-24051
+CVE-2026-39883
+
+# --- litellm wolfi base: busybox + openssl + py3-pip-wheel (Chainguard) ------
+# The litellm v1.89.1 upstream image ships a Chainguard Wolfi base. A fix exists
+# upstream (busybox 1.37.0-r58, openssl 3.6.3-r0, py3-pip-wheel 26.1.2-r1) but
+# the patched builds are NOT in Chainguard's free apk repo yet, so an `apk
+# upgrade` of these is a no-op (verified) — they clear when litellm rebuilds its
+# base. busybox here is the CPIO/shell applet set and py3-pip-wheel is the system
+# pip's vendored urllib3 — neither is reachable from the proxy, which runs out of
+# a uv venv with urllib3 pinned to the patched 2.7.0.
+CVE-2023-39810
+CVE-2026-26157
+CVE-2026-26158
+CVE-2026-45447
+CVE-2026-44432
+
+# --- duckdb/slim bases: debian 12 base packages (no upstream fix) ------------
+# core/benchmark-base-duckdb + benchmark-base-slim (#181) are debian:12-slim;
+# these have no fixed Debian package (will_not_fix / affected) so apt upgrade
+# can't clear them. Low real-world risk in a build-time data loader: zlib's
+# MiniZip overflow (Debian won't fix), jq DoS on crafted JSON (jq only parses
+# trusted HF parquet metadata here), openldap (ldap unused). Revisit on fix.
+CVE-2023-45853
+CVE-2023-2953
+CVE-2026-32316
+CVE-2026-40164

@@ -16,3 +16,10 @@ receivers:
   - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.105.0
 exporters:
   - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.105.0
+
+# grpc-go 1.65.0 (what 0.105.0 pins transitively) carries CVE-2026-33186, a
+# CRITICAL HTTP/2 authorization-bypass in the server. grpc is the OTLP receiver's
+# transport only — bumping it past the fix (>=1.79.3) leaves the trace pipeline
+# (otlpreceiver → fileexporter) byte-identical while clearing the CVE.
+replaces:
+  - google.golang.org/grpc => google.golang.org/grpc v1.79.3

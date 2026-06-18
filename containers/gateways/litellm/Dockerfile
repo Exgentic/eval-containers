@@ -11,20 +11,32 @@
 # Honest size: ~525 MB. litellm[proxy] hard-imports many provider SDKs
 # (boto3, google-cloud, anthropic, ...) at startup so we can only
 # safely strip prisma. The baseline cost of a Python LLM proxy.
-FROM --platform=linux/amd64 python:3.12-slim AS builder
+FROM python:3.12-slim AS builder
 
-COPY --from=ghcr.io/astral-sh/uv:0.5.14 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
 
 # venv lives at /opt/gateway/venv so the entire gateway tree is
 # self-contained under /opt/gateway/ — combination.Dockerfile only has
 # to COPY one path and gets the binary, the venv, and the config.
+#
+# litellm 1.89.1 (same as core/litellm) + the same transitive-dep CVE
+# force-patches, applied in a second pass that overrides litellm's caps
+# (cryptography 48.0.1 is past its <47 ceiling):
+#   starlette CVE-2026-48818/54283 · python-multipart CVE-2026-24486/42561/53539
+#   PyJWT CVE-2026-48526 · urllib3 CVE-2026-44431/44432 · cryptography GHSA-537c-gmf6-5ccf
 ENV UV_HTTP_TIMEOUT=120 UV_NO_CACHE=1
 RUN uv venv --python 3.12 --seed --relocatable /opt/gateway/venv \
  && uv pip install --python /opt/gateway/venv/bin/python \
-      "litellm[proxy]==1.83.3" \
+      "litellm[proxy]==1.89.1" \
       "opentelemetry-api>=1.25.0" \
       "opentelemetry-sdk>=1.25.0" \
-      "opentelemetry-exporter-otlp-proto-http>=1.25.0"
+      "opentelemetry-exporter-otlp-proto-http>=1.25.0" \
+ && uv pip install --python /opt/gateway/venv/bin/python \
+      "starlette==1.3.1" \
+      "python-multipart==0.0.30" \
+      "PyJWT==2.13.0" \
+      "urllib3==2.7.0" \
+      "cryptography==48.0.1"
 
 # Drop prisma — DB ORM only used when virtual keys / DB-backed budgets
 # are enabled. Other heavy deps (boto3, google, anthropic) are imported
@@ -35,10 +47,10 @@ RUN /opt/gateway/venv/bin/pip uninstall -y prisma || true \
  && find /opt/gateway/venv -type f -name '*.pyc' -delete 2>/dev/null || true \
  && find /opt/gateway/venv -type d \( -name 'tests' -o -name 'test' \) -exec rm -rf {} + 2>/dev/null || true
 
-FROM --platform=linux/amd64 python:3.12-slim
+FROM python:3.12-slim
 
 LABEL gateway.kind="litellm"
-LABEL gateway.litellm_version="1.83.3"
+LABEL gateway.litellm_version="1.89.1"
 LABEL gateway.translates_protocols="true"
 
 # curl is the uniform health-check tool across gateway flavors. The

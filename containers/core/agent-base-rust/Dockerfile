@@ -5,12 +5,14 @@
 # drop a prebuilt binary + symlink into /usr/local/bin. If a Go-only base
 # emerges, add a `core/agent-base-go/` and retag then.
 # Provides: apt-retry wrapper with tar/bzip2, /opt/agent skeleton + /opt/agent/bin on PATH.
-FROM --platform=linux/amd64 ubuntu:24.04
+FROM ubuntu:24.04
 LABEL eval.type="core-base"
 LABEL eval.base.runtime="rust"
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
-      if apt-get update --fix-missing && apt-get install -y --no-install-recommends \
+      if apt-get update --fix-missing \
+         && apt-get upgrade -y \
+         && apt-get install -y --no-install-recommends \
            curl ca-certificates xz-utils bzip2 libgomp1 git; then ok=1; break; fi; \
       echo "apt attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \

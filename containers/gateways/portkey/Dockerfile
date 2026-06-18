@@ -17,9 +17,9 @@
 # One ARG drives both the pull and the version label so they can't drift
 # (principle 9). Named stage because `COPY --from=` can't take an `${ARG}`.
 ARG PORTKEY_VERSION=1.15.2
-FROM --platform=linux/amd64 docker.io/portkeyai/gateway:${PORTKEY_VERSION} AS portkey
+FROM docker.io/portkeyai/gateway:${PORTKEY_VERSION} AS portkey
 
-FROM --platform=linux/amd64 node:20-alpine
+FROM node:20-alpine
 ARG PORTKEY_VERSION
 
 LABEL gateway.kind="portkey"

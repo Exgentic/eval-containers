@@ -15,7 +15,7 @@
 # gateway + otelcol it produces the smallest possible
 # evals/agents-smoke--<agent>:latest.
 
-FROM --platform=linux/amd64 python:3.12-slim
+FROM python:3.12-slim
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="agents-smoke"
