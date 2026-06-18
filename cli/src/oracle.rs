@@ -115,8 +115,6 @@ fn run(image: &str, task: &str, mode: &str, solution: Option<&str>) -> Result<St
     cmd.args([
         "run",
         "--rm",
-        "--platform",
-        "linux/amd64",
         "-e",
         &format!("EVAL_TASK_ID={task}"),
         "-e",
