@@ -1,20 +1,11 @@
-//! Shared test helpers reachable from every `tests/<area>/test.rs` via
-//! `#[path = "../common/mod.rs"] mod common;`.
-//!
-//! After the bake migration (RULES.md principle 15 / tests/RULES.md
-//! rule 6c), this module shells to `docker buildx bake` with the union
-//! of every artifact `docker-bake.hcl` in the repo merged via `-f`. Bake
-//! handles dependency ordering, parallelism, and image caching
-//! internally — tests just name the target(s) they depend on and call
-//! `bake_targets`.
+//! Shared test helpers — included via `#[path = "../common/mod.rs"] mod common;`.
 #![allow(dead_code)]
 
 use eval_containers::bake;
 use tokio::process::Command;
 
-/// Local-only registry prefix for the classic (`DOCKER_BUILDKIT=0`) build path:
-/// published nowhere, so podman's docker-compat can't force-pull a stale *published*
-/// base over the one we just built. Overridable via `REGISTRY`/`EVAL_REGISTRY`.
+/// Local-only registry used by the classic build path so podman can't force-pull a
+/// stale published base over what we just built. Overridable via `REGISTRY`.
 pub const LOCAL_REGISTRY: &str = "localhost/ec";
 
 /// True when the classic, BuildKit-free build path is selected — uses classic `docker build`
@@ -29,24 +20,17 @@ pub fn test_platform() -> Option<String> {
     std::env::var("TEST_PLATFORM").ok()
 }
 
-/// Build a single bake target — the target's transitive deps are
-/// resolved automatically via the `contexts` mappings in the merged
-/// bake files. Equivalent to `bake_targets(&[target])`.
+/// Convenience wrapper around `bake_targets` for a single target.
 pub async fn bake_target(target: &str) {
     bake_targets(&[target]).await
 }
 
-/// Build one or more bake targets in a single bake invocation. Bake
-/// runs the build graph in parallel where it can, serialized only by
-/// the dep edges declared in each target's `contexts`.
+/// Build one or more bake targets.
 pub async fn bake_targets(targets: &[&str]) {
     // bake discovery reads `containers/<category>` relative to cwd; cargo runs
     // each test binary from the crate dir, so anchor at the repo root first
     // (idempotent — safe under the harness's parallel threads).
     test_support::enter_repo_root();
-    // Classic path (podman, DOCKER_BUILDKIT=0): build each target one at a time with
-    // `docker build` instead of bake. Built in the given order — callers list
-    // dependencies before dependents. Rationale lives on `build_target_classic`.
     if classic_build() {
         let reg = std::env::var("REGISTRY").unwrap_or_else(|_| LOCAL_REGISTRY.to_string());
         for target in targets {
@@ -73,17 +57,9 @@ pub async fn bake_targets(targets: &[&str]) {
     );
 }
 
-/// Build ONE bake target with classic `docker build` instead of `docker buildx bake`.
-/// Podman routes classic builds through buildah, which avoids multi-stage 401 issues
-/// on unpublished in-repo bases.
-///
-/// This lives in the test harness, not the CLI: "drive the bake graph without buildx"
-/// is platform-specific test plumbing. Bake is still the build-graph source: we read
-/// the target's resolved spec from `docker buildx bake --print` (HCL→JSON only — no
-/// build) and never re-derive the graph; the *caller* builds dependencies first.
-///
-/// `overrides` are bake `--set` args; `envs` (notably `REGISTRY`) apply to both
-/// the `--print` resolve and the build.
+/// Build one bake target with classic `docker build` (→ buildah) instead of bake.
+/// Avoids podman's multi-stage 401 on unpublished in-repo bases (`--pull=false`).
+/// Reads the build spec from `bake --print`; caller is responsible for dep order.
 pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &str)]) {
     let registry = envs
         .iter()
@@ -91,7 +67,7 @@ pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &st
         .map(|(_, v)| *v)
         .unwrap_or(LOCAL_REGISTRY);
 
-    // 1. Resolve the target's spec — `--print` parses HCL→JSON, no build, no QEMU.
+    // 1. Resolve the target's spec via --print (HCL→JSON, no build).
     let mut print_args: Vec<String> = vec!["buildx".into(), "bake".into()];
     for f in bake::artifact_bake_files() {
         print_args.push("-f".into());
@@ -128,10 +104,7 @@ pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &st
         bargs.push("--platform".into());
         bargs.push(p);
     }
-    // --pull=false: resolve in-repo `FROM` bases from the LOCAL store (the caller
-    // built deps first). Without it podman's docker-compat force-pulls a
-    // multi-stage `FROM <in-repo> AS x` base from the registry — a stale image.
-    // External bases (python:3.12-slim) still pull when absent.
+    // --pull=false: use the locally-built in-repo bases; external bases still pull.
     bargs.extend([
         "--pull=false".into(),
         "-f".into(),
@@ -148,12 +121,8 @@ pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &st
         }
     }
     for (k, v) in spec["args"].as_object().into_iter().flatten() {
-        // REGISTRY/SUFFIX are forced above. HF_TOKEN must never travel as a build
-        // arg — it would persist in image history (the leak #155 closed). Gated
-        // benchmarks (gaia, hle, flores200) read it from a BuildKit
-        // `--mount=type=secret`, which classic `docker build` can't pass on podman,
-        // so those four don't build on this path — use Docker Desktop or
-        // `podman build --secret` (see docs/guides/podman-on-apple-silicon.md §6).
+        // HF_TOKEN must not travel as a build arg (persists in image history).
+        // REGISTRY/SUFFIX are already set above.
         if k == "HF_TOKEN" || k == "REGISTRY" || k == "REGISTRY_SUFFIX" {
             continue;
         }
