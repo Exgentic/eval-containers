@@ -191,7 +191,6 @@ async fn start_replay_mock(net: &str, host_name: &str) -> ContainerAsync<Generic
         // successful fixture load — wait for that before letting the
         // agent connect, otherwise the first call races startup.
         .with_wait_for(WaitFor::message_on_stderr("[replay] loaded "))
-        .with_platform("linux/amd64")
         .with_mount(Mount::bind_mount(
             fixture_path().to_str().expect("utf8 fixture path"),
             "/data/traces.jsonl",
@@ -234,7 +233,6 @@ async fn start_agent(
     // EVAL_TIMEOUT trips). We don't tie the readiness probe to that
     // — we want to start polling the mock's stderr immediately.
     .with_wait_for(WaitFor::seconds(1))
-    .with_platform("linux/amd64")
     .with_network(net)
     .with_mount(Mount::bind_mount(
         output_dir.to_str().expect("utf8 output dir"),

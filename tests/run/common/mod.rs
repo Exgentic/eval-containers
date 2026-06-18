@@ -7,11 +7,6 @@
 //! handles dependency ordering, parallelism, and image caching
 //! internally — tests just name the target(s) they depend on and call
 //! `bake_targets`.
-//!
-//! On podman/Apple-Silicon (`DOCKER_BUILDKIT=0`), bake's BuildKit QEMUs
-//! Python builds, so `build_target_classic` drives the same bake graph
-//! one target at a time with classic `docker build` (→ buildah → Rosetta).
-//! That path is test support, not the CLI — see its doc for why.
 #![allow(dead_code)]
 
 use eval_containers::bake;
@@ -22,8 +17,8 @@ use tokio::process::Command;
 /// base over the one we just built. Overridable via `REGISTRY`/`EVAL_REGISTRY`.
 pub const LOCAL_REGISTRY: &str = "localhost/ec";
 
-/// True when the classic, BuildKit-free build path is selected — podman/Apple-Silicon,
-/// where bake's BuildKit emulates amd64 with QEMU (docs/guides/podman-on-apple-silicon.md §5b).
+/// True when the classic, BuildKit-free build path is selected — uses classic `docker build`
+/// (→ buildah) instead of `docker buildx bake`. Set `DOCKER_BUILDKIT=0` to enable.
 pub fn classic_build() -> bool {
     matches!(std::env::var("DOCKER_BUILDKIT").as_deref(), Ok("0"))
 }
@@ -38,12 +33,6 @@ pub async fn bake_target(target: &str) {
 /// Build one or more bake targets in a single bake invocation. Bake
 /// runs the build graph in parallel where it can, serialized only by
 /// the dep edges declared in each target's `contexts`.
-///
-/// Tests run testcontainers with `.with_platform("linux/amd64")` so
-/// the framework's images must match. On Apple Silicon, buildx's
-/// docker-container driver defaults to the host arch (arm64) and
-/// podman 404s the amd64 probe — pin `*.platform=linux/amd64` here so
-/// every test-driven build matches the runtime probe.
 pub async fn bake_targets(targets: &[&str]) {
     // bake discovery reads `containers/<category>` relative to cwd; cargo runs
     // each test binary from the crate dir, so anchor at the repo root first
@@ -55,15 +44,11 @@ pub async fn bake_targets(targets: &[&str]) {
     if classic_build() {
         let reg = std::env::var("REGISTRY").unwrap_or_else(|_| LOCAL_REGISTRY.to_string());
         for target in targets {
-            build_target_classic(
-                target,
-                &["*.platform=linux/amd64"],
-                &[("REGISTRY", reg.as_str())],
-            );
+            build_target_classic(target, &[], &[("REGISTRY", reg.as_str())]);
         }
         return;
     }
-    let args = bake::base_args(targets, &["*.platform=linux/amd64"], None);
+    let args = bake::base_args(targets, &[], None);
     let mut cmd = Command::new("docker");
     cmd.args(&args);
     if let Ok(t) = std::env::var("HF_TOKEN") {
@@ -80,19 +65,14 @@ pub async fn bake_targets(targets: &[&str]) {
     );
 }
 
-/// Build ONE bake target with classic `docker build` — which podman routes to
-/// buildah and the VM's **Rosetta** — instead of `docker buildx bake`, whose
-/// BuildKit emulates amd64 with QEMU and segfaults Python-heavy builds (pyarrow)
-/// on Apple-Silicon. See docs/guides/podman-on-apple-silicon.md §5b.
+/// Build ONE bake target with classic `docker build` instead of `docker buildx bake`.
+/// Podman routes classic builds through buildah, which avoids multi-stage 401 issues
+/// on unpublished in-repo bases.
 ///
-/// This lives in the test harness, not the CLI, on purpose: `docker buildx bake`
-/// is the CLI's one builder, and "drive the bake graph without buildx" is
-/// platform-specific *test* plumbing — deletable once buildah grows native bake
-/// support (containers/buildah#4796). The CLI stays buildx-only (src/RULES.md
-/// principles 3, 5, 11). Bake is still the build-graph source: we read the
-/// target's resolved spec from `docker buildx bake --print` (HCL→JSON only — no
-/// build, no QEMU) and never re-derive the graph; the *caller* builds
-/// dependencies first (ordering is data in the call site, not logic here).
+/// This lives in the test harness, not the CLI: "drive the bake graph without buildx"
+/// is platform-specific test plumbing. Bake is still the build-graph source: we read
+/// the target's resolved spec from `docker buildx bake --print` (HCL→JSON only — no
+/// build) and never re-derive the graph; the *caller* builds dependencies first.
 ///
 /// `overrides` are bake `--set` args; `envs` (notably `REGISTRY`) apply to both
 /// the `--print` resolve and the build.
@@ -134,11 +114,9 @@ pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &st
     let context = spec["context"].as_str().unwrap_or(".");
     let dockerfile = spec["dockerfile"].as_str().unwrap_or("Dockerfile");
 
-    // 2. Build that one target with classic docker build (buildah → Rosetta).
+    // 2. Build that one target with classic docker build (→ buildah).
     let mut bargs: Vec<String> = vec![
         "build".into(),
-        "--platform".into(),
-        "linux/amd64".into(),
         // --pull=false: resolve in-repo `FROM` bases from the LOCAL store (the caller
         // built deps first). Without it podman's docker-compat force-pulls a
         // multi-stage `FROM <in-repo> AS x` base from the registry — a stale image.
