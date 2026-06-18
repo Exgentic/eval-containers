@@ -34,7 +34,7 @@ emit_target() {
     --arg date    "$BUILD_DATE" \
     '{
       context:   $context,
-      platforms: ["linux/amd64"],
+      platforms: ["linux/amd64","linux/arm64"],
       tags:      [$tag],
       labels: {
         "eval.type":                         $type,
