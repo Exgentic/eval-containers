@@ -322,6 +322,27 @@ fn parse_args(arguments: Option<&Value>) -> Value {
     }
 }
 
+/// A recorded tool call's `(id, name, raw_arguments)`, with defaults: a generated
+/// `prefix`-id when unrecorded, `""` name, `"{}"` arguments. Every emitter pulls
+/// the same three fields; `parse_args(Some(&args))` turns the raw arguments into a
+/// parsed object where a provider wants one (Anthropic/Gemini input).
+fn tool_parts(tc: &Value, prefix: &str) -> (Value, Value, Value) {
+    let func = tc.get("function");
+    let id = tc
+        .get("id")
+        .cloned()
+        .unwrap_or_else(|| json!(gen_id(prefix)));
+    let name = func
+        .and_then(|f| f.get("name"))
+        .cloned()
+        .unwrap_or_else(|| json!(""));
+    let args = func
+        .and_then(|f| f.get("arguments"))
+        .cloned()
+        .unwrap_or_else(|| json!("{}"));
+    (id, name, args)
+}
+
 fn emit_chat(t: &Turn) -> Value {
     let mut msg = json!({
         "role": "assistant",
@@ -357,13 +378,11 @@ fn emit_responses(t: &Turn) -> Value {
         }));
     }
     for tc in &t.tool_calls {
-        let func = tc.get("function");
+        let (id, name, args) = tool_parts(tc, "call_");
         output.push(json!({
-            "id": tc.get("id").cloned().unwrap_or_else(|| json!(gen_id("call_"))),
-            "type": "function_call",
+            "id": id, "type": "function_call",
             "call_id": tc.get("id").cloned().unwrap_or(Value::Null),
-            "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
-            "arguments": func.and_then(|f| f.get("arguments")).cloned().unwrap_or_else(|| json!("{}")),
+            "name": name, "arguments": args,
         }));
     }
     json!({
@@ -379,12 +398,10 @@ fn emit_anthropic(t: &Turn) -> Value {
         content.push(json!({ "type": "text", "text": t.text }));
     }
     for tc in &t.tool_calls {
-        let func = tc.get("function");
+        let (id, name, args) = tool_parts(tc, "toolu_");
         content.push(json!({
-            "type": "tool_use",
-            "id": tc.get("id").cloned().unwrap_or_else(|| json!(gen_id("toolu_"))),
-            "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
-            "input": parse_args(func.and_then(|f| f.get("arguments"))),
+            "type": "tool_use", "id": id, "name": name,
+            "input": parse_args(Some(&args)),
         }));
     }
     let stop = match t.finish_reason.as_str() {
@@ -404,11 +421,8 @@ fn emit_gemini(t: &Turn) -> Value {
         parts.push(json!({ "text": t.text }));
     }
     for tc in &t.tool_calls {
-        let func = tc.get("function");
-        parts.push(json!({ "functionCall": {
-            "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
-            "args": parse_args(func.and_then(|f| f.get("arguments"))),
-        }}));
+        let (_, name, args) = tool_parts(tc, "call_");
+        parts.push(json!({ "functionCall": { "name": name, "args": parse_args(Some(&args)) }}));
     }
     json!({
         "candidates": [{ "content": { "parts": parts, "role": "model" }, "finishReason": "STOP", "index": 0 }],
@@ -557,15 +571,10 @@ fn sse_chat(t: &Turn) -> String {
         );
     }
     for (i, tc) in t.tool_calls.iter().enumerate() {
-        let func = tc.get("function");
+        let (id, name, args) = tool_parts(tc, "call_");
         let delta = json!({ "tool_calls": [{
-            "index": i,
-            "id": tc.get("id").cloned().unwrap_or_else(|| json!(gen_id("call_"))),
-            "type": "function",
-            "function": {
-                "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
-                "arguments": func.and_then(|f| f.get("arguments")).cloned().unwrap_or_else(|| json!("{}")),
-            },
+            "index": i, "id": id, "type": "function",
+            "function": { "name": name, "arguments": args },
         }] });
         sse_event(&mut out, None, &chunk(delta, Value::Null));
     }
@@ -623,16 +632,13 @@ fn sse_anthropic(t: &Turn) -> String {
         block += 1;
     }
     for tc in &t.tool_calls {
-        let func = tc.get("function");
-        let input = parse_args(func.and_then(|f| f.get("arguments")));
+        let (id, name, args) = tool_parts(tc, "toolu_");
+        let input = parse_args(Some(&args));
         sse_event(
             &mut out,
             Some("content_block_start"),
             &json!({ "type": "content_block_start", "index": block, "content_block": {
-                "type": "tool_use",
-                "id": tc.get("id").cloned().unwrap_or_else(|| json!(gen_id("toolu_"))),
-                "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
-                "input": {},
+                "type": "tool_use", "id": id, "name": name, "input": {},
             }}),
         );
         sse_event(
