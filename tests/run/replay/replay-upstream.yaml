@@ -1,0 +1,33 @@
+# Full-stack replay overlay: add the recorded inference engine as the gateway's
+# UPSTREAM, so the real gateway + otelcol run on top of it (ReplayMode::FullStack
+# in test.rs). Layered as a plain `-f` overlay on the benchmark's own
+# compose.yaml — it only ADDS a service and rebinds the output volume, never
+# overrides an imported service, so no flatten is needed (unlike gateway-mode,
+# which swaps the imported gateway and must flatten first).
+#
+# The gateway is pointed at this service purely via the `OPENAI_API_BASE` env the
+# test sets (services.yaml already reads `${OPENAI_API_BASE:?}`) — no gateway
+# override here. Per-run values come from env: REPLAY_FIXTURE (the recorded
+# trajectory) and REPLAY_OUTPUT (host dir the named `output` volume binds to).
+services:
+  upstream:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/replay:latest
+    # The distroless replay image has no shell; probe via the binary's own mode
+    # (services.yaml's gateway uses /opt/gateway/health, a script this image lacks).
+    healthcheck:
+      test: ["CMD", "/opt/gateway/server", "health"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+    volumes:
+      - ${REPLAY_FIXTURE:?}:/data/traces.jsonl:ro
+    networks:
+      - upstream
+
+volumes:
+  output:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${REPLAY_OUTPUT:?}

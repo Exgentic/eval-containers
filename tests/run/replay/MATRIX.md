@@ -46,6 +46,29 @@ Each row is one replay test with a recorded fixture.
 | osworld | — | sidecar | needs VM image (11GB) |
 | tau-bench | — | bridge | needs two-model replay |
 
+## Replay modes
+
+Two modes, split by what they put under test:
+
+| Mode | Replay sits at | What runs for real | Asserts |
+|------|----------------|--------------------|---------|
+| `Lean` (default, whole matrix above) | the gateway slot | the lean eval image in isolation: benchmark, agent, verifier | result.json contract |
+| `FullStack` (`replay_fullstack_test!`) | the gateway's **upstream** | the entire orchestration: real bifrost gateway (boot, routing, format translation, governance, OTel) + otelcol, on top of replay | result.json contract **+ real `gen_ai` gateway spans in traces.jsonl** |
+
+`FullStack` reuses the same fixtures; the real gateway dials the replay server
+as its provider (`OPENAI_API_BASE`). It is the only mode that exercises the
+gateway+OTel stack offline. One fixture (`aime-17-claude-code`) covers the path
+today; the broad matrix stays on cheaper `Lean` replay.
+
+**Known limitation — turn-count fidelity.** Fixtures are recorded for *direct*
+replay (agent ↔ replay), so they hold exactly the turns that agent made. A real
+gateway in front can issue more upstream calls than the fixture has turns; once
+the FIFO is exhausted the agent stops seeing the recorded answer, so the
+full-stack run need not reproduce the recorded reward (e.g. `aime-17` grades
+`reward:0`). The full-stack assertion therefore checks the pipeline ran and the
+gateway instrumented — not reward parity. Closing the gap needs richer fixtures
+or last-turn-repeat in the replay server.
+
 ## Agent coverage
 
 | Agent | Count | Benchmarks |

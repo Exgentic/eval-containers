@@ -30,40 +30,39 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 // Each test runs a full evaluation with a recorded trajectory fixture.
 // Fixtures are in tests/run/replay/fixtures/{benchmark}-0-{agent}.traces.jsonl
 
-/// Helper: start a compose stack with the replay model serving a recorded fixture.
+/// Start a compose stack for a replay run: the benchmark's `compose.yaml` plus a
+/// committed per-mode overlay (see `ReplayMode`), with the fixture and output dir
+/// passed by env. Returns the live `DockerCompose`; its `Drop` tears the stack
+/// down. The caller binds it (`let _compose = …`) for the test's duration.
 ///
-/// Two compose-level overrides are layered on top of the benchmark's
-/// `compose.yaml`:
+/// `with_wait(false)` disables compose's default `--wait` (which would time out
+/// on the one-shot runner); `with_wait_for_service("runner", WaitFor::Exit(_))`
+/// blocks until the runner finishes before we assert on `result.json`.
 ///
-/// 1. **Gateway image**: swap the real gateway image for `models/replay`,
-///    which serves recorded responses at the same protocol-prefixed paths.
-///    Mount the trajectory fixture into the container at `/data/traces.jsonl`.
-/// 2. **Output volume**: rebind the named `output` volume as a bind mount
-///    pointing at the host's `./output/` directory, so the runner's
-///    `result.json` ends up readable from the test process. Without this,
-///    the named volume's contents live inside Docker and the test can't
-///    see them.
-///
-/// `with_wait(false)` disables compose's default `--wait` (which would time
-/// out on the runner — runner is one-shot and exits, not "healthy"); we
-/// use `with_wait_for_service("runner", WaitFor::Exit(_))` to block until
-/// the runner finishes before we assert on `result.json`.
-///
-/// Returned together: a `DockerCompose` plus the two `NamedTempFile`s it reads
-/// from disk — the flattened per-benchmark compose and the replay override.
-/// Declaration order matters — `compose.down()` (called when the
-/// `DockerCompose` field is dropped) runs while both files are still on disk;
-/// they drop afterward.
-/// Held by the test only for its `Drop` order (compose down first, then the
-/// temp files). No field is read after construction.
-#[allow(dead_code)]
-struct ReplayHandle {
-    compose: DockerCompose,
-    _override: tempfile::NamedTempFile,
-    _flat: tempfile::NamedTempFile,
+/// What a replay run puts under test. Two modes, nothing else — split by scope,
+/// not by where replay happens to sit.
+#[derive(Clone, Copy, PartialEq)]
+enum ReplayMode {
+    /// **The lean eval image, in isolation.** `models/replay` stands in for the
+    /// gateway, so the eval container talks straight to a stub: only the
+    /// benchmark, agent, and verifier are exercised. No real gateway is built or
+    /// run — cheap, and the broad fixture matrix uses this.
+    Lean,
+    /// **The entire orchestration.** The *real* bifrost gateway and otelcol run,
+    /// with `models/replay` as the upstream the gateway dials (`OPENAI_API_BASE`).
+    /// Gateway boot, routing, request/response format translation, governance,
+    /// and OTel span emission are all exercised for real, driven offline by the
+    /// same fixtures. Strengthens replay rule 2 (indistinguishability): the eval
+    /// container talks to a genuinely real gateway, not a stand-in.
+    FullStack,
 }
 
-async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)]) -> ReplayHandle {
+async fn replay_compose(
+    compose_file: &str,
+    fixture: &str,
+    mode: ReplayMode,
+    env: &[(&str, &str)],
+) -> DockerCompose {
     test_support::enter_repo_root();
     let cwd = std::env::current_dir().unwrap();
 
@@ -103,12 +102,6 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     // the replay_test! macro). No image override required — compose
     // interpolation picks the right `evals/<bench>--<agent>:latest`.
     let fixture_abs = cwd.join(fixture);
-    // Override the gateway: swap to the distroless models/replay image, point its
-    // healthcheck at the binary's own `health` mode (services.yaml uses
-    // `/opt/gateway/health`, a shell script the distroless replay image can't run),
-    // and mount the recorded fixture read-only. Also rebind the named `output`
-    // volume to a host dir so the test reads result.json.
-    //
     // Classic (podman) path: the bootstrap built models/replay under a local-only
     // registry (overridable via EVAL_REGISTRY); the Docker/Linux path uses
     // ghcr.io/exgentic (compose's own `${EVAL_REGISTRY:-ghcr.io/exgentic}` default).
@@ -118,79 +111,44 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
     } else {
         "ghcr.io/exgentic".to_string()
     };
-    let override_content = format!(
-        "services:\n\
-         \x20 gateway:\n\
-         \x20   image: {replay_registry}/models/replay:latest\n\
-         \x20   healthcheck:\n\
-         \x20     test: [\"CMD\", \"/opt/gateway/server\", \"health\"]\n\
-         \x20   volumes:\n\
-         \x20     - {fixture_abs}:/data/traces.jsonl:ro\n\
-         volumes:\n\
-         \x20 output:\n\
-         \x20   driver: local\n\
-         \x20   driver_opts:\n\
-         \x20     type: none\n\
-         \x20     o: bind\n\
-         \x20     device: {host_output}\n",
-        fixture_abs = fixture_abs.display(),
-        host_output = host_output.display(),
-    );
-    // `NamedTempFile` auto-deletes on drop. Held by `ReplayHandle`
-    // alongside the `DockerCompose` so the file outlives compose.down().
-    let mut override_file = tempfile::Builder::new()
-        .prefix("eval-replay-")
-        .suffix(".yaml")
-        .tempfile()
-        .expect("create compose override tempfile");
-    use std::io::Write;
-    override_file
-        .write_all(override_content.as_bytes())
-        .expect("write compose override");
 
-    let override_str = override_file.path().to_str().unwrap().to_string();
-
-    // Stand up the benchmark's own per-benchmark compose.yaml — the same stack
-    // the published artifact runs, including any task sidecars (e.g.
-    // enterpriseops-gym's seven MCP servers, which the agent calls directly and
-    // which therefore must be live, not replayed). That file does
-    // `include: ../../compose/services.yaml` and `extends:` a runner template;
-    // docker compose's `include` forbids a later `-f` override of an *imported*
-    // service ("services.gateway conflicts with imported resource"), so we can't
-    // layer the gateway override straight onto it. Flatten it first with
-    // `docker compose config` — that resolves include + extends + sidecars into
-    // one self-contained model with no `include`, where `gateway` is a plain
-    // service the `-f` merge can override. `--no-interpolate` keeps `${VAR}`
-    // literal, so no upstream creds are needed to flatten; interpolation runs at
-    // `up` (the with_env values below). #171 made every per-benchmark compose
-    // load cleanly on real docker compose — that is what lets this flatten work.
-    let flat = {
-        let out = Command::new("docker")
-            .args(["compose", "-f", compose_file, "config", "--no-interpolate"])
-            .output()
-            .expect("failed to run docker compose config");
-        assert!(
-            out.status.success(),
-            "docker compose config failed for {compose_file}:\n{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        String::from_utf8(out.stdout).expect("docker compose config output not UTF-8")
+    // Each mode is a committed overlay layered on the benchmark's own
+    // `compose.yaml` (the same stack the published artifact runs, including any
+    // task sidecars). Both overlays take their per-run values from env —
+    // REPLAY_FIXTURE (the trajectory to serve) and REPLAY_OUTPUT (the host dir
+    // the named `output` volume binds to) — so the harness only picks a file and
+    // sets env; the YAML lives on disk and a human runs the identical command:
+    //   docker compose -f <benchmark>/compose.yaml -f <overlay> --env-file replay.env up
+    //
+    // - Lean: `replay-lean.yaml` puts replay in the gateway slot (stub).
+    // - Full-stack: `replay-upstream.yaml` adds replay as the real gateway's
+    //   upstream; the gateway is pointed at it by the `OPENAI_API_BASE` env.
+    //
+    // Absolute paths: testcontainers' local client cd's into the FIRST file's
+    // parent dir before running `docker compose`, so relative `-f` paths would
+    // break. Absolute paths resolve from anywhere, and cwd landing in the
+    // benchmark dir is exactly right for its relative `include:`.
+    let fixture_str = fixture_abs.display().to_string();
+    let output_str = host_output.display().to_string();
+    let overlay = match mode {
+        ReplayMode::Lean => "tests/run/replay/replay-lean.yaml",
+        ReplayMode::FullStack => "tests/run/replay/replay-upstream.yaml",
     };
-    let mut flat_file = tempfile::Builder::new()
-        .prefix("eval-replay-flat-")
-        .suffix(".yaml")
-        .tempfile()
-        .expect("create flattened compose tempfile");
-    flat_file
-        .write_all(flat.as_bytes())
-        .expect("write flattened compose");
-    let flat_str = flat_file.path().to_str().unwrap().to_string();
+    let files = [
+        cwd.join(compose_file).to_string_lossy().into_owned(),
+        cwd.join(overlay).to_string_lossy().into_owned(),
+    ];
 
-    let mut compose = DockerCompose::with_local_client(&[flat_str.as_str(), override_str.as_str()]);
+    let file_refs: Vec<&str> = files.iter().map(String::as_str).collect();
+    let mut compose = DockerCompose::with_local_client(file_refs.as_slice());
 
     for (key, val) in env {
         compose = compose.with_env(*key, *val);
     }
+    // Both overlays read these per-run values from env.
+    compose = compose
+        .with_env("REPLAY_FIXTURE", fixture_str.as_str())
+        .with_env("REPLAY_OUTPUT", output_str.as_str());
     // Classic path only: the runner image is `${EVAL_REGISTRY}/evals/<b>--<a>`, so point
     // compose at the registry the images were built under. Docker/Linux keeps compose's
     // own EVAL_REGISTRY default/inheritance (unchanged).
@@ -232,11 +190,7 @@ async fn replay_compose(compose_file: &str, fixture: &str, env: &[(&str, &str)])
             timeout_secs / 60
         ),
     }
-    ReplayHandle {
-        compose,
-        _override: override_file,
-        _flat: flat_file,
-    }
+    compose
 }
 
 /// Assert the standard output contract: result.json with required fields.
@@ -334,8 +288,37 @@ async fn bootstrap_core_bases() {
 /// directly with `common::build_target_classic` (→ buildah → Rosetta), under a
 /// local-only registry so nothing stale is force-pulled. The eval inputs mirror the
 /// CLI's own `build eval` overrides for the lean combination.
-async fn ensure_images(benchmark: &str, agent: &str) {
+/// Build the real gateway (bifrost) for full-stack replay. The default replay
+/// mode swaps the gateway out entirely, so `bootstrap_core_bases` omits it; the
+/// full-stack mode dials it for real and therefore must build it. Runs once per
+/// process via its own `OnceCell` so pure lean runs never pay for it.
+static GATEWAY_BOOTSTRAPPED: OnceCell<()> = OnceCell::const_new();
+
+async fn bootstrap_gateway() {
+    GATEWAY_BOOTSTRAPPED
+        .get_or_init(|| async {
+            if common::classic_build() {
+                let reg = std::env::var("EVAL_REGISTRY")
+                    .unwrap_or_else(|_| common::LOCAL_REGISTRY.to_string());
+                let base_env = [("REGISTRY", reg.as_str())];
+                // model-bifrost FROMs gateway-bifrost; classic builds one target
+                // at a time, so build the base first.
+                common::build_target_classic("gateway-bifrost", &[], &base_env);
+                common::build_target_classic("model-bifrost", &[], &base_env);
+            } else {
+                // Bake builds the dependency closure (gateway-bifrost before
+                // model-bifrost) from the `contexts` blocks.
+                common::bake_targets(&["model-bifrost"]).await;
+            }
+        })
+        .await;
+}
+
+async fn ensure_images(benchmark: &str, agent: &str, mode: ReplayMode) {
     bootstrap_core_bases().await;
+    if mode == ReplayMode::FullStack {
+        bootstrap_gateway().await;
+    }
 
     if common::classic_build() {
         // Bases are built above; these add only the benchmark, agent, and lean eval
@@ -386,8 +369,9 @@ async fn ensure_images(benchmark: &str, agent: &str) {
     );
 }
 
-/// Macro for replay tests. Each test follows the same pattern:
-/// build eval image, start compose with replay model, verify output contract.
+/// Lean replay test (`ReplayMode::Lean`): build the eval image, run it against a
+/// replay stub in the gateway slot, verify the output contract. The cheap path
+/// the broad fixture matrix uses.
 ///
 /// Variants:
 ///   - `replay_test!(name, compose, fixture, benchmark, agent)` — task_id "0"
@@ -400,11 +384,12 @@ macro_rules! replay_test {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            ensure_images($benchmark, $agent).await;
+            ensure_images($benchmark, $agent, ReplayMode::Lean).await;
 
             let _compose = replay_compose(
                 $compose,
                 $fixture,
+                ReplayMode::Lean,
                 &[
                     // EVAL_BENCHMARK is consumed by compose/services.yaml's
                     // runner env (`EVAL_BENCHMARK: ${EVAL_BENCHMARK:-aime}`)
@@ -439,6 +424,81 @@ macro_rules! replay_test {
         }
     };
 }
+
+/// Assert the real gateway emitted OTel `gen_ai` spans — the proof it booted,
+/// routed, and instrumented for real. Only exists in `ReplayMode::FullStack`;
+/// otelcol's `file` exporter writes the spans to the host-bound traces.jsonl.
+fn assert_gateway_traces(benchmark: &str, task_id: &str) {
+    let traces_path = Path::new("output")
+        .join(benchmark)
+        .join(task_id)
+        .join("traces.jsonl");
+    let traces = fs::read_to_string(&traces_path)
+        .unwrap_or_else(|e| panic!("traces.jsonl not readable at {traces_path:?}: {e}"));
+    assert!(
+        traces.contains("dock-gateway"),
+        "no dock-gateway service spans in {traces_path:?} — the real gateway did not emit OTel"
+    );
+    assert!(
+        traces.contains("gen_ai."),
+        "no gen_ai semconv spans in {traces_path:?} — gateway ran but did not instrument the call"
+    );
+}
+
+/// Full-stack replay test: the real gateway runs and `models/replay` is its
+/// upstream (see `ReplayMode::FullStack`). Adds `assert_gateway_traces` on top of
+/// the lean contract. `EVAL_MODEL` is a real handle bifrost routes on;
+/// the dummy `OPENAI_API_KEY` only satisfies interpolation (replay never auths).
+macro_rules! replay_fullstack_test {
+    ($name:ident, $compose:expr, $fixture:expr, $benchmark:expr, $agent:expr, $task_id:expr) => {
+        #[tokio::test]
+        #[ignore]
+        async fn $name() {
+            ensure_images($benchmark, $agent, ReplayMode::FullStack).await;
+
+            let _compose = replay_compose(
+                $compose,
+                $fixture,
+                ReplayMode::FullStack,
+                &[
+                    ("EVAL_BENCHMARK", $benchmark),
+                    ("EVAL_TASK_ID", $task_id),
+                    ("EVAL_AGENT", $agent),
+                    // Real routing handle for bifrost (provider/model). The
+                    // override repoints OPENAI_API_BASE at the replay upstream,
+                    // so provider `openai` is served by replay regardless of the
+                    // model name.
+                    ("EVAL_MODEL", "openai/azure/gpt-5.4"),
+                    ("EVAL_GATEWAY_LABEL", "replay-fullstack"),
+                    // Point the real gateway's upstream at the replay overlay
+                    // service (services.yaml reads `${OPENAI_API_BASE:?}`). The
+                    // dummy key only satisfies interpolation — replay never auths.
+                    ("OPENAI_API_KEY", "sk-replay-test"),
+                    ("OPENAI_API_BASE", "http://upstream:4000"),
+                ],
+            )
+            .await;
+
+            assert_result_valid($benchmark, $task_id);
+            assert_gateway_traces($benchmark, $task_id);
+        }
+    };
+}
+
+// ── Full-stack replay tests ──────────────────────────────────────────
+// Real gateway + otelcol run on top of the replay upstream. One fixture covers
+// the path; the broad matrix stays on cheaper lean `replay_test!`. The
+// assertion checks the pipeline ran and the gateway instrumented, not reward
+// parity (turn-count caveat in tests/run/replay/MATRIX.md).
+
+replay_fullstack_test!(
+    replay_fullstack_aime_17_claude_code,
+    "containers/benchmarks/aime/compose.yaml",
+    "tests/run/replay/fixtures/aime-17-claude-code.traces.jsonl",
+    "aime",
+    "claude-code",
+    "17"
+);
 
 // ── Replay tests ─────────────────────────────────────────────────────
 // One test per fixture in tests/run/replay/fixtures/. Fixture filename:
