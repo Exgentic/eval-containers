@@ -108,8 +108,8 @@ image_lane() {
       [ -d "$d" ] || continue
       name=$(basename "$d"); case $name in _*|.*) continue ;; esac
       # Only dirs with a bake target are published images — skip helper dirs like
-      # core/oracle and core/process-compose (no docker-bake.hcl → never pushed),
-      # which would otherwise be phantom refs in the from-registry lane.
+      # core/oracle (no docker-bake.hcl → never pushed), which would otherwise be
+      # phantom refs in the from-registry lane.
       [ -f "${d}docker-bake.hcl" ] || continue
       scan_one "$REG/$kind/$name:$tag"
     done

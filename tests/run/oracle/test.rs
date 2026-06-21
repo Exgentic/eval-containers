@@ -76,7 +76,7 @@ async fn benchmarks_are_oracle_solvable() {
         "test-exact-match",
         "llm-bridge",
         "otel",
-        "runtime-bundle",
+        "gosu",
         "agent-base-node",
         "agent-base-python",
         "agent-base-rust",

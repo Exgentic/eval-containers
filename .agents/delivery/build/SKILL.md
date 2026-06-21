@@ -65,7 +65,7 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
      -f containers/core/benchmark-base-hf/docker-bake.hcl \
      -f containers/core/test-exact-match/docker-bake.hcl \
      -f containers/core/otel/docker-bake.hcl \
-     -f containers/core/runtime-bundle/docker-bake.hcl \
+     -f containers/core/gosu/docker-bake.hcl \
      -f containers/gateways/bifrost/docker-bake.hcl \
      -f containers/models/bifrost/docker-bake.hcl \
      -f containers/benchmarks/aime/docker-bake.hcl \
@@ -221,7 +221,7 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
      variable "AGENT_IMAGE"        {}
      variable "MODEL_IMAGE"        {}
      variable "OTEL_IMAGE"         { default = "${REGISTRY}/core/otel:${TAG}" }
-     variable "RUNTIME_BUNDLE_IMAGE" { default = "${REGISTRY}/core/runtime-bundle:${TAG}" }
+     variable "GOSU_IMAGE"         { default = "${REGISTRY}/core/gosu:${TAG}" }
 
      target "eval" {
        context    = "."
@@ -232,7 +232,7 @@ the [Docker Bake documentation](https://docs.docker.com/build/bake/).
          AGENT_VERSION        = EVAL_AGENT_VERSION
          MODEL_IMAGE          = MODEL_IMAGE
          OTEL_IMAGE           = OTEL_IMAGE
-         RUNTIME_BUNDLE_IMAGE = RUNTIME_BUNDLE_IMAGE
+         GOSU_IMAGE           = GOSU_IMAGE
        }
        tags = ["${REGISTRY}/evals/${EVAL_BENCHMARK}--${EVAL_AGENT}:${TAG}"]
      }

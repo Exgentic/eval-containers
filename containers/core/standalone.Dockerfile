@@ -28,13 +28,13 @@
 #   MODEL_IMAGE           — gateway+config; places files under /opt/gateway/ and
 #                           exposes /opt/gateway/start as entrypoint
 #   OTEL_IMAGE            — core/otel (slim OTLP→file collector + config)
-#   RUNTIME_BUNDLE_IMAGE  — core/runtime-bundle (process-compose)
+#   PROCESS_COMPOSE_IMAGE — core/process-compose (in-container orchestrator)
 #
 # Path layout added on top of the lean base:
 #   /opt/gateway/                  COPY'd from MODEL_IMAGE — start + binary/venv + config
 #   /usr/local/bin/otelcol         from OTEL_IMAGE
 #   /etc/otelcol/config.yaml       from OTEL_IMAGE
-#   /usr/local/bin/process-compose from RUNTIME_BUNDLE_IMAGE
+#   /usr/local/bin/process-compose from PROCESS_COMPOSE_IMAGE
 #   /etc/process-compose.yaml      full pipeline (otelcol → gateway → agent → verifier → result)
 #
 # Why root-owned /opt/gateway (mode 0700): agent uid 1002 cannot traverse it, so
@@ -42,13 +42,13 @@
 # by file perms alone — no Linux capabilities required).
 ARG MODEL_IMAGE=ghcr.io/exgentic/models/bifrost:latest
 ARG OTEL_IMAGE=ghcr.io/exgentic/core/otel:latest
-ARG RUNTIME_BUNDLE_IMAGE=ghcr.io/exgentic/core/runtime-bundle:latest
+ARG PROCESS_COMPOSE_IMAGE=ghcr.io/exgentic/core/process-compose:latest
 
 # Named stages for the build-arg base images (buildx forbids `${ARG}` in
 # `COPY --from=`; `FROM` allows it for globally-scoped ARGs).
-FROM ${MODEL_IMAGE}          AS model
-FROM ${OTEL_IMAGE}           AS otel
-FROM ${RUNTIME_BUNDLE_IMAGE} AS runtime-bundle
+FROM ${MODEL_IMAGE}           AS model
+FROM ${OTEL_IMAGE}            AS otel
+FROM ${PROCESS_COMPOSE_IMAGE} AS process-compose
 
 FROM eval-base
 
@@ -66,7 +66,7 @@ COPY --from=otel /otelcol                 /usr/local/bin/otelcol
 COPY --from=otel /etc/otelcol/config.yaml /etc/otelcol/config.yaml
 
 # ─── In-container orchestrator + full pipeline ───────────────────────
-COPY --from=runtime-bundle /bundle/bin/process-compose /usr/local/bin/process-compose
+COPY --from=process-compose /bundle/bin/process-compose /usr/local/bin/process-compose
 COPY process-compose/process-compose.yaml              /etc/process-compose.yaml
 
 # Tighten perms. /opt/gateway is 0700 by default; explicit chmod pins it.

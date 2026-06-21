@@ -92,7 +92,8 @@ EOF
 }
 
 oc-build core-entrypoint        core/entrypoint
-oc-build core-runtime-bundle    core/runtime-bundle
+oc-build core-gosu              core/gosu
+oc-build core-process-compose   core/process-compose
 oc-build core-otel              core/otel
 oc-build core-test-exact-match  core/test-exact-match
 oc-build core-agent-base-node   core/agent-base-node      # + agent-base-python/rust as needed

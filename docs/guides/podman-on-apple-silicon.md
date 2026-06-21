@@ -238,7 +238,7 @@ images. End-to-end recipe (one task → one trajectory fixture):
 
 ```bash
 # 1. Pull deps that ARE already published (skips the bake)
-for img in agents/codex models/bifrost core/otel core/runtime-bundle; do
+for img in agents/codex models/bifrost core/otel core/gosu core/process-compose; do
   docker pull --platform linux/amd64 ghcr.io/exgentic/$img:latest
 done
 
@@ -252,7 +252,7 @@ podman build --platform linux/amd64 --pull=never \
   --build-arg AGENT_IMAGE=ghcr.io/exgentic/agents/codex:latest \
   --build-arg MODEL_IMAGE=ghcr.io/exgentic/models/bifrost:latest \
   --build-arg OTEL_IMAGE=ghcr.io/exgentic/core/otel:latest \
-  --build-arg RUNTIME_BUNDLE_IMAGE=ghcr.io/exgentic/core/runtime-bundle:latest \
+  --build-arg GOSU_IMAGE=ghcr.io/exgentic/core/gosu:latest \
   -t ghcr.io/exgentic/evals/<name>--codex:latest \
   -f containers/core/combination.Dockerfile containers/core
 

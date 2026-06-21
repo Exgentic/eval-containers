@@ -146,7 +146,7 @@ async fn ensure_agent_image(agent: &str) {
                 "test-exact-match",
                 "llm-bridge",
                 "otel",
-                "runtime-bundle",
+                "gosu",
                 "agent-base-node",
                 "agent-base-python",
                 "agent-base-rust",
