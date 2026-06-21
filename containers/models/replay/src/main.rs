@@ -38,6 +38,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// One recorded LLM turn, normalized from a gen_ai span.
+#[derive(Clone)]
 struct Turn {
     text: String,
     tool_calls: Vec<Value>,
@@ -407,15 +408,24 @@ fn emit_gemini(t: &Turn) -> Value {
 
 // ── serve engine ────────────────────────────────────────────────────
 
-/// Pull the next recorded turn (FIFO) and emit it. Past the last recorded turn,
-/// repeat the final one rather than erroring: a *real* gateway in front of replay
-/// (full-stack mode) can issue more upstream calls than the fixture has turns —
-/// retries, boot-time probes, an agent that re-asks — and the recorded run stays
-/// faithful only if those extra calls keep seeing the recorded final answer
-/// instead of a sentinel that throws the agent off (which otherwise flips reward
-/// to 0). With an empty fixture there is nothing to repeat, so fall back to a
-/// benign sentinel that keeps the agent from crashing on a missing reply.
-fn next_turn(turns: &[Turn], emit: fn(&Turn) -> Value) -> Value {
+/// Provider wire protocol a route speaks, so a turn can be emitted as either a
+/// JSON body or an SSE stream in that protocol.
+#[derive(Clone, Copy)]
+enum Wire {
+    Chat,
+    Responses,
+    Anthropic,
+    Gemini,
+}
+
+/// Advance the FIFO and return the turn for this call (owned, so the empty-fixture
+/// sentinel is handled uniformly). Past the last recorded turn, repeat the final
+/// one rather than erroring: a *real* gateway in front of replay (full-stack mode)
+/// can issue more upstream calls than the fixture has turns — retries, boot-time
+/// probes, an agent that re-asks — and the recorded run stays faithful only if
+/// those extra calls keep seeing the recorded final answer. An empty fixture has
+/// nothing to repeat, so fall back to a benign sentinel.
+fn pick_turn(turns: &[Turn]) -> Turn {
     let idx = CALL_INDEX.fetch_add(1, Ordering::SeqCst);
     match select_turn(turns, idx) {
         Some(t) => {
@@ -431,40 +441,235 @@ fn next_turn(turns: &[Turn], emit: fn(&Turn) -> Value) -> Value {
                 t.text.len(),
                 t.tool_calls.len()
             );
-            emit(t)
+            t.clone()
         }
         None => {
             eprintln!("[replay] empty fixture, call {idx}: serving sentinel");
-            emit(&Turn {
+            Turn {
                 text: "REPLAY_EXHAUSTED".into(),
                 tool_calls: Vec::new(),
                 finish_reason: "stop".into(),
                 model: "replay".into(),
-            })
+            }
         }
     }
 }
 
 /// Pick the turn for call `idx`: the recorded turn in order, or — once past the
 /// last — the final recorded turn (faithful repeat). `None` only for an empty
-/// fixture. Split out from `next_turn` so it's testable without the global index.
+/// fixture. Split out from `pick_turn` so it's testable without the global index.
 fn select_turn(turns: &[Turn], idx: usize) -> Option<&Turn> {
     turns.get(idx).or_else(|| turns.last())
 }
 
-fn route(method: &tiny_http::Method, path: &str) -> Option<fn(&Turn) -> Value> {
+fn route(method: &tiny_http::Method, path: &str) -> Option<Wire> {
     if method != &tiny_http::Method::Post {
         return None;
     }
     match path {
-        "/v1/chat/completions" | "/openai/v1/chat/completions" => Some(emit_chat),
-        "/v1/messages" | "/anthropic/v1/messages" => Some(emit_anthropic),
-        "/v1/responses" | "/openai/v1/responses" => Some(emit_responses),
+        "/v1/chat/completions" | "/openai/v1/chat/completions" => Some(Wire::Chat),
+        "/v1/messages" | "/anthropic/v1/messages" => Some(Wire::Anthropic),
+        "/v1/responses" | "/openai/v1/responses" => Some(Wire::Responses),
         p if p.starts_with("/v1beta/models/") || p.starts_with("/genai/v1beta/models/") => {
-            Some(emit_gemini)
+            Some(Wire::Gemini)
         }
         _ => None,
     }
+}
+
+fn emit_json(wire: Wire, t: &Turn) -> Value {
+    match wire {
+        Wire::Chat => emit_chat(t),
+        Wire::Responses => emit_responses(t),
+        Wire::Anthropic => emit_anthropic(t),
+        Wire::Gemini => emit_gemini(t),
+    }
+}
+
+fn emit_sse(wire: Wire, t: &Turn) -> String {
+    match wire {
+        Wire::Chat => sse_chat(t),
+        Wire::Responses => sse_responses(t),
+        Wire::Anthropic => sse_anthropic(t),
+        Wire::Gemini => sse_gemini(t),
+    }
+}
+
+/// Does the caller want a streamed (SSE) response? A real gateway (bifrost) in
+/// front of replay forwards the client's `stream: true` to the upstream and then
+/// *requires* the upstream to actually stream — it errors a JSON body with
+/// "provider returned non-SSE response for streaming request". Gemini signals
+/// streaming in the path (`:streamGenerateContent`), the others in the body.
+fn wants_stream(body: &str, path: &str) -> bool {
+    if path.contains(":streamGenerateContent") {
+        return true;
+    }
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("stream").and_then(Value::as_bool))
+        .unwrap_or(false)
+}
+
+fn sse_event(out: &mut String, event: Option<&str>, data: &Value) {
+    if let Some(ev) = event {
+        out.push_str("event: ");
+        out.push_str(ev);
+        out.push('\n');
+    }
+    out.push_str("data: ");
+    out.push_str(&data.to_string());
+    out.push_str("\n\n");
+}
+
+/// OpenAI Chat Completions SSE: role chunk, one content delta, tool-call deltas,
+/// a final finish_reason chunk, then `[DONE]`. Chunk granularity is irrelevant
+/// to the client, so the whole recorded text rides one delta.
+fn sse_chat(t: &Turn) -> String {
+    let id = gen_id("chatcmpl-");
+    let created = now_secs();
+    let chunk = |delta: Value, finish: Value| {
+        json!({
+            "id": id, "object": "chat.completion.chunk", "created": created, "model": t.model,
+            "choices": [{ "index": 0, "delta": delta, "finish_reason": finish }],
+        })
+    };
+    let mut out = String::new();
+    sse_event(
+        &mut out,
+        None,
+        &chunk(json!({ "role": "assistant" }), Value::Null),
+    );
+    if !t.text.is_empty() {
+        sse_event(
+            &mut out,
+            None,
+            &chunk(json!({ "content": t.text }), Value::Null),
+        );
+    }
+    for (i, tc) in t.tool_calls.iter().enumerate() {
+        let func = tc.get("function");
+        let delta = json!({ "tool_calls": [{
+            "index": i,
+            "id": tc.get("id").cloned().unwrap_or_else(|| json!(gen_id("call_"))),
+            "type": "function",
+            "function": {
+                "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
+                "arguments": func.and_then(|f| f.get("arguments")).cloned().unwrap_or_else(|| json!("{}")),
+            },
+        }] });
+        sse_event(&mut out, None, &chunk(delta, Value::Null));
+    }
+    sse_event(&mut out, None, &chunk(json!({}), json!(t.finish_reason)));
+    out.push_str("data: [DONE]\n\n");
+    out
+}
+
+/// Anthropic Messages SSE: message_start, a text content block (start/delta/stop),
+/// tool_use blocks, then message_delta + message_stop.
+fn sse_anthropic(t: &Turn) -> String {
+    let id = gen_id("msg_");
+    let stop = match t.finish_reason.as_str() {
+        "length" => "max_tokens",
+        "tool_calls" => "tool_use",
+        _ => "end_turn",
+    };
+    let mut out = String::new();
+    sse_event(
+        &mut out,
+        Some("message_start"),
+        &json!({ "type": "message_start", "message": {
+            "id": id, "type": "message", "role": "assistant", "model": t.model,
+            "content": [], "stop_reason": Value::Null, "stop_sequence": Value::Null,
+            "usage": { "input_tokens": 0, "output_tokens": 0 },
+        }}),
+    );
+    let mut block = 0;
+    if !t.text.is_empty() {
+        sse_event(
+            &mut out,
+            Some("content_block_start"),
+            &json!({ "type": "content_block_start", "index": block, "content_block": { "type": "text", "text": "" }}),
+        );
+        sse_event(
+            &mut out,
+            Some("content_block_delta"),
+            &json!({ "type": "content_block_delta", "index": block, "delta": { "type": "text_delta", "text": t.text }}),
+        );
+        sse_event(
+            &mut out,
+            Some("content_block_stop"),
+            &json!({ "type": "content_block_stop", "index": block }),
+        );
+        block += 1;
+    }
+    for tc in &t.tool_calls {
+        let func = tc.get("function");
+        let input = parse_args(func.and_then(|f| f.get("arguments")));
+        sse_event(
+            &mut out,
+            Some("content_block_start"),
+            &json!({ "type": "content_block_start", "index": block, "content_block": {
+                "type": "tool_use",
+                "id": tc.get("id").cloned().unwrap_or_else(|| json!(gen_id("toolu_"))),
+                "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
+                "input": {},
+            }}),
+        );
+        sse_event(
+            &mut out,
+            Some("content_block_delta"),
+            &json!({ "type": "content_block_delta", "index": block, "delta": { "type": "input_json_delta", "partial_json": input.to_string() }}),
+        );
+        sse_event(
+            &mut out,
+            Some("content_block_stop"),
+            &json!({ "type": "content_block_stop", "index": block }),
+        );
+        block += 1;
+    }
+    sse_event(
+        &mut out,
+        Some("message_delta"),
+        &json!({ "type": "message_delta", "delta": { "stop_reason": stop, "stop_sequence": Value::Null }, "usage": { "output_tokens": 0 }}),
+    );
+    sse_event(
+        &mut out,
+        Some("message_stop"),
+        &json!({ "type": "message_stop" }),
+    );
+    out
+}
+
+/// OpenAI Responses SSE: created, one output_text delta + done, completed.
+fn sse_responses(t: &Turn) -> String {
+    let id = gen_id("resp_");
+    let full = emit_responses(t);
+    let mut out = String::new();
+    sse_event(
+        &mut out,
+        Some("response.created"),
+        &json!({ "type": "response.created", "response": { "id": id, "status": "in_progress" }}),
+    );
+    if !t.text.is_empty() {
+        sse_event(
+            &mut out,
+            Some("response.output_text.delta"),
+            &json!({ "type": "response.output_text.delta", "delta": t.text }),
+        );
+    }
+    sse_event(
+        &mut out,
+        Some("response.completed"),
+        &json!({ "type": "response.completed", "response": full }),
+    );
+    out
+}
+
+/// Gemini streamGenerateContent SSE: the same candidate payload as a single chunk.
+fn sse_gemini(t: &Turn) -> String {
+    let mut out = String::new();
+    sse_event(&mut out, None, &emit_gemini(t));
+    out
 }
 
 fn serve(port: u16, turns: Vec<Turn>) -> ! {
@@ -476,16 +681,24 @@ fn serve(port: u16, turns: Vec<Turn>) -> ! {
     eprintln!("[replay] serving on {addr}");
     // Single-threaded on purpose: requests are served strictly in arrival order
     // so the recorded turns replay deterministically (FIFO).
-    for req in server.incoming_requests() {
+    for mut req in server.incoming_requests() {
         let path = req.url().split('?').next().unwrap_or("").to_string();
         let resp = match route(req.method(), &path) {
-            Some(emit) => {
-                let body =
-                    serde_json::to_vec(&next_turn(&turns, emit)).unwrap_or_else(|_| b"{}".to_vec());
-                let ctype =
-                    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
-                        .expect("static header");
-                tiny_http::Response::from_data(body).with_header(ctype)
+            Some(wire) => {
+                let mut body = String::new();
+                let _ = req.as_reader().read_to_string(&mut body);
+                let t = pick_turn(&turns);
+                let (ctype, data) = if wants_stream(&body, &path) {
+                    ("text/event-stream", emit_sse(wire, &t).into_bytes())
+                } else {
+                    (
+                        "application/json",
+                        serde_json::to_vec(&emit_json(wire, &t)).unwrap_or_else(|_| b"{}".to_vec()),
+                    )
+                };
+                let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], ctype.as_bytes())
+                    .expect("static header");
+                tiny_http::Response::from_data(data).with_header(header)
             }
             // /health, /, and any unmatched request: a plain-text "ok" (text/plain
             // via from_string, NOT application/json — a JSON client must not parse it).
@@ -603,6 +816,38 @@ mod tests {
     #[test]
     fn select_turn_none_only_when_empty() {
         assert!(select_turn(&[], 0).is_none());
+    }
+
+    #[test]
+    fn wants_stream_from_body_or_gemini_path() {
+        assert!(wants_stream(r#"{"stream":true}"#, "/v1/chat/completions"));
+        assert!(!wants_stream(r#"{"stream":false}"#, "/v1/chat/completions"));
+        assert!(!wants_stream(r#"{"messages":[]}"#, "/v1/chat/completions"));
+        assert!(!wants_stream("not json", "/v1/chat/completions"));
+        // Gemini signals streaming in the path, not the body.
+        assert!(wants_stream("{}", "/v1beta/models/x:streamGenerateContent"));
+        assert!(!wants_stream("{}", "/v1beta/models/x:generateContent"));
+    }
+
+    #[test]
+    fn sse_chat_frames_text_and_terminates() {
+        let sse = sse_chat(&turn("HELLO"));
+        // SSE framing: every event is `data: ...\n\n`, terminated by [DONE].
+        assert!(sse.contains("\"delta\":{\"role\":\"assistant\"}"));
+        assert!(sse.contains("\"content\":\"HELLO\""));
+        assert!(sse.contains("\"finish_reason\":\"stop\""));
+        assert!(sse.trim_end().ends_with("data: [DONE]"));
+        for ev in sse.split("\n\n").filter(|e| !e.is_empty()) {
+            assert!(ev.starts_with("data: "), "chat SSE event not framed: {ev}");
+        }
+    }
+
+    #[test]
+    fn sse_anthropic_has_message_lifecycle() {
+        let sse = sse_anthropic(&turn("HI"));
+        assert!(sse.contains("event: message_start"));
+        assert!(sse.contains("text_delta") && sse.contains("\"text\":\"HI\""));
+        assert!(sse.contains("event: message_stop"));
     }
 
     #[test]
