@@ -15,11 +15,15 @@ variable "PROCESS_COMPOSE_IMAGE" { default = "${REGISTRY}/core/process-compose:$
 target "eval" {
   context    = "containers/core"
   dockerfile = "combination.Dockerfile"
+  # Build gosu in-graph so eval needs no pre-published core/gosu (offline).
+  contexts = {
+    "${REGISTRY}/core/gosu" = "target:gosu"
+  }
   args = {
-    BENCHMARK_IMAGE      = BENCHMARK_IMAGE
-    AGENT_IMAGE          = AGENT_IMAGE
-    AGENT_VERSION        = EVAL_AGENT_VERSION
-    GOSU_IMAGE           = GOSU_IMAGE
+    BENCHMARK_IMAGE = BENCHMARK_IMAGE
+    AGENT_IMAGE     = AGENT_IMAGE
+    AGENT_VERSION   = EVAL_AGENT_VERSION
+    GOSU_IMAGE      = GOSU_IMAGE
   }
   tags = ["${REGISTRY}/evals/${EVAL_BENCHMARK}--${EVAL_AGENT}:${TAG}"]
 }
@@ -38,7 +42,8 @@ target "eval-standalone" {
   context    = "containers/core"
   dockerfile = "standalone.Dockerfile"
   contexts = {
-    "eval-base" = "target:eval"
+    "eval-base"                        = "target:eval"
+    "${REGISTRY}/core/process-compose" = "target:process-compose"
   }
   args = {
     MODEL_IMAGE           = MODEL_IMAGE
