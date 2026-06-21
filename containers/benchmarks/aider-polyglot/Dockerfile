@@ -219,6 +219,12 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
     fi
   fi
 
+  # Let the non-root agent (uid 1002) edit just its solution files; tests stay
+  # root-only. After the Java src copy above, which would otherwise re-root them.
+  for f in $SOLUTION_FILES; do
+    chown 1002 "/app/$f" "/app/$(dirname "$f")" 2>/dev/null || true
+  done
+
   FILE_LIST=$(echo "$SOLUTION_FILES" | tr '\n' ', ' | sed 's/,$//')
   export TASK="Edit the following $LANGUAGE code file(s) to solve the exercise described below. Modify ONLY the listed file(s) in the current directory. Do not create new files.
 
