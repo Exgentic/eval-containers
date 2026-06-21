@@ -6,17 +6,10 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="ruler"
-LABEL eval.benchmark.description="RULER - synthetic long-context benchmark (NIAH variants at multiple lengths)"
-LABEL eval.benchmark.tasks="200"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
-LABEL eval.benchmark.url="https://github.com/hsiehjackson/RULER"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.06654"
+# Stdlib loader (git clone + python generator, no pyarrow -> QEMU-safe) runs in a
+# discarded hf builder; the python token-recall grader keeps python on python-slim.
 
 # Generate RULER-style tasks deterministically. Uses Paul Graham essays
 # as the haystack source (same style as the reference implementation's
@@ -150,7 +143,19 @@ PYEOF
 RUN rm -rf /tmp/niah
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="ruler"
+LABEL eval.benchmark.description="RULER - synthetic long-context benchmark (NIAH variants at multiple lengths)"
+LABEL eval.benchmark.tasks="200"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
+LABEL eval.benchmark.url="https://github.com/hsiehjackson/RULER"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.06654"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=ruler
 
 # Custom test: token-level recall of expected answer tokens in response
