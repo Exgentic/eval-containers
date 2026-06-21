@@ -6,17 +6,10 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="alpaca-eval"
-LABEL eval.benchmark.description="AlpacaEval 2.0 - instruction following pairwise eval with LLM-as-judge"
-LABEL eval.benchmark.tasks="805"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
-LABEL eval.benchmark.url="https://github.com/tatsu-lab/alpaca_eval"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.04475"
+# Stdlib loader (curl + json, no pyarrow -> QEMU-safe) runs in a discarded hf
+# builder; the LLM-judge grader keeps python on a python-slim runtime.
 
 # Fetch the 805-example eval set and the gpt-4-turbo baseline outputs
 RUN curl -sSfL -o /tmp/eval.json \
@@ -55,7 +48,19 @@ PYEOF
 RUN rm -f /tmp/eval.json /tmp/baseline.json
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="alpaca-eval"
+LABEL eval.benchmark.description="AlpacaEval 2.0 - instruction following pairwise eval with LLM-as-judge"
+LABEL eval.benchmark.tasks="805"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
+LABEL eval.benchmark.url="https://github.com/tatsu-lab/alpaca_eval"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.04475"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=alpaca-eval
 
 # Custom test: pairwise LLM-as-judge with both orderings (AlpacaEval protocol)

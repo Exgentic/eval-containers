@@ -6,18 +6,10 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="arena-hard"
-LABEL eval.benchmark.description="Arena-Hard - pairwise chat eval vs gpt-4-0314 baseline with LLM judge"
-LABEL eval.benchmark.tasks="500"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="196f6b826783b3da7310e361a805fa36f0be83f3"
-LABEL eval.benchmark.url="https://github.com/lmarena/arena-hard-auto"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.11939"
-
+# Stdlib loader (git clone + json, no pyarrow -> QEMU-safe) runs in a discarded
+# hf builder; the runtime is python-slim (python grader, no shipped pyarrow).
 # Fetch the Arena-Hard v0.1 question set and baseline answers (pinned sha)
 RUN git clone --depth 1 https://github.com/lmarena/arena-hard-auto.git /tmp/ah \
     && cd /tmp/ah \
@@ -65,7 +57,19 @@ PYEOF
 RUN rm -rf /tmp/ah
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="arena-hard"
+LABEL eval.benchmark.description="Arena-Hard - pairwise chat eval vs gpt-4-0314 baseline with LLM judge"
+LABEL eval.benchmark.tasks="500"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="196f6b826783b3da7310e361a805fa36f0be83f3"
+LABEL eval.benchmark.url="https://github.com/lmarena/arena-hard-auto"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.11939"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=arena-hard
 
 # Custom test: LLM-as-judge pairwise comparison (agent vs baseline).

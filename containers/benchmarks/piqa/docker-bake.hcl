@@ -2,7 +2,7 @@ target "benchmark-piqa" {
   context = "containers/benchmarks/piqa"
   contexts = {
     "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
-    "${REGISTRY}/core/test-exact-match" = "target:test-exact-match"
+    "${REGISTRY}/core/benchmark-base-slim" = "target:benchmark-base-slim"
   }
   tags = ["${REGISTRY}/benchmarks/piqa:${TAG}"]
 }

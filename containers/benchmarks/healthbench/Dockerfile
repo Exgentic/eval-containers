@@ -4,19 +4,10 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="healthbench"
-LABEL eval.benchmark.released="true"
-LABEL eval.benchmark.description="HealthBench - medical/health AI evaluation with physician rubrics"
-LABEL eval.benchmark.tasks="5000"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="40ee1968852fc57f625934251ac22be47077a8fb"
-LABEL eval.benchmark.url="https://github.com/openai/healthbench"
-LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/healthbench"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.11709"
+# Stdlib loader (curl + json, no pyarrow -> QEMU-safe) runs in a discarded hf
+# builder; the LLM-judge grader keeps python on a python-slim runtime.
 
 # Fetch dataset (JSONL from OpenAI public blob storage)
 RUN curl -sfL -o /tmp/eval.jsonl \
@@ -55,7 +46,21 @@ PYEOF
 RUN rm -f /tmp/eval.jsonl
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="healthbench"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="HealthBench - medical/health AI evaluation with physician rubrics"
+LABEL eval.benchmark.tasks="5000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="40ee1968852fc57f625934251ac22be47077a8fb"
+LABEL eval.benchmark.url="https://github.com/openai/healthbench"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/healthbench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.11709"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=healthbench
 
 # Custom test: LLM-as-judge scoring using physician rubrics

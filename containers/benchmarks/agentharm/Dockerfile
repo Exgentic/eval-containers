@@ -5,17 +5,10 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="agentharm"
-LABEL eval.benchmark.description="AgentHarm - harmfulness evaluation for LLM agents"
-LABEL eval.benchmark.tasks="176"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
-LABEL eval.benchmark.url="https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.09024"
+# Stdlib loader (curl + json, no pyarrow -> QEMU-safe) runs in a discarded hf
+# builder; the judge grader keeps python on a python-slim runtime.
 
 RUN curl -sfL -o /tmp/agentharm.json \
     'https://huggingface.co/datasets/ai-safety-institute/AgentHarm/resolve/e23b3fe60a0da9037314b88e5ee3a0c054970dad/benchmark/harmful_behaviors_test_public.json'
@@ -41,7 +34,19 @@ PYEOF
 RUN rm -f /tmp/agentharm.json
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="agentharm"
+LABEL eval.benchmark.description="AgentHarm - harmfulness evaluation for LLM agents"
+LABEL eval.benchmark.tasks="176"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.09024"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=agentharm
 
 RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
