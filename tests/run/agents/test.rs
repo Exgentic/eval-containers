@@ -162,7 +162,14 @@ async fn ensure_agent_image(agent: &str) {
         .get_or_init(|| async { cargo_build(&["build", "bench", "agents-smoke"]) })
         .await;
     cargo_build(&["build", "agent", agent]);
-    cargo_build(&["build", "eval", "agents-smoke", "--agent", agent]);
+    cargo_build(&[
+        "build",
+        "eval",
+        "agents-smoke",
+        "--agent",
+        agent,
+        "--no-pull",
+    ]);
 }
 
 /// Shell `cargo run -- <args>` (the framework's own build CLI) and assert success.
