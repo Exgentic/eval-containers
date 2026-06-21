@@ -7,11 +7,13 @@ name: PR replay smoke
 #
 # Fixture: replay_bigcodebench_0_zerostack (duckdb-python benchmark + rust agent).
 # It exercises the shared core bases + the real compose stack, so a base
-# regression (e.g. otelcol failing to boot) shows up at `compose up`. otel is
-# pure infra (deterministic, decoupled) so its published :latest IS the cache —
-# pull it, rebuild only if this PR changed it. Everything else builds from source
-# (model-replay is the harness-coupled gateway, so it must match; gosu is FROM'd
-# by the lean eval; process-compose is standalone-only and never touched here).
+# regression (e.g. otelcol failing to boot) shows up at `compose up`.
+#
+# Bases are BUILT FROM SOURCE (no pulling published :latest): :latest only updates
+# on a release, so between releases it lags main and a pulled base can carry stale/
+# broken code (e.g. the pre-fix otel). The bakes build the rest in-graph; we
+# pre-build only the few images the eval/compose consume as plain refs.
+# (process-compose is standalone-only and never touched here.)
 
 on:
   pull_request:
@@ -40,8 +42,6 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0 # need history to diff which bases the PR changed
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
@@ -58,41 +58,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Pull the deterministic from-source bases; rebuild only the one(s) this PR
-      # changed (so a base regression is still caught). EVAL_BASES_OVERRIDE then
-      # bakes just those + the cheap image-ref bases — the rest build in-graph.
-      - name: Resolve base set
-        id: bases
-        run: |
-          git fetch -q origin main
-          # gosu + model-replay build from source: gosu is FROM'd by the lean eval
-          # (must be in the store); model-replay is the harness-coupled replay
-          # gateway (a stale published image fails its /opt/gateway/server health
-          # check → "gateway unhealthy"). otel is pure infra → pull it, rebuild
-          # only if changed.
-          BUILD="entrypoint agent-base-rust gosu model-replay"
-          for entry in "otel containers/core/otel core/otel"; do
-            read -r b dir repo <<< "$entry"
-            if ! git diff --quiet origin/main...HEAD -- "$dir"; then
-              echo "$b changed -> rebuild"; BUILD="$BUILD $b"
-            elif docker pull -q "ghcr.io/exgentic/${repo}:latest" >/dev/null 2>&1; then
-              echo "$b unchanged -> pulled"
-            else
-              echo "::warning::$b pull failed -> rebuild"; BUILD="$BUILD $b"
-            fi
-          done
-          echo "bases=$BUILD" >> "$GITHUB_OUTPUT"
-
       - name: Replay zerostack
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          EVAL_BASES_OVERRIDE: ${{ steps.bases.outputs.bases }}
+          # Bake only the bases this fixture consumes as image-refs — all FROM
+          # SOURCE (never pull :latest; it lags main between releases). The
+          # benchmark/agent bakes build their own bases (duckdb, python-slim) and
+          # entrypoint in-graph; we pre-build the few the eval/compose consume
+          # directly: gosu (lean eval), model-replay (gateway), otel (sidecar),
+          # plus entrypoint + agent-base-rust for safety.
+          EVAL_BASES_OVERRIDE: entrypoint agent-base-rust gosu model-replay otel
         run: |
-          # Exact fixture name (the sole zerostack recording).
-          CASES=(replay_bigcodebench_0_zerostack)
-          set +e
+          # pipefail (the bash default here) fails the step if cargo fails; the
+          # grep guards against a renamed fixture matching 0 tests (libtest exits 0).
           cargo test -p eval-containers-tests-run --test replay \
-            -- --ignored --nocapture --test-threads=1 "${CASES[@]}" 2>&1 | tee replay.log
-          rc=${PIPESTATUS[0]}
-          grep -qE "running 0 tests" replay.log && { echo "::error::ran 0 tests — fixture renamed?"; exit 1; }
-          exit "${rc}"
+            -- --ignored --nocapture --test-threads=1 replay_bigcodebench_0_zerostack \
+            | tee replay.log
+          if grep -qE "running 0 tests" replay.log; then
+            echo "::error::ran 0 tests — fixture renamed?"; exit 1
+          fi
