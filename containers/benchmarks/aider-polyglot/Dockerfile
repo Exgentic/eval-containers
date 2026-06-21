@@ -26,10 +26,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git python3 python3-pip ca-certificates gnupg \
     gcc g++ cmake make \
     golang-go \
-    default-jdk \
+    openjdk-21-jdk-headless \
     rustc cargo \
     jq \
-  && rm -rf /var/lib/apt/lists/*
+  && rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* \
+            /usr/lib/go-*/test /usr/lib/go-*/api
+ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 
 # Node.js 20 (Ubuntu 22.04 ships v12 which is too old for Jest)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -112,6 +114,22 @@ PYEOF
 # Lock down task metadata and exercise repo from agent (includes reference solutions)
 RUN chmod 600 /tasks/all.jsonl && chmod -R 600 /polyglot
 
+# Pre-cache java (gradle) + js (npm) build deps now, while the build still has
+# network — eval time is internet=false, and grade.sh below runs them --offline.
+# The gradle distro + JUnit/jest/babel are shared across exercises, so this stays
+# ~290MB regardless of exercise count.
+ENV GRADLE_USER_HOME=/opt/gradle
+ENV npm_config_cache=/opt/npmcache
+RUN mkdir -p /opt/gradle /opt/npmcache \
+ && for ex in /polyglot/java/exercises/practice/*/; do \
+      rm -rf /tmp/w; cp -r "$ex" /tmp/w; cd /tmp/w; chmod +x gradlew 2>/dev/null; \
+      timeout 300 ./gradlew test --no-daemon >/dev/null 2>&1 || true; done \
+ && for ex in /polyglot/javascript/exercises/practice/*/; do \
+      rm -rf /tmp/w; cp -r "$ex" /tmp/w; cd /tmp/w; \
+      timeout 200 npm install >/dev/null 2>&1 || true; done \
+ && rm -rf /tmp/w && chmod -R a+rX /opt/gradle /opt/npmcache \
+ && rm -rf /opt/gradle/daemon /root/.gradle 2>/dev/null || true
+
 WORKDIR /app
 ENV EVAL_BENCHMARK=aider-polyglot
 
@@ -152,7 +170,7 @@ case "$LANGUAGE" in
     TEST_CMD="python3 -m pytest $TEST_FILES -x -q"
     ;;
   javascript)
-    TEST_CMD="bash -c 'if [ -f package.json ]; then npm install --silent 2>/dev/null; fi && npx jest --no-cache'"
+    TEST_CMD="bash -c 'if [ -f package.json ]; then npm install --offline --silent 2>/dev/null; fi && npx jest --no-cache'"
     ;;
   go)
     TEST_CMD="go test -v -count=1 ./..."
@@ -164,7 +182,7 @@ case "$LANGUAGE" in
     TEST_CMD="bash -c 'mkdir -p build && cd build && cmake .. -DEXERCISM_RUN_ALL_TESTS=1 && make && ctest --output-on-failure'"
     ;;
   java)
-    TEST_CMD="bash -c 'chmod +x gradlew && ./gradlew test'"
+    TEST_CMD="bash -c 'chmod +x gradlew && ./gradlew test --offline'"
     ;;
   *)
     echo 0.0 > /logs/verifier/reward.txt
