@@ -331,6 +331,12 @@ async fn bootstrap_core_bases() {
 /// handling lives in the CLI (`src/main.rs` dotenv + `src/build.rs` `--secret`),
 /// inherited for free by shelling out — no test-specific env code here.
 ///
+/// `--no-pull` is passed to `build eval` so the bake invocation skips the
+/// remote registry manifest check for the eval's FROM images. The bench and
+/// agent images were just built locally (steps above) and are in the BuildKit
+/// content store; the manifest check would fail on arm64 because the registry
+/// has only amd64 entries.
+///
 /// **Podman/classic path (`DOCKER_BUILDKIT=0`):** `docker buildx bake` can't build
 /// here (BuildKit QEMUs Python — docs/guides/podman-on-apple-silicon.md §5b), so
 /// the CLI's bake-based `build` can't run; the harness builds the same targets
@@ -379,8 +385,19 @@ async fn ensure_images(benchmark: &str, agent: &str) {
             .unwrap_or_else(|e| panic!("failed to run cargo run -- build {kind}: {e}"));
         assert!(status.success(), "failed to build {kind} image for {name}");
     }
+    // --no-pull: bench and agent images are in the BuildKit content store from the
+    // steps above; skip the remote manifest check that fails on arm64.
     let status = Command::new("cargo")
-        .args(["run", "--", "build", "eval", benchmark, "--agent", agent])
+        .args([
+            "run",
+            "--",
+            "build",
+            "eval",
+            benchmark,
+            "--agent",
+            agent,
+            "--no-pull",
+        ])
         .status()
         .expect("failed to run cargo run -- build eval");
     assert!(

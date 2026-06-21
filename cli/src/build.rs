@@ -105,6 +105,13 @@ pub enum BuildTarget {
         /// not a tag (the tag is the version). (benchmarks/RULES.md 24f.)
         #[arg(long)]
         standalone: bool,
+        /// Skip the remote manifest check for the eval's FROM images (benchmark and
+        /// agent) and use the locally-cached versions from the BuildKit content store
+        /// instead. Pass this when `build bench` and `build agent` were just run
+        /// locally: the content store already holds the arm64 images, so the registry
+        /// manifest check (which finds only amd64) is both unnecessary and harmful.
+        #[arg(long)]
+        no_pull: bool,
     },
     /// Publish a benchmark's compose stack as `oci://<registry>/eval-<x>`.
     ///
@@ -195,6 +202,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             agent_version,
             model,
             standalone,
+            no_pull,
         } => {
             let tag = std::env::var("TAG").unwrap_or_else(|_| "latest".to_string());
             let bench_tag = if let Some(ref tid) = task_id {
@@ -226,6 +234,13 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             // set => override the upstream version the agent installs.
             if !agent_version.is_empty() {
                 overrides.push(format!("eval.args.AGENT_VERSION={agent_version}"));
+            }
+            // --no-pull: skip the remote registry manifest check for the eval's FROM
+            // images. Use this when bench and agent were just built locally — their
+            // arm64 images are in the BuildKit content store, and the manifest check
+            // (which finds only amd64 in the registry) is both unnecessary and harmful.
+            if no_pull {
+                overrides.push("eval.pull=false".into());
             }
             if !standalone {
                 // Lean base only (the gateway image is irrelevant — no in-process
@@ -683,6 +698,7 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
             agent_version,
             model: _,
             standalone,
+            no_pull: _,
         } => {
             if task_id.is_some() {
                 return Err("--builder oc does not support --task-id".into());
