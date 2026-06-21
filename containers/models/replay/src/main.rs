@@ -49,7 +49,7 @@ static CALL_INDEX: AtomicUsize = AtomicUsize::new(0);
 static ID_SEQ: AtomicUsize = AtomicUsize::new(0);
 
 fn main() {
-    if std::env::args().nth(1).as_deref() == Some("health") {
+    if is_health_invocation() {
         std::process::exit(health_probe());
     }
     let port = env_port();
@@ -57,6 +57,27 @@ fn main() {
     let turns = load_turns(&path);
     eprintln!("[replay] loaded {} gen_ai turns from {path}", turns.len());
     serve(port, turns);
+}
+
+/// True when invoked as a health probe, two ways: the explicit `server health`
+/// form, or invoked *as* `/opt/gateway/health` (argv[0] basename `health`). The
+/// latter is the gateway-contract drop-in: services.yaml's default healthcheck
+/// `["CMD", "/opt/gateway/health"]` runs that path with no args, so making the
+/// binary answer to it lets replay occupy the gateway slot with no healthcheck
+/// override — the same contract bifrost's shell `health` script honors.
+fn is_health_invocation() -> bool {
+    let mut args = std::env::args();
+    let arg0 = args.next().unwrap_or_default();
+    is_health_args(&arg0, args.next().as_deref())
+}
+
+/// Pure core of `is_health_invocation`, split out for unit tests.
+fn is_health_args(arg0: &str, arg1: Option<&str>) -> bool {
+    arg1 == Some("health")
+        || std::path::Path::new(arg0)
+            .file_name()
+            .and_then(|f| f.to_str())
+            == Some("health")
 }
 
 fn env_port() -> u16 {
@@ -386,28 +407,49 @@ fn emit_gemini(t: &Turn) -> Value {
 
 // ── serve engine ────────────────────────────────────────────────────
 
-/// Pull the next recorded turn (FIFO) and emit it; on exhaustion serve a benign
-/// sentinel so the agent doesn't crash on a missing reply.
+/// Pull the next recorded turn (FIFO) and emit it. Past the last recorded turn,
+/// repeat the final one rather than erroring: a *real* gateway in front of replay
+/// (full-stack mode) can issue more upstream calls than the fixture has turns —
+/// retries, boot-time probes, an agent that re-asks — and the recorded run stays
+/// faithful only if those extra calls keep seeing the recorded final answer
+/// instead of a sentinel that throws the agent off (which otherwise flips reward
+/// to 0). With an empty fixture there is nothing to repeat, so fall back to a
+/// benign sentinel that keeps the agent from crashing on a missing reply.
 fn next_turn(turns: &[Turn], emit: fn(&Turn) -> Value) -> Value {
     let idx = CALL_INDEX.fetch_add(1, Ordering::SeqCst);
-    if let Some(t) = turns.get(idx) {
-        eprintln!(
-            "[replay] {}/{}: {} chars, {} tool_calls",
-            idx + 1,
-            turns.len(),
-            t.text.len(),
-            t.tool_calls.len()
-        );
-        emit(t)
-    } else {
-        eprintln!("[replay] EXHAUSTED after {idx}");
-        emit(&Turn {
-            text: "REPLAY_EXHAUSTED".into(),
-            tool_calls: Vec::new(),
-            finish_reason: "stop".into(),
-            model: "replay".into(),
-        })
+    match select_turn(turns, idx) {
+        Some(t) => {
+            let repeat = if idx >= turns.len() {
+                " (repeat last)"
+            } else {
+                ""
+            };
+            eprintln!(
+                "[replay] {}/{}{repeat}: {} chars, {} tool_calls",
+                idx + 1,
+                turns.len(),
+                t.text.len(),
+                t.tool_calls.len()
+            );
+            emit(t)
+        }
+        None => {
+            eprintln!("[replay] empty fixture, call {idx}: serving sentinel");
+            emit(&Turn {
+                text: "REPLAY_EXHAUSTED".into(),
+                tool_calls: Vec::new(),
+                finish_reason: "stop".into(),
+                model: "replay".into(),
+            })
+        }
     }
+}
+
+/// Pick the turn for call `idx`: the recorded turn in order, or — once past the
+/// last — the final recorded turn (faithful repeat). `None` only for an empty
+/// fixture. Split out from `next_turn` so it's testable without the global index.
+fn select_turn(turns: &[Turn], idx: usize) -> Option<&Turn> {
+    turns.get(idx).or_else(|| turns.last())
 }
 
 fn route(method: &tiny_http::Method, path: &str) -> Option<fn(&Turn) -> Value> {
@@ -535,6 +577,44 @@ mod tests {
         assert_eq!(turns.len(), 1, "two bifrost spans must dedup to one turn");
         assert_eq!(turns[0].text, "HELLO_BIFROST");
         assert_eq!(turns[0].finish_reason, "stop");
+    }
+
+    fn turn(text: &str) -> Turn {
+        Turn {
+            text: text.into(),
+            tool_calls: Vec::new(),
+            finish_reason: "stop".into(),
+            model: "m".into(),
+        }
+    }
+
+    #[test]
+    fn select_turn_repeats_last_past_the_end() {
+        let turns = vec![turn("A"), turn("B")];
+        // In order...
+        assert_eq!(select_turn(&turns, 0).unwrap().text, "A");
+        assert_eq!(select_turn(&turns, 1).unwrap().text, "B");
+        // ...then the last turn repeats for every extra call (a real gateway in
+        // front can over-call the fixture; the agent must keep seeing the answer).
+        assert_eq!(select_turn(&turns, 2).unwrap().text, "B");
+        assert_eq!(select_turn(&turns, 99).unwrap().text, "B");
+    }
+
+    #[test]
+    fn select_turn_none_only_when_empty() {
+        assert!(select_turn(&[], 0).is_none());
+    }
+
+    #[test]
+    fn health_detected_by_arg_or_argv0() {
+        // explicit `server health`
+        assert!(is_health_args("/opt/gateway/server", Some("health")));
+        // invoked AS /opt/gateway/health (gateway-contract drop-in, no args)
+        assert!(is_health_args("/opt/gateway/health", None));
+        assert!(is_health_args("health", None));
+        // normal serve invocations are not health probes
+        assert!(!is_health_args("/opt/gateway/server", None));
+        assert!(!is_health_args("/opt/gateway/start", None));
     }
 
     #[test]

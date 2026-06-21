@@ -27,15 +27,17 @@ LABEL eval.model.name="replay"
 LABEL eval.model.provider="replay"
 
 COPY --from=build /src/target/release/replay-server /opt/gateway/server
-# start/health are the SHELL entrypoints for the standalone bundle (run under a
-# shell-bearing base). They are NOT runnable on this distroless image (no shell):
-# a compose/k8s healthcheck for the replay gateway must use the binary form
-# `["/opt/gateway/server","health"]` (as tests/run/replay/test.rs overrides) —
-# NOT services.yaml's default `/opt/gateway/health` script, which would never
-# pass here and would leave the gateway permanently unhealthy.
+# /opt/gateway/health is the SAME binary, not a shell script: the binary detects
+# the health-probe invocation by its argv[0] basename (`health`). This makes
+# replay a true drop-in for the gateway slot — services.yaml's default
+# healthcheck `["CMD", "/opt/gateway/health"]` (the contract bifrost's shell
+# `health` honors) passes here too, with no per-test healthcheck override. The
+# binary form `["/opt/gateway/server", "health"]` still works (explicit arg).
+COPY --from=build /src/target/release/replay-server /opt/gateway/health
+# start is the shell entrypoint for the standalone bundle (run under a
+# shell-bearing base); it execs the binary. Not runnable on this distroless image.
 COPY --chmod=755 start /opt/gateway/start
-COPY --chmod=755 health /opt/gateway/health
 
 EXPOSE 4000
-HEALTHCHECK --interval=2s --timeout=3s --retries=10 CMD ["/opt/gateway/server", "health"]
+HEALTHCHECK --interval=2s --timeout=3s --retries=10 CMD ["/opt/gateway/health"]
 CMD ["/opt/gateway/server"]

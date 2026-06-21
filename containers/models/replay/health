@@ -1,4 +1,0 @@
-#!/bin/sh
-# Health probe for the standalone bundle. The binary probes its own /health
-# endpoint, so this works without curl/python in the image.
-exec /opt/gateway/server health
