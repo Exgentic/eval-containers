@@ -151,11 +151,9 @@ jobs:
   # The one daemon-backed gate: a miniature of the nightly replay E2E. Builds what
   # one fixture (bigcodebench + zerostack) needs and replays it on the real
   # compose stack (otelcol → gateway → runner), so a base regression like otelcol
-  # failing to boot shows up at `compose up`, on the PR. Skipped on push-to-main
-  # (the nightly covers main); PRs + manual dispatch only.
+  # failing to boot shows up at `compose up` — on every PR and every push to main.
   replay-e2e:
     name: Replay E2E (zerostack)
-    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
