@@ -304,6 +304,9 @@ async fn bootstrap_core_bases() {
                 "benchmark-base-hf",
                 "benchmark-base-github",
                 "benchmark-base-external",
+                "benchmark-base-duckdb",
+                "benchmark-base-slim",
+                "benchmark-base-python-slim",
             ];
             // EVAL_BASES_OVERRIDE (space-separated) bakes only the listed targets
             // (the PR-replay-smoke gate passes just what its fixtures need); unset
