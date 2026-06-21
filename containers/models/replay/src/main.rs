@@ -336,7 +336,16 @@ fn emit_chat(t: &Turn) -> Value {
         "created": now_secs(),
         "model": t.model,
         "choices": [{ "index": 0, "message": msg, "finish_reason": t.finish_reason }],
+        "usage": usage_openai(),
     })
+}
+
+/// A zero `usage` block (OpenAI shape). Replay doesn't track tokens, but a real
+/// gateway (bifrost) maps this onto the client's provider usage — and a client
+/// like claude-code reads `usage.input_tokens` and crashes if it's absent. So
+/// the field must always be present, even as zeros.
+fn usage_openai() -> Value {
+    json!({ "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 })
 }
 
 fn emit_responses(t: &Turn) -> Value {
@@ -360,6 +369,7 @@ fn emit_responses(t: &Turn) -> Value {
     json!({
         "id": gen_id("resp_"), "object": "response", "created_at": now_secs(),
         "status": "completed", "model": t.model, "output": output,
+        "usage": json!({ "input_tokens": 0, "output_tokens": 0, "total_tokens": 0 }),
     })
 }
 
@@ -560,6 +570,16 @@ fn sse_chat(t: &Turn) -> String {
         sse_event(&mut out, None, &chunk(delta, Value::Null));
     }
     sse_event(&mut out, None, &chunk(json!({}), json!(t.finish_reason)));
+    // Final usage chunk (empty choices) — bifrost maps this to the client's
+    // provider usage; without it claude-code reads an undefined `input_tokens`.
+    sse_event(
+        &mut out,
+        None,
+        &json!({
+            "id": id, "object": "chat.completion.chunk", "created": created, "model": t.model,
+            "choices": [], "usage": usage_openai(),
+        }),
+    );
     out.push_str("data: [DONE]\n\n");
     out
 }
@@ -840,6 +860,15 @@ mod tests {
         for ev in sse.split("\n\n").filter(|e| !e.is_empty()) {
             assert!(ev.starts_with("data: "), "chat SSE event not framed: {ev}");
         }
+    }
+
+    #[test]
+    fn openai_emitters_carry_usage() {
+        // A real gateway maps this onto the client's usage; claude-code reads
+        // `usage.input_tokens` and crashes if usage is absent.
+        assert!(emit_chat(&turn("x"))["usage"].is_object());
+        assert!(emit_responses(&turn("x"))["usage"].is_object());
+        assert!(sse_chat(&turn("x")).contains("\"usage\""));
     }
 
     #[test]
