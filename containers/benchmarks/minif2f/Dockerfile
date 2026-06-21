@@ -1,25 +1,14 @@
 # MiniF2F (formal math from olympiads and exams)
 # 244 tasks (test split informal statements). Source: github yangky11/miniF2F
 # Agent prints final answer to stdout. Test compares to expected answer.
-
+#
+# Source is a github tarball parsed with regex — not duckdb-loadable. The stdlib
+# loader (urllib + tarfile + re, no pyarrow → QEMU-safe) runs in a discarded
+# benchmark-base-hf builder; the runtime is slim (no python, no shipped pyarrow).
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
-
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="minif2f"
-LABEL eval.benchmark.description="MiniF2F - formal-math competition problems (olympiad, AMC, AIME) with informal statements"
-LABEL eval.benchmark.tasks="244"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
-LABEL eval.benchmark.url="https://github.com/yangky11/miniF2F"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2109.00110"
-
-# Single-JSONL task layout. One line per task. Agent never sees this file
-# (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$EVAL_TASK_ID/.
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
 import urllib.request, tarfile, io, os, json, re
 
@@ -65,24 +54,18 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="minif2f"
+LABEL eval.benchmark.description="MiniF2F - formal-math competition problems (olympiad, AMC, AIME) with informal statements"
+LABEL eval.benchmark.tasks="244"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
+LABEL eval.benchmark.url="https://github.com/yangky11/miniF2F"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2109.00110"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=minif2f
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Solve this competition math problem. Print only the final answer in its simplest form (a number or expression). Do not include any explanation.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Solve this competition math problem. Print only the final answer in its simplest form (a number or expression). Do not include any explanation."

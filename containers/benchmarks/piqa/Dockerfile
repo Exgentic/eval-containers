@@ -2,28 +2,14 @@
 # 1838 tasks. Data: https://yonatanbisk.com/piqa (valid split; test labels are hidden)
 # Agent prints answer letter to stdout. Test compares stdout to expected letter.
 #
-# Note: the canonical HuggingFace ybisk/piqa dataset ships as a Python loader
-# script, which can't be parquet-converted by HF. We fetch the original raw
-# JSONL files hosted by the authors at yonatanbisk.com (same data).
-
+# The HuggingFace dataset is a python loader script (not parquet-convertible); the
+# data is raw JSONL + a positional label file — not duckdb-loadable. The stdlib
+# loader (urllib + json, no pyarrow → QEMU-safe) runs in a discarded
+# benchmark-base-hf builder; the runtime is slim (no python, no shipped pyarrow).
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
-
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="piqa"
-LABEL eval.benchmark.description="PIQA - physical commonsense reasoning (2-way multiple choice)"
-LABEL eval.benchmark.tasks="1838"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
-LABEL eval.benchmark.url="https://yonatanbisk.com/piqa"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/1911.11641"
-
-# Single-JSONL task layout. One line per task. Agent never sees this file
-# (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$EVAL_TASK_ID/.
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
 urllib.request.urlretrieve('https://yonatanbisk.com/piqa/data/valid.jsonl', '/tmp/valid.jsonl')
@@ -46,27 +32,20 @@ with open('/tasks/all.jsonl', 'w') as out:
 print(f'Wrote {count} tasks')
 PYEOF
 
-RUN rm -f /tmp/valid.jsonl /tmp/valid-labels.lst
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="piqa"
+LABEL eval.benchmark.description="PIQA - physical commonsense reasoning (2-way multiple choice)"
+LABEL eval.benchmark.tasks="1838"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
+LABEL eval.benchmark.url="https://yonatanbisk.com/piqa"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1911.11641"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=piqa
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Pick the solution that best accomplishes the goal. Print only the letter of the correct answer (A or B), nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Pick the solution that best accomplishes the goal. Print only the letter of the correct answer (A or B), nothing else."

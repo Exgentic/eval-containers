@@ -2,29 +2,14 @@
 # 1954 tasks. Data: AI2 public mirror (dev split; test labels are hidden)
 # Agent prints answer letter to stdout. Test compares stdout to expected letter.
 #
-# Note: the canonical HuggingFace allenai/social_i_qa dataset ships as a
-# Python loader script, which can't be parquet-converted by HF. We fetch the
-# original zip hosted by AI2 on Google Cloud Storage (same data).
-
+# The HuggingFace dataset is a python loader script (not parquet-convertible) and
+# the data is a zip on GCS — neither duckdb-loadable. The stdlib loader (urllib +
+# zipfile, no pyarrow → QEMU-safe) runs in a discarded benchmark-base-hf builder;
+# the runtime is slim (no python, no shipped pyarrow).
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
-
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="socialiqa"
-LABEL eval.benchmark.description="SocialIQA - social interaction reasoning (3-way multiple choice)"
-LABEL eval.benchmark.tasks="1954"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
-LABEL eval.benchmark.url="https://leaderboard.allenai.org/socialiqa"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/1904.09728"
-
-RUN apt-get update && apt-get install -y --no-install-recommends curl unzip && rm -rf /var/lib/apt/lists/*
-
-# Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN python3 <<'PYEOF'
 import urllib.request, zipfile, json, os
 urllib.request.urlretrieve(
@@ -55,27 +40,20 @@ with open('/tasks/all.jsonl', 'w') as out:
 print(f'Wrote {count} tasks')
 PYEOF
 
-RUN rm -rf /tmp/siqa /tmp/siqa.zip && apt-get purge -y unzip && apt-get autoremove -y
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="socialiqa"
+LABEL eval.benchmark.description="SocialIQA - social interaction reasoning (3-way multiple choice)"
+LABEL eval.benchmark.tasks="1954"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
+LABEL eval.benchmark.url="https://leaderboard.allenai.org/socialiqa"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/1904.09728"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=socialiqa
-
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
-RUN cat > /entrypoint.sh <<'ENTRY'
-#!/bin/bash
-/eval-materialize-task
-if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="Answer this social reasoning multiple choice question. Print only the letter of the correct answer (A, B, or C), nothing else.
-
-$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
-  export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
-fi
-exec "$@"
-ENTRY
-
-RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
+ENV EVAL_TASK_PROMPT="Answer this social reasoning multiple choice question. Print only the letter of the correct answer (A, B, or C), nothing else."
