@@ -4,7 +4,26 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22). Merged public+private+
+# generated I/O tests are stored as a JSON array in tests_json; the entrypoint
+# expands them into /tasks/$EVAL_TASK_ID/tests/.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT name AS id, description AS problem, \
+            CAST(len(tests) AS VARCHAR) AS num_tests, \
+            CAST(COALESCE(time_limit.seconds, 10) AS VARCHAR) AS time_limit, \
+            to_json(tests)::VARCHAR AS tests_json \
+     FROM ( \
+       SELECT name, description, time_limit, \
+              list_concat( \
+                list_transform(COALESCE(public_tests.input, []::VARCHAR[]),    (v, i) -> {'input': v::VARCHAR, 'output': public_tests.output[i]::VARCHAR}), \
+                list_transform(COALESCE(private_tests.input, []::VARCHAR[]),   (v, i) -> {'input': v::VARCHAR, 'output': private_tests.output[i]::VARCHAR}), \
+                list_transform(COALESCE(generated_tests.input, []::VARCHAR[]), (v, i) -> {'input': v::VARCHAR, 'output': generated_tests.output[i]::VARCHAR}) \
+              ) AS tests \
+       FROM read_parquet('hf://datasets/deepmind/code_contests@~parquet/default/partial-test/0000.parquet') \
+     )"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="code-contests"
@@ -16,40 +35,9 @@ LABEL eval.benchmark.data_revision="802411c3010cb00d1b05bad57ca77365a3c699d6"
 LABEL eval.benchmark.url="https://github.com/google-deepmind/code_contests"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.07814"
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl gcc g++ && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ && rm -rf /var/lib/apt/lists/*
 
-# Single-JSONL task layout. Merged I/O tests are stored as a JSON array in the
-# "tests_json" field; the entrypoint expands them into /tasks/$EVAL_TASK_ID/tests/.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/deepmind/code_contests/resolve/refs%2Fconvert%2Fparquet/default/partial-test/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        tests = []
-        for group in ('public_tests', 'private_tests', 'generated_tests'):
-            col = t[group][i].as_py() or {}
-            ins = col.get('input') or []
-            outs = col.get('output') or []
-            for inp, o in zip(ins, outs):
-                tests.append({'input': str(inp), 'output': str(o)})
-        tl = t['time_limit'][i].as_py() if t['time_limit'][i] else None
-        secs = (tl or {}).get('seconds', 10) if isinstance(tl, dict) else 10
-        row = {
-            'id': str(t['name'][i]),
-            'problem': str(t['description'][i]),
-            'num_tests': str(len(tests)),
-            'time_limit': str(secs),
-            'tests_json': json.dumps(tests),
-        }
-        out.write(json.dumps(row) + '\n')
-print(f'Extracted {len(t)} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
+COPY --from=data /tasks /tasks
 
 WORKDIR /app
 ENV EVAL_BENCHMARK=code-contests

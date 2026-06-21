@@ -4,7 +4,15 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT task_id::VARCHAR AS id, text AS problem, \
+            array_to_string(test_list, chr(10)) AS tests, \
+            COALESCE(test_setup_code, '') AS setup \
+     FROM 'hf://datasets/google-research-datasets/mbpp@~parquet/full/test/0000.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mbpp"
@@ -18,33 +26,7 @@ LABEL eval.benchmark.url="https://github.com/google-research/google-research/tre
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mbpp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2108.07732"
 
-# Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-os.makedirs('/tasks', exist_ok=True)
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/google-research-datasets/mbpp/resolve/refs%2Fconvert%2Fparquet/full/test/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        tests = t['test_list'][i].as_py()
-        setup = str(t['test_setup_code'][i]) if t['test_setup_code'][i] else ''
-        row = {
-            'id': str(t['task_id'][i]),
-            'problem': str(t['text'][i]),
-            'tests': '\n'.join(tests),
-            'setup': setup,
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mbpp
 
 # Test: pipe setup + completion + assert-based tests into the shared grader

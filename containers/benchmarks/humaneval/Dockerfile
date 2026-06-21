@@ -4,7 +4,13 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT task_id AS id, prompt AS problem, prompt, test, entry_point \
+     FROM 'hf://datasets/openai/openai_humaneval@~parquet/openai_humaneval/test/0000.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="humaneval"
@@ -18,32 +24,7 @@ LABEL eval.benchmark.url="https://github.com/openai/human-eval"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/humaneval"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2107.03374"
 
-# Single-JSONL task layout (see benchmarks/RULES.md #22).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-os.makedirs('/tasks', exist_ok=True)
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/openai/openai_humaneval/resolve/refs%2Fconvert%2Fparquet/openai_humaneval/test/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        row = {
-            'id': str(t['task_id'][i]),
-            'problem': str(t['prompt'][i]),
-            'prompt': str(t['prompt'][i]),
-            'test': str(t['test'][i]),
-            'entry_point': str(t['entry_point'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=humaneval
 
 # Test: pipe prompt + completion + upstream test (ending in `check(<entry>)`) into

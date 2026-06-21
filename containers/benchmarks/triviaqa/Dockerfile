@@ -4,7 +4,16 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22). aliases = the deduped
+# normalized answer aliases (+ normalized_value); the grader set-matches them.
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT question_id AS id, question AS problem, COALESCE(answer.value, '') AS answer, \
+            list_filter(list_distinct(list_concat(answer.normalized_aliases, [answer.normalized_value])), \
+                        x -> x IS NOT NULL AND x <> '') AS aliases \
+     FROM read_parquet('hf://datasets/mandarjoshi/trivia_qa@~parquet/rc.nocontext/validation/0000.parquet')"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="triviaqa"
@@ -16,43 +25,7 @@ LABEL eval.benchmark.data_revision="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
 LABEL eval.benchmark.url="https://nlp.cs.washington.edu/triviaqa/"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1705.03551"
 
-# Write every task to a single JSONL file (root-only). Runtime entrypoint
-# materializes just the requested task's fields into /tasks/$EVAL_TASK_ID/.
-# Note: aliases is written as JSON (to aliases.json) to preserve list structure
-# for the custom grader.
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/mandarjoshi/trivia_qa/resolve/refs%2Fconvert%2Fparquet/rc.nocontext/validation/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        ans = t['answer'][i].as_py()
-        aliases = list(ans.get('normalized_aliases') or [])
-        if ans.get('normalized_value'):
-            aliases.append(ans['normalized_value'])
-        seen = set()
-        uniq = []
-        for a in aliases:
-            if a and a not in seen:
-                seen.add(a); uniq.append(a)
-        row = {
-            'id': str(t['question_id'][i]),
-            'problem': str(t['question'][i]),
-            'answer': str(ans.get('value', '')),
-            'aliases': uniq,
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=triviaqa
 
 # Custom test: normalize agent output + any alias; accept if any match.

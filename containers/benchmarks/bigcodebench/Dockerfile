@@ -4,7 +4,13 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT task_id AS id, instruct_prompt, code_prompt, test, entry_point \
+     FROM 'hf://datasets/bigcode/bigcodebench@b74c0d0bf70d2c0bc459be537895cca163007f1a/data/v0.1.4-00000-of-00001.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="bigcodebench"
@@ -17,31 +23,7 @@ LABEL eval.benchmark.url="https://github.com/bigcode-project/bigcodebench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.15877"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/bigcodebench"
 
-# Single-JSONL task layout. Agent never sees /tasks/all.jsonl (root-only).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/bigcode/bigcodebench/resolve/b74c0d0bf70d2c0bc459be537895cca163007f1a/data/v0.1.4-00000-of-00001.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        # "problem" is a synonym used elsewhere for the agent-facing prompt;
-        # here we preserve BigCodeBench's original field name "instruct_prompt".
-        row = {
-            'id': str(t['task_id'][i]),
-            'instruct_prompt': str(t['instruct_prompt'][i]),
-            'code_prompt': str(t['code_prompt'][i]),
-            'test': str(t['test'][i]),
-            'entry_point': str(t['entry_point'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=bigcodebench
 
 # Test: pipe solution + upstream test into the shared grader /eval-grade

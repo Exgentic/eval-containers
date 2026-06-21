@@ -4,7 +4,14 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT task_id::VARCHAR AS id, prompt AS problem, \
+            COALESCE(array_to_string(test_list, chr(10)), '') AS test_list, test \
+     FROM 'hf://datasets/evalplus/mbppplus@~parquet/default/test/0000.parquet'"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mbppplus"
@@ -16,37 +23,9 @@ LABEL eval.benchmark.data_revision="b2d74c91837c3f2a20c1299ae98133cbe7cfa077"
 LABEL eval.benchmark.url="https://github.com/evalplus/evalplus"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.01210"
 
-# Single-JSONL task layout. One line per task. Agent never sees this file
-# (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$EVAL_TASK_ID/.
-RUN pip install --no-cache-dir pyarrow==18.1.0 numpy==2.0.2
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, json, os
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/evalplus/mbppplus/resolve/refs%2Fconvert%2Fparquet/default/test/0000.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        tl = t['test_list'][i].as_py() or []
-        row = {
-            'id': str(t['task_id'][i]),
-            'problem': str(t['prompt'][i]),
-            # test_list is the original MBPP basic asserts used in the prompt
-            'test_list': '\n'.join(tl),
-            # test is the full EvalPlus harness (imports + assertion helper + inputs/results driver)
-            'test': str(t['test'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+# numpy for EvalPlus test execution (pyarrow was loader-only, now in the builder).
+RUN pip install --no-cache-dir numpy==2.0.2
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mbppplus
 
 # Test: pipe completion + EvalPlus test into the shared grader /eval-grade

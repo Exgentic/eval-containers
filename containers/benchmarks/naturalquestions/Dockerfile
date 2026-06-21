@@ -9,7 +9,16 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22). id is the physical row
+# index; aliases is the JSON-encoded gold answer list (grader set-matches it).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT file_row_number::VARCHAR AS id, question AS problem, \
+            COALESCE(answer[1], '') AS answer, \
+            '[' || array_to_string(list_transform(COALESCE(answer, []::VARCHAR[]), x -> to_json(x)::VARCHAR), ', ') || ']' AS aliases \
+     FROM read_parquet('hf://datasets/google-research-datasets/nq_open@5dd9790a83002ad084ddeb7c420dc716852c6f28/nq_open/validation-00000-of-00001.parquet', file_row_number=true)"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="naturalquestions"
@@ -21,34 +30,7 @@ LABEL eval.benchmark.data_revision="5dd9790a83002ad084ddeb7c420dc716852c6f28"
 LABEL eval.benchmark.url="https://ai.google.com/research/NaturalQuestions"
 LABEL eval.benchmark.paper="https://aclanthology.org/Q19-1026/"
 
-# Single-JSONL task layout. One line per task. Agent never sees this file
-# (root-only). Runtime entrypoint materializes just the requested task's
-# fields into /tasks/$EVAL_TASK_ID/ (and converts aliases to JSON).
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, json, os
-urllib.request.urlretrieve(
-    'https://huggingface.co/datasets/google-research-datasets/nq_open/resolve/5dd9790a83002ad084ddeb7c420dc716852c6f28/nq_open/validation-00000-of-00001.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-count = 0
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        answers = list(t['answer'][i].as_py() or [])
-        row = {
-            'id': str(i),
-            'problem': str(t['question'][i]),
-            'answer': answers[0] if answers else '',
-            'aliases': json.dumps(answers),
-        }
-        out.write(json.dumps(row) + '\n')
-        count += 1
-print(f'Wrote {count} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=naturalquestions
 
 RUN mkdir -p /tests && cat > /grade.sh <<'TEST'

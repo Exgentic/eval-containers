@@ -3,11 +3,15 @@
 # Agent is given a buggy Java function and must print the refined (bug-free) version.
 # Test compares stdout to the reference fix (exact match; upstream follows the same
 # convention — all identifiers are normalized).
-
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
+# Single-JSONL task layout (see benchmarks/RULES.md #22).
+RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
+    "SELECT CAST(id AS VARCHAR) AS id, buggy AS problem, fixed AS answer \
+     FROM read_parquet('hf://datasets/google/code_x_glue_cc_code_refinement@~parquet/medium/test/0000.parquet')"
+
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-slim:latest
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="coderefine"
@@ -19,32 +23,12 @@ LABEL eval.benchmark.data_revision="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
 LABEL eval.benchmark.url="https://github.com/microsoft/CodeXGLUE/tree/main/Code-Code/code-refinement"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2102.04664"
 
-RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, os, json
-urllib.request.urlretrieve(
-    'https://huggingface.co/api/datasets/google/code_x_glue_cc_code_refinement/parquet/medium/test/0.parquet',
-    '/tmp/data.parquet')
-t = pq.read_table('/tmp/data.parquet')
-os.makedirs('/tasks', exist_ok=True)
-with open('/tasks/all.jsonl', 'w') as out:
-    for i in range(len(t)):
-        row = {
-            'id': str(t['id'][i]),
-            'problem': str(t['buggy'][i]),
-            'answer': str(t['fixed'][i]),
-        }
-        out.write(json.dumps(row) + '\n')
-print(f'Extracted {len(t)} tasks')
-PYEOF
-
-RUN chmod 600 /tasks/all.jsonl
-
-WORKDIR /app
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=coderefine
 
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
-
+# Bespoke entrypoint: the prompt embeds the buggy code under a "Buggy code:" label
+# with a single newline, which the shared "{prompt}\n\n{problem}" layout can't
+# reproduce byte-for-byte, so keep the original entrypoint verbatim.
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 /eval-materialize-task
@@ -61,5 +45,3 @@ exec "$@"
 ENTRY
 
 RUN chmod +x /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]
-CMD ["/grade.sh"]
