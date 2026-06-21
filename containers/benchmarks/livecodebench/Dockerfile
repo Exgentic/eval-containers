@@ -5,21 +5,10 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="livecodebench"
-LABEL eval.benchmark.released="true"
-LABEL eval.benchmark.description="LiveCodeBench - competitive programming from recent contests"
-LABEL eval.benchmark.tasks="880"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
-LABEL eval.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
-LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.07974"
-
-RUN apt-get update && apt-get install -y --no-install-recommends curl gcc g++ && rm -rf /var/lib/apt/lists/*
+# Stdlib loader (urllib + base64/zlib/pickle, no pyarrow -> QEMU-safe) runs in a
+# discarded hf builder; the compile-and-run grader keeps python + gcc/g++ on python-slim.
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Private test cases
 # are stored as a JSON array under the tests_json field; entrypoint decodes
@@ -72,7 +61,23 @@ PYEOF
 RUN rm -f /tmp/*.jsonl
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="livecodebench"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="LiveCodeBench - competitive programming from recent contests"
+LABEL eval.benchmark.tasks="880"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
+LABEL eval.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
+LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.07974"
+
+# Runtime: the grader compiles C++ solutions and runs python ones.
+RUN apt-get update && apt-get install -y --no-install-recommends gcc g++ && rm -rf /var/lib/apt/lists/*
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=livecodebench
 
 # Test: compile agent's solution and run against test cases

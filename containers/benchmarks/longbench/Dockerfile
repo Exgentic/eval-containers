@@ -6,17 +6,10 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="longbench"
-LABEL eval.benchmark.description="LongBench - long-context multi-task (QA, summarization, code, few-shot)"
-LABEL eval.benchmark.tasks="3750"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
-LABEL eval.benchmark.url="https://huggingface.co/datasets/THUDM/LongBench"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.14508"
+# Stdlib loader (curl + unzip + json, no pyarrow -> QEMU-safe) runs in a discarded
+# hf builder; the stdlib-python metric grader keeps python on python-slim.
 
 RUN apt-get update && apt-get install -y --no-install-recommends curl unzip && rm -rf /var/lib/apt/lists/*
 
@@ -103,7 +96,19 @@ PYEOF
 RUN rm -rf /tmp/data
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="longbench"
+LABEL eval.benchmark.description="LongBench - long-context multi-task (QA, summarization, code, few-shot)"
+LABEL eval.benchmark.tasks="3750"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="5e628be450b7e67fb7ae6e201bd6d8f7056f7672"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/THUDM/LongBench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.14508"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=longbench
 
 # Custom test: metric selected per task type (F1 / ROUGE-L / classification / edit-sim)

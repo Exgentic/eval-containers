@@ -6,16 +6,10 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="niah"
-LABEL eval.benchmark.description="Needle in a Haystack - long-context retrieval across context lengths and depths"
-LABEL eval.benchmark.tasks="63"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="7b90d285651b68d39a94f3d3bd3672f84192c989"
-LABEL eval.benchmark.url="https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
+# Stdlib loader (git clone + python generator, no pyarrow -> QEMU-safe) runs in a
+# discarded hf builder; the python substring grader keeps python on python-slim.
 
 # Fetch the Paul Graham essays from the upstream NIAH repo (pinned sha)
 RUN git clone --depth 1 https://github.com/gkamradt/LLMTest_NeedleInAHaystack.git /tmp/niah \
@@ -82,7 +76,18 @@ PYEOF
 RUN rm -rf /tmp/niah
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="niah"
+LABEL eval.benchmark.description="Needle in a Haystack - long-context retrieval across context lengths and depths"
+LABEL eval.benchmark.tasks="63"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="7b90d285651b68d39a94f3d3bd3672f84192c989"
+LABEL eval.benchmark.url="https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=niah
 
 # Custom test: case-insensitive substring match of the needle answer
