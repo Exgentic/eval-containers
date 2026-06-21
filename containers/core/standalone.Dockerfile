@@ -67,7 +67,7 @@ COPY --from=otel /etc/otelcol/config.yaml /etc/otelcol/config.yaml
 
 # ─── In-container orchestrator + full pipeline ───────────────────────
 COPY --from=process-compose /bundle/bin/process-compose /usr/local/bin/process-compose
-COPY process-compose/process-compose.yaml              /etc/process-compose.yaml
+COPY runner/process-compose.yaml              /etc/process-compose.yaml
 
 # Tighten perms. /opt/gateway is 0700 by default; explicit chmod pins it.
 RUN chmod 0700 /opt/gateway \

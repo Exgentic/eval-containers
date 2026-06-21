@@ -78,7 +78,7 @@ report (what was flagged last time).
    ("reword the rule" vs "implement the path") just re-surfaces next cycle.
 
 5. **For every mechanizable drift, propose a new catalog rule.** State the rule
-   ID, severity, and the predicate (e.g. "assert `core/process-compose/run`
+   ID, severity, and the predicate (e.g. "assert `core/runner/run`
    references `EVAL_BENCHMARK_VERSION` and writes `/output/task/version.json`";
    "assert every `models/*/Dockerfile` contains `LABEL eval.model.litellm_version=`";
    "assert no benchmark `compose.yaml` uses `EVAL_*_VERSION` as a Docker image

@@ -9,9 +9,9 @@
 # -standalone mode (otelcol + gateway + runner + verifier in one container); it
 # ships ONLY in core/standalone.Dockerfile. The lean eval base needs none of it.
 # (gosu, the drop-privileges helper used in ALL modes, is a separate base —
-# core/gosu.) The orchestration config + scripts this binary runs
-# (process-compose.yaml, run, run-agent, write-result) also live in this dir and
-# are COPY'd by the combination/standalone Dockerfiles from the core context.
+# core/gosu.) This dir builds ONLY the binary; the pipeline scripts it runs and
+# the process-compose.yaml supervision graph live in core/runner/ (mode-agnostic
+# — the same scripts drive the lean base's runner sequence with no supervisor).
 FROM golang:1.26.4-alpine AS gobuild
 ARG PROCESS_COMPOSE_VERSION=v1.116.0
 ENV CGO_ENABLED=0 GOOS=linux

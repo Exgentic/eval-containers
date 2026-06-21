@@ -450,7 +450,7 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 
     // 4. Single-image (process-compose): otelcol probes :13133, the gateway
     //    gates on process_healthy.
-    let pc = read("containers/core/process-compose/process-compose.yaml");
+    let pc = read("containers/core/runner/process-compose.yaml");
     assert!(
         pc.contains("port: 13133") && pc.contains("condition: process_healthy"),
         "process-compose.yaml must probe otelcol :13133 and gate on process_healthy (#45)"
@@ -549,7 +549,7 @@ fn eval_image_launches_the_pipeline() {
 /// single-container bundle) and the runner sequence in `run` (compose/k8s).
 #[test]
 fn agent_env_excludes_the_task_id() {
-    let ra = fs::read_to_string(repo_root().join("containers/core/process-compose/run-agent"))
+    let ra = fs::read_to_string(repo_root().join("containers/core/runner/run-agent"))
         .expect("read run-agent");
     assert!(
         ra.contains("gosu agent") && ra.contains("env -i"),
@@ -576,8 +576,9 @@ fn agent_env_excludes_the_task_id() {
 #[test]
 fn lean_base_is_glue_free_and_standalone_adds_the_glue() {
     // Scan the lean base's INSTRUCTION lines only — comments narrate the split and
-    // legitimately name the glue. The framework scripts live under a
-    // `process-compose/` dir, so match precise glue paths, not the bare substring.
+    // legitimately name the glue. The lean base also COPYs runner/ scripts, so
+    // match precise glue paths (bin/process-compose, process-compose.yaml), not
+    // the bare substring.
     let lean = fs::read_to_string(repo_root().join("containers/core/combination.Dockerfile"))
         .expect("read combination.Dockerfile");
     let lean_instr: String = lean
