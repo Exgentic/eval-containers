@@ -6,18 +6,11 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="mrcr"
-LABEL eval.benchmark.released="true"
-LABEL eval.benchmark.description="MRCR v2 - Multi-Round Coreference Resolution (long-context retrieval)"
-LABEL eval.benchmark.tasks="2400"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
-LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/mrcr"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.14993"
+# Loader runs pyarrow, so it stays in the discarded hf builder (size win: the
+# shipped runtime drops pyarrow; QEMU-build still needs duckdb, a later step).
+# The python SequenceMatcher grader runs on python-slim.
 
 # Single-JSONL task layout. One line per task. Agent never sees this file
 # (root-only). Runtime entrypoint materializes just the requested task's
@@ -70,7 +63,20 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mrcr"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="MRCR v2 - Multi-Round Coreference Resolution (long-context retrieval)"
+LABEL eval.benchmark.tasks="2400"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/mrcr"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.14993"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mrcr
 
 # Custom test: SequenceMatcher ratio with prefix check (per MRCR spec)
