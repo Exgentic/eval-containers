@@ -5,11 +5,11 @@
 # follows the builder — works on CI buildx (amd64), local classic podman (arm64),
 # and native-per-arch runners alike, with no $TARGETARCH (BuildKit-only, empty
 # under DOCKER_BUILDKIT=0) and no QEMU. go1.26.4 (not 1.22) CVE-patches the
-# collector's bundled Go stdlib; the OCB collector version stays 0.105.0
-# (byte-identical traces), only the toolchain moves. The grpc bump that clears
-# CVE-2026-33186 is a builder-config `replaces` (transport-only, traces unchanged).
+# collector's bundled Go stdlib. The OCB collector version is 0.154.0, whose
+# transitive otel SDK (1.44.0) and grpc (1.81.1) are CVE-clean natively — no
+# `replaces` forcing the SDK out of lockstep (which crashed the binary at boot).
 FROM golang:1.26.4-alpine AS build
-ARG OCB_VERSION=0.105.0
+ARG OCB_VERSION=0.154.0
 RUN go install "go.opentelemetry.io/collector/cmd/builder@v${OCB_VERSION}"
 COPY builder-config.yaml /tmp/builder-config.yaml
 RUN CGO_ENABLED=0 GOOS=linux builder --config=/tmp/builder-config.yaml

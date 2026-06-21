@@ -1,29 +1,22 @@
 # Custom collector build: only the 3 components our pipeline uses. Pinned to
-# 0.105.0 (the version the contrib image shipped) so the file exporter is the
-# same code and traces.jsonl stays identical for replay/inspection.
+# 0.154.0, whose transitive deps are CVE-clean natively (otel SDK 1.44.0 clears
+# CVE-2026-29181; grpc 1.81.1 clears CVE-2026-33186), so no out-of-lockstep
+# `replaces` are needed. Forcing the SDK ahead of the collector it was compiled
+# against is what crashed the binary at startup — it builds, but aborts during
+# telemetry init. The version moved off 0.105.0, so traces.jsonl is re-verified
+# byte-for-byte against the replay fixtures, not assumed identical.
 dist:
   name: otelcol
   description: "Minimal OTLP-in / file-out OpenTelemetry Collector for eval-containers."
   output_path: /build   # single new dir under an existing parent: OCB's mkdir is non-recursive
-  version: "0.105.0"
-  otelcol_version: "0.105.0"
+  version: "0.154.0"
+  otelcol_version: "0.154.0"
 
 # otlpreceiver is core; fileexporter + healthcheckextension are contrib-only
 # (which is why plain otelcol-core can't replace this).
 extensions:
-  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.105.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/extension/healthcheckextension v0.154.0
 receivers:
-  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.105.0
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.154.0
 exporters:
-  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.105.0
-
-# grpc-go 1.65.0 (what 0.105.0 pins transitively) carries CVE-2026-33186, a
-# CRITICAL HTTP/2 authorization-bypass in the server. grpc is the OTLP receiver's
-# transport only — bumping it past the fix (>=1.79.3) leaves the trace pipeline
-# (otlpreceiver → fileexporter) byte-identical while clearing the CVE.
-# go.opentelemetry.io/otel 1.39.0 (pinned by 0.105.0) carries CVE-2026-29181 (HIGH);
-# 1.41.0 fixes it — the collector's own telemetry API, a minor bump that leaves the
-# otlpreceiver → fileexporter pipeline byte-identical.
-replaces:
-  - google.golang.org/grpc => google.golang.org/grpc v1.79.3
-  - go.opentelemetry.io/otel => go.opentelemetry.io/otel v1.41.0
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/fileexporter v0.154.0
