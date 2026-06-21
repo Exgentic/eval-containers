@@ -1,8 +1,10 @@
 name: E2E Test
 
 on:
-  pull_request:
-    branches: [main]
+  # NB: the per-PR trigger is disabled — this E2E `oc login`s to a live OpenShift
+  # cluster, so it fails on every PR whenever that cluster/endpoint is unavailable
+  # (infra, not the PR). Run it on demand via workflow_dispatch; re-enable the
+  # pull_request trigger once the cluster is reliably reachable from CI.
   workflow_dispatch:
 
 permissions:
