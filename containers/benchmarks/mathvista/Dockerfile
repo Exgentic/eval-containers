@@ -5,19 +5,10 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="mathvista"
-LABEL eval.benchmark.description="MathVista - visual mathematical reasoning benchmark"
-LABEL eval.benchmark.tasks="1000"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.modality="multimodal"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="2b6ad69445fbb5695c9b165475e8decdbeb97747"
-LABEL eval.benchmark.url="https://mathvista.github.io"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2310.02255"
-LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mathvista"
+# Loader runs pyarrow (base64-encodes images into all.jsonl), so it stays in the
+# discarded hf builder; the python image-decode entrypoint runs on python-slim.
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22). Image bytes are
 # base64-encoded inline; entrypoint decodes back to image.png at runtime.
@@ -46,7 +37,21 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mathvista"
+LABEL eval.benchmark.description="MathVista - visual mathematical reasoning benchmark"
+LABEL eval.benchmark.tasks="1000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.modality="multimodal"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="2b6ad69445fbb5695c9b165475e8decdbeb97747"
+LABEL eval.benchmark.url="https://mathvista.github.io"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2310.02255"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mathvista"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mathvista
 
 COPY --from=test-exact-match /test.sh /grade.sh

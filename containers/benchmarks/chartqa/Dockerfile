@@ -5,18 +5,10 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="chartqa"
-LABEL eval.benchmark.description="ChartQA - question answering about charts with visual and logical reasoning"
-LABEL eval.benchmark.tasks="2500"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.modality="multimodal"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="b605b6e08b57faf4359aeb2fe6a3ca595f99b6c5"
-LABEL eval.benchmark.url="https://huggingface.co/datasets/HuggingFaceM4/ChartQA"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.10244"
+# Loader runs pyarrow (base64-encodes images into all.jsonl), so it stays in the
+# discarded hf builder; the python image-decode entrypoint runs on python-slim.
 
 # Single-JSONL task layout. Image bytes are base64-encoded inline; the runtime
 # entrypoint materializes just the requested row and decodes image.png.
@@ -47,7 +39,20 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="chartqa"
+LABEL eval.benchmark.description="ChartQA - question answering about charts with visual and logical reasoning"
+LABEL eval.benchmark.tasks="2500"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.modality="multimodal"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="b605b6e08b57faf4359aeb2fe6a3ca595f99b6c5"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/HuggingFaceM4/ChartQA"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.10244"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=chartqa
 
 COPY --from=test-exact-match /test.sh /grade.sh
