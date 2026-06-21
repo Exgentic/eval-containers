@@ -291,7 +291,7 @@ async fn bootstrap_core_bases() {
             // and model-bifrost; nothing else here depends on them (bake
             // builds the dependency closure, so omitting a target only skips it,
             // never breaks the build).
-            common::bake_targets(&[
+            const DEFAULT_BASES: &[&str] = &[
                 "entrypoint",
                 "test-exact-match",
                 "llm-bridge",
@@ -304,8 +304,17 @@ async fn bootstrap_core_bases() {
                 "benchmark-base-hf",
                 "benchmark-base-github",
                 "benchmark-base-external",
-            ])
-            .await;
+            ];
+            // EVAL_BASES_OVERRIDE (space-separated) bakes only the listed targets
+            // (the PR-replay-smoke gate passes just what its fixtures need); unset
+            // => the full DEFAULT_BASES (the nightly), unchanged.
+            let override_list = std::env::var("EVAL_BASES_OVERRIDE").unwrap_or_default();
+            let overridden: Vec<&str> = override_list.split_whitespace().collect();
+            if overridden.is_empty() {
+                common::bake_targets(DEFAULT_BASES).await;
+            } else {
+                common::bake_targets(&overridden).await;
+            }
         })
         .await;
 }
