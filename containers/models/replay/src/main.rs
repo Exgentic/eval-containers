@@ -878,6 +878,43 @@ mod tests {
     }
 
     #[test]
+    fn sse_responses_and_gemini_carry_text() {
+        assert!(sse_responses(&turn("ANS")).contains("ANS"));
+        assert!(sse_responses(&turn("ANS")).contains("response.completed"));
+        assert!(sse_gemini(&turn("ANS")).contains("ANS"));
+    }
+
+    #[test]
+    fn sse_chat_streams_tool_calls() {
+        let t = Turn {
+            text: String::new(),
+            tool_calls: vec![json!({"id":"c1","function":{"name":"read","arguments":"{}"}})],
+            finish_reason: "tool_calls".into(),
+            model: "m".into(),
+        };
+        let sse = sse_chat(&t);
+        assert!(sse.contains("\"tool_calls\""));
+        assert!(sse.contains("\"name\":\"read\""));
+        assert!(sse.contains("\"finish_reason\":\"tool_calls\""));
+        assert!(sse.trim_end().ends_with("data: [DONE]"));
+    }
+
+    #[test]
+    fn tool_parts_fills_defaults_and_passes_through() {
+        let (id, name, args) = tool_parts(&json!({}), "call_");
+        assert!(id.as_str().unwrap().starts_with("call_"));
+        assert_eq!(name, json!(""));
+        assert_eq!(args, json!("{}"));
+        let (id2, name2, args2) = tool_parts(
+            &json!({"id":"x","function":{"name":"n","arguments":"{\"a\":1}"}}),
+            "call_",
+        );
+        assert_eq!(id2, json!("x"));
+        assert_eq!(name2, json!("n"));
+        assert_eq!(args2, json!("{\"a\":1}"));
+    }
+
+    #[test]
     fn sse_anthropic_has_message_lifecycle() {
         let sse = sse_anthropic(&turn("HI"));
         assert!(sse.contains("event: message_start"));
