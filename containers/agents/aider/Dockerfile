@@ -15,14 +15,14 @@ RUN uv pip install --system --no-cache aider-chat==${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-pip install --no-cache-dir aider-chat==${AGENT_VERSION}
+/opt/agent/setup-uv-venv.sh /opt/aider-venv aider-chat==${AGENT_VERSION}
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-exec aider --yes-always --no-git --no-auto-commits --no-stream \
+exec /opt/aider-venv/bin/aider --yes-always --no-git --no-auto-commits --no-stream \
   --openai-api-base "${OPENAI_BASE_URL:-http://model:4000}" \
   --model "openai/${EVAL_MODEL:-default}" --message "$TASK"
 E

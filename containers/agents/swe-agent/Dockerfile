@@ -18,8 +18,10 @@ RUN git clone --depth 1 --branch v${AGENT_VERSION} https://github.com/SWE-agent/
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
+# git for the clone below + gitpython at runtime; the slim base ships neither.
+apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 git clone --depth 1 --branch v${AGENT_VERSION} https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent 2>/dev/null || true
-pip install --no-cache-dir -e /opt/swe-agent
+/opt/agent/setup-uv-venv.sh /opt/swe-agent-venv -e /opt/swe-agent
 # SWE-agent's LocalDeployment assumes uid-0 root: it writes /root/state.json
 # + /root/.swe-agent-env and copies tool bundles into /root/tools. The eval
 # framework runs the agent as uid 1002, so open up /root at build time.
@@ -46,7 +48,7 @@ if [ ! -d "$REPO/.git" ]; then
     && git commit --allow-empty -qm init) || true
 fi
 git config --global --add safe.directory "$REPO"
-exec sweagent run --agent.model.name="openai/${EVAL_MODEL:-default}" --agent.model.per_instance_cost_limit=3 \
+exec /opt/swe-agent-venv/bin/sweagent run --agent.model.name="openai/${EVAL_MODEL:-default}" --agent.model.per_instance_cost_limit=3 \
   --agent.model.api_base="${OPENAI_BASE_URL:-http://model:4000}" --env.deployment.type=local \
   --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.text="$TASK"
 E

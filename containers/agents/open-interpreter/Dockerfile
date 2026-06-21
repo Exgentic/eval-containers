@@ -17,7 +17,7 @@ RUN chmod +x /opt/agent/run_oi.py
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-pip install --no-cache-dir 'setuptools<81' open-interpreter==${AGENT_VERSION}
+/opt/agent/setup-uv-venv.sh /opt/oi-venv 'setuptools<81' open-interpreter==${AGENT_VERSION}
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
@@ -26,7 +26,7 @@ set -euo pipefail
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_API_BASE="${OPENAI_BASE_URL}"
-exec python3 /opt/agent/run_oi.py "$TASK"
+exec /opt/oi-venv/bin/python /opt/agent/run_oi.py "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]
