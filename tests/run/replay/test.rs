@@ -465,10 +465,45 @@ fn assert_gateway_traces(benchmark: &str, task_id: &str) {
     );
 }
 
+/// Assert the agent ran clean *through the real gateway* — no streaming/usage/SDK
+/// failure. This is the assertion that actually exercises full-stack: a crashed
+/// agent still writes a `reward:0` result.json and the gateway still emits spans,
+/// so `assert_result_valid` + `assert_gateway_traces` pass even on a broken run.
+/// The two real failure modes of the gateway path land as agent error lines —
+/// the strict-streaming 500 ("non-SSE response for streaming request") and the
+/// missing-usage SDK crash ("Cannot read properties of undefined (reading
+/// 'input_tokens')") — so failing on them is what catches a regression. Requires
+/// a faithful replay upstream (SSE + usage); see containers/models/replay.
+fn assert_agent_succeeded(benchmark: &str, task_id: &str) {
+    let agent_dir = Path::new("output")
+        .join(benchmark)
+        .join(task_id)
+        .join("agent");
+    let mut out = fs::read_to_string(agent_dir.join("stdout.log")).unwrap_or_default();
+    out.push_str(&fs::read_to_string(agent_dir.join("stderr.log")).unwrap_or_default());
+    assert!(
+        !out.trim().is_empty(),
+        "agent produced no output for {benchmark}/{task_id} — it never ran"
+    );
+    for sig in [
+        "non-SSE response for streaming request",
+        "Cannot read properties of undefined",
+        "provider returned",
+        "API Error:",
+    ] {
+        assert!(
+            !out.contains(sig),
+            "agent failed through the real gateway ({sig:?}) for {benchmark}/{task_id}:\n{}",
+            out.lines().take(20).collect::<Vec<_>>().join("\n")
+        );
+    }
+}
+
 /// Full-stack replay test: the real gateway runs and `models/replay` is its
-/// upstream (see `ReplayMode::FullStack`). Adds `assert_gateway_traces` on top of
-/// the lean contract. `EVAL_MODEL` is a real handle bifrost routes on;
-/// the dummy `OPENAI_API_KEY` only satisfies interpolation (replay never auths).
+/// upstream (see `ReplayMode::FullStack`). Adds `assert_gateway_traces` and
+/// `assert_agent_succeeded` on top of the lean contract. `EVAL_MODEL` is a real
+/// handle bifrost routes on; the dummy `OPENAI_API_KEY` only satisfies
+/// interpolation (replay never auths).
 macro_rules! replay_fullstack_test {
     ($name:ident, $compose:expr, $fixture:expr, $benchmark:expr, $agent:expr, $task_id:expr) => {
         #[tokio::test]
@@ -501,15 +536,17 @@ macro_rules! replay_fullstack_test {
 
             assert_result_valid($benchmark, $task_id);
             assert_gateway_traces($benchmark, $task_id);
+            assert_agent_succeeded($benchmark, $task_id);
         }
     };
 }
 
 // ── Full-stack replay tests ──────────────────────────────────────────
 // Real gateway + otelcol run on top of the replay upstream. One fixture covers
-// the path; the broad matrix stays on cheaper lean `replay_test!`. The
-// assertion checks the pipeline ran and the gateway instrumented, not reward
-// parity (turn-count caveat in tests/run/replay/MATRIX.md).
+// the path; the broad matrix stays on cheaper lean `replay_test!`. Assertions
+// check the pipeline ran, the gateway instrumented, and the agent ran clean
+// through the real gateway — which requires a faithful replay upstream (SSE +
+// usage; see containers/models/replay and MATRIX.md).
 
 replay_fullstack_test!(
     replay_fullstack_aime_17_claude_code,
