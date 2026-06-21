@@ -4,19 +4,11 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="ifeval"
-LABEL eval.benchmark.released="true"
-LABEL eval.benchmark.description="IFEval - instruction following with verifiable constraints"
-LABEL eval.benchmark.tasks="541"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="966cd89545d6b6acfd7638bc708b98261ca58e84"
-LABEL eval.benchmark.url="https://github.com/google-research/google-research/tree/master/instruction_following_eval"
-LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/ifeval"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.07911"
+# Loader runs pyarrow, so it stays in the discarded hf builder (size win; QEMU-build
+# still needs duckdb, a later step). The official IFEval verifier is cloned here
+# (where git is available); nltk/absl + the verifier run on python-slim at runtime.
 
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 # instruction_ids and kwargs are stored as JSON strings (field names
@@ -55,15 +47,31 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-# Install official IFEval verification code from google-research
-RUN pip install --no-cache-dir absl-py==2.1.0 langdetect==1.0.9 nltk==3.9.1 immutabledict==4.2.0
-RUN python3 -c "import nltk; nltk.download('punkt_tab', quiet=True)"
+# Clone the official IFEval verifier in the builder (needs git).
 RUN git clone --depth 1 https://github.com/google-research/google-research.git /tmp/google-research \
     && cp -r /tmp/google-research/instruction_following_eval /opt/instruction_following_eval \
     && rm -rf /tmp/google-research \
     && touch /opt/instruction_following_eval/__init__.py
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="ifeval"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="IFEval - instruction following with verifiable constraints"
+LABEL eval.benchmark.tasks="541"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="966cd89545d6b6acfd7638bc708b98261ca58e84"
+LABEL eval.benchmark.url="https://github.com/google-research/google-research/tree/master/instruction_following_eval"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/ifeval"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.07911"
+
+# Runtime deps for the official IFEval verifier.
+RUN pip install --no-cache-dir absl-py==2.1.0 langdetect==1.0.9 nltk==3.9.1 immutabledict==4.2.0
+RUN python3 -c "import nltk; nltk.download('punkt_tab', quiet=True)"
+COPY --from=data /opt/instruction_following_eval /opt/instruction_following_eval
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=ifeval
 
 # Custom test: verify instruction following using official IFEval logic
