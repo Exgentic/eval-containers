@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # tests/static/standalone.sweep.sh — assert the single-container bundle's in-process
-# orchestrator config (core/process-compose/process-compose.yaml) is well-wired
+# orchestrator config (core/runner/process-compose.yaml) is well-wired
 # (the single-container mode of the wiring gate, alongside compose.config.sweep.sh
 # and helm.sweep.sh).
 #
@@ -20,7 +20,7 @@ set -uo pipefail
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
 command -v conftest >/dev/null || { echo "conftest not found — required for the single-container wiring gate"; exit 1; }
 
-PC="$ROOT/containers/core/process-compose/process-compose.yaml"
+PC="$ROOT/containers/core/runner/process-compose.yaml"
 [ -f "$PC" ] || { echo "process-compose.yaml not found at $PC"; exit 1; }
 
 conftest test "$PC" --policy "$ROOT/tests/static/policy/standalone"

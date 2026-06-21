@@ -23,7 +23,7 @@ commit: 0960c36
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | egress-blocked | ✓ | `compose.yaml` includes the network-isolated shared runner (`compose/services.yaml`; runner on the `internal: true` network only); `LABEL eval.benchmark.internet="false"` — grading is offline (no `swebench` package; `run_script.sh`/`parser.py` baked from upstream at a pinned commit) |
-| agent-nonroot | ✓ | agent runs via the shared runner (`core/process-compose/process-compose.yaml`) as `gosu agent`; `entrypoint.sh` `chown -R agent:agent /app` hands the repo to the agent; the benchmark image adds no agent/root override |
+| agent-nonroot | ✓ | agent runs via the shared runner (`core/runner/process-compose.yaml`) as `gosu agent`; `entrypoint.sh` `chown -R agent:agent /app` hands the repo to the agent; the benchmark image adds no agent/root override |
 | secrets-isolated | ✓ | no secrets in `Dockerfile`/`build.sh` (no `ENV`/`COPY` of credentials; `build.sh` only pulls the public dataset + base image); model creds enter via the framework gateway |
 | resource-limited | ? | CPU/memory caps not audited (shared runner default `cpus: 2` / `2G`; per-repo test-suite needs unverified) |
 

@@ -79,9 +79,9 @@ RUN grep -q '^agent:' /etc/passwd || echo 'agent:x:1002:0::/home/agent:/bin/bash
  && chmod -R g+rwX /home/agent
 
 # ─── Framework scripts ───────────────────────────────────────────────
-COPY process-compose/run              /usr/local/bin/run
-COPY process-compose/run-agent        /usr/local/bin/run-agent
-COPY process-compose/write-result     /usr/local/bin/write-result
+COPY runner/run              /usr/local/bin/run
+COPY runner/run-agent        /usr/local/bin/run-agent
+COPY runner/write-result     /usr/local/bin/write-result
 COPY entrypoint/eval-materialize-task /usr/local/bin/materialize-task
 COPY entrypoint/reap-sidecars         /usr/local/bin/reap-sidecars
 

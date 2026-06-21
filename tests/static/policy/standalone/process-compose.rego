@@ -9,7 +9,7 @@ import rego.v1
 # Single-container orchestrator (process-compose.yaml) wiring contract. process-compose
 # ships no parse-and-exit / JSON schema, so this conftest policy is the single-container
 # analog of `docker compose config` and `helm template`: it asserts the wiring a real
-# loader would enforce. Run over core/process-compose/process-compose.yaml
+# loader would enforce. Run over core/runner/process-compose.yaml
 # (see tests/static/standalone.sweep.sh).
 
 # Every process must declare a `command` — it is what the supervisor execs.
