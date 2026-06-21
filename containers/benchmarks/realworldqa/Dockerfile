@@ -5,18 +5,10 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="realworldqa"
-LABEL eval.benchmark.description="RealWorldQA - real-world spatial understanding benchmark from xAI"
-LABEL eval.benchmark.tasks="765"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.modality="multimodal"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="17e7f75e092e47169732462ea3cdfebe911105dd"
-LABEL eval.benchmark.url="https://huggingface.co/datasets/xai-org/RealworldQA"
-LABEL eval.benchmark.paper="https://x.ai/blog/grok-1.5v"
+# Loader runs pyarrow (base64-encodes images into all.jsonl), so it stays in the
+# discarded hf builder; the python image-decode entrypoint runs on python-slim.
 
 # Single-JSONL task layout. One line per task. Image bytes are base64-encoded
 # inline; runtime entrypoint decodes only the requested task's image.
@@ -71,7 +63,20 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="realworldqa"
+LABEL eval.benchmark.description="RealWorldQA - real-world spatial understanding benchmark from xAI"
+LABEL eval.benchmark.tasks="765"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.modality="multimodal"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="17e7f75e092e47169732462ea3cdfebe911105dd"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/xai-org/RealworldQA"
+LABEL eval.benchmark.paper="https://x.ai/blog/grok-1.5v"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=realworldqa
 
 COPY --from=test-exact-match /test.sh /grade.sh

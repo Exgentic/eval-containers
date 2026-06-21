@@ -5,19 +5,10 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="mmmu"
-LABEL eval.benchmark.released="true"
-LABEL eval.benchmark.description="MMMU - massive multi-discipline multimodal understanding"
-LABEL eval.benchmark.tasks="900"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
-LABEL eval.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
-LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.16502"
+# Loader runs pyarrow (base64-encodes images into all.jsonl), so it stays in the
+# discarded hf builder; the python image-decode entrypoint runs on python-slim.
 
 # Single-JSONL task layout. One line per task. Images base64-encoded inline;
 # runtime entrypoint decodes only the requested task's images.
@@ -64,7 +55,21 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="mmmu"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="MMMU - massive multi-discipline multimodal understanding"
+LABEL eval.benchmark.tasks="900"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
+LABEL eval.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.16502"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mmmu
 
 COPY --from=test-exact-match /test.sh /grade.sh
