@@ -5,18 +5,10 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="docvqa"
-LABEL eval.benchmark.description="DocVQA - question answering on document images"
-LABEL eval.benchmark.tasks="5349"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.modality="multimodal"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="539088ef8a8ada01ac8e2e6d4e372586748a265e"
-LABEL eval.benchmark.url="https://www.docvqa.org"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2007.00398"
+# Loader runs pyarrow (base64-encodes images into all.jsonl), so it stays in the
+# discarded hf builder; the python image-decode entrypoint runs on python-slim.
 
 # Write every task to a single JSONL file. One line per task. Image bytes
 # are base64-encoded inline so the whole benchmark lives in a single
@@ -50,7 +42,20 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="docvqa"
+LABEL eval.benchmark.description="DocVQA - question answering on document images"
+LABEL eval.benchmark.tasks="5349"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.modality="multimodal"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="539088ef8a8ada01ac8e2e6d4e372586748a265e"
+LABEL eval.benchmark.url="https://www.docvqa.org"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2007.00398"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=docvqa
 
 COPY --from=test-exact-match /test.sh /grade.sh

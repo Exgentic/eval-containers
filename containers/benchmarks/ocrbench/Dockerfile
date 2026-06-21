@@ -5,18 +5,10 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="ocrbench"
-LABEL eval.benchmark.description="OCRBench - benchmark for OCR capability of large multimodal models"
-LABEL eval.benchmark.tasks="1000"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.modality="multimodal"
-LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="92a54bd1384387c178d5a07140a2d85e0a3d12e1"
-LABEL eval.benchmark.url="https://github.com/Yuliang-Liu/MultimodalOCR"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.07895"
+# Loader runs pyarrow (base64-encodes images into all.jsonl), so it stays in the
+# discarded hf builder; the python image-decode entrypoint runs on python-slim.
 
 # Single-JSONL task layout. One line per task. Image bytes are base64-encoded
 # inline; runtime entrypoint decodes only the requested task's image.
@@ -47,7 +39,20 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="ocrbench"
+LABEL eval.benchmark.description="OCRBench - benchmark for OCR capability of large multimodal models"
+LABEL eval.benchmark.tasks="1000"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.modality="multimodal"
+LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.data_revision="92a54bd1384387c178d5a07140a2d85e0a3d12e1"
+LABEL eval.benchmark.url="https://github.com/Yuliang-Liu/MultimodalOCR"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.07895"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=ocrbench
 
 COPY --from=test-exact-match /test.sh /grade.sh
