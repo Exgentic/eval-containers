@@ -15,12 +15,12 @@
 #   BENCHMARK_IMAGE       — source benchmark image
 #   AGENT_IMAGE           — source agent image (provides /opt/agent/)
 #   AGENT_VERSION         — pinned upstream CLI version (recorded in version.json)
-#   RUNTIME_BUNDLE_IMAGE  — core/runtime-bundle (gosu; process-compose is bundle-only)
+#   GOSU_IMAGE            — core/gosu (drop-privileges helper; used in all modes)
 #
 # Path layout in the lean base:
 #   /opt/agent/                      COPY'd from AGENT_IMAGE
 #   /run.sh                          agent launch script (image root, not /opt/agent/)
-#   /usr/local/bin/gosu              from RUNTIME_BUNDLE_IMAGE (drop to agent uid)
+#   /usr/local/bin/gosu              from GOSU_IMAGE (drop to agent uid)
 #   /usr/local/bin/run               framework launcher (runner sequence / single-image)
 #   /usr/local/bin/run-agent         shared agent launcher (rule 7 allow-list, one home)
 #   /usr/local/bin/write-result      final result writer
@@ -36,15 +36,15 @@
 ARG BENCHMARK_IMAGE
 ARG AGENT_IMAGE
 ARG AGENT_VERSION
-ARG RUNTIME_BUNDLE_IMAGE=ghcr.io/exgentic/core/runtime-bundle:latest
+ARG GOSU_IMAGE=ghcr.io/exgentic/core/gosu:latest
 
 # Named stages for the build-arg base images: buildx forbids variable
 # expansion in `COPY --from=` ("variable expansion is not supported for
 # --from"), so pin each base to a stage here — `FROM` *does* allow the
 # `${ARG}` (declared in the global scope above) — and the layers below copy
 # from the stage name. buildah accepts either form; this builds on both.
-FROM ${AGENT_IMAGE}          AS agent
-FROM ${RUNTIME_BUNDLE_IMAGE} AS runtime-bundle
+FROM ${AGENT_IMAGE} AS agent
+FROM ${GOSU_IMAGE}  AS gosu
 
 FROM ${BENCHMARK_IMAGE}
 
@@ -67,7 +67,7 @@ RUN AGENT_VERSION="${AGENT_VERSION:-$(cat /opt/agent/VERSION 2>/dev/null)}" \
 # gosu lets `run`/`run-agent` switch root → agent uid before launching the
 # agent. process-compose is NOT copied here — it is a single-container-only
 # orchestrator and ships only in the -standalone bundle.
-COPY --from=runtime-bundle /bundle/bin/gosu /usr/local/bin/gosu
+COPY --from=gosu /bundle/bin/gosu /usr/local/bin/gosu
 
 # Ensure the agent user (uid 1002) and /home/agent exist so benchmarks that
 # ask the agent to write files there (e.g. AIME's answer.txt) work correctly.

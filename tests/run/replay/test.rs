@@ -296,7 +296,7 @@ async fn bootstrap_core_bases() {
                 "test-exact-match",
                 "llm-bridge",
                 "otel",
-                "runtime-bundle",
+                "gosu",
                 "agent-base-node",
                 "agent-base-python",
                 "agent-base-rust",
