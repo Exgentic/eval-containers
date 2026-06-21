@@ -24,7 +24,7 @@ commit: 1a344fd
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | egress-blocked | ◐ | compose: runner on `internal: true` (no egress) ✓. single-image: rule-24d `iptables --uid-owner` on the agent uid not verified here |
-| agent-nonroot | ✓ | agent runs as uid 1002 via `gosu agent` (`core/process-compose/process-compose.yaml`) |
+| agent-nonroot | ✓ | agent runs as uid 1002 via `gosu agent` (`core/runner/process-compose.yaml`) |
 | secrets-isolated | ◐ | compose: real key only in the separate `gateway` service; agent gets `sk-proxy` ✓. single-image: verifier runs `/grade.sh` (and the candidate it execs) **as root** — see reward-forge residual |
 | resource-limited | ✓ | compose `deploy.resources.limits` 2 cpu / 2 GB (shared `compose/services.yaml`) |
 

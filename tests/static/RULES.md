@@ -53,7 +53,7 @@ Parent: [../RULES.md](../RULES.md)
    rule 9). Migrated to conftest/OPA (`policy/compose/`, swept by
    `compose.sweep.sh`) for issue #114.
 
-8. **Shared entrypoint contract** — `core/process-compose/run` (the
+8. **Shared entrypoint contract** — `core/runner/run` (the
    framework launcher) MUST reference `EVAL_BENCHMARK_VERSION`,
    `EVAL_AGENT_VERSION`, and write `/output/task/version.json` +
    `/output/agent/version.json`.

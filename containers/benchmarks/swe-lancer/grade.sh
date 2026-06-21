@@ -2,7 +2,7 @@
 # Grade one swe-lancer task: bring up the upstream service stack, run the task's
 # own pytest suite, and translate its exit code into the eval reward.
 #   reward = 1 iff issues/$ISSUE_ID/test.py passes (pytest exit 0), else 0.
-# Written to /logs/verifier/reward.txt (read by core/process-compose/write-result
+# Written to /logs/verifier/reward.txt (read by core/runner/write-result
 # and by the oracle). Uses the baked ISSUE_ID (the real task id); EVAL_TASK_ID is
 # overridden to 0 at oracle runtime, so we never read it here.
 mkdir -p /logs/verifier
