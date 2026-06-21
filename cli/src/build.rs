@@ -211,47 +211,66 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 benchmark_image(registry, &benchmark, &tag)
             };
             let agent_tag = agent_image(registry, &agent, &tag);
-            let bake_env = vec![
+            // --no-pull on a base (non-task) build: use eval-local, which wires
+            // bench+agent in-graph via named contexts. This avoids registry manifest
+            // checks that fail on arm64 Mac (docker-container driver isolation means
+            // --load'd images are not visible in the BuildKit content store). The
+            // eval-local target produces the same image tag as eval. Per-task builds
+            // always use the plain eval target — their BENCHMARK_IMAGE is a task-
+            // specific image built outside bake, not a named bake target.
+            let eval_target = if no_pull && task_id.is_none() {
+                "eval-local"
+            } else {
+                "eval"
+            };
+            // Pass image refs as env vars so the bake HCL variables resolve for the
+            // eval-local context keys ("${BENCHMARK_IMAGE}" / "${AGENT_IMAGE}").
+            // --set target.args.X only sets the build arg; setting as an env var also
+            // populates the HCL variable used in the contexts map key.
+            let mut bake_env = vec![
                 ("EVAL_BENCHMARK", benchmark.clone()),
                 ("EVAL_AGENT", agent.clone()),
+                ("BENCHMARK_IMAGE", bench_tag.clone()),
+                ("AGENT_IMAGE", agent_tag.clone()),
             ];
             // The lean `eval` base's two source images. (When --standalone layers
             // the bundle on top, the `eval-standalone` target builds `eval` first
             // as a wired dependency via the `eval-base` context, so these still apply.)
             let mut overrides = vec![
-                format!("eval.args.BENCHMARK_IMAGE={bench_tag}"),
-                format!("eval.args.AGENT_IMAGE={agent_tag}"),
+                format!("{eval_target}.args.BENCHMARK_IMAGE={bench_tag}"),
+                format!("{eval_target}.args.AGENT_IMAGE={agent_tag}"),
             ];
             // Per-task: tag the lean base evals/<b>-<task>--<a> (what compose,
             // container, and the chart all address), overriding the bake file's
             // shared-env default — else `build` and `run` disagree (RULES.md 24f).
             if let Some(ref tid) = task_id {
                 let lean_tag = eval_task_image(registry, &benchmark, tid, &agent, &tag);
-                overrides.push(format!("eval.tags={lean_tag}"));
+                overrides.push(format!("{eval_target}.tags={lean_tag}"));
             }
             // Version is a build arg (RULES.md principle 9). Empty => the
             // combination defaults to the agent image's pinned /opt/agent/VERSION;
             // set => override the upstream version the agent installs.
             if !agent_version.is_empty() {
-                overrides.push(format!("eval.args.AGENT_VERSION={agent_version}"));
-            }
-            // --no-pull: skip the remote registry manifest check for the eval's FROM
-            // images. Use this when bench and agent were just built locally — their
-            // arm64 images are in the BuildKit content store, and the manifest check
-            // (which finds only amd64 in the registry) is both unnecessary and harmful.
-            if no_pull {
-                overrides.push("eval.pull=false".into());
+                overrides.push(format!("{eval_target}.args.AGENT_VERSION={agent_version}"));
             }
             if !standalone {
                 // Lean base only (the gateway image is irrelevant — no in-process
                 // gateway here; the model is selected at run time as a sidecar).
-                return bake_with_env(registry, "eval", &overrides, &bake_env, builder, dry_run);
+                return bake_with_env(
+                    registry,
+                    eval_target,
+                    &overrides,
+                    &bake_env,
+                    builder,
+                    dry_run,
+                );
             }
             // Standalone bundle: bake `eval-standalone`. It builds the lean `eval`
             // target in-graph (wired via the `eval-base` context in the bake file)
             // and layers onto its output directly, so the only extra input here is
             // the gateway — MODEL_IMAGE lives ONLY in the bundle.
             let model_tag = model_image(registry, &model, &tag);
+            bake_env.push(("MODEL_IMAGE", model_tag.clone()));
             overrides.push(format!("eval-standalone.args.MODEL_IMAGE={model_tag}"));
             // Per-task: override the shared-env default with the task-aware
             // standalone name, mirroring the lean `eval.tags` override above.

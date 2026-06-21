@@ -28,6 +28,19 @@ target "eval" {
   tags = ["${REGISTRY}/evals/${EVAL_BENCHMARK}--${EVAL_AGENT}:${TAG}"]
 }
 
+# Local-build variant: wires bench+agent in-graph via named contexts so eval
+# builds them as graph dependencies instead of pulling from the registry.
+# Used by `build eval --no-pull` on base (non-task) builds to avoid registry
+# manifest checks that fail on arm64 Mac (docker-container driver isolation
+# means --load'd images are not visible in the BuildKit content store).
+target "eval-local" {
+  inherits = ["eval"]
+  contexts = {
+    "${BENCHMARK_IMAGE}" = "target:benchmark-${EVAL_BENCHMARK}"
+    "${AGENT_IMAGE}"     = "target:agent-${EVAL_AGENT}"
+  }
+}
+
 # Single-container standalone bundle (evals/<b>--<a>-standalone:<version>): the
 # lean base + the in-process gateway, otelcol, process-compose, and the full
 # pipeline. The laptop / `--mode container` artifact. The variant is a NAME
