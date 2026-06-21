@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   e2e:
-    name: E2E pipeline test (aime / codex / bifrost)
+    name: E2E pipeline test (aime / zerostack / gpt-5.4)
     # Same-repo only: fork PRs receive empty secrets (oc login fails noisily) and
     # this job runs untrusted PR code (deploy/oc/test.sh). Manual dispatch allowed.
     if: >-
@@ -30,4 +30,4 @@ jobs:
         run: oc login "${{ secrets.OC_SERVER }}" --token="${{ secrets.OC_TOKEN }}" --insecure-skip-tls-verify
 
       - name: Run e2e test
-        run: bash deploy/oc/test.sh --benchmark aime --agent codex --model bifrost --task 0
+        run: bash deploy/oc/test.sh --benchmark aime --agent zerostack --model gpt-5.4 --task 0
