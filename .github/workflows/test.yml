@@ -154,7 +154,7 @@ jobs:
   # failing to boot shows up at `compose up`, on the PR. Skipped on push-to-main
   # (the nightly covers main); PRs + manual dispatch only.
   replay-e2e:
-    name: replay E2E (zerostack)
+    name: Replay E2E (zerostack)
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 25
