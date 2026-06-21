@@ -290,11 +290,11 @@ async fn bootstrap_core_bases() {
             // the single slowest bake step (~55s). Drop litellm, gateway-bifrost,
             // and model-bifrost; nothing else here depends on them (bake
             // builds the dependency closure, so omitting a target only skips it,
-            // never breaks the build).
+            // never breaks the build). Also drop llm-bridge — only tau-bench uses
+            // it, and there is no tau-bench replay fixture.
             const DEFAULT_BASES: &[&str] = &[
                 "entrypoint",
                 "test-exact-match",
-                "llm-bridge",
                 "otel",
                 "gosu",
                 "agent-base-node",
