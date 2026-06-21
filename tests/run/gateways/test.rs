@@ -140,10 +140,6 @@ async fn start_gateway(flavor: &str, extra_env: &[(&str, &str)]) -> ContainerAsy
                 // its happy-path health endpoint.
                 .with_expected_status_code(200u16),
         )))
-        // Fleet images are linux/amd64 — on Apple Silicon dev machines
-        // podman still runs them via the qemu shim. Explicit so the
-        // emulation is intentional, not "accidentally pulled wrong arch".
-        .with_platform("linux/amd64")
         // Boot defaults. extra_env overrides any of these.
         .with_env_var("EVAL_MODEL", "openai/azure/gpt-5.4")
         .with_env_var("OPENAI_API_KEY", "sk-bogus")
@@ -610,7 +606,6 @@ async fn start_pod_with_otel(
         .with_wait_for(WaitFor::message_on_stderr(
             "Everything is ready. Begin running and processing data.",
         ))
-        .with_platform("linux/amd64")
         .with_mount(Mount::bind_mount(
             host_output.to_str().expect("utf8 host path"),
             "/output",
@@ -633,7 +628,6 @@ async fn start_pod_with_otel(
                 .with_poll_interval(Duration::from_millis(500))
                 .with_expected_status_code(200u16),
         )))
-        .with_platform("linux/amd64")
         // Share /output with the otelcol sidecar so the litellm
         // eval_logger callback's writes to /output/trajectory.jsonl +
         // /output/result.json are visible to the test process. otelcol
