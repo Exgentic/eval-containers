@@ -60,14 +60,25 @@ as its provider (`OPENAI_API_BASE`). It is the only mode that exercises the
 gateway+OTel stack offline. One fixture (`aime-17-claude-code`) covers the path
 today; the broad matrix stays on cheaper `Lean` replay.
 
-**Known limitation — turn-count fidelity.** Fixtures are recorded for *direct*
-replay (agent ↔ replay), so they hold exactly the turns that agent made. A real
-gateway in front can issue more upstream calls than the fixture has turns; once
-the FIFO is exhausted the agent stops seeing the recorded answer, so the
-full-stack run need not reproduce the recorded reward (e.g. `aime-17` grades
-`reward:0`). The full-stack assertion therefore checks the pipeline ran and the
-gateway instrumented — not reward parity. Closing the gap needs richer fixtures
-or last-turn-repeat in the replay server.
+**Faithful upstream required.** A real gateway enforces the provider wire
+contract a directly-connected agent tolerates: it forwards the client's
+`stream: true` and *requires* the upstream to stream, and it maps the upstream's
+`usage` onto the client's. So full-stack needs a replay upstream that speaks SSE
+and emits `usage` (see `containers/models/replay`); with it, full-stack
+reproduces lean's result exactly. `assert_agent_succeeded` guards this — without
+a faithful upstream the agent crashes on the streaming 500 or an undefined
+`input_tokens`, which `assert_result_valid` + `assert_gateway_traces` would miss
+(a crashed agent still writes a `reward:0` result and the gateway still emits
+spans).
+
+**Reward parity vs lean.** Full-stack matches lean's reward, not necessarily 1:
+the absolute reward depends on the *fixture*. The claude-code aime fixtures
+record only the final text turn, not the tool calls that write
+`/home/agent/answer.txt`, so both modes grade `0` (e.g. `aime-17`). Benchmarks
+graded from the final text reproduce reward faithfully. The full-stack
+assertions therefore check the pipeline ran, the gateway instrumented, and the
+agent ran clean — reward parity with lean follows, absolute reward is a fixture
+property.
 
 ## Agent coverage
 
