@@ -1,4 +1,4 @@
-name: PR replay smoke
+name: PR replay E2E
 
 # A miniature of the nightly replay E2E for every PR: build what one fixture
 # needs and replay it, giving the real "images build AND the compose stack
@@ -18,7 +18,7 @@ name: PR replay smoke
 on:
   pull_request:
     branches: [main]
-    paths: ['containers/**', 'cli/**', 'tests/run/**', '.github/workflows/pr-replay-smoke.yml']
+    paths: ['containers/**', 'cli/**', 'tests/run/**', '.github/workflows/pr-replay-e2e.yml']
   workflow_dispatch:
 
 permissions:
@@ -28,7 +28,7 @@ permissions:
 concurrency:
   # One group per PR/branch (head_ref on PRs, ref otherwise) so a new push cancels
   # the in-flight run and the gate only ever evaluates the latest commit.
-  group: pr-replay-smoke-${{ github.head_ref || github.ref }}
+  group: pr-replay-e2e-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 defaults:
@@ -37,7 +37,7 @@ defaults:
 
 jobs:
   replay:
-    name: replay smoke (zerostack)
+    name: replay E2E (zerostack)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
