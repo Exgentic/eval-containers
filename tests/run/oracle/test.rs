@@ -66,21 +66,13 @@ fn oracle(args: &[&str]) -> bool {
 #[tokio::test]
 #[ignore]
 async fn benchmarks_are_oracle_solvable() {
-    // A fresh CI runner has none of the base images this gate builds on, and the
-    // shared registry may be empty, so bake the core bases locally first — the
-    // same bootstrap the replay suite uses. `oracle --local` then builds each
-    // benchmark against these local bases. (Locally, where the bases already
-    // exist, the bake is a fast cache hit.)
+    // Bake the bases `oracle --local` builds each benchmark on (empty registry /
+    // fresh runner); a warm cache makes this a fast hit. oracle runs the grader
+    // against the gold/no-op solution — no agent, no model, no boot — so it needs
+    // only the benchmark-build bases, not the runtime images or llm-bridge.
     common::bake_targets(&[
         "entrypoint",
         "test-exact-match",
-        "llm-bridge",
-        "otel",
-        "gosu",
-        "agent-base-node",
-        "agent-base-python",
-        "agent-base-rust",
-        "model-replay",
         "benchmark-base-hf",
         "benchmark-base-github",
         "benchmark-base-external",
