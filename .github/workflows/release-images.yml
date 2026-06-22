@@ -69,6 +69,10 @@ on:
       only:
         description: "Debug: restrict matrices to these space-separated leaf targets (e.g. 'benchmark-gsm8k agent-claude-code'); blank = whole fleet"
         default: ""
+      skip_published:
+        description: "Incremental: skip building any image already at :TAG (build only missing/failed). Use when re-running and the published images are still current."
+        type: boolean
+        default: false
 
 concurrency:
   group: fleet-release-${{ github.ref }}
@@ -317,6 +321,11 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
           export TAG="${TAG}-${ARCH}"   # per-arch tag; merge builds the :TAG manifest list
+          # Incremental (skip_published): if this leaf is already at :TAG-arch, skip it.
+          if [ "${{ inputs.skip_published }}" = "true" ] && \
+             docker buildx imagetools inspect "${REGISTRY}/${T%%-*}s/${T#*-}:${TAG}" >/dev/null 2>&1; then
+            echo "skip-published: $T already at :$TAG"; exit 0
+          fi
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           # Override every base context to PULL the frozen registry image, so this
@@ -407,6 +416,7 @@ jobs:
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
             cache="${REGISTRY}/buildcache/${B}-${tid}-${ARCH}"
+            if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then echo "skip-published: $ref"; continue; fi
             if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
             echo "::group::$ref ($KIND)"
             if [ "$KIND" = "script" ]; then
@@ -588,6 +598,7 @@ jobs:
               eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
               PLAT="linux/amd64,linux/arm64" # light overlay → multi-arch is fine
             fi
+            if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "${REGISTRY}/evals/${eb}--${A}:${TAG}" >/dev/null 2>&1; then echo "skip-published: evals/${eb}--${A}"; continue; fi
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
             # once, then layers standalone on it via the eval-base context.
