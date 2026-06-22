@@ -7,7 +7,7 @@ ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
-    "SELECT task_id AS id, instruct_prompt, code_prompt, test, entry_point \
+    "SELECT task_id AS id, instruct_prompt, code_prompt, test, entry_point, canonical_solution \
      FROM 'hf://datasets/bigcode/bigcodebench@b74c0d0bf70d2c0bc459be537895cca163007f1a/data/v0.1.4-00000-of-00001.parquet'"
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest

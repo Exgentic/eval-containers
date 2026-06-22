@@ -8,7 +8,7 @@ FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
     "SELECT task_id::VARCHAR AS id, prompt AS problem, \
-            COALESCE(array_to_string(test_list, chr(10)), '') AS test_list, test \
+            COALESCE(array_to_string(test_list, chr(10)), '') AS test_list, test, code \
      FROM 'hf://datasets/evalplus/mbppplus@~parquet/default/test/0000.parquet'"
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
