@@ -93,7 +93,7 @@ jobs:
     if: github.ref_type == 'tag' || inputs.tag != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - name: git tag matches Cargo.toml + Chart.yaml (RULES.md principle 9)
         run: |
           ver="${TAG#v}"
@@ -109,11 +109,11 @@ jobs:
   cli:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build -p eval-containers --release --quiet
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cli
           path: target/release/eval-containers
@@ -137,7 +137,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -179,7 +179,7 @@ jobs:
       combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - id: l
         env:
           GH_TOKEN: ${{ github.token }}
@@ -306,7 +306,7 @@ jobs:
           - arch: arm64
             runner: ${{ vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -378,7 +378,7 @@ jobs:
           - arch: arm64
             runner: ${{ vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - uses: docker/setup-buildx-action@v4   # kind=bake (swe-bench)
       - name: Ensure podman                    # kind=script (build.sh)
         run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
@@ -465,7 +465,7 @@ jobs:
       LEAVES: ${{ needs.enumerate.outputs.leaves }}
       PERTASK_SHARDS: ${{ needs.enumerate.outputs.pertask_shards }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -524,13 +524,13 @@ jobs:
       matrix:
         benchmark: ${{ fromJson(needs.enumerate.outputs.benchmarks) }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with: { name: cli, path: . }
       - run: chmod +x eval-containers
       - name: build compose -> push eval-${{ matrix.benchmark }}
@@ -565,8 +565,8 @@ jobs:
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.combo_shards) }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: docker/setup-qemu-action@v3   # combos build arm64 via --platform (QEMU) on this amd64 runner
+      - uses: actions/checkout@v6.0.3
+      - uses: docker/setup-qemu-action@v4   # combos build arm64 via --platform (QEMU) on this amd64 runner
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -627,7 +627,7 @@ jobs:
     if: always() && needs.merge.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
@@ -664,7 +664,7 @@ jobs:
     if: github.ref_type == 'tag' || inputs.tag != ''
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
       - uses: azure/setup-helm@v5
       - name: Publish charts/eval at the tag
         run: |
@@ -753,7 +753,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Upload durable size report
         if: ${{ !inputs.dry_run }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: fleet-size-report
           path: |
