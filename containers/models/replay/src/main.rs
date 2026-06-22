@@ -519,11 +519,9 @@ fn emit_sse(wire: Wire, t: &Turn) -> String {
     }
 }
 
-/// Does the caller want a streamed (SSE) response? A real gateway (bifrost) in
-/// front of replay forwards the client's `stream: true` to the upstream and then
-/// *requires* the upstream to actually stream — it errors a JSON body with
-/// "provider returned non-SSE response for streaming request". Gemini signals
-/// streaming in the path (`:streamGenerateContent`), the others in the body.
+/// Does the caller's request ask for a streamed response? Gemini signals
+/// streaming in the path (`:streamGenerateContent`), the others in the body
+/// (`stream: true`).
 fn wants_stream(body: &str, path: &str) -> bool {
     if path.contains(":streamGenerateContent") {
         return true;
@@ -531,6 +529,25 @@ fn wants_stream(body: &str, path: &str) -> bool {
     serde_json::from_str::<Value>(body)
         .ok()
         .and_then(|v| v.get("stream").and_then(Value::as_bool))
+        .unwrap_or(false)
+}
+
+/// Emit SSE only when streaming is *both* requested and enabled. SSE is a
+/// full-stack need: a real gateway (bifrost) forwards the client's `stream: true`
+/// to the upstream and *requires* it to actually stream ("provider returned
+/// non-SSE response for streaming request"). The lean path (agent ↔ replay
+/// direct) was deliberately built around non-stream replies and is verified that
+/// way, so SSE stays off there. The full-stack overlay sets `REPLAY_SSE=1`; lean
+/// does not — so a streaming request to a lean replay gets the same JSON it
+/// always did.
+fn should_stream(sse_enabled: bool, body: &str, path: &str) -> bool {
+    sse_enabled && wants_stream(body, path)
+}
+
+/// Whether SSE is enabled for this server (`REPLAY_SSE` set non-empty / non-"0").
+fn sse_enabled() -> bool {
+    std::env::var("REPLAY_SSE")
+        .map(|v| !v.is_empty() && v != "0")
         .unwrap_or(false)
 }
 
@@ -704,7 +721,8 @@ fn serve(port: u16, turns: Vec<Turn>) -> ! {
         eprintln!("[replay] bind {addr} failed: {e}");
         std::process::exit(1);
     });
-    eprintln!("[replay] serving on {addr}");
+    let sse = sse_enabled();
+    eprintln!("[replay] serving on {addr} (sse={sse})");
     // Single-threaded on purpose: requests are served strictly in arrival order
     // so the recorded turns replay deterministically (FIFO).
     for mut req in server.incoming_requests() {
@@ -714,7 +732,7 @@ fn serve(port: u16, turns: Vec<Turn>) -> ! {
                 let mut body = String::new();
                 let _ = req.as_reader().read_to_string(&mut body);
                 let t = pick_turn(&turns);
-                let (ctype, data) = if wants_stream(&body, &path) {
+                let (ctype, data) = if should_stream(sse, &body, &path) {
                     ("text/event-stream", emit_sse(wire, &t).into_bytes())
                 } else {
                     (
@@ -842,6 +860,28 @@ mod tests {
     #[test]
     fn select_turn_none_only_when_empty() {
         assert!(select_turn(&[], 0).is_none());
+    }
+
+    #[test]
+    fn should_stream_gated_by_sse_enabled() {
+        // A streaming request streams only when SSE is enabled (full-stack);
+        // disabled (lean), the same request gets non-stream JSON.
+        assert!(should_stream(
+            true,
+            r#"{"stream":true}"#,
+            "/v1/chat/completions"
+        ));
+        assert!(!should_stream(
+            false,
+            r#"{"stream":true}"#,
+            "/v1/chat/completions"
+        ));
+        // Non-streaming request never streams, regardless of the gate.
+        assert!(!should_stream(
+            true,
+            r#"{"stream":false}"#,
+            "/v1/chat/completions"
+        ));
     }
 
     #[test]

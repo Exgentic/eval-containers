@@ -12,6 +12,11 @@
 services:
   upstream:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/replay:latest
+    # The real gateway enforces the streaming contract, so the upstream must
+    # stream SSE when asked. Lean (replay in the gateway slot) does NOT set this
+    # — it keeps the non-stream replies that path was verified against.
+    environment:
+      REPLAY_SSE: "1"
     # The distroless replay image has no shell; probe via the binary's own mode
     # (services.yaml's gateway uses /opt/gateway/health, a script this image lacks).
     healthcheck:
