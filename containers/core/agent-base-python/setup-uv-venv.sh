@@ -25,8 +25,11 @@ venv_path=$1
 shift
 
 export UV_PYTHON_INSTALL_DIR=/opt/uv-python
-command -v uv >/dev/null 2>&1 || pip install --no-cache-dir --quiet uv
-uv python install --quiet "$python_version"
-uv venv --quiet --python "$python_version" "$venv_path"
-uv pip install --quiet --python "$venv_path/bin/python" "$@"
+# Fall back to the bundled /opt/agent/uv when uv isn't on PATH — the combined
+# eval image's base may be python-free (no PATH uv, no pip).
+uv=$(command -v uv 2>/dev/null || true)
+[ -n "$uv" ] || uv=/opt/agent/uv
+"$uv" python install --quiet "$python_version"
+"$uv" venv --quiet --python "$python_version" "$venv_path"
+"$uv" pip install --quiet --python "$venv_path/bin/python" "$@"
 chmod -R a+rX /opt/uv-python "$venv_path"

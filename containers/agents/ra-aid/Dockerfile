@@ -22,8 +22,9 @@ RUN set -e; ok=0; \
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-apt-get update && apt-get install -y --no-install-recommends ripgrep && rm -rf /var/lib/apt/lists/*
-pip install --no-cache-dir 'langgraph<0.4' ra-aid==${AGENT_VERSION}
+# ra-aid shells out to ripgrep + git (via GitPython); the slim base ships neither.
+apt-get update && apt-get install -y --no-install-recommends ripgrep git && rm -rf /var/lib/apt/lists/*
+/opt/agent/setup-uv-venv.sh /opt/ra-aid-venv 'langgraph<0.4' ra-aid==${AGENT_VERSION}
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
@@ -33,7 +34,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_API_BASE="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export EXPERT_OPENAI_API_KEY="${OPENAI_API_KEY}"
 export EXPERT_OPENAI_API_BASE="${OPENAI_API_BASE}"
-exec ra-aid --cowboy-mode --provider openai-compatible --model "${EVAL_MODEL:-default}" \
+exec /opt/ra-aid-venv/bin/ra-aid --cowboy-mode --provider openai-compatible --model "${EVAL_MODEL:-default}" \
   --expert-provider openai-compatible --expert-model "${EVAL_MODEL:-default}" -m "$TASK"
 E
 
