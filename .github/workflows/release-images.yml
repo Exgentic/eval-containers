@@ -583,8 +583,10 @@ jobs:
             if [ -n "$TASK" ]; then           # per-task combo: evals/<b>-<task>--<a>
               tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
               eb="${B}-${tid}"; bench_img="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
+              PLAT="linux/amd64"              # heavy per-task base × arm64-via-QEMU hangs → amd64-only
             else                              # shared combo: evals/<b>--<a>
               eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
+              PLAT="linux/amd64,linux/arm64" # light overlay → multi-arch is fine
             fi
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
@@ -596,7 +598,7 @@ jobs:
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
-                 --set "*.platform=linux/amd64,linux/arm64" \
+                 --set "*.platform=${PLAT}" \
                  "${ACT[@]}"; then :; \
             else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
             echo "::endgroup::"

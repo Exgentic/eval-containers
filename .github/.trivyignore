@@ -105,6 +105,15 @@ CVE-2026-26158
 CVE-2026-45447
 CVE-2026-44432
 
+# --- undici in node tooling: npm bundle (no reachable fix) ------------------
+# core/agent-base-node and core/litellm both carry npm's bundled undici 6.26.0 /
+# 6.25.0. Fixed in undici 6.27.0, but `npm@latest` IS 11.17.0 (still bundles
+# 6.26.0 — verified), so no npm bump reaches it. This is build-time npm tooling:
+# the agents' runtime HTTP uses node's OWN bundled undici, and the eval data path
+# is the Python litellm proxy — so this unbounded-memory DoS is not reachable.
+# Revisit when npm ships undici >=6.27.
+CVE-2026-12151
+
 # --- duckdb/slim bases: debian 12 base packages (no upstream fix) ------------
 # core/benchmark-base-duckdb + benchmark-base-slim (#181) are debian:12-slim;
 # these have no fixed Debian package (will_not_fix / affected) so apt upgrade
