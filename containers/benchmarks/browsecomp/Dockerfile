@@ -1,27 +1,17 @@
 # BrowseComp (OpenAI)
 # 1266 tasks. Data: OpenAI public blob (encrypted, decrypted at build time)
 # Agent browses the web and prints answer to stdout.
-
+#
+# The loader uses only stdlib (csv + base64/hashlib — no pandas/pyarrow), so it
+# builds under QEMU and runs in a discarded benchmark-base-hf builder (kept for its
+# urllib-retry on the one CSV download); the python judge grader runs on python-slim.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
-
-LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="browsecomp"
-LABEL eval.benchmark.released="true"
-LABEL eval.benchmark.description="BrowseComp - web browsing QA"
-LABEL eval.benchmark.tasks="1266"
-LABEL eval.benchmark.env="shared-env"
-LABEL eval.benchmark.internet="true"
-LABEL eval.benchmark.url="https://github.com/openai/simple-evals"
-LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
-LABEL eval.benchmark.paper="https://arxiv.org/abs/2504.16186"
-
-RUN pip install --no-cache-dir pandas
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
 # Fetch encrypted CSV, decrypt, and write everything to a single JSONL file.
 RUN python3 <<'PYEOF'
-import urllib.request, pandas as pd, base64, hashlib, os, json
+import urllib.request, csv, base64, hashlib, os, json
 
 def derive_key(password, length):
     key = hashlib.sha256(password.encode()).digest()
@@ -35,10 +25,10 @@ def decrypt(ciphertext_b64, password):
 urllib.request.urlretrieve(
     'https://openaipublic.blob.core.windows.net/simple-evals/browse_comp_test_set.csv',
     '/tmp/browsecomp.csv')
-df = pd.read_csv('/tmp/browsecomp.csv')
 os.makedirs('/tasks', exist_ok=True)
-with open('/tasks/all.jsonl', 'w') as out:
-    for i, row_in in df.iterrows():
+count = 0
+with open('/tmp/browsecomp.csv', newline='') as f, open('/tasks/all.jsonl', 'w') as out:
+    for i, row_in in enumerate(csv.DictReader(f)):
         canary = row_in['canary']
         row = {
             'id': str(i),
@@ -46,13 +36,26 @@ with open('/tasks/all.jsonl', 'w') as out:
             'answer': decrypt(row_in['answer'], canary),
         }
         out.write(json.dumps(row) + '\n')
-print(f'Extracted {len(df)} tasks')
+        count += 1
+print(f'Extracted {count} tasks')
 PYEOF
 
-RUN rm -f /tmp/browsecomp.csv && pip uninstall -y pandas
 RUN chmod 600 /tasks/all.jsonl
 
-WORKDIR /app
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+
+LABEL eval.type="benchmark"
+LABEL eval.benchmark.name="browsecomp"
+LABEL eval.benchmark.released="true"
+LABEL eval.benchmark.description="BrowseComp - web browsing QA"
+LABEL eval.benchmark.tasks="1266"
+LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.internet="true"
+LABEL eval.benchmark.url="https://github.com/openai/simple-evals"
+LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2504.16186"
+
+COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=browsecomp
 
 COPY judge.py /tests/judge.py
