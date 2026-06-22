@@ -587,6 +587,11 @@ jobs:
               echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
+          # eval/eval-standalone pull gosu + process-compose in-graph (target:gosu /
+          # target:process-compose), so the bake must see ALL bake files — not just
+          # docker-bake + combination (else "failed to find target gosu").
+          mapfile -t FILES < <(find containers -name '*docker-bake.hcl')
+          FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
@@ -608,7 +613,7 @@ jobs:
             echo "::group::evals/${eb}--${A}"
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
-               retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
+               retry docker buildx bake "${FARGS[@]}" \
                  --set "*.platform=${PLAT}" \
                  "${ACT[@]}"; then :; \
             else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
