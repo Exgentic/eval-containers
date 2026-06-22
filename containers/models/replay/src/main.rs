@@ -50,7 +50,7 @@ static CALL_INDEX: AtomicUsize = AtomicUsize::new(0);
 static ID_SEQ: AtomicUsize = AtomicUsize::new(0);
 
 fn main() {
-    if is_health_invocation() {
+    if std::env::args().nth(1).as_deref() == Some("health") {
         std::process::exit(health_probe());
     }
     let port = env_port();
@@ -58,27 +58,6 @@ fn main() {
     let turns = load_turns(&path);
     eprintln!("[replay] loaded {} gen_ai turns from {path}", turns.len());
     serve(port, turns);
-}
-
-/// True when invoked as a health probe, two ways: the explicit `server health`
-/// form, or invoked *as* `/opt/gateway/health` (argv[0] basename `health`). The
-/// latter is the gateway-contract drop-in: services.yaml's default healthcheck
-/// `["CMD", "/opt/gateway/health"]` runs that path with no args, so making the
-/// binary answer to it lets replay occupy the gateway slot with no healthcheck
-/// override — the same contract bifrost's shell `health` script honors.
-fn is_health_invocation() -> bool {
-    let mut args = std::env::args();
-    let arg0 = args.next().unwrap_or_default();
-    is_health_args(&arg0, args.next().as_deref())
-}
-
-/// Pure core of `is_health_invocation`, split out for unit tests.
-fn is_health_args(arg0: &str, arg1: Option<&str>) -> bool {
-    arg1 == Some("health")
-        || std::path::Path::new(arg0)
-            .file_name()
-            .and_then(|f| f.to_str())
-            == Some("health")
 }
 
 fn env_port() -> u16 {
@@ -960,18 +939,6 @@ mod tests {
         assert!(sse.contains("event: message_start"));
         assert!(sse.contains("text_delta") && sse.contains("\"text\":\"HI\""));
         assert!(sse.contains("event: message_stop"));
-    }
-
-    #[test]
-    fn health_detected_by_arg_or_argv0() {
-        // explicit `server health`
-        assert!(is_health_args("/opt/gateway/server", Some("health")));
-        // invoked AS /opt/gateway/health (gateway-contract drop-in, no args)
-        assert!(is_health_args("/opt/gateway/health", None));
-        assert!(is_health_args("health", None));
-        // normal serve invocations are not health probes
-        assert!(!is_health_args("/opt/gateway/server", None));
-        assert!(!is_health_args("/opt/gateway/start", None));
     }
 
     #[test]
