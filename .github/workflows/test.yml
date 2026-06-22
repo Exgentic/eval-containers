@@ -191,11 +191,12 @@ jobs:
           # plus entrypoint.
           EVAL_BASES_OVERRIDE: entrypoint agent-base-node gosu model-replay model-bifrost otel
         run: |
-          # pipefail (the bash default here) fails the step if cargo fails; the
-          # grep guards against a renamed fixture matching 0 tests (libtest exits 0).
+          # Select by substring, not a hardcoded fixture name: `fullstack` matches
+          # every `replay_fullstack_*` test (one today). The grep guards against
+          # the filter matching nothing (libtest exits 0 on zero tests).
           cargo test -p eval-containers-tests-run --test replay \
-            -- --ignored --nocapture --test-threads=1 replay_fullstack_aime_17_claude_code \
+            -- --ignored --nocapture --test-threads=1 fullstack \
             | tee replay.log
           if grep -qE "running 0 tests" replay.log; then
-            echo "::error::ran 0 tests — fixture renamed?"; exit 1
+            echo "::error::ran 0 full-stack tests — none matched 'fullstack'"; exit 1
           fi
