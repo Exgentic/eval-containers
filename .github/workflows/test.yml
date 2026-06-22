@@ -185,11 +185,12 @@ jobs:
           # plus entrypoint + agent-base-rust for safety.
           EVAL_BASES_OVERRIDE: entrypoint agent-base-rust gosu model-replay otel
         run: |
-          # pipefail (the bash default here) fails the step if cargo fails; the
-          # grep guards against a renamed fixture matching 0 tests (libtest exits 0).
+          # Select by substring, not the full fixture name: `zerostack` uniquely
+          # matches the one smoke test. The grep guards against it matching nothing
+          # (libtest exits 0 on zero tests).
           cargo test -p eval-containers-tests-run --test replay \
-            -- --ignored --nocapture --test-threads=1 replay_bigcodebench_0_zerostack \
+            -- --ignored --nocapture --test-threads=1 zerostack \
             | tee replay.log
           if grep -qE "running 0 tests" replay.log; then
-            echo "::error::ran 0 tests — fixture renamed?"; exit 1
+            echo "::error::ran 0 tests — no 'zerostack' fixture matched"; exit 1
           fi

@@ -38,6 +38,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// One recorded LLM turn, normalized from a gen_ai span.
+#[derive(Clone)]
 struct Turn {
     text: String,
     tool_calls: Vec<Value>,
@@ -300,6 +301,27 @@ fn parse_args(arguments: Option<&Value>) -> Value {
     }
 }
 
+/// A recorded tool call's `(id, name, raw_arguments)`, with defaults: a generated
+/// `prefix`-id when unrecorded, `""` name, `"{}"` arguments. Every emitter pulls
+/// the same three fields; `parse_args(Some(&args))` turns the raw arguments into a
+/// parsed object where a provider wants one (Anthropic/Gemini input).
+fn tool_parts(tc: &Value, prefix: &str) -> (Value, Value, Value) {
+    let func = tc.get("function");
+    let id = tc
+        .get("id")
+        .cloned()
+        .unwrap_or_else(|| json!(gen_id(prefix)));
+    let name = func
+        .and_then(|f| f.get("name"))
+        .cloned()
+        .unwrap_or_else(|| json!(""));
+    let args = func
+        .and_then(|f| f.get("arguments"))
+        .cloned()
+        .unwrap_or_else(|| json!("{}"));
+    (id, name, args)
+}
+
 fn emit_chat(t: &Turn) -> Value {
     let mut msg = json!({
         "role": "assistant",
@@ -314,7 +336,16 @@ fn emit_chat(t: &Turn) -> Value {
         "created": now_secs(),
         "model": t.model,
         "choices": [{ "index": 0, "message": msg, "finish_reason": t.finish_reason }],
+        "usage": usage_openai(),
     })
+}
+
+/// A zero `usage` block (OpenAI shape). Replay doesn't track tokens, but a real
+/// gateway (bifrost) maps this onto the client's provider usage — and a client
+/// like claude-code reads `usage.input_tokens` and crashes if it's absent. So
+/// the field must always be present, even as zeros.
+fn usage_openai() -> Value {
+    json!({ "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0 })
 }
 
 fn emit_responses(t: &Turn) -> Value {
@@ -326,18 +357,17 @@ fn emit_responses(t: &Turn) -> Value {
         }));
     }
     for tc in &t.tool_calls {
-        let func = tc.get("function");
+        let (id, name, args) = tool_parts(tc, "call_");
         output.push(json!({
-            "id": tc.get("id").cloned().unwrap_or_else(|| json!(gen_id("call_"))),
-            "type": "function_call",
+            "id": id, "type": "function_call",
             "call_id": tc.get("id").cloned().unwrap_or(Value::Null),
-            "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
-            "arguments": func.and_then(|f| f.get("arguments")).cloned().unwrap_or_else(|| json!("{}")),
+            "name": name, "arguments": args,
         }));
     }
     json!({
         "id": gen_id("resp_"), "object": "response", "created_at": now_secs(),
         "status": "completed", "model": t.model, "output": output,
+        "usage": json!({ "input_tokens": 0, "output_tokens": 0, "total_tokens": 0 }),
     })
 }
 
@@ -347,12 +377,10 @@ fn emit_anthropic(t: &Turn) -> Value {
         content.push(json!({ "type": "text", "text": t.text }));
     }
     for tc in &t.tool_calls {
-        let func = tc.get("function");
+        let (id, name, args) = tool_parts(tc, "toolu_");
         content.push(json!({
-            "type": "tool_use",
-            "id": tc.get("id").cloned().unwrap_or_else(|| json!(gen_id("toolu_"))),
-            "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
-            "input": parse_args(func.and_then(|f| f.get("arguments"))),
+            "type": "tool_use", "id": id, "name": name,
+            "input": parse_args(Some(&args)),
         }));
     }
     let stop = match t.finish_reason.as_str() {
@@ -372,11 +400,8 @@ fn emit_gemini(t: &Turn) -> Value {
         parts.push(json!({ "text": t.text }));
     }
     for tc in &t.tool_calls {
-        let func = tc.get("function");
-        parts.push(json!({ "functionCall": {
-            "name": func.and_then(|f| f.get("name")).cloned().unwrap_or_else(|| json!("")),
-            "args": parse_args(func.and_then(|f| f.get("arguments"))),
-        }}));
+        let (_, name, args) = tool_parts(tc, "call_");
+        parts.push(json!({ "functionCall": { "name": name, "args": parse_args(Some(&args)) }}));
     }
     json!({
         "candidates": [{ "content": { "parts": parts, "role": "model" }, "finishReason": "STOP", "index": 0 }],
@@ -386,43 +411,287 @@ fn emit_gemini(t: &Turn) -> Value {
 
 // ── serve engine ────────────────────────────────────────────────────
 
-/// Pull the next recorded turn (FIFO) and emit it; on exhaustion serve a benign
-/// sentinel so the agent doesn't crash on a missing reply.
-fn next_turn(turns: &[Turn], emit: fn(&Turn) -> Value) -> Value {
+/// Provider wire protocol a route speaks, so a turn can be emitted as either a
+/// JSON body or an SSE stream in that protocol.
+#[derive(Clone, Copy)]
+enum Wire {
+    Chat,
+    Responses,
+    Anthropic,
+    Gemini,
+}
+
+/// Advance the FIFO and return the turn for this call (owned, so the empty-fixture
+/// sentinel is handled uniformly). Past the last recorded turn, repeat the final
+/// one rather than erroring: a *real* gateway in front of replay (full-stack mode)
+/// can issue more upstream calls than the fixture has turns — retries, boot-time
+/// probes, an agent that re-asks — and the recorded run stays faithful only if
+/// those extra calls keep seeing the recorded final answer. An empty fixture has
+/// nothing to repeat, so fall back to a benign sentinel.
+fn pick_turn(turns: &[Turn]) -> Turn {
     let idx = CALL_INDEX.fetch_add(1, Ordering::SeqCst);
-    if let Some(t) = turns.get(idx) {
-        eprintln!(
-            "[replay] {}/{}: {} chars, {} tool_calls",
-            idx + 1,
-            turns.len(),
-            t.text.len(),
-            t.tool_calls.len()
-        );
-        emit(t)
-    } else {
-        eprintln!("[replay] EXHAUSTED after {idx}");
-        emit(&Turn {
-            text: "REPLAY_EXHAUSTED".into(),
-            tool_calls: Vec::new(),
-            finish_reason: "stop".into(),
-            model: "replay".into(),
-        })
+    match select_turn(turns, idx) {
+        Some(t) => {
+            let repeat = if idx >= turns.len() {
+                " (repeat last)"
+            } else {
+                ""
+            };
+            eprintln!(
+                "[replay] {}/{}{repeat}: {} chars, {} tool_calls",
+                idx + 1,
+                turns.len(),
+                t.text.len(),
+                t.tool_calls.len()
+            );
+            t.clone()
+        }
+        None => {
+            eprintln!("[replay] empty fixture, call {idx}: serving sentinel");
+            Turn {
+                text: "REPLAY_EXHAUSTED".into(),
+                tool_calls: Vec::new(),
+                finish_reason: "stop".into(),
+                model: "replay".into(),
+            }
+        }
     }
 }
 
-fn route(method: &tiny_http::Method, path: &str) -> Option<fn(&Turn) -> Value> {
+/// Pick the turn for call `idx`: the recorded turn in order, or — once past the
+/// last — the final recorded turn (faithful repeat). `None` only for an empty
+/// fixture. Split out from `pick_turn` so it's testable without the global index.
+fn select_turn(turns: &[Turn], idx: usize) -> Option<&Turn> {
+    turns.get(idx).or_else(|| turns.last())
+}
+
+fn route(method: &tiny_http::Method, path: &str) -> Option<Wire> {
     if method != &tiny_http::Method::Post {
         return None;
     }
     match path {
-        "/v1/chat/completions" | "/openai/v1/chat/completions" => Some(emit_chat),
-        "/v1/messages" | "/anthropic/v1/messages" => Some(emit_anthropic),
-        "/v1/responses" | "/openai/v1/responses" => Some(emit_responses),
+        "/v1/chat/completions" | "/openai/v1/chat/completions" => Some(Wire::Chat),
+        "/v1/messages" | "/anthropic/v1/messages" => Some(Wire::Anthropic),
+        "/v1/responses" | "/openai/v1/responses" => Some(Wire::Responses),
         p if p.starts_with("/v1beta/models/") || p.starts_with("/genai/v1beta/models/") => {
-            Some(emit_gemini)
+            Some(Wire::Gemini)
         }
         _ => None,
     }
+}
+
+fn emit_json(wire: Wire, t: &Turn) -> Value {
+    match wire {
+        Wire::Chat => emit_chat(t),
+        Wire::Responses => emit_responses(t),
+        Wire::Anthropic => emit_anthropic(t),
+        Wire::Gemini => emit_gemini(t),
+    }
+}
+
+fn emit_sse(wire: Wire, t: &Turn) -> String {
+    match wire {
+        Wire::Chat => sse_chat(t),
+        Wire::Responses => sse_responses(t),
+        Wire::Anthropic => sse_anthropic(t),
+        Wire::Gemini => sse_gemini(t),
+    }
+}
+
+/// Does the caller's request ask for a streamed response? Gemini signals
+/// streaming in the path (`:streamGenerateContent`), the others in the body
+/// (`stream: true`).
+fn wants_stream(body: &str, path: &str) -> bool {
+    if path.contains(":streamGenerateContent") {
+        return true;
+    }
+    serde_json::from_str::<Value>(body)
+        .ok()
+        .and_then(|v| v.get("stream").and_then(Value::as_bool))
+        .unwrap_or(false)
+}
+
+/// Emit SSE only when streaming is *both* requested and enabled. SSE is a
+/// full-stack need: a real gateway (bifrost) forwards the client's `stream: true`
+/// to the upstream and *requires* it to actually stream ("provider returned
+/// non-SSE response for streaming request"). The lean path (agent ↔ replay
+/// direct) was deliberately built around non-stream replies and is verified that
+/// way, so SSE stays off there. The full-stack overlay sets `REPLAY_SSE=1`; lean
+/// does not — so a streaming request to a lean replay gets the same JSON it
+/// always did.
+fn should_stream(sse_enabled: bool, body: &str, path: &str) -> bool {
+    sse_enabled && wants_stream(body, path)
+}
+
+/// Whether SSE is enabled for this server (`REPLAY_SSE` set non-empty / non-"0").
+fn sse_enabled() -> bool {
+    std::env::var("REPLAY_SSE")
+        .map(|v| !v.is_empty() && v != "0")
+        .unwrap_or(false)
+}
+
+fn sse_event(out: &mut String, event: Option<&str>, data: &Value) {
+    if let Some(ev) = event {
+        out.push_str("event: ");
+        out.push_str(ev);
+        out.push('\n');
+    }
+    out.push_str("data: ");
+    out.push_str(&data.to_string());
+    out.push_str("\n\n");
+}
+
+/// OpenAI Chat Completions SSE: role chunk, one content delta, tool-call deltas,
+/// a final finish_reason chunk, then `[DONE]`. Chunk granularity is irrelevant
+/// to the client, so the whole recorded text rides one delta.
+fn sse_chat(t: &Turn) -> String {
+    let id = gen_id("chatcmpl-");
+    let created = now_secs();
+    let chunk = |delta: Value, finish: Value| {
+        json!({
+            "id": id, "object": "chat.completion.chunk", "created": created, "model": t.model,
+            "choices": [{ "index": 0, "delta": delta, "finish_reason": finish }],
+        })
+    };
+    let mut out = String::new();
+    sse_event(
+        &mut out,
+        None,
+        &chunk(json!({ "role": "assistant" }), Value::Null),
+    );
+    if !t.text.is_empty() {
+        sse_event(
+            &mut out,
+            None,
+            &chunk(json!({ "content": t.text }), Value::Null),
+        );
+    }
+    for (i, tc) in t.tool_calls.iter().enumerate() {
+        let (id, name, args) = tool_parts(tc, "call_");
+        let delta = json!({ "tool_calls": [{
+            "index": i, "id": id, "type": "function",
+            "function": { "name": name, "arguments": args },
+        }] });
+        sse_event(&mut out, None, &chunk(delta, Value::Null));
+    }
+    sse_event(&mut out, None, &chunk(json!({}), json!(t.finish_reason)));
+    // Final usage chunk (empty choices) — bifrost maps this to the client's
+    // provider usage; without it claude-code reads an undefined `input_tokens`.
+    sse_event(
+        &mut out,
+        None,
+        &json!({
+            "id": id, "object": "chat.completion.chunk", "created": created, "model": t.model,
+            "choices": [], "usage": usage_openai(),
+        }),
+    );
+    out.push_str("data: [DONE]\n\n");
+    out
+}
+
+/// Anthropic Messages SSE: message_start, a text content block (start/delta/stop),
+/// tool_use blocks, then message_delta + message_stop.
+fn sse_anthropic(t: &Turn) -> String {
+    let id = gen_id("msg_");
+    let stop = match t.finish_reason.as_str() {
+        "length" => "max_tokens",
+        "tool_calls" => "tool_use",
+        _ => "end_turn",
+    };
+    let mut out = String::new();
+    sse_event(
+        &mut out,
+        Some("message_start"),
+        &json!({ "type": "message_start", "message": {
+            "id": id, "type": "message", "role": "assistant", "model": t.model,
+            "content": [], "stop_reason": Value::Null, "stop_sequence": Value::Null,
+            "usage": { "input_tokens": 0, "output_tokens": 0 },
+        }}),
+    );
+    let mut block = 0;
+    if !t.text.is_empty() {
+        sse_event(
+            &mut out,
+            Some("content_block_start"),
+            &json!({ "type": "content_block_start", "index": block, "content_block": { "type": "text", "text": "" }}),
+        );
+        sse_event(
+            &mut out,
+            Some("content_block_delta"),
+            &json!({ "type": "content_block_delta", "index": block, "delta": { "type": "text_delta", "text": t.text }}),
+        );
+        sse_event(
+            &mut out,
+            Some("content_block_stop"),
+            &json!({ "type": "content_block_stop", "index": block }),
+        );
+        block += 1;
+    }
+    for tc in &t.tool_calls {
+        let (id, name, args) = tool_parts(tc, "toolu_");
+        let input = parse_args(Some(&args));
+        sse_event(
+            &mut out,
+            Some("content_block_start"),
+            &json!({ "type": "content_block_start", "index": block, "content_block": {
+                "type": "tool_use", "id": id, "name": name, "input": {},
+            }}),
+        );
+        sse_event(
+            &mut out,
+            Some("content_block_delta"),
+            &json!({ "type": "content_block_delta", "index": block, "delta": { "type": "input_json_delta", "partial_json": input.to_string() }}),
+        );
+        sse_event(
+            &mut out,
+            Some("content_block_stop"),
+            &json!({ "type": "content_block_stop", "index": block }),
+        );
+        block += 1;
+    }
+    sse_event(
+        &mut out,
+        Some("message_delta"),
+        &json!({ "type": "message_delta", "delta": { "stop_reason": stop, "stop_sequence": Value::Null }, "usage": { "output_tokens": 0 }}),
+    );
+    sse_event(
+        &mut out,
+        Some("message_stop"),
+        &json!({ "type": "message_stop" }),
+    );
+    out
+}
+
+/// OpenAI Responses SSE: created, one output_text delta + done, completed.
+fn sse_responses(t: &Turn) -> String {
+    let id = gen_id("resp_");
+    let full = emit_responses(t);
+    let mut out = String::new();
+    sse_event(
+        &mut out,
+        Some("response.created"),
+        &json!({ "type": "response.created", "response": { "id": id, "status": "in_progress" }}),
+    );
+    if !t.text.is_empty() {
+        sse_event(
+            &mut out,
+            Some("response.output_text.delta"),
+            &json!({ "type": "response.output_text.delta", "delta": t.text }),
+        );
+    }
+    sse_event(
+        &mut out,
+        Some("response.completed"),
+        &json!({ "type": "response.completed", "response": full }),
+    );
+    out
+}
+
+/// Gemini streamGenerateContent SSE: the same candidate payload as a single chunk.
+fn sse_gemini(t: &Turn) -> String {
+    let mut out = String::new();
+    sse_event(&mut out, None, &emit_gemini(t));
+    out
 }
 
 fn serve(port: u16, turns: Vec<Turn>) -> ! {
@@ -431,19 +700,28 @@ fn serve(port: u16, turns: Vec<Turn>) -> ! {
         eprintln!("[replay] bind {addr} failed: {e}");
         std::process::exit(1);
     });
-    eprintln!("[replay] serving on {addr}");
+    let sse = sse_enabled();
+    eprintln!("[replay] serving on {addr} (sse={sse})");
     // Single-threaded on purpose: requests are served strictly in arrival order
     // so the recorded turns replay deterministically (FIFO).
-    for req in server.incoming_requests() {
+    for mut req in server.incoming_requests() {
         let path = req.url().split('?').next().unwrap_or("").to_string();
         let resp = match route(req.method(), &path) {
-            Some(emit) => {
-                let body =
-                    serde_json::to_vec(&next_turn(&turns, emit)).unwrap_or_else(|_| b"{}".to_vec());
-                let ctype =
-                    tiny_http::Header::from_bytes(&b"Content-Type"[..], &b"application/json"[..])
-                        .expect("static header");
-                tiny_http::Response::from_data(body).with_header(ctype)
+            Some(wire) => {
+                let mut body = String::new();
+                let _ = req.as_reader().read_to_string(&mut body);
+                let t = pick_turn(&turns);
+                let (ctype, data) = if should_stream(sse, &body, &path) {
+                    ("text/event-stream", emit_sse(wire, &t).into_bytes())
+                } else {
+                    (
+                        "application/json",
+                        serde_json::to_vec(&emit_json(wire, &t)).unwrap_or_else(|_| b"{}".to_vec()),
+                    )
+                };
+                let header = tiny_http::Header::from_bytes(&b"Content-Type"[..], ctype.as_bytes())
+                    .expect("static header");
+                tiny_http::Response::from_data(data).with_header(header)
             }
             // /health, /, and any unmatched request: a plain-text "ok" (text/plain
             // via from_string, NOT application/json — a JSON client must not parse it).
@@ -535,6 +813,132 @@ mod tests {
         assert_eq!(turns.len(), 1, "two bifrost spans must dedup to one turn");
         assert_eq!(turns[0].text, "HELLO_BIFROST");
         assert_eq!(turns[0].finish_reason, "stop");
+    }
+
+    fn turn(text: &str) -> Turn {
+        Turn {
+            text: text.into(),
+            tool_calls: Vec::new(),
+            finish_reason: "stop".into(),
+            model: "m".into(),
+        }
+    }
+
+    #[test]
+    fn select_turn_repeats_last_past_the_end() {
+        let turns = vec![turn("A"), turn("B")];
+        // In order...
+        assert_eq!(select_turn(&turns, 0).unwrap().text, "A");
+        assert_eq!(select_turn(&turns, 1).unwrap().text, "B");
+        // ...then the last turn repeats for every extra call (a real gateway in
+        // front can over-call the fixture; the agent must keep seeing the answer).
+        assert_eq!(select_turn(&turns, 2).unwrap().text, "B");
+        assert_eq!(select_turn(&turns, 99).unwrap().text, "B");
+    }
+
+    #[test]
+    fn select_turn_none_only_when_empty() {
+        assert!(select_turn(&[], 0).is_none());
+    }
+
+    #[test]
+    fn should_stream_gated_by_sse_enabled() {
+        // A streaming request streams only when SSE is enabled (full-stack);
+        // disabled (lean), the same request gets non-stream JSON.
+        assert!(should_stream(
+            true,
+            r#"{"stream":true}"#,
+            "/v1/chat/completions"
+        ));
+        assert!(!should_stream(
+            false,
+            r#"{"stream":true}"#,
+            "/v1/chat/completions"
+        ));
+        // Non-streaming request never streams, regardless of the gate.
+        assert!(!should_stream(
+            true,
+            r#"{"stream":false}"#,
+            "/v1/chat/completions"
+        ));
+    }
+
+    #[test]
+    fn wants_stream_from_body_or_gemini_path() {
+        assert!(wants_stream(r#"{"stream":true}"#, "/v1/chat/completions"));
+        assert!(!wants_stream(r#"{"stream":false}"#, "/v1/chat/completions"));
+        assert!(!wants_stream(r#"{"messages":[]}"#, "/v1/chat/completions"));
+        assert!(!wants_stream("not json", "/v1/chat/completions"));
+        // Gemini signals streaming in the path, not the body.
+        assert!(wants_stream("{}", "/v1beta/models/x:streamGenerateContent"));
+        assert!(!wants_stream("{}", "/v1beta/models/x:generateContent"));
+    }
+
+    #[test]
+    fn sse_chat_frames_text_and_terminates() {
+        let sse = sse_chat(&turn("HELLO"));
+        // SSE framing: every event is `data: ...\n\n`, terminated by [DONE].
+        assert!(sse.contains("\"delta\":{\"role\":\"assistant\"}"));
+        assert!(sse.contains("\"content\":\"HELLO\""));
+        assert!(sse.contains("\"finish_reason\":\"stop\""));
+        assert!(sse.trim_end().ends_with("data: [DONE]"));
+        for ev in sse.split("\n\n").filter(|e| !e.is_empty()) {
+            assert!(ev.starts_with("data: "), "chat SSE event not framed: {ev}");
+        }
+    }
+
+    #[test]
+    fn openai_emitters_carry_usage() {
+        // A real gateway maps this onto the client's usage; claude-code reads
+        // `usage.input_tokens` and crashes if usage is absent.
+        assert!(emit_chat(&turn("x"))["usage"].is_object());
+        assert!(emit_responses(&turn("x"))["usage"].is_object());
+        assert!(sse_chat(&turn("x")).contains("\"usage\""));
+    }
+
+    #[test]
+    fn sse_responses_and_gemini_carry_text() {
+        assert!(sse_responses(&turn("ANS")).contains("ANS"));
+        assert!(sse_responses(&turn("ANS")).contains("response.completed"));
+        assert!(sse_gemini(&turn("ANS")).contains("ANS"));
+    }
+
+    #[test]
+    fn sse_chat_streams_tool_calls() {
+        let t = Turn {
+            text: String::new(),
+            tool_calls: vec![json!({"id":"c1","function":{"name":"read","arguments":"{}"}})],
+            finish_reason: "tool_calls".into(),
+            model: "m".into(),
+        };
+        let sse = sse_chat(&t);
+        assert!(sse.contains("\"tool_calls\""));
+        assert!(sse.contains("\"name\":\"read\""));
+        assert!(sse.contains("\"finish_reason\":\"tool_calls\""));
+        assert!(sse.trim_end().ends_with("data: [DONE]"));
+    }
+
+    #[test]
+    fn tool_parts_fills_defaults_and_passes_through() {
+        let (id, name, args) = tool_parts(&json!({}), "call_");
+        assert!(id.as_str().unwrap().starts_with("call_"));
+        assert_eq!(name, json!(""));
+        assert_eq!(args, json!("{}"));
+        let (id2, name2, args2) = tool_parts(
+            &json!({"id":"x","function":{"name":"n","arguments":"{\"a\":1}"}}),
+            "call_",
+        );
+        assert_eq!(id2, json!("x"));
+        assert_eq!(name2, json!("n"));
+        assert_eq!(args2, json!("{\"a\":1}"));
+    }
+
+    #[test]
+    fn sse_anthropic_has_message_lifecycle() {
+        let sse = sse_anthropic(&turn("HI"));
+        assert!(sse.contains("event: message_start"));
+        assert!(sse.contains("text_delta") && sse.contains("\"text\":\"HI\""));
+        assert!(sse.contains("event: message_stop"));
     }
 
     #[test]

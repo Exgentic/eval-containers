@@ -1,0 +1,29 @@
+# Lean replay overlay: put `models/replay` in the gateway slot so the lean eval
+# image talks to a stub — only the benchmark/agent/verifier run, no real gateway
+# (ReplayMode::Lean in test.rs). Layered as a plain `-f` overlay on the
+# benchmark's own compose.yaml; a human runs the same stack by hand:
+#   REPLAY_FIXTURE=… REPLAY_OUTPUT=… \
+#     docker compose -f <benchmark>/compose.yaml -f replay-lean.yaml up
+#
+# Per-run values come from env: REPLAY_FIXTURE (the recorded trajectory) and
+# REPLAY_OUTPUT (host dir the named `output` volume binds to). This overrides the
+# imported `gateway` service (image + healthcheck + fixture mount) — fine on the
+# compose the test/run path uses; the full-stack overlay relies on the same
+# imported-volume rebind.
+services:
+  gateway:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/replay:latest
+    # Distroless replay image: probe via the binary's own `health` mode rather
+    # than services.yaml's `/opt/gateway/health` script, which it lacks.
+    healthcheck:
+      test: ["CMD", "/opt/gateway/server", "health"]
+    volumes:
+      - ${REPLAY_FIXTURE:?}:/data/traces.jsonl:ro
+
+volumes:
+  output:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${REPLAY_OUTPUT:?}

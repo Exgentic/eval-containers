@@ -46,6 +46,40 @@ Each row is one replay test with a recorded fixture.
 | osworld | — | sidecar | needs VM image (11GB) |
 | tau-bench | — | bridge | needs two-model replay |
 
+## Replay modes
+
+Two modes, split by what they put under test:
+
+| Mode | Replay sits at | What runs for real | Asserts |
+|------|----------------|--------------------|---------|
+| `Lean` (default, whole matrix above) | the gateway slot | the lean eval image in isolation: benchmark, agent, verifier | result.json contract |
+| `FullStack` (`replay_fullstack_test!`) | the gateway's **upstream** | the entire orchestration: real bifrost gateway (boot, routing, format translation, governance, OTel) + otelcol, on top of replay | result.json contract **+ real `gen_ai` gateway spans in traces.jsonl** |
+
+`FullStack` reuses the same fixtures; the real gateway dials the replay server
+as its provider (`OPENAI_API_BASE`). It is the only mode that exercises the
+gateway+OTel stack offline. One fixture (`aime-17-claude-code`) covers the path
+today; the broad matrix stays on cheaper `Lean` replay.
+
+**Faithful upstream required.** A real gateway enforces the provider wire
+contract a directly-connected agent tolerates: it forwards the client's
+`stream: true` and *requires* the upstream to stream, and it maps the upstream's
+`usage` onto the client's. So full-stack needs a replay upstream that speaks SSE
+and emits `usage` (see `containers/models/replay`); with it, full-stack
+reproduces lean's result exactly. `assert_agent_succeeded` guards this — without
+a faithful upstream the agent crashes on the streaming 500 or an undefined
+`input_tokens`, which `assert_result_valid` + `assert_gateway_traces` would miss
+(a crashed agent still writes a `reward:0` result and the gateway still emits
+spans).
+
+**Reward parity vs lean.** Full-stack matches lean's reward, not necessarily 1:
+the absolute reward depends on the *fixture*. The claude-code aime fixtures
+record only the final text turn, not the tool calls that write
+`/home/agent/answer.txt`, so both modes grade `0` (e.g. `aime-17`). Benchmarks
+graded from the final text reproduce reward faithfully. The full-stack
+assertions therefore check the pipeline ran, the gateway instrumented, and the
+agent ran clean — reward parity with lean follows, absolute reward is a fixture
+property.
+
 ## Agent coverage
 
 | Agent | Count | Benchmarks |

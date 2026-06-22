@@ -106,6 +106,12 @@ jobs:
             read -ra PATS <<< "${FILTER}"
             PAT=$(IFS='|'; printf '%s' "${PATS[*]}")
             ALL=$(printf '%s\n' "${ALL}" | grep -E "${PAT}" || true)
+          else
+            # The default nightly is the LEAN matrix — benchmark × agent coverage,
+            # replay in the gateway slot. Full-stack tests (real gateway + otelcol,
+            # ReplayMode::FullStack) are a different scope and aren't part of it;
+            # run them on demand via the FILTER input (e.g. filter: fullstack).
+            ALL=$(printf '%s\n' "${ALL}" | grep -v '^replay_fullstack' || true)
           fi
           TOTAL=$(printf '%s\n' "${ALL}" | grep -c . || true)
           if [ "${TOTAL}" -eq 0 ]; then
