@@ -2,7 +2,8 @@
 # image talks to a stub — only the benchmark/agent/verifier run, no real gateway
 # (ReplayMode::Lean in test.rs). Layered as a plain `-f` overlay on the
 # benchmark's own compose.yaml; a human runs the same stack by hand:
-#   docker compose -f <benchmark>/compose.yaml -f replay-lean.yaml --env-file replay.env up
+#   REPLAY_FIXTURE=… REPLAY_OUTPUT=… \
+#     docker compose -f <benchmark>/compose.yaml -f replay-lean.yaml up
 #
 # Per-run values come from env: REPLAY_FIXTURE (the recorded trajectory) and
 # REPLAY_OUTPUT (host dir the named `output` volume binds to). This overrides the
