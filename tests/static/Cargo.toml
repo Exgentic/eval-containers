@@ -31,3 +31,7 @@ path = "dockerfile_inspection.rs"
 [[test]]
 name = "task_inspection"
 path = "task_inspection.rs"
+
+[[test]]
+name = "grader"
+path = "grader.rs"
