@@ -148,14 +148,19 @@ jobs:
         if: ${{ !cancelled() }}
         run: tests/static/model-paths.sweep.sh
 
-  # The one daemon-backed gate: a miniature of the nightly replay E2E. Builds what
-  # one fixture (bigcodebench + zerostack) needs and replays it on the real
-  # compose stack (otelcol → gateway → runner), so a base regression like otelcol
-  # failing to boot shows up at `compose up` — on every PR and every push to main.
+  # The one daemon-backed gate: a miniature of the nightly replay E2E, in
+  # FULL-STACK mode — the *real* bifrost gateway and otelcol run, with the replay
+  # server as the gateway's upstream (ReplayMode::FullStack). This is the only
+  # per-PR check that exercises the gateway path end to end: boot, routing,
+  # request/response format translation, SSE streaming, usage, and OTel emission
+  # — the layers a lean replay (agent ↔ replay direct) can't reach, and where the
+  # recurring regressions live (otelcol failing to boot, the strict-streaming
+  # 500, the missing-usage client crash). `assert_agent_succeeded` fails the step
+  # if the agent crashed through the gateway, not just if the contract is missing.
   replay-e2e:
-    name: Replay E2E (zerostack)
+    name: Replay E2E (full-stack)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     steps:
       - uses: actions/checkout@v6
 
@@ -174,21 +179,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Replay zerostack
+      - name: Replay full-stack
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # Bake only the bases this fixture consumes as image-refs — all FROM
-          # SOURCE (never pull :latest; it lags main between releases). The
-          # benchmark/agent bakes build their own bases (duckdb, python-slim) and
-          # entrypoint in-graph; we pre-build the few the eval/compose consume
-          # directly: gosu (lean eval), model-replay (gateway), otel (sidecar),
-          # plus entrypoint + agent-base-rust for safety.
-          EVAL_BASES_OVERRIDE: entrypoint agent-base-rust gosu model-replay otel
+          # Bake from SOURCE the bases the full-stack stack consumes as image-refs
+          # (never pull :latest; it lags main between releases). The benchmark/agent
+          # bakes build their own bases (duckdb, python-slim) in-graph; we pre-build
+          # the rest the eval/compose consume directly: gosu (eval), otel (sidecar),
+          # model-replay (the recorded upstream — the thing under test), model-bifrost
+          # (the REAL gateway full-stack runs), agent-base-node (claude-code's base),
+          # plus entrypoint.
+          EVAL_BASES_OVERRIDE: entrypoint agent-base-node gosu model-replay model-bifrost otel
         run: |
           # pipefail (the bash default here) fails the step if cargo fails; the
           # grep guards against a renamed fixture matching 0 tests (libtest exits 0).
           cargo test -p eval-containers-tests-run --test replay \
-            -- --ignored --nocapture --test-threads=1 replay_bigcodebench_0_zerostack \
+            -- --ignored --nocapture --test-threads=1 replay_fullstack_aime_17_claude_code \
             | tee replay.log
           if grep -qE "running 0 tests" replay.log; then
             echo "::error::ran 0 tests — fixture renamed?"; exit 1
