@@ -6,7 +6,14 @@
 set -euo pipefail
 python3 - "${EVAL_TASK_ID:-0}" <<'PY'
 import sys, os, urllib.request
-import pyarrow.parquet as pq
+try:
+    import pyarrow.parquet as pq
+except ModuleNotFoundError:
+    # The python-slim runtime (#197) ships no pyarrow. solution.sh is oracle-only
+    # and mounted at run time (never baked), so install it here, not in the image.
+    import subprocess
+    subprocess.run([sys.executable, '-m', 'pip', 'install', '--quiet', '--no-cache-dir', 'pyarrow'], check=True)
+    import pyarrow.parquet as pq
 
 # --- per-benchmark config ---
 NAME = "mbppplus"
