@@ -9,7 +9,7 @@ FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
     "SELECT task_id::VARCHAR AS id, text AS problem, \
             array_to_string(test_list, chr(10)) AS tests, \
-            COALESCE(test_setup_code, '') AS setup \
+            COALESCE(test_setup_code, '') AS setup, code \
      FROM 'hf://datasets/google-research-datasets/mbpp@~parquet/full/test/0000.parquet'"
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest

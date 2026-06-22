@@ -7,7 +7,7 @@ ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-duckdb:latest AS data
 # Single-JSONL task layout (see benchmarks/RULES.md #22).
 RUN --mount=type=secret,id=HF_TOKEN /eval-hf-load \
-    "SELECT task_id AS id, prompt AS problem, prompt, test, entry_point \
+    "SELECT task_id AS id, prompt AS problem, prompt, test, entry_point, canonical_solution \
      FROM 'hf://datasets/openai/openai_humaneval@~parquet/openai_humaneval/test/0000.parquet'"
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
