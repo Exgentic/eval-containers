@@ -15,7 +15,7 @@ RUN uv pip install --system --no-cache mini-swe-agent==${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-pip install --no-cache-dir mini-swe-agent==${AGENT_VERSION}
+/opt/agent/setup-uv-venv.sh /opt/mini-venv mini-swe-agent==${AGENT_VERSION}
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
@@ -27,7 +27,7 @@ export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 # `script -qec` provides a fake-PTY — mini's typer CLI aborts on non-TTY stdin
 # even with --yolo.
 export MSWEA_CONFIGURED=1
-exec script -qec "mini --model openai/${EVAL_MODEL:-default} --yolo --task \"$TASK\"" /dev/null
+exec script -qec "/opt/mini-venv/bin/mini --model openai/${EVAL_MODEL:-default} --yolo --task \"$TASK\"" /dev/null
 E
 
 ENTRYPOINT ["/run.sh"]
