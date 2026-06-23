@@ -783,6 +783,7 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" --paginate \
             --jq '.jobs[]|select(.conclusion=="failure")|.name' > /tmp/failed.txt 2>/dev/null || true
           nfail=$(wc -l < /tmp/failed.txt | tr -d ' ')
+          echo "::notice title=Fleet inventory::${total} packages indexed (window since ${run_started}); ${nfail} failed job(s) this run."
           {
             echo ""
             echo "## Fleet inventory — every published image, by freshness"
