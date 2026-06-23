@@ -784,6 +784,7 @@ jobs:
             --jq '.jobs[]|select(.conclusion=="failure")|.name' > /tmp/failed.txt 2>/dev/null || true
           nfail=$(wc -l < /tmp/failed.txt | tr -d ' ')
           echo "::notice title=Fleet inventory::${total} packages indexed (window since ${run_started}); ${nfail} failed job(s) this run."
+          echo "DBG_FLEET total=${total} run_started=${run_started} nfail=${nfail}"
           {
             echo ""
             echo "## Fleet inventory — every published image, by freshness"
