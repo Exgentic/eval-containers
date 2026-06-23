@@ -83,6 +83,7 @@ mod common;
 const AGENTS: &[&str] = &[
     "aider",
     "claude-code",
+    "claude-code-rtk",
     "cline",
     "codex",
     "continue-cli",
@@ -384,6 +385,7 @@ macro_rules! agent_smoke {
 
 agent_smoke!(agent_aider, "aider");
 agent_smoke!(agent_claude_code, "claude-code");
+agent_smoke!(agent_claude_code_rtk, "claude-code-rtk");
 agent_smoke!(agent_cline, "cline");
 agent_smoke!(agent_codex, "codex");
 agent_smoke!(agent_continue_cli, "continue-cli");
@@ -409,4 +411,4 @@ agent_smoke!(agent_zerostack, "zerostack");
 // also bumping this literal). It does NOT catch the reverse — an
 // agent_smoke! without an AGENTS entry just adds a test. The list above
 // is the documented roster; the macro invocations are the test surface.
-const _: () = assert!(AGENTS.len() == 20);
+const _: () = assert!(AGENTS.len() == 21);
