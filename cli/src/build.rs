@@ -599,9 +599,9 @@ fn run_build_script(script: &str, image: &str, task_id: &str, dry_run: bool) -> 
 
 /// One target as emitted by `docker buildx bake --print`.
 #[derive(serde::Deserialize)]
-struct BakeTargetSpec {
-    context: Option<String>,
-    dockerfile: Option<String>,
+pub(crate) struct BakeTargetSpec {
+    pub(crate) context: Option<String>,
+    pub(crate) dockerfile: Option<String>,
     tags: Option<Vec<String>>,
     args: Option<std::collections::BTreeMap<String, String>>,
 }
@@ -638,10 +638,13 @@ fn oc_capture(args: &[&str]) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
-/// Read a target's resolved build spec from `docker buildx bake --print`.
-/// The bake file is the source of truth — this backend never re-derives the
-/// graph, only translates bake's output into a BuildConfig.
-fn bake_print(
+/// Read a target's resolved build spec (context, dockerfile, args) from
+/// `docker buildx bake --print` so callers never re-derive what the bake file
+/// already declares — bake stays the single source of truth. Used by the oc
+/// BuildConfig backend and by `run --mode container --local` (which builds the
+/// standalone bundle with a raw `docker build`, overriding only the eval-base
+/// context to a concrete image).
+pub(crate) fn bake_print(
     bake_target: &str,
     overrides: &[String],
     registry: &str,
