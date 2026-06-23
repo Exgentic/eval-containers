@@ -928,3 +928,113 @@ fn dockerfile_bake_alignment() {
         failures.join("\n")
     );
 }
+
+// ─── bake invocation resolution (RULES.md principle 15) ────────────
+//
+// Each real `docker buildx bake` shape the repo runs must RESOLVE — every
+// `target:<x>` context reachable from the targets it builds, under the exact
+// `-f` set that invocation passes. `bake --print` is the oracle (it evaluates
+// the HCL graph; no daemon, no bespoke parsing). A cross-file in-graph context
+// on a target whose invocation doesn't load the defining file fails here with
+// `failed to find target <x>` — the bug that sank every combo in run
+// 27940336791.
+
+/// Run `docker buildx bake -f <files> --print <targets>` with the given env;
+/// Ok(()) on resolve, Err(stderr) otherwise.
+fn bake_print(files: &[&str], targets: &[&str], env: &[(&str, &str)]) -> Result<(), String> {
+    let mut args = vec!["buildx".to_string(), "bake".to_string()];
+    for f in files {
+        args.push("-f".into());
+        args.push((*f).into());
+    }
+    args.push("--print".into());
+    args.extend(targets.iter().map(|t| t.to_string()));
+    let out = Command::new("docker")
+        .current_dir(test_support::repo_root())
+        .args(&args)
+        .envs(env.iter().copied())
+        .output()
+        .expect("run docker buildx bake --print");
+    if out.status.success() {
+        Ok(())
+    } else {
+        Err(String::from_utf8_lossy(&out.stderr).into_owned())
+    }
+}
+
+/// Every bake file rooted at repo_root, absolute (the whole graph the CLI loads).
+/// `artifact_bake_files()` is CWD-relative and useless under `cargo test`, whose
+/// CWD is not the repo root — hence repo_root-anchored absolute paths.
+fn all_bake_files() -> Vec<String> {
+    let root = test_support::repo_root();
+    let mut out = vec![
+        root.join("containers/docker-bake.hcl")
+            .to_string_lossy()
+            .into_owned(),
+    ];
+    let mut stack = vec![root.join("containers")];
+    while let Some(d) = stack.pop() {
+        for e in fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.ends_with("docker-bake.hcl"))
+            {
+                out.push(p.to_string_lossy().into_owned());
+            }
+        }
+    }
+    out
+}
+
+/// Release shape (`combos` job): eval + eval-standalone bake from ROOT_BAKE_FILE
+/// + COMBINATION_BAKE_FILE only, so they MUST be self-contained — a cross-file
+/// in-graph context here breaks every combo. In-graph mode is the `eval-local`
+/// target (below), built only by the CLI with the whole graph loaded.
+#[test]
+#[ignore = "needs the docker buildx CLI; runs in the build lane like the other bake checks"]
+fn release_eval_targets_resolve_from_combos_files() {
+    use eval_containers::bake::{COMBINATION_BAKE_FILE, ROOT_BAKE_FILE};
+    let env = [
+        ("EVAL_BENCHMARK", "smoke"),
+        ("EVAL_AGENT", "smoke"),
+        ("BENCHMARK_IMAGE", "x"),
+        ("AGENT_IMAGE", "y"),
+    ];
+    if let Err(stderr) = bake_print(
+        &[ROOT_BAKE_FILE, COMBINATION_BAKE_FILE],
+        &["eval", "eval-standalone"],
+        &env,
+    ) {
+        panic!(
+            "release targets eval/eval-standalone don't resolve from the combos `-f` set \
+             ({ROOT_BAKE_FILE} + {COMBINATION_BAKE_FILE}) — this breaks every combo. In-graph base \
+             wiring belongs on the eval-local target, not the release targets.\n{stderr}"
+        );
+    }
+}
+
+/// Local shape (`build eval --no-pull` → `eval-local`): its in-graph contexts
+/// (benchmark / agent / gosu) must each resolve to a real target with the whole
+/// graph loaded, the way the CLI bakes it.
+#[test]
+#[ignore = "needs the docker buildx CLI; runs in the build lane like the other bake checks"]
+fn eval_local_resolves_from_full_graph() {
+    let files = all_bake_files();
+    let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+    let env = [
+        ("EVAL_BENCHMARK", "aime"),
+        ("EVAL_AGENT", "codex"),
+        ("BENCHMARK_IMAGE", "ghcr.io/exgentic/benchmarks/aime:latest"),
+        ("AGENT_IMAGE", "ghcr.io/exgentic/agents/codex:latest"),
+    ];
+    if let Err(stderr) = bake_print(&refs, &["eval-local"], &env) {
+        panic!(
+            "eval-local does not resolve from the full graph — its in-graph contexts \
+             (gosu / benchmark-aime / agent-codex) must each be a real target.\n{stderr}"
+        );
+    }
+}

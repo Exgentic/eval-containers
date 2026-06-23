@@ -309,21 +309,42 @@ fn run_container(
         _ => eval_containers::naming::eval_standalone_image(registry, benchmark, &agent, "latest"),
     };
     if local {
-        // Build the bundle from the ONE generic core/standalone.Dockerfile, layering
-        // the in-process gateway/otelcol/process-compose onto the lean base that
-        // `build eval` produced. The lean base is supplied as the `eval-base` build
-        // CONTEXT (standalone.Dockerfile is `FROM eval-base`) — a named context binds
-        // `FROM eval-base` to a concrete image where an ARG-based FROM does not;
-        // per-task resolution lives in that ref. Build context dir is containers/core
-        // (standalone.Dockerfile COPYs process-compose/…).
+        // Build the bundle by layering the in-process gateway/otelcol/process-
+        // compose onto the lean base that `build eval` produced. The lean base is
+        // supplied as the `eval-base` build CONTEXT (standalone.Dockerfile is
+        // `FROM eval-base`) — a named context binds `FROM eval-base` to a concrete
+        // image where an ARG-based FROM does not; per-task resolution lives in that
+        // ref. The build's context dir + dockerfile come from the `eval-standalone`
+        // bake target (read via bake --print), not hardcoded — bake stays the
+        // single source of truth; we override only the eval-base context here.
         let combination = match (per_task, task_id.as_deref()) {
             (true, Some(t)) => {
                 eval_containers::naming::eval_task_image(registry, benchmark, t, &agent, "latest")
             }
             _ => eval_containers::naming::eval_image(registry, benchmark, &agent, "latest"),
         };
-        let context = "containers/core";
-        let dockerfile = "containers/core/standalone.Dockerfile";
+        let spec = crate::build::bake_print(
+            "eval-standalone",
+            &[],
+            registry,
+            &[
+                ("EVAL_BENCHMARK", benchmark.to_string()),
+                ("EVAL_AGENT", agent.to_string()),
+                ("BENCHMARK_IMAGE", combination.clone()),
+                ("AGENT_IMAGE", combination.clone()),
+            ],
+        )?;
+        let context = spec
+            .context
+            .as_deref()
+            .unwrap_or("containers/core")
+            .to_string();
+        // bake reports `dockerfile` relative to `context`; `docker build -f` wants
+        // it relative to CWD, so join them.
+        let dockerfile = match spec.dockerfile.as_deref() {
+            Some(df) => format!("{context}/{df}"),
+            None => "containers/core/standalone.Dockerfile".to_string(),
+        };
         eprintln!(
             "$ docker build -f {dockerfile} --build-context eval-base=docker-image://{combination} -t {image} {context}"
         );
