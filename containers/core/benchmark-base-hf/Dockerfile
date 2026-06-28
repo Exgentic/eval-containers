@@ -23,7 +23,7 @@ RUN set -e; ok=0; \
       if apt-get update --fix-missing \
          && apt-get upgrade -y \
          && apt-get install -y --no-install-recommends \
-           curl ca-certificates git jq; then ok=1; break; fi; \
+           curl ca-certificates git jq gettext-base; then ok=1; break; fi; \
       echo "apt attempt $i failed; retry" >&2; sleep $((i*5)); \
     done; \
     [ "$ok" = 1 ] || { echo "apt install failed after 5 tries" >&2; exit 1; }; \
