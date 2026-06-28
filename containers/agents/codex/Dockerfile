@@ -28,6 +28,9 @@ model_provider = "eval-containers"
 name = "Eval Containers LiteLLM Proxy"
 base_url = "${OPENAI_BASE_URL:-http://model:4000/v1}"
 env_key = "OPENAI_API_KEY"
+[tools]
+web_search = true
+view_image = true
 CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 exec codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"

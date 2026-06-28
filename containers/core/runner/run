@@ -68,7 +68,8 @@ fi
 # We own the whole pipeline. Point the agent + gateway at loopback and let
 # process-compose bring up otelcol → gateway → agent → verifier → result.
 export ANTHROPIC_BASE_URL="http://127.0.0.1:4000/anthropic"
-export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai}"
+# OpenAI base needs /v1 (clients append /chat/completions); anthropic doesn't.
+export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai/v1}"
 export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://127.0.0.1:4000/genai}"
 # litellm's OTel callback honors this env var; bifrost reads its collector_url
 # from config.json. Setting it unconditionally is harmless for bifrost.
