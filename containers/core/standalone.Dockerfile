@@ -54,12 +54,9 @@ FROM eval-base
 
 # ─── Gateway layer (uniform /opt/gateway/ contract) ──────────────────
 COPY --from=model /opt/gateway /opt/gateway
-# The gateway's start script uses envsubst to render its config template at
-# runtime. envsubst is part of `gettext-base` on Debian; the combination's base
-# is the benchmark image (Debian-slim), which doesn't have it. Install it here
-# (single-container mode is the only place the gateway runs in-process).
-RUN apt-get update && apt-get install -y --no-install-recommends gettext-base curl \
- && rm -rf /var/lib/apt/lists/*
+# The gateway's start script needs envsubst (gettext-base) + curl at runtime;
+# both now ship in the benchmark base, so this layer stays pure COPY — no
+# per-combo apt (that emulated install under QEMU was the combo-build bottleneck).
 
 # ─── OTel collector layer ────────────────────────────────────────────
 COPY --from=otel /otelcol                 /usr/local/bin/otelcol
