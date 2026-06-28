@@ -17,7 +17,7 @@ Codex CLI is OpenAI's terminal coding agent. It edits and executes code against 
 
 ## How Eval Containers runs it
 
-The entrypoint writes `~/.codex/config.toml` declaring a `eval-containers` model provider whose `base_url` is `$OPENAI_BASE_URL/v1` and whose `env_key` is `OPENAI_API_KEY`, then runs `codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"`. Approvals are bypassed because Docker is the sandbox. Answer is streamed to stdout.
+The entrypoint writes `~/.codex/config.toml` declaring a `eval-containers` model provider whose `base_url` is `$OPENAI_BASE_URL` and whose `env_key` is `OPENAI_API_KEY`, and enabling the `web_search` and `view_image` tools (so the agent can research the web and read image attachments — needed by benchmarks like GAIA). It then runs `codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"`. Approvals are bypassed because Docker is the sandbox. Answer is streamed to stdout.
 
 ## Version
 

@@ -11,7 +11,7 @@
 # URL contract (resolved by /usr/local/bin/run BEFORE process-compose starts, so
 # plain $VAR refs in commands work uniformly):
 #   ANTHROPIC_BASE_URL  http://127.0.0.1:4000/anthropic
-#   OPENAI_BASE_URL     http://127.0.0.1:4000/openai
+#   OPENAI_BASE_URL     http://127.0.0.1:4000/openai/v1
 #
 # The compose / k8s surfaces mirror the same five units across separate
 # services/containers — compose/services.yaml and benchmarks/_chart — with the
