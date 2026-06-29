@@ -13,7 +13,7 @@
 # invokes benchmarks/<name>/build.sh when present). Args:
 #   $1 = image ref to produce        $2 = task id (a tasks/<task> name)
 #
-# Uses `podman build` directly so the two builds chain through the local image
+# Uses `docker build` directly so the two builds chain through the local image
 # store (docker buildx's container driver keeps results only in the build cache).
 # No --platform pin: the per-task job runs this on a native amd64 OR arm64 runner,
 # so pinning a platform would force one arch and break the multi-arch per-task build.
@@ -34,19 +34,19 @@ ENVIMG="localhost/skills-bench-env:${TASK}"
 
 # Optional cross-run registry layer cache. CI sets EVAL_BUILD_CACHE to a registry
 # ref; local CLI builds leave it unset (no cache, unchanged). Auto-skipped if this
-# podman predates --cache-to, so there's no hard podman-version dependency. The
+# docker lacks --cache-to (buildkit only), so there's no hard version dependency. The
 # `${arr[@]+...}` form is empty-array-safe under `set -u` on bash 3.2 (macOS).
 CACHE_ENV=(); CACHE_IMG=()
-if [ -n "${EVAL_BUILD_CACHE:-}" ] && podman build --help 2>/dev/null | grep -q -- '--cache-to'; then
+if [ -n "${EVAL_BUILD_CACHE:-}" ] && docker build --help 2>/dev/null | grep -q -- '--cache-to'; then
   CACHE_ENV=(--cache-from "${EVAL_BUILD_CACHE}-env" --cache-to "${EVAL_BUILD_CACHE}-env")
   CACHE_IMG=(--cache-from "${EVAL_BUILD_CACHE}" --cache-to "${EVAL_BUILD_CACHE}")
 fi
 
 echo "[skills-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
-podman build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
+docker build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
 
 echo "[skills-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
-podman build ${CACHE_IMG[@]+"${CACHE_IMG[@]}"} -t "${IMAGE}" \
+docker build ${CACHE_IMG[@]+"${CACHE_IMG[@]}"} -t "${IMAGE}" \
   --build-arg "TASK_BASE=${ENVIMG}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "SB_REF=${REF}" \

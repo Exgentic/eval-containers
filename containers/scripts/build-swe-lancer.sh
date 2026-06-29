@@ -19,9 +19,9 @@ set -euo pipefail
 PREP_REF="${PREP_REF:-8ea5c659b5232d3c520c5ca2a018fe65dc5e1988}"
 BASE_TAG="${BASE_TAG:-swelancer_x86:latest}"
 
-# podman's macOS VM mounts only /Users, not /tmp — the build context (a local
+# The macOS container VM mounts only /Users, not /tmp — the build context (a local
 # clone, since Dockerfile_x86_base COPYs requirements.txt/issues/…) must live
-# under /Users for `podman build` to read it. Keep WORK under $HOME.
+# under /Users for `docker build` to read it. Keep WORK under $HOME.
 WORK="$(mktemp -d "${HOME}/.swelancer-build.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -37,8 +37,8 @@ CTX="$WORK/prep/project/swelancer"
 [ -f "$CTX/Dockerfile_x86_base" ] || { echo "ERROR: base Dockerfile not found in upstream checkout" >&2; exit 1; }
 
 # Build linux/amd64 (the oracle/runner platform + OpenShift; the base also
-# hardcodes the x86_64 Miniconda installer) directly with podman so the image
-# lands in the local store the per-task overlay FROMs.
+# hardcodes the x86_64 Miniconda installer) with docker so the image lands in
+# docker's local store, where the per-task overlay FROMs resolve it.
 echo ">> building ${BASE_TAG} (this takes a while — installs conda, Python 3.12, Playwright, Node, ruby, browsers)"
-podman build --platform linux/amd64 -t "$BASE_TAG" -f "$CTX/Dockerfile_x86_base" "$CTX"
+docker build --platform linux/amd64 -t "$BASE_TAG" -f "$CTX/Dockerfile_x86_base" "$CTX"
 echo ">> done. Tag: ${BASE_TAG}"
