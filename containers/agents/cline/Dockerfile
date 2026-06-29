@@ -26,7 +26,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # cline's auth state lives in $HOME/.cline/data/{globalState,secrets}.json
 # and is only recognised when written via `cline auth`.
 cline auth -p openai -k "$OPENAI_API_KEY" -m "${EVAL_MODEL:-default}" -b "$OPENAI_BASE_URL" >/dev/null 2>&1 || true
-exec cline -y "$TASK"
+exec cline -y ${EVAL_AGENT_REASONING_EFFORT:+--reasoning-effort $EVAL_AGENT_REASONING_EFFORT} "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

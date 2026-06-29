@@ -24,7 +24,7 @@ set -euo pipefail
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 exec /opt/aider-venv/bin/aider --yes-always --no-git --no-auto-commits --no-stream \
   --openai-api-base "${OPENAI_BASE_URL:-http://model:4000}" \
-  --model "openai/${EVAL_MODEL:-default}" --message "$TASK"
+  --model "openai/${EVAL_MODEL:-default}" ${EVAL_AGENT_REASONING_EFFORT:+--reasoning-effort $EVAL_AGENT_REASONING_EFFORT} --message "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

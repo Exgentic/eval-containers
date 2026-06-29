@@ -37,6 +37,8 @@ services:
       EVAL_MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
       EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-300}
+      # Optional; the agent's entrypoint applies it (empty → agent default).
+      EVAL_AGENT_REASONING_EFFORT: ${EVAL_AGENT_REASONING_EFFORT:-}
       BENCHMARK: ${EVAL_BENCHMARK:-aime}
       AGENT: ${EVAL_AGENT:-claude-code}
       MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}

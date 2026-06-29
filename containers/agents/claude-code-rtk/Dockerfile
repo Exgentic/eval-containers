@@ -72,7 +72,7 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
 # non-interactively.
 mkdir -p "$HOME/.claude"
 rtk init -g --auto-patch >>/output/agent/stderr.log 2>&1 || true
-exec claude -p --dangerously-skip-permissions "$TASK"
+exec claude -p ${EVAL_AGENT_REASONING_EFFORT:+--effort $EVAL_AGENT_REASONING_EFFORT} --dangerously-skip-permissions "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

@@ -29,6 +29,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `agentVersion` | `""` | `--agent-version` |
 | `litellmVersion` | `""` | `--litellm-version` |
 | `maxBudget` | `""` | `--max-budget` |
+| `reasoningEffort` | `""` | `--agent-reasoning-effort` |
 
 ## Knobs a benchmark may override
 

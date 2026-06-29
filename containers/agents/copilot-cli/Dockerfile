@@ -25,7 +25,7 @@ export COPILOT_PROVIDER_BASE_URL="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export COPILOT_PROVIDER_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export COPILOT_OFFLINE=true
 export COPILOT_MODEL="${COPILOT_MODEL:-default}"
-echo "$TASK" | exec copilot --yolo
+echo "$TASK" | exec copilot --yolo ${EVAL_AGENT_REASONING_EFFORT:+--reasoning-effort $EVAL_AGENT_REASONING_EFFORT}
 E
 
 ENTRYPOINT ["/run.sh"]
