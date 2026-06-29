@@ -268,6 +268,25 @@ jobs:
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
           fi
 
+          # ── affected-set (manual dispatch): build only the combos + per-task whose
+          # benchmark or agent changed since the last release. A change under
+          # containers/core, gateways, or the root bake is a shared/base change → keep
+          # everything (the cascade = "bulk on base update"). rebuild_bases / --only /
+          # tag-release / no-prior-tag all skip this and build the full fleet. Leaves
+          # stay full: they're ~38s cache hits, and an empty leaf matrix would skip the
+          # merge job the combos depend on.
+          LAST=$(git tag --list 'v*' --sort=-v:refname | grep -vxF "${TAG:-}" | head -1 || true)
+          if [ "$IS_DISPATCH" = "true" ] && [ -z "${ONLY:-}" ] && [ "${{ inputs.rebuild_bases }}" != "true" ] && [ -n "$LAST" ]; then
+            ch=$(git diff --name-only "$LAST" HEAD 2>/dev/null || true)
+            if [ -n "$ch" ] && ! printf '%s\n' "$ch" | grep -qE '^containers/(core|gateways)/|^containers/docker-bake\.hcl|^\.github/workflows/release-images'; then
+              names() { printf '%s\n' "$ch" | sed -nE "s#^containers/$1/([^/]+)/.*#\\1#p" | sort -u | jq -Rsc 'split("\n")-[""]'; }
+              cb=$(names benchmarks); ca=$(names agents)
+              combos=$(printf '%s'  "$combos"  | jq -c --argjson b "$cb" --argjson a "$ca" 'map(select((.b|IN($b[])) or (.a|IN($a[]))))')
+              pertask=$(printf '%s' "$pertask" | jq -c --argjson b "$cb" 'map(select(.b|IN($b[])))')
+              echo "affected-set since $LAST: combos=$(jq length <<<"$combos") pertask=$(jq length <<<"$pertask")  (changed benchmarks=$cb agents=$ca)"
+            fi
+          fi
+
           # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
           # GitHub caps a matrix at 256 jobs; each shard job loops its items. Chunk
           # combos by 25 (thin overlays) and per-task bases by 10 (heavier builds).
