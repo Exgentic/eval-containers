@@ -429,12 +429,17 @@ fn otelcol_health_gate_is_consistent_across_modes() {
         "containers/core/otel/config.yaml must enable + wire the health_check extension (#45)"
     );
 
-    // 2. Compose: otelcol has a healthcheck (probing :13133), gateway gates on
-    //    service_healthy.
+    // 2. Compose: services.yaml healthchecks otelcol on :13133; the gateway no
+    //    longer gates on it (parallel boot) — each benchmark runner does (#45).
     let svc = read("containers/compose/services.yaml");
     assert!(
-        svc.contains("13133") && svc.contains("condition: service_healthy"),
-        "containers/compose/services.yaml must healthcheck otelcol on :13133 and gate the gateway on service_healthy (#45)"
+        svc.contains("13133"),
+        "containers/compose/services.yaml must healthcheck otelcol on :13133 (#45)"
+    );
+    let runner = read("containers/benchmarks/gsm8k/compose.yaml");
+    assert!(
+        runner.contains("otelcol:") && runner.contains("condition: service_healthy"),
+        "benchmark runners must gate on otelcol service_healthy (#45 — moved from the gateway)"
     );
 
     // 3. k8s: the otelcol sidecar has a startupProbe on :13133.

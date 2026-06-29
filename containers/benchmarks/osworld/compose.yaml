@@ -12,6 +12,8 @@ services:
       TIMEOUT: "1800"
       DESKTOP_URL: http://desktop:5000
     depends_on:
+      otelcol:
+        condition: service_healthy
       gateway:
         condition: service_healthy
       desktop:

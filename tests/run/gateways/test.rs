@@ -535,6 +535,40 @@ async fn upstream_litellm_genai() {
     assert_genai_200("litellm").await
 }
 
+// Streaming must keep routing: the bifrost config allow-lists the *_stream ops
+// (to skip list_models without blocking inference). Assert 200 + SSE chunks.
+async fn assert_openai_stream_200(flavor: &str) {
+    let c = start_with_real_creds(flavor).await;
+    let port = gateway_port(&c).await;
+    let mut body = body_openai();
+    body["stream"] = json!(true);
+    body["max_tokens"] = json!(16);
+    let resp = http()
+        .post(format!(
+            "http://127.0.0.1:{port}/openai/v1/chat/completions"
+        ))
+        .json(&body)
+        .send()
+        .await
+        .expect("post streaming chat completions");
+    let status = resp.status();
+    let text = resp.text().await.expect("read SSE body");
+    assert_eq!(
+        status, 200,
+        "{flavor} /openai stream → {status} body={text}"
+    );
+    assert!(
+        text.lines().any(|l| l.starts_with("data:")),
+        "{flavor} /openai stream returned no SSE data chunks: {text}"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn upstream_bifrost_openai_stream() {
+    assert_openai_stream_200("bifrost").await
+}
+
 #[tokio::test]
 #[ignore]
 async fn upstream_portkey_anthropic_remains_501() {

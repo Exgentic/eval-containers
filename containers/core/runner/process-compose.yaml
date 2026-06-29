@@ -49,9 +49,8 @@ processes:
       period_seconds: 1
       timeout_seconds: 2
       failure_threshold: 60
-    depends_on:
-      otelcol:
-        condition: process_healthy
+    # No depends_on otelcol: gateway/otelcol start in parallel; the agent waits
+    # on both instead (mirrors compose). OTLP exporter retries until up.
     availability:
       restart: "no"
     log_location: /output/model/gateway.log
@@ -62,6 +61,8 @@ processes:
     # the lean base's runner sequence so rule 7's allow-list has one home.
     command: /usr/local/bin/run-agent
     depends_on:
+      otelcol:
+        condition: process_healthy
       gateway:
         condition: process_healthy
     availability:

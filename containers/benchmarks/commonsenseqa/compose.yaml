@@ -7,6 +7,8 @@ services:
       file: ../../compose/runner.yaml
       service: runner
     depends_on:
+      otelcol:
+        condition: service_healthy
       gateway:
         condition: service_healthy
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/commonsenseqa--${EVAL_AGENT:-claude-code}:latest
