@@ -91,6 +91,7 @@ $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
     name=$(basename "$f")
     case "$name" in problem.txt|answer.txt|id.txt) continue;; esac
     cp "$f" /app/
+    chmod 0644 "/app/$name"  # readable by the non-root agent (uid 1002); the /tasks copy stays 600
   done
 fi
 exec "$@"

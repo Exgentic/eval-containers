@@ -14,7 +14,7 @@ the task's own Playwright end-to-end test.
 | Released | no |
 | Upstream | [openai/preparedness](https://github.com/openai/preparedness) (`project/swelancer`) |
 | Paper | [paper](https://arxiv.org/abs/2502.12115) |
-| Upstream commit | `8ea5c659b5232d3c520c5ca2a018fe65dc5e1988` |
+| Per-task base | `docker.io/swelancer/swelancer_x86_<task>:releasev1` (Diamond split) |
 
 The legacy repo `openai/SWELancer-Benchmark` now redirects to `openai/preparedness`.
 The open-source `project/swelancer` ships 198 IC-SWE issues (each with a checked-in
@@ -41,27 +41,19 @@ written to `/logs/verifier/reward.txt`.
 
 The gold solution (`solution.sh`, mounted only at oracle time — never baked) is
 upstream's documented reference: reverse the bug patch
-(`patch -p1 -R < bug_reintroduce.patch`), fetched fresh from the pinned commit.
+(`patch -p1 -R < bug_reintroduce.patch`), read from the image's root-only
+`/app/tests/issues/<id>/` so it matches the exact version the base was built from.
 
 ## Per-task build (rule 24g)
 
-No per-task upstream images exist, so the image is built from source in two steps:
-
-1. **Shared base** (`scripts/build-swe-lancer.sh`) — builds `swelancer_x86`
-   (Ubuntu + conda/Python + Playwright + Node + Ruby + the bundled `issues/` +
-   harness) from `openai/preparedness` at the pinned commit. Built **once**,
-   reused across all tasks.
-2. **Per-task overlay** (`build.sh <image> <task-id>` → this `Dockerfile`) — runs
-   the upstream `setup_expensify.yml` (check out Expensify at the task commit,
-   re-introduce the bug, `npm install` + webpack) and layers the eval pipeline.
-
-`eval-containers build`/`oracle`/`run` invoke `build.sh` automatically (it builds
-the base on first use). Both builds are `podman build --platform linux/amd64`.
+`build.sh <image> <task-id>` pulls OpenAI's prebuilt per-task image
+(`swelancer/swelancer_x86_<task>:releasev1` — Expensify + bug + build already
+baked) and overlays only the eval pipeline. No from-source build.
 
 ## Files
 
-- `Dockerfile` — per-task overlay on the shared base
-- `build.sh` — two-step per-task build (base if missing, then overlay)
+- `Dockerfile` — eval-pipeline overlay on the prebuilt per-task base
+- `build.sh` — pull the per-task image + overlay
 - `solution.sh` — gold (reverse the bug patch); mounted at oracle time only
 - `grade.sh` — service stack + `run_tests.yml` → reward
 - `entrypoint.sh` — hands the checkout to the agent + seeds `TASK`
