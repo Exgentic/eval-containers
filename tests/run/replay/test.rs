@@ -475,8 +475,8 @@ macro_rules! replay_fullstack_test {
 }
 
 // ── Full-stack replay tests ──────────────────────────────────────────
-// Real gateway + otelcol on top of the replay upstream (the broad matrix stays
-// on lean `replay_test!`). Needs a faithful upstream (SSE + usage; see MATRIX.md).
+// Real gateway + otelcol over the replay upstream (broad matrix stays on lean
+// `replay_test!`); needs a faithful upstream (SSE + usage; see MATRIX.md).
 
 // Per-PR gate (test.yml): cheapest real-gateway path — rust agent, no node.
 replay_fullstack_test!(

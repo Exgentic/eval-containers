@@ -148,9 +148,8 @@ jobs:
         if: ${{ !cancelled() }}
         run: tests/static/model-paths.sweep.sh
 
-  # Per-PR daemon-backed gate: the cheapest full-stack fixture (bigcodebench +
-  # zerostack) on the real stack (otelcol → bifrost → runner), so a gateway/otelcol
-  # boot or routing regression fails the PR.
+  # Per-PR gate: cheapest full-stack fixture (bigcodebench + zerostack) on the real
+  # stack (otelcol → bifrost → runner), so a gateway/otelcol regression fails the PR.
   replay-e2e:
     name: Replay E2E (full-stack)
     runs-on: ubuntu-latest
@@ -180,10 +179,8 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
         run: |
           set -eo pipefail  # else `| tee` masks a failing cargo test
-          # Bases the eval/compose consume directly (FROM source). otel is a slow
-          # from-source build and a standalone sidecar (nothing here FROMs it), so
-          # build it only when this PR changes it; otherwise pull the published
-          # base. Default to building (push events, or if the diff check fails).
+          # otel is a slow from-source build but a standalone sidecar — build it only
+          # when this PR changes it (default), else pull the published base.
           bases="entrypoint agent-base-rust gosu model-replay"
           if [ -n "$PR" ] && files=$(gh pr diff "$PR" --name-only) \
              && ! grep -qE '^containers/core/otel/' <<<"$files"; then
