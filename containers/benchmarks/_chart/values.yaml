@@ -20,6 +20,8 @@ registry: ghcr.io/exgentic
 # label is derived from it (last path segment).
 gatewayImage: bifrost
 model: ""
+# Agent-side reasoning effort (e.g. high); empty → the agent's default.
+reasoningEffort: ""
 # Image tags (CLI --model-tag → gatewayTag; --agent-tag/--benchmark-tag → runnerTag)
 gatewayTag: latest
 runnerTag: latest

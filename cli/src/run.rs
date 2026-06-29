@@ -78,6 +78,10 @@ pub struct RunArgs {
     #[arg(long)]
     model: Option<String>,
 
+    /// Agent reasoning effort, e.g. `high` (maps to $EVAL_AGENT_REASONING_EFFORT)
+    #[arg(long)]
+    agent_reasoning_effort: Option<String>,
+
     /// Task ID within the benchmark (maps to $EVAL_TASK_ID)
     #[arg(long)]
     task_id: Option<String>,
@@ -167,6 +171,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(ref v) = args.model {
         envs.push(("EVAL_MODEL", v.clone()));
+    }
+    if let Some(ref v) = args.agent_reasoning_effort {
+        envs.push(("EVAL_AGENT_REASONING_EFFORT", v.clone()));
     }
     if let Some(ref v) = args.task_id {
         envs.push(("EVAL_TASK_ID", v.clone()));
@@ -482,6 +489,9 @@ fn run_job(
     }
     if let Some(m) = &args.model {
         sets.push(format!("model={m}"));
+    }
+    if let Some(e) = &args.agent_reasoning_effort {
+        sets.push(format!("reasoningEffort={e}"));
     }
     if let Some(t) = args.timeout {
         sets.push(format!("timeout={t}"));

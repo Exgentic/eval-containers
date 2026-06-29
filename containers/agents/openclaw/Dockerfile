@@ -33,7 +33,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # --session-id / --agent). --session-id is the cheapest — picks an
 # ad-hoc session derived from the literal string. No real session
 # state is needed for non-interactive agent invocations.
-exec openclaw agent --local --session-id smoke --message "$TASK"
+exec openclaw agent --local --session-id smoke ${EVAL_AGENT_REASONING_EFFORT:+--thinking $EVAL_AGENT_REASONING_EFFORT} --message "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

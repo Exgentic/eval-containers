@@ -31,7 +31,7 @@ export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
-exec claude -p --dangerously-skip-permissions "$TASK"
+exec claude -p ${EVAL_AGENT_REASONING_EFFORT:+--effort $EVAL_AGENT_REASONING_EFFORT} --dangerously-skip-permissions "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

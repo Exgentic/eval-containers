@@ -43,6 +43,7 @@ overrides the env var.
 | `--benchmark <name>` | `EVAL_BENCHMARK` | or positional |
 | `--agent <name>` | `EVAL_AGENT` | |
 | `--model <name>` | `EVAL_MODEL` | sets the gateway upstream |
+| `--agent-reasoning-effort <level>` | `EVAL_AGENT_REASONING_EFFORT` | the agent applies it; e.g. `high` |
 | `--task-id <id>` | `EVAL_TASK_ID` | default `0` |
 | `--mode <compose\|container\|job>` | — | default `compose` |
 | `--benchmark-tag <tag>` | `EVAL_BENCHMARK_TAG` | image tag |

@@ -573,6 +573,53 @@ fn agent_env_excludes_the_task_id() {
     eprintln!("✓ run-agent env -i allow-list excludes the task id (rule 7)");
 }
 
+/// `EVAL_AGENT_REASONING_EFFORT`: a supporting agent applies it via `${VAR:+…}`
+/// (unset = default); run-agent forwards it and rejects it for an agent whose
+/// /run.sh doesn't use it.
+#[test]
+fn reasoning_effort_wired_through_to_agents() {
+    let root = repo_root();
+    let read =
+        |p: &str| fs::read_to_string(root.join(p)).unwrap_or_else(|e| panic!("read {p}: {e}"));
+    let run_agent = read("containers/core/runner/run-agent");
+
+    assert!(
+        run_agent.contains("EVAL_AGENT_REASONING_EFFORT="),
+        "run-agent's `env -i` allow-list must pass EVAL_AGENT_REASONING_EFFORT or the agent can't read it"
+    );
+    assert!(
+        run_agent.contains("grep -q EVAL_AGENT_REASONING_EFFORT /run.sh")
+            && run_agent.contains("exit 2"),
+        "run-agent must reject EVAL_AGENT_REASONING_EFFORT loudly when the agent's /run.sh doesn't use it"
+    );
+    for a in ["codex", "claude-code"] {
+        assert!(
+            read(&format!("containers/agents/{a}/Dockerfile"))
+                .contains("${EVAL_AGENT_REASONING_EFFORT:+"),
+            "{a} /run.sh must apply EVAL_AGENT_REASONING_EFFORT only when set"
+        );
+    }
+
+    assert!(
+        read("containers/compose/runner.yaml")
+            .contains("EVAL_AGENT_REASONING_EFFORT: ${EVAL_AGENT_REASONING_EFFORT:-}"),
+        "compose runner.yaml must forward EVAL_AGENT_REASONING_EFFORT (optional, no default)"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("reasoningEffort: \"\""),
+        "_chart/values.yaml must ship `reasoningEffort: \"\"` — empty default, agent decides"
+    );
+    let job = read("containers/benchmarks/_chart/templates/job.yaml");
+    assert!(
+        job.contains("with $v.reasoningEffort") && job.contains("EVAL_AGENT_REASONING_EFFORT"),
+        "job.yaml must render EVAL_AGENT_REASONING_EFFORT from .reasoningEffort only when set"
+    );
+
+    eprintln!(
+        "✓ EVAL_AGENT_REASONING_EFFORT: agent-side `${{VAR:+…}}` + run-agent grep-based loud-reject + compose/chart"
+    );
+}
+
 /// The lean/standalone split (benchmarks/RULES.md 24a/24f). The lean base
 /// (combination.Dockerfile → evals/<b>--<a>) is glue-free: no in-process gateway,
 /// otelcol, or process-compose — that is what compose/job/k8s run, with those as

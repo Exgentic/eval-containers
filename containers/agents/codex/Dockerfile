@@ -33,7 +33,7 @@ web_search = true
 view_image = true
 CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-exec codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"
+exec codex exec ${EVAL_AGENT_REASONING_EFFORT:+-c model_reasoning_effort=$EVAL_AGENT_REASONING_EFFORT} --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

@@ -13,6 +13,13 @@
 #     inflate the score; the verifier/result steps read the id from the
 #     inherited container env, so grading is unaffected (rule 7).
 #
+# Fail loud if EVAL_AGENT_REASONING_EFFORT is set but the agent's entrypoint
+# doesn't reference it — a supported agent declares itself by using the var.
+if [ -n "${EVAL_AGENT_REASONING_EFFORT:-}" ] && ! grep -q EVAL_AGENT_REASONING_EFFORT /run.sh; then
+  echo "run-agent: EVAL_AGENT_REASONING_EFFORT is set but agent '${EVAL_AGENT:-?}' does not support it" >&2
+  exit 2
+fi
+
 # stdout/stderr go straight to /output/agent/{stdout,stderr}.log (raw, not via
 # process-compose's JSON log envelope, which breaks verifiers reading stdout).
 # Every value is read from the inherited environment — exported by
@@ -21,6 +28,7 @@ exec timeout "${TIMEOUT:-300}" gosu agent env -i \
   PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
   HOME=/home/agent USER=agent LANG=C.UTF-8 \
   TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
+  EVAL_AGENT_REASONING_EFFORT="${EVAL_AGENT_REASONING_EFFORT:-}" \
   OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" OPENAI_API_KEY=sk-proxy \
   ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}" ANTHROPIC_API_KEY=sk-proxy \
   GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \
