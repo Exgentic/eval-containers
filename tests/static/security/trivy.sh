@@ -33,6 +33,9 @@
 #                                  dropping the local-presence gate
 #
 # Severity gate is HIGH,CRITICAL for both lanes; override with EVAL_TRIVY_SEVERITY.
+# The image lane also passes --ignore-unfixed: a CVE with no available fix can't be
+# patched and would re-fail the gate on every rebuild, so the gate fires only on
+# fixable CVEs (bump the pin).
 # Accepted/by-design misconfig findings live in .github/.trivyignore (each
 # documented there). Fail loud: no `|| true`, no `2>/dev/null` swallowing
 # (.agents/verification/RULES.md:57).
@@ -94,8 +97,9 @@ image_lane() {
     fi
     checked=$((checked + 1))
     echo "── trivy image $img ──"
-    # --pkg-types os,library covers both distro packages and language deps.
-    if ! trivy image "$img" "${COMMON[@]}" --pkg-types os,library --scanners vuln; then
+    # --pkg-types os,library covers both distro packages and language deps;
+    # --ignore-unfixed gates on fixable CVEs only (see header).
+    if ! trivy image "$img" "${COMMON[@]}" --ignore-unfixed --pkg-types os,library --scanners vuln; then
       fail=$((fail + 1))
       echo "FAIL $img — HIGH/CRITICAL CVE(s) above"
     fi
