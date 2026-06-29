@@ -81,6 +81,7 @@ concurrency:
 permissions:
   contents: read
   packages: write  # push to GHCR; Actions-pushed packages auto-link to this repo
+  actions: read    # report job reads this run's jobs (build time + failure summary)
 
 env:
   REGISTRY: ghcr.io/exgentic
@@ -751,6 +752,76 @@ jobs:
             echo ""
             echo "_size-report.json / .csv are uploaded as the \`fleet-size-report\` artifact (durable — feeds audits + README). Combos + per-task sizes are omitted here (hundreds) — query \`ghcr.io/exgentic/evals/*\` / \`benchmarks/*-<task>\`._"
           } >> "$GITHUB_STEP_SUMMARY"
+      - name: Fleet inventory — completeness + freshness
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The registry is the source of truth for what the fleet ACTUALLY
+          # shipped. Cross-check every published image against this run so stale
+          # or failed images can't hide behind green stages.
+          ORG="${REGISTRY##*/}"
+          run_started=$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" --jq '.run_started_at' 2>/dev/null || echo "1970-01-01T00:00:00Z")
+          # GITHUB_TOKEN can't list org packages (confirmed: returns empty) — use a
+          # read:packages PAT if provided (secret GHCR_READ_TOKEN), else fall back
+          # (inventory stays empty → "unavailable" note, never fails the release).
+          GH_TOKEN="${{ secrets.GHCR_READ_TOKEN || github.token }}" \
+          gh api "/orgs/${ORG}/packages?package_type=container&per_page=100" --paginate \
+            --jq '.[]|[.name,.updated_at]|@tsv' > /tmp/pkgs.tsv 2>/dev/null || true
+          total=$(wc -l < /tmp/pkgs.tsv | tr -d ' ')
+          # Bucket each by category; split fresh (pushed during THIS run) vs older.
+          awk -F'\t' -v rs="$run_started" '
+            { n=$1; ts=$2; d=substr(ts,1,10)
+              if (n~/^core\// || n~/^gateways\//) c="base"
+              else if (n~/^benchmarks\/(swe-bench|terminal-bench|skills-bench)-./) c="per-task"
+              else if (n~/^(benchmarks|agents|models)\//) c="leaf"
+              else if (n~/-standalone$/) c="standalone"
+              else if (n~/^evals\//) c="combo"
+              else next
+              tot[c]++
+              if (ts>=rs) fr[c]++; else { old[c]++; if(oldest[c]==""||d<oldest[c]) oldest[c]=d; if(d>no[c]) no[c]=d } }
+            END { split("base leaf per-task combo standalone", o, " ")
+              for (i=1;i<=5;i++){ c=o[i]; if(!(c in tot)) continue
+                printf "| %s | %d | %d | %d | %s |\n", c, tot[c], fr[c]+0, old[c]+0, (old[c]?oldest[c]" → "no[c]:"—") } }' \
+            /tmp/pkgs.tsv > /tmp/inv.md
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" --paginate \
+            --jq '.jobs[]|select(.conclusion=="failure")|.name' > /tmp/failed.txt 2>/dev/null || true
+          nfail=$(wc -l < /tmp/failed.txt | tr -d ' ')
+          echo "::notice title=Fleet inventory::${total} packages indexed (window since ${run_started}); ${nfail} failed job(s) this run."
+          {
+            echo ""
+            echo "## Fleet inventory — every published image, by freshness"
+            if [ "${total:-0}" -gt 0 ]; then
+              echo "_${total} container packages in \`${ORG}\`. **built this run** = pushed since \`${run_started}\`; **older** = not rebuilt this run (stale if its inputs changed since)._"
+              echo "| category | total | built this run | older | older span |"
+              echo "|---|--:|--:|--:|---|"
+              cat /tmp/inv.md
+            else
+              echo "_Inventory unavailable (empty package list — check the job's \`packages: read\` scope)._"
+            fi
+            echo ""
+            echo "## Failures this run: ${nfail}"
+            if [ "${nfail:-0}" -gt 0 ]; then
+              echo "| bucket | count |"; echo "|---|--:|"
+              sed -E 's/^([A-Za-z][A-Za-z-]*).*/\1/' /tmp/failed.txt | sort | uniq -c | sort -rn \
+                | awk '{printf "| %s | %d |\n",$2,$1}'
+              echo ""
+              echo "<details><summary>failed job names</summary>"
+              echo ""
+              sed 's/^/- /' /tmp/failed.txt
+              echo ""
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Loud annotation for consumable layers that did NOT refresh this run.
+          while IFS='|' read -r _ cat _t _f old _rest; do
+            cat="$(echo "$cat" | xargs)"; old="$(echo "$old" | xargs)"
+            case "$cat" in
+              combo|standalone|base)
+                [ "${old:-0}" -gt 0 ] && echo "::warning title=Stale ${cat}::${old} ${cat} image(s) not rebuilt this run — refresh if inputs changed." ;;
+            esac
+          done < /tmp/inv.md
+          cp /tmp/pkgs.tsv fleet-inventory.tsv 2>/dev/null || true
       - name: Upload durable size report
         if: ${{ !inputs.dry_run }}
         uses: actions/upload-artifact@v4
@@ -759,4 +830,5 @@ jobs:
           path: |
             size-report.json
             size-report.csv
+            fleet-inventory.tsv
           if-no-files-found: ignore
