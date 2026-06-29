@@ -148,12 +148,9 @@ jobs:
         if: ${{ !cancelled() }}
         run: tests/static/model-paths.sweep.sh
 
-  # The one daemon-backed gate: a miniature of the nightly replay E2E. Builds what
-  # the cheapest full-stack fixture (bigcodebench + zerostack, a rust agent — no
-  # node) needs and replays it on the real compose stack with the REAL gateway —
-  # otelcol → bifrost → runner, the replay server as bifrost's upstream — so a base
-  # regression (otelcol OR the gateway failing to boot/route) shows up at `compose
-  # up` on every PR and every push to main.
+  # Per-PR daemon-backed gate: the cheapest full-stack fixture (bigcodebench +
+  # zerostack) on the real stack (otelcol → bifrost → runner), so a gateway/otelcol
+  # boot or routing regression fails the PR.
   replay-e2e:
     name: Replay E2E (full-stack)
     runs-on: ubuntu-latest
@@ -179,19 +176,11 @@ jobs:
       - name: Replay full-stack
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # Bake only the bases this fixture consumes as image-refs — all FROM
-          # SOURCE (never pull :latest; it lags main between releases). The
-          # benchmark/agent bakes build their own bases (duckdb, slim) and
-          # entrypoint in-graph, and the harness builds the real gateway (bifrost)
-          # itself for full-stack; we pre-build the few the eval/compose consume
-          # directly: gosu (lean eval), model-replay (gateway upstream), otel
-          # (sidecar), agent-base-rust (zerostack), plus entrypoint.
+          # Bases the eval/compose consume directly (FROM source, never pull
+          # :latest). Benchmark/agent bases + bifrost build in-graph.
           EVAL_BASES_OVERRIDE: entrypoint agent-base-rust gosu model-replay otel
         run: |
-          # pipefail so a failing `cargo test` isn't masked by the `| tee` exit 0.
-          set -eo pipefail
-          # Run the cheapest full-stack test (bigcodebench + zerostack). The grep
-          # guards against the filter matching nothing (libtest exits 0 on 0 tests).
+          set -eo pipefail  # else `| tee` masks a failing cargo test
           cargo test -p eval-containers-tests-run --test replay \
             -- --ignored --nocapture --test-threads=1 replay_fullstack_bigcodebench_0_zerostack \
             | tee replay.log

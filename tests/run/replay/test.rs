@@ -475,15 +475,10 @@ macro_rules! replay_fullstack_test {
 }
 
 // ── Full-stack replay tests ──────────────────────────────────────────
-// Real gateway + otelcol run on top of the replay upstream. The broad matrix
-// stays on cheaper lean `replay_test!`. Assertions check the pipeline ran, the
-// gateway instrumented, and the agent ran clean through the real gateway — which
-// requires a faithful replay upstream (SSE + usage; see containers/models/replay
-// and MATRIX.md).
+// Real gateway + otelcol on top of the replay upstream (the broad matrix stays
+// on lean `replay_test!`). Needs a faithful upstream (SSE + usage; see MATRIX.md).
 
-// bigcodebench + zerostack: the cheapest real-gateway path (rust agent, no node)
-// — the per-PR gate (`test.yml`). Same benchmark+agent as the lean smoke, with
-// the real bifrost gateway in front, so a gateway regression fails per-PR.
+// Per-PR gate (test.yml): cheapest real-gateway path — rust agent, no node.
 replay_fullstack_test!(
     replay_fullstack_bigcodebench_0_zerostack,
     "bigcodebench",
@@ -491,7 +486,7 @@ replay_fullstack_test!(
     "0"
 );
 
-// aime + claude-code: also covers the Anthropic `/messages` path through bifrost.
+// Anthropic `/messages` path coverage.
 replay_fullstack_test!(
     replay_fullstack_aime_17_claude_code,
     "aime",

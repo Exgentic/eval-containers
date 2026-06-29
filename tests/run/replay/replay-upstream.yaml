@@ -29,11 +29,8 @@ services:
     networks:
       - upstream
 
-  # The runner must wait for the replay upstream, not just the gateway: the real
-  # gateway dials the upstream lazily on the agent's first request, so without
-  # this edge the agent can fire before replay is ready and get a 500 ("failed to
-  # execute HTTP request to provider API"). Merges with the otelcol+gateway deps
-  # the benchmark compose.yaml already declares on the runner.
+  # Wait for the upstream too (the gateway dials it lazily on the first request,
+  # so gating only on the gateway races a 500). Merges with the existing deps.
   runner:
     depends_on:
       upstream:
