@@ -21,7 +21,7 @@ jobs:
   publish-crate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v6.0.3
 
       # .agents/delivery/RULES.md:6 — the release aborts unless the git tag,
       # Cargo.toml, and Chart.yaml versions all agree.
