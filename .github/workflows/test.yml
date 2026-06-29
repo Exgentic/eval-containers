@@ -148,12 +148,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: tests/static/model-paths.sweep.sh
 
-  # The one daemon-backed gate: a miniature of the nightly replay E2E. Builds what
-  # one fixture (bigcodebench + zerostack) needs and replays it on the real
-  # compose stack (otelcol → gateway → runner), so a base regression like otelcol
-  # failing to boot shows up at `compose up` — on every PR and every push to main.
+  # Per-PR gate: cheapest full-stack fixture (bigcodebench + zerostack) on the real
+  # stack (otelcol → bifrost → runner), so a gateway/otelcol regression fails the PR.
   replay-e2e:
-    name: Replay E2E (zerostack)
+    name: Replay E2E (full-stack)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -174,23 +172,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Replay zerostack
+      - name: Replay full-stack
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # Bake only the bases this fixture consumes as image-refs — all FROM
-          # SOURCE (never pull :latest; it lags main between releases). The
-          # benchmark/agent bakes build their own bases (duckdb, python-slim) and
-          # entrypoint in-graph; we pre-build the few the eval/compose consume
-          # directly: gosu (lean eval), model-replay (gateway), otel (sidecar),
-          # plus entrypoint + agent-base-rust for safety.
-          EVAL_BASES_OVERRIDE: entrypoint agent-base-rust gosu model-replay otel
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
-          # Select by substring, not the full fixture name: `zerostack` uniquely
-          # matches the one smoke test. The grep guards against it matching nothing
-          # (libtest exits 0 on zero tests).
+          set -eo pipefail  # else `| tee` masks a failing cargo test
+          # otel is a slow from-source build but a standalone sidecar — build it only
+          # when this PR changes it (default), else pull the published base.
+          bases="entrypoint agent-base-rust gosu model-replay"
+          if [ -n "$PR" ] && files=$(gh pr diff "$PR" --name-only) \
+             && ! grep -qE '^containers/core/otel/' <<<"$files"; then
+            docker pull ghcr.io/exgentic/core/otel:latest
+          else
+            bases="$bases otel"
+          fi
+          export EVAL_BASES_OVERRIDE="$bases"
           cargo test -p eval-containers-tests-run --test replay \
-            -- --ignored --nocapture --test-threads=1 zerostack \
+            -- --ignored --nocapture --test-threads=1 replay_fullstack_bigcodebench_0_zerostack \
             | tee replay.log
           if grep -qE "running 0 tests" replay.log; then
-            echo "::error::ran 0 tests — no 'zerostack' fixture matched"; exit 1
+            echo "::error::ran 0 tests — no 'replay_fullstack_bigcodebench_0_zerostack' fixture matched"; exit 1
           fi

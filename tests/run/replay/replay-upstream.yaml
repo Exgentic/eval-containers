@@ -29,6 +29,13 @@ services:
     networks:
       - upstream
 
+  # Wait for the upstream too (the gateway dials it lazily on the first request,
+  # so gating only on the gateway races a 500). Merges with the existing deps.
+  runner:
+    depends_on:
+      upstream:
+        condition: service_healthy
+
 volumes:
   output:
     driver: local
