@@ -17,6 +17,8 @@ services:
       REDDIT_URL: http://reddit:80
       SHOPPING_URL: http://shopping:80
     depends_on:
+      otelcol:
+        condition: service_healthy
       gateway:
         condition: service_healthy
       proxy:

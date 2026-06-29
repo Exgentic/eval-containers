@@ -18,6 +18,8 @@ services:
       OPENAI_BASE_URL: http://gateway:4000
       OPENAI_API_KEY: sk-proxy
     depends_on:
+      otelcol:
+        condition: service_healthy
       gateway:
         condition: service_healthy
       bridge:
