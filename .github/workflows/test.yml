@@ -149,11 +149,12 @@ jobs:
         run: tests/static/model-paths.sweep.sh
 
   # The one daemon-backed gate: a miniature of the nightly replay E2E. Builds what
-  # one fixture (bigcodebench + zerostack) needs and replays it on the real
-  # compose stack (otelcol → gateway → runner), so a base regression like otelcol
-  # failing to boot shows up at `compose up` — on every PR and every push to main.
+  # the full-stack fixture (aime + claude-code) needs and replays it on the real
+  # compose stack with the REAL gateway — otelcol → bifrost → runner, the replay
+  # server as bifrost's upstream — so a base regression (otelcol OR the gateway
+  # failing to boot) shows up at `compose up` on every PR and every push to main.
   replay-e2e:
-    name: Replay E2E (zerostack)
+    name: Replay E2E (full-stack)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -174,23 +175,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Replay zerostack
+      - name: Replay full-stack
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           # Bake only the bases this fixture consumes as image-refs — all FROM
           # SOURCE (never pull :latest; it lags main between releases). The
-          # benchmark/agent bakes build their own bases (duckdb, python-slim) and
-          # entrypoint in-graph; we pre-build the few the eval/compose consume
-          # directly: gosu (lean eval), model-replay (gateway), otel (sidecar),
-          # plus entrypoint + agent-base-rust for safety.
-          EVAL_BASES_OVERRIDE: entrypoint agent-base-rust gosu model-replay otel
+          # benchmark/agent bakes build their own bases (duckdb, slim) and
+          # entrypoint in-graph, and the harness builds the real gateway (bifrost)
+          # itself for full-stack; we pre-build the few the eval/compose consume
+          # directly: gosu (lean eval), model-replay (gateway upstream), otel
+          # (sidecar), agent-base-node (claude-code), plus entrypoint.
+          EVAL_BASES_OVERRIDE: entrypoint agent-base-node gosu model-replay otel
         run: |
-          # Select by substring, not the full fixture name: `zerostack` uniquely
-          # matches the one smoke test. The grep guards against it matching nothing
+          # Select by substring: `replay_fullstack` uniquely matches the one
+          # full-stack smoke test. The grep guards against it matching nothing
           # (libtest exits 0 on zero tests).
           cargo test -p eval-containers-tests-run --test replay \
-            -- --ignored --nocapture --test-threads=1 zerostack \
+            -- --ignored --nocapture --test-threads=1 replay_fullstack \
             | tee replay.log
           if grep -qE "running 0 tests" replay.log; then
-            echo "::error::ran 0 tests — no 'zerostack' fixture matched"; exit 1
+            echo "::error::ran 0 tests — no 'replay_fullstack' fixture matched"; exit 1
           fi
