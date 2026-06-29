@@ -13,7 +13,7 @@
 # benchmarks/<name>/build.sh when present). Args:
 #   $1 = image ref to produce        $2 = task id (an issues/<id> name)
 #
-# Uses `podman build` directly (linux/amd64 — the oracle/runner platform, and the
+# Uses `docker build` directly (linux/amd64 — the oracle/runner platform, and the
 # base hardcodes x86_64 deps) so the base + overlay chain through the local image
 # store (docker buildx's container driver keeps results only in the build cache).
 set -euo pipefail
@@ -29,7 +29,7 @@ PREP_REF="${PREP_REF:-8ea5c659b5232d3c520c5ca2a018fe65dc5e1988}"
 BASE_TAG="${BASE_TAG:-swelancer_x86:latest}"
 
 # 1. Shared base — build once, reuse for every task.
-if podman image exists "${BASE_TAG}"; then
+if docker image inspect "${BASE_TAG}" >/dev/null 2>&1; then
   echo "[swe-lancer] 1/2 base ${BASE_TAG} present — reusing"
 else
   echo "[swe-lancer] 1/2 building shared base ${BASE_TAG} (openai/preparedness@${PREP_REF})"
@@ -38,7 +38,7 @@ fi
 
 # 2. Per-task overlay (runs the upstream setup_expensify.yml for this task).
 echo "[swe-lancer] 2/2 overlaying the eval pipeline for '${TASK}' -> ${IMAGE}"
-podman build --platform linux/amd64 -t "${IMAGE}" \
+docker build --platform linux/amd64 -t "${IMAGE}" \
   --build-arg "TASK_BASE=${BASE_TAG}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "PREP_REF=${PREP_REF}" \

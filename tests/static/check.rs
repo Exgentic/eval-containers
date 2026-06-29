@@ -730,3 +730,58 @@ fn otel_is_a_pinned_slim_ocb_build() {
         "✓ core/otel is a pinned slim OCB build (otlp+file+healthcheck @ v{otelcol_version})"
     );
 }
+
+// ─── build engine: docker only, never podman (RULES.md verification 6c) ───
+
+/// Every `*.sh` under containers/ MUST build with `docker`, never `podman`. A
+/// `podman build` lands the image in podman's store, which the oracle/runner's
+/// `docker run` can't see — it then pulls the ref from the registry and fails
+/// (`manifest unknown`) for unpublished per-task images (swe-lancer,
+/// swe-bench-pro). Comments may explain podman behaviour; commands may not.
+#[test]
+fn build_scripts_use_docker_not_podman() {
+    fn collect_sh(dir: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                collect_sh(&p, out);
+            } else if p.extension().is_some_and(|x| x == "sh") {
+                out.push(p);
+            }
+        }
+    }
+    let root = repo_root();
+    let mut scripts = Vec::new();
+    collect_sh(&root.join("containers"), &mut scripts);
+    assert!(
+        !scripts.is_empty(),
+        "no shell scripts found under containers/"
+    );
+
+    let mut offenders: Vec<String> = Vec::new();
+    for path in &scripts {
+        let text = fs::read_to_string(path).unwrap_or_default();
+        for (n, line) in text.lines().enumerate() {
+            if line.trim_start().starts_with('#') {
+                continue;
+            }
+            if line.contains("podman ") {
+                let rel = path.strip_prefix(&root).unwrap_or(path);
+                offenders.push(format!("{}:{}: {}", rel.display(), n + 1, line.trim()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "build scripts must use docker, not podman (RULES.md verification 6c — a podman \
+         build lands in podman's store, unreachable by the oracle/runner's `docker run`):\n{}",
+        offenders.join("\n")
+    );
+    eprintln!(
+        "✓ no podman invocations in {} container shell scripts",
+        scripts.len()
+    );
+}

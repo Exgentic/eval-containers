@@ -4,8 +4,8 @@
 # Upstream publishes a ready per-instance image per task on Docker Hub, so this is
 # a per-task PULL + overlay (swe-bench-style), not a source build (rule 24g):
 #   1. resolve the task's `dockerhub_tag` from the ScaleAI/SWE-bench_Pro dataset
-#   2. podman build the overlay Dockerfile FROM docker.io/jefzda/sweap-images:<tag>
-# podman build (not docker buildx) so the result lands in the local store for the
+#   2. docker build the overlay Dockerfile FROM docker.io/jefzda/sweap-images:<tag>
+# docker build (not docker buildx) so the result lands in the local store for the
 # run/oracle. Args: $1 = image ref to produce, $2 = instance_id (EVAL_TASK_ID).
 set -euo pipefail
 
@@ -32,7 +32,7 @@ done
 [ -n "$TAG" ] || { echo "ERROR: dockerhub_tag not found for ${ID}" >&2; exit 1; }
 
 echo "[swe-bench-pro] dockerhub_tag=${TAG}; building overlay -> ${IMAGE}"
-podman build --platform linux/amd64 -t "${IMAGE}" \
+docker build --platform linux/amd64 -t "${IMAGE}" \
   --build-arg "TASK_BASE=docker.io/jefzda/sweap-images:${TAG}" \
   --build-arg "EVAL_TASK_ID=${ID}" \
   --build-arg "SBP_REV=${SBP_REV}" \
