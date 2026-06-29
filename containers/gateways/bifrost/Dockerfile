@@ -22,7 +22,7 @@
 # Caddy shim is needed (cf. gateways/litellm/ which does need one).
 # One ARG drives both the pull and the label so they can't drift (principle 9).
 # Named stage because `COPY --from=` can't take an `${ARG}`.
-ARG BIFROST_VERSION=v1.5.4
+ARG BIFROST_VERSION=v1.5.15
 FROM docker.io/maximhq/bifrost:${BIFROST_VERSION} AS bifrost-bin
 
 FROM alpine:3.20
@@ -42,6 +42,12 @@ COPY start  /opt/gateway/start
 COPY health /opt/gateway/health
 RUN chmod +x /opt/gateway/start /opt/gateway/health /opt/gateway/main \
  && mkdir -p /opt/gateway/data
+
+# Bake the datasheets so the model config can load them via file:// instead of
+# fetching getbifrost.ai on every boot (offline/air-gappable). Refreshed on rebuild.
+RUN curl -fsSL https://getbifrost.ai/datasheet                  -o /opt/gateway/data/pricing.json \
+ && curl -fsSL https://getbifrost.ai/datasheet/model-parameters -o /opt/gateway/data/model-parameters.json \
+ && curl -fsSL https://getbifrost.ai/mcp-library                -o /opt/gateway/data/mcp-library.json
 
 EXPOSE 4000
 ENTRYPOINT ["/opt/gateway/start"]

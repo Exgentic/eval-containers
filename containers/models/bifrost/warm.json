@@ -1,0 +1,15 @@
+{
+  "$schema": "https://www.getbifrost.ai/schema",
+  "providers": {},
+  "governance": { "routing_rules": [] },
+  "plugins": [],
+  "framework": {
+    "pricing": {
+      "pricing_url": "file:///opt/gateway/data/pricing.json",
+      "model_parameters_url": "file:///opt/gateway/data/model-parameters.json",
+      "mcp_library_url": "file:///opt/gateway/data/mcp-library.json",
+      "pricing_sync_interval": 86400,
+      "mcp_library_sync_interval": 86400
+    }
+  }
+}
