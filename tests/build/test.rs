@@ -1038,3 +1038,27 @@ fn eval_local_resolves_from_full_graph() {
         );
     }
 }
+
+// ─── combo source-hash contract (incremental :src-<hash> skip) ────────
+//
+// The combos job tags each built combo `:src-<hash>` and, on a re-run with
+// skip_published, skips any combo whose tag already exists. The hash
+// (containers/scripts/combo-src-hash.sh) must be deterministic, cascade over
+// every parent digest, and be source-sensitive — or the skip is wrong. This
+// guard is pure hashing (no docker), so unlike the bake/build checks above it
+// runs on every `cargo test`, not just the build lane.
+#[test]
+fn combo_src_hash_cascade() {
+    let root = test_support::repo_root();
+    let out = Command::new("bash")
+        .arg(root.join("tests/build/hash-cascade.sweep.sh"))
+        .current_dir(&root)
+        .output()
+        .expect("run tests/build/hash-cascade.sweep.sh");
+    assert!(
+        out.status.success(),
+        "combo source-hash contract failed:\n--- stdout ---\n{}--- stderr ---\n{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr),
+    );
+}

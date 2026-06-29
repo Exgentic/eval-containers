@@ -588,6 +588,13 @@ jobs:
             done
           }
           fails=0
+          # Incremental skip: a combo's content hash folds its build source + the
+          # digest of every base it's FROM. Identical hash → its :src-<hash> tag
+          # already exists → skip; a changed base → new digest → new hash → rebuild
+          # (the cascade). gosu/otel/process-compose/model are shared — resolve once.
+          dg() { docker buildx imagetools inspect "$1" --format '{{.Manifest.Digest}}' 2>/dev/null || echo absent; }
+          GOSU_D=$(dg "${REGISTRY}/core/gosu:${TAG}");          OTEL_D=$(dg "${REGISTRY}/core/otel:${TAG}")
+          PC_D=$(dg "${REGISTRY}/core/process-compose:${TAG}"); MODEL_D=$(dg "${REGISTRY}/models/bifrost:${TAG}")
           while read -r it; do
             IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
             if [ -n "$TASK" ]; then           # per-task combo: evals/<b>-<task>--<a>
@@ -598,7 +605,9 @@ jobs:
               eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
               PLAT="linux/amd64,linux/arm64" # light overlay → multi-arch is fine
             fi
-            if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "${REGISTRY}/evals/${eb}--${A}:${TAG}" >/dev/null 2>&1; then echo "skip-published: evals/${eb}--${A}"; continue; fi
+            HASH=$(containers/scripts/combo-src-hash.sh "$(dg "$bench_img")" "$(dg "${REGISTRY}/agents/${A}:${TAG}")" "$GOSU_D" "$OTEL_D" "$PC_D" "$MODEL_D" "standalone=${STANDALONE}")
+            ht="${REGISTRY}/evals/${eb}--${A}:src-${HASH}"
+            if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "$ht" >/dev/null 2>&1; then echo "skip-unchanged: evals/${eb}--${A} (src-${HASH})"; continue; fi
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
             # once, then layers standalone on it via the eval-base context.
@@ -610,7 +619,9 @@ jobs:
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
                  --set "*.platform=${PLAT}" \
-                 "${ACT[@]}"; then :; \
+                 "${ACT[@]}"; then
+              # stamp the content-hash tag so a later skip_published run skips this exact source.
+              [ "$DRY" = "true" ] || docker buildx imagetools create -t "$ht" "${REGISTRY}/evals/${eb}--${A}:${TAG}" 2>/dev/null || true
             else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
             echo "::endgroup::"
           done < <(jq -c '.[]' <<< "$ITEMS")
