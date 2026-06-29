@@ -43,9 +43,8 @@ services:
       timeout: 2s
       retries: 60
       start_period: 5s
-    depends_on:
-      otelcol:
-        condition: service_healthy
+    # No depends_on otelcol: gateway and otelcol boot in parallel; the runner
+    # gates on both healthy instead (rule 8). OTLP exporter retries until up.
     networks:
       - internal
       - upstream

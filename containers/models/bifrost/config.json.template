@@ -1,23 +1,23 @@
 {
   "$schema": "https://www.getbifrost.ai/schema",
   "providers": {
-    "openai": {
+    "evalupstream": {
       "keys": [
         { "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }
       ],
-      "network_config": { "base_url": "${OPENAI_API_BASE}" }
-    },
-    "anthropic": {
-      "keys": [
-        { "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }
-      ],
-      "network_config": { "base_url": "${OPENAI_API_BASE}" }
-    },
-    "gemini": {
-      "keys": [
-        { "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }
-      ],
-      "network_config": { "base_url": "${OPENAI_API_BASE}" }
+      "network_config": { "base_url": "${OPENAI_API_BASE}" },
+      "custom_provider_config": {
+        "base_provider_type": "openai",
+        "allowed_requests": {
+          "chat_completion": true,
+          "chat_completion_stream": true,
+          "responses": true,
+          "responses_stream": true,
+          "text_completion": true,
+          "text_completion_stream": true,
+          "count_tokens": true
+        }
+      }
     }
   },
   "governance": {
@@ -29,7 +29,7 @@
         "cel_expression": "true",
         "scope": "global",
         "targets": [
-          { "provider": "${PROVIDER}", "model": "${MODEL_NAME}", "weight": 1.0 }
+          { "provider": "evalupstream", "model": "${MODEL_NAME}", "weight": 1.0 }
         ]
       }
     ]
@@ -45,5 +45,14 @@
         "protocol": "http"
       }
     }
-  ]
+  ],
+  "framework": {
+    "pricing": {
+      "pricing_url": "file:///opt/gateway/data/pricing.json",
+      "model_parameters_url": "file:///opt/gateway/data/model-parameters.json",
+      "mcp_library_url": "file:///opt/gateway/data/mcp-library.json",
+      "pricing_sync_interval": 86400,
+      "mcp_library_sync_interval": 86400
+    }
+  }
 }

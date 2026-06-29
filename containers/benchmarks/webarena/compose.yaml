@@ -22,6 +22,8 @@ services:
       WIKIPEDIA_URL: http://wikipedia:8080
       MAP_URL: http://map:8080
     depends_on:
+      otelcol:
+        condition: service_healthy
       gateway:
         condition: service_healthy
       proxy:
