@@ -599,6 +599,14 @@ fn reasoning_effort_wired_through_to_agents() {
             "{a} /run.sh must apply EVAL_AGENT_REASONING_EFFORT only when set"
         );
     }
+    // zerostack has no native flag — it injects reasoning_effort via the config's extra_body.
+    let zs = read("containers/agents/zerostack/Dockerfile");
+    assert!(
+        zs.contains("EVAL_AGENT_REASONING_EFFORT")
+            && zs.contains("extra_body")
+            && zs.contains("reasoning_effort"),
+        "zerostack must inject EVAL_AGENT_REASONING_EFFORT as reasoning_effort via extra_body"
+    );
 
     assert!(
         read("containers/compose/runner.yaml")
