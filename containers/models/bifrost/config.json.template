@@ -5,7 +5,7 @@
       "keys": [
         { "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }
       ],
-      "network_config": { "base_url": "${OPENAI_API_BASE}" },
+      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true },
       "custom_provider_config": {
         "base_provider_type": "openai",
         "allowed_requests": {
