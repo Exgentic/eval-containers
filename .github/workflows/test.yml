@@ -176,11 +176,22 @@ jobs:
       - name: Replay full-stack
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
-          # Bases the eval/compose consume directly (FROM source, never pull
-          # :latest). Benchmark/agent bases + bifrost build in-graph.
-          EVAL_BASES_OVERRIDE: entrypoint agent-base-rust gosu model-replay otel
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
           set -eo pipefail  # else `| tee` masks a failing cargo test
+          # Bases the eval/compose consume directly (FROM source). otel is a slow
+          # from-source build and a standalone sidecar (nothing here FROMs it), so
+          # build it only when this PR changes it; otherwise pull the published
+          # base. Default to building (push events, or if the diff check fails).
+          bases="entrypoint agent-base-rust gosu model-replay"
+          if [ -n "$PR" ] && files=$(gh pr diff "$PR" --name-only) \
+             && ! grep -qE '^containers/core/otel/' <<<"$files"; then
+            docker pull ghcr.io/exgentic/core/otel:latest
+          else
+            bases="$bases otel"
+          fi
+          export EVAL_BASES_OVERRIDE="$bases"
           cargo test -p eval-containers-tests-run --test replay \
             -- --ignored --nocapture --test-threads=1 replay_fullstack_bigcodebench_0_zerostack \
             | tee replay.log
