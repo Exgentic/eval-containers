@@ -76,6 +76,7 @@ fi
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   if [ -f /tasks/$EVAL_TASK_ID/image.png ]; then
     cp /tasks/$EVAL_TASK_ID/image.png /app/image.png
+    chmod 0644 /app/image.png
     IMAGE_LINE="
 
 Image: /app/image.png"

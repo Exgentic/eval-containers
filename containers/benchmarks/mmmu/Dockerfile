@@ -100,6 +100,7 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
     [ -f "$f" ] || continue
     name=$(basename "$f")
     cp "$f" /app/"$name"
+    chmod 0644 /app/"$name"
     IMAGE_LIST="${IMAGE_LIST}
 /app/${name}"
   done
