@@ -50,8 +50,8 @@ baked, shared artifact that ignores `EVAL_MODEL`. Both are pull-not-build; see
 | `EVAL_REGISTRY` | Registry to pull from | `ghcr.io/exgentic` |
 
 Supported agents: **codex, claude-code, claude-code-rtk, aider, cline,
-copilot-cli, openclaw**. Setting it for any other agent **fails loud** (the run
-exits non-zero) rather than silently ignoring it.
+copilot-cli, openclaw, zerostack**. Setting it for any other agent **fails loud**
+(the run exits non-zero) rather than silently ignoring it.
 
 The two version axes are orthogonal: the **tag** controls which container to
 pull (Docker-native), the **version** is a runtime override the entrypoint
