@@ -187,6 +187,8 @@ jobs:
           # (sidecar), agent-base-node (claude-code), plus entrypoint.
           EVAL_BASES_OVERRIDE: entrypoint agent-base-node gosu model-replay otel
         run: |
+          # pipefail so a failing `cargo test` isn't masked by the `| tee` exit 0.
+          set -eo pipefail
           # Select by substring: `replay_fullstack` uniquely matches the one
           # full-stack smoke test. The grep guards against it matching nothing
           # (libtest exits 0 on zero tests).
