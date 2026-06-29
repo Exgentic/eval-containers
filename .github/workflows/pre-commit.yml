@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
         with:
           fetch-depth: 0   # base history for the PR diff
 
@@ -27,14 +27,14 @@ jobs:
       - name: Verify rustfmt is available
         run: rustfmt --version
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6.2.0
         with:
           python-version: '3.x'
 
       - run: pip install pre-commit
 
       - name: Cache pre-commit environments
-        uses: actions/cache@v5
+        uses: actions/cache@v5.0.5
         with:
           path: ~/.cache/pre-commit
           # pythonLocation is in the key because python-version '3.x' floats the
@@ -76,7 +76,7 @@ jobs:
       # serves it from disk. trivy still self-refreshes the bundle when it ages
       # out, so a static key is safe for config/misconfig checks.
       - name: Cache trivy checks DB
-        uses: actions/cache@v5
+        uses: actions/cache@v5.0.5
         with:
           path: ~/.cache/trivy
           key: trivy-${{ runner.os }}

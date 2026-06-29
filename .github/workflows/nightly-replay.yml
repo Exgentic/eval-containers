@@ -58,7 +58,7 @@ jobs:
         # list. Per shard: a one-time ~44s base bake + ~15 x ~34s replays.
         shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.0
 
       # No "free disk space" step: the runner reports ~108 GB free and the build
       # uses ~15-20 GB. The old `rm -rf` of dotnet/android/… cost ~1m43s for
