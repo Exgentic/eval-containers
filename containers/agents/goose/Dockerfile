@@ -38,7 +38,7 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 export GOOSE_PROVIDER="openai"
-export GOOSE_MODEL="${EVAL_MODEL:?EVAL_MODEL must be set}"
+export GOOSE_MODEL="${EVAL_MODEL:-default}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # Goose appends /v1/chat/completions to OPENAI_HOST, but rule 5
 # delivers OPENAI_BASE_URL with /v1 baked in. Strip the suffix so we
