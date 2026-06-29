@@ -20,20 +20,18 @@ I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
-mkdir -p ~/.codex
-cat > ~/.codex/config.toml <<CONF
-model = "${CODEX_MODEL:-default}"
-model_provider = "eval-containers"
-[model_providers.eval-containers]
-name = "Eval Containers LiteLLM Proxy"
-base_url = "${OPENAI_BASE_URL:-http://model:4000/v1}"
-env_key = "OPENAI_API_KEY"
-[tools]
-web_search = true
-view_image = true
-CONF
+# web_search must be the top-level key (codex ignores [tools].web_search).
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-exec codex exec ${EVAL_AGENT_REASONING_EFFORT:+-c model_reasoning_effort=$EVAL_AGENT_REASONING_EFFORT} --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"
+exec codex exec \
+  --model "${CODEX_MODEL:-default}" \
+  -c model_provider=eval-containers \
+  -c 'model_providers.eval-containers.name="Eval Containers LiteLLM Proxy"' \
+  -c "model_providers.eval-containers.base_url=\"${OPENAI_BASE_URL:-http://model:4000/v1}\"" \
+  -c 'model_providers.eval-containers.env_key="OPENAI_API_KEY"' \
+  -c 'web_search="live"' \
+  -c 'tools.view_image=true' \
+  ${EVAL_AGENT_REASONING_EFFORT:+-c model_reasoning_effort=$EVAL_AGENT_REASONING_EFFORT} \
+  --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]
