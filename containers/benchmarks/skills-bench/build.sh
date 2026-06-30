@@ -6,7 +6,6 @@
 # per-task upstream images exist, so the per-task build is two steps:
 #   1. build the task's environment/Dockerfile (its base + setup) -> the task env
 #   2. overlay our eval pipeline (Dockerfile) on that env
-# Both fetch the upstream task dir at a pinned ref directly (no local checkout).
 # The gold solution is never baked. (benchmarks/RULES.md 24g.)
 #
 # Run by `eval-containers build`/`oracle`/`run` for per-task builds (src/build.rs
@@ -42,12 +41,20 @@ if [ -n "${EVAL_BUILD_CACHE:-}" ] && docker build --help 2>/dev/null | grep -q -
   CACHE_IMG=(--cache-from "${EVAL_BUILD_CACHE}" --cache-to "${EVAL_BUILD_CACHE}")
 fi
 
+# Build from a local checkout: a `docker build <git-url>#subdir` context recurses
+# skillsbench's broken alignment-handbook submodule and fails. A fetch doesn't.
+SRC="$(mktemp -d)"; trap 'rm -rf "${SRC}"' EXIT
+git -C "${SRC}" init -q
+git -C "${SRC}" fetch -q --depth 1 "${REPO}" "${REF}"
+git -C "${SRC}" checkout -q FETCH_HEAD
+TASKDIR="${SRC}/tasks/${TASK}"
+
 echo "[skills-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
-docker build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
+docker build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} -t "${ENVIMG}" "${TASKDIR}/environment"
 
 echo "[skills-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
 docker build ${CACHE_IMG[@]+"${CACHE_IMG[@]}"} -t "${IMAGE}" \
   --build-arg "TASK_BASE=${ENVIMG}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "SB_REF=${REF}" \
-  -f "${HERE}/Dockerfile" "${REPO}#${REF}:tasks/${TASK}"
+  -f "${HERE}/Dockerfile" "${TASKDIR}"
