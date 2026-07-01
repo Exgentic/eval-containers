@@ -4,7 +4,6 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 
 LABEL eval.type="benchmark"
@@ -59,9 +58,38 @@ RUN chmod 600 /tasks/all.jsonl
 WORKDIR /app
 ENV EVAL_BENCHMARK=gaia
 
-# Test: exact match on agent stdout
-COPY --from=test-exact-match /test.sh /grade.sh
-RUN chmod +x /grade.sh
+# Grading: GAIA's own scorer, downloaded (pinned) from the official leaderboard
+# Space -- not vendored -- so gaia grades with the canonical question_scorer and
+# never drifts. huggingface_hub is already used above (dataset); the Space is
+# public, so no token is needed. scorer.py imports numpy but never uses it, and
+# the standalone runtime ships no numpy, so the dead import is stripped to keep
+# the grader stdlib-only. A generic exact-match under-scores correct answers
+# like "right"/"Right", "Extremely."/"Extremely", or "1,000"/"1000".
+RUN python3 -c "from huggingface_hub import hf_hub_download; import shutil; shutil.copy(hf_hub_download('gaia-benchmark/leaderboard', repo_type='space', filename='scorer.py', revision='9f133d71362e77b3539f1514f31b9c101a545fec'), '/gaia_scorer.py')" \
+    && sed -i '/^import numpy/d' /gaia_scorer.py
+RUN cat > /grade.py <<'GAIAEOF'
+import os
+import sys
+
+os.makedirs("/logs/verifier", exist_ok=True)
+reward = 0
+try:
+    sys.path.insert(0, "/")
+    from gaia_scorer import question_scorer  # GAIA's canonical scorer (pinned above)
+
+    with open("/output/agent/stdout.log", encoding="utf-8", errors="replace") as fh:
+        answer = fh.read().strip()
+    expected = os.environ.get("EXPECTED_ANSWER", "")
+    if expected and question_scorer(answer, expected):
+        reward = 1
+except Exception as exc:  # fail closed on any grader error
+    print(f"gaia grader error: {exc}", file=sys.stderr)
+with open("/logs/verifier/reward.txt", "w") as fh:
+    fh.write(f"{reward}\n")
+print(reward)
+GAIAEOF
+
+RUN printf '#!/bin/bash\nexec python3 /grade.py\n' > /grade.sh && chmod +x /grade.sh
 
 # Shared entrypoint (agent → test → results)
 
