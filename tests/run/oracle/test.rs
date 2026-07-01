@@ -26,7 +26,9 @@ mod common;
 /// answer matches itself (substring / token-recall / normalized).
 const SPECIAL: &[(&str, &str)] = &[
     ("swe-bench", "sympy__sympy-24066"), // per-task state grader (apply gold patch to /testbed)
-    ("terminal-bench", "build-cython-ext"), // per-task (Harbor 2.1), built from source (rule 24g)
+    // terminal-bench (build-cython-ext) omitted — its gold runs legacy pyknotid 0.5.3's
+    // own test suite, whose unpinned deps (vispy, networkx, …) have drifted past it, so
+    // the gold can't deterministically score 1.0 through no fault of our grader.
     // per-task pull + own grader (run_script.sh/parser.py); resolve = fail_to_pass+pass_to_pass all PASS
     (
         "swe-bench-pro",
