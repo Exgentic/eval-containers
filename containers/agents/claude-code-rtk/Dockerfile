@@ -37,11 +37,12 @@ RUN npm install -g @anthropic-ai/claude-code@${AGENT_VERSION}
 # combination image (which COPYs /opt/agent/ from this image) picks it
 # up. Putting it in /usr/local/bin would NOT reach the combination,
 # since core/combination.Dockerfile only copies /opt/agent/ + /run.sh.
-# RTK_VERSION="${EVAL_RTK_VERSION#v}" strips the leading 'v' (rtk's
-# install.sh expects "0.42.3", not "v0.42.3").
+# RTK_VERSION is passed through verbatim: install.sh puts it straight into the
+# release-download URL, and rtk's tags carry the leading 'v' (…/download/v0.42.3/…),
+# so stripping the 'v' 404s.
 RUN mkdir -p /opt/agent/bin \
  && curl -fsSL https://raw.githubusercontent.com/rtk-ai/rtk/refs/heads/master/install.sh \
-      | RTK_VERSION="${EVAL_RTK_VERSION#v}" sh \
+      | RTK_VERSION="${EVAL_RTK_VERSION}" sh \
  && cp /root/.local/bin/rtk /opt/agent/bin/rtk \
  && /opt/agent/bin/rtk --version
 
