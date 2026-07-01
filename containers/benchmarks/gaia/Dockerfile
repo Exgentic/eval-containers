@@ -34,7 +34,20 @@ RUN python3 <<'PYEOF'
 import pyarrow.parquet as pq, os, json, base64
 os.makedirs('/tasks', exist_ok=True)
 t = pq.read_table('/tmp/gaia/2023/validation/metadata.parquet')
+
+# Subset filters keyed off GAIA's own "Tools" annotation. A search engine is the
+# one tool the in-pod agent can't drive (codex's web_search is server-side and
+# dead through the gateway), so EVAL_GAIA_SUBSET (see entrypoint) carves out:
+#   no-search -- drop tasks needing a search engine (keep web-fetch + offline)
+#   offline   -- drop any web dependency at all     (attachment + local tools)
+SEARCH = ('search engine', 'web search', 'google search', 'search the web')
+ONLINE = ('browser', 'wikipedia', 'youtube', 'website', 'http', 'online', 'internet')
+def _tools(i):
+    am = t['Annotator Metadata'][i].as_py() or {}
+    return (am.get('Tools', '') or '').lower()
+
 count = 0
+no_search, offline = [], []
 with open('/tasks/all.jsonl', 'w') as out:
     for i in range(len(t)):
         row = {
@@ -49,8 +62,21 @@ with open('/tasks/all.jsonl', 'w') as out:
                 row['attachment_name'] = fname
                 row['attachment_b64'] = base64.b64encode(fh.read()).decode('ascii')
         out.write(json.dumps(row) + '\n')
+        tl = _tools(i)
+        if not any(k in tl for k in SEARCH):
+            no_search.append(i)
+            if not any(k in tl for k in ONLINE):
+                offline.append(i)
         count += 1
-print(f'Wrote {count} tasks')
+
+# Index files map a 0-based subset position -> the real all.jsonl line, so the
+# subsets reuse the single data file (no attachment duplication). The entrypoint
+# remaps EVAL_TASK_ID through these when EVAL_GAIA_SUBSET is set.
+for name, idx in (('no-search', no_search), ('offline', offline)):
+    with open(f'/tasks/gaia-{name}.idx', 'w') as f:
+        f.write('\n'.join(str(i) for i in idx) + '\n')
+print(f'Wrote {count} tasks; subsets: no-search={len(no_search)} offline={len(offline)}')
+assert (count, len(no_search), len(offline)) == (165, 54, 43), 'GAIA subset counts drifted'
 PYEOF
 
 RUN rm -rf /tmp/gaia
@@ -68,6 +94,19 @@ RUN chmod +x /grade.sh
 # Resolve EVAL_TASK_ID to TASK + EXPECTED_ANSWER from materialized files, then exec shared entrypoint
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
+# EVAL_GAIA_SUBSET (all|no-search|offline) selects which task set runs. The
+# subset .idx maps the 0-based EVAL_TASK_ID to a real all.jsonl line, so a -j
+# fan-out spans only that subset (all=165, no-search=54, offline=43).
+SUBSET="${EVAL_GAIA_SUBSET:-all}"
+if [ "$SUBSET" != all ]; then
+  IDX="/tasks/gaia-${SUBSET}.idx"
+  [ -f "$IDX" ] || { echo "gaia: unknown EVAL_GAIA_SUBSET='$SUBSET' (want all|no-search|offline)" >&2; exit 2; }
+  if [ -n "$EVAL_TASK_ID" ]; then
+    REAL=$(sed -n "$((EVAL_TASK_ID + 1))p" "$IDX")
+    [ -n "$REAL" ] || { echo "gaia: EVAL_TASK_ID=$EVAL_TASK_ID out of range for '$SUBSET' ($(wc -l < "$IDX") tasks)" >&2; exit 2; }
+    export EVAL_TASK_ID="$REAL"
+  fi
+fi
 /eval-materialize-task
 if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/attachment_b64.txt ]; then
   python3 - <<'PY'
