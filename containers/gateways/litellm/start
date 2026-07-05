@@ -27,7 +27,7 @@ CONFIG=/opt/gateway/config.yaml
 
 if [ -f "$TEMPLATE" ]; then
   : "${EVAL_MODEL:?EVAL_MODEL must be set to <provider>/<model>}"
-  envsubst '${EVAL_MODEL}' < "$TEMPLATE" > "$CONFIG"
+  sed -e "s|\${EVAL_MODEL}|$EVAL_MODEL|g" < "$TEMPLATE" > "$CONFIG"
 fi
 
 # Caddy in background — listens on $PORT, forwards to litellm:4001.

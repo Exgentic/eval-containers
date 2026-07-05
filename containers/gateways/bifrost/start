@@ -49,9 +49,11 @@ if [ -f "$TEMPLATE" ]; then
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
   export OTEL_COLLECTOR_URL
 
-  # Explicit var list so envsubst leaves bifrost's own $schema key alone.
-  envsubst '${PROVIDER} ${MODEL_NAME} ${OPENAI_API_BASE} ${OTEL_COLLECTOR_URL}' \
-    < "$TEMPLATE" > "$CONFIG"
+  sed -e "s|\${PROVIDER}|${PROVIDER-}|g" \
+      -e "s|\${MODEL_NAME}|${MODEL_NAME-}|g" \
+      -e "s|\${OPENAI_API_BASE}|${OPENAI_API_BASE-}|g" \
+      -e "s|\${OTEL_COLLECTOR_URL}|${OTEL_COLLECTOR_URL-}|g" \
+      < "$TEMPLATE" > "$CONFIG"
 fi
 
 exec /opt/gateway/main \
