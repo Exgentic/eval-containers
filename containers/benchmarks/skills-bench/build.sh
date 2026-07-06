@@ -31,16 +31,6 @@ REF="${SKILLS_BENCH_REF:-312d07e15e5398f6eda32ee1bb86e492ab18edd1}"
 REPO="https://github.com/benchflow-ai/skillsbench.git"
 ENVIMG="localhost/skills-bench-env:${TASK}"
 
-# Optional cross-run registry layer cache. CI sets EVAL_BUILD_CACHE to a registry
-# ref; local CLI builds leave it unset (no cache, unchanged). Auto-skipped if this
-# docker lacks --cache-to (buildkit only), so there's no hard version dependency. The
-# `${arr[@]+...}` form is empty-array-safe under `set -u` on bash 3.2 (macOS).
-CACHE_ENV=(); CACHE_IMG=()
-if [ -n "${EVAL_BUILD_CACHE:-}" ] && docker build --help 2>/dev/null | grep -q -- '--cache-to'; then
-  CACHE_ENV=(--cache-from "${EVAL_BUILD_CACHE}-env" --cache-to "${EVAL_BUILD_CACHE}-env")
-  CACHE_IMG=(--cache-from "${EVAL_BUILD_CACHE}" --cache-to "${EVAL_BUILD_CACHE}")
-fi
-
 # Build from a local checkout: a `docker build <git-url>#subdir` context recurses
 # skillsbench's broken alignment-handbook submodule and fails. A fetch doesn't.
 SRC="$(mktemp -d)"; trap 'rm -rf "${SRC}"' EXIT
@@ -50,10 +40,10 @@ git -C "${SRC}" checkout -q FETCH_HEAD
 TASKDIR="${SRC}/tasks/${TASK}"
 
 echo "[skills-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
-docker build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} -t "${ENVIMG}" "${TASKDIR}/environment"
+docker build -t "${ENVIMG}" "${TASKDIR}/environment"
 
 echo "[skills-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
-docker build ${CACHE_IMG[@]+"${CACHE_IMG[@]}"} -t "${IMAGE}" \
+docker build -t "${IMAGE}" \
   --build-arg "TASK_BASE=${ENVIMG}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "SB_REF=${REF}" \

@@ -29,21 +29,11 @@ REF=c5ee500c185224c97cd6caff7866a990a0057f41
 REPO="https://github.com/harbor-framework/terminal-bench-2-1.git"
 ENVIMG="localhost/tbench-env:${TASK}"
 
-# Optional cross-run registry layer cache. CI sets EVAL_BUILD_CACHE to a registry
-# ref; local CLI builds leave it unset (no cache, unchanged). Auto-skipped if this
-# docker lacks --cache-to (buildkit only), so there's no hard version dependency. The
-# `${arr[@]+...}` form is empty-array-safe under `set -u` on bash 3.2 (macOS).
-CACHE_ENV=(); CACHE_IMG=()
-if [ -n "${EVAL_BUILD_CACHE:-}" ] && docker build --help 2>/dev/null | grep -q -- '--cache-to'; then
-  CACHE_ENV=(--cache-from "${EVAL_BUILD_CACHE}-env" --cache-to "${EVAL_BUILD_CACHE}-env")
-  CACHE_IMG=(--cache-from "${EVAL_BUILD_CACHE}" --cache-to "${EVAL_BUILD_CACHE}")
-fi
-
 echo "[terminal-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
-docker build ${CACHE_ENV[@]+"${CACHE_ENV[@]}"} -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
+docker build -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
 
 echo "[terminal-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
-docker build ${CACHE_IMG[@]+"${CACHE_IMG[@]}"} -t "${IMAGE}" \
+docker build -t "${IMAGE}" \
   --build-arg "TASK_BASE=${ENVIMG}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "TBENCH_REF=${REF}" \
