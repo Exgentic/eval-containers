@@ -54,9 +54,6 @@ FROM eval-base
 
 # ─── Gateway layer (uniform /opt/gateway/ contract) ──────────────────
 COPY --from=model /opt/gateway /opt/gateway
-# The gateway's start script needs envsubst (gettext-base) + curl at runtime;
-# both now ship in the benchmark base, so this layer stays pure COPY — no
-# per-combo apt (that emulated install under QEMU was the combo-build bottleneck).
 
 # ─── OTel collector layer ────────────────────────────────────────────
 COPY --from=otel /otelcol                 /usr/local/bin/otelcol
