@@ -420,11 +420,10 @@ jobs:
             if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
             echo "::group::$ref ($KIND)"
             if [ "$KIND" = "script" ]; then
-              # build.sh turns on podman --cache-to/from when EVAL_BUILD_CACHE is set.
               # It builds native (per-arch); push only if the built arch matches this
               # runner — a task whose upstream pins a different arch is skipped so the
               # merge keeps it single-arch (never a mislabeled :TAG-<arch>).
-              if EVAL_BUILD_CACHE="$cache" retry bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK"; then
+              if retry bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK"; then
                 built=$(podman image inspect "$ref" --format '{{.Architecture}}' 2>/dev/null || echo unknown)
                 if [ "$built" = "$ARCH" ]; then
                   retry podman push "$ref" || { echo "::error::push failed: $ref"; fails=$((fails+1)); }
