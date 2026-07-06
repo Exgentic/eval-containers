@@ -298,6 +298,57 @@ fn static_portkey_has_no_bundled_bifrost_config() {
     );
 }
 
+/// Every `${VAR}` in a config template must be substituted by its gateway's start
+/// script — else adding a template var but forgetting the render ships it unresolved
+/// (a valid-looking config, so the boot tests wouldn't catch it).
+#[test]
+fn static_gateway_render_substitutes_every_template_var() {
+    for (template, start) in [
+        (
+            "containers/models/bifrost/config.json.template",
+            "containers/gateways/bifrost/start",
+        ),
+        (
+            "containers/models/litellm/config.yaml.template",
+            "containers/gateways/litellm/start",
+        ),
+    ] {
+        let root = test_support::repo_root();
+        let tmpl = std::fs::read_to_string(root.join(template)).unwrap();
+        let render = std::fs::read_to_string(root.join(start)).unwrap();
+        let vars = placeholder_vars(&tmpl);
+        assert!(
+            !vars.is_empty(),
+            "{template} — no ${{...}} placeholders found (parser or template broke)"
+        );
+        for var in vars {
+            assert!(
+                render.contains(&format!("${{{var}}}")),
+                "{template} uses ${{{var}}} but {start} never substitutes it — it would render unresolved"
+            );
+        }
+    }
+}
+
+/// Distinct `${NAME}` placeholder names in `s`.
+fn placeholder_vars(s: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = s;
+    while let Some(i) = rest.find("${") {
+        rest = &rest[i + 2..];
+        let Some(j) = rest.find('}') else { break };
+        let name = &rest[..j];
+        if !name.is_empty()
+            && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            && !out.iter().any(|v| v.as_str() == name)
+        {
+            out.push(name.to_string());
+        }
+        rest = &rest[j + 1..];
+    }
+    out
+}
+
 #[test]
 fn static_portkey_caddyfile_returns_501_on_anthropic_and_genai() {
     let cf = std::fs::read_to_string(
