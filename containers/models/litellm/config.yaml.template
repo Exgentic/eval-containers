@@ -1,5 +1,5 @@
 # Provider-agnostic litellm config. EVAL_MODEL=<provider>/<model>
-# (envsubst'd at startup) tells litellm which provider plugin to dispatch
+# (rendered at startup) tells litellm which provider plugin to dispatch
 # to and which upstream model name to use. Upstream credentials are read
 # via `os.environ/VAR` — by provider-native names, whatever the user's
 # SDK conventionally reads (OPENAI_API_KEY+OPENAI_API_BASE for OpenAI-
