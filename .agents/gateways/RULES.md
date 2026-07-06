@@ -27,7 +27,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 3a. **Agent-side env vars are SDK placeholders, set by the eval image.** Agents inside the eval image consult provider-native env vars to satisfy their SDK's startup requirements (`OPENAI_API_KEY=sk-proxy`, `ANTHROPIC_API_KEY=sk-proxy`, `GEMINI_API_KEY=sk-proxy`). The value is a placeholder because the agent talks to the local gateway (which accepts any auth header), not the real provider. Eval images MUST set these placeholders so each SDK boots; the gateway's upstream credentials are read from the *gateway* container's env, populated separately at deploy time (k8s Secret, compose `env_file`, etc.).
 
-4. **Configuration as template.** Where the gateway requires a static config file (`config.json`, `config.yaml`, etc.), the image MUST ship the file as a `.template` with `${VAR}` placeholders. The `start` script MUST render the live config via `envsubst` (or equivalent) at container startup, before launching the gateway process. Hardcoded provider blocks, model names, or URLs in the committed template are forbidden. Credential refs MUST point to provider-native env vars (per rule 3), not framework aliases.
+4. **Configuration as template.** Where the gateway requires a static config file (`config.json`, `config.yaml`, etc.), the image MUST ship the file as a `.template` with `${VAR}` placeholders. The `start` script MUST render the live config from the template at container startup, before launching the gateway process. Hardcoded provider blocks, model names, or URLs in the committed template are forbidden. Credential refs MUST point to provider-native env vars (per rule 3), not framework aliases.
 
 ### Path-Prefix Protocol Namespace
 
@@ -123,3 +123,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 |------|--------|
 | 2026-05-17 | Initial version. Defines provider-agnostic gateway images, the `/<protocol>/<path>` URL namespace, the `EVAL_MODEL=<provider>/<model>` env contract, and the gateway↔model separation (gateways/ holds implementations, models/ holds pre-built combos). |
 | 2026-05-18 | Rule 2a added: gateways MUST work with any model out of the box (one-env-var swap, no rebuild). Rule 16 rewritten: `models/<model>--<gateway>` combo images are OPTIONAL convenience wrappers, MUST equal bare-gateway-plus-mounted-template behavior. |
+| 2026-07-06 | Rule 4 reworded: the `start` script renders config "from the template" at startup; the rule no longer names a specific render tool (gateways render with POSIX `sed`). |

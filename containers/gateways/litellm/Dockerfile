@@ -57,7 +57,7 @@ LABEL gateway.translates_protocols="true"
 # eval image (FROM benchmark-base-hf, debian) already has it; we add
 # it here so the same /opt/gateway/health works when this image runs
 # standalone in compose mode.
-RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates gettext-base \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 # Caddy: tiny shim that maps the framework's protocol-namespaced URLs

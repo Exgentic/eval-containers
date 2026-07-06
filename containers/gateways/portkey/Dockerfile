@@ -31,7 +31,7 @@ LABEL gateway.portkey_version="${PORTKEY_VERSION}"
 LABEL gateway.translates_protocols="false"
 LABEL gateway.protocols="openai"
 
-RUN apk add --no-cache ca-certificates curl gettext
+RUN apk add --no-cache ca-certificates curl
 
 # Caddy: path-prefix + header-injection shim.
 COPY --from=docker.io/library/caddy:2.8-alpine /usr/bin/caddy /usr/bin/caddy

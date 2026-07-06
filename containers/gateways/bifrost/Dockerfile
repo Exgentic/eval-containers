@@ -14,7 +14,7 @@
 #   /opt/gateway/data/                 also where bifrost writes its SQLite
 #
 # Honest size: ~105 MB. The Go binary is statically linked, ca-certs +
-# envsubst are the only runtime deps. UI is `go:embed`-ed into the
+# curl are the only runtime deps. UI is `go:embed`-ed into the
 # binary unconditionally upstream (no flag to strip without forking).
 #
 # Bifrost natively exposes the framework's path-prefix namespace
@@ -32,7 +32,7 @@ LABEL gateway.kind="bifrost"
 LABEL gateway.bifrost_version="${BIFROST_VERSION}"
 LABEL gateway.translates_protocols="true"
 
-RUN apk add --no-cache ca-certificates curl gettext
+RUN apk add --no-cache ca-certificates curl
 
 # Pull just the binary out of the upstream distribution. The /app/data
 # directory and the dashboard's docker-entrypoint.sh are not copied —
