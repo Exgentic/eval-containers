@@ -190,7 +190,13 @@ fn canonicalize(attrs: &Map<String, Value>) -> Turn {
         }
     }
     if finish_reason.is_empty() {
-        finish_reason = "stop".into();
+        // A turn with tool calls must signal tool-use, or a client like claude-code
+        // sees end_turn, stops, and never runs the tool. Text-only turns still stop.
+        finish_reason = if tool_calls.is_empty() {
+            "stop".into()
+        } else {
+            "tool_calls".into()
+        };
     }
 
     let model = attrs
@@ -311,12 +317,17 @@ fn tool_parts(tc: &Value, prefix: &str) -> (Value, Value, Value) {
         .get("id")
         .cloned()
         .unwrap_or_else(|| json!(gen_id(prefix)));
+    // Also read the flat Responses/bifrost shape (`{…, name, args}`), not only the
+    // Chat `function.{name,arguments}` nesting — else the call is served empty.
     let name = func
         .and_then(|f| f.get("name"))
+        .or_else(|| tc.get("name"))
         .cloned()
         .unwrap_or_else(|| json!(""));
     let args = func
         .and_then(|f| f.get("arguments"))
+        .or_else(|| tc.get("arguments"))
+        .or_else(|| tc.get("args"))
         .cloned()
         .unwrap_or_else(|| json!("{}"));
     (id, name, args)
@@ -931,6 +942,72 @@ mod tests {
         assert_eq!(id2, json!("x"));
         assert_eq!(name2, json!("n"));
         assert_eq!(args2, json!("{\"a\":1}"));
+    }
+
+    #[test]
+    fn tool_parts_reads_flat_name_args_shape() {
+        // Flat Responses/bifrost shape: name/args at the top level, no `function` nest.
+        let (id, name, args) = tool_parts(
+            &json!({"id":"fc_1","type":"function","name":"Read","args":"{\"file_path\":\"/app/x.go\"}"}),
+            "call_",
+        );
+        assert_eq!(id, json!("fc_1"));
+        assert_eq!(name, json!("Read"));
+        assert_eq!(args, json!("{\"file_path\":\"/app/x.go\"}"));
+        // Flat with the full `arguments` key (not the `args` shorthand) also works.
+        let (_, name2, args2) =
+            tool_parts(&json!({"id":"c","name":"Edit","arguments":"{}"}), "call_");
+        assert_eq!(name2, json!("Edit"));
+        assert_eq!(args2, json!("{}"));
+    }
+
+    #[test]
+    fn emitters_read_flat_tool_call_shape() {
+        // The flat shape must survive the Anthropic + Responses emitters, not just tool_parts.
+        let t = Turn {
+            text: String::new(),
+            tool_calls: vec![
+                json!({"id":"fc_1","type":"function","name":"Read","args":"{\"file_path\":\"/app/x.go\"}"}),
+            ],
+            finish_reason: "tool_calls".into(),
+            model: "m".into(),
+        };
+        let anth = emit_anthropic(&t);
+        assert_eq!(anth["content"][0]["type"], "tool_use");
+        assert_eq!(anth["content"][0]["name"], "Read");
+        assert_eq!(anth["content"][0]["input"]["file_path"], "/app/x.go");
+        assert_eq!(emit_responses(&t)["output"][0]["name"], "Read");
+    }
+
+    #[test]
+    fn tool_turn_without_finish_reason_signals_tool_use() {
+        // A tool-call turn with no recorded finish_reason must still signal tool_use.
+        let out = json!([{"role":"assistant","content":"",
+            "tool_calls":[{"id":"fc_1","type":"function","name":"Write","args":"{}"}]}])
+        .to_string();
+        let line = one_line(
+            json!([
+                attr("gen_ai.output.messages", &out),
+                attr("gen_ai.response.id", "r1"),
+            ]),
+            1,
+            "100",
+        );
+        let turns = parse_turns(&line);
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].finish_reason, "tool_calls");
+        assert_eq!(emit_anthropic(&turns[0])["stop_reason"], "tool_use");
+        // A text-only turn with no finish_reason still defaults to a plain stop.
+        let txt = json!([{"role":"assistant","content":"done"}]).to_string();
+        let line2 = one_line(
+            json!([
+                attr("gen_ai.output.messages", &txt),
+                attr("gen_ai.response.id", "r2"),
+            ]),
+            1,
+            "100",
+        );
+        assert_eq!(parse_turns(&line2)[0].finish_reason, "stop");
     }
 
     #[test]
