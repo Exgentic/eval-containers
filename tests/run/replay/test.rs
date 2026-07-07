@@ -1438,3 +1438,10 @@ replay_test!(
     "0"
 );
 replay_test!(replay_gaia_0_claude_code, "gaia", "claude-code", "0");
+replay_test!(replay_gaia_5_codex, "gaia", "codex", "5");
+replay_test!(
+    replay_aider_polyglot_29_claude_code,
+    "aider-polyglot",
+    "claude-code",
+    "29"
+);
