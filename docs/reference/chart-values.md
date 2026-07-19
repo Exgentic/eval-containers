@@ -36,7 +36,8 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | Field | Default |
 |---|---|
 | `timeout` | `"300"` |
-| `activeDeadlineSeconds` | `900` |
+| `deadlineGrace` | `600` |
+| `activeDeadlineSeconds` | `""` (derives from `timeout + deadlineGrace`) |
 | `runnerArgs` | `/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc` |
 | `resources.requests` | `{ cpu: 500m, memory: 512Mi }` |
 | `resources.limits` | `{ cpu: 2, memory: 2Gi }` |

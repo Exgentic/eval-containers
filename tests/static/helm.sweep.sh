@@ -83,5 +83,15 @@ if ! cf=$(conftest test "$OUT"/*.yaml --policy "$POLICY" 2>&1); then
   fail=$((fail + 1))
 fi
 
+# 5. the pod backstop must track --timeout, not a fixed constant: a larger
+# --timeout must not be killed early by a stale activeDeadlineSeconds (the
+# derivation regression — see containers/benchmarks/_chart/values.yaml).
+dl=$(helm template deadline-probe "$CHART" --set benchmark=humaneval --set timeout=3000 2>/dev/null |
+  awk '/activeDeadlineSeconds:/{print $2; exit}')
+if [ "${dl:-0}" -le 3000 ]; then
+  echo "FAIL deadline: --timeout 3000 rendered activeDeadlineSeconds=${dl:-<none>} (<=3000) — backstop would kill the run before its own timeout"
+  fail=$((fail + 1))
+fi
+
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]
