@@ -38,7 +38,7 @@ spec:
   backoffLimit: 0
   {{- end }}
   ttlSecondsAfterFinished: 3600
-  activeDeadlineSeconds: {{ $v.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ $v.activeDeadlineSeconds | default (add (int $v.timeout) (int $v.deadlineGrace)) }}
   template:
     metadata:
       labels:
