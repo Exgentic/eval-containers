@@ -27,8 +27,8 @@ services:
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}
-      # No default: a generic gateway errors if this <provider>/<model> handle is
-      # unset; a pinned per-model image bakes its model and ignores it.
+      # The model authority: a generic gateway pins to this handle. Unset ->
+      # passthrough (client model); a pinned per-model image bakes its own.
       EVAL_MODEL: ${EVAL_MODEL}
       HOST: 0.0.0.0
       # Both gateway flavors emit OTel: bifrost via its native `otel`

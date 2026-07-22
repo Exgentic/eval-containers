@@ -18,8 +18,10 @@
 # binary unconditionally upstream (no flag to strip without forking).
 #
 # Bifrost natively exposes the framework's path-prefix namespace
-# (/anthropic/v1/messages, /openai/v1/chat/completions, ...) so no
-# Caddy shim is needed (cf. gateways/litellm/ which does need one).
+# (/anthropic/v1/messages, /openai/v1/chat/completions, ...). A tiny nginx
+# shim (~2 MB) fronts it only to stamp the inbound wire into an X-Eval-Wire
+# header: bifrost governance can't see the request path/provider in a CEL rule,
+# so the native-pin rules key on that header to pin on the incoming wire.
 # One ARG drives both the pull and the label so they can't drift (principle 9).
 # Named stage because `COPY --from=` can't take an `${ARG}`.
 ARG BIFROST_VERSION=v1.5.15
@@ -32,7 +34,7 @@ LABEL gateway.kind="bifrost"
 LABEL gateway.bifrost_version="${BIFROST_VERSION}"
 LABEL gateway.translates_protocols="true"
 
-RUN apk add --no-cache ca-certificates curl
+RUN apk add --no-cache ca-certificates curl nginx
 
 # Pull just the binary out of the upstream distribution. The /app/data
 # directory and the dashboard's docker-entrypoint.sh are not copied —
@@ -40,6 +42,7 @@ RUN apk add --no-cache ca-certificates curl
 COPY --from=bifrost-bin /app/main /opt/gateway/main
 COPY start  /opt/gateway/start
 COPY health /opt/gateway/health
+COPY nginx.conf /etc/nginx/nginx.conf
 RUN chmod +x /opt/gateway/start /opt/gateway/health /opt/gateway/main \
  && mkdir -p /opt/gateway/data
 

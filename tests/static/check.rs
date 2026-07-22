@@ -489,6 +489,12 @@ fn model_axis_generic_default_no_silent_model() {
         !svc.contains("${EVAL_MODEL:-"),
         "services.yaml must not default EVAL_MODEL to a baked handle — no silent fallback model (#187)"
     );
+    // The gateway is the model authority: it must receive EVAL_MODEL to pin
+    // (agents send a placeholder). Dropping this env is the passthrough-no-pin regression.
+    assert!(
+        svc.contains("EVAL_MODEL: ${EVAL_MODEL}"),
+        "services.yaml gateway must pass EVAL_MODEL through so it can pin the model (#269)"
+    );
 
     // Both paths exist. The generic gateways are present…
     for g in ["bifrost", "litellm", "portkey"] {
