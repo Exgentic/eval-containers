@@ -13,6 +13,7 @@ open-interpreter
 openclaw
 opencode
 openhands
+pi
 plandex
 qwen-code
 ra-aid
