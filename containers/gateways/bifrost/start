@@ -1,20 +1,20 @@
 #!/bin/sh
-# Start the bifrost gateway. Renders config.json from config.json.template,
-# parsing EVAL_MODEL=<provider>/<model> for the provider name and the
-# upstream model name to route to.
+# Start the bifrost gateway. Renders config.json from config.json.template.
+#
+# Modes, rendered into the governance block:
+#   EVAL_MODEL_API set  -> WIRE OVERRIDE: force that wire, pin EVAL_MODEL if set.
+#   else EVAL_MODEL set -> NATIVE PIN: pin on the inbound wire — nginx stamps
+#                          X-Eval-Wire from the path, one rule per provider keys
+#                          on it (bifrost governance can't see the path itself).
+#   else                -> passthrough (client model + native routing).
 #
 # Env contract:
-#   EVAL_MODEL        <provider>/<model> for the routing target.
-#   PORT, HOST        bind address (default 4000, 127.0.0.1).
-#   LOG_LEVEL         bifrost log level (default info).
-#
-# Upstream auth is whatever env vars the chosen provider's SDK reads —
-# OPENAI_API_KEY (+ OPENAI_API_BASE) for OpenAI-compatible endpoints,
-# ANTHROPIC_API_KEY for Anthropic direct, AWS_ACCESS_KEY_ID + AWS_SECRET
-# for Bedrock, GOOGLE_APPLICATION_CREDENTIALS for Vertex, etc. The
-# gateway and its config template read these by their native names; the
-# framework does NOT introduce an umbrella `EVAL_API_*` alias (see
-# gateways/RULES.md rule 3).
+#   EVAL_MODEL      target model, a BARE handle (e.g. aws/claude-opus-4-8).
+#   EVAL_MODEL_API  OPTIONAL wire override: anthropic | openai | gemini.
+#   OPENAI_API_BASE upstream root; each provider appends its native path.
+#   LOG_LEVEL       bifrost log level (default info).
+# Upstream auth is the provider-native env var (OPENAI_API_KEY etc.) — no
+# umbrella alias (gateways/RULES.md rule 3).
 
 set -eu
 
@@ -22,43 +22,48 @@ TEMPLATE=/opt/gateway/data/config.json.template
 CONFIG=/opt/gateway/data/config.json
 
 if [ -f "$TEMPLATE" ]; then
-  : "${EVAL_MODEL:?EVAL_MODEL must be set to <provider>/<model>}"
-
-  # Split EVAL_MODEL=<provider>/<rest> on the FIRST slash only.
-  case "$EVAL_MODEL" in
-    */*)
-      PROVIDER=${EVAL_MODEL%%/*}
-      MODEL_NAME=${EVAL_MODEL#*/}
-      ;;
-    *)
-      echo "EVAL_MODEL must be of form <provider>/<model> (got: $EVAL_MODEL)" >&2
-      exit 2
-      ;;
+  # Build the governance block: a single pin rule in translate mode, empty in
+  # passthrough mode. JSON on one line so it substitutes as a single sed value.
+  case "${EVAL_MODEL_API:-}" in
+    ""|anthropic|openai|gemini) ;;
+    *) echo "EVAL_MODEL_API must be anthropic|openai|gemini (got: $EVAL_MODEL_API)" >&2; exit 2 ;;
   esac
-  export PROVIDER MODEL_NAME
 
-  # Derive bifrost's full collector URL from the standard OTel base
-  # endpoint ($OTEL_EXPORTER_OTLP_ENDPOINT — same env var the litellm
-  # gateway, the agent runner, and every other OTel-aware component
-  # reads). Bifrost's plugin config wants the full /v1/traces path; we
-  # append it here so callers only need to set the base URL.
-  #
-  # Compose mode: OTEL_EXPORTER_OTLP_ENDPOINT=http://otelcol:4318
-  # K8s pod-with-sidecars: OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+  if [ -n "${EVAL_MODEL_API:-}" ]; then
+    # WIRE OVERRIDE: one cel="true" rule forces EVAL_MODEL_API; pin the model if set.
+    if [ -n "${EVAL_MODEL:-}" ]; then MODEL=", \"model\": \"${EVAL_MODEL}\""; else MODEL=""; fi
+    RULES="{ \"id\": \"pin\", \"name\": \"pin\", \"enabled\": true, \"scope\": \"global\", \"priority\": 1, \"cel_expression\": \"true\", \"targets\": [{ \"provider\": \"${EVAL_MODEL_API}\"${MODEL}, \"weight\": 1.0 }] }"
+    GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}] },"
+  elif [ -n "${EVAL_MODEL:-}" ]; then
+    # NATIVE PIN: pin the model on the inbound wire. nginx stamps X-Eval-Wire from
+    # the path; one rule per provider keys on it (mutually exclusive).
+    RULES=""; pr=0
+    for p in anthropic openai gemini; do
+      pr=$((pr + 1))
+      [ -n "$RULES" ] && RULES="$RULES, "
+      RULES="$RULES{ \"id\": \"pin-$p\", \"name\": \"pin-$p\", \"enabled\": true, \"scope\": \"global\", \"priority\": $pr, \"cel_expression\": \"headers['x-eval-wire'] == '$p'\", \"targets\": [{ \"provider\": \"$p\", \"model\": \"${EVAL_MODEL}\", \"weight\": 1.0 }] }"
+    done
+    GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}] },"
+  else
+    GOVERNANCE=""
+  fi
+
   : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
-  export OTEL_COLLECTOR_URL
 
-  sed -e "s|\${PROVIDER}|${PROVIDER-}|g" \
-      -e "s|\${MODEL_NAME}|${MODEL_NAME-}|g" \
+  sed -e "s|\${GOVERNANCE}|${GOVERNANCE}|g" \
       -e "s|\${OPENAI_API_BASE}|${OPENAI_API_BASE-}|g" \
-      -e "s|\${OTEL_COLLECTOR_URL}|${OTEL_COLLECTOR_URL-}|g" \
+      -e "s|\${OTEL_COLLECTOR_URL}|${OTEL_COLLECTOR_URL}|g" \
       < "$TEMPLATE" > "$CONFIG"
 fi
 
+# nginx shim on :4000 stamps the inbound wire into X-Eval-Wire (see nginx.conf);
+# bifrost listens on loopback :4001 behind it. The world reaches nginx.
+nginx
+
 exec /opt/gateway/main \
   -app-dir /opt/gateway/data \
-  -port "${PORT:-4000}" \
-  -host "${HOST:-127.0.0.1}" \
+  -port 4001 \
+  -host 127.0.0.1 \
   -log-level "${LOG_LEVEL:-info}" \
   -log-style json

@@ -1,39 +1,20 @@
 {
   "$schema": "https://www.getbifrost.ai/schema",
   "providers": {
-    "evalupstream": {
-      "keys": [
-        { "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }
-      ],
-      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true },
-      "custom_provider_config": {
-        "base_provider_type": "openai",
-        "allowed_requests": {
-          "chat_completion": true,
-          "chat_completion_stream": true,
-          "responses": true,
-          "responses_stream": true,
-          "text_completion": true,
-          "text_completion_stream": true,
-          "count_tokens": true
-        }
-      }
+    "anthropic": {
+      "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
+      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true }
+    },
+    "openai": {
+      "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
+      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true }
+    },
+    "gemini": {
+      "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
+      "network_config": { "base_url": "${OPENAI_API_BASE}/v1beta", "allow_private_network": true }
     }
   },
-  "governance": {
-    "routing_rules": [
-      {
-        "id": "rewrite-to-upstream",
-        "name": "rewrite-to-upstream",
-        "enabled": true,
-        "cel_expression": "true",
-        "scope": "global",
-        "targets": [
-          { "provider": "evalupstream", "model": "${MODEL_NAME}", "weight": 1.0 }
-        ]
-      }
-    ]
-  },
+  ${GOVERNANCE}
   "plugins": [
     {
       "enabled": true,
