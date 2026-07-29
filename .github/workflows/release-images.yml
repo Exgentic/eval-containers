@@ -595,7 +595,15 @@ jobs:
               PLAT="linux/amd64"              # heavy per-task base × arm64-via-QEMU hangs → amd64-only
             else                              # shared combo: evals/<b>--<a>
               eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
-              PLAT="linux/amd64,linux/arm64" # light overlay → multi-arch is fine
+              # A combo can't cover an arch its base lacks — some benchmark bases
+              # are published amd64-only. Intersect {amd64,arm64} with what the
+              # base actually carries so the overlay bake matches it (a hardcoded
+              # multi-arch PLAT dies "no match for platform" on an amd64-only base).
+              base_raw=$(docker buildx imagetools inspect "$bench_img" --raw 2>&1 || true)
+              PLAT=""
+              printf '%s' "$base_raw" | grep -q '"amd64"' && PLAT="linux/amd64"
+              printf '%s' "$base_raw" | grep -q '"arm64"' && PLAT="${PLAT:+$PLAT,}linux/arm64"
+              PLAT="${PLAT:-linux/amd64}" # fall back to amd64 if inspect is unreadable
             fi
             if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "${REGISTRY}/evals/${eb}--${A}:${TAG}" >/dev/null 2>&1; then echo "skip-published: evals/${eb}--${A}"; continue; fi
             # eval = lean base (sidecar mode); eval-standalone = single-container
