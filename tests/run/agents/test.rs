@@ -96,6 +96,7 @@ const AGENTS: &[&str] = &[
     "openclaw",
     "opencode",
     "openhands",
+    "pi",
     "plandex",
     "qwen-code",
     "ra-aid",
@@ -398,6 +399,7 @@ agent_smoke!(agent_open_interpreter, "open-interpreter");
 agent_smoke!(agent_openclaw, "openclaw");
 agent_smoke!(agent_opencode, "opencode");
 agent_smoke!(agent_openhands, "openhands");
+agent_smoke!(agent_pi, "pi");
 agent_smoke!(agent_qwen_code, "qwen-code");
 agent_smoke!(agent_ra_aid, "ra-aid");
 agent_smoke!(agent_swe_agent, "swe-agent");
@@ -411,4 +413,4 @@ agent_smoke!(agent_zerostack, "zerostack");
 // also bumping this literal). It does NOT catch the reverse — an
 // agent_smoke! without an AGENTS entry just adds a test. The list above
 // is the documented roster; the macro invocations are the test surface.
-const _: () = assert!(AGENTS.len() == 21);
+const _: () = assert!(AGENTS.len() == 22);
