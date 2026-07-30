@@ -1,31 +1,22 @@
 # Stamp the inbound wire into X-Eval-Wire from the path prefix, then proxy to
-# bifrost on :4001. bifrost's governance rules key on this header to pin on the
-# incoming wire (its CEL can't see the request path). `header_up` REPLACES the
-# field, so a client can't spoof it. Default (unprefixed) → openai, so an
-# unexpected path still resolves a provider (fail-safe, not "provider not found").
+# bifrost on :4001. bifrost's governance rules key on this header (its CEL can't
+# see the path). header_up REPLACES the field, so a client can't spoof it.
+# Default (unprefixed) → openai, so an unexpected path still resolves a provider.
 {
 	admin off
 	log {
-		output discard
+		output stderr
+		level ERROR
 	}
 }
 
 :4000 {
-	@anthropic path /anthropic/*
-	@genai path /genai/*
-	handle @anthropic {
-		reverse_proxy 127.0.0.1:4001 {
-			header_up X-Eval-Wire anthropic
-		}
+	map {path} {wire} {
+		~^/anthropic/  anthropic
+		~^/genai/      gemini
+		default        openai
 	}
-	handle @genai {
-		reverse_proxy 127.0.0.1:4001 {
-			header_up X-Eval-Wire gemini
-		}
-	}
-	handle {
-		reverse_proxy 127.0.0.1:4001 {
-			header_up X-Eval-Wire openai
-		}
+	reverse_proxy 127.0.0.1:4001 {
+		header_up X-Eval-Wire {wire}
 	}
 }

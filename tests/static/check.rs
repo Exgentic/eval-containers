@@ -839,44 +839,31 @@ fn build_scripts_use_docker_not_podman() {
     );
 }
 
-/// The single-container `-standalone` bundle pulls the gateway in with exactly one
-/// `COPY --from=model /opt/gateway /opt/gateway` (core/standalone.Dockerfile), so any
-/// shim the gateway's `start` launches MUST live under /opt/gateway — otherwise it
-/// works in compose but fails `not found` in the bundle. Regression guard: #269 put
-/// nginx at /usr/sbin (musl), which neither survives the copy nor runs on the glibc
-/// standalone base; the fix is the static caddy under /opt/gateway.
+/// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
+/// carries the gateway with one `COPY /opt/gateway`, so a shim outside it fails
+/// `not found` at boot (regression: #269's nginx at /usr/sbin broke every bundle).
 #[test]
 fn gateway_shim_lives_under_opt_gateway() {
-    for gw in ["bifrost", "litellm"] {
-        let start = fs::read_to_string(repo_root().join(format!("containers/gateways/{gw}/start")))
-            .unwrap_or_else(|_| panic!("missing gateways/{gw}/start"));
-        let df =
-            fs::read_to_string(repo_root().join(format!("containers/gateways/{gw}/Dockerfile")))
-                .unwrap_or_else(|_| panic!("missing gateways/{gw}/Dockerfile"));
+    // Non-comment lines of a shell/Dockerfile.
+    let code = |t: &str| -> Vec<String> {
+        t.lines()
+            .map(|l| l.trim_start().to_string())
+            .filter(|l| !l.starts_with('#'))
+            .collect()
+    };
+    for (gw, dir) in sibling_dirs("gateways") {
+        let start = code(&fs::read_to_string(dir.join("start")).unwrap_or_default()).join("\n");
+        let df = code(&fs::read_to_string(dir.join("Dockerfile")).unwrap_or_default()).join("\n");
         if start.contains("caddy") {
             assert!(
                 start.contains("/opt/gateway/caddy"),
-                "gateways/{gw}/start must launch caddy as /opt/gateway/caddy (under the tree \
-                 the standalone bundle COPYs), not a bare PATH binary"
+                "gateways/{gw}/start must launch caddy as /opt/gateway/caddy, not a bare PATH binary"
             );
         }
-        // nginx is musl + installed to /usr/sbin — it neither survives the copy nor
-        // runs on the glibc standalone base. Forbid installing or launching it
-        // (a comment mentioning it, e.g. the rationale, is fine).
-        let installs_nginx = df.lines().any(|l| {
-            let t = l.trim_start();
-            !t.starts_with('#')
-                && l.contains("nginx")
-                && (t.contains("apk add") || t.contains("apt-get"))
-        });
-        let launches_nginx = start.lines().any(|l| {
-            let t = l.trim_start();
-            !t.starts_with('#') && (t == "nginx" || t.starts_with("nginx ") || t.contains("/nginx"))
-        });
+        // nginx is musl + /usr/sbin — it survives neither the COPY nor the glibc base.
         assert!(
-            !installs_nginx && !launches_nginx,
-            "gateways/{gw} must not install or launch nginx (musl, /usr/sbin — breaks the \
-             standalone bundle); use the static caddy under /opt/gateway"
+            !start.contains("nginx") && !df.contains("nginx"),
+            "gateways/{gw} must not use nginx (musl); use the static caddy under /opt/gateway"
         );
     }
     eprintln!("✓ gateway shims live under /opt/gateway (survive the standalone COPY)");

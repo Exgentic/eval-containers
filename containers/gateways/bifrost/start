@@ -29,26 +29,23 @@ if [ -f "$TEMPLATE" ]; then
     *) echo "EVAL_MODEL_API must be anthropic|openai|gemini (got: $EVAL_MODEL_API)" >&2; exit 2 ;;
   esac
 
+  # Pin the model when EVAL_MODEL is set; omit to keep the client's model.
+  if [ -n "${EVAL_MODEL:-}" ]; then MODEL=", \"model\": \"${EVAL_MODEL}\""; else MODEL=""; fi
   if [ -n "${EVAL_MODEL_API:-}" ]; then
-    # WIRE OVERRIDE: one cel="true" rule forces EVAL_MODEL_API; pin the model if set.
-    if [ -n "${EVAL_MODEL:-}" ]; then MODEL=", \"model\": \"${EVAL_MODEL}\""; else MODEL=""; fi
+    # WIRE OVERRIDE: one cel="true" rule forces EVAL_MODEL_API.
     RULES="{ \"id\": \"pin\", \"name\": \"pin\", \"enabled\": true, \"scope\": \"global\", \"priority\": 1, \"cel_expression\": \"true\", \"targets\": [{ \"provider\": \"${EVAL_MODEL_API}\"${MODEL}, \"weight\": 1.0 }] }"
-    GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}] },"
   else
-    # NATIVE ROUTING: set the provider per inbound wire — caddy stamps X-Eval-Wire
-    # from the path, one rule per provider keys on it. bifrost can't auto-resolve a
-    # provider from the model (bare or `azure/…`-prefixed → "provider not found"),
-    # so the rule MUST name it. Pin the model too when EVAL_MODEL is set; omit it to
-    # keep the client's model (passthrough).
-    if [ -n "${EVAL_MODEL:-}" ]; then MODEL=", \"model\": \"${EVAL_MODEL}\""; else MODEL=""; fi
+    # NATIVE ROUTING: name the provider per inbound wire (caddy stamps X-Eval-Wire
+    # from the path). bifrost can't auto-resolve a provider from the model (bare or
+    # `azure/…`-prefixed → "provider not found"), so a rule MUST name it.
     RULES=""; pr=0
     for p in anthropic openai gemini; do
       pr=$((pr + 1))
       [ -n "$RULES" ] && RULES="$RULES, "
       RULES="$RULES{ \"id\": \"pin-$p\", \"name\": \"pin-$p\", \"enabled\": true, \"scope\": \"global\", \"priority\": $pr, \"cel_expression\": \"headers['x-eval-wire'] == '$p'\", \"targets\": [{ \"provider\": \"$p\"${MODEL}, \"weight\": 1.0 }] }"
     done
-    GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}] },"
   fi
+  GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}] },"
 
   : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"

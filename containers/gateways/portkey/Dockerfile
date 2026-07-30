@@ -34,7 +34,7 @@ LABEL gateway.protocols="openai"
 RUN apk add --no-cache ca-certificates curl
 
 # Caddy: path-prefix + header-injection shim.
-COPY --from=docker.io/library/caddy:2.8-alpine /usr/bin/caddy /usr/bin/caddy
+COPY --from=docker.io/library/caddy:2.8-alpine /usr/bin/caddy /opt/gateway/caddy
 
 # Portkey JS app (upstream WORKDIRs at /app).
 COPY --from=portkey /app /opt/gateway/portkey

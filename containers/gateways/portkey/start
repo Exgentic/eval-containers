@@ -49,7 +49,7 @@ PORTKEY_CONFIG=$(printf '{"provider":"openai","api_key":"%s","override_params":{
 export MODEL_NAME CUSTOM_HOST PORTKEY_CONFIG
 
 # Caddy on $PORT (default 4000).
-caddy run --config /opt/gateway/Caddyfile --adapter caddyfile &
+/opt/gateway/caddy run --config /opt/gateway/Caddyfile --adapter caddyfile &
 
 # Portkey bound to 127.0.0.1:8787 (foreground; container PID 1).
 cd /opt/gateway/portkey
