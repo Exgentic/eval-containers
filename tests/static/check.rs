@@ -838,3 +838,46 @@ fn build_scripts_use_docker_not_podman() {
         scripts.len()
     );
 }
+
+/// The single-container `-standalone` bundle pulls the gateway in with exactly one
+/// `COPY --from=model /opt/gateway /opt/gateway` (core/standalone.Dockerfile), so any
+/// shim the gateway's `start` launches MUST live under /opt/gateway — otherwise it
+/// works in compose but fails `not found` in the bundle. Regression guard: #269 put
+/// nginx at /usr/sbin (musl), which neither survives the copy nor runs on the glibc
+/// standalone base; the fix is the static caddy under /opt/gateway.
+#[test]
+fn gateway_shim_lives_under_opt_gateway() {
+    for gw in ["bifrost", "litellm"] {
+        let start = fs::read_to_string(repo_root().join(format!("containers/gateways/{gw}/start")))
+            .unwrap_or_else(|_| panic!("missing gateways/{gw}/start"));
+        let df =
+            fs::read_to_string(repo_root().join(format!("containers/gateways/{gw}/Dockerfile")))
+                .unwrap_or_else(|_| panic!("missing gateways/{gw}/Dockerfile"));
+        if start.contains("caddy") {
+            assert!(
+                start.contains("/opt/gateway/caddy"),
+                "gateways/{gw}/start must launch caddy as /opt/gateway/caddy (under the tree \
+                 the standalone bundle COPYs), not a bare PATH binary"
+            );
+        }
+        // nginx is musl + installed to /usr/sbin — it neither survives the copy nor
+        // runs on the glibc standalone base. Forbid installing or launching it
+        // (a comment mentioning it, e.g. the rationale, is fine).
+        let installs_nginx = df.lines().any(|l| {
+            let t = l.trim_start();
+            !t.starts_with('#')
+                && l.contains("nginx")
+                && (t.contains("apk add") || t.contains("apt-get"))
+        });
+        let launches_nginx = start.lines().any(|l| {
+            let t = l.trim_start();
+            !t.starts_with('#') && (t == "nginx" || t.starts_with("nginx ") || t.contains("/nginx"))
+        });
+        assert!(
+            !installs_nginx && !launches_nginx,
+            "gateways/{gw} must not install or launch nginx (musl, /usr/sbin — breaks the \
+             standalone bundle); use the static caddy under /opt/gateway"
+        );
+    }
+    eprintln!("✓ gateway shims live under /opt/gateway (survive the standalone COPY)");
+}

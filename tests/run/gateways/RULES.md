@@ -146,7 +146,7 @@ over `{bifrost, litellm}`:
 
 20. **`EVAL_MODEL` pins; `EVAL_MODEL_API` picks the wire.**
     - **Native pin** (default; API unset) — model rewritten to `EVAL_MODEL`, wire
-      kept. bifrost — a small nginx stamps the inbound wire into `X-Eval-Wire`,
+      kept. bifrost — a small Caddy stamps the inbound wire into `X-Eval-Wire`,
       and one governance rule per provider keys on it (`headers['x-eval-wire'] ==
       '<p>'`) to pin on that wire; litellm — three family wildcards rewrite the
       model to `EVAL_MODEL` on each native provider.
@@ -175,6 +175,6 @@ over `{bifrost, litellm}`:
     `${...}` a template uses is substituted by its `start` script.
 
 23. **The change is confined to the two gateway dirs.** bifrost fronts its binary
-    with a small nginx that stamps the inbound wire into a header (its CEL rules
+    with a small Caddy that stamps the inbound wire into a header (its CEL rules
     can't see the request path); litellm keeps its Caddy path-shim. Agents,
     runner, compose, and helm are untouched.
