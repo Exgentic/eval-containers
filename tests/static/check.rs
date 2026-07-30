@@ -838,3 +838,33 @@ fn build_scripts_use_docker_not_podman() {
         scripts.len()
     );
 }
+
+/// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
+/// carries the gateway with one `COPY /opt/gateway`, so a shim outside it fails
+/// `not found` at boot (regression: #269's nginx at /usr/sbin broke every bundle).
+#[test]
+fn gateway_shim_lives_under_opt_gateway() {
+    // Non-comment lines of a shell/Dockerfile.
+    let code = |t: &str| -> Vec<String> {
+        t.lines()
+            .map(|l| l.trim_start().to_string())
+            .filter(|l| !l.starts_with('#'))
+            .collect()
+    };
+    for (gw, dir) in sibling_dirs("gateways") {
+        let start = code(&fs::read_to_string(dir.join("start")).unwrap_or_default()).join("\n");
+        let df = code(&fs::read_to_string(dir.join("Dockerfile")).unwrap_or_default()).join("\n");
+        if start.contains("caddy") {
+            assert!(
+                start.contains("/opt/gateway/caddy"),
+                "gateways/{gw}/start must launch caddy as /opt/gateway/caddy, not a bare PATH binary"
+            );
+        }
+        // nginx is musl + /usr/sbin — it survives neither the COPY nor the glibc base.
+        assert!(
+            !start.contains("nginx") && !df.contains("nginx"),
+            "gateways/{gw} must not use nginx (musl); use the static caddy under /opt/gateway"
+        );
+    }
+    eprintln!("✓ gateway shims live under /opt/gateway (survive the standalone COPY)");
+}

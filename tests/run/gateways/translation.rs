@@ -12,8 +12,9 @@
 //!     its tool, cross-protocol inbound is `KnownLossy`.
 //!   - passthrough (EVAL_MODEL unset) — client model forwarded unchanged.
 //!
-//! 10 tests, one gateway boot per (flavor, config). Every-PR smoke = the 2
-//! native_pin groups; the rest are `#[ignore]`-gated (release, `--ignored`).
+//! One gateway boot per (flavor, config). Every-PR = the native_pin +
+//! passthrough groups (the two prod-relevant modes, incl. provider-prefixed
+//! client models); translate_* are `#[ignore]`-gated (release, `--ignored`).
 //!
 //! ## Run
 //!   cargo test --test translation      # builds images on first run; needs DOCKER_HOST
@@ -234,20 +235,31 @@ fn assert_request(flavor: &str, inbound_path: &str, req: &Value, target: &Target
 
     // Demand 1 — target-wire protocol. path_marker may list alternatives
     // ("responses|completions"); any match satisfies (both are OpenAI-native).
-    assert!(
-        target.path_marker.split('|').any(|m| fwd_path.contains(m)),
-        "{flavor} {inbound_path}: forwarded to `{fwd_path}` but expected a `{}` \
-         (target-wire) path — routed to the wrong protocol. body={body}",
-        target.path_marker
-    );
-    // Demand 2 — model rewritten to the pinned EVAL_MODEL target.
-    assert!(
-        references_model(body, fwd_path, target.model),
-        "{flavor} {inbound_path}: did not pin the model to `{}` — the gateway must \
-         rewrite the client's model. forwarded model={:?} path={fwd_path}",
-        target.model,
-        body["model"]
-    );
+    // Skipped when "" — provider-prefixed passthrough, where the wire differs by
+    // gateway (bifrost keeps the inbound wire via X-Eval-Wire; litellm routes by
+    // model-name family, so a `aws/…` model can land on openai). The guard there
+    // is just "resolved + forwarded, no provider-config error" (run_group).
+    if !target.path_marker.is_empty() {
+        assert!(
+            target.path_marker.split('|').any(|m| fwd_path.contains(m)),
+            "{flavor} {inbound_path}: forwarded to `{fwd_path}` but expected a `{}` \
+             (target-wire) path — routed to the wrong protocol. body={body}",
+            target.path_marker
+        );
+    }
+    // Demand 2 — model rewritten to the pinned target. Skipped when model is ""
+    // (passthrough with a provider-prefixed client model the gateways normalize
+    // differently — e.g. bifrost strips `azure/`; here the guard is just that a
+    // forward happened on the right wire with no provider-resolution error).
+    if !target.model.is_empty() {
+        assert!(
+            references_model(body, fwd_path, target.model),
+            "{flavor} {inbound_path}: did not pin the model to `{}` — the gateway must \
+             rewrite the client's model. forwarded model={:?} path={fwd_path}",
+            target.model,
+            body["model"]
+        );
+    }
     // Demand 3 — native search tool.
     match &target.tool {
         ToolExpect::None => {}
@@ -305,13 +317,31 @@ async fn run_group(flavor: &str, eval_model_api: &str, eval_model: &str, cases: 
 
     let mut seen = 0usize;
     for c in &cases {
-        // Fire-and-tolerate: the gateway may 4xx/5xx on the mock's canned
-        // response — we only care what it FORWARDED, which the mock recorded.
-        let _ = http()
+        // Fire and capture the gateway's OWN response. A legitimate upstream
+        // 4xx/5xx (the mock's canned reply) is tolerated, but the gateway MUST
+        // NOT emit its own provider-resolution / config error — that's the
+        // shipped regression, and it's directly observable in the response body
+        // (not just as a missing forward).
+        let resp_body = match http()
             .post(format!("http://127.0.0.1:{port}{}", c.inbound_path))
             .json(&c.input)
             .send()
-            .await;
+            .await
+        {
+            Ok(r) => r.text().await.unwrap_or_default(),
+            Err(_) => String::new(),
+        };
+        for marker in [
+            "failed to get config for provider",
+            "could not auto resolve a provider",
+        ] {
+            assert!(
+                !resp_body.contains(marker),
+                "{flavor} {}: gateway-origin error `{marker}` — provider not resolved. body={}",
+                c.inbound_path,
+                &resp_body[..resp_body.len().min(300)]
+            );
+        }
 
         // Wait for THIS request's forward to land (a new inference line) so a
         // slow bind-mount flush can't hand us the previous case's forward.
@@ -596,29 +626,55 @@ async fn litellm_translate_gemini() {
     gemini_group("litellm").await
 }
 
-// passthrough -> EVAL_MODEL_API unset: client model forwarded unchanged.
+// PASSTHROUGH (EVAL_MODEL unset): forward the client's own model on its native
+// wire. The gateway must still resolve the provider per wire — bifrost can't
+// auto-resolve it from a bare or `azure/…`-prefixed model, which regressed as
+// `failed to get config for provider: not found`. Every wire × {bare,
+// provider-prefixed} client model; a missing forward (provider-resolution
+// failure) fails the assertion. Every-PR (this class shipped to prod once).
 async fn passthrough_group(flavor: &str) {
     run_group(
         flavor,
         "",
         "",
-        vec![case(
-            ANTHROPIC_PATH,
-            anthropic_chat(),
-            "messages",
-            "claude-sonnet-4-5",
-            ToolExpect::None,
-        )],
+        vec![
+            case(ANTHROPIC_PATH, anthropic_chat(), "messages", "claude-sonnet-4-5", ToolExpect::None),
+            // provider-prefixed client models — the shipped-bug class. path=""
+            // and model="" : the guard is "resolved + forwarded, no provider-
+            // config error" (run_group's no-forward panic + error-body check).
+            // The wire itself differs by gateway, so it's not asserted here.
+            case(
+                ANTHROPIC_PATH,
+                json!({"model":"aws/claude-opus-4-8","max_tokens":16,"messages":[{"role":"user","content":"hi"}]}),
+                "",
+                "",
+                ToolExpect::None,
+            ),
+            case(OPENAI_PATH, openai_chat(), "responses|completions", "gpt-4o", ToolExpect::None),
+            case(
+                OPENAI_PATH,
+                json!({"model":"azure/gpt-5.4","input":"hi"}),
+                "",
+                "",
+                ToolExpect::None,
+            ),
+            case(GOOGLE_PATH, google_chat(), "generateContent", "gemini-2.5-pro", ToolExpect::None),
+            case(
+                "/genai/v1beta/models/gcp/gemini-3-flash-preview:generateContent",
+                google_chat(),
+                "",
+                "",
+                ToolExpect::None,
+            ),
+        ],
     )
     .await
 }
 #[tokio::test]
-#[ignore = "release-only (run with --ignored)"]
 async fn bifrost_passthrough() {
     passthrough_group("bifrost").await
 }
 #[tokio::test]
-#[ignore = "release-only (run with --ignored)"]
 async fn litellm_passthrough() {
     passthrough_group("litellm").await
 }

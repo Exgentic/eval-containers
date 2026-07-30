@@ -69,7 +69,7 @@ fi
 # Caddy in background — listens on $PORT, forwards to litellm:4001.
 # Litellm-min runs as root in our image, so Caddy doesn't need
 # a non-default config dir.
-caddy run --config /opt/gateway/Caddyfile --adapter caddyfile &
+/opt/gateway/caddy run --config /opt/gateway/Caddyfile --adapter caddyfile &
 
 # Litellm bound to loopback only; the world reaches it via Caddy.
 exec /opt/gateway/venv/bin/litellm \

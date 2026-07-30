@@ -48,7 +48,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
    Additional protocols (`/google/...`, `/cohere/...`, ...) MAY be added; when added, they MUST be added uniformly across all gateway flavors.
 
-6. **Native or shim — gateway's choice.** A gateway MAY front the binary with a tiny in-image shim when it needs path rewriting or header injection the engine can't do itself: litellm uses Caddy to map the framework's prefixed URLs onto its native root paths; bifrost uses a small nginx to stamp the inbound wire into a header its governance rules key on (bifrost's routing rules can't otherwise see which protocol a request arrived on). A gateway that needs neither MUST NOT add one. The shim runs in the same container as the gateway binary; users see one process group, one port.
+6. **Native or shim — gateway's choice.** A gateway MAY front the binary with a tiny in-image shim when it needs path rewriting or header injection the engine can't do itself: both litellm and bifrost use **Caddy** — litellm to map the framework's prefixed URLs onto its native root paths, bifrost to stamp the inbound wire into a header its governance rules key on (bifrost's routing rules can't otherwise see which protocol a request arrived on). A gateway that needs neither MUST NOT add one. The shim binary and its config MUST live under `/opt/gateway/` (a **static** binary — Caddy — so it runs on any base): the single-container `-standalone` bundle carries the gateway with one `COPY /opt/gateway`, so a shim outside that tree (or a musl binary like nginx) boots in compose but fails `not found` in the bundle. The shim runs in the same container as the gateway binary; users see one process group, one port.
 
 7. **Port 4000 external.** The gateway image MUST listen on port 4000 for external traffic (Caddy or native binary). Internal processes (gateway behind a shim) MAY bind to other loopback ports; only the external 4000 is the framework contract.
 
@@ -72,7 +72,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
     - `health` — readiness probe script. Exits 0 when the gateway is ready to serve requests on port 4000.
     - The gateway binary or runtime (e.g., `/opt/gateway/main` for Go binaries, `/opt/gateway/venv/` for Python venvs, `/opt/gateway/<flavor>/` for Node bundles).
     - The config template (if applicable), at the gateway's expected config path.
-    - The shim config (`Caddyfile` / `nginx.conf`), only if the gateway fronts the binary with a shim per rule 6.
+    - The shim config (`Caddyfile`) + static binary under `/opt/gateway/`, only if the gateway fronts the binary with a shim per rule 6.
 
 13. **Image base.** Gateway images MUST use the slimmest base appropriate to their runtime (`alpine` for static binaries, `python:slim` for Python runtimes, `node:alpine` for Node). The combined image size SHOULD be under 250 MB; gateways exceeding this MUST justify the size in the Dockerfile comments.
 
@@ -134,4 +134,5 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-05-18 | Rule 2a added: gateways MUST work with any model out of the box (one-env-var swap, no rebuild). Rule 16 rewritten: `models/<model>--<gateway>` combo images are OPTIONAL convenience wrappers, MUST equal bare-gateway-plus-mounted-template behavior. |
 | 2026-07-06 | Rule 4 reworded: the `start` script renders config "from the template" at startup; the rule no longer names a specific render tool (gateways render with POSIX `sed`). |
 | 2026-07-22 | Rules 2, 2b, 22 rewritten for the `EVAL_MODEL` (bare, opaque handle — never parsed) + optional `EVAL_MODEL_API` (wire protocol, `anthropic\|openai\|gemini`) model. |
-| 2026-07-29 | Rule 2b: three modes — `EVAL_MODEL` set ⇒ pin (default keeps the inbound wire so server tools survive), `EVAL_MODEL_API` overrides the wire, unset ⇒ passthrough. Rule 6 permits a header-injection shim (bifrost fronts nginx to stamp the inbound wire — CEL can't see the path); rule 12 lists the shim config. |
+| 2026-07-29 | Rule 2b: three modes — `EVAL_MODEL` set ⇒ pin (default keeps the inbound wire so server tools survive), `EVAL_MODEL_API` overrides the wire, unset ⇒ passthrough. Rule 6 permits a header-injection shim (bifrost fronts Caddy to stamp the inbound wire — CEL can't see the path); rule 12 lists the shim config. |
+| 2026-07-30 | Rule 6: the shim binary+config MUST live under `/opt/gateway/` and be static (Caddy) — bifrost switched nginx→Caddy so the single-container `-standalone` bundle (one `COPY /opt/gateway`) actually boots the gateway (nginx at `/usr/sbin`, musl, silently broke every bundle). Guard: `tests/static/check.rs::gateway_shim_lives_under_opt_gateway`. |
