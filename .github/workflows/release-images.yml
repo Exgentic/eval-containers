@@ -233,7 +233,7 @@ jobs:
           pertask='[]'
           if [ "$INCLUDE_PER_TASK" = "true" ]; then
             acc='[]'
-            for B in terminal-bench skills-bench; do
+            for B in terminal-bench; do
               bs="containers/benchmarks/$B/build.sh"; [ -f "$bs" ] || continue
               repo=$(grep -oE 'github\.com/[A-Za-z0-9_./-]+' "$bs" | head -1 | sed -E 's#github\.com/##; s#\.git$##')
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
