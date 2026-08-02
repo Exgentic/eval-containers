@@ -204,15 +204,11 @@ jobs:
           set -eo pipefail
           cargo run -q -- build eval bigcodebench --agent zerostack --standalone 2>&1 | tail -3
           img=ghcr.io/exgentic/evals/bigcodebench--zerostack-standalone:latest
-          # Boot smoke only — no upstream reached, so no creds. EVAL_MODEL=x pins;
-          # OPENAI_API_BASE is a dead loopback port. We assert only that the gateway serves.
-          cid=$(docker run -d -e EVAL_MODEL=x -e OPENAI_API_BASE=http://127.0.0.1:9 \
-                 --entrypoint /opt/gateway/start "$img")
-          ok=""
-          for _ in $(seq 45); do
-            docker exec "$cid" /opt/gateway/health >/dev/null 2>&1 && { ok=1; break; }
+          # Boot smoke: EVAL_MODEL pins, upstream is a dead port — assert only that the gateway serves.
+          cid=$(docker run -d -e EVAL_MODEL=x -e OPENAI_API_BASE=http://127.0.0.1:9 --entrypoint /opt/gateway/start "$img")
+          deadline=$((SECONDS + 90))
+          until docker exec "$cid" /opt/gateway/health >/dev/null 2>&1; do
+            [ "$SECONDS" -lt "$deadline" ] || { echo "::error::standalone gateway never became healthy (shim not under /opt/gateway?)"; docker logs "$cid"; exit 1; }
             sleep 2
           done
-          docker logs "$cid" 2>&1 | tail -15 || true
-          docker rm -f "$cid" >/dev/null 2>&1 || true
-          [ -n "$ok" ] || { echo "::error::standalone gateway did not become healthy (shim not under /opt/gateway?)"; exit 1; }
+          docker rm -f "$cid" >/dev/null
