@@ -195,3 +195,24 @@ jobs:
           if grep -qE "running 0 tests" replay.log; then
             echo "::error::ran 0 tests — no 'replay_fullstack_bigcodebench_0_zerostack' fixture matched"; exit 1
           fi
+
+      # Standalone bundle: the single-container path (core/standalone.Dockerfile
+      # COPYs only /opt/gateway). Build the -standalone bundle and boot its gateway;
+      # fails if the shim isn't self-contained under /opt/gateway (the #274 class).
+      - name: Standalone gateway boots
+        run: |
+          set -eo pipefail
+          cargo run -q -- build eval bigcodebench --agent zerostack --standalone 2>&1 | tail -3
+          img=ghcr.io/exgentic/evals/bigcodebench--zerostack-standalone:latest
+          # Boot smoke only — no upstream reached, so no creds. EVAL_MODEL=x pins;
+          # OPENAI_API_BASE is a dead loopback port. We assert only that the gateway serves.
+          cid=$(docker run -d -e EVAL_MODEL=x -e OPENAI_API_BASE=http://127.0.0.1:9 \
+                 --entrypoint /opt/gateway/start "$img")
+          ok=""
+          for _ in $(seq 45); do
+            docker exec "$cid" /opt/gateway/health >/dev/null 2>&1 && { ok=1; break; }
+            sleep 2
+          done
+          docker logs "$cid" 2>&1 | tail -15 || true
+          docker rm -f "$cid" >/dev/null 2>&1 || true
+          [ -n "$ok" ] || { echo "::error::standalone gateway did not become healthy (shim not under /opt/gateway?)"; exit 1; }
