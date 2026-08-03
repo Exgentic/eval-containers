@@ -22,8 +22,11 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 mkdir -p ~/.openclaw
+# agents.defaults.workspace pins the agent's cwd to /app (the benchmark WORKDIR
+# where starter files land); without it openclaw defaults to ~/.openclaw/workspace
+# and can't see the task files → ENOENT.
 cat > ~/.openclaw/openclaw.json <<CONF
-{"models":{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000}","apiKey":"${OPENAI_API_KEY:-sk-proxy}","api":"openai-completions","models":[{"id":"eval-model","name":"Eval Containers Proxy Model"}]}}},"agents":{"defaults":{"model":{"primary":"eval-containers/eval-model"}}},"tools":{"exec":{"security":"full","ask":"off"}}}
+{"models":{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000}","apiKey":"${OPENAI_API_KEY:-sk-proxy}","api":"openai-completions","models":[{"id":"eval-model","name":"Eval Containers Proxy Model"}]}}},"agents":{"defaults":{"model":{"primary":"eval-containers/eval-model"},"workspace":"/app"}},"tools":{"exec":{"security":"full","ask":"off"}}}
 CONF
 cat > ~/.openclaw/exec-approvals.json <<CONF
 {"version":1,"defaults":{"security":"full","ask":"off","askFallback":"full"},"agents":{"*":{"security":"full","ask":"off","askFallback":"full","allowlist":[{"pattern":"**"}]}}}
