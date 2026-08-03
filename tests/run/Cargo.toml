@@ -51,3 +51,7 @@ path = "live/test.rs"
 [[test]]
 name = "gateways"
 path = "gateways/test.rs"
+
+[[test]]
+name = "translation"
+path = "gateways/translation.rs"

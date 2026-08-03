@@ -19,9 +19,18 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 1. **No hardcoded provider, model, or URL.** Gateway images MUST NOT bake any provider name, model identifier, or upstream URL into the image. All such values MUST come from runtime environment variables.
 
-2. **Single model selection variable.** The framework's contract for selecting the upstream is a single environment variable, `EVAL_MODEL`, of the form `<provider>/<model>` (matching litellm's convention: `openai/gpt-4`, `anthropic/claude-3-5-sonnet`, `bedrock/anthropic.claude-3-sonnet`, `vertex_ai/gemini-1.5-pro`, etc.). The gateway's `start` script MUST parse this into provider and model components before launching the gateway binary.
+2. **Model + wire selection, neither parsed.** Two framework-scoped env vars select the upstream, and the gateway MUST NOT parse a provider out of either:
+   - `EVAL_MODEL` — the target model as a **bare, opaque handle**, exactly as the upstream expects it (e.g. `aws/claude-opus-4-8`, `azure/gpt-5.4`, `gcp/gemini-3-flash-preview`). The gateway forwards it verbatim as the model field. It MUST NOT split `EVAL_MODEL` to infer a provider or wire protocol: upstream handles routinely carry a routing prefix (`aws/…`, `azure/…`) that is not a wire API and often fronts many APIs, so parsing is unreliable.
+   - `EVAL_MODEL_API` — OPTIONAL. Names the **wire protocol** the target model is served over, from the closed set `anthropic | openai | gemini`. It MUST be supplied explicitly (never inferred from `EVAL_MODEL`) and selects the translate-vs-passthrough mode (rule 2b).
 
 2a. **Any model out of the box.** Gateway images MUST work with any upstream model the user supplies — selected purely by setting `EVAL_MODEL` at container start. Rebuilding the image to switch models is forbidden. The set of supported models is whatever the configured upstream serves; the gateway's job is to route the inbound protocol and rewrite the agent's chosen model name to `EVAL_MODEL` (via governance routing, model_list aliasing, header override, or equivalent), not to gate which models are allowed. A user who wants to try a new model MUST be able to do so by changing one env var, never by building a new image.
+
+2b. **`EVAL_MODEL` pins; `EVAL_MODEL_API` only picks the wire.** The agent sends a non-authoritative model (often a placeholder); the gateway is the model authority and MUST rewrite it to `EVAL_MODEL` whenever `EVAL_MODEL` is set. Three modes:
+   - **Native pin** (`EVAL_MODEL` set, `EVAL_MODEL_API` unset) — the default: rewrite the model to `EVAL_MODEL` and forward on the *inbound* protocol's own wire. No cross-protocol translation, so native server tools (web search) survive. Correct against a protocol-agnostic upstream (one that serves any model over any wire).
+   - **Wire override** (`EVAL_MODEL_API` set) — additionally force the wire to `EVAL_MODEL_API`, translating the inbound protocol to it. For single-protocol upstreams. Cross-protocol server-tool preservation is a known upstream limitation, so it is best-effort (see the test RULES matrix).
+   - **Passthrough** (`EVAL_MODEL` unset) — forward the client's own model on its native wire, unchanged. For recording/observing, not evals.
+
+   All three require no user-authored config file: the `start` script renders the template for whichever mode the env selects.
 
 3. **Provider-native auth, no umbrella alias.** Upstream credentials MUST be read by the gateway's provider plugin directly from whatever env var the chosen provider's SDK conventionally reads — `OPENAI_API_KEY` (+ optional `OPENAI_API_BASE`) for OpenAI-compatible endpoints, `ANTHROPIC_API_KEY` for direct Anthropic, `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` for Bedrock, `GOOGLE_APPLICATION_CREDENTIALS` for Vertex, etc. The contract is "the user sets whatever env vars their target provider expects; the framework flows them through unchanged." The framework MUST NOT introduce an umbrella alias such as `EVAL_API_KEY` / `EVAL_API_BASE` / `EVAL_API_TOKEN` — that would re-bake a provider naming convention into the framework. The only framework-named env var is `EVAL_MODEL` (rule 2), because the model-selection contract is genuinely framework-scoped.
 
@@ -39,7 +48,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
    Additional protocols (`/google/...`, `/cohere/...`, ...) MAY be added; when added, they MUST be added uniformly across all gateway flavors.
 
-6. **Native or shim — gateway's choice.** A gateway that already exposes these prefixes natively (e.g., Bifrost) MUST NOT add a shim. A gateway whose native paths differ (e.g., litellm exposes `/v1/messages` at root, portkey requires headers) MUST add a tiny in-image rewriter (Caddy is the default choice) that maps the framework's prefixed URLs to the gateway's native paths, plus any required header injection. The shim runs in the same container as the gateway binary; users see one process group, one port.
+6. **Native or shim — gateway's choice.** A gateway MAY front the binary with a tiny in-image shim when it needs path rewriting or header injection the engine can't do itself: both litellm and bifrost use **Caddy** — litellm to map the framework's prefixed URLs onto its native root paths, bifrost to stamp the inbound wire into a header its governance rules key on (bifrost's routing rules can't otherwise see which protocol a request arrived on). A gateway that needs neither MUST NOT add one. The shim binary and its config MUST live under `/opt/gateway/` (a **static** binary — Caddy — so it runs on any base): the single-container `-standalone` bundle carries the gateway with one `COPY /opt/gateway`, so a shim outside that tree (or a musl binary like nginx) boots in compose but fails `not found` in the bundle. The shim runs in the same container as the gateway binary; users see one process group, one port.
 
 7. **Port 4000 external.** The gateway image MUST listen on port 4000 for external traffic (Caddy or native binary). Internal processes (gateway behind a shim) MAY bind to other loopback ports; only the external 4000 is the framework contract.
 
@@ -59,11 +68,11 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 12. **Required files.** Every gateway image MUST provide the following files under `/opt/gateway/`:
 
-    - `start` — executable entrypoint (POSIX shell, no bash-only constructs unless the base image is bash-only). Parses `EVAL_MODEL`, renders config if templated, exec's the gateway binary.
+    - `start` — executable entrypoint (POSIX shell, no bash-only constructs unless the base image is bash-only). Reads `EVAL_MODEL`/`EVAL_MODEL_API`, renders config if templated, exec's the gateway binary (behind a shim if the flavor uses one).
     - `health` — readiness probe script. Exits 0 when the gateway is ready to serve requests on port 4000.
     - The gateway binary or runtime (e.g., `/opt/gateway/main` for Go binaries, `/opt/gateway/venv/` for Python venvs, `/opt/gateway/<flavor>/` for Node bundles).
     - The config template (if applicable), at the gateway's expected config path.
-    - `Caddyfile` (only if the gateway needs a path-rewriter shim per rule 6).
+    - The shim config (`Caddyfile`) + static binary under `/opt/gateway/`, only if the gateway fronts the binary with a shim per rule 6.
 
 13. **Image base.** Gateway images MUST use the slimmest base appropriate to their runtime (`alpine` for static binaries, `python:slim` for Python runtimes, `node:alpine` for Node). The combined image size SHOULD be under 250 MB; gateways exceeding this MUST justify the size in the Dockerfile comments.
 
@@ -108,7 +117,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 21. **Gateway errors propagate.** When the upstream provider returns an error (auth, rate limit, model unavailable, invalid request, budget exceeded), the gateway MUST forward the error response to the agent unchanged in body, with the appropriate HTTP status code. Wrapping or paraphrasing provider errors is forbidden.
 
-22. **Misconfiguration is loud.** If `EVAL_MODEL` is unset or malformed (not `<provider>/<model>` shape), the gateway's `start` script MUST exit non-zero with a message to stderr naming the bad value. Containers MUST NOT silently swallow misconfiguration and start in a broken state.
+22. **Misconfiguration is loud.** With `EVAL_MODEL` set the gateway MUST pin (rule 2b); unset `EVAL_MODEL_API` is the normal native-pin case, not an error. A malformed `EVAL_MODEL_API` (outside the closed set) MUST fail loud — exit non-zero naming the bad value. Unset `EVAL_MODEL` selects passthrough — valid, but it forwards the client's placeholder model, so it is for recording, not evals. Containers MUST NOT silently start in a broken or mis-routing state.
 
 ## References
 
@@ -124,3 +133,6 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-05-17 | Initial version. Defines provider-agnostic gateway images, the `/<protocol>/<path>` URL namespace, the `EVAL_MODEL=<provider>/<model>` env contract, and the gateway↔model separation (gateways/ holds implementations, models/ holds pre-built combos). |
 | 2026-05-18 | Rule 2a added: gateways MUST work with any model out of the box (one-env-var swap, no rebuild). Rule 16 rewritten: `models/<model>--<gateway>` combo images are OPTIONAL convenience wrappers, MUST equal bare-gateway-plus-mounted-template behavior. |
 | 2026-07-06 | Rule 4 reworded: the `start` script renders config "from the template" at startup; the rule no longer names a specific render tool (gateways render with POSIX `sed`). |
+| 2026-07-22 | Rules 2, 2b, 22 rewritten for the `EVAL_MODEL` (bare, opaque handle — never parsed) + optional `EVAL_MODEL_API` (wire protocol, `anthropic\|openai\|gemini`) model. |
+| 2026-07-29 | Rule 2b: three modes — `EVAL_MODEL` set ⇒ pin (default keeps the inbound wire so server tools survive), `EVAL_MODEL_API` overrides the wire, unset ⇒ passthrough. Rule 6 permits a header-injection shim (bifrost fronts Caddy to stamp the inbound wire — CEL can't see the path); rule 12 lists the shim config. |
+| 2026-07-30 | Rule 6: the shim binary+config MUST live under `/opt/gateway/` and be static (Caddy) — bifrost switched nginx→Caddy so the single-container `-standalone` bundle (one `COPY /opt/gateway`) actually boots the gateway (nginx at `/usr/sbin`, musl, silently broke every bundle). Guard: `tests/static/check.rs::gateway_shim_lives_under_opt_gateway`. |

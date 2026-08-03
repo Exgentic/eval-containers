@@ -21,7 +21,11 @@ The entrypoint writes `~/.config/opencode/opencode.json` with a `eval-containers
 
 ## Version
 
-Pinned to `1.4.3` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
+Pinned to `1.4.3` via a single `ARG AGENT_VERSION` at image build time — it
+drives the install, the `eval.agent.version` label, and `/opt/agent/VERSION`,
+which the combination image reuses so it installs the same version. Immutable
+per image; override at build with `build agent --agent-version <x>` per
+[RULES.md](../RULES.md) rule 13.
 
 ## Files
 

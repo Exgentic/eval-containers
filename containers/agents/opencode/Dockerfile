@@ -12,7 +12,7 @@ LABEL eval.agent.url="https://github.com/sst/opencode"
 LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=opencode
 RUN npm install -g opencode-ai@${AGENT_VERSION}
-RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
+RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
 for b in node npm npx opencode; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done

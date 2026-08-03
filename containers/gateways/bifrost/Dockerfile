@@ -13,13 +13,14 @@
 #                                      model image's .template
 #   /opt/gateway/data/                 also where bifrost writes its SQLite
 #
-# Honest size: ~105 MB. The Go binary is statically linked, ca-certs +
-# curl are the only runtime deps. UI is `go:embed`-ed into the
-# binary unconditionally upstream (no flag to strip without forking).
-#
 # Bifrost natively exposes the framework's path-prefix namespace
-# (/anthropic/v1/messages, /openai/v1/chat/completions, ...) so no
-# Caddy shim is needed (cf. gateways/litellm/ which does need one).
+# (/anthropic/v1/messages, /openai/v1/chat/completions, ...). A tiny caddy shim
+# fronts it only to stamp the inbound wire into an X-Eval-Wire header: bifrost
+# governance can't see the request path/provider in a CEL rule, so the
+# native-pin rules key on that header to pin on the incoming wire. caddy (a
+# static Go binary) lives UNDER /opt/gateway so the single `COPY /opt/gateway`
+# in core/standalone.Dockerfile carries it into the single-container bundle —
+# nginx (musl, /usr/sbin) does not survive that copy onto the glibc eval base.
 # One ARG drives both the pull and the label so they can't drift (principle 9).
 # Named stage because `COPY --from=` can't take an `${ARG}`.
 ARG BIFROST_VERSION=v1.5.15
@@ -34,12 +35,27 @@ LABEL gateway.translates_protocols="true"
 
 RUN apk add --no-cache ca-certificates curl
 
+# caddy (static Go binary) under /opt/gateway so it survives the standalone COPY.
+# Fetched from GitHub releases (no Docker Hub quota); same version as litellm's.
+ARG CADDY_VERSION=2.8.4
+RUN set -eu; mkdir -p /opt/gateway; \
+    case "$(uname -m)" in \
+      x86_64)  a=amd64 ;; \
+      aarch64) a=arm64 ;; \
+      *) echo "unsupported arch: $(uname -m)" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL --retry 5 --retry-delay 5 \
+      "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${a}.tar.gz" \
+      | tar -xz -C /opt/gateway caddy; \
+    chmod +x /opt/gateway/caddy
+
 # Pull just the binary out of the upstream distribution. The /app/data
 # directory and the dashboard's docker-entrypoint.sh are not copied —
 # we own the layout and the entrypoint.
 COPY --from=bifrost-bin /app/main /opt/gateway/main
-COPY start  /opt/gateway/start
-COPY health /opt/gateway/health
+COPY start     /opt/gateway/start
+COPY health    /opt/gateway/health
+COPY Caddyfile /opt/gateway/Caddyfile
 RUN chmod +x /opt/gateway/start /opt/gateway/health /opt/gateway/main \
  && mkdir -p /opt/gateway/data
 

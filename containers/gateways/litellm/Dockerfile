@@ -68,8 +68,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certifi
 # Fetched from upstream releases instead of `COPY --from=docker.io/...`
 # so this image builds without a Docker Hub account (the anonymous
 # quota of 100 pulls/6h evaporates quickly during fleet builds).
+# caddy lives UNDER /opt/gateway so the single `COPY /opt/gateway` in
+# core/standalone.Dockerfile carries it into the single-container bundle (a
+# /usr/bin binary does not survive that copy → `caddy: not found` at boot).
 ARG CADDY_VERSION=2.8.4
-RUN set -eu; \
+RUN set -eu; mkdir -p /opt/gateway; \
     arch="$(dpkg --print-architecture)"; \
     case "$arch" in \
       amd64)  caddy_arch=amd64 ;; \
@@ -78,8 +81,8 @@ RUN set -eu; \
     esac; \
     curl -fsSL --retry 5 --retry-delay 5 \
       "https://github.com/caddyserver/caddy/releases/download/v${CADDY_VERSION}/caddy_${CADDY_VERSION}_linux_${caddy_arch}.tar.gz" \
-      | tar -xz -C /usr/bin caddy; \
-    chmod +x /usr/bin/caddy
+      | tar -xz -C /opt/gateway caddy; \
+    chmod +x /opt/gateway/caddy
 
 COPY --from=builder /opt/gateway/venv /opt/gateway/venv
 COPY start    /opt/gateway/start

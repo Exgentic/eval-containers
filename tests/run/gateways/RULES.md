@@ -118,3 +118,63 @@ Parent: [../RULES.md](../RULES.md)
     breaks are silent on a unit-test pass but cascade into stale
     replay fixtures and broken observability for the next month — the
     release gate is the right place to enforce them.
+
+## Model routing + pinning (translation contract)
+
+Tested by `translation.rs`, no credentials. 36 assertions grouped into **10 tests
+— one gateway boot per (flavor, config)**: the mode is fixed at boot, only the
+inbound protocol varies per request, so every case in a group reuses one
+container. Every-PR smoke = the 2 `native_pin` groups (the production default:
+`EVAL_MODEL` set, `EVAL_MODEL_API` unset → pin + native wire + tools survive); the
+other 8 groups (`translate_*`, `passthrough`) are `#[ignore]`-gated and run at
+release with `--ignored`. Each case sends a client model DIFFERING from
+`EVAL_MODEL` and checks the forwarded request against demands 19–22. The matrix,
+over `{bifrost, litellm}`:
+
+- **native_pin** — `EVAL_MODEL` set, `EVAL_MODEL_API` unset (the prod default):
+  pin the model, keep the inbound wire, server tool survives.
+- **translate_\*** — `EVAL_MODEL_API` set: force that wire. Matched inbound keeps
+  its tool; cross-protocol inbound (full off-diagonal of the 3 search tools × a
+  different wire) is translated + pinned, tool **known-lossy** (demand 21).
+- **passthrough** — `EVAL_MODEL` unset: client model forwarded unchanged.
+
+19. **Two model knobs, neither parsed.** `EVAL_MODEL` is a bare, opaque handle
+    forwarded verbatim (`aws/claude-opus-4-8`, `azure/gpt-5.4`, …); the optional
+    `EVAL_MODEL_API` (`anthropic|openai|gemini`) names the target wire. The test
+    sets them via env only — NO `HOST`, NO mounted config — proving both gateways
+    bind and route out of the box (`.agents/gateways/RULES.md` rules 2, 2b).
+
+20. **`EVAL_MODEL` pins; `EVAL_MODEL_API` picks the wire.**
+    - **Native pin** (default; API unset) — model rewritten to `EVAL_MODEL`, wire
+      kept. bifrost — a small Caddy stamps the inbound wire into `X-Eval-Wire`,
+      and one governance rule per provider keys on it (`headers['x-eval-wire'] ==
+      '<p>'`) to pin on that wire; litellm — three family wildcards rewrite the
+      model to `EVAL_MODEL` on each native provider.
+    - **Wire override** (API set) — force `EVAL_MODEL_API`. bifrost — one
+      `cel="true"` rule targets that provider; litellm — a single `*` entry.
+    - **Passthrough** (`EVAL_MODEL` unset) — client model forwarded unchanged.
+
+21. **Server tools survive iff protocol matches.** A web-search server tool
+    (Anthropic `web_search_2*`, OpenAI Responses `web_search_preview`, Google
+    `google_search`/`googleSearch`) MUST survive a **matched-protocol** forward
+    intact — this is the invariant that broke (an Anthropic `web_search_20250305`
+    was mangled into a bare `web_search`, upstream rejected it with
+    `_websearch_interception_converted_stream: Extra inputs are not permitted`).
+    **Cross-protocol** translation of a server tool is a known upstream
+    limitation: the cross-protocol search cells mark it `ToolExpect::KnownLossy`,
+    asserting only routing + pin, and emit a `NOTE` if a future engine version
+    starts preserving the tool (then tighten that cell to `Require`) — the same
+    known-limitation pattern as the portkey no-spans test.
+
+22. **Assert on the forwarded request, not the response** (extends rule 10).
+    `mock_upstream.py` (stock `python:3.12-slim`, no bake target) records every
+    forwarded request to `/output/requests.jsonl`; the test reads that "target
+    output request" and checks target-wire path + pinned model + tool. No
+    upstream creds, deterministic. The
+    `static_gateway_render_substitutes_every_template_var` guard checks every
+    `${...}` a template uses is substituted by its `start` script.
+
+23. **The change is confined to the two gateway dirs.** bifrost fronts its binary
+    with a small Caddy that stamps the inbound wire into a header (its CEL rules
+    can't see the request path); litellm keeps its Caddy path-shim. Agents,
+    runner, compose, and helm are untouched.

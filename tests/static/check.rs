@@ -489,6 +489,12 @@ fn model_axis_generic_default_no_silent_model() {
         !svc.contains("${EVAL_MODEL:-"),
         "services.yaml must not default EVAL_MODEL to a baked handle — no silent fallback model (#187)"
     );
+    // The gateway is the model authority: it must receive EVAL_MODEL to pin
+    // (agents send a placeholder). Dropping this env is the passthrough-no-pin regression.
+    assert!(
+        svc.contains("EVAL_MODEL: ${EVAL_MODEL}"),
+        "services.yaml gateway must pass EVAL_MODEL through so it can pin the model (#269)"
+    );
 
     // Both paths exist. The generic gateways are present…
     for g in ["bifrost", "litellm", "portkey"] {
@@ -831,4 +837,34 @@ fn build_scripts_use_docker_not_podman() {
         "✓ no podman invocations in {} container shell scripts",
         scripts.len()
     );
+}
+
+/// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
+/// carries the gateway with one `COPY /opt/gateway`, so a shim outside it fails
+/// `not found` at boot (regression: #269's nginx at /usr/sbin broke every bundle).
+#[test]
+fn gateway_shim_lives_under_opt_gateway() {
+    // Non-comment lines of a shell/Dockerfile.
+    let code = |t: &str| -> Vec<String> {
+        t.lines()
+            .map(|l| l.trim_start().to_string())
+            .filter(|l| !l.starts_with('#'))
+            .collect()
+    };
+    for (gw, dir) in sibling_dirs("gateways") {
+        let start = code(&fs::read_to_string(dir.join("start")).unwrap_or_default()).join("\n");
+        let df = code(&fs::read_to_string(dir.join("Dockerfile")).unwrap_or_default()).join("\n");
+        if start.contains("caddy") {
+            assert!(
+                start.contains("/opt/gateway/caddy"),
+                "gateways/{gw}/start must launch caddy as /opt/gateway/caddy, not a bare PATH binary"
+            );
+        }
+        // nginx is musl + /usr/sbin — it survives neither the COPY nor the glibc base.
+        assert!(
+            !start.contains("nginx") && !df.contains("nginx"),
+            "gateways/{gw} must not use nginx (musl); use the static caddy under /opt/gateway"
+        );
+    }
+    eprintln!("✓ gateway shims live under /opt/gateway (survive the standalone COPY)");
 }

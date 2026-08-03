@@ -10,8 +10,8 @@
 # resolves at request time.
 #
 # Env contract:
-#   EVAL_MODEL        <provider>/<model> for the routing target.
-#                     litellm uses the prefix to pick the provider plugin.
+#   EVAL_MODEL        target model as a bare handle; pinned whenever set.
+#   EVAL_MODEL_API    OPTIONAL wire override: anthropic | openai | gemini.
 #   PORT, HOST        external bind address (default 4000, 127.0.0.1).
 #                     Caddy listens here; litellm is internal.
 #
@@ -25,15 +25,51 @@ set -eu
 TEMPLATE=/opt/gateway/config.yaml.template
 CONFIG=/opt/gateway/config.yaml
 
+# Each litellm provider handler appends a different path to its base, so derive
+# the per-API bases from the single OPENAI_API_BASE:
+#   anthropic appends /v1/messages            -> root WITHOUT /v1
+#   gemini appends /models/<m>:generateContent under /v1beta
+#   openai uses OPENAI_API_BASE as-is (…/v1)
 if [ -f "$TEMPLATE" ]; then
-  : "${EVAL_MODEL:?EVAL_MODEL must be set to <provider>/<model>}"
-  sed -e "s|\${EVAL_MODEL}|$EVAL_MODEL|g" < "$TEMPLATE" > "$CONFIG"
+  _root=${OPENAI_API_BASE:-}; _root=${_root%/}; _root=${_root%/v1}
+  export ANTHROPIC_API_BASE="${ANTHROPIC_API_BASE:-$_root}"
+  export GEMINI_API_BASE="${GEMINI_API_BASE:-$_root/v1beta}"
+
+  # EVAL_MODEL is the model authority — pinned whenever set. EVAL_MODEL_API only
+  # overrides the wire. Three modes, rendered as one-line flow YAML into
+  # ${MODEL_LIST}:
+  #   API set             -> WIRE OVERRIDE: one `*` entry forwards on that API,
+  #                          pinning EVAL_MODEL (or `*` to keep the client model).
+  #   API unset, MODEL set -> NATIVE PIN (default): family wildcards keep each
+  #                          inbound on its native wire, rewriting model->EVAL_MODEL.
+  #   MODEL unset          -> PASSTHROUGH: family wildcards echo the client model.
+  if [ -n "${EVAL_MODEL_API:-}" ]; then
+    # WIRE OVERRIDE: forward every inbound on EVAL_MODEL_API, pinning EVAL_MODEL
+    # (or `*` to keep the client model). One api_base for that API.
+    case "$EVAL_MODEL_API" in
+      anthropic) export UPSTREAM_API_BASE="$_root" ;;
+      gemini)    export UPSTREAM_API_BASE="$_root/v1beta" ;;
+      openai)    export UPSTREAM_API_BASE="${OPENAI_API_BASE:-$_root}" ;;
+      *) echo "EVAL_MODEL_API must be anthropic|openai|gemini (got: $EVAL_MODEL_API)" >&2; exit 2 ;;
+    esac
+    if [ -n "${EVAL_MODEL:-}" ]; then _t="$EVAL_MODEL"; else _t="*"; fi
+    MODEL_LIST="[{\"model_name\": \"*\", \"litellm_params\": {\"model\": \"${EVAL_MODEL_API}/${_t}\", \"api_key\": \"os.environ/OPENAI_API_KEY\", \"api_base\": \"os.environ/UPSTREAM_API_BASE\"}}]"
+  elif [ -n "${EVAL_MODEL:-}" ]; then
+    # NATIVE PIN (default): keep each inbound on its own native wire, but rewrite
+    # the model to EVAL_MODEL. Family wildcards route by inbound family; no
+    # cross-protocol translation, so server tools survive.
+    MODEL_LIST="[{\"model_name\": \"claude-*\", \"litellm_params\": {\"model\": \"anthropic/${EVAL_MODEL}\", \"api_key\": \"os.environ/OPENAI_API_KEY\", \"api_base\": \"os.environ/ANTHROPIC_API_BASE\"}}, {\"model_name\": \"gemini-*\", \"litellm_params\": {\"model\": \"gemini/${EVAL_MODEL}\", \"api_key\": \"os.environ/OPENAI_API_KEY\", \"api_base\": \"os.environ/GEMINI_API_BASE\"}}, {\"model_name\": \"*\", \"litellm_params\": {\"model\": \"openai/${EVAL_MODEL}\", \"api_key\": \"os.environ/OPENAI_API_KEY\", \"api_base\": \"os.environ/OPENAI_API_BASE\"}}]"
+  else
+    # PASSTHROUGH: no EVAL_MODEL -> echo the client's own model on its native API.
+    MODEL_LIST="[{\"model_name\": \"claude-*\", \"litellm_params\": {\"model\": \"anthropic/claude-*\", \"api_key\": \"os.environ/OPENAI_API_KEY\", \"api_base\": \"os.environ/ANTHROPIC_API_BASE\"}}, {\"model_name\": \"gemini-*\", \"litellm_params\": {\"model\": \"gemini/gemini-*\", \"api_key\": \"os.environ/OPENAI_API_KEY\", \"api_base\": \"os.environ/GEMINI_API_BASE\"}}, {\"model_name\": \"*\", \"litellm_params\": {\"model\": \"openai/*\", \"api_key\": \"os.environ/OPENAI_API_KEY\", \"api_base\": \"os.environ/OPENAI_API_BASE\"}}]"
+  fi
+  sed -e "s|\${MODEL_LIST}|${MODEL_LIST}|g" < "$TEMPLATE" > "$CONFIG"
 fi
 
 # Caddy in background — listens on $PORT, forwards to litellm:4001.
 # Litellm-min runs as root in our image, so Caddy doesn't need
 # a non-default config dir.
-caddy run --config /opt/gateway/Caddyfile --adapter caddyfile &
+/opt/gateway/caddy run --config /opt/gateway/Caddyfile --adapter caddyfile &
 
 # Litellm bound to loopback only; the world reaches it via Caddy.
 exec /opt/gateway/venv/bin/litellm \
