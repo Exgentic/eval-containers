@@ -4,10 +4,11 @@
 # Reads:
 #   /logs/verifier/reward.txt   written by /grade.sh
 #   /output/agent/.started-at   written by /usr/local/bin/run
+#   /output/agent/.exit-code    written by /usr/local/bin/run-agent
 #
 # Writes:
 #   /output/task/result.json    task_id, benchmark, reward, passed
-#   /output/agent/result.json   agent, started_at, ended_at
+#   /output/agent/result.json   agent, started_at, ended_at, exit_code
 #   /output/model/result.json   model
 set -euo pipefail
 
@@ -21,12 +22,16 @@ PASSED=$(awk -v r="$REWARD" 'BEGIN{print (r+0 >= 1) ? "true" : "false"}')
 ENDED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 STARTED_AT=$(cat /output/agent/.started-at 2>/dev/null || echo "$ENDED_AT")
 
+# Agent exit status from run-agent; null if it never ran (keeps JSON valid).
+EXIT_CODE=$(head -1 /output/agent/.exit-code 2>/dev/null | tr -d '[:space:]' || true)
+[[ "$EXIT_CODE" =~ ^-?[0-9]+$ ]] || EXIT_CODE=null
+
 printf '{"task_id":"%s","benchmark":"%s","reward":%s,"passed":%s}\n' \
   "${TASK_ID:-unknown}" "${BENCHMARK:-unknown}" "$REWARD" "$PASSED" \
   > /output/task/result.json
 
-printf '{"agent":"%s","started_at":"%s","ended_at":"%s"}\n' \
-  "${AGENT:-unknown}" "$STARTED_AT" "$ENDED_AT" \
+printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s}\n' \
+  "${AGENT:-unknown}" "$STARTED_AT" "$ENDED_AT" "$EXIT_CODE" \
   > /output/agent/result.json
 
 printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json

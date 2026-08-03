@@ -213,6 +213,24 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
         (-1.0..=1.0).contains(&reward),
         "reward out of range [-1, 1]: {reward}"
     );
+
+    // agent/result.json carries the agent's exit code (rule 16). Replay fixtures
+    // record clean runs, so it's an integer here; the crash/timeout paths are
+    // exercised elsewhere. Guards against the field being dropped from the
+    // orchestration.
+    let agent_path = Path::new("output")
+        .join(benchmark)
+        .join(task_id)
+        .join("agent/result.json");
+    assert!(
+        agent_path.exists(),
+        "agent/result.json not written for {benchmark}/{task_id}"
+    );
+    let agent = read_json(&agent_path).expect("agent/result.json is not valid JSON");
+    assert!(
+        agent["exit_code"].is_i64(),
+        "agent/result.json exit_code is not an integer for {benchmark}/{task_id}"
+    );
 }
 
 /// Build every core/gateway/model base image the replay stack
