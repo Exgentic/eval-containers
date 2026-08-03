@@ -237,11 +237,14 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
     fi
   fi
 
-  # Let the non-root agent (uid 1002) edit just its solution files; tests stay
-  # root-only. After the Java src copy above, which would otherwise re-root them.
-  for f in $SOLUTION_FILES; do
-    chown 1002 "/app/$f" "/app/$(dirname "$f")" 2>/dev/null || true
-  done
+  # /app is the agent's workspace (uid 1002): starter code AND build scaffolding
+  # (go.mod, CMakeLists.txt, gradle/, src/) all get copied from the mode-600
+  # $EXERCISE_DIR, so the copies land root:600 and the agent can't read or edit
+  # them. Hand the whole tree to the agent. Grading copies only the solution
+  # files back into the root-only $EXERCISE_DIR and tests there, so agent writes
+  # in /app can't reach the tests or change the verdict.
+  chown -R 1002 /app 2>/dev/null || true
+  chmod -R u+rwX /app 2>/dev/null || true
 
   FILE_LIST=$(echo "$SOLUTION_FILES" | tr '\n' ', ' | sed 's/,$//')
   export TASK="Edit the following $LANGUAGE code file(s) to solve the exercise described below. Modify ONLY the listed file(s) in the current directory. Do not create new files.
