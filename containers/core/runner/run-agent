@@ -1,8 +1,8 @@
 #!/bin/bash
 # Launch the agent under the eval's isolation contract. Shared by BOTH
 # orchestration paths so the env allow-list has exactly one home:
-#   - single-container bundle: process-compose.yaml's `agent` process execs this;
-#   - compose/k8s lean base:   the runner sequence in /usr/local/bin/run execs this.
+#   - single-container bundle: process-compose.yaml's `agent` process runs this;
+#   - compose/k8s lean base:   the runner sequence in /usr/local/bin/run runs this.
 #
 # Contract enforced here:
 #   - non-root: `gosu agent` drops to the unprivileged agent uid (rule 13);
@@ -24,7 +24,10 @@ fi
 # process-compose's JSON log envelope, which breaks verifiers reading stdout).
 # Every value is read from the inherited environment — exported by
 # /usr/local/bin/run (single-container) or set by the orchestrator (compose/k8s).
-exec timeout "${TIMEOUT:-300}" gosu agent env -i \
+#
+# Not exec'd: record the exit status for write-result (rule 16). 124 = timeout.
+rc=0
+timeout "${TIMEOUT:-300}" gosu agent env -i \
   PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
   HOME=/home/agent USER=agent LANG=C.UTF-8 \
   TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
@@ -32,4 +35,6 @@ exec timeout "${TIMEOUT:-300}" gosu agent env -i \
   OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" OPENAI_API_KEY=sk-proxy \
   ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}" ANTHROPIC_API_KEY=sk-proxy \
   GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \
-  /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
+  /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log || rc=$?
+printf '%s' "$rc" > /output/agent/.exit-code
+exit "$rc"
