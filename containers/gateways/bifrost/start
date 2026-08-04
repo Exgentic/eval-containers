@@ -13,6 +13,9 @@
 #   EVAL_MODEL_API  OPTIONAL wire override: anthropic | openai | gemini.
 #   OPENAI_API_BASE upstream root; each provider appends its native path.
 #   LOG_LEVEL       bifrost log level (default info).
+#   EVAL_COST_INPUT_PER_TOKEN, EVAL_COST_OUTPUT_PER_TOKEN
+#                   what the upstream bills us per token (see the pricing
+#                   override below). Defaults match the IBM litellm proxy.
 # Upstream auth is the provider-native env var (OPENAI_API_KEY etc.) — no
 # umbrella alias (gateways/RULES.md rule 3).
 
@@ -45,7 +48,36 @@ if [ -f "$TEMPLATE" ]; then
       RULES="$RULES{ \"id\": \"pin-$p\", \"name\": \"pin-$p\", \"enabled\": true, \"scope\": \"global\", \"priority\": $pr, \"cel_expression\": \"headers['x-eval-wire'] == '$p'\", \"targets\": [{ \"provider\": \"$p\"${MODEL}, \"weight\": 1.0 }] }"
     done
   fi
-  GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}] },"
+  # PRICING: make gen_ai.usage.cost on the OTel span a real number.
+  #
+  # bifrost prices every call from its bundled pricing.json, keyed on the model
+  # name. Ours never matches: the handles we route are the upstream proxy's own
+  # (`azure/gpt-5.5`, `aws/claude-opus-5`, `rits/google/gemma-4-31B`), not
+  # litellm's public catalog names — so the lookup misses and bifrost writes
+  # gen_ai.usage.cost=0. Empirically that was 0 on every one of the ~2,100
+  # provider-call spans in the results store, which is why the dashboard's cost
+  # column was blank.
+  #
+  # The upstream DOES know the cost — it returns `x-litellm-response-cost` on
+  # every response — but that is an HTTP header, and bifrost's span carries the
+  # cost it computed itself, not one read off the wire. Rather than teach it to
+  # forward a header, give it the rate: a global wildcard pricing override makes
+  # its own arithmetic come out right.
+  #
+  # One flat rate covers every model because the upstream bills one: probing it
+  # with gpt-5.4 / gpt-5.5 / gpt-4.1-mini / claude-opus-5 / claude-sonnet-5 /
+  # gemini-3-flash / gemma-4-31B returns the SAME cost for the same token counts.
+  # Solving two samples gives $2.50/1M in, $15.00/1M out, and that predicts
+  # `x-litellm-response-cost` exactly (to 1e-9) on every model tried. Overridable
+  # by env for when the contract changes.
+  : "${EVAL_COST_INPUT_PER_TOKEN:=0.0000025}"
+  : "${EVAL_COST_OUTPUT_PER_TOKEN:=0.000015}"
+  # `pricing_patch` is JSON *inside* a JSON string, and this whole thing is a sed
+  # replacement — so its inner quotes need a backslash that survives sed's own
+  # unescaping (sed reduces `\"` to `"`). Hence the four backslashes: shell →
+  # `\\"`, sed → `\"`, which is what the config file must contain.
+  PRICING="{ \"id\": \"00000000-0000-4000-8000-000000000001\", \"name\": \"upstream-flat-rate\", \"scope_kind\": \"global\", \"match_type\": \"wildcard\", \"pattern\": \"*\", \"request_types\": [\"chat_completion\"], \"pricing_patch\": \"{\\\\\"input_cost_per_token\\\\\":${EVAL_COST_INPUT_PER_TOKEN},\\\\\"output_cost_per_token\\\\\":${EVAL_COST_OUTPUT_PER_TOKEN}}\" }"
+  GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}], \"pricing_overrides\": [${PRICING}] },"
 
   : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
