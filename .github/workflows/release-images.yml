@@ -50,12 +50,12 @@ on:
         default: false
       combo_agents:
         description: "Space-separated agents to build eval combos for (blank = skip)"
-        # The 5 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
+        # The 7 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
         # workflow_dispatch inputs are NOT populated on a tag push, so the enumerate
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
-        default: "claude-code codex gemini-cli openclaw zerostack"
+        default: "claude-code codex gemini-cli openclaw zerostack opencode pi"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, swe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -193,7 +193,7 @@ jobs:
           # any non-dispatch trigger (the vX.Y.Z release tag) force the full published
           # lineup; a manual dispatch keeps its inputs (blank combo_agents = skip).
           if [ "$IS_DISPATCH" != "true" ]; then
-            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack"
+            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi"
             INCLUDE_PER_TASK=true
           fi
           all=$(find containers -name docker-bake.hcl -not -name 'combination*' \
