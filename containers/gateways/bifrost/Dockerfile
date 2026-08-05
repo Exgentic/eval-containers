@@ -23,7 +23,7 @@
 # nginx (musl, /usr/sbin) does not survive that copy onto the glibc eval base.
 # One ARG drives both the pull and the label so they can't drift (principle 9).
 # Named stage because `COPY --from=` can't take an `${ARG}`.
-ARG BIFROST_VERSION=v1.5.15
+ARG BIFROST_VERSION=v1.6.7
 FROM docker.io/maximhq/bifrost:${BIFROST_VERSION} AS bifrost-bin
 
 FROM alpine:3.20
