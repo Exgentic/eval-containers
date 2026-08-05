@@ -13,22 +13,29 @@
 #   EVAL_MODEL_API  OPTIONAL wire override: anthropic | openai | gemini.
 #   OPENAI_API_BASE upstream root; each provider appends its native path.
 #   LOG_LEVEL       bifrost log level (default info).
+#
+# Pricing — what gen_ai.usage.cost on the OTel span gets multiplied by. Both
+# knobs are OPTIONAL and no rate is baked into the image: a price belongs to the
+# deployment, not to us. Set neither and bifrost prices from its own bundled
+# catalog exactly as it does by default (see the pricing block below).
 #   EVAL_COST_INPUT_PER_TOKEN, EVAL_COST_OUTPUT_PER_TOKEN
-#                   what the upstream bills us per token (see the pricing
-#                   override below). Defaults match the IBM litellm proxy.
+#                   one flat rate for every model, in dollars PER TOKEN. For an
+#                   upstream that bills the same regardless of model — the IBM
+#                   litellm proxy bills $2.50/1M in, $15.00/1M out, i.e.
+#                   0.0000025 / 0.000015. Set both or neither.
 #   EVAL_PRICING_FILE
-#                   OPTIONAL price list, to charge different models different
-#                   rates. Default /opt/gateway/data/pricing.tsv (absent in the
-#                   image — mount one). Format, whitespace-separated:
+#                   per-model rates. Format, whitespace-separated:
 #
 #                       # model            in/token   out/token
 #                       azure/gpt-5.5      0.0000050  0.0000300
 #                       aws/claude-opus-5  0.0000150  0.0000750
 #
 #                   `#` comments and blank lines are ignored. The model is the
-#                   BARE handle you'd put in EVAL_MODEL. Any model not listed
-#                   still gets EVAL_COST_*_PER_TOKEN, so an incomplete file
-#                   undercharges nothing — it just falls back.
+#                   BARE handle you'd put in EVAL_MODEL. A path that doesn't
+#                   exist is an error (a mount that didn't land).
+#
+# Set both knobs and the file wins for the models it names while the flat rate
+# catches everything else.
 # Upstream auth is the provider-native env var (OPENAI_API_KEY etc.) — no
 # umbrella alias (gateways/RULES.md rule 3).
 
@@ -61,40 +68,44 @@ if [ -f "$TEMPLATE" ]; then
       RULES="$RULES{ \"id\": \"pin-$p\", \"name\": \"pin-$p\", \"enabled\": true, \"scope\": \"global\", \"priority\": $pr, \"cel_expression\": \"headers['x-eval-wire'] == '$p'\", \"targets\": [{ \"provider\": \"$p\"${MODEL}, \"weight\": 1.0 }] }"
     done
   fi
-  # PRICING: make gen_ai.usage.cost on the OTel span a real number.
+  # PRICING: what bifrost multiplies token counts by to fill gen_ai.usage.cost.
   #
-  # bifrost prices every call from its bundled pricing.json, keyed on the model
-  # name. Ours never matches: the handles we route are the upstream proxy's own
-  # (`azure/gpt-5.5`, `aws/claude-opus-5`, `rits/google/gemma-4-31B`), not
-  # litellm's public catalog names — so the lookup misses and bifrost writes
-  # gen_ai.usage.cost=0. Empirically that was 0 on every one of the ~2,100
-  # provider-call spans in the results store, which is why the dashboard's cost
-  # column was blank.
+  # Left alone, bifrost prices every call from its bundled pricing.json, keyed on
+  # the model name. That works for public catalog names and misses for anything
+  # else: route a proxy's own handles (`azure/gpt-5.5`, `rits/google/gemma-4-31B`)
+  # and the lookup finds nothing, so the span carries cost 0. There is no fallback
+  # layer inside bifrost — an unlisted model is silently free.
   #
-  # The upstream DOES know the cost — it returns `x-litellm-response-cost` on
-  # every response — but that is an HTTP header, and bifrost's span carries the
-  # cost it computed itself, not one read off the wire. Rather than teach it to
-  # forward a header, give it the rate: a global wildcard pricing override makes
-  # its own arithmetic come out right.
+  # A price is a property of the deployment, not of this image: it depends on the
+  # provider, the contract, the account, and it changes without warning. So no
+  # rate is baked in. Configure it and we render `governance.pricing_overrides`;
+  # configure nothing and we render none, leaving bifrost's own pricing.json
+  # lookup exactly as it behaves out of the box.
   #
-  # One flat rate covers every model because the upstream bills one: probing it
-  # with gpt-5.4 / gpt-5.5 / gpt-4.1-mini / claude-opus-5 / claude-sonnet-5 /
-  # gemini-3-flash / gemma-4-31B returns the SAME cost for the same token counts.
-  # Solving two samples gives $2.50/1M in, $15.00/1M out, and that predicts
-  # `x-litellm-response-cost` exactly (to 1e-9) on every model tried. Overridable
-  # by env for when the contract changes.
-  : "${EVAL_COST_INPUT_PER_TOKEN:=0.0000025}"
-  : "${EVAL_COST_OUTPUT_PER_TOKEN:=0.000015}"
+  # Two knobs, either or both:
+  #   EVAL_COST_*_PER_TOKEN  one flat rate for every model, as a `*` wildcard.
+  #                          Right for a proxy that bills one rate regardless of
+  #                          model (ours does).
+  #   EVAL_PRICING_FILE      per-model rates, one `exact` override each.
+  # Both set: the file wins for the models it names, the wildcard catches the
+  # rest. Specificity decides, and array order is irrelevant — a wildcard never
+  # shadows an exact entry.
+  #
   # `pricing_patch` is JSON *inside* a JSON string, and this whole thing is a sed
   # replacement — so its inner quotes need a backslash that survives sed's own
   # unescaping (sed reduces `\"` to `"`). Hence the four backslashes: shell →
   # `\\"`, sed → `\"`, which is what the config file must contain.
-  PRICING="{ \"id\": \"00000000-0000-4000-8000-000000000001\", \"name\": \"upstream-flat-rate\", \"scope_kind\": \"global\", \"match_type\": \"wildcard\", \"pattern\": \"*\", \"request_types\": [\"chat_completion\"], \"pricing_patch\": \"{\\\\\"input_cost_per_token\\\\\":${EVAL_COST_INPUT_PER_TOKEN},\\\\\"output_cost_per_token\\\\\":${EVAL_COST_OUTPUT_PER_TOKEN}}\" }"
-  # A price list, if one is mounted, becomes one `exact` override per model,
-  # layered on top of the wildcard above. Specificity decides which applies —
-  # a listed model gets its own rate, everything else falls back to the
-  # wildcard, so a partial list never prices anything at 0. (Order within the
-  # array is irrelevant; the wildcard does not shadow an exact entry.)
+  PRICING=""
+  if [ -n "${EVAL_COST_INPUT_PER_TOKEN:-}" ] || [ -n "${EVAL_COST_OUTPUT_PER_TOKEN:-}" ]; then
+    # One without the other would silently price that half at 0 — worse than
+    # not configuring pricing at all, because the number looks real.
+    if [ -z "${EVAL_COST_INPUT_PER_TOKEN:-}" ] || [ -z "${EVAL_COST_OUTPUT_PER_TOKEN:-}" ]; then
+      echo "set BOTH EVAL_COST_INPUT_PER_TOKEN and EVAL_COST_OUTPUT_PER_TOKEN, or neither" >&2
+      exit 2
+    fi
+    PRICING="{ \"id\": \"00000000-0000-4000-8000-000000000001\", \"name\": \"flat-rate\", \"scope_kind\": \"global\", \"match_type\": \"wildcard\", \"pattern\": \"*\", \"request_types\": [\"chat_completion\"], \"pricing_patch\": \"{\\\\\"input_cost_per_token\\\\\":${EVAL_COST_INPUT_PER_TOKEN},\\\\\"output_cost_per_token\\\\\":${EVAL_COST_OUTPUT_PER_TOKEN}}\" }"
+  fi
+  # A price list becomes one `exact` override per model.
   #
   # `exact` matches the BARE requested model (`azure/gpt-5.5`), NOT the
   # provider-prefixed key bifrost uses to index its own pricing.json
@@ -105,8 +116,12 @@ if [ -f "$TEMPLATE" ]; then
   # must run under plain `docker run`), so the file is whitespace-separated
   # rather than JSON. Emitting one object per line and stripping newlines
   # keeps the whole block a single sed replacement value.
-  : "${EVAL_PRICING_FILE:=/opt/gateway/data/pricing.tsv}"
-  if [ -f "$EVAL_PRICING_FILE" ]; then
+  CHART=""
+  if [ -n "${EVAL_PRICING_FILE:-}" ]; then
+    # An explicit path that isn't there is a mount that didn't land — a typo in
+    # `-v` would otherwise boot fine and price everything wrong (rule 22).
+    [ -f "$EVAL_PRICING_FILE" ] || {
+      echo "EVAL_PRICING_FILE=$EVAL_PRICING_FILE does not exist" >&2; exit 2; }
     CHART=$(awk '
       /^[[:space:]]*#/ || /^[[:space:]]*$/ { next }
       NF != 3 {
@@ -122,10 +137,19 @@ if [ -f "$TEMPLATE" ]; then
     ' "$EVAL_PRICING_FILE") || {
       echo "EVAL_PRICING_FILE=$EVAL_PRICING_FILE is malformed (see above)" >&2; exit 2; }
     echo "pricing: loaded $(grep -cvE '^[[:space:]]*(#|$)' "$EVAL_PRICING_FILE") model rate(s) from $EVAL_PRICING_FILE" >&2
-  else
-    CHART=""
   fi
-  GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}], \"pricing_overrides\": [${PRICING}${CHART}] },"
+  # Nothing configured -> no overrides -> bifrost's native pricing.json lookup,
+  # untouched. Say so, because the consequence (cost 0 for any model absent from
+  # that catalog) is otherwise invisible until someone reads a blank cost column.
+  if [ -z "$PRICING$CHART" ]; then
+    echo "pricing: none configured — bifrost prices from its bundled catalog; \
+models absent from it report cost 0. Set EVAL_COST_{INPUT,OUTPUT}_PER_TOKEN \
+and/or mount EVAL_PRICING_FILE to price them." >&2
+  fi
+  # Strip the leading ", " the chart entries carry when no wildcard precedes them.
+  OVERRIDES="${PRICING}${CHART}"
+  case "$OVERRIDES" in ", "*) OVERRIDES="${OVERRIDES#, }" ;; esac
+  GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}], \"pricing_overrides\": [${OVERRIDES}] },"
 
   : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"

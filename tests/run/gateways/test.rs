@@ -964,19 +964,30 @@ fn max_span_cost(traces: &str) -> Option<f64> {
 #[tokio::test]
 #[ignore]
 async fn otel_bifrost_span_cost_is_nonzero() {
-    // bifrost prices each call from its bundled pricing.json keyed on the
-    // model name, and the handles we route are the upstream proxy's own
-    // (`azure/gpt-5.4`, `aws/claude-opus-5`, …) — never in that catalog.
-    // So the lookup missed and every span carried gen_ai.usage.cost=0,
-    // which is what left the dashboard's cost column blank across the
-    // whole result history. gateways/bifrost/start now installs a
-    // governance pricing override with the rate the upstream actually
-    // bills; this pins that the span comes out with a real number on it.
+    // The original bug: bifrost prices each call from its bundled pricing.json
+    // keyed on the model name, and the handles we route are the upstream
+    // proxy's own (`azure/gpt-5.4`, `aws/claude-opus-5`, …) — never in that
+    // catalog. The lookup missed, every span carried gen_ai.usage.cost=0, and
+    // the dashboard's cost column was blank across the whole result history.
+    //
+    // Given a rate, the span must carry a real number. The rate is passed in
+    // here exactly the way a deployment passes it (deploy/values-openshift.yaml
+    // sets these two via gatewayExtraEnv) — the image itself has no default, so
+    // a test that set nothing would be testing bifrost's catalog, not us.
     //
     // Asserting the attribute is *populated*, not that it is under some
     // threshold — a cost SLO is forbidden (RULES.md rule 12).
     let tmp = tempfile::tempdir().expect("tempdir");
-    let (_otel, gw) = start_pod_with_otel("bifrost", tmp.path()).await;
+    let (_otel, gw) = start_pod_with_otel_env(
+        "bifrost",
+        tmp.path(),
+        &[
+            ("EVAL_COST_INPUT_PER_TOKEN", "0.0000025"),
+            ("EVAL_COST_OUTPUT_PER_TOKEN", "0.000015"),
+        ],
+        None,
+    )
+    .await;
     let port = gateway_port(&gw).await;
     let resp = http()
         .post(format!(
@@ -1100,25 +1111,66 @@ async fn otel_bifrost_prices_a_listed_model_from_the_mounted_price_file() {
 #[tokio::test]
 #[ignore]
 async fn otel_bifrost_falls_back_when_the_price_file_omits_the_model() {
-    // A partial price list must never price a model at 0 — the unlisted model
-    // stays on the flat EVAL_COST_* wildcard. This is what makes an
-    // incomplete file safe to mount, and it only holds because the wildcard
-    // override is layered alongside the per-model ones rather than replaced
-    // by them.
+    // A partial price list alongside a flat rate: the unlisted model must land
+    // on the flat wildcard — not on the other model's entry, and not on 0.
+    // This is what makes an incomplete file safe to mount, and it only holds
+    // because the wildcard override is layered alongside the per-model ones
+    // rather than replaced by them.
     let (_pdir, prices) = pricing_file("some/other-model  0.0010000  0.0020000\n");
     let tmp = tempfile::tempdir().expect("tempdir");
-    let (_otel, gw) = start_pod_with_otel_env("bifrost", tmp.path(), &[], Some(&prices)).await;
+    let (_otel, gw) = start_pod_with_otel_env(
+        "bifrost",
+        tmp.path(),
+        &[
+            ("EVAL_COST_INPUT_PER_TOKEN", "0.0000025"),
+            ("EVAL_COST_OUTPUT_PER_TOKEN", "0.000015"),
+        ],
+        Some(&prices),
+    )
+    .await;
 
     // Nonzero is enforced by the helper (it panics if no span carries a
     // cost). What this pins is *which* rate: the file's 0.001/token would put
-    // the cost three orders of magnitude above the flat default, so staying
-    // low proves the entry for another model didn't leak onto this one.
+    // the cost three orders of magnitude above the flat rate, so staying low
+    // proves the entry for another model didn't leak onto this one.
     let cost = span_cost_of_one_call(&gw, tmp.path()).await;
     assert!(
         cost < 0.001,
         "unlisted model priced at {cost}, which is the other model's \
          price-file rate — an `exact` override must not match a model it \
          doesn't name"
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn otel_bifrost_serves_with_no_pricing_configured() {
+    // No price is baked into the image, so the unconfigured case is a real
+    // deployment shape and must not be a boot failure: the gateway serves, and
+    // pricing is simply bifrost's own catalog lookup. Whether that lookup finds
+    // our handle is bifrost's business, not ours — the assertion is that the
+    // call succeeds, NOT that cost is any particular value.
+    //
+    // Guards the branch where both knobs are unset and `pricing_overrides`
+    // renders empty: an empty array is easy to get subtly wrong (a stray
+    // leading comma is invalid JSON and bifrost then fails to start).
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (_otel, gw) = start_pod_with_otel_env("bifrost", tmp.path(), &[], None).await;
+    let port = gateway_port(&gw).await;
+    let resp = http()
+        .post(format!(
+            "http://127.0.0.1:{port}/openai/v1/chat/completions"
+        ))
+        .json(&body_openai())
+        .send()
+        .await
+        .expect("post chat");
+    assert_eq!(
+        resp.status(),
+        200,
+        "unconfigured pricing must still serve — rendering an empty \
+         pricing_overrides array broke the config. Body: {}",
+        resp.text().await.unwrap_or_default()
     );
 }
 
