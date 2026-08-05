@@ -51,7 +51,7 @@ use std::time::Duration;
 use reqwest::Client;
 use serde_json::{Value, json};
 use testcontainers::core::wait::HttpWaitStrategy;
-use testcontainers::core::{ContainerPort, Mount, WaitFor};
+use testcontainers::core::{ContainerPort, ExecCommand, Mount, WaitFor};
 use testcontainers::runners::AsyncRunner;
 use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::sync::OnceCell;
@@ -411,6 +411,110 @@ async fn boot_litellm() {
 #[tokio::test]
 async fn boot_portkey() {
     assert_boots("portkey").await
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Env-priced cost (bifrost, no creds) — EVAL_INPUT_COST_PER_TOKEN +
+// EVAL_OUTPUT_COST_PER_TOKEN render one wildcard pricing override so
+// bifrost costs models its catalog doesn't know; unset, the config is
+// untouched; half-set fails loud (RULES.md "env-priced cost emission").
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// USD-per-token test prices. The mock upstream reports usage 1/1, so a
+/// correctly priced span costs exactly IN + OUT.
+const IN_COST: f64 = 0.000002;
+const OUT_COST: f64 = 0.000004;
+
+/// The rendered /opt/gateway/data/config.json of a running gateway.
+async fn rendered_config(c: &ContainerAsync<GenericImage>) -> Value {
+    let mut exec = c
+        .exec(ExecCommand::new(["cat", "/opt/gateway/data/config.json"]))
+        .await
+        .expect("exec cat config.json");
+    let out = exec.stdout_to_vec().await.expect("read exec stdout");
+    serde_json::from_slice(&out).expect("rendered config.json must parse as JSON")
+}
+
+#[tokio::test]
+async fn bifrost_pricing_env_renders_wildcard_override() {
+    let c = start_gateway(
+        "bifrost",
+        &[
+            ("EVAL_INPUT_COST_PER_TOKEN", "0.000002"),
+            ("EVAL_OUTPUT_COST_PER_TOKEN", "0.000004"),
+        ],
+    )
+    .await;
+    let config = rendered_config(&c).await;
+    let overrides = config["governance"]["pricing_overrides"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no governance.pricing_overrides in rendered config: {config}"));
+    assert_eq!(overrides.len(), 1, "exactly one override: {overrides:?}");
+    let o = &overrides[0];
+    assert_eq!(o["scope_kind"], "global");
+    assert_eq!(o["match_type"], "wildcard");
+    assert_eq!(o["pattern"], "*");
+    // pricing_patch is a JSON-encoded string — the render's double-escape
+    // must survive sed intact.
+    let patch: Value = serde_json::from_str(o["pricing_patch"].as_str().expect("patch is string"))
+        .expect("pricing_patch must be embedded JSON");
+    assert_eq!(patch["input_cost_per_token"], json!(IN_COST));
+    assert_eq!(patch["output_cost_per_token"], json!(OUT_COST));
+}
+
+#[tokio::test]
+async fn bifrost_no_pricing_env_renders_no_override() {
+    let c = start_gateway("bifrost", &[]).await;
+    let config = rendered_config(&c).await;
+    assert!(
+        config["governance"].get("pricing_overrides").is_none(),
+        "pricing_overrides must not render without the env vars — catalog \
+         pricing would be shadowed. governance={}",
+        config["governance"]
+    );
+}
+
+#[tokio::test]
+async fn bifrost_half_set_pricing_env_fails_loud() {
+    // Only one of the two vars → the start script must exit non-zero
+    // naming both (gateways/RULES.md rule 22: misconfiguration is loud).
+    // A shell wrapper keeps the container alive after start exits so the
+    // exit code is observable (podman's API can't be inspected once the
+    // container stops — bollard rejects its `stopped` state).
+    ensure_built().await;
+    let (name, tag) = gateway_image_ref("bifrost");
+    let c = GenericImage::new(name, tag)
+        .with_entrypoint("sh")
+        .with_wait_for(WaitFor::message_on_stdout("START_EXIT="))
+        .with_env_var("EVAL_MODEL", "openai/azure/gpt-5.4")
+        .with_env_var("EVAL_INPUT_COST_PER_TOKEN", "0.000002")
+        .with_cmd([
+            "-c",
+            "/opt/gateway/start 2>/tmp/err; echo \"START_EXIT=$?\"; cat /tmp/err; sleep 60",
+        ])
+        .start()
+        .await
+        .expect("start wrapped gateway");
+    let logs = String::from_utf8_lossy(
+        &c.stdout_to_vec()
+            .await
+            .expect("read wrapped container stdout"),
+    )
+    .to_string();
+    assert!(
+        logs.contains("START_EXIT=2"),
+        "half-set pricing env must exit 2 — got: {logs}"
+    );
+    let err = String::from_utf8_lossy(
+        &c.stderr_to_vec()
+            .await
+            .expect("read wrapped container stderr"),
+    )
+    .to_string();
+    assert!(
+        (logs.clone() + &err).contains("must be set together"),
+        "error must name both vars. stdout={logs} stderr={err}"
+    );
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -898,5 +1002,147 @@ async fn otel_portkey_openai_emits_no_gateway_spans() {
         !has_gen_ai,
         "portkey emitted gateway-side gen_ai spans for /openai — is portkey now shipping OTel? \
          Update the comment in gateways/portkey/start and switch this test to assert presence."
+    );
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Env-priced cost emission (no creds) — otelcol + the recording mock
+// upstream (fixed usage 1/1) + a priced bifrost. The span's cost attr
+// must equal tokens × the env prices, proving the override reaches
+// bifrost's pricing engine, not just the rendered file.
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/// The cost attribute bifrost's tracer stamps on every completed span.
+const COST_ATTR: &str = "gen_ai.usage.cost";
+
+/// Every numeric value of a `COST_ATTR` attribute across all spans.
+fn span_costs(traces_jsonl: &str) -> Vec<f64> {
+    fn walk(v: &Value, out: &mut Vec<f64>) {
+        if let Some(attrs) = v.as_array() {
+            for a in attrs {
+                walk(a, out);
+            }
+        } else if let Some(obj) = v.as_object() {
+            if let (Some(key), Some(val)) = (obj.get("key"), obj.get("value")) {
+                if key.as_str() == Some(COST_ATTR) {
+                    let num = val["doubleValue"]
+                        .as_f64()
+                        .or_else(|| val["stringValue"].as_str().and_then(|s| s.parse().ok()))
+                        .or_else(|| val["intValue"].as_str().and_then(|s| s.parse().ok()));
+                    if let Some(n) = num {
+                        out.push(n);
+                    }
+                }
+            }
+            for child in obj.values() {
+                walk(child, out);
+            }
+        }
+    }
+    let mut out = Vec::new();
+    for line in traces_jsonl.lines() {
+        if let Ok(v) = serde_json::from_str::<Value>(line) {
+            walk(&v, &mut out);
+        }
+    }
+    out
+}
+
+#[tokio::test]
+async fn otel_bifrost_env_priced_cost_on_spans() {
+    ensure_built().await;
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let host_output = tmp.path();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let net = format!("gw-cost-{nanos}");
+
+    let _otel = GenericImage::new("ghcr.io/exgentic/core/otel", "latest")
+        .with_wait_for(WaitFor::message_on_stderr(
+            "Everything is ready. Begin running and processing data.",
+        ))
+        .with_mount(Mount::bind_mount(
+            host_output.to_str().expect("utf8 host path"),
+            "/output",
+        ))
+        .with_network(&net)
+        .with_container_name(format!("otelcol-{nanos}"))
+        .start()
+        .await
+        .expect("start otelcol");
+
+    // The translation suite's recording mock: canned OpenAI response
+    // with usage {prompt_tokens: 1, completion_tokens: 1}.
+    let mock_name = format!("mock-{nanos}");
+    let mock_script = test_support::repo_root().join("tests/run/gateways/mock_upstream.py");
+    let _mock = GenericImage::new("python", "3.12-slim")
+        .with_exposed_port(ContainerPort::Tcp(8080))
+        .with_wait_for(WaitFor::Http(Box::new(
+            HttpWaitStrategy::new("/")
+                .with_port(ContainerPort::Tcp(8080))
+                .with_poll_interval(Duration::from_millis(200))
+                .with_expected_status_code(200u16),
+        )))
+        .with_mount(Mount::bind_mount(
+            mock_script.to_str().expect("utf8 script path"),
+            "/mock_upstream.py",
+        ))
+        .with_mount(Mount::bind_mount(
+            host_output.to_str().expect("utf8 host path"),
+            "/output",
+        ))
+        .with_network(&net)
+        .with_container_name(&mock_name)
+        .with_cmd(["python", "/mock_upstream.py"])
+        .start()
+        .await
+        .expect("start mock upstream");
+
+    let (name, tag) = gateway_image_ref("bifrost");
+    let gw = GenericImage::new(name, tag)
+        .with_exposed_port(ContainerPort::Tcp(4000))
+        .with_wait_for(WaitFor::Http(Box::new(
+            HttpWaitStrategy::new(health_path("bifrost"))
+                .with_port(ContainerPort::Tcp(4000))
+                .with_poll_interval(Duration::from_millis(500))
+                .with_expected_status_code(200u16),
+        )))
+        .with_network(&net)
+        .with_env_var("EVAL_MODEL", "vendor/pinned-xyz")
+        .with_env_var("EVAL_INPUT_COST_PER_TOKEN", "0.000002")
+        .with_env_var("EVAL_OUTPUT_COST_PER_TOKEN", "0.000004")
+        .with_env_var("OPENAI_API_KEY", "sk-mock")
+        .with_env_var("OPENAI_API_BASE", format!("http://{mock_name}:8080"))
+        .with_env_var(
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            format!("http://otelcol-{nanos}:4318"),
+        )
+        .start()
+        .await
+        .expect("start gateway");
+
+    let port = gateway_port(&gw).await;
+    let resp = http()
+        .post(format!(
+            "http://127.0.0.1:{port}/openai/v1/chat/completions"
+        ))
+        .json(&body_openai())
+        .send()
+        .await
+        .expect("post chat");
+    assert_eq!(resp.status(), 200, "precondition: mock-backed chat 200");
+
+    let traces = await_traces_with_gen_ai(host_output);
+    let costs = span_costs(&traces);
+    let want = IN_COST + OUT_COST; // usage 1/1 from the mock
+    assert!(
+        costs.iter().any(|c| (c - want).abs() < want * 1e-6),
+        "no span carried a `{COST_ATTR}` attribute equal to \
+         1×{IN_COST} + 1×{OUT_COST} = {want} — the env pricing override \
+         did not reach bifrost's pricing engine. costs seen: {costs:?}. \
+         First 800 bytes of traces.jsonl: {}",
+        &traces[..traces.len().min(800)]
     );
 }

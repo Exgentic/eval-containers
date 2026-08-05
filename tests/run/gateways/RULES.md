@@ -53,6 +53,16 @@ Parent: [../RULES.md](../RULES.md)
    Wired via the standard `OTEL_EXPORTER_OTLP_ENDPOINT` env var (base
    URL — each flavor derives any provider-specific suffix internally).
 
+6a. **Env-priced cost emission (bifrost)** — with `EVAL_INPUT_COST_PER_TOKEN`
+   + `EVAL_OUTPUT_COST_PER_TOKEN` set (USD per token), the rendered config
+   MUST carry exactly one global wildcard `governance.pricing_overrides`
+   entry patching those prices, and a served request's span MUST carry a
+   cost attribute (`gen_ai.usage.cost`) equal to tokens × prices — asserted
+   creds-free against the recording mock's fixed usage. With neither set,
+   `pricing_overrides` MUST NOT render (bifrost's catalog pricing governs,
+   unshadowed). With exactly one set, the container MUST exit non-zero
+   naming both vars (gateways/RULES.md rule 22: misconfiguration is loud).
+
 7. **litellm trajectory + result extras** — the `otel` callback MUST emit
    `gen_ai.*` spans (rule 6) which the otelcol sidecar writes to
    `/output/traces.jsonl` — the native OTLP/JSON trace that `models/replay`
