@@ -11,6 +11,10 @@
 # Env contract:
 #   EVAL_MODEL      target model, a BARE handle (e.g. aws/claude-opus-4-8).
 #   EVAL_MODEL_API  OPTIONAL wire override: anthropic | openai | gemini.
+#   EVAL_INPUT_COST_PER_TOKEN, EVAL_OUTPUT_COST_PER_TOKEN
+#                   OPTIONAL, both or neither: USD-per-token prices rendered
+#                   as a global pricing override, for models bifrost's
+#                   catalog doesn't know (e.g. a proxy's custom handles).
 #   OPENAI_API_BASE upstream root; each provider appends its native path.
 #   LOG_LEVEL       bifrost log level (default info).
 # Upstream auth is the provider-native env var (OPENAI_API_KEY etc.) — no
@@ -45,7 +49,29 @@ if [ -f "$TEMPLATE" ]; then
       RULES="$RULES{ \"id\": \"pin-$p\", \"name\": \"pin-$p\", \"enabled\": true, \"scope\": \"global\", \"priority\": $pr, \"cel_expression\": \"headers['x-eval-wire'] == '$p'\", \"targets\": [{ \"provider\": \"$p\"${MODEL}, \"weight\": 1.0 }] }"
     done
   fi
-  GOVERNANCE="\"governance\": { \"routing_rules\": [${RULES}] },"
+  # Optional pricing: both vars render ONE wildcard pricing override so
+  # bifrost costs models its catalog doesn't know. Neither set → no
+  # override (config unchanged). Exactly one set → fail loud: half a
+  # price would silently miscost every span.
+  PRICING=""
+  if [ -n "${EVAL_INPUT_COST_PER_TOKEN:-}${EVAL_OUTPUT_COST_PER_TOKEN:-}" ]; then
+    if [ -z "${EVAL_INPUT_COST_PER_TOKEN:-}" ] || [ -z "${EVAL_OUTPUT_COST_PER_TOKEN:-}" ]; then
+      echo "EVAL_INPUT_COST_PER_TOKEN and EVAL_OUTPUT_COST_PER_TOKEN must be set together" >&2
+      exit 2
+    fi
+    # Numeric-only guard: these splice into JSON through sed, so this also
+    # blocks sed/JSON metacharacters.
+    case "${EVAL_INPUT_COST_PER_TOKEN}${EVAL_OUTPUT_COST_PER_TOKEN}" in
+      *[!0-9.eE+-]*)
+        echo "EVAL_*_COST_PER_TOKEN must be numeric USD per token" >&2
+        exit 2
+        ;;
+    esac
+    # pricing_patch is a JSON-encoded STRING; \\\\\" here → \\" after the
+    # shell → \" in the file after sed's replacement collapses \\ to \.
+    PRICING="\"pricing_overrides\": [{ \"id\": \"eval-price\", \"name\": \"eval-price\", \"scope_kind\": \"global\", \"match_type\": \"wildcard\", \"pattern\": \"*\", \"request_types\": [\"chat_completion\", \"responses\"], \"pricing_patch\": \"{\\\\\"input_cost_per_token\\\\\": ${EVAL_INPUT_COST_PER_TOKEN}, \\\\\"output_cost_per_token\\\\\": ${EVAL_OUTPUT_COST_PER_TOKEN}}\" }], "
+  fi
+  GOVERNANCE="\"governance\": { ${PRICING}\"routing_rules\": [${RULES}] },"
 
   : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
