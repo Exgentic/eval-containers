@@ -411,6 +411,65 @@ fn static_portkey_health_does_not_probe_removed_sidecar() {
     );
 }
 
+#[test]
+fn static_bifrost_pricing_example_parses_as_the_start_script_reads_it() {
+    // The example file is the user-facing documentation of the price-list
+    // format, so it has to satisfy the same parse `start` applies: three
+    // whitespace-separated fields, `#`/blank ignored, model a BARE handle.
+    // A prefixed pattern is the trap worth guarding — bifrost's `exact`
+    // pricing override matches the bare requested model, so `openai/azure/…`
+    // matches nothing and the entry silently prices at 0.
+    let txt = std::fs::read_to_string(
+        test_support::repo_root().join("containers/gateways/bifrost/pricing.tsv.example"),
+    )
+    .expect("read gateways/bifrost/pricing.tsv.example");
+    let mut rows = 0;
+    for (i, line) in txt.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let f: Vec<&str> = line.split_whitespace().collect();
+        assert_eq!(
+            f.len(),
+            3,
+            "pricing.tsv.example line {}: expected 3 fields (model in out), got {}: {line}",
+            i + 1,
+            f.len()
+        );
+        for price in &f[1..] {
+            let p: f64 = price
+                .parse()
+                .unwrap_or_else(|e| panic!("pricing.tsv.example line {}: {price} — {e}", i + 1));
+            assert!(
+                p > 0.0,
+                "pricing.tsv.example line {}: price must be > 0, got {p}",
+                i + 1
+            );
+            // Per TOKEN, not per million. Anything at/above a cent per token
+            // is a per-1M figure someone forgot to divide.
+            assert!(
+                p < 0.01,
+                "pricing.tsv.example line {}: {p} looks like a per-1M price — \
+                 the file is per TOKEN (divide by 1e6)",
+                i + 1
+            );
+        }
+        assert!(
+            !f[0].starts_with("openai/")
+                && !f[0].starts_with("anthropic/")
+                && !f[0].starts_with("gemini/"),
+            "pricing.tsv.example line {}: `{}` is wire-prefixed. bifrost's `exact` \
+             override matches the BARE handle, so a prefixed pattern never matches \
+             and the model silently prices at 0.",
+            i + 1,
+            f[0]
+        );
+        rows += 1;
+    }
+    assert!(rows > 0, "pricing.tsv.example has no price rows");
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Boot (runtime, no creds) — the gateway listens on :4000 after start.
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -696,6 +755,17 @@ async fn start_pod_with_otel(
     flavor: &str,
     host_output: &Path,
 ) -> (ContainerAsync<GenericImage>, ContainerAsync<GenericImage>) {
+    start_pod_with_otel_env(flavor, host_output, &[], None).await
+}
+
+/// `start_pod_with_otel` plus extra gateway env and an optional host file
+/// bind-mounted at `/etc/eval/pricing.tsv` (for the price-list tests).
+async fn start_pod_with_otel_env(
+    flavor: &str,
+    host_output: &Path,
+    extra_env: &[(&str, &str)],
+    pricing_file: Option<&Path>,
+) -> (ContainerAsync<GenericImage>, ContainerAsync<GenericImage>) {
     ensure_built().await;
     let (key, base) = upstream_creds();
 
@@ -735,7 +805,7 @@ async fn start_pod_with_otel(
         .expect("start otelcol");
 
     let (name, tag) = gateway_image_ref(flavor);
-    let gw = GenericImage::new(name, tag)
+    let mut gw = GenericImage::new(name, tag)
         .with_exposed_port(ContainerPort::Tcp(4000))
         .with_wait_for(WaitFor::Http(Box::new(
             HttpWaitStrategy::new(health_path(flavor))
@@ -764,10 +834,23 @@ async fn start_pod_with_otel(
         .with_env_var(
             "OTEL_EXPORTER_OTLP_ENDPOINT",
             format!("http://otelcol-{uniq}:4318"),
-        )
-        .start()
-        .await
-        .expect("start gateway");
+        );
+
+    // A price list, when the test supplies one: bind the host file and point
+    // the gateway at it, exactly as a user would with `docker run -v`.
+    if let Some(path) = pricing_file {
+        gw = gw
+            .with_mount(Mount::bind_mount(
+                path.to_str().expect("utf8 pricing path"),
+                "/etc/eval/pricing.tsv",
+            ))
+            .with_env_var("EVAL_PRICING_FILE", "/etc/eval/pricing.tsv");
+    }
+    // Last, so a test can override any default set above.
+    for (k, v) in extra_env {
+        gw = gw.with_env_var(*k, *v);
+    }
+    let gw = gw.start().await.expect("start gateway");
 
     (otel, gw)
 }
@@ -929,6 +1012,113 @@ async fn otel_bifrost_span_cost_is_nonzero() {
             Some(c) => format!("{c}"),
         },
         &traces[..traces.len().min(600)]
+    );
+}
+
+/// Write a price list to its own dir and return (dir, file path). The dir is
+/// returned so the caller keeps it alive — dropping it deletes the file.
+fn pricing_file(body: &str) -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("pricing.tsv");
+    std::fs::write(&path, body).expect("write pricing.tsv");
+    (dir, path)
+}
+
+/// Post one chat completion and return the largest span cost the collector saw.
+async fn span_cost_of_one_call(gw: &ContainerAsync<GenericImage>, output: &Path) -> f64 {
+    let port = gateway_port(gw).await;
+    let resp = http()
+        .post(format!(
+            "http://127.0.0.1:{port}/openai/v1/chat/completions"
+        ))
+        .json(&body_openai())
+        .send()
+        .await
+        .expect("post chat");
+    assert_eq!(resp.status(), 200, "precondition: gateway returned 200");
+
+    let mut traces = await_traces_with_gen_ai(output);
+    let path = output.join("traces.jsonl");
+    for _ in 0..40 {
+        if let Some(c) = max_span_cost(&traces).filter(|c| *c > 0.0) {
+            return c;
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        traces = std::fs::read_to_string(&path).unwrap_or(traces);
+    }
+    panic!(
+        "no nonzero gen_ai.usage.cost span within 20s. First 600 bytes of \
+         traces.jsonl: {}",
+        &traces[..traces.len().min(600)]
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn otel_bifrost_prices_a_listed_model_from_the_mounted_price_file() {
+    // A mounted EVAL_PRICING_FILE is how a standalone `docker run` charges
+    // different models different rates. The listed rate must WIN over the
+    // flat EVAL_COST_* fallback — the two rates here differ by six orders of
+    // magnitude so the resulting cost says unambiguously which one applied.
+    //
+    // The file's model must be the BARE handle: bifrost's `exact` override
+    // matches the requested model, not the `openai/…`-prefixed key it uses
+    // to index its own pricing.json. A prefixed pattern matches nothing and
+    // silently leaves the model on the fallback, which is the whole reason
+    // this test asserts on the value rather than on the config rendering.
+    let (_pdir, prices) = pricing_file(&format!(
+        "# model            in          out\n\
+         aws/claude-opus-5  0.0000150   0.0000750\n\
+         {}                 0.0010000   0.0020000\n",
+        eval_model("bifrost")
+    ));
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (_otel, gw) = start_pod_with_otel_env(
+        "bifrost",
+        tmp.path(),
+        // Fallback set far below the file's rate: if the override didn't
+        // match, the cost lands near 1e-6 instead of near 1e-2.
+        &[
+            ("EVAL_COST_INPUT_PER_TOKEN", "0.000000001"),
+            ("EVAL_COST_OUTPUT_PER_TOKEN", "0.000000001"),
+        ],
+        Some(&prices),
+    )
+    .await;
+
+    let cost = span_cost_of_one_call(&gw, tmp.path()).await;
+    assert!(
+        cost > 0.001,
+        "cost {cost} is the flat EVAL_COST_* fallback, not the mounted \
+         price-file rate — the `exact` pricing override for `{}` did not \
+         match. Check the pattern is the bare handle and that the awk block \
+         in gateways/bifrost/start still renders valid JSON.",
+        eval_model("bifrost")
+    );
+}
+
+#[tokio::test]
+#[ignore]
+async fn otel_bifrost_falls_back_when_the_price_file_omits_the_model() {
+    // A partial price list must never price a model at 0 — the unlisted model
+    // stays on the flat EVAL_COST_* wildcard. This is what makes an
+    // incomplete file safe to mount, and it only holds because the wildcard
+    // override is layered alongside the per-model ones rather than replaced
+    // by them.
+    let (_pdir, prices) = pricing_file("some/other-model  0.0010000  0.0020000\n");
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let (_otel, gw) = start_pod_with_otel_env("bifrost", tmp.path(), &[], Some(&prices)).await;
+
+    // Nonzero is enforced by the helper (it panics if no span carries a
+    // cost). What this pins is *which* rate: the file's 0.001/token would put
+    // the cost three orders of magnitude above the flat default, so staying
+    // low proves the entry for another model didn't leak onto this one.
+    let cost = span_cost_of_one_call(&gw, tmp.path()).await;
+    assert!(
+        cost < 0.001,
+        "unlisted model priced at {cost}, which is the other model's \
+         price-file rate — an `exact` override must not match a model it \
+         doesn't name"
     );
 }
 

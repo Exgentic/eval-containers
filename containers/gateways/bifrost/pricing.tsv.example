@@ -1,0 +1,33 @@
+# Per-model token prices for the bifrost gateway. Copy, edit, and point the
+# gateway at it:
+#
+#   docker run -e EVAL_MODEL=azure/gpt-5.5 \
+#              -e EVAL_PRICING_FILE=/etc/eval/pricing.tsv \
+#              -v ./pricing.tsv:/etc/eval/pricing.tsv:ro \
+#              ... ghcr.io/exgentic/models/bifrost:latest
+#
+# Or mount it at the default path and skip the env var entirely:
+#   -v ./pricing.tsv:/opt/gateway/data/pricing.tsv:ro
+#
+# The gateway renders these into bifrost's `governance.pricing_overrides` at
+# startup; the resulting cost lands on the OTel span as `gen_ai.usage.cost`,
+# which is what the dashboard's cost column reads.
+#
+# Format: three whitespace-separated fields. `#` comments and blank lines are
+# ignored. Prices are US dollars PER TOKEN, not per million — divide the usual
+# per-1M figure by 1,000,000 ($2.50/1M -> 0.0000025).
+#
+# The model is the BARE handle, exactly as you'd pass it in EVAL_MODEL
+# (`azure/gpt-5.5`, not `openai/azure/gpt-5.5`).
+#
+# Any model NOT listed here falls back to EVAL_COST_INPUT_PER_TOKEN /
+# EVAL_COST_OUTPUT_PER_TOKEN, so a partial list is fine — nothing silently
+# prices at zero. Listing no models at all (or mounting no file) leaves every
+# model on that fallback.
+#
+# model                     input/token   output/token
+azure/gpt-5.4               0.0000025     0.0000150
+azure/gpt-5.5               0.0000050     0.0000300
+aws/claude-sonnet-5         0.0000030     0.0000150
+aws/claude-opus-5           0.0000150     0.0000750
+gcp/gemini-3-flash-preview  0.0000003     0.0000025
