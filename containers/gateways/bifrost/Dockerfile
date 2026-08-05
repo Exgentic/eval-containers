@@ -56,6 +56,11 @@ COPY --from=bifrost-bin /app/main /opt/gateway/main
 COPY start     /opt/gateway/start
 COPY health    /opt/gateway/health
 COPY Caddyfile /opt/gateway/Caddyfile
+# Documentation + starting point for a per-model price list. Inert: `start`
+# reads only the path EVAL_PRICING_FILE names, never this file, so the
+# illustrative figures in it price nothing and no rate is baked into the image
+# (rule 1). A user copies it, edits it, and mounts their own.
+COPY pricing.tsv.example /opt/gateway/data/pricing.tsv.example
 RUN chmod +x /opt/gateway/start /opt/gateway/health /opt/gateway/main \
  && mkdir -p /opt/gateway/data
 

@@ -8,3 +8,22 @@ serviceAccountName: anyuid-sa
 # would serve a stale image cached on a node (e.g. an old core-otel that fails
 # the :13133 startup probe). Always re-pulls the current digest.
 imagePullPolicy: Always
+
+# What our upstream bills, so the gateway can put a real number in
+# gen_ai.usage.cost (and therefore in the dashboard's cost column). Nothing is
+# baked into the gateway image — a price is a property of this deployment, so it
+# lives here where changing it is an edit to a values file, not a rebuild.
+#
+# One flat rate covers every model because the IBM litellm proxy bills one:
+# probing it with gpt-5.4 / gpt-5.5 / gpt-4.1-mini / claude-opus-5 /
+# claude-sonnet-5 / gemini-3-flash / gemma-4-31B returns the SAME cost for the
+# same token counts. Solving two samples gives $2.50/1M in, $15.00/1M out, which
+# then predicts the proxy's own `x-litellm-response-cost` to 1e-9 on every model
+# tried (measured 2026-08).
+#
+# Per-token, not per-million. When the contract changes, change these. If the
+# proxy ever starts billing per model, drop the flat pair and mount a price file
+# instead (EVAL_PRICING_FILE — see containers/gateways/bifrost/pricing.tsv.example).
+gatewayExtraEnv:
+  - { name: EVAL_COST_INPUT_PER_TOKEN,  value: "0.0000025" }
+  - { name: EVAL_COST_OUTPUT_PER_TOKEN, value: "0.000015" }
