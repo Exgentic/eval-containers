@@ -40,6 +40,16 @@ const SPECIAL: &[(&str, &str)] = &[
     // omitted — its gold hits rate-limited live APIs, so it can't deterministically pass.)
     ("skills-bench", "bike-rebalance"),
     ("skills-bench", "civ6-adjacency-optimizer"),
+    // One task per language: aider-polyglot is six graders and six toolchains
+    // behind one name, and the grader runs the agent's workspace through the
+    // language's own build (gradle/cmake/cargo/jest offline), so a single id
+    // would leave five of them unproven.
+    ("aider-polyglot", "0"),   // cpp/all-your-base
+    ("aider-polyglot", "26"),  // go/alphametics
+    ("aider-polyglot", "65"),  // java/affine-cipher
+    ("aider-polyglot", "112"), // javascript/affine-cipher
+    ("aider-polyglot", "161"), // python/affine-cipher
+    ("aider-polyglot", "195"), // rust/accumulate
     // Code benchmarks — gold solution = the dataset's reference, written to stdout.
     ("humaneval", "0"),
     ("humanevalplus", "0"),
