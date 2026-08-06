@@ -98,6 +98,25 @@ principles 8–10.
 
 ### Fixed
 
+- **`aider-polyglot` measured a task upstream never poses.** Upstream runs
+  the hidden suite after the model's first attempt and pastes the failures
+  back for a second one — `pass_rate_2`, the leaderboard metric, is measured
+  after exactly that round of feedback (Gemini 2.0 Pro: 20.4 → 35.6 with it).
+  Our agent got no feedback at all: a shell, six toolchains, and nothing to
+  run. It now gets `run-tests`, one root-served run of the hidden suite whose
+  output comes back with upstream's `test_failures` text appended; the
+  request FIFO is removed as root picks it up, so the budget can't be reset.
+  Alongside: the prompt is now upstream's `instructions_addendum` verbatim,
+  the test timeout is upstream's 180s (was 120s), and the suite's output goes
+  to the verifier log instead of `/dev/null`, where an infrastructure failure
+  was indistinguishable from a wrong answer.
+- **`aider-polyglot` leaked its tests on all 47 java tasks.** Java keeps its
+  tests in the `src/` tree the entrypoint copies wholesale into `/app`, and
+  `chown -R 1002 /app` then handed them to the agent. The suite is hidden for
+  every language or for none; the test paths are now removed from `/app`.
+  The copy also landed as `cp -r src /app/src` onto a directory the
+  solution-file loop had already created, nesting a second tree at
+  `/app/src/src` — java agents saw the whole project twice. It merges now.
 - **Silent apt-retry wrapper**: `A && B && break || retry` swallowed
   the final failure after exhausting retries. All 5 bases now use an
   explicit `ok=0/1` gate that fails the build on unrecoverable apt.
