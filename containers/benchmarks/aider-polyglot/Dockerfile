@@ -160,8 +160,15 @@ TEST_FILES=$(cat "$TASK_DIR/test_files.txt")
 # Pristine exercise, then the agent's whole workspace on top, then upstream's
 # test files restored over that — the same order aider's harness uses. Agent-
 # written helper files count; agent edits to a test file never do.
-WORK=$(mktemp -d /tests/work/run.XXXXXX) || exit 1
-trap 'rm -rf "$WORK"' EXIT
+#
+# The scratch copy keeps the exercise's own directory name inside a throwaway
+# parent: cpp's CMakeLists.txt derives the test filename from the directory
+# (`${exercise_name}_test.cpp`), so a random name breaks the build for all 26
+# cpp tasks.
+PARENT=$(mktemp -d /tests/work/run.XXXXXX) || exit 1
+trap 'rm -rf "$PARENT"' EXIT
+WORK="$PARENT/$EXERCISE"
+mkdir -p "$WORK"
 cp -r "$EXERCISE_DIR/." "$WORK/"
 cp -r /app/. "$WORK/" 2>/dev/null
 for f in $TEST_FILES; do
@@ -206,9 +213,9 @@ esac
 
 # 180s matches upstream's per-exercise test timeout. Output is sanitized the way
 # aider sanitizes it before pasting it back to the model: timings stripped (they
-# make otherwise-identical runs differ) and the scratch path reduced to the
-# exercise name (it would otherwise leak /tests/work).
-timeout 180 sh -c "$TEST_CMD" 2>&1 | sed -E "s|$WORK|$EXERCISE|g; s/\bin [0-9]+\.[0-9]+s\b//g"
+# make otherwise-identical runs differ) and paths reduced to the exercise name
+# (they would otherwise leak /tests/work).
+timeout 180 sh -c "$TEST_CMD" 2>&1 | sed -E "s|$PARENT/||g; s/\bin [0-9]+\.[0-9]+s\b//g"
 exit "${PIPESTATUS[0]}"
 TEST
 
@@ -284,6 +291,9 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   # hidden for every language or for none.
   for f in $TEST_FILES; do
     rm -f "/app/$f"
+    # …and the dirs that held them (java: src/test/java), so the workspace looks
+    # like a project with no tests rather than one with the tests taken out.
+    rmdir -p --ignore-fail-on-non-empty "$(dirname "/app/$f")" 2>/dev/null || true
   done
 
   # /app is the agent's workspace (uid 1002): starter code AND build scaffolding
