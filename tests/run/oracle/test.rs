@@ -50,6 +50,15 @@ const SPECIAL: &[(&str, &str)] = &[
     ("aider-polyglot", "112"), // javascript/affine-cipher
     ("aider-polyglot", "161"), // python/affine-cipher
     ("aider-polyglot", "195"), // rust/accumulate
+    // Plus one per way the image was found to be missing a dependency, since the
+    // per-language ids above all passed while these scored 0.0 on Exercism's own
+    // reference — a benchmark nobody can pass looks exactly like a hard one.
+    ("aider-polyglot", "10"), // cpp/gigasecond — needs Boost headers
+    ("aider-polyglot", "34"), // go/dnd-character — needs Go >= 1.21 (`slices`)
+    ("aider-polyglot", "3"),  // cpp/binary-search-tree — reference is a lone .h
+    // Not listed: the 3 rust exercises with crates.io dependencies, which no
+    // agent can pass while the image is offline. Registering them would encode
+    // a known-broken state as expected.
     // Code benchmarks — gold solution = the dataset's reference, written to stdout.
     ("humaneval", "0"),
     ("humanevalplus", "0"),
