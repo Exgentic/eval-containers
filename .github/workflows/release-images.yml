@@ -5,9 +5,11 @@ name: Release the fleet
 # fleet-publish-dev + combos-claude-code + publish-per-task) into a single
 # pipeline that uses every GitHub-Actions-NATIVE textbook speedup:
 #
-#   * FROZEN BASE       — shared deps (core + gateways) build ONCE; leaves pull
-#                         the frozen :latest by overriding the bake context to
-#                         docker-image:// (stable digest -> leaf caches hit).
+#   * CARRIED-FORWARD   — every image whose build inputs are unchanged from the
+#                         prior release is retagged from its digest, not rebuilt
+#                         (delivery/RULES.md rule 13); shared bases build ONCE and
+#                         leaves pull them from the registry via docker-image://
+#                         contexts (stable digest -> leaf caches hit).
 #   * PER-LEAF MATRIX   — one job per leaf (not 10-leaf groups), so the wall
 #                         clock is the slowest SINGLE benchmark, not the slowest
 #                         group, and one leaf's failure can't sink its neighbours
@@ -45,7 +47,7 @@ on:
         description: "Version to publish (e.g. v0.1.0); blank = build at :latest"
         default: ""
       rebuild_bases:
-        description: "Rebuild shared bases (else reuse the frozen :latest digest)"
+        description: "Rebuild shared bases even when their input-hashes are fresh"
         type: boolean
         default: false
       combo_agents:
@@ -118,7 +120,7 @@ jobs:
           name: cli
           path: target/release/eval-containers
 
-  # ── frozen base: shared deps (core + gateways) build ONCE, per-arch ───────
+  # ── shared bases (core + gateways): build stale, carry forward fresh ──────
   # Native-per-arch: amd64 on a standard runner, arm64 on ubuntu-24.04-arm
   # (set vars.FLEET_RUNNER_ARM to override). Each arch pushes :TAG-<arch>; the
   # `merge` job stitches them into the :TAG manifest list. No QEMU — the heavy
@@ -144,7 +146,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Build bases (${{ matrix.arch }}) only if missing or forced (else freeze)
+      - name: Bases (${{ matrix.arch }}) — build stale, carry forward fresh
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
           ARCH: ${{ matrix.arch }}
@@ -339,7 +341,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bake ${{ matrix.target }} (${{ matrix.arch }}; frozen base, per-leaf cache)
+      - name: Bake ${{ matrix.target }} (${{ matrix.arch }}; registry bases, per-leaf cache)
         timeout-minutes: 25  # cap a stalled leaf — a hung download blocked the matrix ~40m; leaves build in <2m
         env:
           T: ${{ matrix.target }}
@@ -366,8 +368,8 @@ jobs:
           fi
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
-          # Override every base context to PULL the frozen registry image, so this
-          # leaf builds only its own layers FROM the frozen base (never rebuilds it).
+          # Override every base context to PULL the published registry image, so
+          # this leaf builds only its own layers FROM it (never rebuilds a base).
           OV=()
           for d in $(find containers/core containers/gateways -mindepth 1 -maxdepth 1 -type d | sed -E 's#containers/##'); do
             [ -f "containers/$d/Dockerfile" ] || continue
@@ -487,7 +489,7 @@ jobs:
                 fi
               else echo "::error::per-task build failed: $ref"; fails=$((fails+1)); fi
             else
-              # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the frozen entrypoint.
+              # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the published entrypoint.
               if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
                    --set "benchmark-${B}.labels.eval.input-hash=${H}" \
                    --set "benchmark-${B}.args.EVAL_TASK_ID=${TASK}" \
@@ -642,6 +644,20 @@ jobs:
               echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
+          # Carried-forward (rule 13), per variant: unchanged inputs vs the
+          # prior release (:latest — combos push manifest lists directly)
+          # ⇒ retag its digest; force_rebuild overrides (CVE refresh). Reads
+          # the per-iteration eb/A/TAG/DRY at call time.
+          carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
+            [ "${{ inputs.force_rebuild }}" != "true" ] && [ "$DRY" != "true" ] || return 1
+            bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" >/dev/null || return 1
+            if [ "$TAG" = "latest" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
+            else
+              docker buildx imagetools create --tag "${REGISTRY}/evals/${eb}--${A}$1:${TAG}" \
+                "${REGISTRY}/evals/${eb}--${A}$1:latest" || return 1
+              echo "carried forward: evals/${eb}--${A}$1:${TAG} <- :latest"
+            fi
+          }
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
@@ -666,24 +682,11 @@ jobs:
             HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A" ${TASK:+"$TASK"}) \
               || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
             EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
-            # Carried-forward (rule 13), per variant: unchanged inputs vs the
-            # prior release (:latest — combos push manifest lists directly)
-            # ⇒ retag its digest; force_rebuild overrides (CVE refresh). The
-            # variants judge independently: a stale standalone can rebuild
-            # while the lean combo carries forward.
-            carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
-              [ "${{ inputs.force_rebuild }}" != "true" ] && [ "$DRY" != "true" ] || return 1
-              bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" >/dev/null || return 1
-              if [ "$TAG" = "latest" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
-              else
-                docker buildx imagetools create --tag "${REGISTRY}/evals/${eb}--${A}$1:${TAG}" \
-                  "${REGISTRY}/evals/${eb}--${A}$1:latest" || return 1
-                echo "carried forward: evals/${eb}--${A}$1:${TAG} <- :latest"
-              fi
-            }
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
-            # once, then layers standalone on it via the eval-base context.
+            # once, then layers standalone on it via the eval-base context. The
+            # variants judge freshness independently: a stale standalone can
+            # rebuild while the lean combo carries forward.
             TGT=()
             carry "" "$EH" || TGT+=(eval)
             [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)
@@ -705,10 +708,12 @@ jobs:
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
   # Runs for real releases (tag / explicit version) or whenever the bases were
-  # rebuilt — i.e. when there's something new to gate + promote. A frozen-base
-  # dev dispatch re-scanning unchanged bases would only surface CVEs disclosed
-  # since they were last gated at release, so it's skipped (the dev run isn't
-  # publishing :latest anyway — the promotion below is tag-only).
+  # force-rebuilt. The scan covers whatever :TAG points to — carried-forward
+  # digests included (rule 15) — so a base carried from the prior release is
+  # re-gated at every release; a failure there means the base accumulated CVEs
+  # since it was built, and the fix is a force_rebuild/rebuild_bases refresh.
+  # A dev dispatch skips the gate (it isn't publishing :latest — the promotion
+  # below is tag-only).
   release-gate:
     needs: [merge, per-task, compose, combos]
     if: always() && needs.merge.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
@@ -831,7 +836,7 @@ jobs:
             echo "| CVE gate + :latest | ${{ needs.release-gate.result }} |"
             echo ""
             echo "## Per-image build time + registry size — leaves, biggest first"
-            echo "_build = the leaf's own time FROM the frozen base; bases add ${basedur:-?}s, amortized once across all leaves._"
+            echo "_build = the leaf's own time FROM the published base; bases add ${basedur:-?}s, amortized once across all leaves._"
             echo "| image | build | size |"; echo "|---|--:|--:|"
             sort -t$'\t' -k4 -rn /tmp/sizes.tsv \
               | awk -F'\t' '{printf "| %s | %ds | %d MB |\n", $1, $3, $4/1048576}'
