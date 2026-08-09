@@ -69,8 +69,8 @@ on:
       only:
         description: "Debug: restrict matrices to these space-separated leaf targets (e.g. 'benchmark-gsm8k agent-claude-code'); blank = whole fleet"
         default: ""
-      skip_published:
-        description: "Incremental: skip building any image already at :TAG (build only missing/failed). Use when re-running and the published images are still current."
+      force_rebuild:
+        description: "Rebuild every image even when its recorded input-hash is fresh (use for CVE/base refreshes — upstream base drift is invisible to the input hash)"
         type: boolean
         default: false
 
@@ -150,29 +150,44 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           export TAG="${TAG}-${ARCH}"   # per-arch tag; merge builds the :TAG manifest list
-          if [ "${{ inputs.rebuild_bases }}" != "true" ] && \
-             docker buildx imagetools inspect "${REGISTRY}/core/entrypoint:${TAG}" >/dev/null 2>&1; then
-            echo "Bases present at :${TAG} — FROZEN (skip; stable digest → leaf caches hit)."
-            exit 0
-          fi
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
           mapfile -t DEPS < <(find containers/core containers/gateways -name docker-bake.hcl \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
-          echo "Building ${#DEPS[@]} shared deps (${ARCH}): ${DEPS[*]}"
           # Stamp each base's build-input hash (delivery/RULES.md rule 12) —
           # per-target, never `*.labels`: this one invocation bakes ~19 targets
           # with ~19 different hashes. The label records the repo-computed
           # inputs at this commit; arch-independent by construction.
           HASHES=$(bash containers/scripts/fleet-hash.sh)
-          LBL=()
+          GRAPH=$(bash containers/scripts/fleet-hash.sh graph)
+          # Carried-forward (rule 13): a base whose inputs are unchanged from
+          # the prior release (:latest-<arch>) is retagged, never rebuilt —
+          # digest-stable, so leaf caches keep hitting; this subsumes the old
+          # whole-set FROZEN sentinel with a per-target judgment. rebuild_bases
+          # / force_rebuild override it (CVE refreshes — upstream base drift is
+          # invisible to the input hash). The CVE gate scans whatever :TAG
+          # points to, carried or fresh (rule 15).
+          BUILD=(); LBL=()
           for d in "${DEPS[@]}"; do
             h=$(awk -F'\t' -v t="$d" '$1==t{print $2}' <<< "$HASHES")
             [ -n "$h" ] || { echo "::error::no input-hash for $d"; exit 1; }
-            LBL+=(--set "${d}.labels.eval.input-hash=${h}")
+            ref="${REGISTRY}/$(awk -F'|' -v t="$d" '$1==t{print $2}' <<< "$GRAPH" | sed 's|^containers/||')"
+            if [ "${{ inputs.rebuild_bases }}" != "true" ] && [ "${{ inputs.force_rebuild }}" != "true" ] && \
+               [ "${{ inputs.dry_run }}" != "true" ] && \
+               bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$h" >/dev/null; then
+              if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
+              else
+                docker buildx imagetools create --tag "${ref}:${TAG}" "${ref}:latest-${ARCH}"
+                echo "carried forward: ${ref}:${TAG} <- :latest-${ARCH}"
+              fi
+              continue
+            fi
+            BUILD+=("$d"); LBL+=(--set "${d}.labels.eval.input-hash=${h}")
           done
-          ACT=(--provenance=mode=max --sbom=true "${DEPS[@]}" --push)
-          [ "${{ inputs.dry_run }}" = "true" ] && ACT=("${DEPS[@]}" --print)
+          [ "${#BUILD[@]}" -gt 0 ] || { echo "All ${#DEPS[@]} bases fresh — nothing to build."; exit 0; }
+          echo "Building ${#BUILD[@]}/${#DEPS[@]} shared deps (${ARCH}): ${BUILD[*]}"
+          ACT=(--provenance=mode=max --sbom=true "${BUILD[@]}" --push)
+          [ "${{ inputs.dry_run }}" = "true" ] && ACT=("${BUILD[@]}" --print)
           docker buildx bake "${FARGS[@]}" "${LBL[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
@@ -332,10 +347,22 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
           export TAG="${TAG}-${ARCH}"   # per-arch tag; merge builds the :TAG manifest list
-          # Incremental (skip_published): if this leaf is already at :TAG-arch, skip it.
-          if [ "${{ inputs.skip_published }}" = "true" ] && \
-             docker buildx imagetools inspect "${REGISTRY}/${T%%-*}s/${T#*-}:${TAG}" >/dev/null 2>&1; then
-            echo "skip-published: $T already at :$TAG"; exit 0
+          # Stamp + carry forward (delivery/RULES.md rules 12–13): the hash is
+          # the repo-computed inputs at this commit; the ref comes from the
+          # graph's context column (dot-safe — target names mangle gpt-5.4).
+          # Unchanged inputs vs the prior release (:latest-<arch>) ⇒ retag its
+          # digest instead of rebuilding; force_rebuild overrides (CVE refresh).
+          H=$(bash containers/scripts/fleet-hash.sh | awk -F'\t' -v t="$T" '$1==t{print $2}')
+          [ -n "$H" ] || { echo "::error::no input-hash for $T"; exit 1; }
+          ref="${REGISTRY}/$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}' | sed 's|^containers/||')"
+          if [ "${{ inputs.force_rebuild }}" != "true" ] && [ "${{ inputs.dry_run }}" != "true" ] && \
+             bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$H" >/dev/null; then
+            if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
+            else
+              docker buildx imagetools create --tag "${ref}:${TAG}" "${ref}:latest-${ARCH}"
+              echo "carried forward: ${ref}:${TAG} <- :latest-${ARCH}"
+            fi
+            exit 0
           fi
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
@@ -357,13 +384,6 @@ jobs:
               echo "::warning::build attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
-          # Stamp the leaf's build-input hash (delivery/RULES.md rule 12). The
-          # label records the repo-computed inputs at this commit; on a frozen-
-          # bases dev dispatch the leaf may build FROM an older frozen base than
-          # the hash's base component claims — tagged releases always rebuild
-          # bases first, so release labels are exact.
-          H=$(bash containers/scripts/fleet-hash.sh | awk -F'\t' -v t="$T" '$1==t{print $2}')
-          [ -n "$H" ] || { echo "::error::no input-hash for $T"; exit 1; }
           # dry_run validates config only (bake --print); else build + attest + push.
           ACT=(--provenance=mode=max --sbom=true "$T" --push)
           [ "${{ inputs.dry_run }}" = "true" ] && ACT=("$T" --print)
@@ -435,13 +455,24 @@ jobs:
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
             cache="${REGISTRY}/buildcache/${B}-${tid}-${ARCH}"
-            if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then echo "skip-published: $ref"; continue; fi
             if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
             # Per-task build-input hash (delivery/RULES.md rule 12): the raw
             # task id is part of the preimage; build.sh stamps it via
             # EVAL_INPUT_HASH, bake via a per-target label --set.
             H=$(bash containers/scripts/fleet-hash.sh per-task "$B" "$TASK" | cut -f2)
             [ -n "$H" ] || { echo "::error::no input-hash for $B/$TASK"; fails=$((fails+1)); continue; }
+            # Carried-forward (rule 13): unchanged inputs vs the prior release
+            # ⇒ retag its digest; force_rebuild overrides (CVE refresh).
+            if [ "${{ inputs.force_rebuild }}" != "true" ] && \
+               bash containers/scripts/fleet-status.sh check "${REGISTRY}/benchmarks/${B}-${tid}:latest-${ARCH}" "$H" >/dev/null; then
+              if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: $ref (unchanged; kept)"
+              elif docker buildx imagetools create --tag "$ref" "${REGISTRY}/benchmarks/${B}-${tid}:latest-${ARCH}"; then
+                echo "carried forward: $ref <- :latest-${ARCH}"
+              else
+                echo "::error::retag failed: $ref"; fails=$((fails+1))
+              fi
+              continue
+            fi
             echo "::group::$ref ($KIND)"
             if [ "$KIND" = "script" ]; then
               # It builds native (per-arch); push only if the built arch matches this
@@ -630,16 +661,33 @@ jobs:
               printf '%s' "$base_raw" | grep -q '"arm64"' && PLAT="${PLAT:+$PLAT,}linux/arm64"
               PLAT="${PLAT:-linux/amd64}" # fall back to amd64 if inspect is unreadable
             fi
-            if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "${REGISTRY}/evals/${eb}--${A}:${TAG}" >/dev/null 2>&1; then echo "skip-published: evals/${eb}--${A}"; continue; fi
             # Combo build-input hashes (delivery/RULES.md rule 12) — per-target,
             # never `*.labels`: eval and eval-standalone hash differently.
             HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A" ${TASK:+"$TASK"}) \
               || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
             EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
+            # Carried-forward (rule 13), per variant: unchanged inputs vs the
+            # prior release (:latest — combos push manifest lists directly)
+            # ⇒ retag its digest; force_rebuild overrides (CVE refresh). The
+            # variants judge independently: a stale standalone can rebuild
+            # while the lean combo carries forward.
+            carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
+              [ "${{ inputs.force_rebuild }}" != "true" ] && [ "$DRY" != "true" ] || return 1
+              bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" >/dev/null || return 1
+              if [ "$TAG" = "latest" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
+              else
+                docker buildx imagetools create --tag "${REGISTRY}/evals/${eb}--${A}$1:${TAG}" \
+                  "${REGISTRY}/evals/${eb}--${A}$1:latest" || return 1
+                echo "carried forward: evals/${eb}--${A}$1:${TAG} <- :latest"
+              fi
+            }
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
             # once, then layers standalone on it via the eval-base context.
-            TGT=(eval); [ "$STANDALONE" != "false" ] && TGT+=(eval-standalone)
+            TGT=()
+            carry "" "$EH" || TGT+=(eval)
+            [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)
+            [ "${#TGT[@]}" -gt 0 ] || continue
             ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A}"

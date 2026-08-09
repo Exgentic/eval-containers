@@ -24,6 +24,7 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 - [Triple-mode](concepts/triple-mode.md) — the same eval as container / compose / k8s job
 - [Isolation & gateways](concepts/isolation-and-gateways.md) — how trajectories stay honest
 - [The Helm chart](concepts/the-helm-chart.md) — one chart, `--set benchmark=<x>` to select; optional per-benchmark preset
+- [Release freshness](concepts/release-freshness.md) — input-hash labels, the fleet-status report, and why a release retags unchanged images
 
 ## Guides — *how to do a task*
 

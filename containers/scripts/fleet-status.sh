@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# fleet-status — compare every fleet image's recorded build-input hash against
-# the repository's computed hash (delivery/RULES.md rules 13–14).
+# fleet-status — compare fleet images' recorded build-input hashes against
+# the repository's computed hashes (delivery/RULES.md rules 13–14).
 #
 # For each static bake target: the registry ref is the graph's context column
 # minus `containers/` (exact for every target, including dotted model dirs
@@ -16,22 +16,22 @@
 #
 # Anything non-fresh MUST be rebuilt or retagged by the next release.
 #
-# Usage: fleet-status.sh [tag]     (default: latest)
+# Usage:
+#   fleet-status.sh [tag]                 # full-fleet report (default: latest)
+#   fleet-status.sh check <ref> <hash>    # one ref: prints the verdict;
+#                                         # exit 0 = fresh, 1 = not fresh
+# The `check` form is the release workflow's retag decision (rule 13) — the
+# read logic lives only here.
 # Output (TSV): ref  verdict  computed-hash  recorded-hash
 # Env: REGISTRY (default ghcr.io/exgentic), REF (default HEAD),
 #      STATUS_JOBS (parallel inspects, default 8)
-# Exit: 0 always when the sweep completes — freshness is a report, not a gate.
+# Exit (report form): 0 when the sweep completes — a report, not a gate.
 set -euo pipefail
 
-TAG="${1:-latest}"
 REGISTRY="${REGISTRY:-ghcr.io/exgentic}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 command -v jq >/dev/null || { echo "fleet-status: jq not found" >&2; exit 2; }
-
-# One fleet-hash run gives both the ref map (graph) and the expected hashes.
-GRAPH=$("$HERE/fleet-hash.sh" graph)
-ALL=$("$HERE/fleet-hash.sh")
 
 check_one() {
   local ref=$1 want=$2 img got
@@ -50,6 +50,21 @@ check_one() {
   fi
 }
 export -f check_one
+
+if [ "${1:-}" = "check" ]; then
+  { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } \
+    || { echo "fleet-status: usage: fleet-status.sh check <ref> <expected-hash>" >&2; exit 2; }
+  out=$(check_one "$2" "$3")
+  printf '%s\n' "$out"
+  [ "$(cut -f2 <<< "$out")" = "fresh" ]
+  exit
+fi
+
+TAG="${1:-latest}"
+
+# One fleet-hash run gives both the ref map (graph) and the expected hashes.
+GRAPH=$("$HERE/fleet-hash.sh" graph)
+ALL=$("$HERE/fleet-hash.sh")
 
 # target|context|deps  ⋈  target<TAB>hash…  →  "<ref> <expected-hash>" pairs,
 # fanned out over STATUS_JOBS parallel inspects.
