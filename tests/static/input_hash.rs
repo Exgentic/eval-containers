@@ -418,6 +418,24 @@ fn real_repo_hashes_every_target() {
         "standalone must differ from the lean combo"
     );
 
+    // Per-task combo: rows follow the <bench>-<tid> naming, the hash tracks
+    // the task id, and the no-task hashes above stay the definition-frozen ones.
+    let ct0 = rows(&fleet_hash(&root, &["combo", "aime", "claude-code", "T-0"]));
+    let ct1 = rows(&fleet_hash(&root, &["combo", "aime", "claude-code", "T-1"]));
+    let p0 = &ct0["evals/aime-t-0--claude-code"];
+    assert_ne!(
+        p0.0, ct1["evals/aime-t-1--claude-code"].0,
+        "per-task combo hash must track the task id"
+    );
+    assert_ne!(
+        p0.0, lean.0,
+        "per-task combo must differ from the shared combo"
+    );
+    assert_ne!(
+        p0.0, ct0["evals/aime-t-0--claude-code-standalone"].0,
+        "per-task standalone must differ from its lean variant"
+    );
+
     // Per-task: sensitive to the task id, sharing the benchmark's components.
     let t0 = rows(&fleet_hash(
         &root,
