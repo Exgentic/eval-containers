@@ -41,6 +41,16 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 10. **Consumer-visible entries only.** A `CHANGELOG.md` entry MUST record a change visible to a consumer of a release.
 
+11. **Build inputs.** An image's build inputs MUST comprise its build context, the build inputs of every in-repo base image, and the resolved digests of its external base images.
+
+12. **Recorded inputs.** Every published image MUST record a hash of its build inputs in its image configuration.
+
+13. **Carried-forward images.** A released image whose build inputs are unchanged from a prior release MUST be retagged from that release's digest rather than rebuilt.
+
+14. **Fail dirty.** An image whose recorded build-input hash is absent, unreadable, or different from the repository's computed hash MUST be treated as changed.
+
+15. **Gate parity.** A carried-forward image MUST pass every release gate that a freshly built image passes.
+
 ## References
 
 - [Process](../RULES.md) — principle 9 (the one-version policy and version knobs); principle 13 (self-contained repo).
@@ -55,4 +65,5 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 | 2026-06-11 | Initial version. Lifts the unified fleet + CLI release outcomes out of the root `RELEASE.md` into the delivery topic, which had skills but no `RULES.md`. |
 | 2026-06-11 | Rule 5: permit an explicit `workflow_dispatch` (manual re-run with a version input) alongside a tag push — the fleet workflow's escape hatch; still forbids branch-push publishes. |
 | 2026-06-14 | Added principles 8–10: the changelog is edited only when cutting a release tag, restricted to the Keep a Changelog sections, and limited to consumer-visible changes. |
+| 2026-08-09 | Added rules 11–15 (build inputs, recorded inputs, carried-forward images, fail dirty, gate parity): a release carries an unchanged image's digest forward instead of rebuilding it, keyed on a recorded build-input hash that fails dirty and exempts nothing from release gates. Defining inputs to include resolved external-base digests makes an upstream base bump a *changed* input, so CVE refreshes rebuild naturally. Supersedes the judgment-based `skip_published` dispatch knob (#227); answers the silent-staleness objection that closed #241 (content hash, not path mapping) and implements the change-detection follow-up blessed in #168. |
 | 2026-06-14 | Rule 3 + Abstract: the single shared `evaluate` compose artifact is replaced by per-benchmark `eval-<benchmark>` artifacts (one self-contained compose per benchmark, flattened at publish). A published artifact can't carry a dynamic per-benchmark `include:` (publish flattens includes), so per-benchmark sidecars (EnterpriseOps-Gym, WebArena, …) are baked in at publish and consumed with a single `-f`. |
