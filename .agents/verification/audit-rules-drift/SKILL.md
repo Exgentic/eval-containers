@@ -80,7 +80,7 @@ report (what was flagged last time).
 5. **For every mechanizable drift, propose a new catalog rule.** State the rule
    ID, severity, and the predicate (e.g. "assert `core/runner/run`
    references `EVAL_BENCHMARK_VERSION` and writes `/output/task/version.json`";
-   "assert every `models/*/Dockerfile` contains `LABEL eval.model.litellm_version=`";
+   "assert every `models/*/Dockerfile` is `FROM` a `gateways/<flavor>` image";
    "assert no benchmark `compose.yaml` uses `EVAL_*_VERSION` as a Docker image
    tag"; "assert every file under `tests/run/replay/fixtures/` ends in
    `.traces.jsonl`"). WHY: this is the mechanical > procedural escalation
