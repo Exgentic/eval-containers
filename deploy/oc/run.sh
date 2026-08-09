@@ -2,21 +2,22 @@
 # run.sh — build + run one eval on OpenShift: a single --task, or --dataset
 # (whole dataset → an Indexed Job). Model + flags: oc/README.md and the case below.
 #
-#   ./oc/run.sh --benchmark aime --agent codex --model bifrost --dataset
-#   ./oc/run.sh --benchmark aime --agent codex --model bifrost --task 0   # single, debug
+#   ./oc/run.sh --benchmark aime --agent codex --model openai/gpt-5.4 --dataset
+#   ./oc/run.sh --benchmark aime --agent codex --model openai/gpt-5.4 --task 0   # single, debug
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
-BENCHMARK="" AGENT="" MODEL="" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
-EVAL_MODEL="" NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX=""
+BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
+NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX=""
 DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
   --model) MODEL="$2"; shift 2;; --task) TASK="$2"; shift 2;;
+  --gateway) GATEWAY="$2"; shift 2;;
   --dataset) DATASET_MODE=true; shift;; --dataset-size) DATASET="$2"; DATASET_MODE=true; shift 2;;
   --parallelism) PARALLELISM="$2"; shift 2;; --retry) RETRY="$2"; shift 2;;
   --queue) QUEUE="$2"; shift 2;;
-  --eval-model) EVAL_MODEL="$2"; shift 2;; --namespace) NAMESPACE="$2"; shift 2;;
+  --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --pvc) PVC="$2"; shift 2;;
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
@@ -26,7 +27,9 @@ while [[ $# -gt 0 ]]; do case "$1" in
   *) echo "Unknown argument: $1" >&2; exit 1;;
 esac; done
 [[ -z "$BENCHMARK" || -z "$AGENT" || -z "$MODEL" ]] && {
-  echo "error: --benchmark, --agent and --model are required" >&2; exit 1; }
+  echo "error: --benchmark, --agent and --model (<provider>/<model>) are required" >&2; exit 1; }
+# The runner's clean model label (chart's eval.modelLabel): last handle segment.
+MLABEL="${MODEL##*/}"
 log() { echo "[run] $*"; }
 
 [[ -z "$REGISTRY" ]] && REGISTRY="$(oc_registry "$NAMESPACE")"
@@ -41,7 +44,7 @@ RESULT_PREFIX="runs${SUFFIX}"
 # successfulBuildsHistoryLimit on it so the controller GCs old build pods (and
 # their ConfigMaps) natively; no shell housekeeping needed here.
 if ! $NO_BUILD; then
-  log "=== build ($BENCHMARK / $AGENT / $MODEL) ==="
+  log "=== build ($BENCHMARK / $AGENT / $GATEWAY) ==="
   ISFLAG=(); [[ -n "$SUFFIX" ]] && ISFLAG=(--imagestream-suffix="$SUFFIX")
   build() { local label="$1" is="$2"; shift 2
     $DRY_RUN && { echo "[dry-run] eval-containers build $* --builder oc ${ISFLAG[*]:-}"; return; }
@@ -50,8 +53,8 @@ if ! $NO_BUILD; then
   ( cd "$REPO_DIR"
     build "bench" "$(flat "$BENCHMARK")$SUFFIX"        bench "$BENCHMARK"
     build "agent" "$(flat "$AGENT")$SUFFIX"            agent "$AGENT"
-    build "model" "$(flat "$MODEL")$SUFFIX"            model "$MODEL"
-    build "eval"  "$(flat "$BENCHMARK-$AGENT")$SUFFIX" eval "$BENCHMARK" --agent "$AGENT" --model "$MODEL" )
+    build "model" "$(flat "$GATEWAY")$SUFFIX"          model "$GATEWAY"
+    build "eval"  "$(flat "$BENCHMARK-$AGENT")$SUFFIX" eval "$BENCHMARK" --agent "$AGENT" --model "$GATEWAY" )
 fi
 $NO_RUN && { log "--no-run: built only, not submitting."; exit 0; }
 
@@ -67,13 +70,12 @@ if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
   log "dataset size for $BENCHMARK (from image label): $DATASET"
 fi
 
-if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}";
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"; fi
+if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MLABEL}";
+else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MLABEL}/${TASK}/${JOB}"; fi
 
-[[ -z "$EVAL_MODEL" ]] && EVAL_MODEL="openai/azure/$(echo "$MODEL" | sed 's/--bifrost//;s/--litellm//;s/--portkey//')"
 # flatImages=true → the chart composes flat ImageStream refs for the OC registry.
 SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
-     --set "model=$MODEL" --set "gatewayImage=$MODEL" --set "evalModel=$EVAL_MODEL"
+     --set "model=$MODEL" --set "gatewayImage=$GATEWAY"
      --set "registry=$REGISTRY" --set "flatImages=true"
      --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB")
 [[ -n "$SUFFIX"      ]] && SET+=(--set "imageSuffix=$SUFFIX" --set "nameSuffix=$SUFFIX")

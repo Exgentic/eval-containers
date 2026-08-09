@@ -14,10 +14,10 @@ task: "0"
 # rejected when perTask is true. (benchmarks/RULES.md — eval-image naming.)
 perTask: false
 registry: ghcr.io/exgentic
-# `gatewayImage` picks the proxy: a generic gateway (bifrost/litellm/portkey)
-# routes `model`=<provider>/<model> at runtime; a pinned image bakes its own.
-# REQUIRED, no default — the gateway errors on an empty handle. The runner's clean
-# label is derived from it (last path segment).
+# `gatewayImage` picks the proxy flavor (bifrost/litellm/portkey — or replay);
+# the gateway routes `model`=<provider>/<model> at runtime. `model` is REQUIRED,
+# no default — the gateway errors on an empty handle. The runner's clean label
+# is derived from it (last path segment).
 gatewayImage: bifrost
 model: ""
 # Agent-side reasoning effort (e.g. high); empty → the agent's default.
@@ -50,7 +50,6 @@ nameSuffix: ""
 # Internal upstream version overrides (CLI --*-version, --max-budget); empty = unset
 benchmarkVersion: ""
 agentVersion: ""
-litellmVersion: ""
 maxBudget: ""
 
 # ── Knobs a benchmark MAY override in its values.yaml ────────────────────────

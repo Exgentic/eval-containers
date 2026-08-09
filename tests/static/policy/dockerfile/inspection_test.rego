@@ -249,56 +249,6 @@ test_agent_version_arg_not_required_for_benchmark if {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# model_missing_litellm_version_{label,default} (red, type-gated)
-# ════════════════════════════════════════════════════════════════════
-
-complete_litellm_model := [
-	from("alpine:3"),
-	label("eval.type", `"model"`),
-	label("eval.model.litellm_version", `"main-v1.83.3-stable"`),
-	env("EVAL_LITELLM_VERSION_DEFAULT", "main-v1.83.3-stable"),
-]
-
-test_model_complete_ok if {
-	count(deny) == 0 with input as complete_litellm_model with data.params.dir as "gpt-5"
-}
-
-test_model_missing_litellm_label_fires if {
-	bad := [
-		from("alpine:3"),
-		label("eval.type", `"model"`),
-		env("EVAL_LITELLM_VERSION_DEFAULT", "main-v1.83.3-stable"),
-	]
-	count(deny) == 1 with input as bad with data.params.dir as "gpt-5"
-}
-
-test_model_missing_litellm_default_fires if {
-	bad := [
-		from("alpine:3"),
-		label("eval.type", `"model"`),
-		label("eval.model.litellm_version", `"main-v1.83.3-stable"`),
-	]
-	count(deny) == 1 with input as bad with data.params.dir as "gpt-5"
-}
-
-test_model_missing_both_fires_twice if {
-	bad := [from("alpine:3"), label("eval.type", `"model"`)]
-	count(deny) == 2 with input as bad with data.params.dir as "gpt-5"
-}
-
-# replay is the in-repo stub — exempt from both litellm requirements.
-test_model_replay_exempt if {
-	replay := [from("alpine:3"), label("eval.type", `"model"`)]
-	count(deny) == 0 with input as replay with data.params.dir as "replay"
-}
-
-# Gateway-flavor models (LABEL gateway.kind=) are thin wrappers — exempt.
-test_model_gateway_flavor_exempt if {
-	gw := [from("alpine:3"), label("eval.type", `"model"`), label("gateway.kind", `"litellm"`)]
-	count(deny) == 0 with input as gw with data.params.dir as "litellm"
-}
-
-# ════════════════════════════════════════════════════════════════════
 # upstream_base_unpinned (yellow)
 # ════════════════════════════════════════════════════════════════════
 

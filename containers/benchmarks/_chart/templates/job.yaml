@@ -107,9 +107,6 @@ spec:
             {{- with $v.maxBudget }}
             - { name: EVAL_MODEL_MAX_BUDGET, value: {{ . | quote }} }
             {{- end }}
-            {{- with $v.litellmVersion }}
-            - { name: EVAL_LITELLM_VERSION, value: {{ . | quote }} }
-            {{- end }}
             {{- with $v.gatewayExtraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

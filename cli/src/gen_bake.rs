@@ -176,7 +176,7 @@ mod tests {
     #[test]
     fn gateway_target_is_category_prefixed() {
         // Gateways follow <category>-<name> like agents/benchmarks, NOT a bare
-        // name — a bare `litellm` would collide with core/litellm's target when
+        // name — a bare `litellm` would collide with models/litellm's target when
         // both bake files load in one invocation (RULES.md principle 15.a).
         let out = render("gateways", "litellm", &[], false);
         assert!(out.contains("target \"gateway-litellm\""));

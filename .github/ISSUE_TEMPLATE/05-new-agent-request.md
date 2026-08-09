@@ -43,7 +43,7 @@ specifically. -->
 ## Endpoint compatibility
 
 <!-- If this agent uses OpenAI's Responses API (`/v1/responses`),
-`core/litellm` must be pinned to v1.63.8 or newer. Check the
+`gateways/litellm` must be pinned to v1.63.8 or newer. Check the
 current pin before opening the PR. -->
 
 ## Known obstacles

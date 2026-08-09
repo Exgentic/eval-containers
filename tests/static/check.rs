@@ -464,14 +464,14 @@ fn otelcol_health_gate_is_consistent_across_modes() {
     eprintln!("✓ otelcol health gate consistent across all three modes (#45)");
 }
 
-/// The model axis supports BOTH paths, with the generic gateway as the default
-/// (models/RULES.md rule 1, #187):
-///   - **Generic** (default): `EVAL_GATEWAY_IMAGE=bifrost` routes whatever
-///     `EVAL_MODEL=<provider>/<model>` you set — any LiteLLM model, zero build.
-///     The generic image errors on an empty handle, so there is no compose-level
-///     default model (no silent fallback).
-///   - **Pinned** (opt-in): a per-model image (`EVAL_GATEWAY_IMAGE=<model>`) bakes
-///     its model + custom config — a shared, versioned artifact. Allowed, not forbidden.
+/// The model axis has exactly ONE image kind: the shared generic gateway
+/// (models/RULES.md rule 1). `EVAL_MODEL=<provider>/<model>` selects the model
+/// at runtime — any model, zero build. `EVAL_GATEWAY_IMAGE` selects only the
+/// gateway *flavor* (bifrost default; litellm/portkey/replay). Per-model images
+/// were removed: every `containers/models/<name>` must be a thin combo over its
+/// `gateways/<flavor>` image, with `replay` (a recorded-trajectory server, rule
+/// 17) the single sanctioned exception. The generic image errors on an empty
+/// handle, so there is no compose-level default model (no silent fallback).
 #[test]
 fn model_axis_generic_default_no_silent_model() {
     let svc = fs::read_to_string(repo_root().join("containers/compose/services.yaml"))
@@ -484,7 +484,7 @@ fn model_axis_generic_default_no_silent_model() {
     );
     // No silent fallback model: the compose never bakes a default EVAL_MODEL — an
     // unset handle surfaces as the generic gateway's own startup error, never a
-    // stale default route. (Pinned per-model images bake their model and ignore it.)
+    // stale default route.
     assert!(
         !svc.contains("${EVAL_MODEL:-"),
         "services.yaml must not default EVAL_MODEL to a baked handle — no silent fallback model (#187)"
@@ -496,11 +496,35 @@ fn model_axis_generic_default_no_silent_model() {
         "services.yaml gateway must pass EVAL_MODEL through so it can pin the model (#269)"
     );
 
-    // Both paths exist. The generic gateways are present…
+    // The generic gateways are present…
     for g in ["bifrost", "litellm", "portkey"] {
         assert!(
             repo_root().join("containers/models").join(g).is_dir(),
             "generic gateway containers/models/{g} must exist (#187)"
+        );
+    }
+    // …and they are the ONLY kind: every models/<name> image is a thin combo
+    // over its gateways/<flavor> image. A Dockerfile FROMing anything else is a
+    // per-model image sneaking back in (models/RULES.md rule 1; `replay` is the
+    // single sanctioned pinned exception, rule 17).
+    for entry in
+        fs::read_dir(repo_root().join("containers/models")).expect("missing containers/models")
+    {
+        let dir = entry.expect("readable containers/models entry").path();
+        if !dir.is_dir() {
+            continue;
+        }
+        let name = dir.file_name().unwrap().to_string_lossy().into_owned();
+        if name == "replay" {
+            continue;
+        }
+        let dockerfile = fs::read_to_string(dir.join("Dockerfile"))
+            .unwrap_or_else(|_| panic!("missing containers/models/{name}/Dockerfile"));
+        assert!(
+            dockerfile.contains("/gateways${REGISTRY_SUFFIX}"),
+            "containers/models/{name} must be FROM a gateways/<flavor> image — \
+             per-model images were removed; models are selected at runtime via \
+             EVAL_MODEL (models/RULES.md rule 1)"
         );
     }
     // …and the k8s chart likewise carries no hardcoded default handle.
@@ -511,9 +535,7 @@ fn model_axis_generic_default_no_silent_model() {
         "_chart/values.yaml must ship `model: \"\"` — the routing handle, no hardcoded default (#187)"
     );
 
-    eprintln!(
-        "✓ generic gateway is the default; no silent fallback model; per-model images allowed (#187)"
-    );
+    eprintln!("✓ one shared gateway per flavor; no silent fallback model; no per-model images");
 }
 
 /// The stitched eval image must launch the pipeline (rule 12): the combination

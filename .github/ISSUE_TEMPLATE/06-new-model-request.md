@@ -7,12 +7,11 @@ labels: ["new-model"]
 
 <!--
 The model is a RUNTIME axis: set `EVAL_MODEL=<provider>/<model>` and put the
-provider key in `.env` — any LiteLLM-supported model works with no image, no
-build, no request. See docs/guides/add-a-model.md.
+provider key in `.env` — any model works with no image, no build, no request.
+There are no per-model images. See docs/guides/add-a-model.md.
 
-Open this issue only if that DOESN'T work — e.g. the pinned LiteLLM version
-doesn't support the provider yet, or it needs a new gateway backend beside
-bifrost / litellm / portkey.
+Open this issue only if that DOESN'T work — e.g. it needs a new gateway
+flavor beside bifrost / litellm / portkey.
 -->
 
 ## Model: `<provider>/<model>`
@@ -30,9 +29,7 @@ bifrost / litellm / portkey.
 
 ## What's missing
 
-- [ ] LiteLLM doesn't support this provider in the pinned `core/litellm` version — link a version bump
-- [ ] Needs a new gateway backend (the existing bifrost / litellm / portkey can't reach it) — describe why
-- [ ] Want a **pinned per-model image** (a shared, custom-configured artifact teams run against via `EVAL_GATEWAY_IMAGE=<name>`) — not just runtime `EVAL_MODEL`
+- [ ] Needs a new gateway flavor (the existing bifrost / litellm / portkey can't reach it) — describe why
 - [ ] It works already; requesting it be added to the docs / examples
 
 ## Who implements

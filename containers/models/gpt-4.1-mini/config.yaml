@@ -1,9 +1,0 @@
-model_list:
-  - model_name: "*"
-    litellm_params:
-      model: "openai/Azure/gpt-4.1-mini"
-      api_key: "os.environ/OPENAI_API_KEY"
-      api_base: "os.environ/OPENAI_API_BASE"
-
-litellm_settings:
-  callbacks: ["eval_logger.eval_logger_instance"]

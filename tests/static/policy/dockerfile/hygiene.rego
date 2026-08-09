@@ -18,7 +18,7 @@
 #   here): missing_dock_type, untagged_from, unpinned_pip, unpinned_npm,
 #   from_arg_not_global, hardcoded_secret, label_dir_mismatch, todo_string_literal,
 #   install_order_pip_before_apt, phantom_pip_uninstall, upstream_base_unpinned,
-#   agent_missing_version_arg, model_missing_litellm_version_*.
+#   agent_missing_version_arg.
 #
 # PARITY NOTE (heredocs): buildkit drops heredoc *bodies* from the parse, so the
 # RUN-scanning rules below see only what Rust sees after its strip_heredocs() —

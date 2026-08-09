@@ -1,8 +1,0 @@
-model_list:
-  - model_name: "*"
-    litellm_params:
-      model: "openai/gpt-5"
-      api_key: "os.environ/OPENAI_API_KEY"
-
-litellm_settings:
-  callbacks: ["eval_logger.eval_logger_instance"]

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fetch.sh — `oc cp` eval output off the PVC (paths read from Job labels).
 #
-#   ./oc/fetch.sh --benchmark aime --agent codex --model bifrost   # whole dataset
+#   ./oc/fetch.sh --benchmark aime --agent codex --model openai/gpt-5.4   # whole dataset
 #   ./oc/fetch.sh --sweep-id <id>                                           # every Job in a sweep
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
@@ -35,6 +35,7 @@ if [[ -n "$SWEEP_ID" ]]; then
 else
   [[ -z "$BENCHMARK" || -z "$AGENT" || -z "$MODEL" ]] && {
     echo "error: --sweep-id, or --benchmark/--agent/--model, required" >&2; exit 1; }
-  copy "$BENCHMARK" "$AGENT" "$MODEL"
+  # Results are keyed by the clean model label (last handle segment).
+  copy "$BENCHMARK" "$AGENT" "${MODEL##*/}"
 fi
 log "done → $DEST_ROOT"
