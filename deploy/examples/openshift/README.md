@@ -65,6 +65,18 @@ helm template benchmarks/_chart \
   | oc apply -f -
 ```
 
+## Build pod ran out of disk (`BuildPodEvicted`)
+
+Overrun evicts the pod partway through instead of failing the build, so the
+error names no cause. Defaults are 4Gi, or 10Gi for the combination image. An
+image that needs more declares it, so every build path gets it right:
+
+```dockerfile
+LABEL eval.build.storage="40Gi"
+```
+
+`EVAL_BUILD_STORAGE=40Gi eval-containers build …` overrides both, for a one-off.
+
 ## Bootstrapping core bases (one-time)
 
 The core base images (`core-*`, `gateways-*`) change rarely and aren't

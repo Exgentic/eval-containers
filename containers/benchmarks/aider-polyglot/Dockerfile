@@ -18,6 +18,9 @@ LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.data_revision="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
 LABEL eval.benchmark.url="https://github.com/Aider-AI/polyglot-benchmark"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aider_polyglot"
+# Six toolchains plus a prewarmed gradle + npm cache: the 4Gi default evicts
+# the build pod partway through (`--builder oc`).
+LABEL eval.build.storage="40Gi"
 
 ENV DEBIAN_FRONTEND=noninteractive
 
