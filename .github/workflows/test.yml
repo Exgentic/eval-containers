@@ -148,6 +148,10 @@ jobs:
         if: ${{ !cancelled() }}
         run: tests/static/model-paths.sweep.sh
 
+      - name: fleet-hash graph == bake --print (both directions)
+        if: ${{ !cancelled() }}
+        run: tests/static/fleet-hash.sweep.sh
+
   # Per-PR gate: cheapest full-stack fixture (bigcodebench + zerostack) on the real
   # stack (otelcol → bifrost → runner), so a gateway/otelcol regression fails the PR.
   replay-e2e:

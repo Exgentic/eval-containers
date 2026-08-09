@@ -35,3 +35,7 @@ path = "task_inspection.rs"
 [[test]]
 name = "grader"
 path = "grader.rs"
+
+[[test]]
+name = "input_hash"
+path = "input_hash.rs"
