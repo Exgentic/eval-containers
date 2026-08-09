@@ -4,20 +4,24 @@
 #
 # hash(target) = sha256 of the sorted git tree hashes of the target's build
 # context and every transitive in-repo base context — a pure function of the
-# committed tree at REF, read off the bake graph (principle 15.d keeps each
-# target's `contexts` aligned with its Dockerfile's FROMs). A flat set is
-# sensitivity-equivalent to a Merkle chain here: wiring changes edit bake
-# files, which live inside a hashed context. External FROMs are emitted as
-# unresolved refs; digest resolution needs the network and happens at release
-# time (rule 11), keeping this script offline.
+# committed tree at REF (the containers/ tree is materialized from REF via
+# `git archive`, so worktree state is invisible), read off the bake graph
+# (principle 15.d keeps each target's `contexts` aligned with its Dockerfile's
+# FROMs). A flat set is sensitivity-equivalent to a Merkle chain here: wiring
+# changes edit bake files, which live inside a hashed context. External FROMs
+# are emitted with same-Dockerfile ARG defaults expanded; refs that still
+# carry `${…}` are per-build by design. Digest resolution needs the network
+# and happens at release time (rule 11), keeping this script offline.
 #
 # Usage:
 #   fleet-hash.sh                          # every static bake target
 #   fleet-hash.sh combo <bench> <agent>    # eval + eval-standalone rows
 #   fleet-hash.sh per-task <bench> <task>  # one per-task image row
-#   fleet-hash.sh graph                    # the parsed graph: target|context|deps
-#                                          # (gated against `bake --print` by
-#                                          # tests/build fleet_hash_graph_matches_bake_print)
+#   fleet-hash.sh graph                    # target|context|deps — the context
+#                                          # column is also the registry ref
+#                                          # path (minus containers/); gated
+#                                          # against `bake --print` by
+#                                          # tests/static/fleet-hash.sweep.sh
 #
 # Output (TSV): target  hash  context-hash  bases-hash  externals
 # Env: REF (default HEAD), REPO_ROOT (default: the repo containing this script)
@@ -32,39 +36,51 @@ die() { echo "fleet-hash: $*" >&2; exit 2; }
 sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$@"; else shasum -a 256 "$@"; fi; }
 hash_of() { sha < "$1" | cut -d' ' -f1; }
 row() { printf '%s\t%s\t%s\t%s\t%s\n' "$1" "$2" "$3" "$4" "$5"; }
-M=$(mktemp -d) && trap 'rm -rf "$M"' EXIT && mkdir "$M/full" "$M/bases"
+M=$(mktemp -d) && trap 'rm -rf "$M"' EXIT && mkdir "$M/full" "$M/bases" "$M/src"
+
+# ── materialize containers/ at REF: all parsing below reads this tree ───────
+git archive "$REF" containers 2>/dev/null | tar -x -C "$M/src" \
+  || die "cannot read containers/ at $REF"
+S="$M/src"
 
 # ── graph: one awk over every per-artifact bake file → target|context|deps ──
 # (one target per file, principle 15.a; the parameterized combination file
 # sits directly in containers/core/, outside the subdir glob)
-FILES=(containers/core/*/docker-bake.hcl containers/gateways/*/docker-bake.hcl
-  containers/agents/*/docker-bake.hcl containers/benchmarks/*/docker-bake.hcl
-  containers/models/*/docker-bake.hcl)
-[ "${#FILES[@]}" -gt 0 ] || die "no bake files under $REPO_ROOT/containers"
+FILES=("$S"/containers/core/*/docker-bake.hcl "$S"/containers/gateways/*/docker-bake.hcl
+  "$S"/containers/agents/*/docker-bake.hcl "$S"/containers/benchmarks/*/docker-bake.hcl
+  "$S"/containers/models/*/docker-bake.hcl)
+[ "${#FILES[@]}" -gt 0 ] || die "no bake files under containers/ at $REF"
 awk '
   FNR==1 { tgt="" }
-  /^target "/ && tgt=="" {
+  /^target "/ {
+    if (tgt != "") { print "fleet-hash: " FILENAME " declares a second target — one per file (principle 15.a)" > "/dev/stderr"; exit 2 }
     split($0, q, "\""); tgt=q[2]
     if (tgt in seen) { print "fleet-hash: duplicate target " tgt > "/dev/stderr"; exit 2 }
     seen[tgt]=1; ctx[tgt]=""; deps[tgt]=""
   }
-  $1=="context" && $2=="=" && ctx[tgt]=="" { split($0, q, "\""); ctx[tgt]=q[2] }
-  {
-    s=$0
-    while (match(s, /"target:[A-Za-z0-9_-]+"/)) {
+  tgt != "" && $1=="context" && $2=="=" && ctx[tgt]=="" { split($0, q, "\""); ctx[tgt]=q[2] }
+  tgt != "" {
+    s=$0; sub(/#.*/, "", s)
+    while (match(s, /"target:[^"]+"/)) {
       d=substr(s, RSTART+8, RLENGTH-9)
       if (index(" " deps[tgt] " ", " " d " ")==0) deps[tgt]=deps[tgt] d " "
       s=substr(s, RSTART+RLENGTH)
     }
   }
-  END { for (t in ctx) print t "|" ctx[t] "|" deps[t] }
+  END {
+    for (t in ctx) {
+      if (ctx[t]=="") { print "fleet-hash: target " t " has no context line" > "/dev/stderr"; exit 2 }
+      print t "|" ctx[t] "|" deps[t]
+    }
+  }
 ' "${FILES[@]}" | LC_ALL=C sort > "$M/graph"
 
 # ── tree hashes: one git call over every context, paired by row order ───────
-# shellcheck disable=SC2046  # context paths never contain spaces
-git rev-parse $(awk -F'|' -v r="$REF" '{print r ":" $2}' "$M/graph") > "$M/hashes" 2>/dev/null || {
+PATHS=()
+while IFS='|' read -r t ctx _; do PATHS+=("$REF:$ctx"); done < "$M/graph"
+git rev-parse "${PATHS[@]}" > "$M/hashes" 2>/dev/null || {
   while IFS='|' read -r t ctx _; do
-    git rev-parse "$REF:$ctx" >/dev/null 2>&1 || die "context $ctx of $t is not in $REF (uncommitted?)"
+    git rev-parse "$REF:$ctx" >/dev/null 2>&1 || die "context $ctx of $t is not in $REF"
   done < "$M/graph"
   die "git rev-parse failed"
 }
@@ -87,26 +103,41 @@ awk -F'|' '
     for (j=1; j<=m; j++) if (p[j]!="") walk(root, p[j], 0)
   }
 ' "$M/graph" "$M/trees" | LC_ALL=C sort -u \
-  | awk -F'|' -v m="$M" '{ f = m "/" ($1=="F" ? "full" : "bases") "/" $2; print $3 >> f }'
+  | awk -F'|' -v m="$M" '{
+      f = m "/" ($1=="F" ? "full" : "bases") "/" $2
+      if (f != prev) { if (prev != "") close(prev); prev = f }
+      print $3 >> f
+    }'
 
 # ── externals: one awk over every context Dockerfile → dir|image ────────────
-# A FROM on a continuation line (trailing backslash above) is inside a RUN —
-# e.g. SQL `FROM 'hf://…'` in duckdb heredocs — never a Dockerfile instruction.
+# Only an unindented uppercase FROM outside a backslash continuation is an
+# instruction — SQL `FROM` fragments and Python `from … import` in heredoc
+# RUN bodies are neither. `${VAR}` is expanded from same-file ARG defaults;
+# a ref still carrying `${…}` is per-build by design (e.g. per-task bases).
 DFS=()
 while IFS='|' read -r t ctx _; do
-  [ -f "$ctx/Dockerfile" ] || die "$ctx/Dockerfile missing (target $t)"
-  DFS+=("$ctx/Dockerfile")
+  [ -f "$S/$ctx/Dockerfile" ] || die "$ctx/Dockerfile missing at $REF (target $t)"
+  DFS+=("$S/$ctx/Dockerfile")
 done < "$M/graph"
-awk '
-  FNR==1 { delete alias; cont=0 }
-  !cont && toupper($1)=="FROM" {
+awk -v strip="$S/" '
+  FNR==1 { delete alias; delete arg; cont=0 }
+  /^ARG [A-Za-z_]+=/ { eq=index($2,"="); arg[substr($2,1,eq-1)]=substr($2,eq+1) }
+  !cont && /^FROM[ \t]/ {
     img=$2; if (img ~ /^--platform/) img=$3
-    for (i=1; i<=NF; i++) if (toupper($i)=="AS") alias[$(i+1)]=1
-    if (!(img in alias) && img!="scratch" && index(img,"${REGISTRY}")==0) {
-      d=FILENAME; sub(/\/Dockerfile$/, "", d); print d "|" img
+    if (index(img, "${REGISTRY}") == 0) {
+      while (match(img, /\$\{[A-Za-z_]+\}/)) {
+        v=substr(img, RSTART+2, RLENGTH-3)
+        if (!(v in arg)) break
+        img = substr(img, 1, RSTART-1) arg[v] substr(img, RSTART+RLENGTH)
+      }
+      if (!(img in alias) && img != "scratch") {
+        d=substr(FILENAME, length(strip)+1); sub(/\/Dockerfile$/, "", d)
+        print d "|" img
+      }
     }
+    for (i=1; i<=NF; i++) if ($i=="AS") alias[$(i+1)]=1
   }
-  { cont = ($0 ~ /\\[[:space:]]*$/) }
+  { cont = ($0 ~ /\\[ \t]*$/) }
 ' "${DFS[@]}" | LC_ALL=C sort -u > "$M/ext"
 
 # ── one sha pass over every closure file, then a single join → the TSV ──────
@@ -118,7 +149,10 @@ awk '
   FILENAME ~ /ext$/   { ext[$1] = ($1 in ext) ? ext[$1] "," $2 : $2; next }
   {
     split($0, a, / +/)
-    if (split(a[2], b, "/") == 2) { if (b[1]=="full") full[b[2]]=a[1]; else bases[b[2]]=a[1] }
+    if (split(a[2], b, "/") != 2) { print "fleet-hash: unparsable sums line: " $0 > "/dev/stderr"; exit 2 }
+    if (b[1]=="full") full[b[2]]=a[1]
+    else if (b[1]=="bases") bases[b[2]]=a[1]
+    else { print "fleet-hash: unparsable sums line: " $0 > "/dev/stderr"; exit 2 }
   }
   END {
     for (i=1; i<=n; i++) {
@@ -130,10 +164,23 @@ awk '
 
 col() { awk -F'\t' -v t="$1" -v c="$2" '$1==t { print $c }' "$M/all.tsv"; }
 target_for_dir() {
-  awk -F'|' -v d="$1" '$2==d { print $1; found=1 } END { exit !found }' "$M/graph" \
-    || die "no bake target with context $1"
+  local t
+  t=$(awk -F'|' -v d="$1" '$2==d { print $1 }' "$M/graph")
+  [ -n "$t" ] || die "no bake target with context $1"
+  [ "$(printf '%s\n' "$t" | wc -l)" -eq 1 ] || die "multiple targets with context $1"
+  printf '%s' "$t"
 }
 blobs() { git rev-parse "$@" 2>/dev/null || die "blob not in $REF"; }
+# Combo parents come from combination.docker-bake.hcl's *_IMAGE defaults, so a
+# changed default re-points the closure at the new target automatically.
+parent_target() {
+  local p
+  # shellcheck disable=SC2016  # the ${REGISTRY}/${TAG} literals are the match
+  p=$(grep "\"$1\"" "$S/containers/core/combination.docker-bake.hcl" \
+    | sed -n 's|.*"${REGISTRY}/\(.*\):${TAG}".*|\1|p')
+  [ -n "$p" ] || die "cannot derive $1 from combination.docker-bake.hcl"
+  target_for_dir "containers/$p"
+}
 
 case "${1:-all}" in
 all)
@@ -143,28 +190,32 @@ graph)
   cat "$M/graph"
   ;;
 combo)
-  [ $# -eq 3 ] || die "usage: fleet-hash.sh combo <benchmark> <agent>"
+  { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } || die "usage: fleet-hash.sh combo <benchmark> <agent>"
   b=$(target_for_dir "containers/benchmarks/$2")
   a=$(target_for_dir "containers/agents/$3")
-  # The combination context is all of containers/core (over-broad); the real
-  # inputs are the combination files' blobs plus the parents' closures. The
-  # parent list mirrors combination.docker-bake.hcl's variable defaults —
-  # changing that list edits a hashed blob, so every combo hash moves with it.
+  gosu=$(parent_target GOSU_IMAGE)
+  # The combination Dockerfiles COPY from runner/ and entrypoint/ inside the
+  # containers/core context, so those trees are combo inputs alongside the
+  # Dockerfile + bake-file blobs and the parents' closures.
   blobs "$REF:containers/core/combination.Dockerfile" \
-    "$REF:containers/core/combination.docker-bake.hcl" | LC_ALL=C sort > "$M/eval.ctx"
-  LC_ALL=C sort -u "$M/full/$b" "$M/full/$a" "$M/full/gosu" > "$M/eval.bases"
+    "$REF:containers/core/combination.docker-bake.hcl" \
+    "$REF:containers/core/runner" "$REF:containers/core/entrypoint" \
+    | LC_ALL=C sort > "$M/eval.ctx"
+  LC_ALL=C sort -u "$M/full/$b" "$M/full/$a" "$M/full/$gosu" > "$M/eval.bases"
   LC_ALL=C sort -u "$M/eval.ctx" "$M/eval.bases" > "$M/eval.full"
   row "evals/$2--$3" "$(hash_of "$M/eval.full")" "$(hash_of "$M/eval.ctx")" \
     "$(hash_of "$M/eval.bases")" "-"
   blobs "$REF:containers/core/standalone.Dockerfile" > "$M/sa.ctx"
-  LC_ALL=C sort -u "$M/eval.full" "$M/full/otel" "$M/full/process-compose" \
-    "$M/full/model-bifrost" > "$M/sa.bases"
+  LC_ALL=C sort -u "$M/eval.full" "$M/full/$(parent_target OTEL_IMAGE)" \
+    "$M/full/$(parent_target PROCESS_COMPOSE_IMAGE)" \
+    "$M/full/$(parent_target MODEL_IMAGE)" > "$M/sa.bases"
   LC_ALL=C sort -u "$M/sa.ctx" "$M/sa.bases" > "$M/sa.full"
   row "evals/$2--$3-standalone" "$(hash_of "$M/sa.full")" "$(hash_of "$M/sa.ctx")" \
     "$(hash_of "$M/sa.bases")" "-"
   ;;
 per-task)
-  [ $# -eq 3 ] || die "usage: fleet-hash.sh per-task <benchmark> <task-id>"
+  { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } || die "usage: fleet-hash.sh per-task <benchmark> <task-id>"
+  case "$3" in *[[:space:]]*) die "task id must not contain whitespace" ;; esac
   [ -z "${SKILLS_BENCH_REF:-}" ] || die "SKILLS_BENCH_REF is set — an out-of-tree ref override defeats input hashing; pin the ref in the benchmark dir"
   t=$(target_for_dir "containers/benchmarks/$2")
   h=$(col "$t" 2)
@@ -172,6 +223,6 @@ per-task)
     "$(col "$t" 3)" "$(col "$t" 4)" "$(col "$t" 5)"
   ;;
 *)
-  die "unknown command $1 (expected: all | combo | per-task)"
+  die "unknown command $1 (expected: all | combo | per-task | graph)"
   ;;
 esac

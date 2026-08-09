@@ -672,7 +672,6 @@ version = "0.0.0"
 dependencies = [
  "eval-containers",
  "eval-containers-test-support",
- "serde_json",
  "testcontainers",
  "tokio",
 ]
