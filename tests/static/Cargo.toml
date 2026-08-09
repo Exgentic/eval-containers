@@ -39,3 +39,7 @@ path = "grader.rs"
 [[test]]
 name = "input_hash"
 path = "input_hash.rs"
+
+[[test]]
+name = "fleet_status"
+path = "fleet_status.rs"

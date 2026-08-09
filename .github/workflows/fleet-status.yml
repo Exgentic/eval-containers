@@ -1,0 +1,57 @@
+name: Fleet status
+
+# Freshness report (delivery/RULES.md rules 13–14): compares every fleet
+# image's recorded eval.input-hash label at a tag against the repository's
+# computed hash and reports fresh / stale / unlabeled / absent per image.
+# Report-only — everything non-fresh is what the next release must rebuild
+# or retag; nothing here gates. Replaces hand-inspecting GHCR (the v0.1.0
+# release shipped ~6,400 silently stale combos found only by hand — #233).
+#
+# Combos are deliberately absent: a combo is stale iff one of its parents
+# is (the hashes are derived), so the ~150 leaf reads below cover the
+# ~5,500-combo fleet without per-combo registry reads.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to audit (e.g. v0.1.0); default = latest"
+        default: "latest"
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compare recorded input-hashes against the repo
+        run: |
+          REPORT=$(containers/scripts/fleet-status.sh "${{ inputs.tag }}")
+          echo "$REPORT"
+          {
+            echo "## Fleet freshness @ :${{ inputs.tag }} vs $(git rev-parse --short HEAD)"
+            echo
+            echo "| verdict | images |"
+            echo "|---|---|"
+            cut -f2 <<< "$REPORT" | sort | uniq -c | awk '{printf "| %s | %s |\n", $2, $1}'
+            echo
+            if grep -qE '	(stale|unlabeled|absent)	' <<< "$REPORT"; then
+              echo "<details><summary>non-fresh images (changed under rule 14)</summary>"
+              echo
+              grep -E '	(stale|unlabeled|absent)	' <<< "$REPORT" \
+                | awk -F'\t' '{printf "- `%s` — %s\n", $1, $2}'
+              echo
+              echo "</details>"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          stale=$(grep -cE '	stale	' <<< "$REPORT" || true)
+          [ "$stale" -eq 0 ] || echo "::warning::$stale image(s) stale at :${{ inputs.tag }} — inputs changed since they were built"
