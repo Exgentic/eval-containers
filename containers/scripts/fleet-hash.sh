@@ -209,22 +209,21 @@ combo)
   LC_ALL=C sort -u "$M/eval.ctx" "$M/eval.bases" > "$M/eval.full"
   # A per-task combo mixes the task id into the hash the same way per-task
   # does, and names its rows with the release's <bench>-<tid> convention.
-  eb="$2"; eval_hash=$(hash_of "$M/eval.full")
-  if [ -n "$task" ]; then
-    eb="$2-$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')"
-    eval_hash=$(printf '%s %s' "$eval_hash" "$task" | sha | cut -d' ' -f1)
-  fi
-  row "evals/$eb--$3" "$eval_hash" "$(hash_of "$M/eval.ctx")" \
-    "$(hash_of "$M/eval.bases")" "-"
+  with_task() {
+    if [ -n "$task" ]; then printf '%s %s' "$1" "$task" | sha | cut -d' ' -f1
+    else printf '%s' "$1"; fi
+  }
+  eb="$2"
+  [ -z "$task" ] || eb="$2-$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')"
+  row "evals/$eb--$3" "$(with_task "$(hash_of "$M/eval.full")")" \
+    "$(hash_of "$M/eval.ctx")" "$(hash_of "$M/eval.bases")" "-"
   blobs "$REF:containers/core/standalone.Dockerfile" > "$M/sa.ctx"
   LC_ALL=C sort -u "$M/eval.full" "$M/full/$(parent_target OTEL_IMAGE)" \
     "$M/full/$(parent_target PROCESS_COMPOSE_IMAGE)" \
     "$M/full/$(parent_target MODEL_IMAGE)" > "$M/sa.bases"
   LC_ALL=C sort -u "$M/sa.ctx" "$M/sa.bases" > "$M/sa.full"
-  sa_hash=$(hash_of "$M/sa.full")
-  [ -z "$task" ] || sa_hash=$(printf '%s %s' "$sa_hash" "$task" | sha | cut -d' ' -f1)
-  row "evals/$eb--$3-standalone" "$sa_hash" "$(hash_of "$M/sa.ctx")" \
-    "$(hash_of "$M/sa.bases")" "-"
+  row "evals/$eb--$3-standalone" "$(with_task "$(hash_of "$M/sa.full")")" \
+    "$(hash_of "$M/sa.ctx")" "$(hash_of "$M/sa.bases")" "-"
   ;;
 per-task)
   { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } || die "usage: fleet-hash.sh per-task <benchmark> <task-id>"
