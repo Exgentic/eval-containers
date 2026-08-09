@@ -93,11 +93,10 @@ TREES=$(git rev-parse "${PATHS[@]}" 2>/dev/null) || {
   done
   die "git rev-parse failed"
 }
-i=0
 # shellcheck disable=SC2086  # TARGETS is a space-separated list, split intended
 set -- $TARGETS
 while IFS= read -r h; do
-  i=$((i+1)); eval "TREE_$(key "$1")=\$h"; shift
+  eval "TREE_$(key "$1")=\$h"; shift
 done <<EOF
 $TREES
 EOF
@@ -180,7 +179,10 @@ combo)
   a=$(target_for_dir "containers/agents/$A3")
   for t in "$b" "$a" gosu otel process-compose model-bifrost; do resolve "$t"; done
   # The combination context is all of containers/core (over-broad); the real
-  # inputs are the two Dockerfiles + the bake file + the parent images.
+  # inputs are the two Dockerfiles + the bake file + the parent images. The
+  # parent list mirrors combination.docker-bake.hcl's variable defaults —
+  # changing that list edits the bake file, whose blob is hashed below, so
+  # every combo hash moves the moment the list drifts.
   eval "bh=\$HASH_$(key "$b")"; eval "ah=\$HASH_$(key "$a")"
   eval_bases=$(printf '%s %s %s' "$bh" "$ah" "$HASH_gosu" | sha)
   eval_ctx=$(printf '%s %s' "$(blob containers/core/combination.Dockerfile)" \

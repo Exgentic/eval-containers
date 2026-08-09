@@ -18,12 +18,12 @@ fn script() -> PathBuf {
     repo_root().join("containers/scripts/fleet-hash.sh")
 }
 
-fn fleet_hash(repo: &Path, args: &[&str]) -> String {
+fn fleet_hash_at(repo: &Path, git_ref: &str, args: &[&str]) -> String {
     let out = Command::new("bash")
         .arg(script())
         .args(args)
         .env("REPO_ROOT", repo)
-        .env("REF", "HEAD")
+        .env("REF", git_ref)
         .output()
         .expect("run fleet-hash.sh");
     assert!(
@@ -32,6 +32,10 @@ fn fleet_hash(repo: &Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&out.stderr)
     );
     String::from_utf8(out.stdout).expect("fleet-hash output is utf8")
+}
+
+fn fleet_hash(repo: &Path, args: &[&str]) -> String {
+    fleet_hash_at(repo, "HEAD", args)
 }
 
 /// target -> (hash, context-hash, bases-hash, externals)
@@ -179,14 +183,7 @@ fn hash_is_deterministic_source_sensitive_and_cascading() {
     assert_eq!(v2["benchmark-leaf-b"], v1["benchmark-leaf-b"]);
 
     // REF pins the computation: hashing HEAD~1 reproduces the prior state.
-    let pinned = Command::new("bash")
-        .arg(script())
-        .env("REPO_ROOT", &repo)
-        .env("REF", "HEAD~1")
-        .output()
-        .expect("run fleet-hash.sh at HEAD~1");
-    assert!(pinned.status.success());
-    assert_eq!(rows(&String::from_utf8(pinned.stdout).unwrap()), v1);
+    assert_eq!(rows(&fleet_hash_at(&repo, "HEAD~1", &[])), v1);
 
     let _ = std::fs::remove_dir_all(&repo);
 }
