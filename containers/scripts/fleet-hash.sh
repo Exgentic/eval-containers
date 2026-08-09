@@ -15,7 +15,8 @@
 #
 # Usage:
 #   fleet-hash.sh                          # every static bake target
-#   fleet-hash.sh combo <bench> <agent>    # eval + eval-standalone rows
+#   fleet-hash.sh combo <bench> <agent> [task]  # eval + eval-standalone rows
+#                                          # (task ⇒ the per-task combo variant)
 #   fleet-hash.sh per-task <bench> <task>  # one per-task image row
 #   fleet-hash.sh graph                    # target|context|deps — the context
 #                                          # column is also the registry ref
@@ -190,7 +191,10 @@ graph)
   cat "$M/graph"
   ;;
 combo)
-  { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } || die "usage: fleet-hash.sh combo <benchmark> <agent>"
+  { [ $# -ge 3 ] && [ $# -le 4 ] && [ -n "$2" ] && [ -n "$3" ]; } \
+    || die "usage: fleet-hash.sh combo <benchmark> <agent> [task]"
+  task="${4:-}"
+  case "$task" in *[[:space:]]*) die "task id must not contain whitespace" ;; esac
   b=$(target_for_dir "containers/benchmarks/$2")
   a=$(target_for_dir "containers/agents/$3")
   gosu=$(parent_target GOSU_IMAGE)
@@ -203,15 +207,23 @@ combo)
     | LC_ALL=C sort > "$M/eval.ctx"
   LC_ALL=C sort -u "$M/full/$b" "$M/full/$a" "$M/full/$gosu" > "$M/eval.bases"
   LC_ALL=C sort -u "$M/eval.ctx" "$M/eval.bases" > "$M/eval.full"
-  row "evals/$2--$3" "$(hash_of "$M/eval.full")" "$(hash_of "$M/eval.ctx")" \
-    "$(hash_of "$M/eval.bases")" "-"
+  # A per-task combo mixes the task id into the hash the same way per-task
+  # does, and names its rows with the release's <bench>-<tid> convention.
+  with_task() {
+    if [ -n "$task" ]; then printf '%s %s' "$1" "$task" | sha | cut -d' ' -f1
+    else printf '%s' "$1"; fi
+  }
+  eb="$2"
+  [ -z "$task" ] || eb="$2-$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')"
+  row "evals/$eb--$3" "$(with_task "$(hash_of "$M/eval.full")")" \
+    "$(hash_of "$M/eval.ctx")" "$(hash_of "$M/eval.bases")" "-"
   blobs "$REF:containers/core/standalone.Dockerfile" > "$M/sa.ctx"
   LC_ALL=C sort -u "$M/eval.full" "$M/full/$(parent_target OTEL_IMAGE)" \
     "$M/full/$(parent_target PROCESS_COMPOSE_IMAGE)" \
     "$M/full/$(parent_target MODEL_IMAGE)" > "$M/sa.bases"
   LC_ALL=C sort -u "$M/sa.ctx" "$M/sa.bases" > "$M/sa.full"
-  row "evals/$2--$3-standalone" "$(hash_of "$M/sa.full")" "$(hash_of "$M/sa.ctx")" \
-    "$(hash_of "$M/sa.bases")" "-"
+  row "evals/$eb--$3-standalone" "$(with_task "$(hash_of "$M/sa.full")")" \
+    "$(hash_of "$M/sa.ctx")" "$(hash_of "$M/sa.bases")" "-"
   ;;
 per-task)
   { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } || die "usage: fleet-hash.sh per-task <benchmark> <task-id>"

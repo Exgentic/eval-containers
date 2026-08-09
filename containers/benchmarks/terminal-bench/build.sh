@@ -33,7 +33,11 @@ echo "[terminal-bench] 1/2 building task env for '${TASK}' (environment/Dockerfi
 docker build -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
 
 echo "[terminal-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
+# EVAL_INPUT_HASH (optional): the release stamps the build-input hash here
+# (delivery/RULES.md rule 12) — this path has no bake invocation to --set it on.
+# shellcheck disable=SC2086  # the hash is hex; empty expands to no arg
 docker build -t "${IMAGE}" \
+  ${EVAL_INPUT_HASH:+--label=eval.input-hash=${EVAL_INPUT_HASH}} \
   --build-arg "TASK_BASE=${ENVIMG}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "TBENCH_REF=${REF}" \

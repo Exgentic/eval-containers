@@ -160,9 +160,20 @@ jobs:
           mapfile -t DEPS < <(find containers/core containers/gateways -name docker-bake.hcl \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
           echo "Building ${#DEPS[@]} shared deps (${ARCH}): ${DEPS[*]}"
+          # Stamp each base's build-input hash (delivery/RULES.md rule 12) —
+          # per-target, never `*.labels`: this one invocation bakes ~19 targets
+          # with ~19 different hashes. The label records the repo-computed
+          # inputs at this commit; arch-independent by construction.
+          HASHES=$(bash containers/scripts/fleet-hash.sh)
+          LBL=()
+          for d in "${DEPS[@]}"; do
+            h=$(awk -F'\t' -v t="$d" '$1==t{print $2}' <<< "$HASHES")
+            [ -n "$h" ] || { echo "::error::no input-hash for $d"; exit 1; }
+            LBL+=(--set "${d}.labels.eval.input-hash=${h}")
+          done
           ACT=(--provenance=mode=max --sbom=true "${DEPS[@]}" --push)
           [ "${{ inputs.dry_run }}" = "true" ] && ACT=("${DEPS[@]}" --print)
-          docker buildx bake "${FARGS[@]}" \
+          docker buildx bake "${FARGS[@]}" "${LBL[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
@@ -346,10 +357,18 @@ jobs:
               echo "::warning::build attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
+          # Stamp the leaf's build-input hash (delivery/RULES.md rule 12). The
+          # label records the repo-computed inputs at this commit; on a frozen-
+          # bases dev dispatch the leaf may build FROM an older frozen base than
+          # the hash's base component claims — tagged releases always rebuild
+          # bases first, so release labels are exact.
+          H=$(bash containers/scripts/fleet-hash.sh | awk -F'\t' -v t="$T" '$1==t{print $2}')
+          [ -n "$H" ] || { echo "::error::no input-hash for $T"; exit 1; }
           # dry_run validates config only (bake --print); else build + attest + push.
           ACT=(--provenance=mode=max --sbom=true "$T" --push)
           [ "${{ inputs.dry_run }}" = "true" ] && ACT=("$T" --print)
           retry docker buildx bake "${FARGS[@]}" "${OV[@]}" \
+            --set "${T}.labels.eval.input-hash=${H}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
@@ -418,12 +437,17 @@ jobs:
             cache="${REGISTRY}/buildcache/${B}-${tid}-${ARCH}"
             if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "$ref" >/dev/null 2>&1; then echo "skip-published: $ref"; continue; fi
             if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
+            # Per-task build-input hash (delivery/RULES.md rule 12): the raw
+            # task id is part of the preimage; build.sh stamps it via
+            # EVAL_INPUT_HASH, bake via a per-target label --set.
+            H=$(bash containers/scripts/fleet-hash.sh per-task "$B" "$TASK" | cut -f2)
+            [ -n "$H" ] || { echo "::error::no input-hash for $B/$TASK"; fails=$((fails+1)); continue; }
             echo "::group::$ref ($KIND)"
             if [ "$KIND" = "script" ]; then
               # It builds native (per-arch); push only if the built arch matches this
               # runner — a task whose upstream pins a different arch is skipped so the
               # merge keeps it single-arch (never a mislabeled :TAG-<arch>).
-              if retry bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK"; then
+              if EVAL_INPUT_HASH="$H" retry bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK"; then
                 built=$(podman image inspect "$ref" --format '{{.Architecture}}' 2>/dev/null || echo unknown)
                 if [ "$built" = "$ARCH" ]; then
                   retry podman push "$ref" || { echo "::error::push failed: $ref"; fails=$((fails+1)); }
@@ -434,6 +458,7 @@ jobs:
             else
               # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the frozen entrypoint.
               if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
+                   --set "benchmark-${B}.labels.eval.input-hash=${H}" \
                    --set "benchmark-${B}.args.EVAL_TASK_ID=${TASK}" \
                    --set "benchmark-${B}.args.EVAL_BASE_ARCH=${EPOCH_ARCH}" \
                    --set "benchmark-${B}.contexts.${REGISTRY}/core/entrypoint=docker-image://${REGISTRY}/core/entrypoint:${TAG}" \
@@ -606,6 +631,11 @@ jobs:
               PLAT="${PLAT:-linux/amd64}" # fall back to amd64 if inspect is unreadable
             fi
             if [ "${{ inputs.skip_published }}" = "true" ] && docker buildx imagetools inspect "${REGISTRY}/evals/${eb}--${A}:${TAG}" >/dev/null 2>&1; then echo "skip-published: evals/${eb}--${A}"; continue; fi
+            # Combo build-input hashes (delivery/RULES.md rule 12) — per-target,
+            # never `*.labels`: eval and eval-standalone hash differently.
+            HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A" ${TASK:+"$TASK"}) \
+              || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
+            EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
             # once, then layers standalone on it via the eval-base context.
@@ -616,6 +646,8 @@ jobs:
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
+                 --set "eval.labels.eval.input-hash=${EH}" \
+                 --set "eval-standalone.labels.eval.input-hash=${SH}" \
                  --set "*.platform=${PLAT}" \
                  "${ACT[@]}"; then :; \
             else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
