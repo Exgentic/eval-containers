@@ -15,6 +15,9 @@
 #   fleet-hash.sh                          # every static bake target
 #   fleet-hash.sh combo <bench> <agent>    # eval + eval-standalone rows
 #   fleet-hash.sh per-task <bench> <task>  # one per-task image row
+#   fleet-hash.sh graph                    # the parsed graph: target|context|deps
+#                                          # (gated against `bake --print` by
+#                                          # tests/build fleet_hash_graph_matches_bake_print)
 #
 # Output (TSV): target  hash  context-hash  bases-hash  externals
 # Env: REF (default HEAD), REPO_ROOT (default: the repo containing this script)
@@ -135,6 +138,9 @@ blobs() { git rev-parse "$@" 2>/dev/null || die "blob not in $REF"; }
 case "${1:-all}" in
 all)
   cat "$M/all.tsv"
+  ;;
+graph)
+  cat "$M/graph"
   ;;
 combo)
   [ $# -eq 3 ] || die "usage: fleet-hash.sh combo <benchmark> <agent>"
