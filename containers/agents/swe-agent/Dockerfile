@@ -96,10 +96,18 @@ git config --global --add safe.directory "$REPO"
 # run completes, which crashes with FileNotFoundError immediately after a
 # genuinely correct submit. Point --output_dir outside the repo so it
 # never appears in the repo's own git state.
+# problem_statement.path, not .text=$TASK: pydantic-settings' CLI source
+# case-folds each flag with a regex (`^(--flag)(.*)`) whose `(.*)` doesn't
+# match newlines, so any multi-line --problem_statement.text value is
+# silently truncated at its first embedded newline — SWE-agent then runs on
+# only the boilerplate lead-in sentence, never the real issue body. Writing
+# $TASK to a file and pointing --problem_statement.path at it sidesteps the
+# CLI parser entirely.
+printf '%s' "$TASK" > /tmp/problem_statement.txt
 exec /opt/swe-agent-venv/bin/sweagent run --agent.model.name="openai/${MODEL:-default}" \
   --agent.model.per_instance_cost_limit=0 --agent.model.total_cost_limit=0 \
   --agent.model.api_base="${OPENAI_BASE_URL:-http://model:4000}" --env.deployment.type=local \
-  --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.text="$TASK" \
+  --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.path=/tmp/problem_statement.txt \
   --output_dir=/tmp/trajectories
 E
 
