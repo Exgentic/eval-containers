@@ -23,8 +23,12 @@ name: Release the fleet
 #   * MULTI-ARCH        — native-per-arch: bases/leaves/per-task build on amd64
 #                         AND arm64 runners (NOT QEMU — pyarrow segfaults under it),
 #                         each pushing :TAG-<arch>; the `merge` job then stitches the
-#                         :TAG manifest list. Combos build multi-arch directly
-#                         (buildx --platform — thin overlays are QEMU-safe). The
+#                         :TAG manifest list. Shared combos build multi-arch directly
+#                         (buildx --platform — thin overlays are QEMU-safe); per-task
+#                         combos (swe-bench/terminal-bench/skills-bench — heavy
+#                         testbed bases QEMU can't cross-build reliably) get the same
+#                         native-per-arch + merge treatment as bases/per-task, via
+#                         `combos-pertask` + `merge-pertask-combos`. The
 #                         arm64 runner label is the FLEET_RUNNER_ARM repo Variable
 #                         (default ubuntu-24.04-arm).
 #
@@ -210,7 +214,8 @@ jobs:
     outputs:
       leaves: ${{ steps.l.outputs.leaves }}        # bake targets: benchmarks(shared)+agents+models
       benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
-      combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256
+      combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256 (shared combos only, task=="")
+      pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
       has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a main push with no stale leaf
       dirty: ${{ steps.l.outputs.dirty }}           # main push: anything at all to publish?
@@ -353,17 +358,30 @@ jobs:
             echo "main push -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
           fi
 
+          # Every per-task combo (swe-bench, terminal-bench, skills-bench) is the
+          # one class QEMU can't reliably cross-build (heavy testbed bases —
+          # swe-bench alone hung 90min/shard in #226). Split ALL of them out: they
+          # build natively per-arch via combos-pertask + merge-pertask-combos
+          # instead of this job's buildx --platform (QEMU) path. Shared combos
+          # (task=="") are thin overlays and stay on this job unchanged — QEMU
+          # cross-build already works fine for them.
+          pertask_combo_items=$(printf '%s' "$combos" | jq -c '[.[] | select(.task!="")]')
+          combos=$(printf '%s' "$combos" | jq -c '[.[] | select(.task=="")]')
+
           # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
           # GitHub caps a matrix at 256 jobs; each shard job loops its items. Chunk
           # combos by 25 (thin overlays) and per-task bases by 10 (heavier builds).
           shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
           combo_shards=$(shard "$combos" 25)
+          pertask_combo_shards=$(shard "$pertask_combo_items" 10)
           pertask_shards=$(shard "$pertask" 10)
           # combos build per shard via buildx --platform (one job/shard) → ≤256;
-          # per-task fans out per shard × 2 arches → its matrix must fit 256.
+          # per-task and pertask-combo fan out per shard × 2 arches → matrix must fit 256.
           cn=$(printf '%s' "$combo_shards" | jq length); ptn=$(printf '%s' "$pertask_shards" | jq length)
+          pcn=$(printf '%s' "$pertask_combo_shards" | jq length)
           [ "$cn" -le 256 ] || { echo "::error::combo_shards = $cn > 256 — raise the combo chunk size in enumerate"; exit 1; }
           [ "$((ptn * 2))" -le 256 ] || { echo "::error::pertask_shards = $ptn × 2 arch = $((ptn * 2)) > 256 — raise the per-task chunk size in enumerate"; exit 1; }
+          [ "$((pcn * 2))" -le 256 ] || { echo "::error::pertask_combo_shards = $pcn × 2 arch = $((pcn * 2)) > 256 — raise the pertask-combo chunk size in enumerate"; exit 1; }
 
           has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
           dirty=true
@@ -372,11 +390,12 @@ jobs:
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
             echo "combo_shards=$combo_shards"
+            echo "pertask_combo_shards=$pertask_combo_shards"
             echo "pertask_shards=$pertask_shards"
             echo "has_leaves=$has_leaves"
             echo "dirty=$dirty"
           } >> "$GITHUB_OUTPUT"
-          echo "leaves=$n  combos=$(printf '%s' "$combos" | jq length) in $(printf '%s' "$combo_shards" | jq length) shards  pertask=$(printf '%s' "$pertask" | jq length) in $(printf '%s' "$pertask_shards" | jq length) shards  dirty=$dirty"
+          echo "leaves=$n  combos=$(printf '%s' "$combos" | jq length) in $(printf '%s' "$combo_shards" | jq length) shards  pertask-combos=$(printf '%s' "$pertask_combo_items" | jq length) in $(printf '%s' "$pertask_combo_shards" | jq length) shards  pertask=$(printf '%s' "$pertask" | jq length) in $(printf '%s' "$pertask_shards" | jq length) shards  dirty=$dirty"
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
   build:
@@ -745,26 +764,20 @@ jobs:
           }
           fails=0
           while read -r it; do
-            IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
-            if [ -n "$TASK" ]; then           # per-task combo: evals/<b>-<task>--<a>
-              tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
-              eb="${B}-${tid}"; bench_img="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
-              PLAT="linux/amd64"              # heavy per-task base × arm64-via-QEMU hangs → amd64-only
-            else                              # shared combo: evals/<b>--<a>
-              eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
-              # A combo can't cover an arch its base lacks — some benchmark bases
-              # are published amd64-only. Intersect {amd64,arm64} with what the
-              # base actually carries so the overlay bake matches it (a hardcoded
-              # multi-arch PLAT dies "no match for platform" on an amd64-only base).
-              base_raw=$(docker buildx imagetools inspect "$bench_img" --raw 2>&1 || true)
-              PLAT=""
-              printf '%s' "$base_raw" | grep -q '"amd64"' && PLAT="linux/amd64"
-              printf '%s' "$base_raw" | grep -q '"arm64"' && PLAT="${PLAT:+$PLAT,}linux/arm64"
-              PLAT="${PLAT:-linux/amd64}" # fall back to amd64 if inspect is unreadable
-            fi
+            IFS=$'\t' read -r B A < <(jq -r '[.b,.a]|@tsv' <<< "$it")   # shared combo only: evals/<b>--<a> (per-task combos build in combos-pertask)
+            eb="$B"; bench_img="${REGISTRY}/benchmarks/${B}:${TAG}"
+            # A combo can't cover an arch its base lacks — some benchmark bases
+            # are published amd64-only. Intersect {amd64,arm64} with what the
+            # base actually carries so the overlay bake matches it (a hardcoded
+            # multi-arch PLAT dies "no match for platform" on an amd64-only base).
+            base_raw=$(docker buildx imagetools inspect "$bench_img" --raw 2>&1 || true)
+            PLAT=""
+            printf '%s' "$base_raw" | grep -q '"amd64"' && PLAT="linux/amd64"
+            printf '%s' "$base_raw" | grep -q '"arm64"' && PLAT="${PLAT:+$PLAT,}linux/arm64"
+            PLAT="${PLAT:-linux/amd64}" # fall back to amd64 if inspect is unreadable
             # Combo build-input hashes (delivery/RULES.md rule 12) — per-target,
             # never `*.labels`: eval and eval-standalone hash differently.
-            HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A" ${TASK:+"$TASK"}) \
+            HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A") \
               || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
             EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
             # eval = lean base (sidecar mode); eval-standalone = single-container
@@ -791,6 +804,145 @@ jobs:
           done < <(jq -c '.[]' <<< "$ITEMS")
           [ "$fails" -eq 0 ] || { echo "::error::$fails combo(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
 
+  # ── per-task combos — native per-arch (no QEMU) ────────────────────────────
+  # swe-bench/terminal-bench/skills-bench combos overlay an agent onto a heavy
+  # per-task base (swe-bench's testbed alone hung 90min/shard under QEMU in
+  # #226) — cross-building arm64 via emulation isn't reliable at that weight.
+  # Mirrors the `per-task` job exactly: matrix over {shard × arch}, both arches
+  # native (ubuntu-24.04-arm for arm64, no setup-qemu-action), each pushing
+  # :TAG-<arch>; merge-pertask-combos stitches the :TAG manifest list after.
+  combos-pertask:
+    needs: [merge, enumerate]
+    if: always() && (needs.merge.result == 'success' || inputs.dry_run) && needs.enumerate.outputs.pertask_combo_shards != '[]'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      matrix:
+        shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: ${{ vars.FLEET_RUNNER || 'ubuntu-latest' }}
+          - arch: arm64
+            runner: ${{ vars.FLEET_RUNNER_ARM || 'ubuntu-24.04-arm' }}
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Bake per-task combo shard ${{ matrix.shard.idx }} (${{ matrix.arch }})
+        env:
+          ITEMS: ${{ toJson(matrix.shard.items) }}
+          DRY: ${{ inputs.dry_run }}
+          STANDALONE: ${{ inputs.include_standalone }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          ORIG_TAG="$TAG"             # benchmark/agent image refs stay on the merged multi-arch :TAG
+          export TAG="${TAG}-${ARCH}" # this combo's own OUTPUT tag; merge-pertask-combos builds the final :TAG
+          retry() {
+            local n=0 max="${BUILD_RETRIES:-4}"
+            until "$@"; do
+              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+              echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
+            done
+          }
+          # Carried-forward (rule 13), per arch + variant: unchanged inputs vs the
+          # prior release's per-arch tag ⇒ retag its digest; force_rebuild overrides.
+          carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
+            [ "${{ inputs.force_rebuild }}" != "true" ] && [ "$DRY" != "true" ] || return 1
+            bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest-${ARCH}" "$2" >/dev/null || return 1
+            if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
+            else
+              docker buildx imagetools create --tag "${REGISTRY}/evals/${eb}--${A}$1:${TAG}" \
+                "${REGISTRY}/evals/${eb}--${A}$1:latest-${ARCH}" || return 1
+              echo "carried forward: evals/${eb}--${A}$1:${TAG} <- :latest-${ARCH}"
+            fi
+          }
+          fails=0
+          while read -r it; do
+            IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
+            tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
+            eb="${B}-${tid}"; bench_img="${REGISTRY}/benchmarks/${eb}:${ORIG_TAG}"
+            # A task whose per-task base is arch-pinned upstream (per-task job's
+            # kind=script branch skips pushing an arch it didn't build) has no
+            # ${ARCH} platform to build against — skip here too; merge-pertask-combos
+            # leaves it single-arch rather than failing on "no match for platform".
+            base_raw=$(docker buildx imagetools inspect "$bench_img" --raw 2>&1 || true)
+            printf '%s' "$base_raw" | grep -q "\"$ARCH\"" \
+              || { echo "::warning::evals/${eb}--${A}: base lacks $ARCH — skipping (merge keeps it single-arch)"; continue; }
+            HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A" "$TASK") \
+              || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
+            EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
+            TGT=()
+            carry "" "$EH" || TGT+=(eval)
+            [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)
+            [ "${#TGT[@]}" -gt 0 ] || continue
+            ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
+            [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
+            echo "::group::evals/${eb}--${A} (${ARCH})"
+            if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
+               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${ORIG_TAG}" \
+               retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
+                 --set "eval.labels.eval.input-hash=${EH}" \
+                 --set "eval-standalone.labels.eval.input-hash=${SH}" \
+                 --set "*.platform=linux/${ARCH}" \
+                 "${ACT[@]}"; then :; \
+            else echo "::error::pertask combo failed: evals/${eb}--${A} (${ARCH})"; fails=$((fails+1)); fi
+            echo "::endgroup::"
+          done < <(jq -c '.[]' <<< "$ITEMS")
+          [ "$fails" -eq 0 ] || { echo "::error::$fails pertask combo(s) failed in shard ${{ matrix.shard.idx }} (${ARCH})"; exit 1; }
+
+  # ── merge per-task combos' per-arch tags into :TAG manifest lists ─────────
+  merge-pertask-combos:
+    needs: [combos-pertask, enumerate]
+    if: always() && needs.combos-pertask.result == 'success' && needs.enumerate.outputs.pertask_combo_shards != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SHARDS: ${{ needs.enumerate.outputs.pertask_combo_shards }}
+    steps:
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos)
+        run: |
+          retry() {
+            local n=0 max="${BUILD_RETRIES:-4}"
+            until "$@"; do
+              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+              sleep $(( n*10 + (RANDOM % 10) ))
+            done
+          }
+          fails=0; merged=0; skipped=0
+          # Process substitution, not a pipe: `jq | while` runs the loop body in a
+          # subshell, silently dropping fails/merged/skipped and defeating the exit
+          # check below (a real bug caught in a live test run — every merge
+          # succeeded there, but the job printed merged=0 skipped=0 fails=0 and
+          # would have exited 0 even if every merge had failed).
+          while IFS=$'\t' read -r B A TASK; do
+            tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
+            for suffix in "" "-standalone"; do
+              ref="${REGISTRY}/evals/${B}-${tid}--${A}${suffix}"
+              srcs=()
+              for a in amd64 arm64; do
+                docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
+              done
+              [ "${#srcs[@]}" -eq 0 ] && { skipped=$((skipped+1)); continue; }
+              if retry docker buildx imagetools create --tag "${ref}:${TAG}" "${srcs[@]}"; then merged=$((merged+1))
+              else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
+            done
+          done < <(jq -r '.[]?|.items[]?|"\(.b)\t\(.a)\t\(.task)"' <<< "${SHARDS:-[]}")
+          echo "merged=$merged skipped=$skipped fails=$fails"
+          [ "$fails" -eq 0 ] || { echo "::error::$fails pertask-combo manifest merge(s) failed"; exit 1; }
+
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
   # Runs for real releases (tag / explicit version) or whenever the bases were
   # force-rebuilt. The scan covers whatever :TAG points to — carried-forward
@@ -800,7 +952,7 @@ jobs:
   # A dev dispatch skips the gate (it isn't publishing :latest — the promotion
   # below is tag-only).
   release-gate:
-    needs: [merge, per-task, compose, combos]
+    needs: [merge, per-task, compose, combos, merge-pertask-combos]
     if: always() && needs.merge.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
     runs-on: ubuntu-latest
     steps:
@@ -853,7 +1005,7 @@ jobs:
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:
     name: Build-time + size report
-    needs: [bases, build, per-task, merge, compose, combos, release-gate, enumerate]
+    needs: [bases, build, per-task, merge, compose, combos, combos-pertask, merge-pertask-combos, release-gate, enumerate]
     if: always()
     runs-on: ubuntu-latest
     steps:
