@@ -220,7 +220,10 @@ verification record (`tests/run/fleet/RULES.md:8`).
     dry verification; this is the live release step.)*
 39. **Push the tag + trigger the release workflow:** `git push origin eval-vX.Y.Z`.
 40. **Verify images published** — `docker pull ghcr.io/exgentic/<image>:eval-vX.Y.Z`
-    for each. Pass = every expected tag exists.
+    for each, then `containers/scripts/fleet-status.sh eval-vX.Y.Z`. Pass = every
+    expected tag exists **and** reads `fresh` (its recorded `eval.input-hash`
+    matches the repo at the tag — carried-forward digests included;
+    `.agents/delivery/RULES.md` rules 12–14).
 41. **Verify signatures / attestations** — `cosign verify ghcr.io/exgentic/<image>:eval-vX.Y.Z`.
 42. **Smoke test one image from a clean machine** — pull + run from a different
     host. Pass = end-to-end works from nothing.
