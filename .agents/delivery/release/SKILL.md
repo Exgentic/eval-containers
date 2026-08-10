@@ -128,8 +128,8 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
    (`.agents/RULES.md:15`, sub-rule d).
 
 7. **Prefer letting CI build the fleet.** `.github/workflows/release-images.yml`
-   runs bake on every push to `main` (tag: `latest`) and every `v*` tag
-   (tag: the git tag), setting `GIT_SHA` and `BUILD_DATE`, then
+   runs bake on every `v*` tag (tag: the git tag) and on `workflow_dispatch`
+   (tag: the input, or `latest`), setting `GIT_SHA` and `BUILD_DATE`, then
    `bake --push`es the result. CI runs on real Docker on Linux, where
    the full sweep is clean; local podman-on-macOS chokes the parallel
    fleet build on network contention (a documented, non-structural
@@ -137,6 +137,17 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
    `.agents/verification/build/known-broken.md`). Why: humans building
    100+ images locally is slow and flaky; CI is the authoritative fleet
    builder.
+
+   The workflow builds only what changed: every image carries an
+   `eval.input-hash` label, and a job whose image's inputs are unchanged
+   from the prior release retags that digest instead of rebuilding
+   (`.agents/delivery/RULES.md` rules 12–14) — so consecutive releases
+   share digests for untouched images, and a no-change release builds
+   nothing. Upstream drift (base images, unpinned packages) is invisible
+   to the hash: for CVE refreshes dispatch with `force_rebuild: true`
+   (or `rebuild_bases: true` for the shared bases alone). Audit any
+   tag's freshness with the **Fleet status** workflow or
+   `containers/scripts/fleet-status.sh <tag>`.
 
 8. **Commit the fleet report alongside the release tag.** When cutting
    the tag, commit the final `.agents/verification/fleet/report.md` so
