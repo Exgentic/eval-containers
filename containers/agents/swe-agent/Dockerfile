@@ -38,6 +38,12 @@ export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 # gitpython refuses to read /opt/swe-agent's .git (owned by uid 0, but we're
 # uid 1002) without an explicit safe.directory override.
 git config --global --add safe.directory /opt/swe-agent
+# Raw `git log`/`git diff`/`git branch -a` etc. invoke `less` whenever stdout
+# is a tty. In the pexpect-controlled PTY nothing ever sends it a keypress or
+# EOF, so the pager blocks until swerex's 30s per-command timeout force-kills
+# it — even for one-line output. Disable the pager globally so git commands
+# return immediately instead of eating the 30s budget every single time.
+git config --global core.pager cat
 # LocalRepoConfig's copy() does `shutil.copytree(src, "/{basename}")` then
 # `chown -R root:root` — both fail as a non-root uid. Use the `preexisting`
 # repo type instead (its copy() is a no-op) with a pre-staged repo.
