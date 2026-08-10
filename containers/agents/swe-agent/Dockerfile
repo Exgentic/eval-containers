@@ -38,6 +38,12 @@ export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 # gitpython refuses to read /opt/swe-agent's .git (owned by uid 0, but we're
 # uid 1002) without an explicit safe.directory override.
 git config --global --add safe.directory /opt/swe-agent
+# Raw `git log`/`git diff`/`git branch -a` etc. invoke `less` whenever stdout
+# is a tty. In the pexpect-controlled PTY nothing ever sends it a keypress or
+# EOF, so the pager blocks until swerex's 30s per-command timeout force-kills
+# it — even for one-line output. Disable the pager globally so git commands
+# return immediately instead of eating the 30s budget every single time.
+git config --global core.pager cat
 # LocalRepoConfig's copy() does `shutil.copytree(src, "/{basename}")` then
 # `chown -R root:root` — both fail as a non-root uid. Use the `preexisting`
 # repo type instead (its copy() is a no-op) with a pre-staged repo.
@@ -48,7 +54,18 @@ if [ ! -d "$REPO/.git" ]; then
     && git commit --allow-empty -qm init) || true
 fi
 git config --global --add safe.directory "$REPO"
-exec /opt/swe-agent-venv/bin/sweagent run --agent.model.name="openai/${EVAL_MODEL:-default}" --agent.model.per_instance_cost_limit=3 \
+# Model name comes from $MODEL: run-agent scrubs the env (`env -i`) and forwards
+# only an allow-list — it maps EVAL_MODEL → MODEL, so the agent never sees
+# EVAL_MODEL itself.
+# per_instance_cost_limit/total_cost_limit=0: SWE-agent's own LiteLLM-based
+# cost check aborts with ModelConfigurationError for any model name absent
+# from LiteLLM's static cost map (e.g. gcp/gemini-3.5-flash-lite) — unrelated
+# to whether the call actually succeeds. The gateway (not SWE-agent) is the
+# eval framework's cost authority (EVAL_MODEL_MAX_BUDGET), so disable
+# SWE-agent's redundant, model-name-brittle check per LiteLLM's own suggested
+# fix in that error message.
+exec /opt/swe-agent-venv/bin/sweagent run --agent.model.name="openai/${MODEL:-default}" \
+  --agent.model.per_instance_cost_limit=0 --agent.model.total_cost_limit=0 \
   --agent.model.api_base="${OPENAI_BASE_URL:-http://model:4000}" --env.deployment.type=local \
   --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.text="$TASK"
 E

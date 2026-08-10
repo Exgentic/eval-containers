@@ -50,6 +50,11 @@ RUN chmod 600 /tasks/all.jsonl
 
 WORKDIR /app
 
+# openclaw (and any agent that writes into its cwd, e.g. AGENTS.md) runs as
+# uid 1002 (containers/core/combination.Dockerfile); grant it write access to
+# /app, which otherwise stays root:root 755 from the upstream image.
+RUN chown -R 1002:0 /app && chmod -R g+rwX /app
+
 # Test: AppWorld evaluation is state-based (database checks) and requires
 # the full AppWorld runtime. This is externally graded — always write -1.
 RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
