@@ -27,6 +27,10 @@ git clone --depth 1 --branch v${AGENT_VERSION} https://github.com/SWE-agent/SWE-
 # framework runs the agent as uid 1002, so open up /root at build time.
 chmod 0777 /root && mkdir -p /root/tools && chmod 0777 /root/tools
 touch /root/.swe-agent-env /root/state.json && chmod 0666 /root/.swe-agent-env /root/state.json
+# run.sh creates /workspace/repo at container start as uid 1002; / stays
+# root:root 755 from the base image, so pre-create it here (build time, as
+# root) and grant the agent group write access.
+mkdir -p /workspace && chown 1002:0 /workspace && chmod g+rwX /workspace
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
