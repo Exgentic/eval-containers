@@ -12,6 +12,8 @@ FROM ghcr.io/stonybrooknlp/appworld:latest
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="appworld"
 LABEL eval.benchmark.upstream_base="ghcr.io/stonybrooknlp/appworld:latest"
+# The upstream base is amd64-only, so arm64 cannot be built at all.
+LABEL eval.platforms="linux/amd64"
 LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.description="AppWorld - 9 simulated apps with 457 APIs"
 LABEL eval.benchmark.tasks="732"

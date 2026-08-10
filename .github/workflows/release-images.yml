@@ -407,7 +407,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Bake ${{ matrix.target }} (${{ matrix.arch }}; registry bases, per-leaf cache)
-        timeout-minutes: 25  # cap a stalled leaf — a hung download blocked the matrix ~40m; leaves build in <2m
+        # Cap a stalled leaf (a hung download blocked the matrix ~40m). Big-dataset
+        # leaves legitimately outrun it on a cold cache, so they get headroom.
+        timeout-minutes: ${{ contains(fromJSON('["benchmark-livecodebench"]'), matrix.target) && 60 || 25 }}
         env:
           T: ${{ matrix.target }}
           ARCH: ${{ matrix.arch }}
@@ -421,7 +423,14 @@ jobs:
           # digest instead of rebuilding; force_rebuild overrides (CVE refresh).
           H=$(bash containers/scripts/fleet-hash.sh | awk -F'\t' -v t="$T" '$1==t{print $2}')
           [ -n "$H" ] || { echo "::error::no input-hash for $T"; exit 1; }
-          ref="${REGISTRY}/$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}' | sed 's|^containers/||')"
+          ctx=$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}')
+          ref="${REGISTRY}/${ctx#containers/}"
+          # An arch the image does not declare cannot build (its base lacks it) —
+          # skip, leaving it legitimately single-arch.
+          PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "$ctx/Dockerfile" | tail -1)
+          if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
+            echo "skipping $T on $ARCH — declared platforms: $PLATS"; exit 0
+          fi
           if [ "${{ inputs.force_rebuild }}" != "true" ] && [ "${{ inputs.dry_run }}" != "true" ] && \
              bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$H" >/dev/null; then
             if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
@@ -609,10 +618,14 @@ jobs:
               echo "${REGISTRY}/${kind}/${name}" >> /tmp/refs.txt
             done
           done
-          jq -r '.[]?' <<< "${LEAVES:-[]}" | while read -r T; do
-            kind=${T%%-*}; nm=${T#*-}
-            case "$kind" in benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;; esac
-            echo "${REGISTRY}/${dir}/${nm}" >> /tmp/refs.txt
+          # Ref comes from the graph's context column, NOT the target name: names
+          # cannot carry a dot, so model-gpt-5_4 → models/gpt-5_4, which does not exist.
+          GRAPHMAP=$(bash containers/scripts/fleet-hash.sh graph)
+          mapfile -t LEAF_TARGETS < <(jq -r '.[]?' <<< "${LEAVES:-[]}")
+          for T in "${LEAF_TARGETS[@]}"; do
+            ctx=$(awk -F'|' -v t="$T" '$1==t{print $2}' <<< "$GRAPHMAP")
+            [ -n "$ctx" ] || { echo "::error::no graph context for leaf $T"; exit 1; }
+            echo "${REGISTRY}/${ctx#containers/}" >> /tmp/refs.txt
           done
           jq -r '.[]?|.items[]?|"\(.b)\t\(.task)"' <<< "${PERTASK_SHARDS:-[]}" | while IFS=$'\t' read -r B TASK; do
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
@@ -627,7 +640,12 @@ jobs:
             for a in amd64 arm64; do
               docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
             done
-            if [ "${#srcs[@]}" -eq 0 ]; then skipped=$((skipped+1)); continue; fi
+            # Neither arch pushed → :TAG keeps what it had. Say so; the silent
+            # count is how the mangled dotted-model refs hid.
+            if [ "${#srcs[@]}" -eq 0 ]; then
+              echo "::warning::no ${TAG}-amd64/-arm64 found for ${ref} — :${TAG} left as-is"
+              skipped=$((skipped+1)); continue
+            fi
             if retry docker buildx imagetools create --tag "${ref}:${TAG}" "${srcs[@]}"; then merged=$((merged+1)); \
             else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
           done < /tmp/refs.txt
