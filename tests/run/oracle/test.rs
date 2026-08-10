@@ -127,6 +127,18 @@ async fn benchmarks_are_oracle_solvable() {
         ));
     }
 
+    checks.sort();
+    // ORACLE_LIST=1 prints the coverage this suite has and returns — the
+    // per-PR gate asks the harness what it can oracle instead of
+    // re-deriving it (per-task benchmarks are covered by one pinned task
+    // each; a few, like terminal-bench, are deliberately uncovered).
+    if std::env::var_os("ORACLE_LIST").is_some() {
+        for (label, _) in &checks {
+            println!("oracle-label: {label}");
+        }
+        return;
+    }
+
     let only = std::env::var("ORACLE_ONLY").unwrap_or_default();
     let wanted: Vec<&str> = only.split([',', ' ']).filter(|s| !s.is_empty()).collect();
     if !wanted.is_empty() {
@@ -136,7 +148,6 @@ async fn benchmarks_are_oracle_solvable() {
             "ORACLE_ONLY={only:?} matched no benchmark — refusing to pass vacuously"
         );
     }
-    checks.sort(); // deterministic order so each shard's slice is stable
     let shard: usize = std::env::var("ORACLE_SHARD")
         .ok()
         .and_then(|s| s.parse().ok())
