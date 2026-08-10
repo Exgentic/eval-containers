@@ -41,7 +41,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 7. **Unprivileged.** The agent runs as a non-root user. It MUST NOT assume root access.
 
-8. **Limited filesystem.** The agent MAY write to `/app/` and `/tmp/`. It MUST NOT access `/tasks/`, `/tests/`, `/logs/`, or `/output/task/`.
+8. **Limited filesystem.** The agent MAY write to its task working directory (wherever the benchmark's entrypoint places it — e.g. `/app/`, `/testbed/`) and `/tmp/`. It MUST NOT access `/tasks/`, `/tests/`, `/logs/`, or `/output/task/`.
 
 9. **External timeout.** The entrypoint enforces `EVAL_TIMEOUT`. The agent MUST NOT implement its own timeout.
 
@@ -81,3 +81,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Split rule 12 into rule 12 (reproducible by default via pinned `ARG <NAME>_VERSION`) and new rule 13 (runtime override via `EVAL_AGENT_VERSION`, writes resolved version to `/output/agent/version.json`). Added `eval.agent.version` to required labels (rule 14). Renumbered rules 14–17. |
 | 2026-05-21 | Added rule 18 (smoke test) — agents must pass `tests/run/agents/test.rs` or be documented in `tests/run/agents/broken.md`. |
+| 2026-08-10 | Rule 8: replaced the hardcoded `/app/` with "its task working directory (wherever the benchmark's entrypoint places it)" — only 39 of 102 benchmarks actually use `/app`; swe-bench stages at `/testbed`. The old wording had already misled one agent image into hardcoding `/app` (#308). |
