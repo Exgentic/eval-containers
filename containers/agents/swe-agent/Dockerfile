@@ -22,6 +22,14 @@ set -euo pipefail
 apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 git clone --depth 1 --branch v${AGENT_VERSION} https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent 2>/dev/null || true
 /opt/agent/setup-uv-venv.sh /opt/swe-agent-venv -e /opt/swe-agent
+# swerex's CreateBashSessionRequest.startup_timeout defaults to 1.0s — the
+# window to source /root/.bashrc (which runs `conda activate testbed`) and
+# reset PS1. Under qemu-emulated amd64 that reliably blows past 1s, raising
+# a pexpect.exceptions.TIMEOUT even though the prompt does come up. Patch the
+# vendored default rather than the CLI, since sweagent's swe_env.py builds
+# the request with no override.
+sed -i 's/startup_timeout: float = 1.0/startup_timeout: float = 60.0/' \
+  /opt/swe-agent-venv/lib/python*/site-packages/swerex/runtime/abstract.py
 # SWE-agent's LocalDeployment assumes uid-0 root: it writes /root/state.json
 # + /root/.swe-agent-env and copies tool bundles into /root/tools. The eval
 # framework runs the agent as uid 1002, so open up /root at build time.
