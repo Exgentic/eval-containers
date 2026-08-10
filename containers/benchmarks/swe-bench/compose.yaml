@@ -14,3 +14,5 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/swe-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: swe-bench
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
+      TIMEOUT: ${EVAL_TIMEOUT:-1800}
