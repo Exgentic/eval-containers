@@ -4,8 +4,13 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
+# One source of truth for the dataset pin: the loader fetches this revision and
+# the label below reports it, so they cannot drift apart.
+ARG MMMU_REVISION=21d1d90a93c7450d30bddb579d7b510c00b8a9ab
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
+ARG MMMU_REVISION
+ENV MMMU_REVISION=${MMMU_REVISION}
 
 # Loader runs pyarrow (base64-encodes images into all.jsonl), so it stays in the
 # discarded hf builder; the python image-decode entrypoint runs on python-slim.
@@ -14,6 +19,8 @@ FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 # runtime entrypoint decodes only the requested task's images.
 RUN python3 <<'PYEOF'
 import urllib.request, pyarrow.parquet as pq, json, os, base64
+
+REVISION = os.environ["MMMU_REVISION"]
 
 SUBJECTS = [
     "Accounting", "Agriculture", "Architecture_and_Engineering", "Art",
@@ -29,7 +36,12 @@ os.makedirs('/tasks', exist_ok=True)
 count = 0
 with open('/tasks/all.jsonl', 'w') as out:
     for subject in SUBJECTS:
-        url = f"https://huggingface.co/api/datasets/MMMU/MMMU/parquet/{subject}/validation/0.parquet"
+        # Read the repo's own parquet at the pinned revision, not the /api/…/parquet
+        # auto-conversion: that endpoint redirects into refs/convert/parquet, a
+        # branch HF rebuilds at will — it silently lost several subjects
+        # (Accounting among them), 404ing every build.
+        url = (f"https://huggingface.co/datasets/MMMU/MMMU/resolve/{REVISION}"
+               f"/{subject}/validation-00000-of-00001.parquet")
         urllib.request.urlretrieve(url, "/tmp/data.parquet")
         t = pq.read_table("/tmp/data.parquet")
         for i in range(len(t)):
@@ -56,6 +68,7 @@ PYEOF
 RUN chmod 600 /tasks/all.jsonl
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
+ARG MMMU_REVISION
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mmmu"
@@ -64,7 +77,7 @@ LABEL eval.benchmark.description="MMMU - massive multi-discipline multimodal und
 LABEL eval.benchmark.tasks="900"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
-LABEL eval.benchmark.data_revision="21d1d90a93c7450d30bddb579d7b510c00b8a9ab"
+LABEL eval.benchmark.data_revision="${MMMU_REVISION}"
 LABEL eval.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2311.16502"

@@ -12,6 +12,11 @@ FROM ghcr.io/stonybrooknlp/appworld:latest
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="appworld"
 LABEL eval.benchmark.upstream_base="ghcr.io/stonybrooknlp/appworld:latest"
+# The upstream base publishes a single linux/amd64 manifest — no arm64 exists to
+# build on, so an arm64 leaf pulls the amd64 base and dies at the first RUN with
+# "exec /bin/sh: exec format error". Declaring the real platform set keeps
+# fleet-status from reading the (correctly) single-arch image as incomplete.
+LABEL eval.platforms="linux/amd64"
 LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.description="AppWorld - 9 simulated apps with 457 APIs"
 LABEL eval.benchmark.tasks="732"

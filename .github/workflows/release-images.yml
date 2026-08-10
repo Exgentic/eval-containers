@@ -407,7 +407,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Bake ${{ matrix.target }} (${{ matrix.arch }}; registry bases, per-leaf cache)
-        timeout-minutes: 25  # cap a stalled leaf — a hung download blocked the matrix ~40m; leaves build in <2m
+        # Cap a stalled leaf — a hung download blocked the matrix ~40m; leaves
+        # build in <2m. Leaves that materialize a large dataset can legitimately
+        # outrun that on a cold registry cache (livecodebench timed out on both
+        # arches in the first full-fleet rebuild), so they get headroom while
+        # everything else keeps the tight cap.
+        timeout-minutes: ${{ contains(fromJSON('["benchmark-livecodebench"]'), matrix.target) && 60 || 25 }}
         env:
           T: ${{ matrix.target }}
           ARCH: ${{ matrix.arch }}
@@ -421,7 +426,16 @@ jobs:
           # digest instead of rebuilding; force_rebuild overrides (CVE refresh).
           H=$(bash containers/scripts/fleet-hash.sh | awk -F'\t' -v t="$T" '$1==t{print $2}')
           [ -n "$H" ] || { echo "::error::no input-hash for $T"; exit 1; }
-          ref="${REGISTRY}/$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}' | sed 's|^containers/||')"
+          ctx=$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}')
+          ref="${REGISTRY}/${ctx#containers/}"
+          # An image whose upstream base exists for only some arches declares its
+          # real platform set; building the others just fails at the first RUN
+          # ("exec format error"). Skipping leaves the image legitimately
+          # single-arch, which fleet-status now expects rather than flags.
+          PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "$ctx/Dockerfile" | tail -1)
+          if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
+            echo "skipping $T on $ARCH — declared platforms: $PLATS"; exit 0
+          fi
           if [ "${{ inputs.force_rebuild }}" != "true" ] && [ "${{ inputs.dry_run }}" != "true" ] && \
              bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$H" >/dev/null; then
             if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
