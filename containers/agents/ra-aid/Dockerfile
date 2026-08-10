@@ -34,8 +34,8 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_API_BASE="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export EXPERT_OPENAI_API_KEY="${OPENAI_API_KEY}"
 export EXPERT_OPENAI_API_BASE="${OPENAI_API_BASE}"
-exec /opt/ra-aid-venv/bin/ra-aid --cowboy-mode --provider openai-compatible --model "${EVAL_MODEL:-default}" \
-  --expert-provider openai-compatible --expert-model "${EVAL_MODEL:-default}" -m "$TASK"
+exec /opt/ra-aid-venv/bin/ra-aid --cowboy-mode --provider openai-compatible --model "${MODEL:-default}" \
+  --expert-provider openai-compatible --expert-model "${MODEL:-default}" -m "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

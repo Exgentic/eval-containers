@@ -21,7 +21,7 @@ I
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
-MODEL="${EVAL_MODEL:-default}"
+MODEL="${MODEL:-default}"
 export PI_CODING_AGENT_DIR="${HOME:-/app}/.pi/agent"
 export PI_OFFLINE=1
 mkdir -p "$PI_CODING_AGENT_DIR"

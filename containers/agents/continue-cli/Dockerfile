@@ -32,7 +32,7 @@ schema: v1
 models:
   - name: default
     provider: openai
-    model: ${EVAL_MODEL:-default}
+    model: ${MODEL:-default}
     apiKey: ${OPENAI_API_KEY}
     apiBase: ${OPENAI_BASE_URL}
     roles: [chat, edit, apply]
