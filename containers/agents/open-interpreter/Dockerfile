@@ -11,12 +11,8 @@ LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/OpenInterpreter/open-interpreter"
 LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=open-interpreter
-# open-interpreter 0.4.3 pins psutil<6.0.0, and no psutil in that range ships a
-# manylinux aarch64 wheel — arm64 therefore compiles it from source and fails on
-# the slim base with "psutil could not be installed from sources because gcc is
-# not installed". Build tools go in and come back out in one layer, so the
-# shipped image carries no compiler. Both arches take this path: an arch-only
-# branch is how the failure stayed invisible until the first cold arm64 build.
+# open-interpreter pins psutil<6.0.0, which ships no manylinux aarch64 wheel, so
+# arm64 builds it from source. Toolchain in and out in one layer — no compiler ships.
 RUN set -e; ok=0; \
     for i in 1 2 3 4 5; do \
       if apt-get update --fix-missing \

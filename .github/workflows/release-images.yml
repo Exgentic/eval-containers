@@ -407,11 +407,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Bake ${{ matrix.target }} (${{ matrix.arch }}; registry bases, per-leaf cache)
-        # Cap a stalled leaf — a hung download blocked the matrix ~40m; leaves
-        # build in <2m. Leaves that materialize a large dataset can legitimately
-        # outrun that on a cold registry cache (livecodebench timed out on both
-        # arches in the first full-fleet rebuild), so they get headroom while
-        # everything else keeps the tight cap.
+        # Cap a stalled leaf (a hung download blocked the matrix ~40m). Big-dataset
+        # leaves legitimately outrun it on a cold cache, so they get headroom.
         timeout-minutes: ${{ contains(fromJSON('["benchmark-livecodebench"]'), matrix.target) && 60 || 25 }}
         env:
           T: ${{ matrix.target }}
@@ -428,10 +425,8 @@ jobs:
           [ -n "$H" ] || { echo "::error::no input-hash for $T"; exit 1; }
           ctx=$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}')
           ref="${REGISTRY}/${ctx#containers/}"
-          # An image whose upstream base exists for only some arches declares its
-          # real platform set; building the others just fails at the first RUN
-          # ("exec format error"). Skipping leaves the image legitimately
-          # single-arch, which fleet-status now expects rather than flags.
+          # An arch the image does not declare cannot build (its base lacks it) —
+          # skip, leaving it legitimately single-arch.
           PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "$ctx/Dockerfile" | tail -1)
           if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
             echo "skipping $T on $ARCH — declared platforms: $PLATS"; exit 0
@@ -623,10 +618,8 @@ jobs:
               echo "${REGISTRY}/${kind}/${name}" >> /tmp/refs.txt
             done
           done
-          # The ref is the graph's context column, NOT the target name: bake target
-          # names cannot carry a dot, so model-gpt-5_4 would yield models/gpt-5_4
-          # and merge a ref that does not exist. Both dotted models were silently
-          # skipped every run this way, leaving their :latest stale and single-arch.
+          # Ref comes from the graph's context column, NOT the target name: names
+          # cannot carry a dot, so model-gpt-5_4 → models/gpt-5_4, which does not exist.
           GRAPHMAP=$(bash containers/scripts/fleet-hash.sh graph)
           mapfile -t LEAF_TARGETS < <(jq -r '.[]?' <<< "${LEAVES:-[]}")
           for T in "${LEAF_TARGETS[@]}"; do
@@ -647,9 +640,8 @@ jobs:
             for a in amd64 arm64; do
               docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
             done
-            # A skip is not nothing: it means neither arch was pushed under this
-            # ref, so :TAG keeps whatever it held before. Say so — counting it
-            # silently is how the mangled dotted-model refs hid for months.
+            # Neither arch pushed → :TAG keeps what it had. Say so; the silent
+            # count is how the mangled dotted-model refs hid.
             if [ "${#srcs[@]}" -eq 0 ]; then
               echo "::warning::no ${TAG}-amd64/-arm64 found for ${ref} — :${TAG} left as-is"
               skipped=$((skipped+1)); continue

@@ -17,29 +17,22 @@
 #
 # Anything non-fresh MUST be rebuilt or retagged by the next release.
 #
-# `partial` closes an arch-completeness hole: when one arch's leaf fails, merge
-# still stitches a :TAG from the surviving arch alone, and that arch's config
-# carries the matching hash — so a hash-only check reads fresh forever and the
-# missing arch never self-retries. Expected platforms default to
-# linux/amd64,linux/arm64; a genuinely single-arch image declares its own set
-# with `LABEL eval.platforms="…"` in its Dockerfile. That expectation is read
-# from the repo at REF, never from the registry — a broken image must not be
-# the witness for its own completeness.
+# `partial` exists because a half-built image reads fresh: when one arch fails,
+# merge still stitches a :TAG from the surviving arch, whose config carries the
+# matching hash. Expected platforms are linux/amd64,linux/arm64 unless the
+# Dockerfile declares `LABEL eval.platforms`, read from the repo at REF so a
+# broken image cannot vouch for itself. Only the report form checks this — the
+# `check` callers all pass a per-arch :TAG-<arch> ref.
 #
 # Usage:
 #   fleet-status.sh [tag]                 # full-fleet report (default: latest)
-#   fleet-status.sh check <ref> <hash> [platforms]
-#                                         # one ref: prints the verdict;
-#                                         # exit 0 = fresh, 1 = not fresh.
-#                                         # platforms is opt-in: omitted (the
-#                                         # per-arch :TAG-<arch> callers) means
-#                                         # no completeness check.
+#   fleet-status.sh check <ref> <hash>    # one ref: prints the verdict;
+#                                         # exit 0 = fresh, 1 = not fresh
 # The `check` form is the release workflow's retag decision (rule 13) — the
 # read logic lives only here.
 # Output (TSV): ref  verdict  computed-hash  recorded-hash  platforms
 # Env: REGISTRY (default ghcr.io/exgentic), REF (default HEAD),
-#      STATUS_JOBS (parallel inspects, default 8),
-#      EXPECT_PLATFORMS (report-form default expectation)
+#      STATUS_JOBS (parallel inspects, default 8)
 # Exit (report form): 0 when the sweep completes — a report, not a gate.
 set -euo pipefail
 
@@ -89,9 +82,9 @@ check_one() {
 export -f check_one
 
 if [ "${1:-}" = "check" ]; then
-  { [ $# -ge 3 ] && [ $# -le 4 ] && [ -n "$2" ] && [ -n "$3" ]; } \
-    || { echo "fleet-status: usage: fleet-status.sh check <ref> <expected-hash> [platforms]" >&2; exit 2; }
-  out=$(check_one "$2" "$3" "${4:-}")
+  { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } \
+    || { echo "fleet-status: usage: fleet-status.sh check <ref> <expected-hash>" >&2; exit 2; }
+  out=$(check_one "$2" "$3")
   printf '%s\n' "$out"
   [ "$(cut -f2 <<< "$out")" = "fresh" ]
   exit
@@ -104,17 +97,15 @@ GRAPH=$("$HERE/fleet-hash.sh" graph)
 ALL=$("$HERE/fleet-hash.sh")
 
 REF="${REF:-HEAD}"
-EXPECT_DEFAULT="${EXPECT_PLATFORMS:-linux/amd64,linux/arm64}"
 
-# Expected platforms per target, in graph order. Read from the Dockerfile at
-# REF (same tree fleet-hash hashes), so the expectation is a property of the
-# committed source rather than of whatever happens to be published.
+# Expected platforms per target, in graph order — the Dockerfile's declaration
+# at REF (the tree fleet-hash hashes), else both arches.
 expectations() {
   local ctx p
   while IFS='|' read -r _ ctx _; do
     p=$(git show "$REF:$ctx/Dockerfile" 2>/dev/null \
       | sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' | tail -1)
-    printf '%s\n' "${p:-$EXPECT_DEFAULT}"
+    printf '%s\n' "${p:-linux/amd64,linux/arm64}"
   done <<< "$GRAPH"
 }
 

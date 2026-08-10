@@ -4,8 +4,7 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-# One source of truth for the dataset pin: the loader fetches this revision and
-# the label below reports it, so they cannot drift apart.
+# One pin for both the loader and the label below, so they cannot drift.
 ARG MMMU_REVISION=21d1d90a93c7450d30bddb579d7b510c00b8a9ab
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-exact-match:latest AS test-exact-match
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
@@ -36,10 +35,8 @@ os.makedirs('/tasks', exist_ok=True)
 count = 0
 with open('/tasks/all.jsonl', 'w') as out:
     for subject in SUBJECTS:
-        # Read the repo's own parquet at the pinned revision, not the /api/…/parquet
-        # auto-conversion: that endpoint redirects into refs/convert/parquet, a
-        # branch HF rebuilds at will — it silently lost several subjects
-        # (Accounting among them), 404ing every build.
+        # The repo's own parquet, not /api/…/parquet: that redirects into
+        # refs/convert/parquet, which HF rebuilds and had silently dropped subjects.
         url = (f"https://huggingface.co/datasets/MMMU/MMMU/resolve/{REVISION}"
                f"/{subject}/validation-00000-of-00001.parquet")
         urllib.request.urlretrieve(url, "/tmp/data.parquet")
