@@ -22,6 +22,21 @@ set -euo pipefail
 apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 git clone --depth 1 --branch v${AGENT_VERSION} https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent 2>/dev/null || true
 /opt/agent/setup-uv-venv.sh /opt/swe-agent-venv -e /opt/swe-agent
+# The edit_anthropic tool bundle's install.sh runs `pip install tree-sitter
+# tree-sitter-languages` inside the agent's runtime bash session, and the
+# eval framework's runner network is internet-less. Pre-install both here at
+# build time (when network is available) into whichever pip that session
+# will actually use, so pip finds the exact version already satisfied at
+# runtime and skips the network call. On swe-bench (and any other benchmark
+# using the same harness), /root/.bashrc runs `conda activate testbed` before
+# anything else, switching to that env's pip; benchmarks without a testbed
+# conda env fall back to whatever pip is on PATH.
+testbed_pip=/opt/miniconda3/envs/testbed/bin/pip
+if [ -x "$testbed_pip" ]; then
+  "$testbed_pip" install --no-cache 'tree-sitter==0.21.3' 'tree-sitter-languages'
+elif command -v pip >/dev/null 2>&1; then
+  pip install --no-cache 'tree-sitter==0.21.3' 'tree-sitter-languages'
+fi
 # SWE-agent's LocalDeployment assumes uid-0 root: it writes /root/state.json
 # + /root/.swe-agent-env and copies tool bundles into /root/tools. The eval
 # framework runs the agent as uid 1002, so open up /root at build time.
