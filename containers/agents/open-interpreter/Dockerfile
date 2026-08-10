@@ -11,7 +11,19 @@ LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/OpenInterpreter/open-interpreter"
 LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=open-interpreter
-RUN uv pip install --system --no-cache 'setuptools<81' open-interpreter==${AGENT_VERSION}
+# open-interpreter pins psutil<6.0.0, which ships no manylinux aarch64 wheel, so
+# arm64 builds it from source. Toolchain in and out in one layer — no compiler ships.
+RUN set -e; ok=0; \
+    for i in 1 2 3 4 5; do \
+      if apt-get update --fix-missing \
+         && apt-get install -y --no-install-recommends gcc python3-dev libc6-dev; then ok=1; break; fi; \
+      echo "apt attempt $i failed; retry" >&2; sleep $((i*5)); \
+    done; \
+    [ "$ok" = 1 ] || { echo "apt install of build tools failed after 5 tries" >&2; exit 1; }; \
+    uv pip install --system --no-cache 'setuptools<81' open-interpreter==${AGENT_VERSION}; \
+    apt-get purge -y gcc python3-dev libc6-dev; \
+    apt-get autoremove -y; \
+    rm -rf /var/lib/apt/lists/*
 COPY run_oi.py /opt/agent/run_oi.py
 RUN chmod +x /opt/agent/run_oi.py
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
