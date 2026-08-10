@@ -32,7 +32,7 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 set -euo pipefail
 export LLM_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 export LLM_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
-export LLM_MODEL="${EVAL_MODEL:-default}"
+export LLM_MODEL="${MODEL:-default}"
 exec /opt/openhands-venv/bin/python /opt/agent/run_openhands.py
 E
 

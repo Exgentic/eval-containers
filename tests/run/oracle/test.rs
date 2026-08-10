@@ -84,8 +84,11 @@ async fn benchmarks_are_oracle_solvable() {
     // Collect every oracle check as (label, argv) up front so the heavy part —
     // each check `--local`-builds the benchmark image — can be fanned across a
     // matrix. ORACLE_SHARDS = matrix size, ORACLE_SHARD = this job's index; each
-    // job runs the round-robin slice `i % SHARDS == SHARD`. ORACLE_ONLY=<substr>
-    // narrows to matching labels (single-benchmark validation). All three unset
+    // job runs the round-robin slice `i % SHARDS == SHARD`. ORACLE_ONLY is a
+    // comma/space-separated list of substrings and narrows to labels matching
+    // ANY of them (the per-PR affected gate passes the changed benchmarks); a
+    // list that matches nothing is a hard error, never a green no-op — a
+    // machine-generated filter must not pass vacuously. All three unset
     // (the default) => SHARDS=1, SHARD=0, no filter => every check runs, so a
     // plain `cargo test --test oracle -- --ignored` is unchanged.
     let mut checks: Vec<(String, Vec<String>)> = Vec::new();
@@ -124,11 +127,27 @@ async fn benchmarks_are_oracle_solvable() {
         ));
     }
 
-    let only = std::env::var("ORACLE_ONLY").unwrap_or_default();
-    if !only.is_empty() {
-        checks.retain(|(label, _)| label.contains(&only));
+    checks.sort();
+    // ORACLE_LIST=1 prints the coverage this suite has and returns — the
+    // per-PR gate asks the harness what it can oracle instead of
+    // re-deriving it (per-task benchmarks are covered by one pinned task
+    // each; a few, like terminal-bench, are deliberately uncovered).
+    if std::env::var_os("ORACLE_LIST").is_some() {
+        for (label, _) in &checks {
+            println!("oracle-label: {label}");
+        }
+        return;
     }
-    checks.sort(); // deterministic order so each shard's slice is stable
+
+    let only = std::env::var("ORACLE_ONLY").unwrap_or_default();
+    let wanted: Vec<&str> = only.split([',', ' ']).filter(|s| !s.is_empty()).collect();
+    if !wanted.is_empty() {
+        checks.retain(|(label, _)| wanted.iter().any(|w| label.contains(w)));
+        assert!(
+            !checks.is_empty(),
+            "ORACLE_ONLY={only:?} matched no benchmark — refusing to pass vacuously"
+        );
+    }
     let shard: usize = std::env::var("ORACLE_SHARD")
         .ok()
         .and_then(|s| s.parse().ok())
