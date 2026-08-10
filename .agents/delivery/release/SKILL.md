@@ -128,8 +128,10 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
    (`.agents/RULES.md:15`, sub-rule d).
 
 7. **Prefer letting CI build the fleet.** `.github/workflows/release-images.yml`
-   runs bake on every `v*` tag (tag: the git tag) and on `workflow_dispatch`
-   (tag: the input, or `latest`), setting `GIT_SHA` and `BUILD_DATE`, then
+   runs bake on every `v*` tag (tag: the git tag), on `workflow_dispatch`
+   (tag: the input, or `latest`), and on every push to `main` (tag: `latest` —
+   the continuous channel, delivery rule 16, publishing only the push's
+   delta), setting `GIT_SHA` and `BUILD_DATE`, then
    `bake --push`es the result. CI runs on real Docker on Linux, where
    the full sweep is clean; local podman-on-macOS chokes the parallel
    fleet build on network contention (a documented, non-structural

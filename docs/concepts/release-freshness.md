@@ -34,6 +34,20 @@ Only images work this way. Artifacts that embed the version in their own bytes
 — the per-benchmark `eval-<benchmark>` compose artifacts, the Helm chart, the
 CLI — are republished fresh on every release by definition.
 
+## The continuous `latest` channel
+
+Every push to `main` publishes `:latest` automatically — and publishes **only
+the push's delta**. The release workflow computes the stale set up front and
+prunes every build matrix to it: a push touching one benchmark builds that
+benchmark (and its combos), a push touching a shared base rebuilds the base
+and everything the cascade reaches, and a push touching nothing under
+`containers/` publishes nothing. Versioned `vX.Y.Z` releases remain separate,
+deliberate, tag-triggered events — they always process the full fleet so every
+image gains the new tag (built or carried forward), pass the CVE gate, and are
+what consumers should pin. Per-task images (~600 heavy builds) are excluded
+from the continuous channel and refresh only on versioned releases or manual
+dispatch.
+
 ## Forcing a rebuild
 
 The input hash sees the repository, not the outside world: an upstream base

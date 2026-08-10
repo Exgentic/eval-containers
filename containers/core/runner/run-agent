@@ -6,7 +6,12 @@
 #
 # Contract enforced here:
 #   - non-root: `gosu agent` drops to the unprivileged agent uid (rule 13);
-#   - bounded:  `timeout $TIMEOUT` caps the agent's wall-clock (rule 14);
+#   - bounded:  `timeout -k 30 $TIMEOUT` caps the agent's wall-clock (rule 14).
+#     `-k 30` force-kills (SIGKILL) 30s after the initial SIGTERM if the agent
+#     process ignores or outlives it — without it, an agent that doesn't die on
+#     SIGTERM (observed with Node-based agents) keeps running past $TIMEOUT with
+#     no enforced cutoff, producing a truncated/ambiguous trace instead of a
+#     clean timeout;
 #   - scrubbed: `env -i <allow-list>` hands the agent ONLY the problem text and
 #     the gateway endpoints — never the task IDENTITY (TASK_ID). A model that
 #     recognizes a benchmark instance id can recall a memorized solution and
@@ -27,7 +32,7 @@ fi
 #
 # Not exec'd: record the exit status for write-result (rule 16). 124 = timeout.
 rc=0
-timeout "${TIMEOUT:-300}" gosu agent env -i \
+timeout -k 30 "${TIMEOUT:-300}" gosu agent env -i \
   PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
   HOME=/home/agent USER=agent LANG=C.UTF-8 \
   TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
