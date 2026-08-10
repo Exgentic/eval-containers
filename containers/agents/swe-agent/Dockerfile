@@ -38,19 +38,15 @@ export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 # gitpython refuses to read /opt/swe-agent's .git (owned by uid 0, but we're
 # uid 1002) without an explicit safe.directory override.
 git config --global --add safe.directory /opt/swe-agent
-# LocalRepoConfig's copy() does `shutil.copytree(src, "/{basename}")` then
-# `chown -R root:root` — both fail as a non-root uid. Use the `preexisting`
-# repo type instead (its copy() is a no-op) with a pre-staged repo.
-REPO=/workspace/repo
-mkdir -p "$REPO"
-if [ ! -d "$REPO/.git" ]; then
-  (cd "$REPO" && git init -q && git config user.email a@d.l && git config user.name d \
-    && git commit --allow-empty -qm init) || true
-fi
-git config --global --add safe.directory "$REPO"
+# The benchmark's actual checkout (at the buggy commit grade.sh diffs against)
+# lives at /testbed, not /workspace — LocalRepoConfig's copy() would try to
+# stage a copy of it under a basename dir anyway (and fails as non-root via
+# chown), so use the `preexisting` repo type (its copy() is a no-op) pointed
+# straight at /testbed.
+git config --global --add safe.directory /testbed
 exec /opt/swe-agent-venv/bin/sweagent run --agent.model.name="openai/${EVAL_MODEL:-default}" --agent.model.per_instance_cost_limit=3 \
   --agent.model.api_base="${OPENAI_BASE_URL:-http://model:4000}" --env.deployment.type=local \
-  --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.text="$TASK"
+  --env.repo.type=preexisting --env.repo.repo_name=testbed --problem_statement.text="$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]
