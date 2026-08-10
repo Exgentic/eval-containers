@@ -98,15 +98,18 @@ ALL=$("$HERE/fleet-hash.sh")
 
 REF="${REF:-HEAD}"
 
-# Expected platforms per target, in graph order — the Dockerfile's declaration
-# at REF (the tree fleet-hash hashes), else both arches.
+# Every declared platform set, in one grep over the tree at REF (the tree
+# fleet-hash hashes) → "<context>\t<platforms>".
+# `--full-name` + `:/` keep both the printed paths and the pathspec anchored at
+# the repo root (this runs from any cwd); no match is exit 1, a normal answer here.
+DECLARED=$({ git grep --full-name -o 'eval\.platforms="[^"]*"' "$REF" -- ':/containers/*/*/Dockerfile' 2>/dev/null || true; } \
+  | sed -E 's|^[^:]*:(.*)/Dockerfile:eval\.platforms="([^"]*)"$|\1\t\2|')
+
+# Expected platforms per target, in graph order; undeclared means both arches.
 expectations() {
-  local ctx p
-  while IFS='|' read -r _ ctx _; do
-    p=$(git show "$REF:$ctx/Dockerfile" 2>/dev/null \
-      | sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' | tail -1)
-    printf '%s\n' "${p:-linux/amd64,linux/arm64}"
-  done <<< "$GRAPH"
+  awk -F'\t' 'NR==FNR { if (NF==2) p[$1]=$2; next }
+              { split($0, g, "|"); print (g[2] in p) ? p[g[2]] : "linux/amd64,linux/arm64" }' \
+    <(printf '%s\n' "$DECLARED") <(printf '%s\n' "$GRAPH")
 }
 
 # target|context|deps  ⋈  target<TAB>hash…  →  "<ref> <hash> <platforms>" rows,
