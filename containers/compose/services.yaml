@@ -43,8 +43,18 @@ services:
       timeout: 2s
       retries: 60
       start_period: 5s
-    # No depends_on otelcol: gateway and otelcol boot in parallel; the runner
-    # gates on both healthy instead (rule 8). OTLP exporter retries until up.
+    # condition: service_started (not service_healthy) so this costs no startup
+    # latency — gateway and otelcol still boot in parallel, the runner gates on
+    # both healthy (rule 8). The edge exists for STOP order: Compose stops
+    # dependents before dependencies, so gateway (and its async OTel batch
+    # exporter) is stopped before otelcol — without it, `docker compose up
+    # --abort-on-container-exit` can stop both in parallel, otelcol's hostname
+    # drops from Compose's embedded DNS, and the gateway's still-flushing final
+    # span batch (typically the actual gen_ai completion span, emitted right as
+    # the process winds down) fails with a DNS NameResolutionError and is lost.
+    depends_on:
+      otelcol:
+        condition: service_started
     networks:
       - internal
       - upstream
