@@ -5,7 +5,8 @@ from interpreter import interpreter
 
 interpreter.llm.api_base = os.environ.get("OPENAI_BASE_URL", "http://model:4000")
 interpreter.llm.api_key = os.environ.get("OPENAI_API_KEY", "sk-proxy")
-interpreter.llm.model = "openai/" + os.environ.get("EVAL_MODEL", "default")
+model = os.environ.get("EVAL_MODEL", "default")
+interpreter.llm.model = model if "/" in model else f"openai/{model}"
 interpreter.auto_run = True
 interpreter.offline = False
 interpreter.disable_telemetry = True
