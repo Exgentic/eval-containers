@@ -623,10 +623,16 @@ jobs:
               echo "${REGISTRY}/${kind}/${name}" >> /tmp/refs.txt
             done
           done
-          jq -r '.[]?' <<< "${LEAVES:-[]}" | while read -r T; do
-            kind=${T%%-*}; nm=${T#*-}
-            case "$kind" in benchmark) dir=benchmarks ;; agent) dir=agents ;; model) dir=models ;; gateway) dir=gateways ;; *) dir=$kind ;; esac
-            echo "${REGISTRY}/${dir}/${nm}" >> /tmp/refs.txt
+          # The ref is the graph's context column, NOT the target name: bake target
+          # names cannot carry a dot, so model-gpt-5_4 would yield models/gpt-5_4
+          # and merge a ref that does not exist. Both dotted models were silently
+          # skipped every run this way, leaving their :latest stale and single-arch.
+          GRAPHMAP=$(bash containers/scripts/fleet-hash.sh graph)
+          mapfile -t LEAF_TARGETS < <(jq -r '.[]?' <<< "${LEAVES:-[]}")
+          for T in "${LEAF_TARGETS[@]}"; do
+            ctx=$(awk -F'|' -v t="$T" '$1==t{print $2}' <<< "$GRAPHMAP")
+            [ -n "$ctx" ] || { echo "::error::no graph context for leaf $T"; exit 1; }
+            echo "${REGISTRY}/${ctx#containers/}" >> /tmp/refs.txt
           done
           jq -r '.[]?|.items[]?|"\(.b)\t\(.task)"' <<< "${PERTASK_SHARDS:-[]}" | while IFS=$'\t' read -r B TASK; do
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
@@ -641,7 +647,13 @@ jobs:
             for a in amd64 arm64; do
               docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
             done
-            if [ "${#srcs[@]}" -eq 0 ]; then skipped=$((skipped+1)); continue; fi
+            # A skip is not nothing: it means neither arch was pushed under this
+            # ref, so :TAG keeps whatever it held before. Say so — counting it
+            # silently is how the mangled dotted-model refs hid for months.
+            if [ "${#srcs[@]}" -eq 0 ]; then
+              echo "::warning::no ${TAG}-amd64/-arm64 found for ${ref} — :${TAG} left as-is"
+              skipped=$((skipped+1)); continue
+            fi
             if retry docker buildx imagetools create --tag "${ref}:${TAG}" "${srcs[@]}"; then merged=$((merged+1)); \
             else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
           done < /tmp/refs.txt
