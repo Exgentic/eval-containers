@@ -37,6 +37,14 @@ if [ -x "$testbed_pip" ]; then
 elif command -v pip >/dev/null 2>&1; then
   pip install --no-cache 'tree-sitter==0.21.3' 'tree-sitter-languages'
 fi
+# swerex's CreateBashSessionRequest.startup_timeout defaults to 1.0s — the
+# window to source /root/.bashrc (which runs `conda activate testbed`) and
+# reset PS1. Under qemu-emulated amd64 that reliably blows past 1s, raising
+# a pexpect.exceptions.TIMEOUT even though the prompt does come up. Patch the
+# vendored default rather than the CLI, since sweagent's swe_env.py builds
+# the request with no override.
+sed -i 's/startup_timeout: float = 1.0/startup_timeout: float = 60.0/' \
+  /opt/swe-agent-venv/lib/python*/site-packages/swerex/runtime/abstract.py
 # SWE-agent's LocalDeployment assumes uid-0 root: it writes /root/state.json
 # + /root/.swe-agent-env and copies tool bundles into /root/tools. The eval
 # framework runs the agent as uid 1002, so open up /root at build time.
