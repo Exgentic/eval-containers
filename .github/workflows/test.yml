@@ -152,6 +152,89 @@ jobs:
         if: ${{ !cancelled() }}
         run: tests/static/fleet-hash.sweep.sh
 
+  # Per-PR gate: replay the components this PR actually changed. Affected =
+  # diff of two fleet-hash runs (base SHA vs HEAD) — offline, as the PR gate
+  # must be (verification RULES rule 1; #208), and base-image cascades come
+  # free via the hash's bases component. Selection is machine-generated, so
+  # zero matched tests is a FAILURE, and affected components with no recorded
+  # fixture are named in a ::warning (a visible coverage gap, never a quiet
+  # pass). PRs touching nothing under containers/ exit in ~30s.
+  affected-replay:
+    name: Replay affected (changed components)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6.0.3
+        with:
+          fetch-depth: 0   # the base SHA must be resolvable for REF=<base> fleet-hash
+
+      - name: Select fixtures for affected components
+        id: sel
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -eo pipefail
+          changed=$(comm -13 \
+            <(REF="$BASE" bash containers/scripts/fleet-hash.sh | LC_ALL=C sort) \
+            <(bash containers/scripts/fleet-hash.sh | LC_ALL=C sort) | cut -f1)
+          benches=$(sed -n 's/^benchmark-//p' <<< "$changed")
+          agents=$(sed -n 's/^agent-//p' <<< "$changed")
+          echo "affected: $(tr '\n' ' ' <<< "$changed")"
+          FIX=tests/run/replay/fixtures
+          picks=""; uncovered=""
+          pick() {  # $1 = fixture-name regex; no match = "" (|| true absorbs the
+            basename -a "$FIX"/*.traces.jsonl | grep -E "$1" | LC_ALL=C sort | head -1 || true
+          }         # grep miss, which pipefail would otherwise turn into an abort)
+          for b in $benches; do
+            f=$(pick "^${b}-[0-9]+-[a-z0-9-]+\.traces\.jsonl$")
+            if [ -n "$f" ]; then picks="$picks $f"; else uncovered="$uncovered benchmark/$b"; fi
+          done
+          for a in $agents; do
+            f=$(pick "^[a-z0-9-]+-[0-9]+-${a}\.traces\.jsonl$")
+            if [ -n "$f" ]; then picks="$picks $f"; else uncovered="$uncovered agent/$a"; fi
+          done
+          [ -z "$uncovered" ] || echo "::warning::affected components with no replay fixture (untested by this gate):$uncovered"
+          # Fixture name -> test ident; dedup; cap (a core change affects dozens
+          # of leaves — three fixtures exercise the cascade without an hour-long PR).
+          tests=$(tr ' ' '\n' <<< "$picks" | grep . | sed 's/\.traces\.jsonl$//' | tr '-' '_' | sed 's/^/replay_/' \
+            | LC_ALL=C sort -u | head -3 | tr '\n' ' ' || true)
+          echo "tests=${tests% }" >> "$GITHUB_OUTPUT"
+          echo "selected: ${tests:-<none>}"
+
+      - name: Install Rust toolchain
+        if: steps.sel.outputs.tests != ''
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        if: steps.sel.outputs.tests != ''
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: replay
+
+      - name: Log in to GHCR
+        if: steps.sel.outputs.tests != ''
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Replay the affected fixtures
+        if: steps.sel.outputs.tests != ''
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          TESTS: ${{ steps.sel.outputs.tests }}
+        run: |
+          set -eo pipefail  # else `| tee` masks a failing cargo test
+          # shellcheck disable=SC2086  # TESTS is a space-separated ident list
+          cargo test -p eval-containers-tests-run --test replay \
+            -- --ignored --nocapture --test-threads=1 --exact $TESTS \
+            | tee replay.log
+          if grep -qE "running 0 tests" replay.log; then
+            echo "::error::machine-selected fixtures matched 0 tests: $TESTS"; exit 1
+          fi
+
   # Per-PR gate: cheapest full-stack fixture (bigcodebench + zerostack) on the real
   # stack (otelcol → bifrost → runner), so a gateway/otelcol regression fails the PR.
   replay-e2e:
