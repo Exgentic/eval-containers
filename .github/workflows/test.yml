@@ -169,70 +169,11 @@ jobs:
         with:
           fetch-depth: 0   # the base SHA must be resolvable for REF=<base> fleet-hash
 
-      - name: Select fixtures for affected components
+      - name: Select affected components
         id: sel
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -eo pipefail
-          changed=$(comm -13 \
-            <(REF="$BASE" bash containers/scripts/fleet-hash.sh | LC_ALL=C sort) \
-            <(bash containers/scripts/fleet-hash.sh | LC_ALL=C sort) | cut -f1)
-          benches=$(sed -n 's/^benchmark-//p' <<< "$changed")
-          agents=$(sed -n 's/^agent-//p' <<< "$changed")
-          echo "affected: $(tr '\n' ' ' <<< "$changed")"
-          FIX=tests/run/replay/fixtures
-          picks=""; uncovered=""
-          pick() {  # $1 = fixture-name regex; no match = "" (|| true absorbs the
-            basename -a "$FIX"/*.traces.jsonl | grep -E "$1" | LC_ALL=C sort | head -1 || true
-          }         # grep miss, which pipefail would otherwise turn into an abort)
-          cap() {  # $1 = cap; announce what the cap drops (no silent truncation)
-            local all; all=$(cat); local n; n=$(grep -c . <<< "$all" || true)
-            if [ "$n" -gt "$1" ]; then
-              echo "::warning::$2: $n affected, testing the first $1 ($(tr '\n' ' ' <<< "$all" | cut -c1-200))" >&2
-            fi
-            head -"$1" <<< "$all"
-          }
-          for b in $benches; do
-            f=$(pick "^${b}-[0-9]+-[a-z0-9-]+\.traces\.jsonl$")
-            if [ -n "$f" ]; then picks="$picks $f"; else uncovered="$uncovered benchmark/$b"; fi
-          done
-          for a in $agents; do
-            f=$(pick "^[a-z0-9-]+-[0-9]+-${a}\.traces\.jsonl$")
-            if [ -n "$f" ]; then picks="$picks $f"; else uncovered="$uncovered agent/$a"; fi
-          done
-          [ -z "$uncovered" ] || echo "::warning::affected components with no replay fixture (untested by this gate):$uncovered"
-          # Fixture name -> test ident; dedup; cap (a core change affects dozens
-          # of leaves — three fixtures exercise the cascade without an hour-long PR).
-          tests=$(tr ' ' '\n' <<< "$picks" | grep . | sed 's/\.traces\.jsonl$//' | tr '-' '_' | sed 's/^/replay_/' \
-            | LC_ALL=C sort -u | cap 3 "replay" | tr '\n' ' ' || true)
-          echo "tests=${tests% }" >> "$GITHUB_OUTPUT"
-          echo "selected replay: ${tests:-<none>}"
-
-          # Agent smoke: the changed agents' own suite (bob is deliberately
-          # absent from it — IBM-backend-tied, see tests/run/agents/test.rs).
-          # --exact idents, so agent_claude_code never matches _rtk.
-          smoke=""
-          for a in $agents; do
-            id="agent_$(tr '-' '_' <<< "$a")"
-            if grep -q "agent_smoke!($id," tests/run/agents/test.rs; then smoke="$smoke$id"$'\n'
-            else echo "::warning::agent $a has no agent_smoke! test (untested by this gate)"; fi
-          done
-          smoke=$(printf '%s' "$smoke" | grep . | LC_ALL=C sort -u | cap 2 "agent smoke" | tr '\n' ' ' || true)
-          echo "agents=${smoke% }" >> "$GITHUB_OUTPUT"
-          echo "selected agent smoke: ${smoke:-<none>}"
-
-          # Oracle: every changed benchmark is a candidate — including per-task
-          # ones, which the suite covers with ONE pinned task each. Which
-          # candidates it can actually oracle is the harness's business, so the
-          # oracle step below intersects this list with `ORACLE_LIST` coverage.
-          orc=$(grep . <<< "$benches" | LC_ALL=C sort -u | tr '\n' ' ' || true)
-          echo "oracle=${orc% }" >> "$GITHUB_OUTPUT"
-          echo "oracle candidates: ${orc:-<none>}"
-
-          # One flag for the setup steps: is there anything at all to run?
-          any=false; [ -z "${tests}${smoke}${orc}" ] || any=true
-          echo "any=$any" >> "$GITHUB_OUTPUT"
+        run: tests/select-affected.sh
 
       - name: Install Rust toolchain
         if: steps.sel.outputs.any == 'true'
@@ -299,24 +240,13 @@ jobs:
           CAND: ${{ steps.sel.outputs.oracle }}
         run: |
           set -eo pipefail
-          labels=$(ORACLE_LIST=1 cargo test -p eval-containers-tests-run --test oracle \
-            -- --ignored --nocapture 2>/dev/null | sed -n 's/^oracle-label: //p')
-          only=""; uncovered=""
-          for b in $CAND; do
-            if grep -qE "^${b}( \(task |\$)" <<< "$labels"; then only="$only$b"$'\n'
-            else uncovered="$uncovered $b"; fi
-          done
-          [ -z "$uncovered" ] || echo "::warning::no oracle check exists for:$uncovered (unverified by this gate)"
-          # Cap AFTER coverage filtering, announcing what it drops (each check
-          # --local-builds a benchmark image; per-task ones pull a GB base).
-          n=$(grep -c . <<< "$only" || true)
-          [ "$n" -le 2 ] || echo "::warning::oracle: $n covered, checking the first 2"
-          only=$(grep . <<< "$only" | head -2 | tr '\n' ',' || true)
+          # shellcheck disable=SC2086  # CAND is a space-separated name list
+          only=$(tests/select-affected.sh oracle-filter $CAND | tee /dev/stderr | tail -1)
           [ -n "$only" ] || { echo "no covered benchmark to oracle"; exit 0; }
-          ORACLE_ONLY="${only%,}" cargo test -p eval-containers-tests-run --test oracle \
+          ORACLE_ONLY="$only" cargo test -p eval-containers-tests-run --test oracle \
             -- --ignored --nocapture --test-threads=1 | tee oracle.log
           if grep -qE "running 0 tests" oracle.log; then
-            echo "::error::oracle suite matched 0 tests for: ${only%,}"; exit 1
+            echo "::error::oracle suite matched 0 tests for: $only"; exit 1
           fi
 
   # Per-PR gate: cheapest full-stack fixture (bigcodebench + zerostack) on the real
