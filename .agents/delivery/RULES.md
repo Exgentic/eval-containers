@@ -29,7 +29,7 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 4. **One Release owner.** A tag's GitHub Release object MUST be created and owned solely by the CLI release workflow.
 
-5. **Tag-gated publishing.** The crate and the tagged image fleet MUST be published only by a `vX.Y.Z` tag push or an explicit `workflow_dispatch`, never by a branch push.
+5. **Tag-gated publishing.** The crate and any versioned image fleet MUST be published only by a `vX.Y.Z` tag push or an explicit `workflow_dispatch`, never by a branch push.
 
 6. **Version-agreement gate.** A tagged release MUST abort unless the git tag equals both the `Cargo.toml` and `Chart.yaml` versions.
 
@@ -51,6 +51,8 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 15. **Gate parity.** A carried-forward image MUST pass every release gate that a freshly built image passes.
 
+16. **Continuous channel.** A push to the default branch MAY publish the `latest` fleet channel, and MUST publish only images whose build inputs changed.
+
 ## References
 
 - [Process](../RULES.md) — principle 9 (the one-version policy and version knobs); principle 13 (self-contained repo).
@@ -67,3 +69,4 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 | 2026-06-14 | Added principles 8–10: the changelog is edited only when cutting a release tag, restricted to the Keep a Changelog sections, and limited to consumer-visible changes. |
 | 2026-08-09 | Added rules 11–15 (build inputs, recorded inputs, carried-forward images, fail dirty, gate parity): a release carries an unchanged image's digest forward instead of rebuilding it, keyed on a recorded build-input hash that fails dirty and exempts nothing from release gates. Defining inputs to include resolved external-base digests makes an upstream base bump a *changed* input, so CVE refreshes rebuild naturally. Supersedes the judgment-based `skip_published` dispatch knob (#227); answers the silent-staleness objection that closed #241 (content hash, not path mapping) and implements the change-detection follow-up blessed in #168. |
 | 2026-06-14 | Rule 3 + Abstract: the single shared `evaluate` compose artifact is replaced by per-benchmark `eval-<benchmark>` artifacts (one self-contained compose per benchmark, flattened at publish). A published artifact can't carry a dynamic per-benchmark `include:` (publish flattens includes), so per-benchmark sidecars (EnterpriseOps-Gym, WebArena, …) are baked in at publish and consumed with a single `-f`. |
+| 2026-08-10 | Rule 5 rescoped from "the tagged image fleet" to "any versioned image fleet" — it gates *versioned* publishes, which a continuous `latest` publish is not. Added rule 16 (Continuous channel): a default-branch push MAY publish `latest`, and MUST publish only images whose build inputs changed — affordable exactly because rules 12–14 make "what changed" mechanical and rule 13 carries the rest forward. Versioned releases remain deliberate per rule 5; principle 9's "`latest` on `main`" becomes continuously true. |
