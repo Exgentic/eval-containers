@@ -62,6 +62,10 @@ fi
 
 # ── affected set ────────────────────────────────────────────────────────────
 BASE="${1:-${BASE:-origin/main}}"
+# Diff against the MERGE BASE, not the base branch's tip: a PR is responsible
+# for what it changed, not for what main changed after it branched (GitHub's
+# pull_request.base.sha is the tip, so comparing to it selects unrelated work).
+BASE=$(git merge-base "$BASE" HEAD 2>/dev/null || echo "$BASE")
 changed=$(comm -13 \
   <(REF="$BASE" containers/scripts/fleet-hash.sh | LC_ALL=C sort) \
   <(containers/scripts/fleet-hash.sh | LC_ALL=C sort) | cut -f1)
