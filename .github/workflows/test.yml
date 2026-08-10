@@ -159,61 +159,34 @@ jobs:
   # zero matched tests is a FAILURE, and affected components with no recorded
   # fixture are named in a ::warning (a visible coverage gap, never a quiet
   # pass). PRs touching nothing under containers/ exit in ~30s.
-  affected-replay:
-    name: Replay affected (changed components)
+  affected:
+    name: Test affected (changed components)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6.0.3
         with:
           fetch-depth: 0   # the base SHA must be resolvable for REF=<base> fleet-hash
 
-      - name: Select fixtures for affected components
+      - name: Select affected components
         id: sel
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -eo pipefail
-          changed=$(comm -13 \
-            <(REF="$BASE" bash containers/scripts/fleet-hash.sh | LC_ALL=C sort) \
-            <(bash containers/scripts/fleet-hash.sh | LC_ALL=C sort) | cut -f1)
-          benches=$(sed -n 's/^benchmark-//p' <<< "$changed")
-          agents=$(sed -n 's/^agent-//p' <<< "$changed")
-          echo "affected: $(tr '\n' ' ' <<< "$changed")"
-          FIX=tests/run/replay/fixtures
-          picks=""; uncovered=""
-          pick() {  # $1 = fixture-name regex; no match = "" (|| true absorbs the
-            basename -a "$FIX"/*.traces.jsonl | grep -E "$1" | LC_ALL=C sort | head -1 || true
-          }         # grep miss, which pipefail would otherwise turn into an abort)
-          for b in $benches; do
-            f=$(pick "^${b}-[0-9]+-[a-z0-9-]+\.traces\.jsonl$")
-            if [ -n "$f" ]; then picks="$picks $f"; else uncovered="$uncovered benchmark/$b"; fi
-          done
-          for a in $agents; do
-            f=$(pick "^[a-z0-9-]+-[0-9]+-${a}\.traces\.jsonl$")
-            if [ -n "$f" ]; then picks="$picks $f"; else uncovered="$uncovered agent/$a"; fi
-          done
-          [ -z "$uncovered" ] || echo "::warning::affected components with no replay fixture (untested by this gate):$uncovered"
-          # Fixture name -> test ident; dedup; cap (a core change affects dozens
-          # of leaves — three fixtures exercise the cascade without an hour-long PR).
-          tests=$(tr ' ' '\n' <<< "$picks" | grep . | sed 's/\.traces\.jsonl$//' | tr '-' '_' | sed 's/^/replay_/' \
-            | LC_ALL=C sort -u | head -3 | tr '\n' ' ' || true)
-          echo "tests=${tests% }" >> "$GITHUB_OUTPUT"
-          echo "selected: ${tests:-<none>}"
+        run: tests/select-affected.sh
 
       - name: Install Rust toolchain
-        if: steps.sel.outputs.tests != ''
+        if: steps.sel.outputs.any == 'true'
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache cargo
-        if: steps.sel.outputs.tests != ''
+        if: steps.sel.outputs.any == 'true'
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: replay
 
       - name: Log in to GHCR
-        if: steps.sel.outputs.tests != ''
+        if: steps.sel.outputs.any == 'true'
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -233,6 +206,47 @@ jobs:
             | tee replay.log
           if grep -qE "running 0 tests" replay.log; then
             echo "::error::machine-selected fixtures matched 0 tests: $TESTS"; exit 1
+          fi
+
+      # The changed agents' own suite. AGENTS_SMOKE_BUILD makes it build from
+      # local source (the nightly path) — a PR's agent image does not exist in
+      # the registry yet, which is exactly what we need to test.
+      - name: Smoke the affected agents
+        if: ${{ !cancelled() && steps.sel.outputs.agents != '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          AGENTS_SMOKE_BUILD: "1"
+          IDS: ${{ steps.sel.outputs.agents }}
+        run: |
+          set -eo pipefail
+          # shellcheck disable=SC2086  # IDS is a space-separated ident list
+          cargo test -p eval-containers-tests-run --test agents \
+            -- --ignored --nocapture --test-threads=1 --exact $IDS \
+            | tee agents.log
+          if grep -qE "running 0 tests" agents.log; then
+            echo "::error::machine-selected agent smoke matched 0 tests: $IDS"; exit 1
+          fi
+
+      # The changed benchmarks' gold-solution check: the oracle must still score
+      # 1.0, so a broken grader or a moved dataset fails the PR that broke it.
+      # Per-task benchmarks are included — the suite covers each with one pinned
+      # task. Coverage comes from the harness (ORACLE_LIST), never re-derived
+      # here: a benchmark it deliberately cannot oracle (terminal-bench, whose
+      # upstream gold drifted) warns instead of failing the PR.
+      - name: Oracle the affected benchmarks
+        if: ${{ !cancelled() && steps.sel.outputs.oracle != '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          CAND: ${{ steps.sel.outputs.oracle }}
+        run: |
+          set -eo pipefail
+          # shellcheck disable=SC2086  # CAND is a space-separated name list
+          only=$(tests/select-affected.sh oracle-filter $CAND | tee /dev/stderr | tail -1)
+          [ -n "$only" ] || { echo "no covered benchmark to oracle"; exit 0; }
+          ORACLE_ONLY="$only" cargo test -p eval-containers-tests-run --test oracle \
+            -- --ignored --nocapture --test-threads=1 | tee oracle.log
+          if grep -qE "running 0 tests" oracle.log; then
+            echo "::error::oracle suite matched 0 tests for: $only"; exit 1
           fi
 
   # Per-PR gate: cheapest full-stack fixture (bigcodebench + zerostack) on the real
