@@ -160,10 +160,10 @@ jobs:
   # fixture are named in a ::warning (a visible coverage gap, never a quiet
   # pass). PRs touching nothing under containers/ exit in ~30s.
   affected-replay:
-    name: Replay affected (changed components)
+    name: Test affected (changed components)
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v6.0.3
         with:
@@ -200,20 +200,53 @@ jobs:
           tests=$(tr ' ' '\n' <<< "$picks" | grep . | sed 's/\.traces\.jsonl$//' | tr '-' '_' | sed 's/^/replay_/' \
             | LC_ALL=C sort -u | head -3 | tr '\n' ' ' || true)
           echo "tests=${tests% }" >> "$GITHUB_OUTPUT"
-          echo "selected: ${tests:-<none>}"
+          echo "selected replay: ${tests:-<none>}"
+
+          # Agent smoke: the changed agents' own suite (bob is deliberately
+          # absent from it — IBM-backend-tied, see tests/run/agents/test.rs).
+          # --exact idents, so agent_claude_code never matches _rtk.
+          cap() {  # $1 = cap; announce what the cap drops (no silent truncation)
+            local all; all=$(cat); local n; n=$(grep -c . <<< "$all" || true)
+            if [ "$n" -gt "$1" ]; then
+              echo "::warning::$2: $n affected, testing the first $1 ($(tr '\n' ' ' <<< "$all" | cut -c1-200))" >&2
+            fi
+            head -"$1" <<< "$all"
+          }
+          smoke=""
+          for a in $agents; do
+            id="agent_$(tr '-' '_' <<< "$a")"
+            if grep -q "agent_smoke!($id," tests/run/agents/test.rs; then smoke="$smoke$id"$'\n'
+            else echo "::warning::agent $a has no agent_smoke! test (untested by this gate)"; fi
+          done
+          smoke=$(printf '%s' "$smoke" | grep . | LC_ALL=C sort -u | cap 2 "agent smoke" | tr '\n' ' ' || true)
+          echo "agents=${smoke% }" >> "$GITHUB_OUTPUT"
+          echo "selected agent smoke: ${smoke:-<none>}"
+
+          # Oracle: the changed benchmarks' gold-solution check. ORACLE_ONLY is
+          # a list and fails loudly if it matches nothing (the harness asserts).
+          # Per-task benchmarks build ~GB upstream images — out of the PR lane.
+          orc=""
+          for b in $benches; do
+            grep -q 'eval.benchmark.env="per-task"' "containers/benchmarks/$b/Dockerfile" 2>/dev/null \
+              && { echo "::warning::benchmark $b is per-task — oracle stays nightly for it"; continue; }
+            orc="$orc$b"$'\n'
+          done
+          orc=$(printf '%s' "$orc" | grep . | LC_ALL=C sort -u | cap 2 "oracle" | tr '\n' ',' || true)
+          echo "oracle=${orc%,}" >> "$GITHUB_OUTPUT"
+          echo "selected oracle: ${orc:-<none>}"
 
       - name: Install Rust toolchain
-        if: steps.sel.outputs.tests != ''
+        if: steps.sel.outputs.tests != '' || steps.sel.outputs.agents != '' || steps.sel.outputs.oracle != ''
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
       - name: Cache cargo
-        if: steps.sel.outputs.tests != ''
+        if: steps.sel.outputs.tests != '' || steps.sel.outputs.agents != '' || steps.sel.outputs.oracle != ''
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           shared-key: replay
 
       - name: Log in to GHCR
-        if: steps.sel.outputs.tests != ''
+        if: steps.sel.outputs.tests != '' || steps.sel.outputs.agents != '' || steps.sel.outputs.oracle != ''
         uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -233,6 +266,42 @@ jobs:
             | tee replay.log
           if grep -qE "running 0 tests" replay.log; then
             echo "::error::machine-selected fixtures matched 0 tests: $TESTS"; exit 1
+          fi
+
+      # The changed agents' own suite. AGENTS_SMOKE_BUILD makes it build from
+      # local source (the nightly path) — a PR's agent image does not exist in
+      # the registry yet, which is exactly what we need to test.
+      - name: Smoke the affected agents
+        if: ${{ !cancelled() && steps.sel.outputs.agents != '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          AGENTS_SMOKE_BUILD: "1"
+          IDS: ${{ steps.sel.outputs.agents }}
+        run: |
+          set -eo pipefail
+          # shellcheck disable=SC2086  # IDS is a space-separated ident list
+          cargo test -p eval-containers-tests-run --test agents \
+            -- --ignored --nocapture --test-threads=1 --exact $IDS \
+            | tee agents.log
+          if grep -qE "running 0 tests" agents.log; then
+            echo "::error::machine-selected agent smoke matched 0 tests: $IDS"; exit 1
+          fi
+
+      # The changed benchmarks' gold-solution check: the oracle must score 1.0,
+      # so a broken grader or dataset fails the PR that broke it. ORACLE_ONLY
+      # is a list and the harness asserts it matched something.
+      - name: Oracle the affected benchmarks
+        if: ${{ !cancelled() && steps.sel.outputs.oracle != '' }}
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          ORACLE_ONLY: ${{ steps.sel.outputs.oracle }}
+        run: |
+          set -eo pipefail
+          cargo test -p eval-containers-tests-run --test oracle \
+            -- --ignored --nocapture --test-threads=1 \
+            | tee oracle.log
+          if grep -qE "running 0 tests" oracle.log; then
+            echo "::error::oracle suite matched 0 tests for: $ORACLE_ONLY"; exit 1
           fi
 
   # Per-PR gate: cheapest full-stack fixture (bigcodebench + zerostack) on the real
