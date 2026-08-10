@@ -1,0 +1,4 @@
+# Ships /retry-prompt (core/runner/verify): a failed first attempt earns a
+# second one with the test failures, so the Job needs room for two agent runs
+# and two gradings — twice the chart's derived timeout + deadlineGrace.
+activeDeadlineSeconds: 1800

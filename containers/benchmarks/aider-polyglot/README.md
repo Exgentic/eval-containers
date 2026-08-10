@@ -27,14 +27,31 @@ into `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via `TASK`, with the
 current contents of the editable files appended (aider adds those files to the
 chat, which is the same thing).
 
+## The feedback round
+
+Upstream runs the hidden suite after the model's first attempt and pastes the
+failures back for a second one; its leaderboard metric, `pass_rate_2`, is
+measured after that round, and it is worth a lot (Gemini 2.0 Pro: 20.4 → 35.6).
+
+We reproduce it structurally: on a first attempt that doesn't pass, `/grade.sh`
+runs the suite and invokes the agent once more with `/retry-prompt`'s output — the sanitized failures plus upstream's `test_failures` text. The agent
+is not running while the suite runs and never chooses when to spend the round,
+so both prompts are upstream's verbatim and there is no channel to fence.
+
+An earlier design offered the agent a one-shot `run-tests` command instead. It
+was measured on 30 tasks: only 9 agents spent the round. Waiting to be asked is
+not equivalent to being told.
+
 ## How it's graded
 
-`/grade.sh` calls the root-only `/tests/run.sh`, which builds a throwaway copy of the pristine exercise (minus `.meta/`,
+`/grade.sh` and `/retry-prompt` both call the root-only `/tests/run.sh`. Each
+call builds a throwaway copy of the pristine exercise (minus `.meta/`,
 which holds the reference solution), copies in only the files the agent was told
 to edit, and runs the language's suite for at most 180s — upstream's timeout.
 Reward is 1.0 iff it passes.
 
-The suite runs as a dedicated uid (1004) with root-owned read-only caches copied per run, and its leftovers in
+The suite runs as a dedicated uid (1003 for the feedback round, 1004 for
+grading) with root-owned read-only caches copied per run, and its leftovers in
 `/tmp` and `/dev/shm` are swept — the agent's code executes inside that run, and
 the second attempt's agent could otherwise read what the first run stashed.
 Editable files are read as the agent (uid 1002) so the kernel decides what it
@@ -49,8 +66,9 @@ status). See issue #290.
 
 - **Files the agent creates are not tested** — only the listed files leave the
   workspace. The prompt says so, making it a constraint rather than a trap.
-- The prompt is upstream's verbatim; there is no second attempt, so scores are
-  `pass_rate_1`-shaped and not comparable to aider's leaderboard.
+- Both prompts are upstream's verbatim; what differs is the attempt itself —
+  aider allows one model reply per attempt, an agent loops until `EVAL_TIMEOUT`.
+  Scores are `pass_rate_2`-shaped, not leaderboard-comparable.
 - java/js run `--offline` (no network at eval time), and the prompt's file list
   is relative paths rather than aider's chat basenames.
 

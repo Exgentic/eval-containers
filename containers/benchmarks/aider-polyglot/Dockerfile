@@ -1,7 +1,8 @@
 # Aider Polyglot (Exercism multi-language code editing)
 # 225 tasks across C++, Go, Java, JavaScript, Python, Rust.
 # Data: https://github.com/Aider-AI/polyglot-benchmark
-# Agent edits starter code files; the hidden suite grades them. Rationale: README.md.
+# Agent edits starter code files. A failed first attempt earns a second one with
+# the test failures, driven from /grade.sh. Rationale: README.md.
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
@@ -181,7 +182,8 @@ EXERCISE=$(cat "$TASK_DIR/exercise.txt")
 EXERCISE_DIR=$(cat "$TASK_DIR/exercise_dir.txt")
 SOLUTION_FILES=$(cat "$TASK_DIR/solution_files.txt")
 
-# One suite at a time: two builds sharing 2 CPUs can time out a correct solution.
+# One suite at a time — /retry-prompt and /grade.sh both call this, and two
+# builds sharing 2 CPUs can time out a correct solution.
 exec 9>/work/.lock
 flock 9
 
@@ -275,16 +277,63 @@ sed -E "s|$PARENT/||g; s/\bin [0-9]+\.[0-9]+s\b//g" "$PARENT/out"
 exit "$rc"
 TEST
 
-# --- Verifier: pass iff the hidden suite passes. Output goes to the verifier log.
+# --- Verifier: grade, and take the second attempt upstream's metric assumes ---
+# The framework calls /grade.sh after the agent, on every deployment surface, so
+# the retry round lives here rather than in the shared runner: a benchmark that
+# wants one is the benchmark that knows it. Upstream runs the hidden suite after
+# the model's first attempt and pastes the failures back for a second — its
+# leaderboard number (pass_rate_2) is measured after exactly that.
+#
+# uid 1004 grades; the feedback run uses 1003, so nothing the agent's code left
+# behind in the first is reachable from the run that decides the score.
 RUN cat > /grade.sh <<'GRADE'
 #!/bin/bash
 mkdir -p /logs/verifier
-if /tests/run.sh 1004; then echo 1.0 > /logs/verifier/reward.txt
-else echo 0.0 > /logs/verifier/reward.txt; fi
+grade() {
+  if /tests/run.sh 1004; then echo 1.0 > /logs/verifier/reward.txt
+  else echo 0.0 > /logs/verifier/reward.txt; fi
+}
+grade
+[ "$(cat /logs/verifier/reward.txt)" = "1.0" ] && exit 0
+
+# Second attempt: the sanitized failures plus upstream's test_failures text,
+# verbatim. run-agent overwrites the agent's log, so keep the failed attempt's
+# record — it is the interesting one — before handing it the feedback.
+# run-agent ships in the eval image, not this one: running the benchmark image
+# on its own grades once and stops, which is the correct standalone behaviour.
+[ -x /usr/local/bin/run-agent ] || exit 0
+NEXT=$(/retry-prompt) || exit 0
+[ -n "$NEXT" ] || exit 0
+cp /output/agent/stdout.log  /output/agent/stdout-1.log  2>/dev/null
+cp /output/agent/stderr.log  /output/agent/stderr-1.log  2>/dev/null
+cp /output/agent/.exit-code  /output/agent/.exit-code-1  2>/dev/null
+echo "grade: first attempt did not pass; retrying with test feedback" >&2
+TASK="$NEXT" /usr/local/bin/run-agent || true
+grade
+
+# run-agent overwrote .exit-code with attempt 2's status, and the dashboard reads
+# it as "did the agent run cleanly" — a non-zero there reports the whole task as
+# an ERROR rather than a scored pass/fail (app/results.py). With two attempts the
+# honest aggregate is: errored only if BOTH errored. Restore that.
+if [ "$(cat /output/agent/.exit-code-1 2>/dev/null)" = "0" ]; then
+  printf '0' > /output/agent/.exit-code
+fi
 GRADE
 
+# /grade.sh calls this after a failed first attempt and hands what it prints to
+# the agent as the task for one more attempt. It is
+# upstream's second prompt exactly: the sanitized test output, then
+# prompts.test_failures. Root-only, and the agent is not running when it fires —
+# which is why nothing here needs a channel, a budget, or a lock.
+RUN cat > /retry-prompt <<'RETRY'
+#!/bin/bash
+out=$(/tests/run.sh 1003 2>&1) && exit 0   # passed after all: no second attempt
+printf '%s' "$out"
+printf "\n####\n\nSee the testing errors above.\nThe tests are correct, don't try and change them.\nFix the code in %s to resolve the errors.\n" \
+  "$(cat "/tasks/$EVAL_TASK_ID/file_list.txt")"
+RETRY
 
-RUN chmod -R 700 /tests && chmod +x /grade.sh
+RUN chmod -R 700 /tests && chmod +x /grade.sh /retry-prompt
 
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-materialize-task

@@ -868,3 +868,30 @@ fn gateway_shim_lives_under_opt_gateway() {
     }
     eprintln!("✓ gateway shims live under /opt/gateway (survive the standalone COPY)");
 }
+
+/// A benchmark that retries drives it from /grade.sh — the one hook the framework
+/// calls on every deployment surface. Driving it from the shared runner instead
+/// would make the bundle and the compose/k8s paths grade a different number of
+/// times for the same inputs (rule 24), and would put one benchmark's protocol
+/// in the path of all of them.
+#[test]
+fn the_retry_round_is_driven_from_grade_sh() {
+    let root = test_support::repo_root();
+    let df = std::fs::read_to_string(root.join("containers/benchmarks/aider-polyglot/Dockerfile"))
+        .unwrap();
+    let grade = df
+        .split("cat > /grade.sh")
+        .nth(1)
+        .and_then(|s| s.split("\nGRADE\n").next())
+        .expect("no /grade.sh heredoc");
+    assert!(
+        grade.contains("/retry-prompt") && grade.contains("run-agent"),
+        "the second attempt must be launched from /grade.sh, so every surface gets it"
+    );
+    assert!(
+        !std::fs::read_to_string(root.join("containers/core/runner/run"))
+            .unwrap()
+            .contains("retry"),
+        "the shared runner stays retry-agnostic — one benchmark does not change the fleet"
+    );
+}
