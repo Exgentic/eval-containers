@@ -22,7 +22,7 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 mkdir -p "$HOME/.qwen"
-DM="${EVAL_MODEL:-default}"
+DM="${MODEL:-default}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export OPENAI_MODEL="$DM"
