@@ -23,13 +23,13 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 set -euo pipefail
 mkdir -p "$HOME/.config/opencode"
 cat > "$HOME/.config/opencode/opencode.json" <<CONF
-{"\$schema":"https://opencode.ai/config.json","model":"eval-containers/${EVAL_MODEL:-default}","small_model":"eval-containers/${EVAL_MODEL:-default}","disabled_providers":["anthropic","openai"],"provider":{"eval-containers":{"npm":"@ai-sdk/openai-compatible","name":"Eval Containers LiteLLM Proxy","options":{"baseURL":"${OPENAI_BASE_URL:-http://model:4000/v1}","apiKey":"${OPENAI_API_KEY:-sk-proxy}"},"models":{"${EVAL_MODEL:-default}":{"name":"Eval Containers Proxy Model"}}}},"permission":{"edit":"allow","bash":"allow","webfetch":"allow","external_directory":"allow"},"autoshare":false}
+{"\$schema":"https://opencode.ai/config.json","model":"eval-containers/${MODEL:-default}","small_model":"eval-containers/${MODEL:-default}","disabled_providers":["anthropic","openai"],"provider":{"eval-containers":{"npm":"@ai-sdk/openai-compatible","name":"Eval Containers LiteLLM Proxy","options":{"baseURL":"${OPENAI_BASE_URL:-http://model:4000/v1}","apiKey":"${OPENAI_API_KEY:-sk-proxy}"},"models":{"${MODEL:-default}":{"name":"Eval Containers Proxy Model"}}}},"permission":{"edit":"allow","bash":"allow","webfetch":"allow","external_directory":"allow"},"autoshare":false}
 CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export OPENCODE_DISABLE_AUTOUPDATE=1
 export OPENCODE_DISABLE_MODELS_FETCH=1
-exec opencode run --model "eval-containers/${EVAL_MODEL:-default}" "$TASK"
+exec opencode run --model "eval-containers/${MODEL:-default}" "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

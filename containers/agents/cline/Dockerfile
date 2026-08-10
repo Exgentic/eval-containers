@@ -25,7 +25,7 @@ export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # cline's auth state lives in $HOME/.cline/data/{globalState,secrets}.json
 # and is only recognised when written via `cline auth`.
-cline auth -p openai -k "$OPENAI_API_KEY" -m "${EVAL_MODEL:-default}" -b "$OPENAI_BASE_URL" >/dev/null 2>&1 || true
+cline auth -p openai -k "$OPENAI_API_KEY" -m "${MODEL:-default}" -b "$OPENAI_BASE_URL" >/dev/null 2>&1 || true
 exec cline -y ${EVAL_AGENT_REASONING_EFFORT:+--reasoning-effort $EVAL_AGENT_REASONING_EFFORT} "$TASK"
 E
 
