@@ -106,5 +106,3 @@ ENTRY
 RUN chmod +x /entrypoint.sh
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]
-
-# CI proof commit — reverted immediately; exercises the affected gate end to end.

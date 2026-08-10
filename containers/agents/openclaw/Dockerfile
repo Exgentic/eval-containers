@@ -41,5 +41,3 @@ exec openclaw agent --local --session-id smoke ${EVAL_AGENT_REASONING_EFFORT:+--
 E
 
 ENTRYPOINT ["/run.sh"]
-
-# CI proof commit — reverted immediately; exercises the affected gate end to end.
