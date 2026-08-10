@@ -40,7 +40,13 @@ name: Release the fleet
 
 on:
   push:
-    tags: ['**[0-9]+.[0-9]+.[0-9]+*']  # one tag fires this + release.yml (delivery/RULES.md:1)
+    # One vX.Y.Z tag fires this + release.yml (delivery/RULES.md:1). A push to
+    # main continuously publishes the :latest channel (delivery/RULES.md:16):
+    # enumerate prunes every matrix to the stale set, so a push builds only its
+    # own delta and a no-op push costs ~2 short jobs. No `paths:` filter — it
+    # would also filter the tag ref, silently skipping releases.
+    tags: ['**[0-9]+.[0-9]+.[0-9]+*']
+    branches: [main]
   workflow_dispatch:
     inputs:
       tag:
@@ -206,6 +212,8 @@ jobs:
       benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
       combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
+      has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a main push with no stale leaf
+      dirty: ${{ steps.l.outputs.dirty }}           # main push: anything at all to publish?
     steps:
       - uses: actions/checkout@v6.0.3
       - id: l
@@ -215,14 +223,41 @@ jobs:
           INCLUDE_PER_TASK: ${{ inputs.include_per_task }}
           ONLY: ${{ inputs.only }}
           IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
+          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
         run: |
           # A tag push does NOT populate workflow_dispatch inputs, so COMBO_AGENTS /
           # INCLUDE_PER_TASK arrive empty and combos + per-task would be skipped. On
           # any non-dispatch trigger (the vX.Y.Z release tag) force the full published
           # lineup; a manual dispatch keeps its inputs (blank combo_agents = skip).
+          # A main push keeps the combo lineup (pruned to stale parents below) but
+          # never builds per-task (~600 heavy images stay tag/dispatch-only).
           if [ "$IS_DISPATCH" != "true" ]; then
             COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi"
             INCLUDE_PER_TASK=true
+            [ "$IS_MAIN_PUSH" != "true" ] || INCLUDE_PER_TASK=false
+          fi
+          # The :latest channel (delivery/RULES.md:16): a main push publishes only
+          # images whose inputs changed. Compute the stale set once; every matrix
+          # below intersects with it. Safe to prune here — unchanged images are
+          # already at :latest, the target tag — but NEVER on a version tag, where
+          # every image must gain the new tag (the full matrix carries them).
+          STALE_TARGETS=""; BASES_DIRTY=false; CANARY_DIRTY=false
+          if [ "$IS_MAIN_PUSH" = "true" ]; then
+            STATUS=$(bash containers/scripts/fleet-status.sh latest)
+            GRAPHMAP=$(bash containers/scripts/fleet-hash.sh graph)
+            STALE_TARGETS=$(awk -F'\t' '$2!="fresh"{print $1}' <<< "$STATUS" \
+              | sed -E "s#^${REGISTRY}/##; s#:latest\$##" \
+              | while read -r p; do awk -F'|' -v c="containers/$p" '$2==c{print $1}' <<< "$GRAPHMAP"; done)
+            deps_now=$(find containers/core containers/gateways -name docker-bake.hcl \
+              -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
+            comm -12 <(printf '%s\n' "$STALE_TARGETS" | sort -u) <(printf '%s\n' "$deps_now") \
+              | grep -q . && BASES_DIRTY=true
+            # Combo-global inputs (combination files, runner/, entrypoint/, core
+            # parents) dirty EVERY combo but no benchmark/agent leaf — a canary
+            # combo detects them; parent-specific staleness is caught per combo.
+            ch=$(bash containers/scripts/fleet-hash.sh combo aime claude-code | head -1 | cut -f2)
+            bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/aime--claude-code:latest" "$ch" >/dev/null \
+              || CANARY_DIRTY=true
           fi
           all=$(find containers -name docker-bake.hcl -not -name 'combination*' \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
@@ -237,22 +272,34 @@ jobs:
             leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(tr ' ' '\n' <<< "$ONLY" | sort -u))
             echo "ONLY active -> $(printf '%s\n' "$leaf_list" | grep -c .) leaf target(s)"
           fi
+          # Main push: only stale leaves build (fresh ones are already at :latest).
+          if [ "$IS_MAIN_PUSH" = "true" ]; then
+            leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(printf '%s\n' "$STALE_TARGETS" | sort -u))
+            echo "main push -> $(printf '%s\n' "$leaf_list" | grep -c .) stale leaf target(s)"
+          fi
           leaves=$(printf '%s\n' "$leaf_list" | jq -Rsc 'split("\n")|map(select(length>0))')
           n=$(printf '%s' "$leaves" | jq 'length')
-          if [ "$n" -le 0 ] || [ "$n" -gt 128 ]; then echo "::error::leaf count $n outside 1..128 (build fans out × 2 arches → must fit GitHub's 256-job matrix cap)"; exit 1; fi
+          if [ "$n" -gt 128 ]; then echo "::error::leaf count $n > 128 (build fans out × 2 arches → must fit GitHub's 256-job matrix cap)"; exit 1; fi
+          if [ "$n" -le 0 ] && [ "$IS_MAIN_PUSH" != "true" ]; then echo "::error::leaf count 0 — releases and dispatches must name at least one leaf"; exit 1; fi
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
-          # --only mode derives them from the restricted leaves; else all shared benchmarks.
-          if [ -n "${ONLY:-}" ]; then
+          # --only mode and main pushes derive the compose list from the restricted
+          # leaves; else all shared benchmarks.
+          bench_all=$(comm -23 \
+            <(find containers/benchmarks -mindepth 1 -maxdepth 1 -type d | sed -E 's#.*/##' | sort -u) \
+            <(printf '%s\n' "$pertaskdirs" | sed 's/^benchmark-//' | sort -u))
+          if [ -n "${ONLY:-}" ] || [ "$IS_MAIN_PUSH" = "true" ]; then
             bench_src=$(printf '%s\n' "$leaf_list" | sed -n 's/^benchmark-//p')
           else
-            bench_src=$(comm -23 \
-              <(find containers/benchmarks -mindepth 1 -maxdepth 1 -type d | sed -E 's#.*/##' | sort -u) \
-              <(printf '%s\n' "$pertaskdirs" | sed 's/^benchmark-//' | sort -u))
+            bench_src="$bench_all"
           fi
-          benchmarks=$(printf '%s\n' "$bench_src" \
-            | while read -r b; do [ -n "$b" ] && [ -f "containers/benchmarks/$b/compose.yaml" ] && echo "$b"; done \
-            | jq -Rsc 'split("\n")|map(select(length>0))')
+          with_compose() { while read -r b; do [ -n "$b" ] && [ -f "containers/benchmarks/$b/compose.yaml" ] && echo "$b"; done | jq -Rsc 'split("\n")|map(select(length>0))'; }
+          benchmarks=$(printf '%s\n' "$bench_src" | with_compose)
+          # Combos need the FULL shared list on a main push (a stale agent dirties
+          # its combos across every benchmark, not only stale ones); the pair list
+          # is pruned to stale parents below.
+          combo_bench="$benchmarks"
+          [ "$IS_MAIN_PUSH" != "true" ] || combo_bench=$(printf '%s\n' "$bench_all" | with_compose)
 
           # ── per-task bases: {b,task,kind} for every per-task benchmark ──
           # kind=script -> build.sh (podman two-step upstream build; tasks from the
@@ -289,11 +336,21 @@ jobs:
             # Large arrays go through stdin, never argv: a per-task combo list is
             # >128KB, which exceeds Linux's MAX_ARG_STRLEN (--argjson would E2BIG).
             # Only the small agents list rides argv.
-            shared=$(printf '%s' "$benchmarks" | jq -c --argjson as "$agents" \
+            shared=$(printf '%s' "$combo_bench" | jq -c --argjson as "$agents" \
               '[.[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
             ptc=$(printf '%s' "$pertask" | jq -c --argjson as "$agents" \
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
+          fi
+          # Main push: keep only combos with a stale parent — unless a combo-global
+          # input moved (canary), which dirties every pair. The combos job still
+          # judges each pair itself (carry), so over-inclusion here only costs time.
+          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$CANARY_DIRTY" != "true" ]; then
+            sb=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^benchmark-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
+            sa=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^agent-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
+            combos=$(printf '%s' "$combos" | jq -c --argjson sb "$sb" --argjson sa "$sa" \
+              '[.[] | select((.b as $b | $sb | index($b) != null) or (.a as $a | $sa | index($a) != null))]')
+            echo "main push -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
           fi
 
           # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
@@ -308,18 +365,26 @@ jobs:
           [ "$cn" -le 256 ] || { echo "::error::combo_shards = $cn > 256 — raise the combo chunk size in enumerate"; exit 1; }
           [ "$((ptn * 2))" -le 256 ] || { echo "::error::pertask_shards = $ptn × 2 arch = $((ptn * 2)) > 256 — raise the per-task chunk size in enumerate"; exit 1; }
 
+          has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
+          dirty=true
+          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$n" -eq 0 ] && [ "$combos" = "[]" ] && [ "$BASES_DIRTY" != "true" ]; then dirty=false; fi
           {
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
             echo "combo_shards=$combo_shards"
             echo "pertask_shards=$pertask_shards"
+            echo "has_leaves=$has_leaves"
+            echo "dirty=$dirty"
           } >> "$GITHUB_OUTPUT"
-          echo "leaves=$n  combos=$(printf '%s' "$combos" | jq length) in $(printf '%s' "$combo_shards" | jq length) shards  pertask=$(printf '%s' "$pertask" | jq length) in $(printf '%s' "$pertask_shards" | jq length) shards"
+          echo "leaves=$n  combos=$(printf '%s' "$combos" | jq length) in $(printf '%s' "$combo_shards" | jq length) shards  pertask=$(printf '%s' "$pertask" | jq length) in $(printf '%s' "$pertask_shards" | jq length) shards  dirty=$dirty"
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
   build:
     name: leaf ${{ matrix.target }} (${{ matrix.arch }})
     needs: [bases, enumerate]
+    # A main push with zero stale leaves skips the whole matrix (an empty
+    # matrix list is a workflow error, not zero jobs).
+    if: needs.enumerate.outputs.has_leaves == 'true'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     strategy:
@@ -515,7 +580,9 @@ jobs:
   # them). Combos + compose then consume the :TAG manifest lists.
   merge:
     needs: [bases, build, per-task, enumerate]
-    if: always() && !inputs.dry_run && needs.bases.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'failure')
+    # build is 'skipped' on a main push with no stale leaf; a clean (dirty=false)
+    # main push skips merge and everything downstream of it.
+    if: always() && !inputs.dry_run && needs.bases.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'failure' || needs.build.result == 'skipped') && needs.enumerate.outputs.dirty == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
