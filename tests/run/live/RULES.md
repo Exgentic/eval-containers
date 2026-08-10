@@ -181,9 +181,12 @@ human or agent judgment until we get more mechanical coverage.
     (happens for LiteLLM Responses API path in v1.83.3). Note in
     the known-broken manifest; doesn't fail the run on its own.
 
-28. **Timeout was not hit.** `agent/result.json` `exit_code` is not
-    124 (GNU timeout code). A timeout-killed run is red — raise
-    `EVAL_TIMEOUT` or investigate why the agent looped.
+28. **Timeout was not hit.** `agent/result.json` `exit_code` is
+    neither 124 (GNU `timeout`'s own exit) nor 137 (SIGKILL, the
+    grace-period force-kill for an agent that ignores SIGTERM — see
+    `runner/run-agent`'s `timeout -k`). Either means a timeout-killed
+    run is red — raise `EVAL_TIMEOUT` or investigate why the agent
+    looped.
 
 29. **Version axis recorded.** `task/version.json` and
     `agent/version.json` exist and have the pinned default values
