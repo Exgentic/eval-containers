@@ -501,7 +501,26 @@ fn docker_compose_publish(
         ));
     }
     eprint!("{stderr}");
-    Ok(())
+    // A zero exit is not proof of a publish. `publish` can decline a stack it
+    // cannot turn into a portable artifact — osworld's `desktop` service
+    // bind-mounts a host path — and still exit 0, leaving the registry empty
+    // while the release goes green. Confirm the artifact before believing it.
+    verify_published(tag)
+}
+
+/// Post-condition for [`docker_compose_publish`]: the artifact is in the registry.
+fn verify_published(tag: &str) -> Result<(), String> {
+    let out = Command::new("docker")
+        .args(["buildx", "imagetools", "inspect", tag])
+        .output()
+        .map_err(|e| format!("failed to run docker buildx imagetools inspect: {e}"))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "docker compose publish reported success but {tag} is not in the registry: {}",
+        String::from_utf8_lossy(&out.stderr).trim()
+    ))
 }
 
 /// Escape hatch for per-task benchmark variants — bake doesn't
