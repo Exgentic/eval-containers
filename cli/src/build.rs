@@ -442,6 +442,7 @@ fn docker_compose_publish(
         .ok_or_else(|| "temp dir path is not valid UTF-8".to_string())?;
     eprintln!("$ docker compose -f {compose_file} config --no-interpolate > {flat}");
     eprintln!("$ {env_str} docker compose -f {flat} publish -y {tag}");
+    eprintln!("$ docker buildx imagetools inspect {tag}");
     if dry_run {
         return Ok(());
     }
@@ -501,10 +502,8 @@ fn docker_compose_publish(
         ));
     }
     eprint!("{stderr}");
-    // A zero exit is not proof of a publish. `publish` can decline a stack it
-    // cannot turn into a portable artifact — osworld's `desktop` service
-    // bind-mounts a host path — and still exit 0, leaving the registry empty
-    // while the release goes green. Confirm the artifact before believing it.
+    // A zero exit is not proof of a publish: `publish` can decline a stack it
+    // cannot make portable (osworld bind-mounts a host path) and still exit 0.
     verify_published(tag)
 }
 
