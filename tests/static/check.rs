@@ -887,3 +887,29 @@ fn the_task_deadline_bounds_a_task_not_a_whole_sweep() {
         "must sit under template.spec, not on the Job: {line}"
     );
 }
+
+/// A benchmark that retries drives it from /grade.sh — the one hook the framework
+/// calls on every deployment surface. From the shared runner instead, the bundle
+/// and the compose/k8s paths would grade a different number of times for the same
+/// inputs (rule 24), and one benchmark's protocol would sit in every other's path.
+#[test]
+fn the_retry_round_is_driven_from_grade_sh() {
+    let root = test_support::repo_root();
+    let df = std::fs::read_to_string(root.join("containers/benchmarks/aider-polyglot/Dockerfile"))
+        .unwrap();
+    let grade = df
+        .split("cat > /grade.sh")
+        .nth(1)
+        .and_then(|s| s.split("\nGRADE\n").next())
+        .expect("no /grade.sh heredoc");
+    assert!(
+        grade.contains("/retry-prompt") && grade.contains("run-agent"),
+        "the second attempt must be launched from /grade.sh, so every surface gets it"
+    );
+    assert!(
+        !std::fs::read_to_string(root.join("containers/core/runner/run"))
+            .unwrap()
+            .contains("retry"),
+        "the shared runner stays retry-agnostic — one benchmark does not change the fleet"
+    );
+}

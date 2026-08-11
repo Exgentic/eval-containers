@@ -1,0 +1,3 @@
+# Ships /retry-prompt: a failed first attempt earns a second one with the test
+# failures, so a task needs room for two agent runs and two gradings.
+activeDeadlineSeconds: 1800
