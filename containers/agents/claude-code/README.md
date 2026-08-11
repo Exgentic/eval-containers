@@ -17,7 +17,7 @@ Claude Code is Anthropic's terminal coding agent: it reads, edits, and runs code
 
 ## How Eval Containers runs it
 
-The entrypoint sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` (to avoid beta headers the proxy may not support), then runs `claude -p --dangerously-skip-permissions "$TASK"`. `-p` is print mode — the final answer is written to stdout. `--dangerously-skip-permissions` is safe because Docker is the sandbox.
+The entrypoint sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` (to avoid beta headers the proxy may not support), then runs `claude -p --dangerously-skip-permissions -- "$TASK"`. `-p` is print mode — the final answer is written to stdout. `--dangerously-skip-permissions` is safe because Docker is the sandbox.
 
 ## Version
 
