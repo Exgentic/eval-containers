@@ -86,6 +86,34 @@ fn fleet_status(stub: &Stub) -> HashMap<String, (String, String, String, String)
         .collect()
 }
 
+/// The one-ref `check` form: (ref, verdict, computed, recorded, platforms).
+fn check_one(stub: &Stub, image: &str, hash: &str) -> (String, String, String, String, String) {
+    let out = Command::new("bash")
+        .arg(repo_root().join("containers/scripts/fleet-status.sh"))
+        .args(["check", image, hash])
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                stub.0.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("STATUS_RETRIES", "3")
+        .output()
+        .expect("run fleet-status.sh check");
+    let line = String::from_utf8(out.stdout).expect("utf8");
+    let f: Vec<&str> = line.trim_end().split('\t').collect();
+    assert_eq!(f.len(), 5, "malformed row: {line}");
+    (
+        f[0].into(),
+        f[1].into(),
+        f[2].into(),
+        f[3].into(),
+        f[4].into(),
+    )
+}
+
 fn input_hash(target: &str) -> String {
     let out = Command::new("bash")
         .arg(repo_root().join("containers/scripts/fleet-hash.sh"))
@@ -201,4 +229,48 @@ esac
     let fresh = rows.values().filter(|r| r.0 == "fresh").count();
     assert_eq!(fresh, 2);
     assert_eq!(rows.values().filter(|r| r.0 == "partial").count(), 1);
+}
+
+/// A dropped connection is not a missing image. ghcr fails often enough that
+/// treating any failed read as `absent` made two sweeps minutes apart disagree
+/// by six images — and each false absent is a needless rebuild under rule 14.
+/// Transient errors retry; a registry that never answers reads `unreadable`
+/// (still changed, but distinguishable); a real not-found stays `absent` and
+/// does not burn retries.
+#[test]
+fn transient_registry_errors_retry_instead_of_reading_absent() {
+    let hash = input_hash("benchmark-aime");
+    let counter = std::env::temp_dir().join(format!("fs-attempts-{}", std::process::id()));
+    let _ = std::fs::remove_file(&counter);
+
+    let flaky = write_stub(&format!(
+        r#"n=$(cat {c} 2>/dev/null || echo 0); n=$((n+1)); echo $n > {c}
+if [ "$n" -lt 3 ]; then echo 'ERROR: failed to do request: dial tcp 20.0.0.1:443: i/o timeout' >&2; exit 1; fi
+echo '{{"image":{{"linux/amd64":{{"config":{{"Labels":{{"eval.input-hash":"{hash}"}}}}}}}},"manifest":{{"manifests":[{{"platform":{{"os":"linux","architecture":"amd64"}}}}]}}}}'
+"#,
+        c = counter.display(),
+    ));
+    let out = check_one(&flaky, "ghcr.io/exgentic/benchmarks/aime:latest", &hash);
+    assert_eq!(out.1, "fresh", "a blip must not read as absent: {out:?}");
+    assert_eq!(
+        std::fs::read_to_string(&counter).unwrap().trim(),
+        "3",
+        "it must actually have retried"
+    );
+    let _ = std::fs::remove_file(&counter);
+
+    let dead =
+        write_stub("echo 'ERROR: failed to do request: dial tcp: i/o timeout' >&2; exit 1\n");
+    assert_eq!(
+        check_one(&dead, "ghcr.io/exgentic/benchmarks/aime:latest", &hash).1,
+        "unreadable",
+        "a registry that never answers is unreadable, not absent"
+    );
+
+    let missing = write_stub("echo 'ERROR: ghcr.io/x/y:latest: not found' >&2; exit 1\n");
+    assert_eq!(
+        check_one(&missing, "ghcr.io/exgentic/benchmarks/aime:latest", &hash).1,
+        "absent",
+        "a genuine not-found is still absent"
+    );
 }
