@@ -794,6 +794,20 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
     oc_build(&imagestream, &context, &dockerfile, &build_args, dry_run)
 }
 
+/// Read a `LABEL <key>="<value>"` out of an artifact's Dockerfile. Build-time
+/// knobs an image needs for itself (see `eval.build.storage`) belong next to
+/// the image, not in the invocation. Unreadable file or absent label → None,
+/// so the caller keeps its default.
+fn dockerfile_label(context: &str, dockerfile: &str, key: &str) -> Option<String> {
+    let text = std::fs::read_to_string(std::path::Path::new(context).join(dockerfile)).ok()?;
+    text.lines()
+        .filter_map(|l| l.trim().strip_prefix("LABEL "))
+        .filter_map(|l| l.trim().strip_prefix(key))
+        .filter_map(|l| l.trim().strip_prefix('='))
+        .map(|v| v.trim().trim_matches('"').to_string())
+        .find(|v| !v.is_empty())
+}
+
 /// Apply a binary Docker-strategy BuildConfig (build args baked in) and
 /// run it from a local context. Both steps are plain `oc` invocations and
 /// are printed for copy-paste reproducibility (src/RULES.md principle 2).
@@ -809,12 +823,24 @@ fn oc_build(
         let (k, v) = kv.split_once('=').unwrap_or((kv.as_str(), ""));
         args_yaml.push_str(&format!("        - {{ name: {k}, value: \"{v}\" }}\n"));
     }
-    // The combination image layers 5 large base images — needs more ephemeral storage.
-    let storage = if dockerfile.contains("combination") {
+    // Ephemeral storage for the build pod. Overrun does not fail the build —
+    // the kubelet evicts the pod partway through and reports `BuildPodEvicted`
+    // with no cause named — so an image that needs more than the default says
+    // so itself, in a label, rather than relying on the caller to know:
+    //
+    //     LABEL eval.build.storage="40Gi"
+    //
+    // Precedence: EVAL_BUILD_STORAGE (one-off) > label > default. An image with
+    // no label builds exactly as before.
+    let default = if dockerfile.contains("combination") {
         "10Gi"
     } else {
         "4Gi"
     };
+    let storage = std::env::var("EVAL_BUILD_STORAGE")
+        .ok()
+        .or_else(|| dockerfile_label(context, dockerfile, "eval.build.storage"))
+        .unwrap_or_else(|| default.into());
     let bc = format!(
         // History limits make the build controller prune old build pods, which
         // GCs their owned ConfigMaps (*-ca/*-sys-config) via ownerReference —
@@ -881,4 +907,46 @@ fn oc_build(
         return Err(format!("oc start-build failed with {status}"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::dockerfile_label;
+
+    /// The label is the contract an image uses to ask for more build storage,
+    /// and its ABSENCE is the backward-compatibility guarantee — both directions
+    /// are asserted, since a parser that never matches would look fine on the
+    /// fleet and silently strand the one image that needs it.
+    #[test]
+    fn reads_a_declared_build_storage_and_ignores_everything_else() {
+        let dir = std::env::temp_dir().join("ec-label-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let write = |body: &str| std::fs::write(dir.join("Dockerfile"), body).unwrap();
+
+        write("FROM x\nLABEL eval.build.storage=\"40Gi\"\nRUN true\n");
+        assert_eq!(
+            dockerfile_label(dir.to_str().unwrap(), "Dockerfile", "eval.build.storage"),
+            Some("40Gi".to_string())
+        );
+
+        // No label: the caller must keep its default, unchanged from before.
+        write("FROM x\nLABEL eval.benchmark.name=\"aime\"\nRUN true\n");
+        assert_eq!(
+            dockerfile_label(dir.to_str().unwrap(), "Dockerfile", "eval.build.storage"),
+            None
+        );
+
+        // A key that merely starts the same must not match.
+        write("FROM x\nLABEL eval.build.storageX=\"40Gi\"\n");
+        assert_eq!(
+            dockerfile_label(dir.to_str().unwrap(), "Dockerfile", "eval.build.storage"),
+            None
+        );
+
+        // A missing Dockerfile is not an error — it falls back to the default.
+        assert_eq!(
+            dockerfile_label(dir.to_str().unwrap(), "NoSuchFile", "eval.build.storage"),
+            None
+        );
+    }
 }
