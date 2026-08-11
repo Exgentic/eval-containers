@@ -98,12 +98,13 @@ async def main():
         print("Error: TASK environment variable is empty", file=sys.stderr)
         sys.exit(1)
 
-    model = os.environ.get("EVAL_MODEL", os.environ.get("MODEL", "openai/gpt-4o"))
-    # litellm needs a provider prefix on the model name (e.g.
-    # `openai/<name>`); EVAL_MODEL is just the bare model name in our
-    # framework, so add the openai/ prefix if it's missing.
-    if "/" not in model:
-        model = f"openai/{model}"
+    model = os.environ.get("EVAL_MODEL", os.environ.get("MODEL", "gpt-4o"))
+    # litellm needs to know which wire to speak. EVAL_MODEL is a bare,
+    # opaque handle (gateways/RULES.md rule 2) that MAY already carry a
+    # routing prefix (e.g. `aws/claude-opus-4-8`) which litellm can't
+    # resolve to a real provider on its own — so force the wire via
+    # custom_llm_provider instead of guessing from the presence of "/".
+    llm_kwargs = {"custom_llm_provider": "openai"}
     api_base = os.environ.get("OPENAI_BASE_URL", "http://model:4000")
     api_key = os.environ.get("OPENAI_API_KEY", "sk-proxy")
     os.environ["OPENAI_API_KEY"] = api_key
@@ -115,7 +116,11 @@ async def main():
     trial_dir = Path(tempfile.mkdtemp(prefix="terminus2-trial-"))
 
     agent = Terminus2(
-        logs_dir=logs_dir, model_name=model, api_base=api_base, temperature=0.7
+        logs_dir=logs_dir,
+        model_name=model,
+        api_base=api_base,
+        temperature=0.7,
+        llm_kwargs=llm_kwargs,
     )
     env = LocalEnvironmentShim(trial_dir)
     context = AgentContext()
