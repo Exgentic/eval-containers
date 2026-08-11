@@ -55,7 +55,8 @@ maxBudget: ""
 
 # ── Knobs a benchmark MAY override in its values.yaml ────────────────────────
 timeout: "300"
-# activeDeadlineSeconds unset -> derives from timeout + deadlineGrace; grace must cover grading (scicode's is 600s).
+# Per-task wall clock, set on the pod. Unset -> timeout + deadlineGrace; grace
+# must cover grading (scicode's is 600s).
 deadlineGrace: 600
 activeDeadlineSeconds: ""
 # Job overrides the image command, so invoke the launcher explicitly:

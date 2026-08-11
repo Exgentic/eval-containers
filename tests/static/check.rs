@@ -868,3 +868,22 @@ fn gateway_shim_lives_under_opt_gateway() {
     }
     eprintln!("✓ gateway shims live under /opt/gateway (survive the standalone COPY)");
 }
+
+/// On the Job, activeDeadlineSeconds bounds every index of an Indexed Job at
+/// once, killing a dataset sweep partway. A single-task render looks identical
+/// either way, so only the indentation catches a move back.
+#[test]
+fn the_task_deadline_bounds_a_task_not_a_whole_sweep() {
+    let job = std::fs::read_to_string(
+        test_support::repo_root().join("containers/benchmarks/_chart/templates/job.yaml"),
+    )
+    .unwrap();
+    let line = job
+        .lines()
+        .find(|l| l.contains("activeDeadlineSeconds:"))
+        .expect("chart no longer sets activeDeadlineSeconds");
+    assert!(
+        line.len() - line.trim_start().len() >= 6,
+        "must sit under template.spec, not on the Job: {line}"
+    );
+}
