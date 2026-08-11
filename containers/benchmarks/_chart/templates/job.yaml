@@ -38,12 +38,13 @@ spec:
   backoffLimit: 0
   {{- end }}
   ttlSecondsAfterFinished: 3600
-  activeDeadlineSeconds: {{ $v.activeDeadlineSeconds | default (add (int $v.timeout) (int $v.deadlineGrace)) }}
   template:
     metadata:
       labels:
         {{- include "eval.labels" . | nindent 8 }}
     spec:
+      {{- /* Per POD — on the Job it would bound a whole Indexed sweep. */}}
+      activeDeadlineSeconds: {{ $v.activeDeadlineSeconds | default (add (int $v.timeout) (int $v.deadlineGrace)) }}
       restartPolicy: Never
       shareProcessNamespace: true
       {{- with $v.serviceAccountName }}
