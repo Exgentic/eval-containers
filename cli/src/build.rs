@@ -412,17 +412,24 @@ fn ensure_builder(name: &str) -> Result<(), String> {
 /// placeholders — so we pass inert values and print every step, keeping the
 /// commands hand-runnable (src/RULES.md principle 2). `-y` skips the prompt.
 ///
-/// A benchmark whose stack has only `build:` services (e.g. tau-bench's
-/// `bridge`/`harness`) is not OCI-publishable — `docker compose publish` rejects
-/// it. Such a benchmark is skipped with a warning (it runs `--local` / other
-/// modes), so the release sweep over every benchmark stays green rather than
-/// aborting on it.
+/// A stack that cannot become a portable artifact says so itself, with a
+/// top-level `x-eval-publish: false` in its `compose.yaml`; it is skipped and
+/// runs `--local`. Every other outcome must end with the artifact in the
+/// registry — `publish` can decline and still exit 0, so the exit code alone
+/// is not evidence.
 fn docker_compose_publish(
     benchmark: &str,
     compose_file: &str,
     tag: &str,
     dry_run: bool,
 ) -> Result<(), String> {
+    if declines_publish(compose_file)? {
+        eprintln!(
+            "skipping {tag}: {compose_file} declares `x-eval-publish: false` \
+             — run this benchmark with `--local`"
+        );
+        return Ok(());
+    }
     let publish_env = [
         ("OPENAI_API_KEY", "unused-at-publish"),
         ("OPENAI_API_BASE", "unused-at-publish"),
@@ -484,17 +491,6 @@ fn docker_compose_publish(
         .map_err(|e| format!("failed to run docker compose: {e}"))?;
     let stderr = String::from_utf8_lossy(&pub_out.stderr);
     if !pub_out.status.success() {
-        // A build-only stack is intentionally un-publishable, not a release
-        // failure: skip it so the sweep continues (it runs `--local`).
-        if stderr.contains("only contains a build section")
-            || stderr.contains("cannot be published")
-        {
-            eprintln!(
-                "warning: skipping {tag}: stack has only `build:` services, \
-                 not OCI-publishable — run this benchmark with `--local`"
-            );
-            return Ok(());
-        }
         return Err(format!(
             "docker compose publish failed with {}: {}",
             pub_out.status,
@@ -502,24 +498,31 @@ fn docker_compose_publish(
         ));
     }
     eprint!("{stderr}");
-    // A zero exit is not proof of a publish: `publish` can decline a stack it
-    // cannot make portable (osworld bind-mounts a host path) and still exit 0.
-    verify_published(tag)
-}
 
-/// Post-condition for [`docker_compose_publish`]: the artifact is in the registry.
-fn verify_published(tag: &str) -> Result<(), String> {
+    // The post-condition: `publish` can decline a stack and still exit 0, so
+    // confirm the artifact rather than believing the exit code.
     let out = Command::new("docker")
         .args(["buildx", "imagetools", "inspect", tag])
         .output()
         .map_err(|e| format!("failed to run docker buildx imagetools inspect: {e}"))?;
-    if out.status.success() {
-        return Ok(());
+    if !out.status.success() {
+        return Err(format!(
+            "docker compose publish reported success but {tag} is not in the registry: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
     }
-    Err(format!(
-        "docker compose publish reported success but {tag} is not in the registry: {}",
-        String::from_utf8_lossy(&out.stderr).trim()
-    ))
+    Ok(())
+}
+
+/// Whether a `compose.yaml` declares itself un-publishable with a top-level
+/// `x-eval-publish: false`. Declared by the stack, never inferred from whatever
+/// string `publish` happens to print.
+fn declines_publish(compose_file: &str) -> Result<bool, String> {
+    let text = std::fs::read_to_string(compose_file)
+        .map_err(|e| format!("failed to read {compose_file}: {e}"))?;
+    Ok(text
+        .lines()
+        .any(|l| l.trim_end() == "x-eval-publish: false"))
 }
 
 /// Escape hatch for per-task benchmark variants — bake doesn't
