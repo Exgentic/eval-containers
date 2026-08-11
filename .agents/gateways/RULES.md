@@ -5,7 +5,7 @@
 
 ## Abstract
 
-A gateway image is a self-contained LLM proxy. It accepts requests from the agent on a fixed set of protocol-namespaced paths, routes them to a user-specified upstream provider, and emits OpenTelemetry traces. This document defines the requirements for gateway images in Dock.
+A gateway image is a self-contained LLM proxy. It accepts requests on a fixed set of protocol-namespaced paths and routes them to a user-specified upstream provider, translating between wire protocols where asked. This document defines the requirements for gateway images in Dock. Model authority and call capture belong to the [edge](../edge/RULES.md), which every model call crosses; a gateway is REQUIRED only for cross-wire work.
 
 Gateways are the *how* (which proxy implementation handles routing, format translation, and observability). Models are the *what* (which provider, model name, and credentials a specific deployment uses). The two are independent axes — a single gateway image MUST work with any model, and a single model spec MAY be served by any compatible gateway.
 
@@ -25,7 +25,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 2a. **Any model out of the box.** Gateway images MUST work with any upstream model the user supplies — selected purely by setting `EVAL_MODEL` at container start. Rebuilding the image to switch models is forbidden. The set of supported models is whatever the configured upstream serves; the gateway's job is to route the inbound protocol and rewrite the agent's chosen model name to `EVAL_MODEL` (via governance routing, model_list aliasing, header override, or equivalent), not to gate which models are allowed. A user who wants to try a new model MUST be able to do so by changing one env var, never by building a new image.
 
-2b. **`EVAL_MODEL` pins; `EVAL_MODEL_API` only picks the wire.** The agent sends a non-authoritative model (often a placeholder); the gateway is the model authority and MUST rewrite it to `EVAL_MODEL` whenever `EVAL_MODEL` is set. Three modes:
+2b. **Superseded by [edge:2](../edge/RULES.md) and [edge:4](../edge/RULES.md).** Model authority is no longer a gateway property: the edge pins the model before the call reaches a gateway, and a gateway placed behind the edge translates the wire without renaming the model. The mode taxonomy below is retained for gateways that still face an agent directly. **`EVAL_MODEL` pins; `EVAL_MODEL_API` only picks the wire.** The agent sends a non-authoritative model (often a placeholder); the gateway is the model authority and MUST rewrite it to `EVAL_MODEL` whenever `EVAL_MODEL` is set. Three modes:
    - **Native pin** (`EVAL_MODEL` set, `EVAL_MODEL_API` unset) — the default: rewrite the model to `EVAL_MODEL` and forward on the *inbound* protocol's own wire. No cross-protocol translation, so native server tools (web search) survive. Correct against a protocol-agnostic upstream (one that serves any model over any wire).
    - **Wire override** (`EVAL_MODEL_API` set) — additionally force the wire to `EVAL_MODEL_API`, translating the inbound protocol to it. For single-protocol upstreams. Cross-protocol server-tool preservation is a known upstream limitation, so it is best-effort (see the test RULES matrix).
    - **Passthrough** (`EVAL_MODEL` unset) — forward the client's own model on its native wire, unchanged. For recording/observing, not evals.
@@ -60,9 +60,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### OpenTelemetry
 
-10. **OTel emission required.** Every gateway image MUST emit OpenTelemetry traces following the GenAI semantic conventions (`gen_ai.*` attributes) to the endpoint specified by `OTEL_EXPORTER_OTLP_ENDPOINT`. The default endpoint is `http://otelcol:4318/v1/traces` (resolved by the eval image's hosts file in single-image mode, or by service-name DNS in compose/k8s modes).
+10. **Superseded by [edge:6](../edge/RULES.md) through [edge:10](../edge/RULES.md).** Capture is a property of the edge, which records every call verbatim; a gateway MAY still emit traces but is no longer REQUIRED to. **OTel emission required.** Every gateway image MUST emit OpenTelemetry traces following the GenAI semantic conventions (`gen_ai.*` attributes) to the endpoint specified by `OTEL_EXPORTER_OTLP_ENDPOINT`. The default endpoint is `http://otelcol:4318/v1/traces` (resolved by the eval image's hosts file in single-image mode, or by service-name DNS in compose/k8s modes).
 
-11. **No conditional OTel.** OTel emission MUST NOT be disabled by default. A gateway that requires explicit enablement of GenAI tracing MUST set the relevant flag in its template at build time.
+11. **Superseded by [edge:10](../edge/RULES.md).** Unconditional capture is now required of the edge instead. **No conditional OTel.** OTel emission MUST NOT be disabled by default. A gateway that requires explicit enablement of GenAI tracing MUST set the relevant flag in its template at build time.
 
 ### Image Layout
 
@@ -136,3 +136,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-07-22 | Rules 2, 2b, 22 rewritten for the `EVAL_MODEL` (bare, opaque handle — never parsed) + optional `EVAL_MODEL_API` (wire protocol, `anthropic\|openai\|gemini`) model. |
 | 2026-07-29 | Rule 2b: three modes — `EVAL_MODEL` set ⇒ pin (default keeps the inbound wire so server tools survive), `EVAL_MODEL_API` overrides the wire, unset ⇒ passthrough. Rule 6 permits a header-injection shim (bifrost fronts Caddy to stamp the inbound wire — CEL can't see the path); rule 12 lists the shim config. |
 | 2026-07-30 | Rule 6: the shim binary+config MUST live under `/opt/gateway/` and be static (Caddy) — bifrost switched nginx→Caddy so the single-container `-standalone` bundle (one `COPY /opt/gateway`) actually boots the gateway (nginx at `/usr/sbin`, musl, silently broke every bundle). Guard: `tests/static/check.rs::gateway_shim_lives_under_opt_gateway`. |
+| 2026-08-11 | Rules 2b, 10 and 11 superseded in place by the new [edge](../edge/RULES.md) topic: model authority and call capture move to the one component every call crosses, so they are implemented and verified once instead of per flavor. Abstract narrowed accordingly — a gateway is now REQUIRED only for cross-wire translation, which stays here (8, 9). Rules 5, 6, 7 and 12 are unchanged and still bind any gateway that faces an agent directly. Motivation: the per-flavor capture obligation lost tool definitions on every wire, and dropped them entirely on chat completions. |
