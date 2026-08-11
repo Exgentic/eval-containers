@@ -54,7 +54,11 @@ if [ "${1:-}" = "oracle-filter" ]; then
   done
   [ -z "$uncovered" ] || warn "no oracle check exists for:$uncovered (unverified by this gate)"
   # Each check --local-builds a benchmark image (per-task ones pull a GB base).
-  filtered=$(grep . <<< "$covered" | cap "${ORACLE_CAP:-2}" oracle | tr '\n' ',' | sed 's/,$//')
+  # `|| true`: with nothing covered, grep exits 1 and set -e would kill the
+  # script here — before the warning above is flushed, and before the caller
+  # gets the empty value it already handles ("no covered benchmark to oracle").
+  filtered=$(grep . <<< "$covered" || true)
+  filtered=$(cap "${ORACLE_CAP:-2}" oracle <<< "$filtered" | tr '\n' ',' | sed 's/,$//')
   cat "$WARNF"            # flush before the value, so stdout's last line is it
   printf '%s\n' "$filtered"
   exit 0
