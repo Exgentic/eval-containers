@@ -1,7 +1,7 @@
 # Aider Polyglot (Exercism multi-language code editing)
 # 225 tasks across C++, Go, Java, JavaScript, Python, Rust.
 # Data: https://github.com/Aider-AI/polyglot-benchmark
-# Agent edits starter code files. Test runs language-specific test suite.
+# Agent edits starter code files; the hidden suite grades them. Rationale: README.md.
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
@@ -25,16 +25,25 @@ LABEL eval.build.storage="40Gi"
 ENV DEBIAN_FRONTEND=noninteractive
 
 # --- Language toolchains ---
+# libboost-date-time-dev: cpp/gigasecond and cpp/meetup `find_package(Boost …)`.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl git python3 python3-pip ca-certificates gnupg \
     gcc g++ cmake make \
-    golang-go \
+    libboost-date-time-dev \
     openjdk-21-jdk-headless \
     rustc cargo \
     jq \
-  && rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* \
-            /usr/lib/go-*/test /usr/lib/go-*/api
+  && rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/*
 ENV JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+
+# Go from upstream, not `golang-go` — jammy ships 1.18, which predates `slices`.
+# go/dnd-character fails to build on Exercism's own reference under it.
+ARG GO_VERSION=1.23.4
+RUN ARCH=$(dpkg --print-architecture) \
+ && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" \
+      | tar xz -C /usr/local \
+ && rm -rf /usr/local/go/test /usr/local/go/api
+ENV PATH=/usr/local/go/bin:$PATH
 
 # Node.js 20 (Ubuntu 22.04 ships v12 which is too old for Jest)
 RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
@@ -81,20 +90,37 @@ with open('/tasks/all.jsonl', 'w') as out_f:
             for doc_file in ["introduction.md", "instructions.md", "instructions.append.md"]:
                 doc_path = os.path.join(docs_dir, doc_file)
                 if os.path.isfile(doc_path):
-                    instructions += open(doc_path).read() + "\n\n"
+                    instructions += open(doc_path).read()  # no separator, as upstream
 
-            solution_files = config.get("files", {}).get("solution", [])
+            # Upstream's `ignore_files` keeps the build manifests out of the
+            # editable set; rust lists Cargo.toml as `solution` for all 30.
+            ignored = {"Cargo.toml", "CMakeLists.txt"}
+            solution_files = [f for f in config.get("files", {}).get("solution", [])
+                              if os.path.basename(f) not in ignored]
             test_files = config.get("files", {}).get("test", [])
 
+            # Upstream's first-attempt prompt verbatim: the exercise docs
+            # followed by aider's `instructions_addendum` (benchmark/prompts.py).
+            # The only rendering of the file list; /entrypoint.sh reads it back
+            # for the failure block so the two cannot disagree.
             file_list = ", ".join(solution_files)
             problem = (
-                f"Edit the following {lang} code file(s) to solve the exercise "
-                f"described below. Modify ONLY the listed file(s) in the current "
-                f"directory. Do not create new files.\n\n"
-                f"Language: {lang}\n"
-                f"File(s) to edit: {file_list}\n\n"
+                f"Edit the {lang} code file(s) in the current directory to solve "
+                f"the exercise described below.\n\n"
                 f"## Instructions\n\n"
-                f"{instructions.strip()}"
+                f"{instructions.strip()}\n\n"
+                f"####\n\n"
+                f"Use the above instructions to modify the supplied files: {file_list}\n"
+                f"Don't change the names of existing functions or classes, as they "
+                f"may be referenced from other code like unit tests, etc.\n"
+                f"Only use standard libraries, don't suggest installing any packages.\n"
+                # The one addition to upstream's text. Upstream's model edits in
+                # place so anything it creates survives to the test run; ours
+                # cannot, because only the listed files leave the workspace (a
+                # wider copy would let a conftest.py set the verdict). Saying so
+                # is the difference between a constraint and a silent zero.
+                f"Put your whole solution in the listed file(s) — new files you "
+                f"create are not part of what gets tested."
             )
 
             row = {
@@ -103,6 +129,7 @@ with open('/tasks/all.jsonl', 'w') as out_f:
                 'exercise': exercise,
                 'instructions': instructions.strip(),
                 'problem': problem,
+                'file_list': file_list,
                 'solution_files': "\n".join(solution_files),
                 'test_files': "\n".join(test_files),
                 'exercise_dir': exercise_dir,
@@ -114,13 +141,17 @@ print(f"Indexed {task_id} tasks")
 assert task_id == 225, f"Expected 225 tasks, got {task_id}"
 PYEOF
 
-# Lock down task metadata and exercise repo from agent (includes reference solutions)
-RUN chmod 600 /tasks/all.jsonl && chmod -R 600 /polyglot
+# Lock down task metadata and exercise repo from agent (includes reference
+# solutions). /tasks goes 711 so the agent cannot `ls` it: the directory name is
+# the task id, which the launcher withholds on purpose.
+RUN chmod 600 /tasks/all.jsonl && chmod -R 600 /polyglot && chmod 711 /tasks
 
-# Pre-cache java (gradle) + js (npm) build deps now, while the build still has
-# network — eval time is internet=false, and grade.sh below runs them --offline.
-# The gradle distro + JUnit/jest/babel are shared across exercises, so this stays
-# ~290MB regardless of exercise count.
+# Pre-cache java (gradle) + js (npm) deps while the build still has network —
+# eval time is internet=false. Flat in exercise count. (Rust's 3 crates.io
+# exercises stay unsolvable offline; `cargo fetch` doesn't cover it — see #291.)
+#
+# Root-owned and read-only on purpose: the agent gets code execution under the
+# test uid for one run, and gradle applies any init.d/*.gradle it finds there.
 ENV GRADLE_USER_HOME=/opt/gradle
 ENV npm_config_cache=/opt/npmcache
 RUN mkdir -p /opt/gradle /opt/npmcache \
@@ -130,77 +161,133 @@ RUN mkdir -p /opt/gradle /opt/npmcache \
  && for ex in /polyglot/javascript/exercises/practice/*/; do \
       rm -rf /tmp/w; cp -r "$ex" /tmp/w; cd /tmp/w; \
       timeout 200 npm install >/dev/null 2>&1 || true; done \
- && rm -rf /tmp/w && chmod -R a+rX /opt/gradle /opt/npmcache \
- && rm -rf /opt/gradle/daemon /root/.gradle 2>/dev/null || true
+ && rm -rf /tmp/w && rm -rf /opt/gradle/daemon /root/.gradle 2>/dev/null \
+ && chmod -R a+rX /opt/gradle /opt/npmcache
 
 WORKDIR /app
 ENV EVAL_BENCHMARK=aider-polyglot
 
-# --- Test script: run language-specific test suite ---
-RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
+# --- Test runner: the language suite over the agent's workspace ---
+# Root-only (/tests is 700). Called by /grade.sh and by the one-shot request in
+# /entrypoint.sh. The suite executes the agent's code, so each call gets a
+# disposable identity — uid $1, private caches, swept afterwards (README.md).
+RUN useradd -u 1003 -M -s /usr/sbin/nologin tester \
+ && useradd -u 1004 -M -s /usr/sbin/nologin grader \
+ && mkdir -p /tests /work && chmod 711 /work \
+ && cat > /tests/run.sh <<'TEST'
 #!/bin/bash
-mkdir -p /logs/verifier
-
+# usage: run.sh <uid>   — the identity the suite executes under.
+RUN_UID="$1"
 TASK_DIR="/tasks/$EVAL_TASK_ID"
 LANGUAGE=$(cat "$TASK_DIR/language.txt")
 EXERCISE=$(cat "$TASK_DIR/exercise.txt")
 EXERCISE_DIR=$(cat "$TASK_DIR/exercise_dir.txt")
-TEST_FILES=$(cat "$TASK_DIR/test_files.txt")
 SOLUTION_FILES=$(cat "$TASK_DIR/solution_files.txt")
 
-# Copy agent's edited files back into exercise directory
+# One suite at a time: two builds sharing 2 CPUs can time out a correct solution.
+exec 9>/work/.lock
+flock 9
+
+# Pristine exercise (minus .meta/, the reference solutions) plus the agent's
+# edits to the files it was told to edit. A wider copy would let a conftest.py
+# ride in beside the suite and decide the verdict.
+#
+# The scratch copy keeps the exercise's directory name: cpp's CMakeLists derives
+# the test filename from it (`${exercise_name}_test.cpp`).
+PARENT=$(mktemp -d /work/run.XXXXXX) || exit 1
+trap 'rm -rf "$PARENT"' EXIT
+WORK="$PARENT/$EXERCISE"
+mkdir -p "$WORK"
+cp -r "$EXERCISE_DIR/." "$WORK/"
+rm -rf "$WORK/.meta"
+# Read the agent's files AS the agent: it owns /app and can point an
+# intermediate directory at /polyglot, and a leaf-only symlink test misses that.
 for f in $SOLUTION_FILES; do
-  src="/app/$f"
-  dst="$EXERCISE_DIR/$f"
-  if [ -f "$src" ]; then
-    cp "$src" "$dst"
-  fi
+  setpriv --reuid=1002 --regid=1002 --clear-groups \
+    cat "/app/$f" > "$WORK/$f" 2>/dev/null || rm -f "$WORK/$f"
 done
 
-cd "$EXERCISE_DIR"
+# Per-run copy of the build cache, so a run cannot leave anything for the next.
+case "$LANGUAGE" in
+  java)       cp -r /opt/gradle   "$PARENT/.gradle"; export GRADLE_USER_HOME="$PARENT/.gradle" ;;
+  javascript) cp -r /opt/npmcache "$PARENT/.npm";    export npm_config_cache="$PARENT/.npm" ;;
+esac
+cd "$WORK" || exit 1
 
-# Remove Exercism skip patterns so all tests run
-# Rust: #[ignore]
-find . -name '*.rs' -exec sed -i 's/^#\[ignore\]$//' {} +
-# JavaScript: xtest -> test, xdescribe -> describe
-find . -name '*.spec.js' -o -name '*.test.js' | xargs sed -i 's/\bxtest(/test(/g; s/\bxdescribe(/describe(/g' 2>/dev/null || true
-# Java: @Disabled("...") and @Ignore
-find . -name '*.java' -exec sed -i '/@Disabled/d; /@Ignore/d' {} +
+# Remove Exercism skip patterns so all tests run, matching upstream's handling.
+# JavaScript: xtest -> test (upstream's `sed` over *.spec.js).
+find . -name '*.spec.js' -exec sed -i 's/\bxtest(/test(/g' {} +
+# Java: only the parenthesised form, as upstream's regex requires. Deleting bare
+# `@Disabled` too would enable a test upstream leaves off (java/forth has one).
+find . -name '*.java' -exec sed -i '/@Disabled(/d' {} +
+# Rust needs nothing: `cargo test -- --include-ignored` below runs #[ignore] tests.
 
-# Build the test command
+# Upstream's TEST_COMMANDS verbatim where it can be: this output is what gets
+# pasted back, so a different flag is a different prompt. java/js add --offline
+# because eval time has no network and upstream's runner has one.
 case "$LANGUAGE" in
   python)
-    TEST_CMD="python3 -m pytest $TEST_FILES -x -q"
+    TEST_CMD="python3 -m pytest"
     ;;
   javascript)
-    TEST_CMD="bash -c 'if [ -f package.json ]; then npm install --offline --silent 2>/dev/null; fi && npx jest --no-cache'"
+    # `npm run test` is upstream's entry point — the model sees npm's banner.
+    TEST_CMD="bash -c 'npm install --offline --silent 2>/dev/null; npm run test'"
     ;;
   go)
-    TEST_CMD="go test -v -count=1 ./..."
+    TEST_CMD="go test ./..."
     ;;
   rust)
     TEST_CMD="cargo test -- --include-ignored"
     ;;
   cpp)
-    TEST_CMD="bash -c 'mkdir -p build && cd build && cmake .. -DEXERCISM_RUN_ALL_TESTS=1 && make && ctest --output-on-failure'"
+    # cmake + make only, as upstream: CMakeLists runs the Catch2 binary as a
+    # post-build step, so `make` IS the test run. ctest would only append
+    # "No tests were found!!!" — nothing registers with CTest.
+    TEST_CMD="bash -c 'mkdir -p build && cd build && cmake .. -DEXERCISM_RUN_ALL_TESTS=1 && make'"
     ;;
   java)
     TEST_CMD="bash -c 'chmod +x gradlew && ./gradlew test --offline'"
     ;;
   *)
-    echo 0.0 > /logs/verifier/reward.txt
-    exit 0
+    echo "unsupported language: $LANGUAGE"
+    exit 1
     ;;
 esac
 
-if timeout 120 sh -c "$TEST_CMD" >/dev/null 2>&1; then
-  echo 1.0 > /logs/verifier/reward.txt
-else
-  echo 0.0 > /logs/verifier/reward.txt
+# 180s is upstream's timeout. Output goes to a file, not a pipe: a process the
+# suite spawns inherits stdout and would block us past the timeout.
+# chmod first — /polyglot is 600 including dirs, so copies land untraversable.
+chmod -R u+rwX "$PARENT"
+chown -R "$RUN_UID:$RUN_UID" "$PARENT"
+HOME="$WORK" timeout 180 setpriv --reuid="$RUN_UID" --regid="$RUN_UID" --clear-groups \
+  sh -c "$TEST_CMD" > "$PARENT/out" 2>&1
+rc=$?
+
+# Whatever the run left behind: its code is the agent's, it can double-fork past
+# the timeout, and /tmp is world-writable and readable by the agent — which is
+# how a "solution" copies the hidden suite out to read afterwards.
+pkill -9 -u "$RUN_UID" 2>/dev/null
+find /tmp /dev/shm -uid "$RUN_UID" -delete 2>/dev/null
+
+if [ "$rc" -eq 124 ]; then
+  echo "Tests timed out!"   # upstream's exact text for this case
+  exit 124
 fi
+# Sanitized as upstream's cleanup_test_output does: timings and paths stripped.
+sed -E "s|$PARENT/||g; s/\bin [0-9]+\.[0-9]+s\b//g" "$PARENT/out"
+exit "$rc"
 TEST
 
-RUN chmod +x /grade.sh
+# --- Verifier: pass iff the hidden suite passes. Output goes to the verifier log.
+RUN cat > /grade.sh <<'GRADE'
+#!/bin/bash
+mkdir -p /logs/verifier
+if /tests/run.sh 1004; then echo 1.0 > /logs/verifier/reward.txt
+else echo 0.0 > /logs/verifier/reward.txt; fi
+GRADE
+
+
+RUN chmod -R 700 /tests && chmod +x /grade.sh
 
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-materialize-task
@@ -212,10 +299,10 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   TASK_DIR="/tasks/$EVAL_TASK_ID"
   LANGUAGE=$(cat "$TASK_DIR/language.txt")
-  EXERCISE=$(cat "$TASK_DIR/exercise.txt")
   EXERCISE_DIR=$(cat "$TASK_DIR/exercise_dir.txt")
-  INSTRUCTIONS=$(cat "$TASK_DIR/instructions.txt")
+  PROBLEM=$(cat "$TASK_DIR/problem.txt")
   SOLUTION_FILES=$(cat "$TASK_DIR/solution_files.txt")
+  TEST_FILES=$(cat "$TASK_DIR/test_files.txt")
 
   # Copy starter code and build files to /app (agent workspace)
   for f in $SOLUTION_FILES; do
@@ -233,31 +320,29 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   if [ -d "$EXERCISE_DIR/gradle" ]; then
     cp -r "$EXERCISE_DIR/gradle" "/app/gradle" 2>/dev/null || true
   fi
-  # Copy src directory for Java (Gradle project structure)
-  if [ "$LANGUAGE" = "java" ]; then
-    if [ -d "$EXERCISE_DIR/src" ]; then
-      cp -r "$EXERCISE_DIR/src" "/app/src" 2>/dev/null || true
-    fi
+  # Java's gradle tree. Merge into /app/src rather than copy onto it: the loop
+  # above already made /app/src/main/java, so `cp -r src /app/src` would nest a
+  # second tree at /app/src/src — where java's tests used to survive removal.
+  if [ "$LANGUAGE" = "java" ] && [ -d "$EXERCISE_DIR/src" ]; then
+    mkdir -p /app/src
+    cp -r "$EXERCISE_DIR/src/." "/app/src/" 2>/dev/null || true
   fi
 
-  # /app is the agent's workspace (uid 1002): starter code AND build scaffolding
-  # (go.mod, CMakeLists.txt, gradle/, src/) all get copied from the mode-600
-  # $EXERCISE_DIR, so the copies land root:600 and the agent can't read or edit
-  # them. Hand the whole tree to the agent. Grading copies only the solution
-  # files back into the root-only $EXERCISE_DIR and tests there, so agent writes
-  # in /app can't reach the tests or change the verdict.
+  # Java ships its tests inside that src/ tree, and /app becomes agent-readable
+  # below — the suite is hidden for every language or for none. The empty dirs
+  # go too (`dirname` is /app itself for the flat languages).
+  for f in $TEST_FILES; do
+    rm -f "/app/$f"
+    d=$(dirname "$f")
+    [ "$d" != "." ] && rmdir -p "/app/$d" 2>/dev/null
+  done
+
+  # Everything copied above came from the mode-600 $EXERCISE_DIR, so it lands
+  # root:600 and the agent could not read its own workspace without this.
   chown -R 1002 /app 2>/dev/null || true
   chmod -R u+rwX /app 2>/dev/null || true
 
-  FILE_LIST=$(echo "$SOLUTION_FILES" | tr '\n' ', ' | sed 's/,$//')
-  export TASK="Edit the following $LANGUAGE code file(s) to solve the exercise described below. Modify ONLY the listed file(s) in the current directory. Do not create new files.
-
-Language: $LANGUAGE
-File(s) to edit: $FILE_LIST
-
-## Instructions
-
-$INSTRUCTIONS
+  export TASK="$PROBLEM
 
 ## Current file contents
 
