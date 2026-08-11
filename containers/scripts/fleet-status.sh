@@ -14,6 +14,7 @@
 #   stale      recorded != computed          → changed (rule 14)
 #   unlabeled  image exists, no hash label   → changed (rule 14, fail dirty)
 #   absent     no image at TAG               → changed (rule 14, fail dirty)
+#   unreadable the registry kept failing     → changed (rule 14, fail dirty)
 #
 # Anything non-fresh MUST be rebuilt or retagged by the next release.
 #
@@ -42,14 +43,26 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 command -v jq >/dev/null || { echo "fleet-status: jq not found" >&2; exit 2; }
 
 check_one() {
-  local ref=$1 want=$2 expect=${3:-} img got have missing p
+  local ref=$1 want=$2 expect=${3:-} img got have missing p err n=0
   # One inspect serves both reads: .Image carries the labels, .Manifest the
-  # published platform set.
-  if ! img=$(docker buildx imagetools inspect "$ref" \
-      --format '{"image":{{json .Image}},"manifest":{{json .Manifest}}}' 2>/dev/null); then
-    printf '%s\tabsent\t%s\t-\t-\n' "$ref" "$want"
-    return
-  fi
+  # published platform set. A failed read is NOT automatically "absent": ghcr
+  # drops connections often enough that a plain failure conflated a missing
+  # image with a network blip, which rule 14 then turned into a needless
+  # rebuild (two sweeps minutes apart disagreed by six images). Retry while the
+  # error looks transient; report `unreadable` if it never clears — still
+  # "changed" under rule 14, but distinguishable from genuinely missing.
+  err=$(mktemp)
+  until img=$(docker buildx imagetools inspect "$ref" \
+      --format '{"image":{{json .Image}},"manifest":{{json .Manifest}}}' 2>"$err"); do
+    grep -qiE 'dial tcp|timeout|timed out|connection reset|unexpected EOF|TLS handshake|500 |502 |503 |504 |too many requests' "$err" \
+      || { rm -f "$err"; printf '%s\tabsent\t%s\t-\t-\n' "$ref" "$want"; return; }
+    n=$((n + 1))
+    [ "$n" -lt "${STATUS_RETRIES:-3}" ] || {
+      rm -f "$err"; printf '%s\tunreadable\t%s\t-\t-\n' "$ref" "$want"; return
+    }
+    sleep "$n"
+  done
+  rm -f "$err"
   # A manifest list yields a platform-keyed map (attestation entries live at
   # unknown/unknown); a single-arch image yields the config object directly.
   got=$(jq -r '(.image | if has("linux/amd64") or has("linux/arm64")
