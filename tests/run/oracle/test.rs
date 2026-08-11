@@ -40,6 +40,19 @@ const SPECIAL: &[(&str, &str)] = &[
     // omitted — its gold hits rate-limited live APIs, so it can't deterministically pass.)
     ("skills-bench", "bike-rebalance"),
     ("skills-bench", "civ6-adjacency-optimizer"),
+    // One per language: aider-polyglot is six graders and six toolchains behind one
+    // name, and the grader runs the workspace through the language's own build.
+    ("aider-polyglot", "0"),   // cpp/all-your-base
+    ("aider-polyglot", "26"),  // go/alphametics
+    ("aider-polyglot", "65"),  // java/affine-cipher
+    ("aider-polyglot", "112"), // javascript/affine-cipher
+    ("aider-polyglot", "161"), // python/affine-cipher
+    ("aider-polyglot", "195"), // rust/accumulate
+    // Plus one per dependency gap this change closes — each scored 0.0 on
+    // Exercism's own reference before it, while every id above passed.
+    ("aider-polyglot", "10"), // cpp/gigasecond — Boost headers
+    ("aider-polyglot", "34"), // go/dnd-character — Go >= 1.21 (`slices`)
+    ("aider-polyglot", "3"),  // cpp/binary-search-tree — reference is a lone .h
     // Code benchmarks — gold solution = the dataset's reference, written to stdout.
     ("humaneval", "0"),
     ("humanevalplus", "0"),
