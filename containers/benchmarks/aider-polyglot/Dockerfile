@@ -1,7 +1,8 @@
 # Aider Polyglot (Exercism multi-language code editing)
 # 225 tasks across C++, Go, Java, JavaScript, Python, Rust.
 # Data: https://github.com/Aider-AI/polyglot-benchmark
-# Agent edits starter code files; the hidden suite grades them. Rationale: README.md.
+# Agent edits starter code files. A failed first attempt earns a second one with
+# the test failures, driven from /grade.sh. Rationale: README.md.
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
@@ -282,12 +283,49 @@ TEST
 RUN cat > /grade.sh <<'GRADE'
 #!/bin/bash
 mkdir -p /logs/verifier
-if /tests/run.sh 1004; then echo 1.0 > /logs/verifier/reward.txt
-else echo 0.0 > /logs/verifier/reward.txt; fi
+grade() {
+  if /tests/run.sh 1004; then echo 1.0 > /logs/verifier/reward.txt
+  else echo 0.0 > /logs/verifier/reward.txt; fi
+}
+grade
+[ "$(cat /logs/verifier/reward.txt)" = "1.0" ] && exit 0
+
+# Second attempt, with the failures — upstream measures pass_rate_2 after
+# exactly one such round. run-agent ships in the eval image, not this one, so
+# the benchmark image on its own still grades once and stops.
+[ -x /usr/local/bin/run-agent ] || exit 0
+NEXT=$(/retry-prompt) || exit 0
+[ -n "$NEXT" ] || exit 0
+# run-agent overwrites the agent's log; keep the failed attempt's record.
+cp /output/agent/stdout.log  /output/agent/stdout-1.log  2>/dev/null
+cp /output/agent/stderr.log  /output/agent/stderr-1.log  2>/dev/null
+cp /output/agent/.exit-code  /output/agent/.exit-code-1  2>/dev/null
+echo "grade: first attempt did not pass; retrying with test feedback" >&2
+TASK="$NEXT" /usr/local/bin/run-agent || true
+grade
+
+# .exit-code now holds attempt 2's status, and the dashboard reads it as "did
+# the agent run cleanly" — non-zero reports the task as an ERROR, not a scored
+# pass/fail. With two attempts the honest aggregate is: errored only if both were.
+if [ "$(cat /output/agent/.exit-code-1 2>/dev/null)" = "0" ]; then
+  printf '0' > /output/agent/.exit-code
+fi
 GRADE
 
+# /grade.sh calls this after a failed first attempt and hands what it prints to
+# the agent as its next task: upstream's second prompt exactly — the sanitized
+# test output, then prompts.test_failures. The agent is not running while this
+# executes, so there is no channel to fence.
+RUN cat > /retry-prompt <<'RETRY'
+#!/bin/bash
+out=$(/tests/run.sh 1003 2>&1) && exit 0   # passed after all: no second attempt
+printf '%s' "$out"
+printf "\n####\n\nSee the testing errors above.\nThe tests are correct, don't try and change them.\nFix the code in %s to resolve the errors.\n" \
+  "$(cat "/tasks/$EVAL_TASK_ID/file_list.txt")"
+RETRY
 
-RUN chmod -R 700 /tests && chmod +x /grade.sh
+
+RUN chmod -R 700 /tests && chmod +x /grade.sh /retry-prompt
 
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 RUN chmod +x /eval-materialize-task
