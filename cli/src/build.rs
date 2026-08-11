@@ -932,7 +932,7 @@ fn oc_build(
 
 #[cfg(test)]
 mod tests {
-    use super::dockerfile_label;
+    use super::{declines_publish, dockerfile_label};
 
     /// The label is the contract an image uses to ask for more build storage,
     /// and its ABSENCE is the backward-compatibility guarantee — both directions
@@ -969,5 +969,45 @@ mod tests {
             dockerfile_label(dir.to_str().unwrap(), "NoSuchFile", "eval.build.storage"),
             None
         );
+    }
+
+    /// Write `body` to a temp compose file and return its path.
+    fn compose(name: &str, body: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("eval-build-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(format!("{name}.yaml"));
+        std::fs::write(&path, body).unwrap();
+        path.to_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn only_a_top_level_declaration_declines_publish() {
+        // The declaration, as osworld and tau-bench carry it.
+        assert!(
+            declines_publish(&compose(
+                "declared",
+                "x-eval-publish: false\nservices:\n  runner: {}\n"
+            ))
+            .unwrap()
+        );
+        // No declaration: publishable, and the registry check is the backstop.
+        assert!(!declines_publish(&compose("plain", "services:\n  runner: {}\n")).unwrap());
+        // Nested under a service is not a top-level opt-out — indentation matters,
+        // or a stray key inside a service would silently skip the whole publish.
+        assert!(
+            !declines_publish(&compose(
+                "nested",
+                "services:\n  runner:\n    x-eval-publish: false\n"
+            ))
+            .unwrap()
+        );
+        // A malformed declaration fails safe: we publish, and the post-publish
+        // registry check catches it loudly rather than skipping silently.
+        assert!(!declines_publish(&compose("typo", "x-eval-publish: \"false\"\n")).unwrap());
+    }
+
+    #[test]
+    fn a_missing_compose_file_is_an_error_not_a_skip() {
+        assert!(declines_publish("/nonexistent/compose.yaml").is_err());
     }
 }
