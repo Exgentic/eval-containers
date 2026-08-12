@@ -266,7 +266,12 @@ func forward(r *http.Request, path, wire string, body []byte) (*http.Response, i
 		if attempt > 0 {
 			time.Sleep(time.Duration(attempt) * 250 * time.Millisecond)
 		}
-		req, err := http.NewRequestWithContext(r.Context(), r.Method, base+path, bytes.NewReader(body))
+		// The query survives the hop: Gemini asks for a stream with ?alt=sse.
+		target := base + path
+		if r.URL.RawQuery != "" {
+			target += "?" + r.URL.RawQuery
+		}
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
 		if err != nil {
 			return nil, attempt, err
 		}
