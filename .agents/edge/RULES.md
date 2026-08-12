@@ -37,8 +37,8 @@ written account of one call.
 4. **Inbound wire preserved.** The edge **MUST** forward every call on the wire
    protocol it arrived on.
 
-5. **No silent bridging.** The edge **MUST** answer a call that would require
-   cross-wire translation with a machine-readable error.
+5. **No silent bridging.** The edge **MUST** refuse to start when it is
+   configured to translate wires.
 
 ### Capture
 
@@ -64,8 +64,9 @@ written account of one call.
 12. **Provider-native auth.** The edge **MUST** present the upstream credential
     in the header its target wire expects.
 
-13. **Uniform agent contract.** The edge **MUST** serve the framework's
-    protocol-namespaced prefixes on port 4000.
+13. **Uniform agent contract.** The edge **MUST** serve the agent-facing
+    namespace and port fixed by [gateways 5](../gateways/RULES.md) and
+    [gateways 7](../gateways/RULES.md).
 
 ### Form
 
@@ -83,9 +84,11 @@ written account of one call.
 
 ## References
 
+- [Project rules](../RULES.md) — principle 5, independent observation: the
+  general requirement this topic refines into one component.
 - [Gateways](../gateways/RULES.md) — cross-wire translation and its declaration,
   which remain gateway concerns; rules 2b, 6, 10 and 11 there are superseded by
-  this topic.
+  this topic, while 5 and 7 keep the agent-facing namespace and port.
 - [Verification](../verification/RULES.md) — the gates a contribution passes,
   and the fixture format the records feed.
 - [Meta rules](../meta/rules/RULES.md) — rule form and no-silent-drift.
@@ -96,4 +99,5 @@ written account of one call.
 
 | Date | Change |
 |------|--------|
+| 2026-08-12 | Pre-merge review, while Draft. Rule 5 now requires refusing to start rather than answering each call with an error, matching how the gateway `start` scripts reject bad env — and what the implementation does. Rule 13 binds to gateways 5 and 7 instead of restating the namespace and port, which mirrored a rule that already has a home (meta 4). |
 | 2026-08-11 | Initial version. Lifts model authority out of the gateway (superseding `gateways/RULES.md` 2b), makes call capture a property of one component rather than a per-gateway obligation (superseding 10 and 11 there), and removes the need for the path-rewriting shim (6). Translation and its declaration (8, 9) stay with gateways, which remain OPTIONAL and are needed only for cross-wire work. Status is Draft until the component lands and the verification suite covers it. |
