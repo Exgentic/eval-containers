@@ -7,8 +7,9 @@
 # no shell is needed for the probe (rule 16).
 FROM golang:1.26.5-alpine AS build
 WORKDIR /src
-COPY go.mod main.go ./
+COPY go.mod main.go main_test.go ./
 RUN CGO_ENABLED=0 go vet ./... \
+ && CGO_ENABLED=0 go test ./... \
  && CGO_ENABLED=0 go build -ldflags="-w -s" -trimpath -o /opt/gateway/start .
 
 FROM scratch
