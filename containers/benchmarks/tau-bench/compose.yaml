@@ -1,3 +1,6 @@
+# bridge/harness are build-only services, which `docker compose publish` rejects.
+x-eval-publish: false
+
 include:
   - path: ../../compose/services.yaml
 
