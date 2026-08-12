@@ -43,7 +43,6 @@ type call struct {
 	Status    int               `json:"status"`
 	RespHead  map[string]string `json:"resp_headers"`
 	Response  string            `json:"response"`
-	TTFTms    float64           `json:"ttft_ms"`
 	TotalMs   float64           `json:"total_ms"`
 	Chunks    [][2]float64      `json:"chunks"` // [ms since request start, bytes]
 	Truncated bool              `json:"truncated,omitempty"`
@@ -263,9 +262,6 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 	c.Response = body.String()
 	c.TotalMs = msSince(start)
-	if len(c.Chunks) > 0 {
-		c.TTFTms = c.Chunks[0][0]
-	}
 	record(c)
 }
 

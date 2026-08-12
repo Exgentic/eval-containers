@@ -439,11 +439,10 @@ func TestChunkTimingsAreRecordedInOrder(t *testing.T) {
 			t.Errorf("chunk %d arrived before chunk %d", i, i-1)
 		}
 	}
-	if c.TTFTms != c.Chunks[0][0] {
-		t.Errorf("ttft_ms = %v, want the first chunk's offset %v", c.TTFTms, c.Chunks[0][0])
-	}
-	if c.TotalMs < c.TTFTms {
-		t.Errorf("total_ms %v < ttft_ms %v", c.TotalMs, c.TTFTms)
+	// Time to first token is the first chunk's offset — recorded once, not
+	// stored twice.
+	if c.TotalMs < c.Chunks[0][0] {
+		t.Errorf("total_ms %v < first chunk at %v", c.TotalMs, c.Chunks[0][0])
 	}
 }
 
@@ -647,8 +646,8 @@ func TestEmptyResponseStillRecords(t *testing.T) {
 	if c.Status != http.StatusNoContent {
 		t.Errorf("status = %d, want 204", c.Status)
 	}
-	if c.Response != "" || c.TTFTms != 0 {
-		t.Errorf("empty response recorded as %q / ttft %v", c.Response, c.TTFTms)
+	if c.Response != "" || len(c.Chunks) != 0 {
+		t.Errorf("empty response recorded as %q / %d chunks", c.Response, len(c.Chunks))
 	}
 }
 
