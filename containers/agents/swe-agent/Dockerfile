@@ -22,6 +22,29 @@ set -euo pipefail
 apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 git clone --depth 1 --branch v${AGENT_VERSION} https://github.com/SWE-agent/SWE-agent.git /opt/swe-agent 2>/dev/null || true
 /opt/agent/setup-uv-venv.sh /opt/swe-agent-venv -e /opt/swe-agent
+# The edit_anthropic tool bundle's install.sh runs `pip install tree-sitter
+# tree-sitter-languages` inside the agent's runtime bash session, and the
+# eval framework's runner network is internet-less. Pre-install both here at
+# build time (when network is available) into whichever pip that session
+# will actually use, so pip finds the exact version already satisfied at
+# runtime and skips the network call. On swe-bench (and any other benchmark
+# using the same harness), /root/.bashrc runs `conda activate testbed` before
+# anything else, switching to that env's pip; benchmarks without a testbed
+# conda env fall back to whatever pip is on PATH.
+testbed_pip=/opt/miniconda3/envs/testbed/bin/pip
+if [ -x "$testbed_pip" ]; then
+  "$testbed_pip" install --no-cache 'tree-sitter==0.21.3' 'tree-sitter-languages'
+elif command -v pip >/dev/null 2>&1; then
+  pip install --no-cache 'tree-sitter==0.21.3' 'tree-sitter-languages'
+fi
+# swerex's CreateBashSessionRequest.startup_timeout defaults to 1.0s — the
+# window to source /root/.bashrc (which runs `conda activate testbed`) and
+# reset PS1. Under qemu-emulated amd64 that reliably blows past 1s, raising
+# a pexpect.exceptions.TIMEOUT even though the prompt does come up. Patch the
+# vendored default rather than the CLI, since sweagent's swe_env.py builds
+# the request with no override.
+sed -i 's/startup_timeout: float = 1.0/startup_timeout: float = 60.0/' \
+  /opt/swe-agent-venv/lib/python*/site-packages/swerex/runtime/abstract.py
 # SWE-agent's LocalDeployment assumes uid-0 root: it writes /root/state.json
 # + /root/.swe-agent-env and copies tool bundles into /root/tools. The eval
 # framework runs the agent as uid 1002, so open up /root at build time.
@@ -73,10 +96,18 @@ git config --global --add safe.directory "$REPO"
 # run completes, which crashes with FileNotFoundError immediately after a
 # genuinely correct submit. Point --output_dir outside the repo so it
 # never appears in the repo's own git state.
+# problem_statement.path, not .text=$TASK: pydantic-settings' CLI source
+# case-folds each flag with a regex (`^(--flag)(.*)`) whose `(.*)` doesn't
+# match newlines, so any multi-line --problem_statement.text value is
+# silently truncated at its first embedded newline — SWE-agent then runs on
+# only the boilerplate lead-in sentence, never the real issue body. Writing
+# $TASK to a file and pointing --problem_statement.path at it sidesteps the
+# CLI parser entirely.
+printf '%s' "$TASK" > /tmp/problem_statement.txt
 exec /opt/swe-agent-venv/bin/sweagent run --agent.model.name="openai/${MODEL:-default}" \
   --agent.model.per_instance_cost_limit=0 --agent.model.total_cost_limit=0 \
   --agent.model.api_base="${OPENAI_BASE_URL:-http://model:4000}" --env.deployment.type=local \
-  --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.text="$TASK" \
+  --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.path=/tmp/problem_statement.txt \
   --output_dir=/tmp/trajectories
 E
 
