@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.1
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6.0.3
+      - uses: actions/checkout@v7.0.1
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -80,7 +80,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       # The previous run's digests, keyed so each run restores the last one and
       # saves its own (a cache key cannot be overwritten).
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: external-digests.tsv
           key: external-digests-${{ github.run_id }}
