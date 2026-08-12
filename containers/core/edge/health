@@ -1,0 +1,5 @@
+#!/bin/sh
+# Readiness probe for the in-bundle contract (gateways rule 12): the standalone
+# image runs /opt/gateway/health, while the scratch image has no shell and is
+# probed with `start health` directly.
+exec /opt/gateway/start health

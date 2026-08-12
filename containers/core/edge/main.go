@@ -23,6 +23,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -51,7 +52,7 @@ type call struct {
 
 var (
 	mu     sync.Mutex
-	out    = envOr("OUT", "/output/calls.jsonl")
+	out    = envOr("OUT", "/output/model/calls.jsonl")
 	listen = envOr("LISTEN", ":4000")
 	model  = os.Getenv("EVAL_MODEL")
 	base   = strings.TrimSuffix(os.Getenv("OPENAI_API_BASE"), "/")
@@ -171,6 +172,14 @@ func clip(b []byte) (string, bool) {
 func record(c call) {
 	mu.Lock()
 	defer mu.Unlock()
+	// The record lives beside the other model-service output, in a directory the
+	// agent can read but not write (runner/run leaves /output/model root-owned).
+	if dir := filepath.Dir(out); dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			log.Println("record:", err)
+			return
+		}
+	}
 	f, err := os.OpenFile(out, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		log.Println("record:", err)
