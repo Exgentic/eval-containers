@@ -8,9 +8,9 @@
 # names a subset of the seven sidecars. Bare `EVAL_TASK_ID=<id> docker compose
 # up` brings up the full set (zero-knowledge standalone default, rule 1).
 # Lean local runs name the task's MCP service(s) — the runner waits only on
-# the gateway, so a subset doesn't pull in the rest:
+# the sidecars, so a subset doesn't pull in the rest:
 #
-#   EVAL_TASK_ID=$N docker compose up runner gateway otelcol \
+#   EVAL_TASK_ID=$N docker compose up runner otelcol \
 #     $(jq -r --arg t "$N" \
 #         '.[$t][]' \
 #         ../_chart/task-profiles/enterpriseops-gym.json)
@@ -27,8 +27,6 @@ services:
       service: runner
     depends_on:
       otelcol:
-        condition: service_healthy
-      gateway:
         condition: service_healthy
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/enterpriseops-gym--${EVAL_AGENT:-claude-code}:latest
     environment:

@@ -25,13 +25,10 @@
 #     resolution lives in that ref.
 #
 # Build args:
-#   MODEL_IMAGE           — gateway+config; places files under /opt/gateway/ and
-#                           exposes /opt/gateway/start as entrypoint
 #   OTEL_IMAGE            — core/otel (slim OTLP→file collector + config)
 #   PROCESS_COMPOSE_IMAGE — core/process-compose (in-container orchestrator)
 #
 # Path layout added on top of the lean base:
-#   /opt/gateway/                  COPY'd from MODEL_IMAGE — start + binary/venv + config
 #   /usr/local/bin/otelcol         from OTEL_IMAGE
 #   /etc/otelcol/config.yaml       from OTEL_IMAGE
 #   /usr/local/bin/process-compose from PROCESS_COMPOSE_IMAGE
@@ -40,20 +37,15 @@
 # Why root-owned /opt/gateway (mode 0700): agent uid 1002 cannot traverse it, so
 # the gateway config + credentials are unreadable by the agent (model rule 4 met
 # by file perms alone — no Linux capabilities required).
-ARG MODEL_IMAGE=ghcr.io/exgentic/models/bifrost:latest
 ARG OTEL_IMAGE=ghcr.io/exgentic/core/otel:latest
 ARG PROCESS_COMPOSE_IMAGE=ghcr.io/exgentic/core/process-compose:latest
 
 # Named stages for the build-arg base images (buildx forbids `${ARG}` in
 # `COPY --from=`; `FROM` allows it for globally-scoped ARGs).
-FROM ${MODEL_IMAGE}           AS model
 FROM ${OTEL_IMAGE}            AS otel
 FROM ${PROCESS_COMPOSE_IMAGE} AS process-compose
 
 FROM eval-base
-
-# ─── Gateway layer (uniform /opt/gateway/ contract) ──────────────────
-COPY --from=model /opt/gateway /opt/gateway
 
 # ─── OTel collector layer ────────────────────────────────────────────
 COPY --from=otel /otelcol                 /usr/local/bin/otelcol

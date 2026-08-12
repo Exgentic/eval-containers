@@ -5,7 +5,7 @@ include:
   - path: ../../compose/services.yaml
 
 services:
-  # Agent runner — pass-through that polls bridge and forwards to gateway.
+  # Agent runner — pass-through that polls bridge and forwards to the edge.
   # Built locally (custom Dockerfile), not the pre-built eval image.
   runner:
     extends:
@@ -18,15 +18,35 @@ services:
     environment:
       BENCHMARK: tau-bench
       BRIDGE_URL: http://bridge:8000
-      OPENAI_BASE_URL: http://gateway:4000
+      # This runner has its own entrypoint, so it never runs /usr/local/bin/run
+      # and never starts the in-container edge — it gets one as a service.
+      OPENAI_BASE_URL: http://edge:4000
       OPENAI_API_KEY: sk-proxy
     depends_on:
       otelcol:
         condition: service_healthy
-      gateway:
-        condition: service_healthy
       bridge:
         condition: service_healthy
+      edge:
+        condition: service_healthy
+
+  # The edge, as a service: see the runner's entrypoint note above.
+  edge:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/edge:latest
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:?}
+      EVAL_MODEL: ${EVAL_MODEL}
+    volumes:
+      - output:/output
+    healthcheck:
+      test: ["CMD", "/opt/gateway/start", "health"]
+      interval: 1s
+      timeout: 1s
+      retries: 60
+    networks:
+      - internal
+      - upstream
 
   # Bespoke — second gateway for the user simulator's LLM (not logged).
   user-gateway:
@@ -72,8 +92,6 @@ services:
       MODEL_NAME: ${MODEL_NAME:-gpt-4o}
     depends_on:
       bridge:
-        condition: service_healthy
-      gateway:
         condition: service_healthy
       user-gateway:
         condition: service_healthy

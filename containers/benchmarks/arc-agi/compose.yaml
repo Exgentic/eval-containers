@@ -9,8 +9,6 @@ services:
     depends_on:
       otelcol:
         condition: service_healthy
-      gateway:
-        condition: service_healthy
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/arc-agi--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: arc-agi

@@ -2,19 +2,22 @@
 # Eval entrypoint — preps env/dirs/output, then drives the three-phase eval
 # (agent → verifier → result, benchmarks/RULES.md rule 12).
 #
-# Two execution paths, selected by whether the caller pre-set ANTHROPIC_BASE_URL:
+# The edge runs here, in this container, in every mode: it is one static binary
+# in every eval image, so the agent always talks to 127.0.0.1:4000 and the call
+# record always lands in /output/model (.agents/edge/RULES.md). Nothing external
+# has to be started, health-gated, or resolved by DNS first.
 #
-#   set (compose / k8s "runner" mode)  → the lean eval base.
-#       otelcol + gateway are sibling containers/pods the orchestrator already
-#       started and health-gated, so by the time this container runs the agent
-#       can reach them immediately. There is nothing to orchestrate in-container:
-#       the three phases run as a plain shell sequence — no process-compose.
+# What still differs between modes is only where otelcol lives, which is what
+# selects the path below:
 #
-#   unset (single-container mode)      → the -standalone bundle.
-#       otelcol + gateway run in-process, so process-compose brings up all five
-#       units (otelcol → gateway → agent → verifier → result) with readiness
-#       gating. process-compose + /etc/process-compose.yaml ship ONLY in the
-#       bundle (core/standalone.Dockerfile); the lean base has neither.
+#   no /etc/process-compose.yaml  → the lean eval base (compose / k8s).
+#       otelcol is a sibling container the orchestrator started, so there is
+#       nothing left to orchestrate: the three phases run as a shell sequence.
+#
+#   /etc/process-compose.yaml     → the -standalone bundle.
+#       otelcol runs in-process too, so process-compose brings up the remaining
+#       units (otelcol → agent → verifier → result) with readiness gating. It
+#       ships ONLY in core/standalone.Dockerfile; the lean base has neither.
 #
 # Same agent/verifier/result semantics in both paths; the agent launch itself is
 # shared via /usr/local/bin/run-agent so rule 7's env allow-list has one home.
@@ -27,7 +30,9 @@
 #   AGENT             agent name (for result.json)
 #   MODEL             model name (for result.json)
 #   TIMEOUT           agent wall-clock timeout in seconds
-#   OPENAI_API_KEY    read by the in-container gateway in single-container mode
+#   OPENAI_API_KEY    upstream credential, read by the edge (never by the agent:
+#                     run-agent hands the agent a scrubbed env with placeholders)
+#   OPENAI_API_BASE   upstream root the edge forwards to
 set -euo pipefail
 
 # Resolve from the EVAL_* canonical axis first (what the CLI sets in container
@@ -51,31 +56,44 @@ chmod 0755 /output /output/agent /output/task /output/model
 # Capture run start time for the result writer.
 date -u +%Y-%m-%dT%H:%M:%SZ > /output/agent/.started-at
 
+# ─── The edge ─────────────────────────────────────────────────────────
+# Every mode: start it on loopback and wait for its own probe. A single static
+# binary that boots in well under a second needs no supervisor — and starting it
+# here means every mode gets the same URL contract and the same record.
+export ANTHROPIC_BASE_URL="http://127.0.0.1:4000/anthropic"
+# OpenAI base needs /v1 (clients append /chat/completions); anthropic doesn't.
+export OPENAI_BASE_URL="http://127.0.0.1:4000/openai/v1"
+export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:4000/genai"
+
+/opt/gateway/start >> /output/model/gateway.log 2>&1 &
+edge_ready=0
+for _ in $(seq 1 60); do
+  if /opt/gateway/start health >/dev/null 2>&1; then edge_ready=1; break; fi
+  sleep 0.5
+done
+if [ "$edge_ready" != 1 ]; then
+  echo "edge did not become ready; see /output/model/gateway.log" >&2
+  tail -5 /output/model/gateway.log >&2 || true
+  exit 1
+fi
+
 # ─── Runner mode (lean base) ──────────────────────────────────────────
-# External gateway iff ANTHROPIC_BASE_URL was set by the caller. The gateway +
-# otelcol are siblings the orchestrator health-gated, so run the three phases
+# otelcol is a sibling the orchestrator health-gated, so run the three phases
 # directly. Each phase runs regardless of the previous one's exit status
 # (process-compose's `process_completed` semantics): the verifier always grades
 # whatever the agent produced — even on a timeout or crash — and a result.json
 # is always written.
-if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
+if [ ! -f /etc/process-compose.yaml ]; then
   /usr/local/bin/run-agent || true
   bash /grade.sh || true
   exec /usr/local/bin/write-result
 fi
 
 # ─── Single-container mode (bundle) ───────────────────────────────────
-# We own the whole pipeline. Point the agent + gateway at loopback and let
-# process-compose bring up otelcol → gateway → agent → verifier → result.
-export ANTHROPIC_BASE_URL="http://127.0.0.1:4000/anthropic"
-# OpenAI base needs /v1 (clients append /chat/completions); anthropic doesn't.
-export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai/v1}"
-export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://127.0.0.1:4000/genai}"
-# litellm's OTel callback honors this env var; bifrost reads its collector_url
-# from config.json. Setting it unconditionally is harmless for bifrost.
+# otelcol runs in-process too; process-compose gates the rest of the pipeline.
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
 
-# The gateway config hardcodes the hostname `otelcol`; in-process there is no
+# Agents that emit OTel resolve the collector by name; in-process there is no
 # DNS, so map it to loopback (only when nothing else already resolves it).
 if ! getent hosts otelcol >/dev/null 2>&1; then
   echo "127.0.0.1 otelcol" >> /etc/hosts

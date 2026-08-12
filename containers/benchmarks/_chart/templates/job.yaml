@@ -50,9 +50,10 @@ spec:
       {{- with $v.serviceAccountName }}
       serviceAccountName: {{ . }}
       {{- end }}
-      # otelcol + gateway are native sidecars (restartPolicy: Always), so k8s
-      # starts them in order and holds the runner behind both — compose's graph:
-      # otelcol started, then gateway healthy (its startupProbe), then runner.
+      # otelcol is a native sidecar (restartPolicy: Always), so k8s starts it
+      # before the runner. There is no gateway sidecar: the edge runs inside the
+      # runner container (.agents/edge/RULES.md), so the upstream credential is
+      # mounted there instead.
       initContainers:
         {{- with $v.initContainers }}
         {{- toYaml . | nindent 8 }}
@@ -84,37 +85,6 @@ spec:
           volumeMounts:
             {{- include "eval.outputMount" $v | nindent 12 }}
 
-        - name: gateway
-          restartPolicy: Always
-          image: {{ include "eval.gatewayImage" $v }}
-          imagePullPolicy: {{ $v.imagePullPolicy | default "IfNotPresent" }}
-          ports:
-            - { name: gateway, containerPort: 4000 }
-          startupProbe:
-            exec: { command: ["/opt/gateway/health"] }
-            periodSeconds: 2
-            failureThreshold: 60
-          env:
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef: { name: eval-secrets, key: OPENAI_API_KEY }
-            - name: OPENAI_API_BASE
-              valueFrom:
-                secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
-            - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
-            - { name: HOST,                        value: "127.0.0.1" }
-            # shareProcessNamespace + sidecar pod model puts otelcol on localhost.
-            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://localhost:4318" }
-            {{- with $v.maxBudget }}
-            - { name: EVAL_MODEL_MAX_BUDGET, value: {{ . | quote }} }
-            {{- end }}
-            {{- with $v.litellmVersion }}
-            - { name: EVAL_LITELLM_VERSION, value: {{ . | quote }} }
-            {{- end }}
-            {{- with $v.gatewayExtraEnv }}
-            {{- toYaml . | nindent 12 }}
-            {{- end }}
-
       containers:
         - name: runner
           image: {{ include "eval.runnerImage" $v }}
@@ -130,6 +100,15 @@ spec:
           args: [{{ $v.runnerArgs | quote }}]
           {{- end }}
           env:
+            # The edge runs in this container and forwards upstream, so the
+            # credential is mounted here. run-agent hands the agent a scrubbed
+            # env with placeholders, never these.
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_KEY }
+            - name: OPENAI_API_BASE
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
             # Framework axes in BOTH namespaces, mirroring compose/services.yaml:
             # EVAL_* is canonical (read by /entrypoint.sh + /usr/local/bin/run);
             # the bare names are the process-compose legacy path. Set both so the
@@ -144,9 +123,8 @@ spec:
             - { name: MODEL,                       value: {{ include "eval.modelLabel" $v | quote }} }
             - { name: TASK_ID,                     value: {{ $v.task | quote }} }
             - { name: TIMEOUT,                     value: {{ $v.timeout | quote }} }
-            - { name: ANTHROPIC_BASE_URL,          value: "http://localhost:4000/anthropic" }
-            - { name: OPENAI_BASE_URL,             value: "http://localhost:4000/openai/v1" }
-            - { name: GOOGLE_GEMINI_BASE_URL,      value: "http://localhost:4000/genai" }
+            # No base URLs: /usr/local/bin/run starts the edge in this container
+            # and points the agent at 127.0.0.1:4000 itself.
             - { name: ANTHROPIC_API_KEY,           value: "sk-proxy" }
             - { name: OPENAI_API_KEY,              value: "sk-proxy" }
             - { name: GEMINI_API_KEY,              value: "sk-proxy" }
