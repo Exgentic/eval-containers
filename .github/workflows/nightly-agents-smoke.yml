@@ -93,7 +93,7 @@ jobs:
           TOTAL=$(printf '%s\n' "${ALL}" | grep -c . || true)
           if [ "${TOTAL}" -eq 0 ]; then
             if [ -z "${FILTER}" ]; then echo "::error::no agent tests listed (compile failure?)"; exit 1; fi
-            echo "filter '${FILTER}' matched no tests"; exit 0
+            echo "::error::filter '${FILTER}' matched no tests — a filter that selects nothing must fail, not pass silently"; exit 1
           fi
           mapfile -t CASES < <(printf '%s\n' "${ALL}" | awk -v S="${SHARDS}" -v SH="${SHARD}" 'NF { if (c++ % S == SH) print }')
           echo "shard ${SHARD}/${SHARDS}: ${#CASES[@]} of ${TOTAL} agents"

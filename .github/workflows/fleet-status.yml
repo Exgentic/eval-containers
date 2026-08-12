@@ -10,8 +10,17 @@ name: Fleet status
 # Combos are deliberately absent: a combo is stale iff one of its parents
 # is (the hashes are derived), so the ~150 leaf reads below cover the
 # ~5,500-combo fleet without per-combo registry reads.
+#
+# It also runs nightly for the half no PR can cover: the input hash sees the
+# repository, so an upstream base rebuild changes what our images contain while
+# every hash — and therefore every verdict above — stays put. The drift job
+# resolves each external base's digest and compares it to the previous run, so
+# "the world moved while the repo stood still" becomes a report line instead of
+# months of silence (mmmu's dataset 404'd exactly that way).
 
 on:
+  schedule:
+    - cron: '17 6 * * *' # nightly, 06:17 UTC (after the test nightlies)
   workflow_dispatch:
     inputs:
       tag:
@@ -35,7 +44,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Compare recorded input-hashes against the repo
         run: |
-          REPORT=$(containers/scripts/fleet-status.sh "${{ inputs.tag }}")
+          REPORT=$(containers/scripts/fleet-status.sh "${{ inputs.tag || 'latest' }}")
           echo "$REPORT"
           {
             echo "## Fleet freshness @ :${{ inputs.tag }} vs $(git rev-parse --short HEAD)"
@@ -54,4 +63,43 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           stale=$(grep -cE '	stale	' <<< "$REPORT" || true)
-          [ "$stale" -eq 0 ] || echo "::warning::$stale image(s) stale at :${{ inputs.tag }} — inputs changed since they were built"
+          [ "$stale" -eq 0 ] || echo "::warning::$stale image(s) stale at :${{ inputs.tag || 'latest' }} — inputs changed since they were built"
+
+  # Upstream drift: the one staleness the hash cannot see (rule 11 defers
+  # external digests to release time). Report-only — a moved base is picked up
+  # by dispatching Release the fleet with force_rebuild.
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6.0.3
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The previous run's digests, keyed so each run restores the last one and
+      # saves its own (a cache key cannot be overwritten).
+      - uses: actions/cache@v4
+        with:
+          path: external-digests.tsv
+          key: external-digests-${{ github.run_id }}
+          restore-keys: external-digests-
+      - name: Resolve external base digests and compare with the last run
+        run: |
+          set -eo pipefail
+          # Never fail the report on drift — record it, warn, and let a human
+          # decide whether to force a rebuild.
+          if [ -f external-digests.tsv ]; then
+            containers/scripts/external-drift.sh external-digests.tsv > current.tsv || true
+          else
+            containers/scripts/external-drift.sh > current.tsv || true
+          fi
+          mv current.tsv external-digests.tsv
+          {
+            echo "## External base digests @ $(git rev-parse --short HEAD)"
+            echo
+            echo '| base | digest |'
+            echo '|---|---|'
+            awk -F'\t' '{printf "| `%s` | `%s` |\n", $1, substr($2,1,26) "…"}' external-digests.tsv
+          } >> "$GITHUB_STEP_SUMMARY"
