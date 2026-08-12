@@ -4,7 +4,10 @@ name: Nightly oracle gate
 # through the benchmark's REAL grader, and a no-op must score < 1.0 — proving no
 # always-pass / always-fail grader. No agent, no model (`eval-containers oracle`).
 # Each check `--local`-builds the benchmark image, so this is the daemon-backed
-# lane the per-PR test.yml deliberately can't run. The ~78 checks are split
+# lane the per-PR test.yml deliberately can't run. The checks (27 today:
+# every auto-covered exact-match benchmark plus the pinned SPECIAL list —
+# `ORACLE_LIST=1 cargo test --test oracle -- --ignored --nocapture` prints
+# them) are split
 # across a parallel shard matrix; each shard bakes the core bases once, then
 # `--local`-builds and grades its round-robin slice.
 #
@@ -47,7 +50,7 @@ jobs:
     strategy:
       fail-fast: false # one shard's failure must not cancel the others
       matrix:
-        # N-way shard of the ~78 oracle checks. ORACLE_SHARDS is derived from
+        # N-way shard of the oracle checks. ORACLE_SHARDS is derived from
         # strategy.job-total (= this list's length), so edit only this list.
         shard: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
     steps:
