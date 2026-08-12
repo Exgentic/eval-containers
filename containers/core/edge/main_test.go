@@ -65,6 +65,11 @@ func TestWireForStripsTheNamespace(t *testing.T) {
 		{"/openai/v1/responses", "openai", "/v1/responses"},
 		{"/genai/v1beta/models/x:generateContent", "gemini", "/v1beta/models/x:generateContent"},
 		{"/v1/chat/completions", "openai", "/v1/chat/completions"}, // unprefixed defaults to openai
+		// A bare namespace: an SDK pointed at .../anthropic probes it, and
+		// resolving it to the openai wire would send the wrong auth header.
+		{"/anthropic", "anthropic", "/"},
+		{"/openai", "openai", "/"},
+		{"/genai", "gemini", "/"},
 	}
 	for _, c := range cases {
 		wire, path := wireFor(c.in)

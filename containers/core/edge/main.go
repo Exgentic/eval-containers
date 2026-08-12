@@ -107,13 +107,20 @@ func msSince(t time.Time) float64 { return float64(time.Since(t).Microseconds())
 // wireFor maps an inbound path onto its protocol namespace, returning the
 // wire and the path with the namespace stripped.
 func wireFor(path string) (string, string) {
-	switch {
-	case strings.HasPrefix(path, "/anthropic/"):
-		return "anthropic", strings.TrimPrefix(path, "/anthropic")
-	case strings.HasPrefix(path, "/genai/"):
-		return "gemini", strings.TrimPrefix(path, "/genai")
-	case strings.HasPrefix(path, "/openai/"):
-		return "openai", strings.TrimPrefix(path, "/openai")
+	// The namespace matches with or without a trailing path: an SDK pointed at
+	// .../anthropic probes the bare prefix, and answering that on the wrong
+	// wire would send the wrong auth header.
+	for _, ns := range []struct{ prefix, wire string }{
+		{"/anthropic", "anthropic"},
+		{"/genai", "gemini"},
+		{"/openai", "openai"},
+	} {
+		if path == ns.prefix {
+			return ns.wire, "/"
+		}
+		if strings.HasPrefix(path, ns.prefix+"/") {
+			return ns.wire, strings.TrimPrefix(path, ns.prefix)
+		}
 	}
 	return "openai", path
 }
