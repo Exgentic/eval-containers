@@ -3,10 +3,12 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -642,5 +644,115 @@ func TestEmptyResponseStillRecords(t *testing.T) {
 	}
 	if c.Response != "" || c.TTFTms != 0 {
 		t.Errorf("empty response recorded as %q / ttft %v", c.Response, c.TTFTms)
+	}
+}
+
+// ── Startup and readiness (main's decisions) ────────────────────────
+
+func TestConfigErrorRefusesTranslationAtBoot(t *testing.T) {
+	prev := base
+	base = "http://upstream"
+	defer func() { base = prev }()
+
+	t.Setenv("EVAL_MODEL_API", "openai")
+	err := configError()
+	if err == nil {
+		t.Fatal("EVAL_MODEL_API set: want a refusal to start")
+	}
+	if !strings.Contains(err.Error(), "translate") {
+		t.Errorf("refusal does not say why: %v", err)
+	}
+}
+
+func TestConfigErrorRequiresAnUpstream(t *testing.T) {
+	prev := base
+	base = ""
+	defer func() { base = prev }()
+
+	if err := configError(); err == nil || !strings.Contains(err.Error(), "OPENAI_API_BASE") {
+		t.Errorf("missing upstream gave %v, want a named refusal", err)
+	}
+}
+
+func TestConfigErrorAcceptsAValidSetup(t *testing.T) {
+	prev := base
+	base = "http://upstream"
+	defer func() { base = prev }()
+
+	if err := configError(); err != nil {
+		t.Errorf("valid config refused: %v", err)
+	}
+}
+
+func TestHealthProbeReportsReadiness(t *testing.T) {
+	// Nothing listening on this port: the probe must fail, or a crashed edge
+	// would look healthy to an orchestrator.
+	if code := probeHealth(":1"); code != 1 {
+		t.Errorf("probe against a dead port = %d, want 1", code)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("ok"))
+	})
+	srv := &http.Server{Handler: mux}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() { _ = srv.Serve(ln) }()
+	defer srv.Close()
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	if code := probeHealth(":" + strconv.Itoa(port)); code != 0 {
+		t.Errorf("probe against a live edge = %d, want 0", code)
+	}
+}
+
+// ── Request bounds ──────────────────────────────────────────────────
+
+func TestOversizeRequestIsRefusedNotForwardedUnpinned(t *testing.T) {
+	upstreamCalls := 0
+	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		upstreamCalls++
+		_, _ = w.Write([]byte(`{}`))
+	})
+	prev := maxRequest
+	maxRequest = 256
+	defer func() { maxRequest = prev }()
+
+	resp := post(t, edge.URL+"/openai/v1/chat/completions",
+		`{"model":"p","pad":"`+strings.Repeat("x", 4096)+`"}`, nil)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusRequestEntityTooLarge {
+		t.Errorf("status = %d, want 413", resp.StatusCode)
+	}
+	if upstreamCalls != 0 {
+		t.Error("an unpinnable request was forwarded upstream anyway — model authority broken")
+	}
+	if c := records(t)[0]; c.Status != http.StatusRequestEntityTooLarge || !c.Truncated {
+		t.Errorf("refusal recorded as status=%d truncated=%v", c.Status, c.Truncated)
+	}
+}
+
+func TestRequestAtTheLimitStillGoesThrough(t *testing.T) {
+	edge, bodsReqs, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{}`))
+	})
+	prev := maxRequest
+	maxRequest = 4096
+	defer func() { maxRequest = prev }()
+
+	body := `{"model":"p","pad":"` + strings.Repeat("x", 100) + `"}`
+	resp := post(t, edge.URL+"/openai/v1/chat/completions", body, nil)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("a request under the cap got %d", resp.StatusCode)
+	}
+	if len(*bodsReqs) != 1 {
+		t.Errorf("upstream saw %d requests, want 1", len(*bodsReqs))
 	}
 }

@@ -18,6 +18,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"net/http"
@@ -76,10 +77,13 @@ var (
 		"transfer-encoding": true, "upgrade": true,
 	}
 
-	// Bound how much of one exchange is written to the record. The request is
-	// held whole in memory regardless — it has to be, to be forwarded — so this
-	// caps the file, not the footprint.
+	// Bound how much of one exchange is written to the record; the response is
+	// streamed, so this caps the file, not the footprint.
 	maxRecord = envInt("EDGE_MAX_RECORD_BYTES", 8<<20)
+	// Bound the request instead of trusting it: pinning the model means parsing
+	// the body, so it is held whole. Past this the call is refused rather than
+	// forwarded unpinned, which would break model authority (rule 2).
+	maxRequest = envInt("EDGE_MAX_REQUEST_BYTES", 64<<20)
 	// Transport failures are retried only before any byte reaches the agent.
 	maxRetries = envInt("EDGE_MAX_RETRIES", 2)
 )
@@ -176,7 +180,19 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	wire, path := wireFor(r.URL.Path)
 
-	agentBody, _ := io.ReadAll(r.Body)
+	agentBody, err := io.ReadAll(io.LimitReader(r.Body, int64(maxRequest)+1))
+	if err == nil && len(agentBody) > maxRequest {
+		http.Error(w, `{"error":{"type":"request_too_large","message":"body exceeds EDGE_MAX_REQUEST_BYTES; the edge must parse it to pin the model"}}`,
+			http.StatusRequestEntityTooLarge)
+		c := call{
+			Path: r.URL.Path, Wire: wire, StartUnix: float64(start.UnixNano()) / 1e9,
+			Model: model, Headers: safeHeaders(r.Header), RespHead: map[string]string{},
+			Status: http.StatusRequestEntityTooLarge, Truncated: true, TotalMs: msSince(start),
+		}
+		record(c)
+		return
+	}
+
 	upstreamBody, upstreamPath := agentBody, upstreamPathFor(r.URL.Path, path)
 	if wire == "gemini" {
 		upstreamPath = pinGemini(upstreamPath, model)
@@ -391,15 +407,38 @@ func (r *replayer) serve(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
+// probeHealth is the readiness probe's exit code: 0 when the edge answers on
+// its own port, 1 otherwise.
+func probeHealth(addr string) int {
+	resp, err := http.Get("http://127.0.0.1:" + strings.TrimPrefix(addr, ":") + "/health")
+	if err != nil {
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
+}
+
+// configError reports why the edge must not start. Translation is a gateway's
+// job, and an operator who asked for it here has misconfigured the stack: fail
+// at boot rather than at every call.
+func configError() error {
+	if os.Getenv("EVAL_MODEL_API") != "" {
+		return errors.New("EVAL_MODEL_API is set: the edge does not translate protocols — unset it, or route through a translating gateway")
+	}
+	if base == "" {
+		return errors.New("OPENAI_API_BASE is required")
+	}
+	return nil
+}
+
 func main() {
 	// Rule 16: readiness is reported by the binary itself, so no shell is needed
 	// and the image can be scratch.
 	if len(os.Args) > 1 && os.Args[1] == "health" {
-		resp, err := http.Get("http://127.0.0.1:" + strings.TrimPrefix(listen, ":") + "/health")
-		if err != nil || resp.StatusCode != http.StatusOK {
-			os.Exit(1)
-		}
-		return
+		os.Exit(probeHealth(listen))
 	}
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
@@ -416,13 +455,8 @@ func main() {
 		log.Fatal(http.ListenAndServe(listen, nil))
 	}
 
-	// Translation is a gateway's job: refuse to start rather than 501 every
-	// call, matching how the gateway start scripts reject bad env.
-	if os.Getenv("EVAL_MODEL_API") != "" {
-		log.Fatal("EVAL_MODEL_API is set: the edge does not translate protocols — unset it, or route through a translating gateway")
-	}
-	if base == "" {
-		log.Fatal("OPENAI_API_BASE is required")
+	if err := configError(); err != nil {
+		log.Fatal(err)
 	}
 	http.HandleFunc("/", handle)
 	log.Printf("edge recording to %s, upstream %s", out, base)
