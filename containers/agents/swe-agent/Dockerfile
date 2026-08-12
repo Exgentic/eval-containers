@@ -64,10 +64,20 @@ git config --global --add safe.directory "$REPO"
 # eval framework's cost authority (EVAL_MODEL_MAX_BUDGET), so disable
 # SWE-agent's redundant, model-name-brittle check per LiteLLM's own suggested
 # fix in that error message.
+# output_dir defaults to $CWD/trajectories, and sweagent's cwd is the repo
+# it's operating on — so its own trajectory JSON lands inside the checkout
+# being diffed. The model then sees `trajectories/` show up in
+# `git status`/`git diff` and, on submit review, often tries to
+# `git rm -rf` it to clean up its diff — deleting the very directory
+# sweagent still needs to write its final trajectory file into once the
+# run completes, which crashes with FileNotFoundError immediately after a
+# genuinely correct submit. Point --output_dir outside the repo so it
+# never appears in the repo's own git state.
 exec /opt/swe-agent-venv/bin/sweagent run --agent.model.name="openai/${MODEL:-default}" \
   --agent.model.per_instance_cost_limit=0 --agent.model.total_cost_limit=0 \
   --agent.model.api_base="${OPENAI_BASE_URL:-http://model:4000}" --env.deployment.type=local \
-  --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.text="$TASK"
+  --env.repo.type=preexisting --env.repo.repo_name=workspace/repo --problem_statement.text="$TASK" \
+  --output_dir=/tmp/trajectories
 E
 
 ENTRYPOINT ["/run.sh"]
