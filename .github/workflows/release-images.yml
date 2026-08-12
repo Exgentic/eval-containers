@@ -677,7 +677,7 @@ jobs:
   # every benchmark's bundle.
   compose:
     needs: [cli, merge, enumerate]
-    if: always() && (needs.merge.result == 'success' || inputs.dry_run) && needs.cli.result == 'success' && needs.enumerate.result == 'success'
+    if: always() && (needs.merge.result == 'success' || inputs.dry_run) && needs.cli.result == 'success' && needs.enumerate.result == 'success' && needs.enumerate.outputs.benchmarks != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
