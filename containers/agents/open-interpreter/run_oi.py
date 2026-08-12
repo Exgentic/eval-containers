@@ -5,8 +5,30 @@ from interpreter import interpreter
 
 interpreter.llm.api_base = os.environ.get("OPENAI_BASE_URL", "http://model:4000")
 interpreter.llm.api_key = os.environ.get("OPENAI_API_KEY", "sk-proxy")
-model = os.environ.get("EVAL_MODEL", "default")
-interpreter.llm.model = model if "/" in model else f"openai/{model}"
+# EVAL_MODEL/MODEL is a bare, opaque handle that may already carry a routing
+# prefix like `aws/claude-opus-4-8` or `gcp/gemini-3.5-flash-lite` (gateways/
+# RULES.md: "MUST NOT split EVAL_MODEL to infer a provider or wire protocol").
+# open-interpreter's Llm class has no field for litellm's custom_llm_provider
+# (unlike terminus-2/harbor's LiteLLM wrapper), so a "/" in the handle reaches
+# litellm.completion() unmodified and litellm tries to resolve it as a real
+# provider name — "gcp"/"aws" aren't litellm provider names (those are
+# "vertex_ai"/"bedrock"), so it raises BadRequestError: LLM Provider NOT
+# provided. Force the wire explicitly by wrapping llm.completions (a plain
+# function reference forwarding **params to litellm.completion(**params))
+# to inject custom_llm_provider="openai" regardless of what the handle
+# carries — same fix as #348 (terminus-2), applied via a wrapper since
+# open-interpreter has no dedicated field for it.
+model = os.environ.get("MODEL", "default")
+interpreter.llm.model = model
+_completions = interpreter.llm.completions
+
+
+def _completions_via_openai_wire(**params):
+    params.setdefault("custom_llm_provider", "openai")
+    yield from _completions(**params)
+
+
+interpreter.llm.completions = _completions_via_openai_wire
 interpreter.auto_run = True
 interpreter.offline = False
 interpreter.disable_telemetry = True
