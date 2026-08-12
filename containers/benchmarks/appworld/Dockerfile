@@ -1,8 +1,18 @@
 # AppWorld
 # 732 tasks across 9 simulated apps. Data: HuggingFace LukaszTP/AppWorld-Tasks
 # Upstream image: ghcr.io/stonybrooknlp/appworld — includes all APIs in-process.
-# Evaluation is state-based (database checks), requires the AppWorld runtime.
-# Externally graded: test writes -1.
+# Evaluation is state-based (database checks) and fully local/offline
+# (world.evaluate()) — graded for real, not externally.
+#
+# The agent never gets in-process SDK access (that would expose
+# ground_truth/answer.json, which sits next to the dbs/*.jsonl files it
+# legitimately needs) and never learns its real task id (rule 7). Instead,
+# entrypoint.sh starts bridge.py in the background, a root-owned HTTP
+# service bound to 127.0.0.1 that holds the one live AppWorld session and
+# exposes only a sanitized POST /execute {"code": ...} route. /grade.sh runs
+# later, as root, after the agent's process has exited: it signals bridge.py
+# (SIGUSR1, not an HTTP route — signals respect uid, so this stays
+# unreachable to the agent) to evaluate that same session directly.
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
@@ -48,6 +58,23 @@ PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
 
+# Install the bundled apps/tests and download the full task dataset + base
+# app DBs at build time (no network needed at container runtime). ~193M,
+# ~15s, no auth required — verified live against this same upstream image.
+ENV APPWORLD_ROOT=/appworld
+RUN /opt/venv/bin/python -m appworld.cli install --no-repo \
+    && /opt/venv/bin/python -m appworld.cli download data --root "$APPWORLD_ROOT"
+
+# Root-only: each task directory's ground_truth/{answer,private_data,
+# test_data}.json and evaluation.py sit right next to the dbs/*.jsonl the
+# agent legitimately needs — there is no way to grant dbs/ access without
+# also granting ground_truth/ access at the filesystem level. The agent
+# (uid 1002, gid 0 — same group as root, see combination.Dockerfile) must
+# never read this tree directly; `go-rwx` strips group bits too, since a
+# shared gid alone isn't enough (see /tasks/*/id.txt using the same
+# root:600 pattern for the same reason).
+RUN chmod -R go-rwx "$APPWORLD_ROOT"
+
 WORKDIR /app
 
 # openclaw (and any agent that writes into its cwd, e.g. AGENTS.md) runs as
@@ -55,12 +82,27 @@ WORKDIR /app
 # /app, which otherwise stays root:root 755 from the upstream image.
 RUN chown -R 1002:0 /app && chmod -R g+rwX /app
 
-# Test: AppWorld evaluation is state-based (database checks) and requires
-# the full AppWorld runtime. This is externally graded — always write -1.
+COPY bridge.py /
+RUN chmod 700 /bridge.py
+
+# Test: AppWorld evaluation is state-based (database checks) but fully
+# local/offline (world.evaluate()). Grading reuses the same live AppWorld
+# object bridge.py has been mutating rather than opening a second one —
+# AppWorld() re-initializes by deleting its own output directory on
+# construction, so a second open here would just discard the agent's
+# progress. SIGUSR1 (not an HTTP route) triggers it: only root can signal a
+# root-owned process, so this stays unreachable to the agent's uid even
+# though it shares the container's network namespace with the bridge.
 RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
-mkdir -p /logs/verifier
-echo -1 > /logs/verifier/reward.txt
+mkdir -p /logs/verifier /logs/appworld
+kill -USR1 "$(cat /run/bridge.pid)"
+for i in $(seq 1 150); do
+  if [ -f /logs/verifier/reward.txt ]; then
+    break
+  fi
+  sleep 0.2
+done
 TEST
 
 RUN chmod +x /grade.sh
@@ -71,8 +113,43 @@ RUN chmod +x /eval-materialize-task
 RUN cat > /entrypoint.sh <<'ENTRY'
 #!/bin/bash
 /eval-materialize-task
+
+REAL_TASK_ID="$(cat /tasks/$EVAL_TASK_ID/id.txt)"
+APPWORLD_TASK_ID="$REAL_TASK_ID" /opt/venv/bin/python /bridge.py &
+echo $! > /run/bridge.pid
+
+for i in $(seq 1 150); do
+  if curl -sf http://127.0.0.1:8123/health >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  export TASK="$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
+  BOILERPLATE="You are solving a task in the AppWorld simulated environment
+(9 apps, 457 APIs: spotify, amazon, gmail, phone, file_system, simple_note,
+todoist, venmo, splitwise, plus supervisor/api_docs/admin).
+
+A code-execution bridge is running locally. To run Python code against the
+simulated apps (an \`apis\` object is bound for you), send a POST request to
+http://127.0.0.1:8123/execute with a JSON body: {\"code\": \"<python source>\"}.
+
+Example:
+python3 -c 'import json, urllib.request
+req = urllib.request.Request(\"http://127.0.0.1:8123/execute\",
+    data=json.dumps({\"code\": \"print(apis.api_docs.show_app_descriptions())\"}).encode(),
+    headers={\"Content-Type\": \"application/json\"})
+print(urllib.request.urlopen(req).read().decode())'
+
+The response is JSON: {\"output\": \"<stdout captured during execution>\"} on
+success, or {\"error\": \"<message>\"} on failure. Variables you define persist
+across calls within this task. Call apis.supervisor.complete_task() via this
+bridge once you believe the task is complete — after that, no further
+actions are graded.
+
+Your task:
+"
+  export TASK="${BOILERPLATE}$(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi
 exec "$@"
 ENTRY
