@@ -106,6 +106,9 @@ const AGENTS: &[&str] = &[
     // bob     — IBM-internal: bundled JS hardcodes api.us-east.bob.ibm.com
     //           with no override, only IBM-issued auth accepted. Cannot
     //           be smoke-tested against our mock LLM. See broken.md.
+    // factory — droid authenticates to Factory before it will use a BYOK
+    //           model, so it refuses to run without FACTORY_API_KEY, which
+    //           the smoke suite does not have. See broken.md.
 ];
 
 /// How long to wait for the first LLM call before declaring the agent
