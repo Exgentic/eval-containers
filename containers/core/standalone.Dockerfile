@@ -2,8 +2,8 @@
 # The variant is a NAME suffix, never the tag — `:tag` is the release version.
 #
 # FROM the lean eval base (combination.Dockerfile) + the in-process serving glue
-# that ONLY single-container mode runs: the gateway (LLM proxy), otelcol, the
-# process-compose orchestrator, and the full five-unit pipeline. This is the
+# that ONLY single-container mode runs: the process-compose orchestrator and the
+# three-unit pipeline. This is the
 # laptop / `--mode container` artifact and the image that ships to a
 # single-container harness (e.g. llm-d), where the in-process gateway does the
 # Anthropic→OpenAI translation.
@@ -25,31 +25,23 @@
 #     resolution lives in that ref.
 #
 # Build args:
-#   OTEL_IMAGE            — core/otel (slim OTLP→file collector + config)
 #   PROCESS_COMPOSE_IMAGE — core/process-compose (in-container orchestrator)
 #
 # Path layout added on top of the lean base:
-#   /usr/local/bin/otelcol         from OTEL_IMAGE
-#   /etc/otelcol/config.yaml       from OTEL_IMAGE
 #   /usr/local/bin/process-compose from PROCESS_COMPOSE_IMAGE
-#   /etc/process-compose.yaml      full pipeline (otelcol → gateway → agent → verifier → result)
+#   /etc/process-compose.yaml      pipeline (agent → verifier → result)
 #
 # Why root-owned /opt/gateway (mode 0700): agent uid 1002 cannot traverse it, so
 # the gateway config + credentials are unreadable by the agent (model rule 4 met
 # by file perms alone — no Linux capabilities required).
-ARG OTEL_IMAGE=ghcr.io/exgentic/core/otel:latest
 ARG PROCESS_COMPOSE_IMAGE=ghcr.io/exgentic/core/process-compose:latest
 
 # Named stages for the build-arg base images (buildx forbids `${ARG}` in
 # `COPY --from=`; `FROM` allows it for globally-scoped ARGs).
-FROM ${OTEL_IMAGE}            AS otel
 FROM ${PROCESS_COMPOSE_IMAGE} AS process-compose
 
 FROM eval-base
 
-# ─── OTel collector layer ────────────────────────────────────────────
-COPY --from=otel /otelcol                 /usr/local/bin/otelcol
-COPY --from=otel /etc/otelcol/config.yaml /etc/otelcol/config.yaml
 
 # ─── In-container orchestrator + full pipeline ───────────────────────
 COPY --from=process-compose /bundle/bin/process-compose /usr/local/bin/process-compose
@@ -57,8 +49,8 @@ COPY runner/process-compose.yaml              /etc/process-compose.yaml
 
 # Tighten perms. /opt/gateway is 0700 by default; explicit chmod pins it.
 RUN chmod 0700 /opt/gateway \
- && chmod 0755 /usr/local/bin/otelcol /usr/local/bin/process-compose \
- && chmod 0644 /etc/otelcol/config.yaml /etc/process-compose.yaml
+ && chmod 0755 /usr/local/bin/process-compose \
+ && chmod 0644 /etc/process-compose.yaml
 
 # Inherited from the lean base; restated so the bundle's launch is explicit.
 CMD ["/usr/local/bin/run"]

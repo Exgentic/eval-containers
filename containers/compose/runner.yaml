@@ -7,7 +7,7 @@
 # `include:` ("services.runner conflicts with imported resource"). `extends:`
 # is the merge-friendly path — the benchmark file declares its own `runner`
 # and grafts this template onto it. The rest of the shared topology
-# (`otelcol`, networks, volumes) still comes from `services.yaml`
+# (networks, volumes) still comes from `services.yaml`
 # via `include:`, since benchmarks never override those.
 #
 # IMPORTANT: `extends:` does NOT carry `depends_on` (Compose spec). A benchmark
@@ -51,7 +51,6 @@ services:
       # are set by run-agent's scrubbed env, not by the orchestrator.
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
     volumes:
       - output:/output
     networks:

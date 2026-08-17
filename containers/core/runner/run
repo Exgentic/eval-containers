@@ -7,17 +7,15 @@
 # record always lands in /output/model (.agents/edge/RULES.md). Nothing external
 # has to be started, health-gated, or resolved by DNS first.
 #
-# What still differs between modes is only where otelcol lives, which is what
-# selects the path below:
+What differs between modes is only whether a supervisor is present, which is
+# what selects the path below:
 #
 #   no /etc/process-compose.yaml  → the lean eval base (compose / k8s).
-#       otelcol is a sibling container the orchestrator started, so there is
-#       nothing left to orchestrate: the three phases run as a shell sequence.
+#       Nothing else to orchestrate: the three phases run as a shell sequence.
 #
-#   /etc/process-compose.yaml     → the -standalone bundle.
-#       otelcol runs in-process too, so process-compose brings up the remaining
-#       units (otelcol → agent → verifier → result) with readiness gating. It
-#       ships ONLY in core/standalone.Dockerfile; the lean base has neither.
+#   /etc/process-compose.yaml     → the -standalone bundle, which gates
+#       agent → verifier → result with readiness. It ships ONLY in
+#       core/standalone.Dockerfile; the lean base has neither.
 #
 # Same agent/verifier/result semantics in both paths; the agent launch itself is
 # shared via /usr/local/bin/run-agent so rule 7's env allow-list has one home.
@@ -78,8 +76,8 @@ if [ "$edge_ready" != 1 ]; then
 fi
 
 # ─── Runner mode (lean base) ──────────────────────────────────────────
-# otelcol is a sibling the orchestrator health-gated, so run the three phases
-# directly. Each phase runs regardless of the previous one's exit status
+# Nothing to wait on, so run the three phases directly. Each phase runs
+# regardless of the previous one's exit status
 # (process-compose's `process_completed` semantics): the verifier always grades
 # whatever the agent produced — even on a timeout or crash — and a result.json
 # is always written.
@@ -90,15 +88,7 @@ if [ ! -f /etc/process-compose.yaml ]; then
 fi
 
 # ─── Single-container mode (bundle) ───────────────────────────────────
-# otelcol runs in-process too; process-compose gates the rest of the pipeline.
-export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
-
-# Agents that emit OTel resolve the collector by name; in-process there is no
-# DNS, so map it to loopback (only when nothing else already resolves it).
-if ! getent hosts otelcol >/dev/null 2>&1; then
-  echo "127.0.0.1 otelcol" >> /etc/hosts
-fi
-
+# process-compose gates the rest of the pipeline.
 exec /usr/local/bin/process-compose up \
   --config /etc/process-compose.yaml \
   --disable-dotenv \

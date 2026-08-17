@@ -149,7 +149,6 @@ async fn ensure_agent_image(agent: &str) {
             // the agent-base-* the agents FROM. No benchmark-base-*, no
             // llm-bridge.
             common::bake_targets(&[
-                "otel",
                 "gosu",
                 "edge",
                 "model-replay",

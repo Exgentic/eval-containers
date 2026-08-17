@@ -1,15 +1,15 @@
-# Single-container pipeline. Four processes:
-#   otelcol → agent → verifier → result.
+# Single-container pipeline. Three processes:
+#   agent → verifier → result.
 #
 # The edge is NOT here: /usr/local/bin/run starts it before this file is read,
-# in every mode, so it is running by the time any unit below does.
+# in every mode, so it is running by the time any unit below does. Nothing
+# emits OTel, so there is no collector either.
 #
 # This is the SINGLE-CONTAINER mode only — the in-process orchestrator for the
-# -standalone bundle, where otelcol runs in-process alongside the eval.
+# -standalone bundle.
 # It ships ONLY in core/standalone.Dockerfile; the lean eval base has neither
-# process-compose nor this file. In compose / k8s, otelcol is a sibling
-# container/pod the orchestrator started, so /usr/local/bin/run runs the
-# agent → verifier → result sequence directly there — no in-container supervisor.
+# process-compose nor this file: there /usr/local/bin/run runs the
+# agent → verifier → result sequence directly — no in-container supervisor.
 #
 # URL contract (resolved by /usr/local/bin/run BEFORE process-compose starts, so
 # plain $VAR refs in commands work uniformly):
@@ -24,30 +24,11 @@
 version: "0.5"
 
 processes:
-  otelcol:
-    command: /usr/local/bin/otelcol --config=/etc/otelcol/config.yaml
-    readiness_probe:
-      http_get:
-        host: 127.0.0.1
-        scheme: http
-        port: 13133
-        path: /
-      initial_delay_seconds: 0
-      period_seconds: 1
-      timeout_seconds: 1
-      failure_threshold: 30
-    availability:
-      restart: "no"
-    log_location: /output/model/otelcol.log
-
   agent:
     # The agent launch (non-root gosu, timeout, scrubbed env -i allow-list, raw
     # stdout/stderr redirection) lives in /usr/local/bin/run-agent — shared with
     # the lean base's runner sequence so rule 7's allow-list has one home.
     command: /usr/local/bin/run-agent
-    depends_on:
-      otelcol:
-        condition: process_healthy
     availability:
       restart: "no"
 
@@ -67,11 +48,8 @@ processes:
         condition: process_completed
     availability:
       restart: "no"
-      # When the result writer finishes, process-compose exits — so the
-      # whole container exits cleanly. Without this, otelcol
-      # (long-running daemons) would keep the container alive forever
-      # in single-image mode. In compose/k8s modes otelcol
-      # are disabled via the overlay file, so this still terminates
-      # correctly there.
+      # When the result writer finishes, process-compose exits, so the
+      # container exits cleanly. Every unit here is one-shot, but without
+      # this the supervisor itself would keep the container alive.
       exit_on_end: true
     log_location: /output/task/result-writer.log

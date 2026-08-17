@@ -50,10 +50,9 @@ spec:
       {{- with $v.serviceAccountName }}
       serviceAccountName: {{ . }}
       {{- end }}
-      # otelcol is a native sidecar (restartPolicy: Always), so k8s starts it
-      # before the runner. There is no gateway sidecar: the edge runs inside the
-      # runner container (.agents/edge/RULES.md), so the upstream credential is
-      # mounted there instead.
+      # No sidecars: the edge runs inside the runner container
+      # (.agents/edge/RULES.md), so the upstream credential is mounted there,
+      # and nothing emits OTel for a collector to receive.
       initContainers:
         {{- with $v.initContainers }}
         {{- toYaml . | nindent 8 }}
@@ -68,23 +67,6 @@ spec:
             - -c
             - "until{{- range $name, $sc := $v.sidecars }}{{- if has $name $active }} nc -z {{ $name }} {{ $sc.port }} &&{{- end }}{{- end }} true; do echo 'waiting for sidecars'; sleep 2; done"
         {{- end }}
-        - name: otelcol
-          restartPolicy: Always
-          image: {{ include "eval.otelImage" $v }}
-          imagePullPolicy: {{ $v.imagePullPolicy | default "IfNotPresent" }}
-          ports:
-            - { name: otlp-grpc, containerPort: 4317 }
-            - { name: otlp-http, containerPort: 4318 }
-            - { name: health,    containerPort: 13133 }
-          # Sidecar (restartPolicy: Always): k8s holds later containers until
-          # this startupProbe passes — probes otelcol's health_check (:13133).
-          startupProbe:
-            httpGet: { path: /, port: 13133 }
-            periodSeconds: 1
-            failureThreshold: 30
-          volumeMounts:
-            {{- include "eval.outputMount" $v | nindent 12 }}
-
       containers:
         - name: runner
           image: {{ include "eval.runnerImage" $v }}

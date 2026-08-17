@@ -12,13 +12,11 @@ services:
       TIMEOUT: "1800"
       HTTP_PROXY: http://proxy:8080
       HTTPS_PROXY: http://proxy:8080
-      NO_PROXY: otelcol,localhost,127.0.0.1
+      NO_PROXY: localhost,127.0.0.1
       CLASSIFIEDS_URL: http://classifieds:80
       REDDIT_URL: http://reddit:80
       SHOPPING_URL: http://shopping:80
     depends_on:
-      otelcol:
-        condition: service_healthy
       proxy:
         condition: service_started
     deploy:

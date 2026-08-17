@@ -12,7 +12,7 @@ services:
       TIMEOUT: "1800"
       HTTP_PROXY: http://proxy:8080
       HTTPS_PROXY: http://proxy:8080
-      NO_PROXY: otelcol,localhost,127.0.0.1
+      NO_PROXY: localhost,127.0.0.1
       # Each app's real internal port (per upstream's docker-compose.yml):
       # shopping/shopping_admin/reddit :80, gitlab :8023, wikipedia/map :8080.
       SHOPPING_URL: http://shopping:80
@@ -22,8 +22,6 @@ services:
       WIKIPEDIA_URL: http://wikipedia:8080
       MAP_URL: http://map:8080
     depends_on:
-      otelcol:
-        condition: service_healthy
       proxy:
         condition: service_started
     deploy:

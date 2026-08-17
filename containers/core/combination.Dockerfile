@@ -1,10 +1,10 @@
 # Universal LEAN eval base. Produces evals/<benchmark>--<agent>:latest.
 #
 # This is the EVAL, nothing more: benchmark + agent + grader + the framework
-# launcher. It is what `--mode compose`, `--mode job`, and k8s run, with the
-# gateway + otelcol as SIBLING containers/pods that the orchestrator starts and
-# health-gates. The in-process serving glue — gateway, otelcol, process-compose,
-# and the full pipeline — is NOT here; that is the single-container convenience,
+# launcher, plus the edge, which runs in this container in every mode (it ships
+# here, see below). It is what `--mode compose`, `--mode job`, and k8s run, with
+# no sidecars at all. The in-process supervisor — process-compose and the
+# pipeline it gates — is NOT here; that is the single-container convenience,
 # layered on top by core/standalone.Dockerfile to produce the -standalone bundle.
 #
 # Image naming: one image per (benchmark, agent), tag = version. The variant is a

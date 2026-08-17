@@ -234,7 +234,6 @@ async fn bootstrap_core_bases() {
             const DEFAULT_BASES: &[&str] = &[
                 "entrypoint",
                 "test-exact-match",
-                "otel",
                 "gosu",
                 // Every eval image carries the edge now, so it is a base.
                 "edge",

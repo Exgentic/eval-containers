@@ -1,30 +1,15 @@
 # Shared compose topology that per-benchmark `compose.yaml` files pull in
-# verbatim with `include:` — the parts no benchmark overrides: the `otelcol`
-# service, the `internal`/`upstream` networks, and the `output` volume. There is
-# no `gateway` service: the edge runs inside the runner, so the agent talks to
-# 127.0.0.1:4000 and the upstream credential goes straight to the runner
-# (.agents/edge/RULES.md).
+# verbatim with `include:` — the parts no benchmark overrides: the
+# `internal`/`upstream` networks and the `output` volume. There is no `gateway`
+# and no `otelcol` service: the edge runs inside the runner and records every
+# call itself (.agents/edge/RULES.md), and nothing emits OTel any more — the
+# gateway was the only emitter, and agents never had the collector's endpoint
+# in their scrubbed env.
 #
 # The `runner` service is NOT here: every benchmark must override its image and
 # `BENCHMARK` env, and Compose forbids overriding an `include:`d
 # service, so the runner template lives in `runner.yaml` and is pulled via
 # `extends:` instead. See `.agents/compose/RULES.md` rule 8.
-services:
-  otelcol:
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/otel:latest
-    volumes:
-      - output:/output
-    # Probe otelcol's health_check endpoint (:13133) so the runner can gate on
-    # `service_healthy`. Image is alpine-based, so busybox wget exists.
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
-      interval: 1s
-      timeout: 1s
-      retries: 30
-      start_period: 1s
-    networks:
-      - internal
-
 networks:
   internal:
     internal: true
