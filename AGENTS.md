@@ -37,6 +37,11 @@ active rule must not merge.
 
 ## Working in this repo
 
+Two principles bind every change, whatever the topic:
+
+- **Minimal.** The simplest, cleanest implementation that serves the goal — no dead code, no premature abstractions, no accumulated bloat ([`.agents/RULES.md`](.agents/RULES.md) principle 8).
+- **Verified.** Every change passes the mechanical gates (`cargo test`); releases additionally walk [`.agents/verification/verify/SKILL.md`](.agents/verification/verify/SKILL.md) ([`.agents/RULES.md`](.agents/RULES.md) principle 14).
+
 1. **Find the topic(s)** your change touches and read their `RULES.md` (and any ancestor topic's, up to `.agents/RULES.md`).
 2. **If a skill exists** for what you're doing (adding a benchmark/agent, building, releasing, auditing), follow it.
 3. **Before opening a PR**, check your change against the relevant rules — `.agents/verification/verify/SKILL.md` is the release walk.
