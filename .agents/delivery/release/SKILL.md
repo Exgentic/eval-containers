@@ -145,11 +145,21 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
    from the prior release retags that digest instead of rebuilding
    (`.agents/delivery/RULES.md` rules 12–14) — so consecutive releases
    share digests for untouched images, and a no-change release builds
-   nothing. Upstream drift (base images, unpinned packages) is invisible
-   to the hash: for CVE refreshes dispatch with `force_rebuild: true`
-   (or `rebuild_bases: true` for the shared bases alone). Audit any
-   tag's freshness with the **Fleet status** workflow or
-   `containers/scripts/fleet-status.sh <tag>`.
+   nothing. Audit any tag's freshness with the **Fleet status** workflow
+   or `containers/scripts/fleet-status.sh <tag>` (log in to the registry
+   first — an anonymous sweep hits the rate limit and reads `unreadable`).
+
+   **Decide the force knob from the drift report, not from memory.**
+   Upstream movement — a rebuilt base image, an unpinned package — is
+   invisible to the input hash, so a release can carry forward images
+   whose *contents* moved. The Fleet status workflow's nightly `drift`
+   job resolves every external base's digest and warns per moved one.
+   Before tagging, read the latest run: if it reports movement you want
+   in this release, dispatch with `force_rebuild: true` (or
+   `rebuild_bases: true` for the shared bases alone) and let it rebuild;
+   if it reports none, the carried-forward digests are current and no
+   knob is needed. Principle 9 classes such base/CVE refreshes as a
+   patch bump.
 
 8. **Commit the fleet report alongside the release tag.** When cutting
    the tag, commit the final `.agents/verification/fleet/report.md` so

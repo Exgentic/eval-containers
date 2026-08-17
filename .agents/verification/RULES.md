@@ -21,6 +21,7 @@ Testing exists to answer two separate questions, triggered at different points i
    - MUST complete under 2 hours total (sanity + build + replay)
    - MUST be fully reproducible by any contributor on a clean clone
    - MUST NOT include audits, live inference, or human inspection
+   - MUST exercise the components the change affects (rule 14)
 
 2. **Release verification** — triggered before cutting a release tag. MUST pass before tagging.
    - MUST include every contribution verification gate
@@ -30,6 +31,14 @@ Testing exists to answer two separate questions, triggered at different points i
    - MAY take hours; runs rarely
 
 The **procedure** for executing each process — exact commands, order, gates — lives in [VERIFY.md](verify/SKILL.md). The procedure cites rule IDs from this file and its siblings; it does not restate them.
+
+## Coverage selection
+
+14. **Change-driven contribution verification.** Contribution verification MUST exercise the components a change affects, including those reached through a shared base image.
+
+15. **Selection fails loud.** A machine-generated test selection that matches no test MUST fail, and an affected component with no test of its own MUST be reported.
+
+16. **Scheduled verification is unselected.** Scheduled verification MUST run its full suite rather than a change-derived subset, and MUST report movement in every upstream reference the build-input hash cannot see.
 
 ## Test category organization
 
@@ -121,3 +130,4 @@ tests rather than moving into `.agents/`.
 | 2026-06-14 | Rule 3: split the suite into per-stage Cargo crates (`tests/static` / `tests/build` / `tests/run` + shared `tests/support`). The dependency-light `static` crate is the per-PR gate and excludes the testcontainers/tokio/reqwest stack. Test target names preserved, so `cargo test --test <name>` is unchanged. |
 | 2026-06-14 | Dissolved the two pre-`.agents` test-doctrine relics (`tests/cli/RULES.md`, `tests/containers/RULES.md`): ~70% duplicated this strategy + the per-category rules. The one unique contract (replay-model serve behavior) moved to [models](../models/RULES.md) rule 17; the unused local-registry rule was dropped (no push test binds it); the rest was redundant. Removed both from the category index above. |
 | 2026-06-15 | Rule 10: replay fixture format migrated from LiteLLM `StandardLoggingPayload` (`*.trajectory.jsonl`) to native OTLP/JSON (`*.traces.jsonl`, OpenTelemetry `gen_ai` spans). `models/replay` and the `task_inspection` rules now consume OTLP; a stopgap converter bridges the still-`trajectory.jsonl` recording until native OTLP recording lands (see [tests/run/replay/RULES.md](../../tests/run/replay/RULES.md)). |
+| 2026-08-11 | Added the Coverage selection section (rules 14–16) after the change-detection system landed with nothing governing it. 14: contribution verification must exercise what a change affects — the per-PR gate now selects replay fixtures, agent smoke, and benchmark oracles from the build-input hash diff, base-image cascades included, and nothing required that. 15: a machine-generated selection matching nothing must fail and an uncovered affected component must be reported — two nightly filters previously exited 0 on a zero match. 16: scheduled verification stays unselected and reports upstream movement — on a quiet day the affected set is empty, so filtering the nightlies by it would test nothing exactly when drift detection matters most (a dataset 404'd unnoticed for months that way). |
