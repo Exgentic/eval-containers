@@ -248,28 +248,16 @@ async fn start_agent(
     .with_env_var("EVAL_BENCHMARK", "agents-smoke")
     .with_env_var("EVAL_AGENT", agent)
     .with_env_var("EVAL_TASK_ID", "0")
-    .with_env_var("EVAL_MODEL", "mock")
+    .with_env_var("EVAL_MODEL", PINNED_MODEL)
     // Cap the agent's own runtime so a hung agent doesn't keep
     // burning until the cargo timeout.
     .with_env_var("EVAL_TIMEOUT", "180")
-    // All three protocol URLs — each agent picks exactly one
-    // (agents/RULES.md, "Protocol exclusivity"). Path prefixes per
-    // the protocol-namespaced gateway contract.
-    .with_env_var(
-        "ANTHROPIC_BASE_URL",
-        format!("http://{mock_host}:4000/anthropic"),
-    )
-    .with_env_var(
-        "OPENAI_BASE_URL",
-        format!("http://{mock_host}:4000/openai/v1"),
-    )
-    .with_env_var(
-        "GOOGLE_GEMINI_BASE_URL",
-        format!("http://{mock_host}:4000/genai"),
-    )
-    .with_env_var("ANTHROPIC_API_KEY", "sk-proxy")
-    .with_env_var("OPENAI_API_KEY", "sk-proxy")
-    .with_env_var("GEMINI_API_KEY", "sk-proxy")
+    // No base URLs: /usr/local/bin/run starts the edge in this container and
+    // points the agent at 127.0.0.1:4000 on all three protocol prefixes. The
+    // mock is the edge's UPSTREAM, and the agent's own SDK placeholders come
+    // from run-agent's scrubbed env — not from here.
+    .with_env_var("OPENAI_API_BASE", format!("http://{mock_host}:4000"))
+    .with_env_var("OPENAI_API_KEY", UPSTREAM_CREDENTIAL)
     .start()
     .await
     .unwrap_or_else(|e| {
@@ -280,6 +268,14 @@ async fn start_agent(
         )
     })
 }
+
+/// What EVAL_MODEL is set to, so the pin is unambiguous in the record: no agent
+/// would send this of its own accord.
+const PINNED_MODEL: &str = "smoke/pinned-by-the-edge";
+
+/// The upstream credential the edge injects. Distinctive so the "never in a
+/// record" assertion cannot pass by accident.
+const UPSTREAM_CREDENTIAL: &str = "smoke-upstream-credential";
 
 // ─── First-call detection ────────────────────────────────────────────
 
@@ -297,6 +293,74 @@ async fn await_first_call(replay: &ContainerAsync<GenericImage>, timeout: Durati
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     false
+}
+
+/// Read the edge's record. One JSON line per call, written as each completes,
+/// so this is polled rather than read once.
+async fn await_records(output_dir: &Path, timeout: Duration) -> Vec<serde_json::Value> {
+    let path = output_dir.join("model/calls.jsonl");
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Ok(raw) = std::fs::read_to_string(&path) {
+            let rows: Vec<serde_json::Value> = raw
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| serde_json::from_str(l).expect("edge wrote a malformed record"))
+                .collect();
+            if !rows.is_empty() {
+                return rows;
+            }
+        }
+        if Instant::now() >= deadline {
+            return Vec::new();
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// The two properties the edge exists for (.agents/edge/RULES.md): it rerouted
+/// the call to EVAL_MODEL (rules 2, 3) and it wrote the exchange down (6-9).
+async fn assert_edge_rerouted_and_recorded(agent: &str, output_dir: &Path) {
+    let rows = await_records(output_dir, FIRST_CALL_TIMEOUT).await;
+    assert!(
+        !rows.is_empty(),
+        "{agent} reached the LLM but the edge wrote no record to \
+         /output/model/calls.jsonl — capture is not optional (edge rule 10)"
+    );
+
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(
+            row["model"].as_str(),
+            Some(PINNED_MODEL),
+            "{agent} call {i}: the edge recorded model={:?}, so EVAL_MODEL was not \
+             the model authority (edge rule 2)",
+            row["model"]
+        );
+        assert!(
+            row["status"].as_i64().unwrap_or(0) > 0,
+            "{agent} call {i}: no response status recorded (edge rule 7)"
+        );
+    }
+
+    // Not every record carries a body: an SDK pointed at .../anthropic probes
+    // the bare prefix first. What must hold is that the real call was captured
+    // verbatim — a request that still parses as the JSON the agent sent.
+    let captured = rows.iter().any(|row| {
+        serde_json::from_str::<serde_json::Value>(row["request"].as_str().unwrap_or_default())
+            .is_ok_and(|body| body.get("model").is_some())
+    });
+    assert!(
+        captured,
+        "{agent}: no record carries the request the agent actually sent \
+         (edge rule 6); recorded {} call(s)",
+        rows.len()
+    );
+
+    let raw = std::fs::read_to_string(output_dir.join("model/calls.jsonl")).unwrap_or_default();
+    assert!(
+        !raw.contains(UPSTREAM_CREDENTIAL),
+        "{agent}: the upstream credential reached the record (edge rule 9)"
+    );
 }
 
 async fn assert_agent_calls_llm(agent: &str) {
@@ -365,6 +429,8 @@ async fn assert_agent_calls_llm(agent: &str) {
             String::from_utf8_lossy(&agent_stderr),
         );
     }
+
+    assert_edge_rerouted_and_recorded(agent, output_dir.path()).await;
 }
 
 // ─── Per-agent test instantiation ───────────────────────────────────
