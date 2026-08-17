@@ -53,5 +53,9 @@ name = "gateways"
 path = "gateways/test.rs"
 
 [[test]]
+name = "uid"
+path = "uid/test.rs"
+
+[[test]]
 name = "translation"
 path = "gateways/translation.rs"

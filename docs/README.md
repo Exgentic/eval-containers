@@ -45,3 +45,4 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 - [CLI](reference/cli.md) — `eval-containers` commands and flags
 - [Environment variables](reference/env-vars.md) — the `EVAL_*` namespace
 - [Chart values](reference/chart-values.md) — `containers/benchmarks/_chart` values
+- [Platform postures](reference/platform-postures.md) — what an eval image demands of a host, and which clouds grant it
