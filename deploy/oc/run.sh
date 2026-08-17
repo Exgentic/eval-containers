@@ -68,7 +68,16 @@ if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
 fi
 
 if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}";
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"; fi
+else
+  # $JOB doubles as the Helm release name (positional arg to `helm template`),
+  # which Helm validates as a DNS-1123-ish label before the chart even
+  # renders — a raw per-task task id with `_` (SWE-bench's
+  # sympy__sympy-24066) fails that check outright, independent of the
+  # chart's own metadata.name sanitization. SUB keeps the real $TASK (the PVC
+  # output path); only $JOB is sanitized.
+  SAFE_TASK="$(echo "$TASK" | tr '_' '-')"
+  JOB="${BENCHMARK}-${AGENT}-task-${SAFE_TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"
+fi
 
 [[ -z "$EVAL_MODEL" ]] && EVAL_MODEL="openai/azure/$(echo "$MODEL" | sed 's/--bifrost//;s/--litellm//;s/--portkey//')"
 # flatImages=true → the chart composes flat ImageStream refs for the OC registry.
