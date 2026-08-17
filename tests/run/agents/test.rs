@@ -250,7 +250,12 @@ async fn start_agent(
     .with_env_var("EVAL_BENCHMARK", "agents-smoke")
     .with_env_var("EVAL_AGENT", agent)
     .with_env_var("EVAL_TASK_ID", "0")
+    // EVAL_MODEL is the handle the edge pins to; MODEL is what the agent and
+    // result.json see. Production splits them the same way (compose/runner.yaml)
+    // — collapsing them here made litellm-based agents try to *call* the pin
+    // target and never reach the LLM at all.
     .with_env_var("EVAL_MODEL", PINNED_MODEL)
+    .with_env_var("MODEL", "mock")
     // Cap the agent's own runtime so a hung agent doesn't keep
     // burning until the cargo timeout.
     .with_env_var("EVAL_TIMEOUT", "180")
@@ -346,10 +351,17 @@ async fn assert_edge_rerouted_and_recorded(agent: &str, output_dir: &Path) {
 
     // Not every record carries a body: an SDK pointed at .../anthropic probes
     // the bare prefix first. What must hold is that the real call was captured
-    // verbatim — a request that still parses as the JSON the agent sent.
+    // verbatim — a request that still parses as the JSON the agent sent. The
+    // Gemini wire names the model in the URL, so its body has no `model` key;
+    // there the payload itself is the evidence.
     let captured = rows.iter().any(|row| {
         serde_json::from_str::<serde_json::Value>(row["request"].as_str().unwrap_or_default())
-            .is_ok_and(|body| body.get("model").is_some())
+            .is_ok_and(|body| {
+                body.get("model").is_some()
+                    || body.get("contents").is_some()
+                    || body.get("messages").is_some()
+                    || body.get("input").is_some()
+            })
     });
     assert!(
         captured,
