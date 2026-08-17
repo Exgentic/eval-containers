@@ -50,6 +50,14 @@ local format validation rather than a call to Factory — but it gates the run
 either way. This is a vendor account requirement, not a bug, and the image is
 otherwise contract-complete: supply a real `FACTORY_API_KEY` and it runs.
 
+This blocks two rules, both for the same reason:
+
+- **Rule 18 (smoke test)** — the suite has no Factory credential, so the agent is
+  listed in [`broken.md`](../../../tests/run/agents/broken.md).
+- **Rule 17 (replay test)** — a replay fixture is a *recorded* trajectory, and
+  recording one requires a run that gets past this gate. The fixture lands with
+  the first keyed run.
+
 Note this also means the agent reaches Factory's servers for auth on a normal
 run, which is in tension with rule 9 (no agent internet). A benchmark using this
 agent must allow that egress.
