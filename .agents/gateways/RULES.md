@@ -86,24 +86,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 15. **Gateway image coords.** Gateway implementation images live at `<registry>/gateways/<flavor>:<tag>`. The flavor is a single token (no `--`). Tag is the version per the project's pin-by-default convention.
 
-16. **Model+gateway combo images are OPTIONAL convenience wrappers.** Pre-built `(model, gateway)` combos MAY be published at `<registry>/models/<model>--<gateway>:<tag>`, using the project's double-dash separator convention. The combo image's Dockerfile MUST be `FROM <registry>/gateways/<gateway>:<tag>` and MUST add nothing more than the config template (per rule 4) — no baked credentials, no baked model name, no other layers. The combo image is a packaging convenience so users don't have to mount the template themselves; it MUST NOT change runtime behavior compared to running the bare `gateways/<flavor>` image with the template mounted at the same path. The two deployment styles are equivalent contracts:
+16. **One combo per flavor — never per model.** Each gateway flavor publishes exactly one model image at `<registry>/models/<flavor>:<tag>`. Its Dockerfile MUST be `FROM <registry>/gateways/<flavor>:<tag>` and MUST add nothing more than the config template (per rule 4) — no baked credentials, no baked model name, no other layers. It MUST NOT change runtime behavior compared to running the bare `gateways/<flavor>` image with the template mounted at the same path; both MUST yield byte-identical routing for the same `EVAL_MODEL`. The framework MUST NOT publish per-model combo images (`models/<model>--<gateway>`, or any image naming a model) — in the framework, the model is runtime configuration (`EVAL_MODEL`), never an image. Downstream users MAY bake their own template-only derivation of a published `gateways/<flavor>` in their own registry (the non-default path, [models](../models/RULES.md) rule 1a); it MUST stay template-only and MUST NOT publish under the framework's namespaces.
 
-    ```
-    # Style A — combo image (preset template baked in)
-    docker run -e EVAL_MODEL=<provider>/<model> \
-               -e <upstream-creds> \
-               <registry>/models/<model>--<gateway>:<tag>
-
-    # Style B — bare gateway image (mount your own template)
-    docker run -e EVAL_MODEL=<provider>/<model> \
-               -e <upstream-creds> \
-               -v ./config.json.template:/opt/gateway/data/config.json.template \
-               <registry>/gateways/<gateway>:<tag>
-    ```
-
-    Both MUST yield byte-identical routing behavior for the same `EVAL_MODEL`. Style A is recommended for canonical/shared setups (the template is auditable in the repo); style B is for one-off experimentation.
-
-17. **Source layout mirrors registry.** `gateways/<flavor>/` in the repo holds the gateway implementation. `models/<model>--<gateway>/` holds the combo Dockerfile + per-model config files referenced by it. No other directories may publish under `gateways/` or `models/`.
+17. **Source layout mirrors registry.** `gateways/<flavor>/` in the repo holds the gateway implementation. `models/<flavor>/` holds that flavor's combo Dockerfile + config template (plus the sanctioned `models/replay` exception, [models](../models/RULES.md) rule 17). No other directories may publish under `gateways/` or `models/`.
 
 ### Independence and Composition
 
@@ -122,7 +107,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 ## References
 
 - [Top-level Rules](../RULES.md)
-- [Models](../models/RULES.md) — model-image conventions for pre-built (model, gateway) combos
+- [Models](../models/RULES.md) — model-image conventions for the per-flavor combos
 - [Benchmarks](../benchmarks/RULES.md)
 - [Compose / Repository](../compose/RULES.md)
 
@@ -136,3 +121,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-07-22 | Rules 2, 2b, 22 rewritten for the `EVAL_MODEL` (bare, opaque handle — never parsed) + optional `EVAL_MODEL_API` (wire protocol, `anthropic\|openai\|gemini`) model. |
 | 2026-07-29 | Rule 2b: three modes — `EVAL_MODEL` set ⇒ pin (default keeps the inbound wire so server tools survive), `EVAL_MODEL_API` overrides the wire, unset ⇒ passthrough. Rule 6 permits a header-injection shim (bifrost fronts Caddy to stamp the inbound wire — CEL can't see the path); rule 12 lists the shim config. |
 | 2026-07-30 | Rule 6: the shim binary+config MUST live under `/opt/gateway/` and be static (Caddy) — bifrost switched nginx→Caddy so the single-container `-standalone` bundle (one `COPY /opt/gateway`) actually boots the gateway (nginx at `/usr/sbin`, musl, silently broke every bundle). Guard: `tests/static/check.rs::gateway_shim_lives_under_opt_gateway`. |
+| 2026-08-09 | Rules 16–17 rewritten with the removal of per-model images: each flavor publishes exactly one combo at `models/<flavor>` (thin template wrapper over `gateways/<flavor>`); the framework no longer publishes per-model combos (`models/<model>--<gateway>`) — the model is runtime configuration. Downstream template-only derivations of a published `gateways/<flavor>` remain permitted (models rule 1a) as the explicit non-default path. |

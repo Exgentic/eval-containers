@@ -146,13 +146,15 @@ Validate: `eval-containers oracle <name> --task-id <task> --local` — gold MUST
 
 ## Non-default canonical (different model or agent)
 
-If a benchmark's canonical isn't `bifrost` × `claude-code`, override:
+If a benchmark's canonical isn't `bifrost` × `claude-code`, override. The model
+is always runtime configuration (`EVAL_MODEL`); the gateway image only picks
+the proxy flavor (`bifrost`/`litellm`/`portkey`):
 
 ```yaml
-# compose.yaml — add gateway image + EVAL_MODEL overrides
+# compose.yaml — add gateway flavor + EVAL_MODEL overrides
 services:
   gateway:
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/<other-combo>:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/<other-flavor>:latest
     environment:
       EVAL_MODEL: <other-provider/other-model>
   runner:
@@ -165,10 +167,9 @@ services:
 # k8s — pass the non-default axes as --set values (no manifest editing):
 helm template {name} benchmarks/_chart \
   --set benchmark={name} \
-  --set agent=<other-agent> \          # → runner image evals/{name}--<other-agent>
-  --set gatewayImage=<other-combo> \   # → gateway image models/<other-combo>
-  --set evalModel=<other-provider/other-model> \
-  --set model=<friendly-label>
+  --set agent=<other-agent> \           # → runner image evals/{name}--<other-agent>
+  --set gatewayImage=<other-flavor> \   # → gateway image models/<other-flavor>
+  --set model=<other-provider/other-model>
 ```
 
 ## Gotchas
