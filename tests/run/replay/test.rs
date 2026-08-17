@@ -30,23 +30,16 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 // Each test runs a full evaluation with a recorded trajectory fixture.
 // Fixtures are in tests/run/replay/fixtures/{benchmark}-0-{agent}.traces.jsonl
 
-/// What a replay run puts under test. Two modes, nothing else — split by scope,
-/// not by where replay happens to sit.
-#[derive(Clone, Copy, PartialEq)]
-enum ReplayMode {
-    /// **The lean eval image, in isolation.** `models/replay` stands in for the
-    /// gateway, so the eval container talks straight to a stub: only the
-    /// benchmark, agent, and verifier are exercised. No real gateway is built or
-    /// run — cheap, and the broad fixture matrix uses this.
-    Lean,
-    /// **The entire orchestration.** The *real* bifrost gateway and otelcol run,
-    /// with `models/replay` as the upstream the gateway dials (`OPENAI_API_BASE`).
-    /// Gateway boot, routing, request/response format translation, governance,
-    /// and OTel span emission are all exercised for real, driven offline by the
-    /// same fixtures. Strengthens replay rule 2 (indistinguishability): the eval
-    /// container talks to a genuinely real gateway, not a stand-in.
-    FullStack,
-}
+/// What a replay run puts under test. One shape, because there is only one:
+/// the edge runs inside the runner in every mode, so there is no gateway slot
+/// for a stub to occupy. `models/replay` is the edge's UPSTREAM, and every run
+/// exercises the real model path — boot, pin, forward, stream, record — driven
+/// offline by the fixtures. This is what the old Lean/FullStack split was
+/// approximating; it collapsed when the topology did.
+///
+/// The broad matrix (`replay_test!`) asserts the result. The full-stack entries
+/// (`replay_fullstack_test!`) add the assertions that need a faithful upstream:
+/// the edge's own record, and an agent that ran clean through it.
 
 /// Start a compose stack for a replay run. The benchmark compose, the recorded
 /// fixture, the per-mode overlay, and all env are *derived* from
@@ -57,31 +50,22 @@ enum ReplayMode {
 /// `with_wait(false)` disables compose's default `--wait` (which would time out
 /// on the one-shot runner); `with_wait_for_service("runner", WaitFor::Exit(_))`
 /// blocks until the runner finishes before we assert on `result.json`.
-async fn replay_compose(
-    benchmark: &str,
-    agent: &str,
-    task_id: &str,
-    mode: ReplayMode,
-) -> DockerCompose {
+async fn replay_compose(benchmark: &str, agent: &str, task_id: &str) -> DockerCompose {
     test_support::enter_repo_root();
     let cwd = std::env::current_dir().unwrap();
 
     // Derive everything from the axes: the benchmark compose, the recorded
-    // fixture (naming convention, replay/RULES.md rule 5), and the per-mode
-    // committed overlay. Both overlays layer on the benchmark's own compose.yaml
-    // (the same stack the published artifact runs, sidecars and all):
-    //   - Lean: `replay-lean.yaml` puts replay in the gateway slot (a stub).
-    //   - Full-stack: `replay-upstream.yaml` adds replay as the real gateway's
-    //     upstream; the gateway is pointed at it by `OPENAI_API_BASE`.
-    // A human runs the identical stack: `docker compose -f <compose> -f <overlay>`.
+    // fixture (naming convention, replay/RULES.md rule 5), and the one committed
+    // overlay. `replay-upstream.yaml` adds replay as the upstream the in-runner
+    // edge dials, pointed at by `OPENAI_API_BASE`, and layers on the benchmark's
+    // own compose.yaml — the same stack the published artifact runs, sidecars and
+    // all. A human runs the identical stack:
+    //   docker compose -f <benchmark>/compose.yaml -f replay-upstream.yaml
     let compose_file = cwd.join(format!("containers/benchmarks/{benchmark}/compose.yaml"));
     let fixture = cwd.join(format!(
         "tests/run/replay/fixtures/{benchmark}-{task_id}-{agent}.traces.jsonl"
     ));
-    let overlay = cwd.join(match mode {
-        ReplayMode::Lean => "tests/run/replay/replay-lean.yaml",
-        ReplayMode::FullStack => "tests/run/replay/replay-upstream.yaml",
-    });
+    let overlay = cwd.join("tests/run/replay/replay-upstream.yaml");
 
     // Bind the named `output` volume to `./output/{benchmark}/{task_id}/` so the
     // runner's `/output/task/result.json` lands on the host (compose/RULES.md
@@ -116,14 +100,9 @@ async fn replay_compose(
     // directly (EVAL_MODEL=replay); full-stack routes a real handle through bifrost
     // to the replay upstream (OPENAI_API_BASE). REPLAY_FIXTURE / REPLAY_OUTPUT are
     // what the committed overlays read.
-    let (model, label, api_base) = match mode {
-        ReplayMode::Lean => ("replay", "replay", "https://replay.test"),
-        ReplayMode::FullStack => (
-            "openai/azure/gpt-5.4",
-            "replay-fullstack",
-            "http://upstream:4000",
-        ),
-    };
+    // One handle, one upstream: the edge pins EVAL_MODEL and forwards to the
+    // replay server, which serves recorded turns regardless of the handle.
+    let (model, label, api_base) = ("openai/azure/gpt-5.4", "replay", "http://upstream:4000");
     let fixture_str = fixture.to_string_lossy().into_owned();
     let output_str = host_output.to_string_lossy().into_owned();
     for (key, val) in [
@@ -257,6 +236,8 @@ async fn bootstrap_core_bases() {
                 "test-exact-match",
                 "otel",
                 "gosu",
+                // Every eval image carries the edge now, so it is a base.
+                "edge",
                 "agent-base-node",
                 "agent-base-python",
                 "agent-base-rust",
@@ -303,37 +284,9 @@ async fn bootstrap_core_bases() {
 /// directly with `common::build_target_classic` (→ buildah → Rosetta), under a
 /// local-only registry so nothing stale is force-pulled. The eval inputs mirror the
 /// CLI's own `build eval` overrides for the lean combination.
-/// Build the real gateway (bifrost) for full-stack replay. The default replay
-/// mode swaps the gateway out entirely, so `bootstrap_core_bases` omits it; the
-/// full-stack mode dials it for real and therefore must build it. Runs once per
-/// process via its own `OnceCell` so pure lean runs never pay for it.
-static GATEWAY_BOOTSTRAPPED: OnceCell<()> = OnceCell::const_new();
 
-async fn bootstrap_gateway() {
-    GATEWAY_BOOTSTRAPPED
-        .get_or_init(|| async {
-            if common::classic_build() {
-                let reg = std::env::var("EVAL_REGISTRY")
-                    .unwrap_or_else(|_| common::LOCAL_REGISTRY.to_string());
-                let base_env = [("REGISTRY", reg.as_str())];
-                // model-bifrost FROMs gateway-bifrost; classic builds one target
-                // at a time, so build the base first.
-                common::build_target_classic("gateway-bifrost", &[], &base_env);
-                common::build_target_classic("model-bifrost", &[], &base_env);
-            } else {
-                // Bake builds the dependency closure (gateway-bifrost before
-                // model-bifrost) from the `contexts` blocks.
-                common::bake_targets(&["model-bifrost"]).await;
-            }
-        })
-        .await;
-}
-
-async fn ensure_images(benchmark: &str, agent: &str, mode: ReplayMode) {
+async fn ensure_images(benchmark: &str, agent: &str) {
     bootstrap_core_bases().await;
-    if mode == ReplayMode::FullStack {
-        bootstrap_gateway().await;
-    }
 
     if common::classic_build() {
         // Bases are built above; these add only the benchmark, agent, and lean eval
@@ -395,7 +348,7 @@ async fn ensure_images(benchmark: &str, agent: &str, mode: ReplayMode) {
     );
 }
 
-/// Lean replay test (`ReplayMode::Lean`): build the eval image, run it against a
+/// Replay test: build the eval image, run it against a
 /// replay stub in the gateway slot, verify the output contract. The cheap path
 /// the broad fixture matrix uses. A caller states each axis once; `replay_compose`
 /// derives the compose/fixture/overlay/env from them.
@@ -411,30 +364,32 @@ macro_rules! replay_test {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            ensure_images($benchmark, $agent, ReplayMode::Lean).await;
-            let _compose = replay_compose($benchmark, $agent, $task_id, ReplayMode::Lean).await;
+            ensure_images($benchmark, $agent).await;
+            let _compose = replay_compose($benchmark, $agent, $task_id).await;
             assert_result_valid($benchmark, $task_id);
         }
     };
 }
 
-/// Assert the real gateway emitted OTel `gen_ai` spans — the proof it booted,
-/// routed, and instrumented for real. Only exists in `ReplayMode::FullStack`;
-/// otelcol's `file` exporter writes the spans to the host-bound traces.jsonl.
-fn assert_gateway_traces(benchmark: &str, task_id: &str) {
-    let traces_path = Path::new("output")
+/// Assert the edge recorded the run — the proof the model path booted, pinned,
+/// forwarded and captured for real, and the replacement for the gateway's OTel
+/// spans now that the model service no longer emits any.
+fn assert_edge_recorded(benchmark: &str, task_id: &str) {
+    let path = Path::new("output")
         .join(benchmark)
         .join(task_id)
-        .join("traces.jsonl");
-    let traces = fs::read_to_string(&traces_path)
-        .unwrap_or_else(|e| panic!("traces.jsonl not readable at {traces_path:?}: {e}"));
+        .join("model")
+        .join("calls.jsonl");
+    let raw = fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("calls.jsonl not readable at {path:?}: {e}"));
+    let calls = raw.lines().filter(|l| !l.trim().is_empty()).count();
     assert!(
-        traces.contains("dock-gateway"),
-        "no dock-gateway service spans in {traces_path:?} — the real gateway did not emit OTel"
+        calls > 0,
+        "the edge wrote no call to {path:?} — the model path did not run, or did not record it"
     );
     assert!(
-        traces.contains("gen_ai."),
-        "no gen_ai semconv spans in {traces_path:?} — gateway ran but did not instrument the call"
+        raw.contains("\"model\":\"openai/azure/gpt-5.4\""),
+        "no record in {path:?} carries the pinned handle — EVAL_MODEL was not the model authority"
     );
 }
 
@@ -472,21 +427,19 @@ fn assert_agent_succeeded(benchmark: &str, task_id: &str) {
     }
 }
 
-/// Full-stack replay test: the real gateway runs and `models/replay` is its
-/// upstream (see `ReplayMode::FullStack`). Adds `assert_gateway_traces` and
-/// `assert_agent_succeeded` on top of the lean contract. `EVAL_MODEL` is a real
-/// handle bifrost routes on; the dummy `OPENAI_API_KEY` only satisfies
+/// Full-stack replay test: adds the assertions that need a faithful upstream —
+/// the edge's own record, and an agent that ran clean through it — on top of the
+/// shared result contract. The dummy `OPENAI_API_KEY` only satisfies
 /// interpolation (replay never auths).
 macro_rules! replay_fullstack_test {
     ($name:ident, $benchmark:literal, $agent:literal, $task_id:literal) => {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            ensure_images($benchmark, $agent, ReplayMode::FullStack).await;
-            let _compose =
-                replay_compose($benchmark, $agent, $task_id, ReplayMode::FullStack).await;
+            ensure_images($benchmark, $agent).await;
+            let _compose = replay_compose($benchmark, $agent, $task_id).await;
             assert_result_valid($benchmark, $task_id);
-            assert_gateway_traces($benchmark, $task_id);
+            assert_edge_recorded($benchmark, $task_id);
             assert_agent_succeeded($benchmark, $task_id);
         }
     };

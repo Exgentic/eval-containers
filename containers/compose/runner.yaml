@@ -33,7 +33,10 @@ services:
       # is what keeps the per-benchmark `oci://…/eval-<benchmark>` artifact
       # self-describing without the consumer repeating the benchmark.
       EVAL_AGENT: ${EVAL_AGENT:-claude-code}
-      EVAL_MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
+      # EVAL_MODEL is the handle the edge pins to (edge rule 2), not a label.
+      # The human-readable label for result.json stays in MODEL below, which
+      # write-result prefers — so the report reads the same as before.
+      EVAL_MODEL: ${EVAL_MODEL}
       EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-300}
       # Optional; the agent's entrypoint applies it (empty → agent default).

@@ -115,7 +115,9 @@ spec:
             # run works regardless of which internal path produces result.json.
             - { name: EVAL_BENCHMARK,              value: {{ $v.benchmark | quote }} }
             - { name: EVAL_AGENT,                  value: {{ $v.agent | quote }} }
-            - { name: EVAL_MODEL,                  value: {{ include "eval.modelLabel" $v | quote }} }
+            # The handle the edge pins to (edge rule 2). The label for
+            # result.json is MODEL below, which write-result prefers.
+            - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
             - { name: EVAL_TASK_ID,                value: {{ $v.task | quote }} }
             - { name: EVAL_TIMEOUT,                value: {{ $v.timeout | quote }} }
             - { name: BENCHMARK,                   value: {{ $v.benchmark | quote }} }
