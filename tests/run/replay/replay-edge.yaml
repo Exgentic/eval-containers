@@ -1,0 +1,26 @@
+# Replay overlay for a fixture the edge recorded itself (`*.calls.jsonl`).
+#
+#   REPLAY_FIXTURE=… REPLAY_OUTPUT=… \
+#     docker compose -f <benchmark>/compose.yaml -f replay-edge.yaml up
+#
+# There is no upstream service: the edge already runs inside the runner, and
+# EDGE_REPLAY makes it serve the recorded calls instead of forwarding them. A
+# replay run is therefore the runner alone — the same single container a live
+# run uses, with its own record played back into it.
+#
+# The older `*.traces.jsonl` fixtures keep using replay-upstream.yaml, which
+# needs models/replay to reconstruct wire responses from OTel spans.
+services:
+  runner:
+    environment:
+      EDGE_REPLAY: /fixture/calls.jsonl
+    volumes:
+      - ${REPLAY_FIXTURE:?}:/fixture/calls.jsonl:ro
+
+volumes:
+  output:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${REPLAY_OUTPUT:?}

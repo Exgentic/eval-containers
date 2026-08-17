@@ -760,3 +760,34 @@ func TestRequestAtTheLimitStillGoesThrough(t *testing.T) {
 		t.Errorf("upstream saw %d requests, want 1", len(*bodsReqs))
 	}
 }
+
+// A replayed run must leave a record too (rule 10): it captures the request the
+// agent sent this time against the response the fixture served.
+func TestReplayRecordsWhatItServed(t *testing.T) {
+	dir := t.TempDir()
+	prev := out
+	out = filepath.Join(dir, "calls.jsonl")
+	defer func() { out = prev }()
+
+	r := &replayer{turns: []call{{Status: 200, Response: `{"ok":true}`, Model: "azure/gpt-5.4"}}}
+	srv := httptest.NewServer(http.HandlerFunc(r.serve))
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/anthropic/v1/messages", "application/json",
+		strings.NewReader(`{"model":"placeholder","messages":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+
+	rows := awaitRecords(t, 1)
+	if rows[0].Wire != "anthropic" {
+		t.Errorf("replay recorded wire %q, want anthropic", rows[0].Wire)
+	}
+	if !strings.Contains(rows[0].Request, "placeholder") {
+		t.Errorf("replay lost the request the agent sent: %q", rows[0].Request)
+	}
+	if rows[0].Response != `{"ok":true}` {
+		t.Errorf("replay recorded response %q, want what it served", rows[0].Response)
+	}
+}

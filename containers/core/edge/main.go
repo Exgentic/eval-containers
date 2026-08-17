@@ -378,7 +378,9 @@ func (r *replayer) next() (call, bool) {
 }
 
 func (r *replayer) serve(w http.ResponseWriter, req *http.Request) {
-	_, _ = io.Copy(io.Discard, req.Body)
+	start := time.Now()
+	wire, _ := wireFor(req.URL.Path)
+	agentBody, _ := io.ReadAll(io.LimitReader(req.Body, int64(maxRequest)+1))
 	c, ok := r.next()
 	if !ok {
 		http.Error(w, `{"error":{"type":"empty_fixture","message":"no recorded calls to replay"}}`, http.StatusInternalServerError)
@@ -417,6 +419,17 @@ func (r *replayer) serve(w http.ResponseWriter, req *http.Request) {
 			flusher.Flush()
 		}
 	}
+
+	// Capture is unconditional (rule 10): a replayed run records what it served,
+	// against the request this agent actually sent — so a replay is as
+	// inspectable as the run it came from, and drift shows up as a diff.
+	served := c
+	served.Path, served.Wire = req.URL.Path, wire
+	served.StartUnix = float64(start.UnixNano()) / 1e9
+	served.Headers = safeHeaders(req.Header)
+	served.Request, served.Truncated = clip(agentBody)
+	served.TotalMs = msSince(start)
+	record(served)
 }
 
 // probeHealth is the readiness probe's exit code: 0 when the edge answers on

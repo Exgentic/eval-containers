@@ -55,17 +55,32 @@ async fn replay_compose(benchmark: &str, agent: &str, task_id: &str) -> DockerCo
     let cwd = std::env::current_dir().unwrap();
 
     // Derive everything from the axes: the benchmark compose, the recorded
-    // fixture (naming convention, replay/RULES.md rule 5), and the one committed
-    // overlay. `replay-upstream.yaml` adds replay as the upstream the in-runner
-    // edge dials, pointed at by `OPENAI_API_BASE`, and layers on the benchmark's
-    // own compose.yaml — the same stack the published artifact runs, sidecars and
-    // all. A human runs the identical stack:
-    //   docker compose -f <benchmark>/compose.yaml -f replay-upstream.yaml
+    // fixture (naming convention, replay/RULES.md rule 5), and the overlay its
+    // format selects (below). Both layer on the benchmark's own compose.yaml —
+    // the same stack the published artifact runs. A human runs the identical
+    // stack: docker compose -f <benchmark>/compose.yaml -f <overlay>
     let compose_file = cwd.join(format!("containers/benchmarks/{benchmark}/compose.yaml"));
-    let fixture = cwd.join(format!(
-        "tests/run/replay/fixtures/{benchmark}-{task_id}-{agent}.traces.jsonl"
+
+    // Two fixture formats, and the overlay follows the one on disk. A
+    // `*.calls.jsonl` was recorded by the edge itself, so the edge replays it
+    // in-runner with no upstream at all. A `*.traces.jsonl` predates the edge
+    // and needs models/replay to reconstruct wire responses from OTel spans.
+    // New fixtures land in the first form; the corpus migrates as it is
+    // re-recorded, with no flag day.
+    let recorded = cwd.join(format!(
+        "tests/run/replay/fixtures/{benchmark}-{task_id}-{agent}.calls.jsonl"
     ));
-    let overlay = cwd.join("tests/run/replay/replay-upstream.yaml");
+    let (fixture, overlay_name) = if recorded.exists() {
+        (recorded, "tests/run/replay/replay-edge.yaml")
+    } else {
+        (
+            cwd.join(format!(
+                "tests/run/replay/fixtures/{benchmark}-{task_id}-{agent}.traces.jsonl"
+            )),
+            "tests/run/replay/replay-upstream.yaml",
+        )
+    };
+    let overlay = cwd.join(overlay_name);
 
     // Bind the named `output` volume to `./output/{benchmark}/{task_id}/` so the
     // runner's `/output/task/result.json` lands on the host (compose/RULES.md
