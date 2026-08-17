@@ -19,7 +19,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
 # self-contained under /opt/gateway/ — combination.Dockerfile only has
 # to COPY one path and gets the binary, the venv, and the config.
 #
-# litellm 1.89.1 (same as core/litellm) + the same transitive-dep CVE
+# litellm 1.89.1 + the transitive-dep CVE
 # force-patches, applied in a second pass that overrides litellm's caps
 # (cryptography 48.0.1 is past its <47 ceiling):
 #   starlette CVE-2026-48818/54283 · python-multipart CVE-2026-24486/42561/53539

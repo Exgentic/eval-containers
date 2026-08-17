@@ -82,7 +82,7 @@ Parent: [../RULES.md](../RULES.md)
 ## Core image dependency
 
 10. **Core images MUST be available.** Replay's `ensure_images()` MUST
-    rebuild `core/entrypoint`, `core/test-exact-match`, `core/litellm`,
-    and `models/replay` before any replay test runs. The build sweep's
+    rebuild `core/entrypoint`, `core/test-exact-match`, and
+    `models/replay` before any replay test runs. The build sweep's
     `ImageGuard::Drop` deletes them after a prior sweep, so replay
     cannot assume they exist.

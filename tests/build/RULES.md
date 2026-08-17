@@ -20,7 +20,7 @@ Parent: [../RULES.md](../RULES.md)
    fails with `no space left on device`.
 
 3. **Core images bootstrap first.** Benchmarks `COPY --from=` the core
-   images (`core/entrypoint`, `core/test-exact-match`, `core/litellm`,
+   images (`core/entrypoint`, `core/test-exact-match`,
    `core/llm-bridge`). The sweep MUST build these first, otherwise
    every benchmark build fails at its first `COPY --from=` step.
 

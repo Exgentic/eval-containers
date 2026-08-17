@@ -100,7 +100,7 @@ pub struct RunArgs {
     model_tag: Option<String>,
 
     // NOTE: upstream versions (benchmark dataset revision, agent CLI version,
-    // litellm version) are a BUILD-time axis (RULES.md principle 9): pinned via
+    // gateway version) are a BUILD-time axis (RULES.md principle 9): pinned via
     // `ARG *_VERSION` in each image and overridden at `build` time, not here.
     // There is no runtime override — the running version is whatever the image
     // was built with, recorded in its label.
@@ -109,7 +109,7 @@ pub struct RunArgs {
     timeout: Option<u32>,
 
     /// Hard cap on model spend in USD for this run (maps to
-    /// $EVAL_MODEL_MAX_BUDGET). The litellm proxy enforces it and
+    /// $EVAL_MODEL_MAX_BUDGET). The gateway enforces it and
     /// returns an error once spend crosses the cap, which crashes
     /// the agent's next request. Default: $1.
     #[arg(long)]

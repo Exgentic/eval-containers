@@ -1,16 +1,15 @@
-# Use (or build) a model
+# Use (or add) a model
 
 *Guide · for everyone · the canonical rules are [`.agents/models/RULES.md`](../../.agents/models/RULES.md).*
 
-The model is a **runtime** axis, and **using one never requires a build**. Two
-paths — the generic gateway is the default; pinned per-model images are an
-opt-in. You only build when you *author* one.
+The model is a **runtime** axis: one shared gateway image routes any model, and
+**using a model never requires a build**. There are no per-model images — the
+only build case is authoring a new gateway *flavor*.
 
-## Generic gateway (default) — any model, zero build
+## Any model, zero build
 
-The default gateway routes whatever `EVAL_MODEL=<provider>/<model>` you set to
-that provider, so any [LiteLLM-supported model](https://docs.litellm.ai/docs/providers)
-works with no per-model image:
+The shared gateway routes whatever `EVAL_MODEL=<provider>/<model>` you set to
+that provider, so any model works with no new image:
 
 ```bash
 echo "OPENAI_API_KEY=sk-..." > .env
@@ -18,35 +17,51 @@ eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4
 # or --model anthropic/claude-sonnet-4-5, gemini/gemini-2.5-pro, openai/azure/<deployment>, …
 ```
 
-`EVAL_MODEL` must be `<provider>/<model>` form — the generic gateway errors on a
-bare name or an empty value (no silent default). Pick the proxy backend with
-`EVAL_GATEWAY_IMAGE` (default `bifrost`; `litellm` and `portkey` also ship).
-
-## Pinned per-model image — a shared, custom artifact (still zero build)
-
-A per-model image bakes one model plus its config (cost rates, endpoint,
-params). It's a **named, versioned artifact** teams share — "run it against
-`models/gpt-5.4`" gives everyone the exact same pinned setup, which is the point
-for cross-team reproducibility and per-model customization. Use a published one
-with no build and no `EVAL_MODEL` (the model is baked):
-
-```bash
-EVAL_GATEWAY_IMAGE=gpt-5.4 eval-containers run aime --task-id 0 --agent codex
-```
+`EVAL_MODEL` must be `<provider>/<model>` form — the gateway errors on a
+bare name or an empty value (no silent default). Pick the proxy flavor with
+`EVAL_GATEWAY_IMAGE` (default `bifrost`; `litellm` and `portkey` also ship) —
+the flavor changes *how* requests are proxied, never *which* model runs.
 
 The gateway holds the real provider key; the runner only ever sees the proxy —
 see [Isolation & gateways](../concepts/isolation-and-gateways.md).
 
-## Build a model image (the only build case)
+## Custom gateway config (advanced, non-default)
 
-You build + publish a `containers/models/<name>` image only to **author** one —
-either a new pinned per-model artifact, or a new generic backend beside
-`bifrost`/`litellm`/`portkey`. Then:
+If your team needs a shared, custom-configured gateway — a fixed corporate
+endpoint, custom cost rates, an alias table — that is a **downstream artifact
+you own**, not a framework image (models rule 1a). Two equivalent styles, both
+selected through the standard seams:
 
-1. **Read the rules** — [`.agents/models/RULES.md`](../../.agents/models/RULES.md)
-   (rule 1: the default is a generic runtime gateway; a pinned image is a
-   deliberate option; rules 4–7: key isolation + tamper-proof logging).
-2. **Honor the version axes** — pin a reproducible LiteLLM version, expose
-   `EVAL_LITELLM_VERSION` (see [Environment variables](../reference/env-vars.md)).
+```bash
+# Style A — mount your template on the published gateway image
+docker run -e EVAL_MODEL=<provider>/<model> -e <provider-creds> \
+  -v ./config.yaml.template:/opt/gateway/config.yaml.template \
+  ghcr.io/exgentic/gateways/litellm:latest
+```
+
+```dockerfile
+# Style B — bake it in YOUR registry: template-only over a published flavor
+FROM ghcr.io/exgentic/gateways/litellm:latest
+COPY config.yaml.template /opt/gateway/config.yaml.template
+```
+
+Publish style B under your own registry (e.g. `ghcr.io/<you>/models/<name>`)
+and select it with `EVAL_REGISTRY=ghcr.io/<you> EVAL_GATEWAY_IMAGE=<name>`
+(compose) or `--set gatewayImageRef=<full-ref>` (k8s). The image must stay
+template-only — same routing as the bare gateway with the template mounted.
+Custom images never live in this repo or its registry: the framework's default
+stays one shared gateway per flavor.
+
+## Add a gateway flavor (the only build case)
+
+You build + publish an image only to **author a new gateway flavor** beside
+`bifrost`/`litellm`/`portkey` — never for a model. Then:
+
+1. **Read the rules** — [`.agents/gateways/RULES.md`](../../.agents/gateways/RULES.md)
+   (provider-agnostic, `EVAL_MODEL` selected at runtime) and
+   [`.agents/models/RULES.md`](../../.agents/models/RULES.md)
+   (rule 1: no per-model images; rules 4–7: key isolation + tamper-proof logging).
+2. **Ship the pair** — the implementation at `containers/gateways/<flavor>/` and
+   its thin combo at `containers/models/<flavor>/` (gateways rules 16–17).
 3. **Open the PR** with the
    [model PR template](../../.github/PULL_REQUEST_TEMPLATE/model.md).

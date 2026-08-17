@@ -14,8 +14,6 @@
 #   - todo_string_literal   a non-comment instruction with a quoted "TODO" / 'TODO'
 #   - from_arg_not_global   a FROM interpolates an ARG not declared in the global scope
 #   - agent_missing_version_arg             agent image with no ARG AGENT_VERSION
-#   - model_missing_litellm_version_label   model image with no LABEL eval.model.litellm_version
-#   - model_missing_litellm_version_default model image with no ENV EVAL_LITELLM_VERSION_DEFAULT
 # warn  (yellow):
 #   - upstream_base_unpinned   eval.benchmark.upstream_base ends :latest, or has no tag/digest
 #   - phantom_pip_uninstall    a RUN does `pip uninstall` with no `pip install` on it
@@ -83,8 +81,6 @@ deny contains msg if {
 
 # ── type classification (eval.type label, reusing main.label_value) ──
 is_agent if main.label_value("eval.type") == `"agent"`
-
-is_model if main.label_value("eval.type") == `"model"`
 
 # ── missing_dock_type (red) ─────────────────────────────────────────
 # A benchmarks/agents/models Dockerfile MUST declare `LABEL eval.type=`. (Rust:
@@ -214,42 +210,6 @@ deny contains msg if {
 	is_agent
 	not has_agent_version_arg
 	msg := "agent Dockerfile is missing `ARG AGENT_VERSION` (dockerfile_inspection agent_missing_version_arg, RULES.md 9)"
-}
-
-# ── model_missing_litellm_version_{label,default} (red, type-gated) ─
-# A model image that actually wraps the LiteLLM proxy MUST record the version on
-# both axes: LABEL eval.model.litellm_version= and ENV EVAL_LITELLM_VERSION_DEFAULT=.
-# Exempt: models/replay (its own minimal server, no litellm) and gateway-flavor
-# models (LABEL gateway.kind=, thin wrappers over the gateways). Type-gated by
-# is_model.
-is_replay_model if data.params.dir == "replay"
-
-is_gateway_flavor_model if main.label_keys["gateway.kind"]
-
-litellm_model if {
-	is_model
-	not is_replay_model
-	not is_gateway_flavor_model
-}
-
-# ENV keys present anywhere (ENV packs as flat (key, value, "=") triples like LABEL).
-env_keys contains key if {
-	some instr in input
-	instr.Cmd == "env"
-	some idx, key in instr.Value
-	idx % 3 == 0
-}
-
-deny contains msg if {
-	litellm_model
-	not main.label_keys["eval.model.litellm_version"]
-	msg := "model Dockerfile is missing LABEL eval.model.litellm_version (dockerfile_inspection model_missing_litellm_version_label)"
-}
-
-deny contains msg if {
-	litellm_model
-	not env_keys["EVAL_LITELLM_VERSION_DEFAULT"]
-	msg := "model Dockerfile is missing ENV EVAL_LITELLM_VERSION_DEFAULT (dockerfile_inspection model_missing_litellm_version_default)"
 }
 
 # ── upstream_base_unpinned (yellow) ─────────────────────────────────

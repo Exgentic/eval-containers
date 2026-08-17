@@ -30,7 +30,8 @@ pub fn agent_image(registry: &str, agent: &str, tag: &str) -> String {
     format!("{registry}/agents/{agent}:{tag}")
 }
 
-/// `{registry}/models/<model>:<tag>` — the per-model gateway image.
+/// `{registry}/models/<name>:<tag>` — the shared model-gateway image
+/// (a gateway flavor: bifrost/litellm/portkey, or replay).
 pub fn model_image(registry: &str, model: &str, tag: &str) -> String {
     format!("{registry}/models/{model}:{tag}")
 }

@@ -3,7 +3,7 @@
 # then assert on the PVC output (result written, agent exit 0, gen_ai traces).
 # Exits non-zero on the first failed check.
 #
-#   ./oc/test.sh --benchmark aime --agent codex --model bifrost
+#   ./oc/test.sh --benchmark aime --agent codex --model openai/gpt-5.4
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"
@@ -13,7 +13,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
   --model) MODEL="$2"; shift 2;; --task) TASK="$2"; shift 2;;
   --namespace) NAMESPACE="$2"; PASS_ARGS+=(--namespace "$2"); shift 2;;
-  --eval-model) PASS_ARGS+=(--eval-model "$2"); shift 2;;
+  --gateway) PASS_ARGS+=(--gateway "$2"); shift 2;;
   --pvc) PASS_ARGS+=(--pvc "$2"); shift 2;;
   --repo-dir) PASS_ARGS+=(--repo-dir "$2"); shift 2;;
   --rebuild) PASS_ARGS+=(--rebuild); shift;;
@@ -22,13 +22,14 @@ while [[ $# -gt 0 ]]; do case "$1" in
   *) echo "Unknown argument: $1" >&2; exit 1;;
 esac; done
 [[ -z "$BENCHMARK" || -z "$AGENT" || -z "$MODEL" ]] && {
-  echo "error: --benchmark, --agent and --model are required" >&2; exit 1; }
+  echo "error: --benchmark, --agent and --model (<provider>/<model>) are required" >&2; exit 1; }
 pass() { echo "[test] PASS: $*"; }
 fail() { echo "[test] FAIL: $*" >&2; exit 1; }
 
 # Isolated run: job <b>-<a>-task-<t><suffix>, results under runs<suffix>/.
+# Result paths use the clean model label (last handle segment), same as run.sh.
 JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"
-RESULT="/data/runs${SUFFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"
+RESULT="/data/runs${SUFFIX}/${BENCHMARK}/${AGENT}/${MODEL##*/}/${TASK}/${JOB}"
 read_file() { oc exec eval-reader -n "$NAMESPACE" -- cat "$1" 2>/dev/null || true; }
 
 echo "[test] running $BENCHMARK/$AGENT/$MODEL task=$TASK (isolated $SUFFIX) …"

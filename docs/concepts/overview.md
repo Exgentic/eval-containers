@@ -50,7 +50,8 @@ Every image has a reproducible default and two independent version knobs:
 - **Container version** — *which image to pull* — set by the image **tag**
   (`EVAL_BENCHMARK_TAG`, `EVAL_AGENT_TAG`, `EVAL_MODEL_TAG`).
 - **Internal version** — *what runs inside* — set at runtime
-  (`EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_LITELLM_VERSION`).
+  (`EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`; the model gateway's proxy
+  version is pinned at build time instead).
 
 Casual users never touch these; power users pin. Full list in
 [Environment variables](../reference/env-vars.md).

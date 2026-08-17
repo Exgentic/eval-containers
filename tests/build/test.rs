@@ -859,7 +859,7 @@ fn dockerfile_bake_alignment() {
         let art = dir.file_name().and_then(|s| s.to_str()).unwrap_or("");
         let expected_target = match cat {
             // Leaf core images: bare name. Other categories: <cat>-<name>
-            // (gateways included — a bare `litellm` collides with core/litellm).
+            // (gateways included — a bare `litellm` collides with models/litellm).
             "core" => art.to_string(),
             "agents" => format!("agent-{art}"),
             "benchmarks" => format!("benchmark-{art}"),

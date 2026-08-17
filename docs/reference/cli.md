@@ -51,7 +51,6 @@ overrides the env var.
 | `--model-tag <tag>` | `EVAL_MODEL_TAG` | image tag |
 | `--benchmark-version <v>` | `EVAL_BENCHMARK_VERSION` | dataset revision inside the image |
 | `--agent-version <v>` | `EVAL_AGENT_VERSION` | upstream CLI version inside the image |
-| `--litellm-version <v>` | `EVAL_LITELLM_VERSION` | LiteLLM version inside the image |
 | `--timeout <secs>` | `EVAL_TIMEOUT` | default `300` |
 | `--max-budget <usd>` | `EVAL_MODEL_MAX_BUDGET` | hard spend cap; default `$1` |
 | `--local` | — | use in-repo `containers/benchmarks/<name>/` instead of the registry |

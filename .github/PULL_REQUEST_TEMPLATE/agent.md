@@ -71,7 +71,7 @@ eval-containers run aime --agent <name> --model openai/gpt-5.4 --task-id 0 --loc
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty, has real LLM calls
 - [ ] `output/aime/0/task/result.json` has a valid reward (0, 1, or fractional)
-- [ ] `output/aime/0/model/result.json` has `cost_usd > 0` — the proxy logged the call (if 0, investigate: your agent's SDK path may not trigger the logging callback, see `core/litellm/eval_logger.py`)
+- [ ] `output/aime/0/model/result.json` has `cost_usd > 0` — the proxy logged the call (if 0, investigate: your agent's SDK path may not trigger the logging callback, see `gateways/litellm/eval_logger.py`)
 
 Benchmark 2 (recommend `humaneval` for code generation or `gsm8k` for tool-less reasoning):
 
@@ -97,7 +97,7 @@ Our proxy exposes `/v1/messages` (Anthropic) and `/v1/chat/completions` (OpenAI)
 
 - [ ] My agent uses `/v1/messages` (Anthropic SDK)
 - [ ] My agent uses `/v1/chat/completions` (OpenAI Chat Completions)
-- [ ] My agent uses `/v1/responses` (OpenAI Responses API) — requires `core/litellm` pinned to v1.63.8+
+- [ ] My agent uses `/v1/responses` (OpenAI Responses API) — requires the `gateways/litellm` pin at v1.63.8+
 - [ ] My agent uses a different endpoint (specify): <!-- ... --> — document which LiteLLM version is required
 
 ### Known limitations
