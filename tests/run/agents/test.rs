@@ -145,11 +145,13 @@ async fn ensure_agent_image(agent: &str) {
         .get_or_init(|| async {
             // agents-smoke is FROM python:3.12-slim with an inline grader, so the
             // only bases this suite boots are the runtime images: gosu, otel,
-            // model-replay, and the agent-base-* the agents FROM. No
-            // benchmark-base-*, no llm-bridge.
+            // the edge (which every eval image now carries), model-replay, and
+            // the agent-base-* the agents FROM. No benchmark-base-*, no
+            // llm-bridge.
             common::bake_targets(&[
                 "otel",
                 "gosu",
+                "edge",
                 "model-replay",
                 "agent-base-node",
                 "agent-base-python",

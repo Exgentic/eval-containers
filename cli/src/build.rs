@@ -35,7 +35,7 @@ use eval_containers::bake;
 use eval_containers::naming::{
     OCI_SOURCE, REPO_URL, agent_bake_target, agent_image, benchmark_bake_target, benchmark_image,
     benchmark_task_image, compose_artifact, eval_task_image, eval_task_standalone_image,
-    flatten_imagestream, model_bake_target, model_image,
+    flatten_imagestream, model_bake_target,
 };
 use std::io::Write;
 use std::process::{Command, Stdio};
@@ -61,7 +61,7 @@ pub struct BuildArgs {
     /// (`--builder oc` only) Append a suffix to every output imagestream name.
     /// E.g. `--imagestream-suffix -test` writes to `aime-test`, `codex-test`,
     /// `aime-codex-test` instead of the production imagestreams. The eval
-    /// combination's BENCHMARK_IMAGE/AGENT_IMAGE/MODEL_IMAGE build args are
+    /// combination's BENCHMARK_IMAGE/AGENT_IMAGE build args are
     /// also rewritten to reference the suffixed imagestreams so the test build
     /// is fully isolated from production images.
     #[arg(long, global = true, default_value = "")]
@@ -200,7 +200,11 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             agent,
             task_id,
             agent_version,
-            model,
+            // No longer an input to an eval build: the bundle used to layer a
+            // gateway chosen by --model, and now inherits the edge from the lean
+            // base. The flag itself is left for a follow-up that can also drop
+            // --model-tag and the chart's gatewayImage values.
+            model: _,
             standalone,
             no_pull,
         } => {
@@ -227,7 +231,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             // eval-local context keys ("${BENCHMARK_IMAGE}" / "${AGENT_IMAGE}").
             // --set target.args.X only sets the build arg; setting as an env var also
             // populates the HCL variable used in the contexts map key.
-            let mut bake_env = vec![
+            let bake_env = vec![
                 ("EVAL_BENCHMARK", benchmark.clone()),
                 ("EVAL_AGENT", agent.clone()),
                 ("BENCHMARK_IMAGE", bench_tag.clone()),
@@ -267,11 +271,8 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             }
             // Standalone bundle: bake `eval-standalone`. It builds the lean `eval`
             // target in-graph (wired via the `eval-base` context in the bake file)
-            // and layers onto its output directly, so the only extra input here is
-            // the gateway — MODEL_IMAGE lives ONLY in the bundle.
-            let model_tag = model_image(registry, &model, &tag);
-            bake_env.push(("MODEL_IMAGE", model_tag.clone()));
-            overrides.push(format!("eval-standalone.args.MODEL_IMAGE={model_tag}"));
+            // and layers onto its output directly. It adds no gateway: the edge
+            // is already in the lean base, since every mode runs it in-container.
             // Per-task: override the shared-env default with the task-aware
             // standalone name, mirroring the lean `eval.tags` override above.
             if let Some(ref tid) = task_id {
