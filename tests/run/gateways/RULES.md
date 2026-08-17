@@ -68,9 +68,10 @@ Parent: [../RULES.md](../RULES.md)
    `/output/traces.jsonl` — the native OTLP/JSON trace that `models/replay`
    replays and the inspection rules read. litellm MUST additionally write
    `/output/result.json` (aggregated cost) and `/output/trajectory.jsonl`
-   (LiteLLM StandardLoggingPayload) via the `eval_logger` callback;
-   `trajectory.jsonl` is the legacy recording from which OTLP fixtures are
-   currently converted, until recording emits OTLP natively.
+   (LiteLLM StandardLoggingPayload) via the `eval_logger` callback. Both are
+   properties of the litellm image, which this suite boots directly; neither
+   feeds a fixture any more — fixtures are the edge's own record
+   ([verification/RULES.md](../../../.agents/verification/RULES.md) 10).
 
 8. **Stripped-component regression guards** — when a component is
    removed from a flavor (e.g. the bifrost sidecar that portkey used to

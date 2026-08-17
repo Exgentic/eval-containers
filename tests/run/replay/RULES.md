@@ -29,14 +29,14 @@ Parent: [../RULES.md](../RULES.md)
 ## Fixture lifecycle
 
 4. **Fixtures are immutable ground truth.** Files under
-   `tests/run/replay/fixtures/*.traces.jsonl` are PRODUCED by release
+   `tests/run/replay/fixtures/` are PRODUCED by release
    verification's live fleet sweep. Contributors MUST NOT hand-edit
    fixtures; the fixture is the record of what a specific
    (benchmark, task, agent, model) combination actually produced
    under a specific release tag.
 
-4a. **No live secrets or internal endpoints in a fixture.** A
-   `*.traces.jsonl` MUST NOT contain a live credential (API key, token,
+4a. **No live secrets or internal endpoints in a fixture.** A fixture
+   MUST NOT contain a live credential (API key, token,
    OAuth token, password) or an internal-only endpoint (e.g. a
    `*.vpc-int.res.ibm.com` gateway host). The live sweep (rule 4) captures the
    eval container's environment, so it MUST redact these at capture. The secret

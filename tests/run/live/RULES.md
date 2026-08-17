@@ -54,9 +54,8 @@ Parent: [../RULES.md](../RULES.md)
 
 9. **Every live run MUST pass the trajectory rule catalog.** After each
    run, the driver MUST invoke the inspection rule catalog
-   (`tests/static/task_inspection.rs`) against the run's OTLP
-   `traces.jsonl` — converted from the recorded `model/trajectory.jsonl`
-   until recording emits OTLP natively. Any red rule (refusal, max-tokens
+   (`tests/static/task_inspection.rs`) against the run's recorded
+   `model/calls.jsonl`. Any red rule (refusal, max-tokens
    truncation, no substantive output, wrong-answer format) blocks
    promotion of that fixture.
 
@@ -67,12 +66,12 @@ Parent: [../RULES.md](../RULES.md)
 
 ## Fixture promotion
 
-11. **Pass fixture → `tests/run/replay/fixtures/`.** Convert
-    `output/<bench>/<task>/model/trajectory.jsonl` to OTLP and write
-    `tests/run/replay/fixtures/<bench>-<task>-claude-code.traces.jsonl`
-    (once recording emits OTLP natively this is a plain copy), then add
-    an entry to `fixtures/provenance.json`. The promotion is a single
-    commit for auditability.
+11. **Pass fixture → `tests/run/replay/fixtures/`.** Copy
+    `output/<bench>/<task>/model/calls.jsonl` to
+    `tests/run/replay/fixtures/<bench>-<task>-claude-code.calls.jsonl`,
+    then add an entry to `fixtures/provenance.json`. The promotion is a
+    single commit for auditability. No conversion: the edge records the
+    exchange verbatim, and replays that same file.
 
 12. **Fail fixture → `known-broken.md`.** A run that fails an
     inspection rule is not promoted to fixtures. Instead, its failure
@@ -93,10 +92,10 @@ human or agent judgment until we get more mechanical coverage.
 ### A. Was the task actually delivered to the agent?
 
 13. **Task prompt reached the agent.** `task/input/problem.txt` exists
-    and is non-empty. `agent/stdout.log` or the first
-    `trajectory.jsonl` request contains the problem text verbatim (not
-    a truncated/mangled version). If the benchmark has attached files
-    (images, code, data), they MUST be referenced in the trajectory.
+    and is non-empty. `agent/stdout.log` or the first `calls.jsonl`
+    request contains the problem text verbatim (not a
+    truncated/mangled version). If the benchmark has attached files
+    (images, code, data), they MUST be referenced in the record.
 
 14. **Ground truth was NOT in the agent's context.**
     `task/input/answer.txt` exists (it's what `test.sh` compares
@@ -105,7 +104,7 @@ human or agent judgment until we get more mechanical coverage.
     the agent's final answer. A leaked answer invalidates the run.
 
 15. **System context matches the benchmark contract.** The first
-    request in `trajectory.jsonl` should include the system prompt the
+    request in `calls.jsonl` should include the system prompt the
     benchmark expected. For example, a code-generation benchmark
     should set a coding-appropriate system message; an MCQ benchmark
     should include the "print only the letter" instruction.
@@ -113,7 +112,7 @@ human or agent judgment until we get more mechanical coverage.
 ### B. Did the model actually engage with the task?
 
 16. **Non-empty substantive response.** At least one assistant message
-    in `trajectory.jsonl` has non-empty `content` (covered mechanically
+    in `calls.jsonl` has non-empty `content` (covered mechanically
     by `no_substantive_output` in task_inspection.rs).
 
 17. **No refusal.** The final assistant response is NOT a refusal or
