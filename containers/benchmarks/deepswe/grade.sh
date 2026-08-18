@@ -28,6 +28,13 @@ BASE="$(python3 -c 'import json;print(json.load(open("/tests/config.json"))["bas
 # 0 for a bookkeeping reason. If the agent already committed, this is a no-op.
 cd /app || { echo -1 > /logs/verifier/reward.txt; exit 6; }
 git config --global --add safe.directory /app
+# Drop crash/debug debris before staging. A Go binary dying under QEMU
+# (amd64-on-arm64) drops multi-MB `qemu_*.core` files into the CWD; `git add -A`
+# would sweep them into "agent work", producing a 32 MB model.patch of core dumps
+# (observed). They are not source and never part of a fix.
+find . -maxdepth 2 \( -name 'qemu_*.core' -o -name 'core.[0-9]*' \) \
+     -type f -delete 2>/dev/null || true
+
 if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
   git -c user.name=eval -c user.email=eval@local add -A 2>/dev/null
   git -c user.name=eval -c user.email=eval@local commit -q -m "agent work" 2>/dev/null

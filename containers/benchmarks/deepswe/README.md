@@ -88,6 +88,19 @@ helm template deepswe containers/benchmarks/_chart \
   --set task=fastapi-implicit-head-options --set agent=claude-code | kubectl apply -f -
 ```
 
+## Timeout — the most likely cause of a false zero
+
+Upstream allows the agent **5400s** (90 min) per task (`[agent].timeout_sec`), and
+the chart preset matches. Under-budgeting is silent and looks exactly like failure:
+the shared launcher kills the agent with **exit 124**, the verifier then grades a
+tree with no agent work, and `result.json` reports `reward: 0` — indistinguishable
+from an honest wrong answer. Observed locally with `EVAL_TIMEOUT=1500`: the agent
+worked the full 29 minutes, was killed at the limit, and scored 0.
+
+Check `agent/result.json` for `"exit_code": 124` before believing any zero. On
+emulated (arm64) hosts, allow *more* than 5400s — everything runs several times
+slower.
+
 ## Platform requirement
 
 **The upstream per-task base images are amd64-only.** `build.sh` pins
