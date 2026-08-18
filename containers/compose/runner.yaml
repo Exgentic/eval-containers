@@ -34,7 +34,13 @@ services:
       # is what keeps the per-benchmark `oci://…/eval-<benchmark>` artifact
       # self-describing without the consumer repeating the benchmark.
       EVAL_AGENT: ${EVAL_AGENT:-claude-code}
-      EVAL_MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
+      # The handle the edge pins to (edge rule 2). MODEL below keeps the
+      # human-readable label, which write-result prefers, so result.json is
+      # unchanged.
+      EVAL_MODEL: ${EVAL_MODEL}
+      # The edge's upstream: the gateway service, unchanged. The credential
+      # stays on the gateway — the runner only ever holds the placeholder.
+      OPENAI_API_BASE: http://gateway:4000
       EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-300}
       # Optional; the agent's entrypoint applies it (empty → agent default).

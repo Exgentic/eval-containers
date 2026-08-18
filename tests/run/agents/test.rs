@@ -251,7 +251,14 @@ async fn start_agent(
     .with_env_var("EVAL_BENCHMARK", "agents-smoke")
     .with_env_var("EVAL_AGENT", agent)
     .with_env_var("EVAL_TASK_ID", "0")
-    .with_env_var("EVAL_MODEL", "mock")
+    // EVAL_MODEL is the handle the edge pins to; MODEL is what the agent and
+    // result.json see. Production splits them the same way — collapsing them
+    // makes litellm-based agents try to *call* the pin target and never reach
+    // the LLM at all.
+    .with_env_var("EVAL_MODEL", PINNED_MODEL)
+    .with_env_var("MODEL", "mock")
+    // Distinctive so "never in a record" cannot pass by accident.
+    .with_env_var("OPENAI_API_KEY", UPSTREAM_CREDENTIAL)
     // Cap the agent's own runtime so a hung agent doesn't keep
     // burning until the cargo timeout.
     .with_env_var("EVAL_TIMEOUT", "180")
@@ -284,6 +291,13 @@ async fn start_agent(
     })
 }
 
+/// What EVAL_MODEL is set to, so the pin is unambiguous in the record: no agent
+/// would send this of its own accord.
+const PINNED_MODEL: &str = "smoke/pinned-by-the-edge";
+
+/// The upstream credential the edge injects toward the mock.
+const UPSTREAM_CREDENTIAL: &str = "smoke-upstream-credential";
+
 // ─── First-call detection ────────────────────────────────────────────
 
 /// Poll the mock's stderr for the first call marker. Replay's server
@@ -300,6 +314,78 @@ async fn await_first_call(replay: &ContainerAsync<GenericImage>, timeout: Durati
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
     false
+}
+
+/// The edge writes one JSON line per call as each completes, so this polls
+/// rather than reading once.
+async fn await_records(output_dir: &Path, timeout: Duration) -> Vec<serde_json::Value> {
+    let path = output_dir.join("model/calls.jsonl");
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Ok(raw) = std::fs::read_to_string(&path) {
+            let rows: Vec<serde_json::Value> = raw
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| serde_json::from_str(l).expect("edge wrote a malformed record"))
+                .collect();
+            if !rows.is_empty() {
+                return rows;
+            }
+        }
+        if Instant::now() >= deadline {
+            return Vec::new();
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
+/// Reaching the LLM is the weaker half. The edge exists to pin the model and
+/// write the exchange down (.agents/edge/RULES.md 2, 6-9), and neither shows up
+/// in a green agent run — so assert them from the record it left.
+async fn assert_edge_pinned_and_recorded(agent: &str, output_dir: &Path) {
+    let rows = await_records(output_dir, FIRST_CALL_TIMEOUT).await;
+    assert!(
+        !rows.is_empty(),
+        "{agent} reached the LLM but the edge wrote no record to \
+         /output/model/calls.jsonl"
+    );
+
+    for (i, row) in rows.iter().enumerate() {
+        assert_eq!(
+            row["model"].as_str(),
+            Some(PINNED_MODEL),
+            "{agent} call {i}: recorded model={:?} — EVAL_MODEL was not the model authority",
+            row["model"]
+        );
+        assert!(
+            row["status"].as_i64().unwrap_or(0) > 0,
+            "{agent} call {i}: no response status recorded"
+        );
+    }
+
+    // Not every record carries a body: an SDK pointed at .../anthropic probes
+    // the bare prefix first. And the Gemini wire names the model in the URL, so
+    // its body has no `model` key — accept any shape an agent actually sends.
+    let captured = rows.iter().any(|row| {
+        serde_json::from_str::<serde_json::Value>(row["request"].as_str().unwrap_or_default())
+            .is_ok_and(|body| {
+                body.get("model").is_some()
+                    || body.get("messages").is_some()
+                    || body.get("input").is_some()
+                    || body.get("contents").is_some()
+            })
+    });
+    assert!(
+        captured,
+        "{agent}: no record carries the request the agent actually sent; recorded {} call(s)",
+        rows.len()
+    );
+
+    let raw = std::fs::read_to_string(output_dir.join("model/calls.jsonl")).unwrap_or_default();
+    assert!(
+        !raw.contains(UPSTREAM_CREDENTIAL),
+        "{agent}: the upstream credential reached the record"
+    );
 }
 
 async fn assert_agent_calls_llm(agent: &str) {
@@ -368,6 +454,8 @@ async fn assert_agent_calls_llm(agent: &str) {
             String::from_utf8_lossy(&agent_stderr),
         );
     }
+
+    assert_edge_pinned_and_recorded(agent, output_dir.path()).await;
 }
 
 // ─── Per-agent test instantiation ───────────────────────────────────

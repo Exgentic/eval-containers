@@ -37,6 +37,8 @@ ARG BENCHMARK_IMAGE
 ARG AGENT_IMAGE
 ARG AGENT_VERSION
 ARG GOSU_IMAGE=ghcr.io/exgentic/core/gosu:latest
+# The edge records every LLM call the agent makes (.agents/edge/RULES.md).
+ARG EDGE_IMAGE=ghcr.io/exgentic/core/edge:latest
 
 # Named stages for the build-arg base images: buildx forbids variable
 # expansion in `COPY --from=` ("variable expansion is not supported for
@@ -45,6 +47,7 @@ ARG GOSU_IMAGE=ghcr.io/exgentic/core/gosu:latest
 # from the stage name. buildah accepts either form; this builds on both.
 FROM ${AGENT_IMAGE} AS agent
 FROM ${GOSU_IMAGE}  AS gosu
+FROM ${EDGE_IMAGE}  AS edge
 
 FROM ${BENCHMARK_IMAGE}
 
@@ -68,6 +71,11 @@ RUN AGENT_VERSION="${AGENT_VERSION:-$(cat /opt/agent/VERSION 2>/dev/null)}" \
 # agent. process-compose is NOT copied here — it is a single-container-only
 # orchestrator and ships only in the -standalone bundle.
 COPY --from=gosu /bundle/bin/gosu /usr/local/bin/gosu
+
+# Root-owned 0700: agent uid 1002 cannot traverse it, so the upstream
+# credential the edge holds is unreadable by the agent (RULES 5).
+COPY --from=edge /opt/edge /opt/edge
+RUN chmod 0700 /opt/edge
 
 # Ensure the agent user (uid 1002) and /home/agent exist so benchmarks that
 # ask the agent to write files there (e.g. AIME's answer.txt) work correctly.

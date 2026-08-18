@@ -6,9 +6,9 @@
 #
 #   set (compose / k8s "runner" mode)  → the lean eval base.
 #       otelcol + gateway are sibling containers/pods the orchestrator already
-#       started and health-gated, so by the time this container runs the agent
-#       can reach them immediately. There is nothing to orchestrate in-container:
-#       the three phases run as a plain shell sequence — no process-compose.
+#       started and health-gated. The edge runs HERE, in front of the gateway,
+#       so the agent's calls are recorded verbatim; the three phases then run as
+#       a plain shell sequence — no process-compose.
 #
 #   unset (single-container mode)      → the -standalone bundle.
 #       otelcol + gateway run in-process, so process-compose brings up all five
@@ -59,6 +59,31 @@ date -u +%Y-%m-%dT%H:%M:%SZ > /output/agent/.started-at
 # whatever the agent produced — even on a timeout or crash — and a result.json
 # is always written.
 if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
+  # The edge sits between the agent and the gateway: it pins the model and
+  # records every call verbatim, including the tool definitions the gateway's
+  # own traces summarise away (.agents/edge/RULES.md). One static binary, so it
+  # needs no supervisor — start it, wait for its own probe, and point the agent
+  # at it instead of at the gateway.
+  # Scoped to the edge's own process: OPENAI_API_BASE is the *gateway's*
+  # upstream everywhere else, and exporting it here would repoint whatever else
+  # reads it.
+  edge_upstream="${OPENAI_API_BASE:-$(printf '%s' "$ANTHROPIC_BASE_URL" | sed 's#/anthropic$##')}"
+  OPENAI_API_BASE="$edge_upstream" EDGE_UPSTREAM=gateway \
+    /opt/edge/start >> /output/model/edge.log 2>&1 &
+  edge_ready=0
+  for _ in $(seq 1 60); do
+    if /opt/edge/start health >/dev/null 2>&1; then edge_ready=1; break; fi
+    sleep 0.5
+  done
+  if [ "$edge_ready" != 1 ]; then
+    echo "edge did not become ready; see /output/model/edge.log" >&2
+    tail -5 /output/model/edge.log >&2 || true
+    exit 1
+  fi
+  export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
+  export OPENAI_BASE_URL="http://127.0.0.1:4100/openai/v1"
+  export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:4100/genai"
+
   /usr/local/bin/run-agent || true
   bash /grade.sh || true
   exec /usr/local/bin/write-result
@@ -67,10 +92,14 @@ fi
 # ─── Single-container mode (bundle) ───────────────────────────────────
 # We own the whole pipeline. Point the agent + gateway at loopback and let
 # process-compose bring up otelcol → gateway → agent → verifier → result.
-export ANTHROPIC_BASE_URL="http://127.0.0.1:4000/anthropic"
+# The edge fronts the in-process gateway here too, so a single-container run is
+# recorded exactly like a compose one. Its upstream is set on the edge process
+# in process-compose.yaml, NOT exported: OPENAI_API_BASE is the gateway's own
+# upstream, and overwriting it would point the gateway at itself.
+export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
 # OpenAI base needs /v1 (clients append /chat/completions); anthropic doesn't.
-export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai/v1}"
-export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://127.0.0.1:4000/genai}"
+export OPENAI_BASE_URL="http://127.0.0.1:4100/openai/v1"
+export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:4100/genai"
 # litellm's OTel callback honors this env var; bifrost reads its collector_url
 # from config.json. Setting it unconditionally is harmless for bifrost.
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
