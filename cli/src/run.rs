@@ -418,6 +418,15 @@ fn run_container(
 /// command's `$?`/`$rc` untouched — no kustomize overlay to synthesize.
 /// See .agents/benchmarks/RULES.md.
 ///
+/// True when a `helm template` stderr looks like a denied registry pull rather
+/// than a chart-rendering error — an HTTP 403, or the OCI distribution
+/// `denied` / `unauthorized` error codes. Matched case-insensitively on the
+/// substrings registries emit; a false positive only widens the hint we print.
+fn is_registry_denied(stderr: &str) -> bool {
+    let s = stderr.to_ascii_lowercase();
+    s.contains("403") || s.contains("denied") || s.contains("unauthorized")
+}
+
 /// Cluster `eval-secrets` Secret still provides upstream credentials.
 fn run_job(
     registry: &str,
@@ -451,6 +460,9 @@ fn run_job(
     // `--mode job` can't render for per-task benchmarks (benchmarks/RULES.md 24f).
     let release =
         eval_containers::naming::release_name(&format!("{benchmark}-{agent}-task-{task}"));
+    // Keep the chart ref for diagnostics (a denied-pull error below) before it
+    // moves into the arg vec.
+    let chart_ref = chart.clone();
     let mut helm: Vec<String> = vec!["template".into(), release, chart];
     // OCI charts are versioned; pin the published version (the `--local` dir needs none).
     if !args.local {
@@ -534,10 +546,30 @@ fn run_job(
         .output()
         .map_err(|e| format!("failed to run helm template (is helm installed?): {e}"))?;
     if !helm_out.status.success() {
-        return Err(format!(
-            "helm template failed: {}",
-            String::from_utf8_lossy(&helm_out.stderr)
-        ));
+        let stderr = String::from_utf8_lossy(&helm_out.stderr);
+        // A denied OCI pull (403 / "denied" / "unauthorized") reads like a chart
+        // bug but is almost always missing registry auth: the user hasn't logged
+        // in to the registry (`helm registry login`) or their account can't read
+        // the published chart. Point at the two ways forward — authenticate, or
+        // render the in-repo chart with `--local` — instead of leaving the raw
+        // helm error to look like a rendering failure. (src/RULES.md principle 2:
+        // the CLI surfaces the real cause, never hides it.)
+        if !args.local && is_registry_denied(&stderr) {
+            // `helm/docker registry login` take the registry HOST, not the full
+            // repository path (registry is e.g. "ghcr.io/exgentic").
+            let host = registry.split('/').next().unwrap_or(registry);
+            return Err(format!(
+                "helm could not pull the chart {chart_ref} \
+                 (registry access denied):\n{stderr}\n\
+                 The chart is not publicly readable. Either authenticate to the \
+                 registry:\n  \
+                 helm registry login {host}\n  \
+                 docker login {host}   # for the benchmark/agent images too\n\
+                 or render the in-repo chart without a registry pull:\n  \
+                 eval-containers run … --mode job --local"
+            ));
+        }
+        return Err(format!("helm template failed: {stderr}"));
     }
 
     use std::process::Stdio;
@@ -570,7 +602,26 @@ fn run_job(
 
 #[cfg(test)]
 mod tests {
-    use super::{CHART_NAME, CHART_VERSION};
+    use super::{CHART_NAME, CHART_VERSION, is_registry_denied};
+
+    // A denied OCI chart pull must be recognized so `run --mode job` can print
+    // the auth / `--local` hint instead of a raw "helm template failed".
+    #[test]
+    fn detects_denied_registry_pull() {
+        // The exact ghcr.io stderr a logged-out pull produces.
+        assert!(is_registry_denied(
+            "Error: failed to perform \"FetchReference\" on source: GET \
+             \"https://ghcr.io/v2/exgentic/charts/eval/manifests/0.1.0\": \
+             response status code 403: denied: requested access to the resource is denied"
+        ));
+        assert!(is_registry_denied(
+            "Error: unauthorized: authentication required"
+        ));
+        // A genuine rendering error must NOT trip the auth hint.
+        assert!(!is_registry_denied(
+            "Error: template: eval/templates/job.yaml:12:3: executing … nil pointer"
+        ));
+    }
 
     // `--mode job` (non-local) renders `oci://…/charts/{CHART_NAME}` pinned to
     // {CHART_VERSION}; both MUST track benchmarks/_chart/Chart.yaml, or the
