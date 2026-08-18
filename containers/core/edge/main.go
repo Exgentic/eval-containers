@@ -5,11 +5,6 @@
 // (rule 11), and write the exchange as the agent sent it (rules 6-8). The
 // injected upstream credential never enters a record (rule 9).
 //
-// Replay (EDGE_REPLAY set): serve those same records instead of forwarding, so
-// a recorded run replays with no upstream at all. One mechanism writes the
-// fixture and one reads it, which is why a replayed run cannot drift from what
-// was recorded.
-//
 // Stdlib only, so the binary is static and runs with no runtime dependency
 // (rule 15): the same file is a scratch image, a sidecar, and a process inside
 // the standalone bundle.
@@ -335,103 +330,6 @@ func forward(r *http.Request, path, wire string, body []byte) (*http.Response, i
 	return nil, maxRetries, lastErr
 }
 
-// ── Replay ──────────────────────────────────────────────────────────
-
-type replayer struct {
-	mu    sync.Mutex
-	turns []call
-	idx   int
-}
-
-func loadReplay(path string) (*replayer, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	r := &replayer{}
-	dec := json.NewDecoder(f)
-	for {
-		var c call
-		if err := dec.Decode(&c); err != nil {
-			break
-		}
-		r.turns = append(r.turns, c)
-	}
-	return r, nil
-}
-
-// next returns the recorded turns in order; past the last one it repeats the
-// final turn, so an agent that probes or re-asks still sees a faithful answer.
-func (r *replayer) next() (call, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if len(r.turns) == 0 {
-		return call{}, false
-	}
-	i := r.idx
-	if i >= len(r.turns) {
-		i = len(r.turns) - 1
-	}
-	r.idx++
-	return r.turns[i], true
-}
-
-func (r *replayer) serve(w http.ResponseWriter, req *http.Request) {
-	start := time.Now()
-	wire, _ := wireFor(req.URL.Path)
-	agentBody, _ := io.ReadAll(io.LimitReader(req.Body, int64(maxRequest)+1))
-	c, ok := r.next()
-	if !ok {
-		http.Error(w, `{"error":{"type":"empty_fixture","message":"no recorded calls to replay"}}`, http.StatusInternalServerError)
-		return
-	}
-	for k, v := range c.RespHead {
-		if !hopByHop[strings.ToLower(k)] {
-			w.Header().Set(k, v)
-		}
-	}
-	w.Header().Del("Content-Length") // chunk boundaries are replayed, not the original framing
-	status := c.Status
-	if status == 0 {
-		status = http.StatusOK
-	}
-	w.WriteHeader(status)
-
-	// Replay the recorded chunk boundaries so a streamed fixture stays streamed.
-	body := []byte(c.Response)
-	flusher, _ := w.(http.Flusher)
-	off := 0
-	for _, ch := range c.Chunks {
-		n := int(ch[1])
-		if off+n > len(body) {
-			break
-		}
-		_, _ = w.Write(body[off : off+n])
-		if flusher != nil {
-			flusher.Flush()
-		}
-		off += n
-	}
-	if off < len(body) {
-		_, _ = w.Write(body[off:])
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}
-
-	// Capture is unconditional (rule 10): a replayed run records what it served,
-	// against the request this agent actually sent — so a replay is as
-	// inspectable as the run it came from, and drift shows up as a diff.
-	served := c
-	served.Path, served.Wire = req.URL.Path, wire
-	served.StartUnix = float64(start.UnixNano()) / 1e9
-	served.Headers = safeHeaders(req.Header)
-	served.Request, served.Truncated = clip(agentBody)
-	served.TotalMs = msSince(start)
-	record(served)
-}
-
 // probeHealth is the readiness probe's exit code: 0 when the edge answers on
 // its own port, 1 otherwise.
 func probeHealth(addr string) int {
@@ -451,7 +349,7 @@ func probeHealth(addr string) int {
 // at boot rather than at every call.
 func configError() error {
 	if os.Getenv("EVAL_MODEL_API") != "" {
-		return errors.New("EVAL_MODEL_API is set: the edge does not translate protocols — unset it, or route through a translating gateway")
+		return errors.New("EVAL_MODEL_API is set: the edge does not translate protocols — route through a gateway, which does")
 	}
 	if base == "" {
 		return errors.New("OPENAI_API_BASE is required")
@@ -469,16 +367,6 @@ func main() {
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
 	})
-
-	if fixture := os.Getenv("EDGE_REPLAY"); fixture != "" {
-		r, err := loadReplay(fixture)
-		if err != nil {
-			log.Fatalf("EDGE_REPLAY: %v", err)
-		}
-		http.HandleFunc("/", r.serve)
-		log.Printf("edge replaying %d calls from %s on %s", len(r.turns), fixture, listen)
-		log.Fatal(http.ListenAndServe(listen, nil))
-	}
 
 	if err := configError(); err != nil {
 		log.Fatal(err)

@@ -117,91 +117,6 @@ func TestSafeHeadersDropsEveryCredential(t *testing.T) {
 	}
 }
 
-// The round trip that makes record and replay one mechanism: record a streamed
-// exchange against a live upstream, then serve it back from the file the edge
-// itself wrote, and require the agent-visible bytes to be identical.
-func TestRecordedCallsReplayByteIdentically(t *testing.T) {
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("content-type", "text/event-stream")
-		w.WriteHeader(http.StatusOK)
-		for _, part := range []string{"data: one\n\n", "data: two\n\n", "data: [DONE]\n\n"} {
-			_, _ = io.WriteString(w, part)
-			w.(http.Flusher).Flush()
-		}
-	}))
-	defer upstream.Close()
-
-	dir := t.TempDir()
-	out = filepath.Join(dir, "calls.jsonl")
-	base, model = upstream.URL, "azure/gpt-5.4"
-	apiKey = upstreamCredential // pragma: allowlist secret — a test constant, asserted absent below
-
-	rec := httptest.NewServer(http.HandlerFunc(handle))
-	defer rec.Close()
-
-	live, err := http.Post(rec.URL+"/openai/v1/chat/completions", "application/json",
-		strings.NewReader(`{"model":"placeholder","stream":true}`))
-	if err != nil {
-		t.Fatalf("record request: %v", err)
-	}
-	recorded, _ := io.ReadAll(live.Body)
-	live.Body.Close()
-
-	replay, err := loadReplay(out)
-	if err != nil {
-		t.Fatalf("loadReplay: %v", err)
-	}
-	if len(replay.turns) != 1 {
-		t.Fatalf("recorded %d calls, want 1", len(replay.turns))
-	}
-
-	srv := httptest.NewServer(http.HandlerFunc(replay.serve))
-	defer srv.Close()
-	played, err := http.Post(srv.URL+"/openai/v1/chat/completions", "application/json",
-		strings.NewReader(`{"model":"placeholder","stream":true}`))
-	if err != nil {
-		t.Fatalf("replay request: %v", err)
-	}
-	replayed, _ := io.ReadAll(played.Body)
-	played.Body.Close()
-
-	if string(replayed) != string(recorded) {
-		t.Errorf("replayed bytes differ\n recorded: %q\n replayed: %q", recorded, replayed)
-	}
-	if ct := played.Header.Get("content-type"); ct != "text/event-stream" {
-		t.Errorf("replayed content-type = %q, want text/event-stream", ct)
-	}
-
-	// The record must carry the agent's own model, not the pinned one, and no
-	// credential anywhere (rules 6 and 9).
-	raw, _ := os.ReadFile(out)
-	if !strings.Contains(string(raw), `placeholder`) {
-		t.Error("record lost the agent's verbatim model")
-	}
-	if strings.Contains(string(raw), upstreamCredential) {
-		t.Error("record contains the upstream credential — rule 9 violated")
-	}
-}
-
-func TestReplayRepeatsTheFinalTurnPastTheEnd(t *testing.T) {
-	r := &replayer{turns: []call{
-		{Response: "first", Status: 200},
-		{Response: "last", Status: 200},
-	}}
-	var got []string
-	for i := 0; i < 4; i++ {
-		w := httptest.NewRecorder()
-		r.serve(w, httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader("{}")))
-		got = append(got, w.Body.String())
-	}
-	want := []string{"first", "last", "last", "last"}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Errorf("call %d served %q, want %q", i+1, got[i], want[i])
-		}
-	}
-}
-
 // ── Helpers ─────────────────────────────────────────────────────────
 
 // edgeAgainst points the edge at a stub upstream and returns a live edge
@@ -531,42 +446,6 @@ func TestOversizeBodiesAreClippedAndFlagged(t *testing.T) {
 
 // ── Replay ──────────────────────────────────────────────────────────
 
-func TestReplayPreservesTheRecordedStatus(t *testing.T) {
-	r := &replayer{turns: []call{{Status: http.StatusTooManyRequests, Response: `{"error":"rate limited"}`}}}
-	w := httptest.NewRecorder()
-	r.serve(w, httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader("{}")))
-	if w.Code != http.StatusTooManyRequests {
-		t.Errorf("replayed status = %d, want 429 — a recorded failure must replay as a failure", w.Code)
-	}
-}
-
-func TestReplayOfAnEmptyFixtureFailsLoudly(t *testing.T) {
-	r := &replayer{}
-	w := httptest.NewRecorder()
-	r.serve(w, httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader("{}")))
-	if w.Code != http.StatusInternalServerError {
-		t.Errorf("empty fixture served %d, want a loud 500", w.Code)
-	}
-	if !strings.Contains(w.Body.String(), "empty_fixture") {
-		t.Errorf("empty fixture error is not machine-readable: %s", w.Body.String())
-	}
-}
-
-func TestReplayPreservesChunkBoundaries(t *testing.T) {
-	r := &replayer{turns: []call{{
-		Status: 200, Response: "data: a\n\ndata: b\n\n",
-		Chunks: [][2]float64{{1, 9}, {2, 9}},
-	}}}
-	w := httptest.NewRecorder()
-	r.serve(w, httptest.NewRequest(http.MethodPost, "/openai/v1/chat/completions", strings.NewReader("{}")))
-	if got := w.Body.String(); got != "data: a\n\ndata: b\n\n" {
-		t.Errorf("replayed body = %q", got)
-	}
-	if w.Flushed != true {
-		t.Error("replay did not flush: a streamed fixture must replay as a stream")
-	}
-}
-
 // An agent that hangs up mid-stream must not leave the edge reading upstream
 // forever, and the partial exchange must still be recorded.
 func TestAgentDisconnectStopsTheStreamAndStillRecords(t *testing.T) {
@@ -758,36 +637,5 @@ func TestRequestAtTheLimitStillGoesThrough(t *testing.T) {
 	}
 	if len(*bodsReqs) != 1 {
 		t.Errorf("upstream saw %d requests, want 1", len(*bodsReqs))
-	}
-}
-
-// A replayed run must leave a record too (rule 10): it captures the request the
-// agent sent this time against the response the fixture served.
-func TestReplayRecordsWhatItServed(t *testing.T) {
-	dir := t.TempDir()
-	prev := out
-	out = filepath.Join(dir, "calls.jsonl")
-	defer func() { out = prev }()
-
-	r := &replayer{turns: []call{{Status: 200, Response: `{"ok":true}`, Model: "azure/gpt-5.4"}}}
-	srv := httptest.NewServer(http.HandlerFunc(r.serve))
-	defer srv.Close()
-
-	resp, err := http.Post(srv.URL+"/anthropic/v1/messages", "application/json",
-		strings.NewReader(`{"model":"placeholder","messages":[]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	resp.Body.Close()
-
-	rows := awaitRecords(t, 1)
-	if rows[0].Wire != "anthropic" {
-		t.Errorf("replay recorded wire %q, want anthropic", rows[0].Wire)
-	}
-	if !strings.Contains(rows[0].Request, "placeholder") {
-		t.Errorf("replay lost the request the agent sent: %q", rows[0].Request)
-	}
-	if rows[0].Response != `{"ok":true}` {
-		t.Errorf("replay recorded response %q, want what it served", rows[0].Response)
 	}
 }

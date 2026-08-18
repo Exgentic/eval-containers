@@ -18,9 +18,6 @@ LABEL eval.core.component="edge"
 LABEL eval.core.description="Pins the model to EVAL_MODEL and records every LLM call verbatim"
 
 COPY --from=build /opt/edge/start /opt/edge/start
-# The bundle probes /opt/edge/health (gateways rule 12); scratch has no shell
-# to run it, so the scratch image is probed with `start health` instead.
-COPY --chmod=0755 health /opt/edge/health
 
 EXPOSE 4000
 ENTRYPOINT ["/opt/edge/start"]
