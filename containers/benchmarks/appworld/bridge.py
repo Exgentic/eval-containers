@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
-# Root-owned code-execution bridge for the AppWorld runtime. Runs in the
-# background from /entrypoint.sh, before the agent (uid 1002) starts.
+# Code-execution bridge for the AppWorld runtime, run as its own dedicated
+# uid (`bridge`, distinct from root and from the agent's uid 1002 — see the
+# Dockerfile). Runs in the background from /entrypoint.sh, before the agent
+# starts.
 #
 # Exposes exactly two HTTP routes on 127.0.0.1: GET /health and POST
 # /execute. Deliberately does NOT expose evaluate() over HTTP — failing
@@ -8,6 +10,21 @@
 # a reachable /evaluate route would let the agent read the answer, and the
 # agent shares this container's network namespace so any bound TCP port is
 # reachable to it regardless of uid.
+#
+# Running as `bridge` rather than root matters for more than the signal
+# story below: AppWorld's own code-safety guard (SafetyGuard in
+# appworld/common/safety_guard.py) blocks *writes* during execute() but
+# explicitly permits *reads* via any path — it was designed to stop the
+# agent's code from corrupting the sandbox, not to protect a secret
+# co-located on the same filesystem. ground_truth/ sits right next to the
+# dbs/ this process legitimately needs, so if this process ran as root, the
+# agent's execute()-supplied code could read ground_truth straight off disk
+# regardless of that guard. Running as `bridge`, with ground_truth/ chowned
+# root-only in the Dockerfile, makes the OS itself enforce what AppWorld's
+# guard does not — and since that's a real OS permission, not a flag, the
+# constructor below opts out of AppWorld's own default eager
+# ground_truth read (load_ground_truth=False) so this process never even
+# attempts to touch it until grade.sh has explicitly opened it back up.
 #
 # AppWorld() re-initializes by deleting its own output directory (see
 # _prepare_directories in appworld/environment.py) — opening a fresh session
@@ -18,10 +35,11 @@
 # one `world` object alive and call execute() on it repeatedly.
 #
 # Grading reuses that same live object instead of opening a second one, and
-# is triggered by SIGUSR1 rather than an HTTP route: signals respect uid
-# (only root can signal a root-owned process), so /grade.sh (root, run after
-# the agent's own process has exited) can ask for evaluation without the
-# agent ever having a network path to it.
+# is triggered by SIGUSR1 rather than an HTTP route: signals respect uid (the
+# agent's uid can't signal a process owned by a different uid without
+# CAP_KILL), so /grade.sh (root, run after the agent's own process has
+# exited) can ask for evaluation without the agent ever being able to
+# trigger it itself, over HTTP or otherwise.
 
 import json
 import os
@@ -41,6 +59,14 @@ world = None
 
 def handle_evaluate_signal(signum, frame):
     try:
+        # world was opened with load_ground_truth=False (see main()) — the
+        # ground_truth/ directory is root-only until grade.sh chowns it to
+        # `bridge` immediately before sending this signal, after the agent's
+        # own process has already exited. Load it now, into the same live
+        # object, rather than reconstructing (which would wipe progress).
+        from appworld.ground_truth import GroundTruth
+
+        world.task.ground_truth = GroundTruth.load(task_id=TASK_ID, mode="minimal")
         result = world.evaluate().to_dict()
     except Exception as e:
         result = {"success": False, "error": f"{type(e).__name__}: {e}"}
@@ -99,7 +125,14 @@ def main():
     # for why re-opening per call is wrong). First open is 4-5s, so /health
     # only reports ready once this has actually completed.
     try:
-        world = AppWorld(task_id=TASK_ID, experiment_name=EXPERIMENT_NAME)
+        # load_ground_truth=False: AppWorld's constructor eagerly reads
+        # ground_truth/metadata.json by default — but that directory is
+        # root-only (this process runs as `bridge`, see the Dockerfile), so
+        # the default would crash on startup, not just leak the secret.
+        # Loaded explicitly, later, in handle_evaluate_signal.
+        world = AppWorld(
+            task_id=TASK_ID, experiment_name=EXPERIMENT_NAME, load_ground_truth=False
+        )
     except Exception:
         traceback.print_exc(file=sys.stderr)
         sys.exit(1)

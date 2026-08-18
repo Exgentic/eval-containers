@@ -33,7 +33,7 @@ LABEL eval.benchmark.data_revision="refs/convert/parquet"
 LABEL eval.benchmark.url="https://github.com/stonybrooknlp/appworld"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.18901"
 
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends curl gosu && rm -rf /var/lib/apt/lists/*
 
 ENV EVAL_BENCHMARK=appworld
 
@@ -65,15 +65,38 @@ ENV APPWORLD_ROOT=/appworld
 RUN /opt/venv/bin/python -m appworld.cli install --no-repo \
     && /opt/venv/bin/python -m appworld.cli download data --root "$APPWORLD_ROOT"
 
-# Root-only: each task directory's ground_truth/{answer,private_data,
-# test_data}.json and evaluation.py sit right next to the dbs/*.jsonl the
-# agent legitimately needs — there is no way to grant dbs/ access without
-# also granting ground_truth/ access at the filesystem level. The agent
-# (uid 1002, gid 0 — same group as root, see combination.Dockerfile) must
-# never read this tree directly; `go-rwx` strips group bits too, since a
-# shared gid alone isn't enough (see /tasks/*/id.txt using the same
-# root:600 pattern for the same reason).
-RUN chmod -R go-rwx "$APPWORLD_ROOT"
+# Dedicated uid for bridge.py — distinct from both root (0) and the agent
+# (1002, gid 0). Two independent reasons:
+#  1. grade.sh's SIGUSR1 trigger relies on signals respecting uid (only a
+#     process with root privileges, or the same uid, can signal another
+#     process) — a THIRD uid keeps that property (the agent still cannot
+#     signal bridge) without bridge itself needing to be root.
+#  2. AppWorld's own code-safety guard blocks *writes* during execute() but
+#     explicitly permits *reads* via any path (it was designed to stop the
+#     agent's code from corrupting the sandbox, not to protect a secret
+#     co-located on the same filesystem) — so running bridge as root would
+#     let the agent's execute()-supplied code read ground_truth straight off
+#     disk, guard or no guard. A real OS-level permission boundary is what
+#     actually stops that, not AppWorld's own guard.
+RUN groupadd -g 1003 bridge && useradd -u 1003 -g 1003 -M -s /usr/sbin/nologin bridge
+
+# Each task directory's ground_truth/{answer,private_data,test_data}.json
+# and evaluation.py sit right next to the dbs/*.jsonl bridge legitimately
+# needs to run the agent's execute() calls — there is no way to grant dbs/
+# access without also granting ground_truth/ access at the filesystem
+# level, for whichever uid runs execute(). So: give bridge's uid the whole
+# tree (it needs to read dbs/ and read+write the mutable experiment state
+# under experiments/), then immediately claw ground_truth/ back to
+# root-only per task. grade.sh (root) re-opens each task's own
+# ground_truth/ for bridge only briefly, immediately before signaling
+# evaluation — after the agent's own process has already exited, so that
+# window is never agent-reachable. The agent (uid 1002, gid 0) gets none of
+# this either way: chown -R bridge:bridge plus per-file default perms
+# (no world bits) leaves it with nothing to read.
+RUN chown -R bridge:bridge "$APPWORLD_ROOT" \
+    && chmod -R go-rwx "$APPWORLD_ROOT" \
+    && find "$APPWORLD_ROOT/data/tasks" -maxdepth 1 -mindepth 1 -type d -exec sh -c \
+         'chown -R root:root "$1/ground_truth" && chmod -R 700 "$1/ground_truth"' _ {} \;
 
 WORKDIR /app
 
@@ -83,19 +106,23 @@ WORKDIR /app
 RUN chown -R 1002:0 /app && chmod -R g+rwX /app
 
 COPY bridge.py /
-RUN chmod 700 /bridge.py
+RUN chown bridge:bridge /bridge.py && chmod 700 /bridge.py
 
 # Test: AppWorld evaluation is state-based (database checks) but fully
 # local/offline (world.evaluate()). Grading reuses the same live AppWorld
 # object bridge.py has been mutating rather than opening a second one —
 # AppWorld() re-initializes by deleting its own output directory on
 # construction, so a second open here would just discard the agent's
-# progress. SIGUSR1 (not an HTTP route) triggers it: only root can signal a
-# root-owned process, so this stays unreachable to the agent's uid even
-# though it shares the container's network namespace with the bridge.
+# progress. SIGUSR1 (not an HTTP route) triggers it: as root, this script
+# can signal bridge's uid regardless — the agent (a third, distinct uid)
+# cannot signal it either way. Runs after the agent's own process has
+# already exited, so re-opening this one task's ground_truth/ for bridge
+# right here, immediately before signaling, is never agent-reachable.
 RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier /logs/appworld
+REAL_TASK_ID="$(cat /tasks/$EVAL_TASK_ID/id.txt)"
+chown -R bridge:bridge "$APPWORLD_ROOT/data/tasks/$REAL_TASK_ID/ground_truth"
 kill -USR1 "$(cat /run/bridge.pid)"
 for i in $(seq 1 150); do
   if [ -f /logs/verifier/reward.txt ]; then
@@ -115,7 +142,9 @@ RUN cat > /entrypoint.sh <<'ENTRY'
 /eval-materialize-task
 
 REAL_TASK_ID="$(cat /tasks/$EVAL_TASK_ID/id.txt)"
-APPWORLD_TASK_ID="$REAL_TASK_ID" /opt/venv/bin/python /bridge.py &
+mkdir -p /run /logs/appworld /logs/verifier
+chown bridge:bridge /logs/appworld /logs/verifier
+APPWORLD_TASK_ID="$REAL_TASK_ID" gosu bridge /opt/venv/bin/python /bridge.py &
 echo $! > /run/bridge.pid
 
 for i in $(seq 1 150); do
