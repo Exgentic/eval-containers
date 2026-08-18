@@ -10,7 +10,12 @@ LABEL eval.agent.description="Charm Crush terminal AI coding assistant"
 LABEL eval.agent.runtime="go"
 LABEL eval.agent.url="https://github.com/charmbracelet/crush"
 LABEL eval.agent.version="${AGENT_VERSION}"
+# Declares the MCP contract (doctrine/agents rule 19). The label is for
+# discovery only; /opt/agent/MCP below is what the runtime guard reads,
+# because labels do not survive the combination build.
+LABEL eval.agent.mcp="true"
 ENV EVAL_AGENT=crush
+RUN echo true > /opt/agent/MCP
 # Download-to-file with retry + size check; avoids streaming curl|tar
 # corruption on partial bytes under flaky networks (same pattern as
 # agents/goose/Dockerfile).

@@ -69,6 +69,16 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 18. **Smoke test.** Every agent MUST pass `tests/agents/test.rs` — boot from the `evals/agents-smoke--<name>` carrier and make at least one LLM call to the protocol-namespaced gateway endpoint within `FIRST_CALL_TIMEOUT` seconds. The smoke test runs with a `models/replay` mock LLM, so no upstream credentials are needed. An agent that cannot satisfy this contract (because its design hardcodes a vendor backend, requires interactive setup, or runs a self-hosted multi-process stack) MUST be listed in `tests/agents/broken.md` with the root cause + smallest viable fix. Removing an agent from `broken.md` is the success condition.
 
+### Tool Access
+
+19. **MCP is benchmark-declared, agent-rendered.** A benchmark that exposes tools to the agent declares its MCP servers in the `EVAL_MCP_SERVERS` environment variable: a JSON object mapping a logical server name to its address, e.g. `{"tools":"http://tools:8000/mcp","db":"http://db:8000/mcp"}`. The servers themselves are benchmark-owned sidecars on the `internal` network ([compose](../compose/RULES.md) rule 12) — the framework provides no shared MCP service, because which tools a task needs is a property of the task.
+
+    An agent that supports MCP MUST read `EVAL_MCP_SERVERS` in its entrypoint and render **every** entry into its own CLI's configuration dialect, over streamable HTTP. Rendering is the agent's own business and MUST stay inside `agents/<name>/` — there is no shared translator, because a translator that knew all the dialects would make every new agent an edit to `core/`. An empty or unset value MUST leave the agent's invocation unchanged, so a benchmark that declares no servers behaves exactly as before.
+
+    An agent that implements this MUST declare it by writing `true` to `/opt/agent/MCP` (the rule 13 mechanism: `/opt/agent/` is the only channel from the agent image into the combination image). An agent that has not implemented it MUST NOT write the file. The framework entrypoint MUST refuse to start a run that pairs a benchmark declaring MCP servers with an agent that has not declared support, and MUST fail it as a framework error rather than a scored result — an agent silently deprived of the tools a task requires scores 0, which is indistinguishable from a genuine failure and would otherwise be averaged into results as if it meant something.
+
+20. **MCP smoke test.** Every agent that declares MCP support MUST pass `tests/agents/mcp.rs` — boot from the `evals/agents-smoke--<name>` carrier with `EVAL_MCP_SERVERS` pointing at `core/mcp-mock` and fetch the server's tool list within `TOOLS_LIST_TIMEOUT` seconds. The assertion is the `tools/list` request observed **at the server**, because `tools/list` is part of the MCP initialization handshake and therefore fires before and independently of any model decision — the test needs no inference and no tokens. Server-side observation is required rather than parsing agent logs: every MCP client in the fleet treats a failed server as non-fatal and continues silently, so a misconfigured server is invisible from the agent's side. An agent whose upstream CLI cannot satisfy this contract MUST be listed in `tests/agents/mcp-broken.md` with the root cause and smallest viable fix.
+
 ## References
 
 - [Process](../RULES.md)
@@ -81,3 +91,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Split rule 12 into rule 12 (reproducible by default via pinned `ARG <NAME>_VERSION`) and new rule 13 (runtime override via `EVAL_AGENT_VERSION`, writes resolved version to `/output/agent/version.json`). Added `eval.agent.version` to required labels (rule 14). Renumbered rules 14–17. |
 | 2026-05-21 | Added rule 18 (smoke test) — agents must pass `tests/agents/test.rs` or be documented in `tests/agents/broken.md`. |
+| 2026-08-18 | Added section "Tool Access" with rule 19 (MCP is benchmark-declared via `EVAL_MCP_SERVERS`, rendered per-agent, capability published to `/opt/agent/MCP`, mismatched pairing fails as a framework error) and rule 20 (MCP smoke test — `tests/agents/mcp.rs` asserts the `tools/list` handshake server-side, no inference required). |

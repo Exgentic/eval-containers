@@ -66,7 +66,15 @@ processes:
     # this YAML scalar at parse time corrupts the document ("could not find
     # expected ':'"). run exports all of these into the env process-compose
     # inherits, so the shell still resolves them.
-    command: timeout $$TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$$TASK" TASK_ID="$$TASK_ID" MODEL="$$MODEL" TIMEOUT="$$TIMEOUT" OPENAI_BASE_URL="$$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
+    #
+    # `env -i` makes this an allowlist, not a filter: an agent only ever
+    # sees what is named here. EVAL_MCP_SERVERS is the benchmark's
+    # {name: address} map of MCP sidecars (doctrine/agents rule 19) —
+    # /run.sh renders it into the CLI's own config dialect, so it has to
+    # cross this boundary. `run` exports it (empty when unset), so the
+    # no-MCP case passes an empty string rather than tripping on an
+    # undefined variable.
+    command: timeout $$TIMEOUT gosu agent env -i PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/agent USER=agent LANG=C.UTF-8 TASK="$$TASK" TASK_ID="$$TASK_ID" MODEL="$$MODEL" TIMEOUT="$$TIMEOUT" OPENAI_BASE_URL="$$OPENAI_BASE_URL" OPENAI_API_KEY=sk-proxy ANTHROPIC_BASE_URL="$$ANTHROPIC_BASE_URL" ANTHROPIC_API_KEY=sk-proxy GOOGLE_GEMINI_BASE_URL="$$GOOGLE_GEMINI_BASE_URL" GEMINI_API_KEY=sk-proxy EVAL_MCP_SERVERS="$$EVAL_MCP_SERVERS" /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log
     depends_on:
       gateway:
         condition: process_healthy

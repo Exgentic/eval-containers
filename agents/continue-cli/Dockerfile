@@ -10,8 +10,13 @@ LABEL eval.agent.description="Continue CLI (cn): terminal-native multi-model cod
 LABEL eval.agent.runtime="node"
 LABEL eval.agent.url="https://github.com/continuedev/continue"
 LABEL eval.agent.version="${AGENT_VERSION}"
+# Declares the MCP contract (doctrine/agents rule 19). The label is for
+# discovery only; /opt/agent/MCP below is what the runtime guard reads,
+# because labels do not survive the combination build.
+LABEL eval.agent.mcp="true"
 ENV EVAL_AGENT=continue-cli
 RUN npm install -g @continuedev/cli@${AGENT_VERSION}
+RUN echo true > /opt/agent/MCP
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh
 #!/bin/bash
 set -euo pipefail
@@ -37,6 +42,16 @@ models:
     apiBase: ${OPENAI_BASE_URL}
     roles: [chat, edit, apply]
 CONF
+# Benchmark-declared MCP servers (doctrine/agents rule 19): append a
+# `mcpServers` block to the config assembled above — one list entry per
+# declared server. Continue infers the transport from a bare `url`
+# (streamable HTTP first, SSE as fallback), and headless `cn -p`
+# auto-allows every tool, so nothing else needs wiring.
+# Unset or `{}` appends nothing, leaving the config identical to the
+# no-MCP case.
+if [ -n "${EVAL_MCP_SERVERS:-}" ] && [ "$EVAL_MCP_SERVERS" != "{}" ]; then
+  node -e 'const m = JSON.parse(process.env.EVAL_MCP_SERVERS); const out = ["mcpServers:"]; for (const [n, u] of Object.entries(m)) out.push(`  - name: ${n}`, `    url: ${u}`); console.log(out.join("\n"))' >> "$D/config.yaml"
+fi
 exec cn -p "$TASK"
 E
 

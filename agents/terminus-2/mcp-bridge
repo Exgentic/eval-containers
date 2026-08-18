@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Bash-callable bridge to the benchmark's MCP servers.
+
+Benchmark-declared MCP servers (doctrine/agents rule 19): the benchmark
+publishes a flat {name: address} map in EVAL_MCP_SERVERS and each agent
+renders it into its own dialect. This agent's only tool interface is a
+shell, so its "dialect" is a command — this one. Two modes matter:
+
+    mcp prompt                     # inventory, formatted for the task text
+    mcp call <server> <tool> '{}'  # invoke a tool, JSON args
+
+`mcp prompt` is what the entrypoint runs before handing the task to the
+model, so the `tools/list` handshake happens at startup rather than on
+the model's initiative — the agent cannot be asked to use tools it was
+never told about. Unset or `{}` makes every mode a silent no-op.
+
+Stdlib only, and duplicated per agent rather than shared: rule 19 keeps
+rendering inside `agents/<name>/` so adding an agent is never an edit to
+`core/`.
+"""
+
+import json
+import os
+import sys
+import urllib.request
+
+# The revision that introduced streamable HTTP as the standard remote
+# transport. Servers negotiate down if they speak something older.
+PROTOCOL_VERSION = "2025-06-18"
+TIMEOUT = 30
+
+
+class McpError(RuntimeError):
+    pass
+
+
+def _payload(raw: str) -> dict:
+    """Decode a JSON-RPC response body.
+
+    Streamable HTTP lets the server answer a POST with either a plain
+    JSON object or an SSE stream carrying the same object in a `data:`
+    line, and which one you get is the server's choice — so accept both.
+    """
+    if raw.lstrip().startswith("{"):
+        return json.loads(raw)
+    for line in raw.splitlines():
+        if line.startswith("data:"):
+            return json.loads(line[len("data:") :].strip())
+    raise McpError("no JSON-RPC payload in response")
+
+
+class Server:
+    def __init__(self, name: str, url: str) -> None:
+        self.name = name
+        self.url = url
+        self._session: str | None = None
+        self._next_id = 0
+
+    def _rpc(self, method: str, params=None, notify: bool = False):
+        self._next_id += 1
+        body: dict = {"jsonrpc": "2.0", "method": method}
+        if params is not None:
+            body["params"] = params
+        if not notify:
+            body["id"] = self._next_id
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json, text/event-stream",
+        }
+        # The session id the server handed back on initialize. Servers
+        # that don't use sessions simply never send the header.
+        if self._session:
+            headers["Mcp-Session-Id"] = self._session
+        req = urllib.request.Request(
+            self.url, data=json.dumps(body).encode(), method="POST", headers=headers
+        )
+        with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+            session = resp.headers.get("Mcp-Session-Id")
+            if session:
+                self._session = session
+            raw = resp.read().decode("utf-8", "replace")
+        # Notifications get 202 + empty body; there is nothing to parse.
+        if notify:
+            return None
+        payload = _payload(raw)
+        if "error" in payload:
+            raise McpError(str(payload["error"].get("message", payload["error"])))
+        return payload.get("result", {})
+
+    def connect(self) -> None:
+        self._rpc(
+            "initialize",
+            {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "eval-containers-bridge", "version": "1"},
+            },
+        )
+        self._rpc("notifications/initialized", notify=True)
+
+    def tools(self) -> list:
+        return self._rpc("tools/list", {}).get("tools", [])
+
+    def call(self, tool: str, arguments: dict) -> str:
+        result = self._rpc("tools/call", {"name": tool, "arguments": arguments})
+        text = [
+            block.get("text", "")
+            for block in result.get("content", [])
+            if block.get("type") == "text"
+        ]
+        return "\n".join(text) if text else json.dumps(result)
+
+
+def servers() -> list:
+    raw = os.environ.get("EVAL_MCP_SERVERS", "").strip()
+    if not raw or raw == "{}":
+        return []
+    return [Server(name, url) for name, url in json.loads(raw).items()]
+
+
+def inventory() -> list:
+    """`[(server, tool_spec), ...]` for every reachable declared server.
+
+    An unreachable server is reported on stderr and skipped rather than
+    fatal: one broken sidecar should not stop the agent from using the
+    others, and the framework's own guard is what catches a benchmark
+    that declared servers nobody can use.
+    """
+    found = []
+    for server in servers():
+        try:
+            server.connect()
+            specs = server.tools()
+        except Exception as exc:  # noqa: BLE001 — any failure is "skip it"
+            print(f"[mcp-bridge] {server.name}: {exc}", file=sys.stderr)
+            continue
+        print(f"[mcp-bridge] {server.name}: {len(specs)} tools", file=sys.stderr)
+        found.extend((server, spec) for spec in specs)
+    return found
+
+
+def prompt_text() -> str:
+    found = inventory()
+    if not found:
+        return ""
+    lines = [
+        "",
+        "External tools are available through the `mcp` command. Call one with:",
+        "",
+        "    mcp call <server> <tool> '<json-arguments>'",
+        "",
+        "It prints the tool's result to stdout. Available tools:",
+        "",
+    ]
+    for server, spec in found:
+        summary = (spec.get("description") or "").strip().splitlines()
+        lines.append(
+            f"  {server.name} {spec.get('name')} — {summary[0] if summary else ''}"
+        )
+        lines.append(f"      arguments: {json.dumps(spec.get('inputSchema', {}))}")
+    return "\n".join(lines)
+
+
+def main() -> int:
+    mode = sys.argv[1] if len(sys.argv) > 1 else "prompt"
+    if mode in ("prompt", "list"):
+        text = prompt_text()
+        if text:
+            print(text)
+        return 0
+    if mode == "call":
+        if len(sys.argv) < 4:
+            print(
+                "usage: mcp call <server> <tool> ['<json-arguments>']", file=sys.stderr
+            )
+            return 2
+        name, tool = sys.argv[2], sys.argv[3]
+        arguments = json.loads(sys.argv[4]) if len(sys.argv) > 4 else {}
+        matches = [s for s in servers() if s.name == name]
+        if not matches:
+            print(f"no such MCP server: {name}", file=sys.stderr)
+            return 1
+        server = matches[0]
+        server.connect()
+        print(server.call(tool, arguments))
+        return 0
+    print(f"unknown mode: {mode}", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

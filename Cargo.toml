@@ -82,3 +82,7 @@ path = "tests/gateways/test.rs"
 [[test]]
 name = "agents"
 path = "tests/agents/test.rs"
+
+[[test]]
+name = "agents_mcp"
+path = "tests/agents/mcp.rs"

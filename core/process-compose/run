@@ -37,6 +37,10 @@ export MODEL="${MODEL:-${EVAL_MODEL:-}}"
 export BENCHMARK="${BENCHMARK:-${EVAL_BENCHMARK:-unknown}}"
 export AGENT="${AGENT:-${EVAL_AGENT:-unknown}}"
 export TASK="${TASK:-}"
+# The benchmark's MCP sidecar map, {name: address} JSON (doctrine/agents
+# rule 19). Exported unconditionally so process-compose.yaml's `env -i`
+# allowlist has something to name in the no-MCP case.
+export EVAL_MCP_SERVERS="${EVAL_MCP_SERVERS:-}"
 
 # Mode detection: external gateway iff ANTHROPIC_BASE_URL was set by
 # the caller. In single-image mode we set it ourselves AFTER this check.
@@ -54,6 +58,35 @@ export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://127.0.0.1:4000/g
 # so this is litellm-specific. Setting it unconditionally is harmless
 # for bifrost.
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
+
+# ─── MCP capability guard ────────────────────────────────────────────
+# An agent that implements the MCP contract declares it by writing `true`
+# to /opt/agent/MCP — the same publish-a-fact mechanism as
+# /opt/agent/VERSION, and for the same reason: the combination image
+# copies all of /opt/agent/, so a file there is the only thing an agent
+# can tell the assembled eval image. (Labels can't do this job; the eval
+# image inherits the *benchmark* image's labels, not the agent's.)
+#
+# Refusing the pairing is the point. If a benchmark stands up MCP
+# sidecars and the agent ignores them, the agent attempts the task with
+# no way to reach the data it needs and scores 0 — numerically identical
+# to a genuine capability failure, and averaged into the leaderboard as
+# if it meant something. Every MCP client in the fleet fails silently
+# here (crush swallows init errors, continue-cli marks the server
+# `error` and continues), so nothing downstream would flag it either.
+#
+# Exit 78 (EX_CONFIG) rather than writing result.json: this is a
+# misconfigured run, not a result. No result.json means the harness
+# reports a framework error instead of a score.
+if [ -n "$EVAL_MCP_SERVERS" ] && [ "$EVAL_MCP_SERVERS" != "{}" ]; then
+  if [ "$(cat /opt/agent/MCP 2>/dev/null || true)" != "true" ]; then
+    echo "ERROR: benchmark '$BENCHMARK' declares MCP servers but agent '$AGENT' does not implement the MCP contract." >&2
+    echo "       EVAL_MCP_SERVERS=$EVAL_MCP_SERVERS" >&2
+    echo "       Fix: render EVAL_MCP_SERVERS in agents/$AGENT/Dockerfile's /run.sh and write 'true' to /opt/agent/MCP," >&2
+    echo "       or pair this benchmark with an MCP-capable agent (see tests/agents/mcp.rs MCP_AGENTS)." >&2
+    exit 78
+  fi
+fi
 
 # Defensive fallback (agent uid baked into image at build time).
 id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent

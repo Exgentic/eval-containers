@@ -14,6 +14,76 @@ addition; the patch on a bug fix that doesn't change the rule surface.
 
 ### Added
 
+- **MCP support, benchmark-declared.** A benchmark that wants to hand
+  the agent tools sets `EVAL_MCP_SERVERS` on its runner — a
+  `{name: address}` JSON map — alongside the MCP sidecars it already
+  may run on the `internal` network
+  ([compose](doctrine/compose/RULES.md) rule 12). Each agent renders
+  that map into its own CLI's config dialect inside its own
+  `/run.sh`; there is deliberately no shared translator, because one
+  would make every new agent an edit to `core/`. Every entry in the map
+  becomes a server, so a benchmark can stand up as many sidecars as it
+  likes without any agent changing. Unset or `{}` leaves the agent's
+  invocation byte-identical, so existing replay fixtures still match.
+  16 of the 20 agents are wired — every one whose upstream can do it:
+  `claude-code`, `cline`, `codex`, `continue-cli`, `copilot-cli`,
+  `crush`, `gemini-cli`, `goose`, `mini-swe-agent`, `openclaw`,
+  `opencode`, `openhands`, `qwen-code`, `ra-aid`, `swe-agent`,
+  `terminus-2`. The dialects are all different — a JSON blob on a flag
+  (`claude-code`, `copilot-cli`), appended TOML (`codex`), an authored
+  or merged settings file (`gemini-cli`, `qwen-code`, `opencode`,
+  `openclaw`), appended YAML (`continue-cli`), CLI registration
+  (`cline`), one flag per server (`goose`), a keyword argument
+  (`openhands`) — which is exactly why the rendering lives with the
+  agent and not in `core/`.
+- **`/opt/agent/MCP` capability flag + a guard that refuses bad
+  pairings.** An agent declares MCP support by writing `true` to
+  `/opt/agent/MCP` (the rule 13 mechanism — `/opt/agent/` is the only
+  channel from the agent image into the combination image). Pairing an
+  MCP-declaring benchmark with an agent that hasn't implemented it now
+  exits 78 (`EX_CONFIG`) from `core/process-compose/run` **before any
+  tokens are spent**, and writes no `result.json` — so it surfaces as a
+  framework error rather than a `reward: 0` that is numerically
+  indistinguishable from a genuine capability failure.
+- **`core/mcp-mock`** — the MCP analogue of `models/replay`: a
+  stdlib-only streamable-HTTP MCP server (python:3.12-slim plus one
+  file, no `mcp` package) serving two deterministic tools and logging
+  every request to stderr. Verified against the official MCP Python
+  SDK.
+- **`agents/<name>/mcp-bridge`** — a ~180-line stdlib-only MCP client
+  (streamable HTTP, `initialize` → `tools/list` → `tools/call`) for the
+  four agents with no usable client of their own. `mini-swe-agent`,
+  `swe-agent`, and `terminus-2` act by typing shell commands, so the
+  bridge *is* their config dialect: it goes on `PATH` as `mcp` and its
+  tool inventory is appended to the task prompt. `ra-aid` gets the same
+  bridge wrapped as a `--custom-tools` LangChain module
+  (`agents/ra-aid/mcp_tools.py`), because its own
+  `MultiServerMCPClient_Sync` calls APIs removed in
+  langchain-mcp-adapters ≥0.1.0. All four list tools at startup, so the
+  handshake still precedes inference. Copied per agent rather than
+  shared, since `/opt/agent/` is the only channel into the combination
+  image ([RULES.md](RULES.md) rule 11's documented exception).
+- **`tests/agents/mcp.rs`** — per-agent MCP smoke suite. Boots the
+  `evals/agents-smoke--<name>` carrier with `EVAL_MCP_SERVERS` pointed
+  at `mcp-mock` and asserts the `tools/list` request arrives **at the
+  server**. Needs no inference and no tokens: `tools/list` is part of
+  the MCP init handshake, so it fires before the model decides
+  anything. Server-side observation is the point — `crush` swallows MCP
+  init errors, `continue-cli` marks a server `error` and proceeds,
+  `cline` and `gemini-cli` skip a malformed entry, so from the agent's
+  side a misconfigured server is invisible. One test per agent, 16 in
+  all; 14 verified green locally, each in well under a minute. The two
+  that don't pass are blocked upstream of MCP and fail identically in
+  the plain smoke suite: `goose` (`EVAL_MODEL` is not in the runner's
+  `env -i` allowlist) and `ra-aid` (`fireworks.client.error` no longer
+  imports, so the CLI dies before `main`). Upstream-impossible agents
+  are documented in `tests/agents/mcp-broken.md` (`aider`,
+  `open-interpreter`, plus `bob`/`plandex` downstream of `broken.md`).
+- **Doctrine: [agents](doctrine/agents/RULES.md) section "Tool Access"**
+  — rule 19 (MCP is benchmark-declared, agent-rendered, capability
+  published, mismatch is a framework error) and rule 20 (MCP smoke
+  test).
+
 - **100 benchmarks × 20 agents** in the fleet (up from 96 × 17).
   - New IBM benchmarks: `acpbench` (1040 MCQ), `assetopsbench`
     (152 industrial-asset scenarios), `vakra` (28 multi-hop tool-calling),

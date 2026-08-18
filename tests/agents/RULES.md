@@ -1,10 +1,17 @@
 # Agent smoke test rules
 
-The agents category answers one question per agent: **does this agent
-actually talk to an LLM when invoked?** It does NOT measure quality,
-score reward, or check the answer — those are `live/`'s job. This
-suite catches the dominant failure mode: an agent that crashes on
-startup or can't reach the gateway.
+The agents category answers one question per agent, per suite:
+
+- `test.rs` — **does this agent actually talk to an LLM when invoked?**
+  Catches the dominant failure mode: an agent that crashes on startup
+  or can't reach the gateway.
+- `mcp.rs` — **does this agent actually reach the benchmark's tools?**
+  Catches the MCP equivalent: an agent that ignores or misparses
+  `EVAL_MCP_SERVERS`.
+
+Neither measures quality, scores reward, or checks the answer — those
+are `live/`'s job. Rules 1–17 below govern `test.rs`; rules 18–21
+govern `mcp.rs`, and everything in "Lifecycle" applies to both.
 
 Parent: [../RULES.md](../RULES.md)
 
@@ -72,6 +79,8 @@ Parent: [../RULES.md](../RULES.md)
     with a citation — same convention as `tests/build/known-broken.md`
     + `tests/replay/broken.json`. The test stays in the file (don't
     silently delete) so the regression direction is "this got fixed."
+    The MCP suite has its own list, `mcp-broken.md` — an agent can
+    reach the LLM but not MCP, or (bob, plandex) neither.
 
 ## Prerequisites
 
@@ -96,6 +105,37 @@ Parent: [../RULES.md](../RULES.md)
 15. **No retry-loop behavior.** If the agent retries on a 4xx from
     the mock or loops indefinitely, the timeout catches it. We
     deliberately don't assert on call counts beyond "≥1."
+
+## MCP suite (`mcp.rs`)
+
+18. **The pass condition is "`tools/list` observed at the server."**
+    `core/mcp-mock` logs `[mcp] tools/list -> N tools` on every list
+    request; the test polls its stderr and the first match passes.
+    Server-side, not agent-side: every MCP client in the fleet treats a
+    dead server as non-fatal and continues silently, so agent logs
+    cannot distinguish "connected" from "gave up."
+
+19. **No inference, no tokens.** `tools/list` belongs to the MCP
+    initialization handshake, so it fires before and independently of
+    any model decision. The suite MUST NOT depend on the model choosing
+    to call a tool — that would need a per-agent tool-call fixture and
+    would conflate "never connected" with "didn't feel like it."
+    Asserting that a tool *result* reaches the answer is `live/`'s job,
+    with a benchmark whose grader depends on it.
+
+20. **Only agents that declare support.** `MCP_AGENTS` lists agents
+    that write `true` to `/opt/agent/MCP` (doctrine/agents rule 19).
+    An agent whose CLI supports MCP but whose `/run.sh` isn't wired yet
+    is unfinished — it belongs in neither `MCP_AGENTS` nor
+    `mcp-broken.md`. Upstream-impossible cases go in `mcp-broken.md`
+    with a citation.
+
+21. **The server map is what a benchmark would set.** The test passes
+    `EVAL_MCP_SERVERS` as a `{name: address}` JSON object, the same
+    shape a benchmark's `compose.yaml` declares on its runner — not a
+    bare URL and not an agent-specific dialect. A single-entry map is
+    enough to prove the contract; `mcp-mock` serves two *tools* so a
+    client that mishandles plural lists is still caught.
 
 ## Lifecycle
 

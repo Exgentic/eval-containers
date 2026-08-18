@@ -14,6 +14,33 @@ import sys
 import tempfile
 from pathlib import Path
 
+MCP_BRIDGE = "/opt/agent/mcp-bridge"
+
+
+def mcp_instructions() -> str:
+    """Inventory of the benchmark's MCP tools, as instruction text.
+
+    Benchmark-declared MCP servers (doctrine/agents rule 19). Terminus-2
+    acts by typing into a terminal — `mcp_servers` on Harbor's agent
+    config only appends prompt text, there is no MCP client behind it —
+    so the servers reach the model as a documented command plus the tool
+    list. `mcp-bridge` does the `tools/list` handshake here, before the
+    agent starts, which is both how the agent learns what exists and why
+    the handshake does not depend on the model choosing to look.
+
+    Unset or `{}` in EVAL_MCP_SERVERS yields "", leaving the instruction
+    exactly as the benchmark wrote it.
+    """
+    raw = os.environ.get("EVAL_MCP_SERVERS", "").strip()
+    if not raw or raw == "{}":
+        return ""
+    result = subprocess.run(
+        [sys.executable, MCP_BRIDGE, "prompt"], capture_output=True, text=True
+    )
+    if result.stderr:
+        print(result.stderr, file=sys.stderr, end="")
+    return result.stdout
+
 
 class LocalEnvironmentShim:
     def __init__(self, trial_dir: Path):
@@ -121,7 +148,9 @@ async def main():
     context = AgentContext()
 
     await agent.setup(env)
-    await agent.run(instruction=task, environment=env, context=context)
+    await agent.run(
+        instruction=task + mcp_instructions(), environment=env, context=context
+    )
 
     answer = ""
     if hasattr(agent, "_trajectory_steps") and agent._trajectory_steps:

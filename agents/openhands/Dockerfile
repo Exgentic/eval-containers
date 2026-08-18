@@ -10,7 +10,13 @@ LABEL eval.agent.description="OpenHands open-source AI software engineer"
 LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/All-Hands-AI/OpenHands"
 LABEL eval.agent.version="${AGENT_VERSION}"
+# Declares the MCP contract (doctrine/agents rule 19) — rendered in
+# run_openhands.py, since this agent drives the SDK rather than a CLI.
+# The label is for discovery only; /opt/agent/MCP below is what the
+# runtime guard reads, because labels do not survive the combination build.
+LABEL eval.agent.mcp="true"
 ENV EVAL_AGENT=openhands
+RUN echo true > /opt/agent/MCP
 # openhands-ai requires Python >=3.12; several benchmark bases ship 3.10
 # (aider-polyglot's ubuntu:22.04). Provision a self-contained venv via the
 # shared `/opt/agent/setup-uv-venv.sh` helper (core/agent-base-python). We

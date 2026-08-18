@@ -10,9 +10,31 @@ via uv-managed Python during install.sh, and driving the SDK from
 this script under that venv's interpreter — a one-shot CLI wrapper.
 """
 
+import json
 import os
 import sys
 import tempfile
+
+
+def _mcp_config() -> dict:
+    """Render EVAL_MCP_SERVERS into the SDK's mcp_config shape.
+
+    Benchmark-declared MCP servers (doctrine/agents rule 19): the
+    benchmark publishes a flat {name: address} map and we turn every
+    entry into a streamable-HTTP server, so a benchmark can stand up as
+    many sidecars as it likes without this script changing. Unset or
+    `{}` returns an empty dict, which the SDK treats as "no MCP" — the
+    agent is constructed exactly as before.
+    """
+    raw = os.environ.get("EVAL_MCP_SERVERS", "").strip()
+    if not raw or raw == "{}":
+        return {}
+    servers = json.loads(raw)
+    return {
+        "mcpServers": {
+            name: {"url": url, "transport": "http"} for name, url in servers.items()
+        }
+    }
 
 
 def _env(*keys: str, default: str) -> str:
@@ -43,10 +65,17 @@ def main() -> None:
     base_url = _env("LLM_BASE_URL", "OPENAI_BASE_URL", default="http://model:4000")
 
     llm = LLM(model=model, api_key=api_key, base_url=base_url, usage_id="smoke")
-    agent = Agent(llm=llm)
+    mcp_config = _mcp_config()
+    agent = Agent(llm=llm, mcp_config=mcp_config) if mcp_config else Agent(llm=llm)
     workspace = tempfile.mkdtemp(prefix="openhands-")
+    # More iterations when MCP is in play: the SDK spends the first turns
+    # connecting to each server and listing its tools before the model
+    # gets to act, so the 3 that suffice for a bare run can be consumed
+    # before any tool call happens.
     conversation = Conversation(
-        agent=agent, workspace=workspace, max_iteration_per_run=3
+        agent=agent,
+        workspace=workspace,
+        max_iteration_per_run=10 if mcp_config else 3,
     )
     conversation.send_message(Message(role="user", content=[TextContent(text=task)]))
     conversation.run()

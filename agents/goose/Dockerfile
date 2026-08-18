@@ -10,7 +10,12 @@ LABEL eval.agent.description="Block Goose AI agent"
 LABEL eval.agent.runtime="rust"
 LABEL eval.agent.url="https://github.com/block/goose"
 LABEL eval.agent.version="${AGENT_VERSION}"
+# Declares the MCP contract (doctrine/agents rule 19). The label is for
+# discovery only; /opt/agent/MCP below is what the runtime guard reads,
+# because labels do not survive the combination build.
+LABEL eval.agent.mcp="true"
 ENV EVAL_AGENT=goose
+RUN echo true > /opt/agent/MCP
 # Download + integrity-check, then extract. Streaming `curl | tar` fails
 # on partial bytes under flaky networks (observed 2026-04-17); download
 # to a file so curl can retry and we can size-check before extracting.
@@ -45,7 +50,33 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # don't end up posting to /openai/v1/v1/chat/completions.
 H="${OPENAI_BASE_URL:-http://model:4000}"; export OPENAI_HOST="${H%/v1}"
 export GOOSE_TELEMETRY_OFF=true
-exec goose run -t "$TASK" --no-session -q
+# Benchmark-declared MCP servers (doctrine/agents rule 19). goose calls
+# them "extensions" and takes one flag per server, so we build the flag
+# list from the map — a benchmark can declare as many as it likes and
+# this script never changes. Flags beat ~/.config/goose/config.yaml here:
+# they can't be shadowed by a stale config in some benchmark base.
+#
+# awk, not node/python: goose is a static binary dropped onto whatever
+# base the benchmark chose, and rule 11 says we don't get to assume that
+# base ships an interpreter. awk is POSIX. The map is flat string→string,
+# so splitting each comma-separated pair on its first `:` is enough —
+# URLs contain `:` but neither `,` nor `"`.
+MCP=()
+if [ -n "${EVAL_MCP_SERVERS:-}" ] && [ "$EVAL_MCP_SERVERS" != "{}" ]; then
+  while IFS="$(printf '\t')" read -r name url; do
+    [ -n "$name" ] || continue
+    MCP+=(--with-streamable-http-extension "$url")
+  done < <(printf '%s' "$EVAL_MCP_SERVERS" | awk '{
+    gsub(/[{}"]/, ""); n = split($0, e, ",");
+    for (i = 1; i <= n; i++) {
+      p = index(e[i], ":"); if (p == 0) continue;
+      k = substr(e[i], 1, p - 1); v = substr(e[i], p + 1);
+      gsub(/^[ \t]+|[ \t]+$/, "", k); gsub(/^[ \t]+|[ \t]+$/, "", v);
+      if (k != "") printf "%s\t%s\n", k, v;
+    }
+  }')
+fi
+exec goose run -t "$TASK" --no-session -q "${MCP[@]}"
 E
 
 ENTRYPOINT ["/run.sh"]
