@@ -163,9 +163,17 @@ for shape in "--task sympy__sympy-24066" "--task 0" "--dataset"; do
     bad "oc $shape: no eval Job rendered — $(grep -m1 -i 'error' <<<"$out")"
   elif [ "$said" != "$rendered" ]; then
     bad "oc $shape: the wrapper addresses Job '$said' but the chart named it '$rendered'"
-  elif [ "$said" = "tau-bench-harness" ]; then
+  elif [[ "$said" == tau-bench-harness* ]]; then
     # Both readers agreeing on the WRONG Job would satisfy the check above.
     bad "oc $shape: the wrapper picked the preset's harness Job, not the eval Job"
+  fi
+  # The harness plays the task the eval Job is on (benchmarks/RULES.md 24c). Not
+  # for --dataset, where the task is each pod's index.
+  if [ "$shape" != "--dataset" ]; then
+    ids=$(awk '/name: EVAL_TASK_ID/ { v = $0; if (v !~ /value:/) getline v
+               sub(/.*value: */, "", v); print v }' <<<"$out" | tr -d "\"' }" | sort -u | paste -sd' ' -)
+    [ "$ids" = "${shape#--task }" ] \
+      || bad "oc $shape: the render's Jobs are on task(s) '$ids', not the one asked for"
   fi
 done
 
