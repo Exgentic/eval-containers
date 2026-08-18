@@ -1,7 +1,7 @@
 # Running Eval Containers Tests Locally
 
 **Status:** Practical guide
-**Date:** April 2026
+**Date:** August 2026
 
 This document is the practical counterpart to [RULES.md](../../.agents/verification/RULES.md). RULES defines what tests MUST do; this doc explains how to run them on your machine without drowning in disk usage or OOMing your VM.
 
@@ -9,7 +9,7 @@ This document is the practical counterpart to [RULES.md](../../.agents/verificat
 
 **Test what you touched locally. Let CI test everything.**
 
-Eval Containers has 96+ benchmarks and 17+ agents. That's 1600+ possible eval combinations, most of which you'll never need locally. Build only what you're working on; pull everything else from the registry.
+Eval Containers has 100+ benchmarks and 20+ agents. That's 2000+ possible eval combinations, most of which you'll never need locally. Build only what you're working on; pull everything else from the registry.
 
 ## What runtime you need
 
@@ -95,11 +95,19 @@ suites do this for you under `DOCKER_BUILDKIT=0` (podman guide §5a–§6).
 No containers built. Catches missing Dockerfiles, missing labels, broken compose files.
 
 ```bash
-cargo test --test check structural_validation                      # every benchmark + agent on disk
-cargo test --test compose -- --ignored       # cargo equivalent for the 29 committed benchmarks
+cargo test --test check structural_validation   # every benchmark + agent on disk
+tests/static/compose.config.sweep.sh             # every benchmark compose.yaml loads via `docker compose config`
+tests/static/standalone.sweep.sh                 # single-container process-compose wiring (needs conftest)
+tests/static/helm.sweep.sh                       # every benchmark renders through the chart (needs helm, kubeconform, conftest)
 ```
 
 Run on every commit.
+
+> **Compose version matters for `compose.config.sweep.sh`.** The `include:` +
+> redeclare conflict this sweep catches is version-dependent: newer Compose merges
+> the override silently and reports 0 failures, so it misses that class of error.
+> CI pins the strict `v2.32.4` (`.github/workflows/test.yml`) for exactly this
+> reason; run the same version locally if you rely on this check.
 
 ### Level 2: Build the thing you touched
 
@@ -110,7 +118,7 @@ Local dev loop: build exactly the benchmark or agent you're working on. Nothing 
 docker build -t local/aime containers/benchmarks/aime/
 
 # One agent
-docker build -t local/claude-code agents/claude-code/
+docker build -t local/claude-code containers/agents/claude-code/
 
 # One eval combination (benchmark + agent + model)
 eval-containers build eval aime --agent codex
@@ -160,7 +168,7 @@ One-time. Runs a real task with a real model, saves the trajectory as a fixture.
 
 ```bash
 # Record one combination — uses the shared `output` named volume from
-# compose/services.yaml (the runner writes to /output inside the container).
+# containers/compose/services.yaml (the runner writes to /output inside the container).
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
@@ -170,7 +178,7 @@ docker run --rm -v aime_output:/output:ro alpine \
   cat /output/traces.jsonl > tests/run/replay/fixtures/aime-0-codex.traces.jsonl
 ```
 
-The volume name follows `<benchmark>_output` (compose project + the `output` declared in `compose/services.yaml`). Sanity-check the result:
+The volume name follows `<benchmark>_output` (compose project + the `output` declared in `containers/compose/services.yaml`). Sanity-check the result:
 ```bash
 docker run --rm -v aime_output:/output:ro alpine cat /output/task/result.json
 ```
@@ -187,7 +195,7 @@ eval-containers images                     # all eval-containers images
 eval-containers images benchmarks          # just benchmarks
 eval-containers images agents
 
-# Inspect a eval-containers image (wraps `docker inspect`)
+# Inspect an eval-containers image (wraps `docker inspect`)
 eval-containers inspect aime               # benchmark
 eval-containers inspect codex --category agents
 ```
@@ -215,19 +223,21 @@ cargo test --test check structural_validation
 docker build -t local/aime containers/benchmarks/aime/
 
 # 3. Run one task with a real model
-TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-4.1-mini \
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
-# 4. Check the output
-cat output/aime/0/task/result.json
+# 4. Check the output — it lives in the `aime_output` named volume, not on the host.
+docker run --rm -v aime_output:/output:ro alpine cat /output/task/result.json
 ```
 
 **Before pushing a PR:**
 ```bash
-cargo test --test check structural_validation                      # every benchmark + agent structurally
-cargo test --test compose -- --ignored       # cargo compose tests
-docker build containers/benchmarks/aime/                # only the ones you changed
-cargo test --test replay -- --ignored        # only the ones you changed
+cargo test --test check structural_validation   # every benchmark + agent structurally
+tests/static/compose.config.sweep.sh             # every benchmark compose.yaml loads (pin Compose v2.32.4 — see Level 1)
+tests/static/standalone.sweep.sh                 # single-container process-compose wiring
+tests/static/helm.sweep.sh                       # every benchmark renders through the chart
+docker build containers/benchmarks/aime/         # only the ones you changed
+cargo test --test replay -- --ignored            # only the ones you changed
 ```
 
 Everything else — full fleet build, registry push, multi-arch — is CI's job. See [release pipeline](../../.agents/delivery/release/SKILL.md).
@@ -245,9 +255,9 @@ eval-containers prune --all
 eval-containers build bench swe-bench --task-id sympy__sympy-24066
 ```
 
-## Registry Caching (Future)
+## Registry Caching
 
-Once images are published to the registry, local testing becomes:
+The `eval-containers run` command already drives a full eval end to end:
 
 ```bash
 eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4

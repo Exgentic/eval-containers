@@ -46,6 +46,42 @@ compose/helm lint) on **commit**, and a **commit-msg** hook that auto-adds the
 gates (`clippy`, `cargo test`) run in CI, not in a hook. Hooks are advisory —
 DCO and CI are the enforced gates on every pull request.
 
+Most hooks bring their own environment, but some shell out to tools that must
+already be on your `PATH` — without them those hooks fail on every run (not
+intermittently), with a `not found` error:
+
+| Hook | Requires |
+|---|---|
+| `cargo-fmt` | `cargo` (Rust toolchain) |
+| `hadolint` | `hadolint` |
+| `helm-lint` | `helm` |
+| `conftest-dockerfile`, `conftest-compose` | `conftest` |
+| `trivy-config` | `trivy` |
+
+**macOS** (Homebrew):
+
+```sh
+brew install hadolint helm conftest trivy
+```
+
+**Linux** (Homebrew works here too; otherwise use the distro/official installers):
+
+```sh
+# Homebrew on Linux
+brew install hadolint helm conftest trivy
+
+# or, without Homebrew:
+#   hadolint — https://github.com/hadolint/hadolint#install
+#   conftest — https://www.conftest.dev/install/
+#   trivy    — https://trivy.dev/latest/getting-started/installation/
+#   helm     — https://helm.sh/docs/intro/install/
+```
+
+`cargo` comes from a Rust toolchain on either OS — install via [rustup](https://rustup.rs/).
+CI installs the same tools in
+[`.github/workflows/pre-commit.yml`](.github/workflows/pre-commit.yml), which
+pins the versions it runs against.
+
 ## Opening a pull request
 
 A typical change flows through five steps:

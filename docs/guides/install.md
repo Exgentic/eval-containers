@@ -14,6 +14,7 @@ needs.
 | Deploy to OpenShift | the above plus `oc` |
 | Build images yourself | Docker with `buildx` (bundled with recent Docker) |
 | Use the `eval-containers` CLI | a Rust toolchain (`cargo`) to build it |
+| Run the pre-commit gates (contribute code) | `pre-commit`, plus `cargo`, `hadolint`, `helm`, `conftest`, and `trivy` on PATH for the hooks that shell out to them — see [Local setup](../../CONTRIBUTING.md#local-setup) |
 
 The CLI is optional: everything it does is a plain `docker` / `helm` /
 `kubectl` command you can run yourself (see [CLI reference](../reference/cli.md)).
