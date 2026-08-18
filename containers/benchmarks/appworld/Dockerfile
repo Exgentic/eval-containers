@@ -115,13 +115,21 @@ RUN chown bridge:bridge /bridge.py && chmod 700 /bridge.py
 # construction, so a second open here would just discard the agent's
 # progress. SIGUSR1 (not an HTTP route) triggers it: as root, this script
 # can signal bridge's uid regardless — the agent (a third, distinct uid)
-# cannot signal it either way. Runs after the agent's own process has
-# already exited, so re-opening this one task's ground_truth/ for bridge
-# right here, immediately before signaling, is never agent-reachable.
+# cannot signal it either way.
+#
+# This is meant to run after the agent's own process has already exited,
+# but run-agent's timeout only bounds the agent's direct child — a
+# deliberately-detached grandchild would survive it and could still be
+# POSTing to /execute. Touching bridge.stop_accepting BEFORE the chown
+# below (not after) closes that regardless: bridge.py's HTTP server is
+# single-threaded and synchronous, so once that file exists no new
+# /execute call ever runs, and anything already mid-request when it was
+# created ran (and finished) while ground_truth/ was still root-only.
 RUN mkdir -p /tests && cat > /grade.sh <<'TEST'
 #!/bin/bash
 mkdir -p /logs/verifier /logs/appworld
 REAL_TASK_ID="$(cat /tasks/$EVAL_TASK_ID/id.txt)"
+touch /run/bridge.stop_accepting
 chown -R bridge:bridge "$APPWORLD_ROOT/data/tasks/$REAL_TASK_ID/ground_truth"
 kill -USR1 "$(cat /run/bridge.pid)"
 for i in $(seq 1 150); do

@@ -40,6 +40,20 @@
 # CAP_KILL), so /grade.sh (root, run after the agent's own process has
 # exited) can ask for evaluation without the agent ever being able to
 # trigger it itself, over HTTP or otherwise.
+#
+# grade.sh's own sequencing (kill the agent's timed process, THEN chown
+# ground_truth/ to `bridge`, THEN signal) assumes the agent has no process
+# left running — but run-agent's timeout only bounds the agent's direct
+# child; a deliberately-detached grandchild would survive it and could keep
+# POSTing to /execute during the gap between that chown and this signal
+# actually being delivered, reading ground_truth through a live world.execute()
+# the same way root once could. STOP_FILE closes that regardless of timing:
+# grade.sh touches it BEFORE the chown (see Dockerfile), and do_POST checks
+# it first. The HTTP server below is single-threaded and fully synchronous
+# (one request completes before the next is even accepted), so once the
+# file exists no further code ever executes here — and anything already
+# mid-request when it was created started (and finished) while
+# ground_truth/ was still root-only, before the chown that follows it.
 
 import json
 import os
@@ -53,6 +67,7 @@ from appworld import AppWorld
 TASK_ID = os.environ["APPWORLD_TASK_ID"]
 EXPERIMENT_NAME = "agent"
 PORT = int(os.environ.get("APPWORLD_BRIDGE_PORT", "8123"))
+STOP_FILE = "/run/bridge.stop_accepting"
 
 world = None
 
@@ -61,9 +76,9 @@ def handle_evaluate_signal(signum, frame):
     try:
         # world was opened with load_ground_truth=False (see main()) — the
         # ground_truth/ directory is root-only until grade.sh chowns it to
-        # `bridge` immediately before sending this signal, after the agent's
-        # own process has already exited. Load it now, into the same live
-        # object, rather than reconstructing (which would wipe progress).
+        # `bridge` immediately before sending this signal, after touching
+        # STOP_FILE. Load it now, into the same live object, rather than
+        # reconstructing (which would wipe progress).
         from appworld.ground_truth import GroundTruth
 
         world.task.ground_truth = GroundTruth.load(task_id=TASK_ID, mode="minimal")
@@ -78,7 +93,12 @@ def handle_evaluate_signal(signum, frame):
     reward = 1.0 if result.get("success") else 0.0
     with open("/logs/verifier/reward.txt", "w") as f:
         f.write(str(reward))
-    sys.exit(0)
+    # sys.exit(0) here only raises SystemExit in this thread — AppWorld's
+    # construction spins up at least one non-daemon thread that survives it,
+    # leaving the process alive (confirmed live: thread count 1->2, /health
+    # hangs afterward). os._exit() terminates the process unconditionally,
+    # at the OS level, regardless of what other threads are doing.
+    os._exit(0)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -99,6 +119,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != "/execute":
             self._send_json(404, {"error": "not found"})
+            return
+        if os.path.exists(STOP_FILE):
+            self._send_json(503, {"error": "grading in progress"})
             return
         length = int(self.headers.get("Content-Length", 0))
         try:
