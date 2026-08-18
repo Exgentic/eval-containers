@@ -6,8 +6,8 @@
 // injected upstream credential never enters a record (rule 9).
 //
 // Stdlib only, so the binary is static and runs with no runtime dependency
-// (rule 15): the same file is a scratch image, a sidecar, and a process inside
-// the standalone bundle.
+// (rule 15): the same file is a scratch image and a process inside every eval
+// image.
 package main
 
 import (
@@ -48,7 +48,9 @@ type call struct {
 var (
 	mu     sync.Mutex
 	out    = envOr("OUT", "/output/model/calls.jsonl")
-	listen = envOr("LISTEN", ":4000")
+	// 4100, not 4000: a gateway owns 4000, and in k8s it shares this pod's
+	// network namespace (edge rule 13).
+	listen = envOr("LISTEN", ":4100")
 	model  = os.Getenv("EVAL_MODEL")
 	base   = strings.TrimSuffix(os.Getenv("OPENAI_API_BASE"), "/")
 	apiKey = os.Getenv("OPENAI_API_KEY")

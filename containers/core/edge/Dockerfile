@@ -19,5 +19,5 @@ LABEL eval.core.description="Pins the model to EVAL_MODEL and records every LLM 
 
 COPY --from=build /opt/edge/start /opt/edge/start
 
-EXPOSE 4000
+EXPOSE 4100
 ENTRYPOINT ["/opt/edge/start"]

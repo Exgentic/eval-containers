@@ -1,5 +1,5 @@
-# Single-container pipeline. Five processes:
-#   otelcol → gateway → agent → verifier → result.
+# Single-container pipeline. Six processes:
+#   otelcol → gateway → edge → agent → verifier → result.
 #
 # This is the SINGLE-CONTAINER mode only — the in-process orchestrator for the
 # -standalone bundle, where otelcol + gateway run in-process alongside the eval.
@@ -55,6 +55,29 @@ processes:
       restart: "no"
     log_location: /output/model/gateway.log
 
+  # The edge fronts the gateway: the agent talks to 4100, the edge forwards to
+  # the gateway on 4000 and records every call (.agents/edge/RULES.md). Same
+  # shape as compose, where /usr/local/bin/run starts it directly.
+  edge:
+    command: /opt/edge/start
+    environment:
+      # Its own upstream is the in-process gateway. Set here, on this process
+      # only — the gateway reads OPENAI_API_BASE for the REAL upstream.
+      - "OPENAI_API_BASE=http://127.0.0.1:4000"
+      - "EDGE_UPSTREAM=gateway"
+    depends_on:
+      gateway:
+        condition: process_healthy
+    readiness_probe:
+      exec:
+        command: /opt/edge/start health
+      initial_delay_seconds: 0
+      period_seconds: 1
+      failure_threshold: 30
+    availability:
+      restart: "no"
+    log_location: /output/model/edge.log
+
   agent:
     # The agent launch (non-root gosu, timeout, scrubbed env -i allow-list, raw
     # stdout/stderr redirection) lives in /usr/local/bin/run-agent — shared with
@@ -63,7 +86,7 @@ processes:
     depends_on:
       otelcol:
         condition: process_healthy
-      gateway:
+      edge:
         condition: process_healthy
     availability:
       restart: "no"

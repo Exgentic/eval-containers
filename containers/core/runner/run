@@ -64,13 +64,12 @@ if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
   # own traces summarise away (.agents/edge/RULES.md). One static binary, so it
   # needs no supervisor — start it, wait for its own probe, and point the agent
   # at it instead of at the gateway.
-  export OPENAI_API_BASE="${OPENAI_API_BASE:-$(printf '%s' "$ANTHROPIC_BASE_URL" | sed 's#/anthropic$##')}"
-  export EDGE_UPSTREAM=gateway
-  # 4100, not 4000: in k8s the gateway sidecar shares this pod's network
-  # namespace, so 4000 is already taken. One port everywhere keeps the contract
-  # uniform across compose and k8s.
-  export LISTEN=":4100"
-  /opt/edge/start >> /output/model/edge.log 2>&1 &
+  # Scoped to the edge's own process: OPENAI_API_BASE is the *gateway's*
+  # upstream everywhere else, and exporting it here would repoint whatever else
+  # reads it.
+  edge_upstream="${OPENAI_API_BASE:-$(printf '%s' "$ANTHROPIC_BASE_URL" | sed 's#/anthropic$##')}"
+  OPENAI_API_BASE="$edge_upstream" EDGE_UPSTREAM=gateway \
+    /opt/edge/start >> /output/model/edge.log 2>&1 &
   edge_ready=0
   for _ in $(seq 1 60); do
     if /opt/edge/start health >/dev/null 2>&1; then edge_ready=1; break; fi
@@ -93,10 +92,14 @@ fi
 # ─── Single-container mode (bundle) ───────────────────────────────────
 # We own the whole pipeline. Point the agent + gateway at loopback and let
 # process-compose bring up otelcol → gateway → agent → verifier → result.
-export ANTHROPIC_BASE_URL="http://127.0.0.1:4000/anthropic"
+# The edge fronts the in-process gateway here too, so a single-container run is
+# recorded exactly like a compose one. Its upstream is set on the edge process
+# in process-compose.yaml, NOT exported: OPENAI_API_BASE is the gateway's own
+# upstream, and overwriting it would point the gateway at itself.
+export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
 # OpenAI base needs /v1 (clients append /chat/completions); anthropic doesn't.
-export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://127.0.0.1:4000/openai/v1}"
-export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://127.0.0.1:4000/genai}"
+export OPENAI_BASE_URL="http://127.0.0.1:4100/openai/v1"
+export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:4100/genai"
 # litellm's OTel callback honors this env var; bifrost reads its collector_url
 # from config.json. Setting it unconditionally is harmless for bifrost.
 export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
