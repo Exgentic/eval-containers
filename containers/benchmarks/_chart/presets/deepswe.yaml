@@ -1,0 +1,15 @@
+# DeepSWE v1.1 — long-horizon tasks, so the agent budget and the per-task
+# resources both come from upstream's task.toml rather than the chart defaults.
+#   [agent].timeout_sec        = 5400  -> timeout
+#   [verifier].timeout_sec     = 1800  -> deadlineGrace (grading runs after the agent)
+#   [environment].cpus/memory  = 2 / 8192 MiB -> resources.limits (rule 24e:
+#                                must match compose.yaml's deploy.resources.limits)
+timeout: '5400'
+deadlineGrace: 1800
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: '2'
+    memory: 8Gi
