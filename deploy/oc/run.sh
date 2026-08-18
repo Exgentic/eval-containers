@@ -8,7 +8,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
 BENCHMARK="" AGENT="" MODEL="" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
-EVAL_MODEL="" NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX=""
+EVAL_MODEL="" NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" FLAT_IMAGES="true"
 DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
@@ -19,6 +19,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --eval-model) EVAL_MODEL="$2"; shift 2;; --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --pvc) PVC="$2"; shift 2;;
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
+  --flat-images) FLAT_IMAGES="$2"; shift 2;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --test) TEST=true; shift;;
   --test-suffix) TEST=true; SUFFIX="$2"; shift 2;;
@@ -71,10 +72,12 @@ if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"; SUB="${RESULT
 else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"; fi
 
 [[ -z "$EVAL_MODEL" ]] && EVAL_MODEL="openai/azure/$(echo "$MODEL" | sed 's/--bifrost//;s/--litellm//;s/--portkey//')"
-# flatImages=true → the chart composes flat ImageStream refs for the OC registry.
+# flatImages=true → the chart composes flat ImageStream refs for the OC internal
+# registry (no slashes). A nested-path registry (ghcr/ICR/external) needs the
+# chart's own default (false) instead — override with --flat-images false.
 SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "model=$MODEL" --set "gatewayImage=$MODEL" --set "evalModel=$EVAL_MODEL"
-     --set "registry=$REGISTRY" --set "flatImages=true"
+     --set "registry=$REGISTRY" --set "flatImages=$FLAT_IMAGES"
      --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB")
 [[ -n "$SUFFIX"      ]] && SET+=(--set "imageSuffix=$SUFFIX" --set "nameSuffix=$SUFFIX")
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
