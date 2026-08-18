@@ -37,6 +37,33 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
 {{- end }}
 {{- end -}}
 
+{{/* Job metadata.name: a dataset eval is <benchmark>-<agent>; a single-task run
+     keeps the task so several coexist. Two things the plain concatenation got
+     wrong. Task ids can carry `__`/uppercase (swe-bench's
+     `astropy__astropy-12907`) and blow past k8s' 63-char RFC-1123 limit, so
+     sanitise (lower, non-alnum→`-`) and, when still too long, truncate and append
+     a short hash of the raw name for uniqueness. And a task id that looks like a
+     number (`5` — every index of a dataset replay) arrives from `--set` as a
+     float64, which `%s` renders as `%!s(float64=5)`; `toString` is what keeps it
+     `5`.
+
+     Dots are legal inside an RFC-1123 name but not at either end, and the
+     character class below lets them through, so they are trimmed alongside
+     dashes.
+
+     Callers that need to predict this name — the dashboard mirrors it in Python
+     to make the Job own its per-run token Secret, and a mismatch orphans a Secret
+     holding an API key — must mirror it exactly. Note `trimAll` (not
+     `trimSuffix`) on the truncation: `trimSuffix` strips one character, Python's
+     `strip('-.')` strips all, and a name whose cut lands mid-`--` would
+     diverge. */}}
+{{- define "eval.jobName" -}}
+{{- $raw := (printf "%s-%s%s" .benchmark .agent .nameSuffix) -}}
+{{- if not .datasetSize -}}{{- $raw = (printf "%s-%s-task-%s%s" .benchmark .agent (toString .task) .nameSuffix) -}}{{- end -}}
+{{- $s := trimAll "-." (regexReplaceAll "[^a-z0-9.-]+" (lower $raw) "-") -}}
+{{- if gt (len $s) 63 -}}{{- printf "%s-%s" (trimAll "-." (trunc 54 $s)) (sha1sum $raw | trunc 8) -}}{{- else -}}{{- $s -}}{{- end -}}
+{{- end -}}
+
 {{/* Image refs. Default to the nested registry path; when
      flatImages is set, compose the flat ImageStream name the OpenShift internal
      registry requires (no slashes) — lowercase, dots→dash, `--`→`-`. imageSuffix

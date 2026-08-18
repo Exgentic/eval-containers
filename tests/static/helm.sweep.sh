@@ -93,5 +93,29 @@ if [ "${dl:-0}" -le 3000 ]; then
   fail=$((fail + 1))
 fi
 
+# 6. a hostile task id must still render an RFC-1123 Job name. The sweep above
+# can't catch this — values.yaml's `task` default is the quoted "0" — so probe
+# the two shapes that broke: an id that merely looks like a number (`--set
+# task=5` arrives as float64, and `%s` rendered it `%!s(float64=5)`), and a
+# swe-bench id carrying `__` and blowing past the 63-char limit.
+rfc1123='^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$'
+long_id=astropy__astropy-12907-plus-a-very-long-tail-that-blows-past-the-limit
+for probe in 5 "$long_id"; do
+  jn=$(helm template name-probe "$CHART" --set benchmark=humaneval --set "task=$probe" 2>/dev/null |
+    awk '/^kind: Job$/{j=1} j&&/^  name:/{print $2; exit}')
+  if [ -z "$jn" ] || [ "${#jn}" -gt 63 ] || ! printf '%s' "$jn" | grep -Eq "$rfc1123"; then
+    echo "FAIL naming: task=$probe rendered Job name '${jn:-<none>}' — not a ${#jn}-char RFC-1123 name"
+    fail=$((fail + 1))
+  fi
+done
+
+# 7. a benchmark with helper services must refuse to be a dataset (Indexed) Job:
+# its helpers are selected from the task id, and an Indexed Job has a different
+# id per index — so it would start index 0's helpers and strand every other one.
+if helm template dataset-probe "$CHART" --set benchmark=webarena --set datasetSize=50 >/dev/null 2>&1; then
+  echo "FAIL dataset guard: webarena rendered as an Indexed Job — its per-task sites would be wrong for every index but 0"
+  fail=$((fail + 1))
+fi
+
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]
