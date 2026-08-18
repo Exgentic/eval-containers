@@ -8,12 +8,27 @@
 {{- if and ($v.perTask | default false) $v.datasetSize -}}
 {{- fail "per-task benchmarks bake one eval image per task and cannot use a dataset (Indexed) Job — run one Job per task (omit datasetSize)" -}}
 {{- end -}}
+{{- /* A benchmark with helper services can't be a dataset (Indexed) Job either,
+       for two reasons this chart can't paper over. The helpers a task needs are
+       resolved from the task id above, and an Indexed Job has a different id per
+       index — so it would start index 0's helpers and leave every other index
+       pointing at a hostname that never resolves. And a helper is named by role,
+       so the Job's whole parallelism would share one copy of the environment it
+       is scored against. One Job per task is the only shape that works. */ -}}
+{{- $helperManifests := list -}}
+{{- range $v.extraManifests }}
+{{- if or (eq .kind "Deployment") (eq .kind "Service") }}{{- $helperManifests = append $helperManifests .kind -}}{{- end }}
+{{- end -}}
+{{- if and $v.datasetSize (or $v.sidecars $helperManifests) -}}
+{{- fail (printf "%s brings up helper services, which are selected per task and named by role — it cannot run as a dataset (Indexed) Job. Run one Job per task (omit datasetSize)." $v.benchmark) -}}
+{{- end -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  # A dataset eval (datasetSize set) is named <benchmark>-<agent>; a single-task
-  # debug run keeps the task in the name so several can coexist.
-  name: {{ if $v.datasetSize }}{{ $v.benchmark }}-{{ $v.agent }}{{ else }}{{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}{{ end }}{{ $v.nameSuffix }}
+  # Sanitised + length-capped (see eval.jobName): dataset → <benchmark>-<agent>,
+  # single-task → keeps the task so several coexist; long/`__`/numeric task ids
+  # all stay RFC-1123.
+  name: {{ include "eval.jobName" $v }}
   labels:
     {{- include "eval.labels" . | nindent 4 }}
 spec:
