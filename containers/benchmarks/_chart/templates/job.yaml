@@ -185,9 +185,15 @@ spec:
         {{- with $v.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+{{/* Extra manifests are rendered through `tpl`, so a preset can reach the run's
+     own axes — `{{ .Values.task }}`, `{{ .Values.nameSuffix }}`. Without it a
+     preset is frozen data: tau-bench's harness Job had the task id baked in as
+     `0` and one fixed name, so every task of every run rendered the same object
+     and only task 0 was ever evaluated. No preset used `{{` before this, so
+     nothing else changes. */}}
 {{- range $v.extraManifests }}
 ---
-{{ toYaml . }}
+{{ tpl (toYaml .) $ }}
 {{- end }}
 {{/* Per-task website sidecars: a Deployment+Service for each catalog entry whose
      name is in $active — the chart self-resolves $active above from the
