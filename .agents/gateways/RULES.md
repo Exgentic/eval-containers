@@ -5,7 +5,7 @@
 
 ## Abstract
 
-A gateway image is a self-contained LLM proxy. It accepts requests from the agent on a fixed set of protocol-namespaced paths, routes them to a user-specified upstream provider, and emits OpenTelemetry traces. This document defines the requirements for gateway images in Dock.
+A gateway image is a self-contained LLM proxy. It accepts requests on a fixed set of protocol-namespaced paths, routes them to a user-specified upstream provider, and emits OpenTelemetry traces. This document defines the requirements for gateway images in Dock. Model authority moved to the [edge](../edge/RULES.md), which fronts the gateway; everything else here stands.
 
 Gateways are the *how* (which proxy implementation handles routing, format translation, and observability). Models are the *what* (which provider, model name, and credentials a specific deployment uses). The two are independent axes — a single gateway image MUST work with any model, and a single model spec MAY be served by any compatible gateway.
 
@@ -25,7 +25,10 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 2a. **Any model out of the box.** Gateway images MUST work with any upstream model the user supplies — selected purely by setting `EVAL_MODEL` at container start. Rebuilding the image to switch models is forbidden. The set of supported models is whatever the configured upstream serves; the gateway's job is to route the inbound protocol and rewrite the agent's chosen model name to `EVAL_MODEL` (via governance routing, model_list aliasing, header override, or equivalent), not to gate which models are allowed. A user who wants to try a new model MUST be able to do so by changing one env var, never by building a new image.
 
-2b. **`EVAL_MODEL` pins; `EVAL_MODEL_API` only picks the wire.** The agent sends a non-authoritative model (often a placeholder); the gateway is the model authority and MUST rewrite it to `EVAL_MODEL` whenever `EVAL_MODEL` is set. Three modes:
+2b. **Superseded by [edge:2](../edge/RULES.md).** The edge pins the model before
+   the call reaches a gateway, so a gateway behind it forwards an
+   already-pinned model. The mode taxonomy below still governs a gateway that
+   faces an agent directly. **`EVAL_MODEL` pins; `EVAL_MODEL_API` only picks the wire.** The agent sends a non-authoritative model (often a placeholder); the gateway is the model authority and MUST rewrite it to `EVAL_MODEL` whenever `EVAL_MODEL` is set. Three modes:
    - **Native pin** (`EVAL_MODEL` set, `EVAL_MODEL_API` unset) — the default: rewrite the model to `EVAL_MODEL` and forward on the *inbound* protocol's own wire. No cross-protocol translation, so native server tools (web search) survive. Correct against a protocol-agnostic upstream (one that serves any model over any wire).
    - **Wire override** (`EVAL_MODEL_API` set) — additionally force the wire to `EVAL_MODEL_API`, translating the inbound protocol to it. For single-protocol upstreams. Cross-protocol server-tool preservation is a known upstream limitation, so it is best-effort (see the test RULES matrix).
    - **Passthrough** (`EVAL_MODEL` unset) — forward the client's own model on its native wire, unchanged. For recording/observing, not evals.
@@ -136,3 +139,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-07-22 | Rules 2, 2b, 22 rewritten for the `EVAL_MODEL` (bare, opaque handle — never parsed) + optional `EVAL_MODEL_API` (wire protocol, `anthropic\|openai\|gemini`) model. |
 | 2026-07-29 | Rule 2b: three modes — `EVAL_MODEL` set ⇒ pin (default keeps the inbound wire so server tools survive), `EVAL_MODEL_API` overrides the wire, unset ⇒ passthrough. Rule 6 permits a header-injection shim (bifrost fronts Caddy to stamp the inbound wire — CEL can't see the path); rule 12 lists the shim config. |
 | 2026-07-30 | Rule 6: the shim binary+config MUST live under `/opt/gateway/` and be static (Caddy) — bifrost switched nginx→Caddy so the single-container `-standalone` bundle (one `COPY /opt/gateway`) actually boots the gateway (nginx at `/usr/sbin`, musl, silently broke every bundle). Guard: `tests/static/check.rs::gateway_shim_lives_under_opt_gateway`. |
+| 2026-08-18 | Rule 2b superseded in place by [edge:2](../edge/RULES.md): the edge fronts the gateway and pins the model before a call reaches it, so model authority is implemented and verified once instead of once per flavor. Everything else here stands — rules 10 and 11 still require OTel emission, and the edge emits none. Motivation: the per-flavor capture obligation carried tool names and descriptions without their schemas, and none at all on the chat-completions wire. |
