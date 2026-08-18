@@ -1,0 +1,4 @@
+#!/bin/sh
+# Readiness probe for images that have a shell. The scratch image has none and
+# is probed with `start health` directly.
+exec /opt/edge/start health

@@ -3,6 +3,7 @@ variable "EVAL_AGENT"         {}
 variable "EVAL_AGENT_VERSION" { default = "" }
 variable "BENCHMARK_IMAGE"    {}
 variable "AGENT_IMAGE"        {}
+variable "EDGE_IMAGE"         { default = "${REGISTRY}/core/edge:${TAG}" }
 variable "MODEL_IMAGE"        { default = "${REGISTRY}/models/bifrost:${TAG}" }
 variable "OTEL_IMAGE"         { default = "${REGISTRY}/core/otel:${TAG}" }
 variable "GOSU_IMAGE"            { default = "${REGISTRY}/core/gosu:${TAG}" }
@@ -24,6 +25,7 @@ target "eval" {
     AGENT_IMAGE     = AGENT_IMAGE
     AGENT_VERSION   = EVAL_AGENT_VERSION
     GOSU_IMAGE      = GOSU_IMAGE
+    EDGE_IMAGE      = EDGE_IMAGE
   }
   tags = ["${REGISTRY}/evals/${EVAL_BENCHMARK}--${EVAL_AGENT}:${TAG}"]
 }
@@ -41,6 +43,7 @@ target "eval-local" {
     "${BENCHMARK_IMAGE}"    = "target:benchmark-${EVAL_BENCHMARK}"
     "${AGENT_IMAGE}"        = "target:agent-${EVAL_AGENT}"
     "${REGISTRY}/core/gosu" = "target:gosu"
+    "${REGISTRY}/core/edge" = "target:edge"
   }
 }
 

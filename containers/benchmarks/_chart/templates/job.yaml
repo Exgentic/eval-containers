@@ -136,7 +136,11 @@ spec:
             # run works regardless of which internal path produces result.json.
             - { name: EVAL_BENCHMARK,              value: {{ $v.benchmark | quote }} }
             - { name: EVAL_AGENT,                  value: {{ $v.agent | quote }} }
-            - { name: EVAL_MODEL,                  value: {{ include "eval.modelLabel" $v | quote }} }
+            # The handle the edge pins to (edge rule 2); MODEL below keeps the
+            # label for result.json. The edge's upstream is the gateway sidecar
+            # on this pod's shared loopback.
+            - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
+            - { name: OPENAI_API_BASE,             value: "http://localhost:4000" }
             - { name: EVAL_TASK_ID,                value: {{ $v.task | quote }} }
             - { name: EVAL_TIMEOUT,                value: {{ $v.timeout | quote }} }
             - { name: BENCHMARK,                   value: {{ $v.benchmark | quote }} }
