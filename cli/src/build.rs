@@ -66,6 +66,21 @@ pub struct BuildArgs {
     /// is fully isolated from production images.
     #[arg(long, global = true, default_value = "")]
     pub imagestream_suffix: String,
+
+    /// Target platform for the build, e.g. `linux/amd64` or `linux/arm64`.
+    /// `DOCKER_DEFAULT_PLATFORM` is silently ignored by `docker buildx bake`
+    /// (confirmed: the same env var, same command, still builds the host's
+    /// native arch), so a bake-based build (agent/bench/model/eval) on an
+    /// Apple Silicon Mac targeting an x86_64 cluster silently produces the
+    /// wrong architecture with no error — just an `exec format error` at pod
+    /// run time. Threaded to bake as `--set '*.platform=<value>'`, and to a
+    /// per-task `docker build` (`--task-id`) as `--platform`. Does not apply
+    /// to `--builder oc` (the cluster node's own architecture, not a
+    /// cross-compile target) or a benchmark's own `build.sh` (per-task
+    /// environments built from an upstream Dockerfile via a two-step script
+    /// this flag doesn't reach).
+    #[arg(long, global = true)]
+    pub platform: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -131,6 +146,14 @@ pub enum BuildTarget {
 pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     let builder = args.builder.as_deref();
     let dry_run = args.dry_run;
+    let platform = args.platform.as_deref();
+    // `*.platform=<value>` bake override, shared by every bake-based target below.
+    let platform_override = |mut o: Vec<String>| -> Vec<String> {
+        if let Some(p) = platform {
+            o.push(format!("*.platform={p}"));
+        }
+        o
+    };
 
     // `--builder oc` is the OpenShift BuildConfig backend (not a buildx
     // builder): build one artifact in-cluster with `oc start-build`. Routed
@@ -149,9 +172,13 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     }
 
     match args.target {
-        BuildTarget::Agent { name } => {
-            bake(registry, &agent_bake_target(&name), &[], builder, dry_run)
-        }
+        BuildTarget::Agent { name } => bake(
+            registry,
+            &agent_bake_target(&name),
+            &platform_override(vec![]),
+            builder,
+            dry_run,
+        ),
         BuildTarget::Bench { benchmark, task_id } => {
             if let Some(tid) = task_id {
                 if builder.is_some() {
@@ -179,6 +206,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                         &format!("./containers/benchmarks/{benchmark}"),
                         &[format!("EVAL_TASK_ID={tid}")],
                         &[(OCI_SOURCE.to_string(), REPO_URL.to_string())],
+                        platform,
                         dry_run,
                     )
                 }
@@ -186,15 +214,19 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 bake(
                     registry,
                     &benchmark_bake_target(&benchmark),
-                    &[],
+                    &platform_override(vec![]),
                     builder,
                     dry_run,
                 )
             }
         }
-        BuildTarget::Model { name } => {
-            bake(registry, &model_bake_target(&name), &[], builder, dry_run)
-        }
+        BuildTarget::Model { name } => bake(
+            registry,
+            &model_bake_target(&name),
+            &platform_override(vec![]),
+            builder,
+            dry_run,
+        ),
         BuildTarget::Eval {
             benchmark,
             agent,
@@ -236,10 +268,10 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             // The lean `eval` base's two source images. (When --standalone layers
             // the bundle on top, the `eval-standalone` target builds `eval` first
             // as a wired dependency via the `eval-base` context, so these still apply.)
-            let mut overrides = vec![
+            let mut overrides = platform_override(vec![
                 format!("{eval_target}.args.BENCHMARK_IMAGE={bench_tag}"),
                 format!("{eval_target}.args.AGENT_IMAGE={agent_tag}"),
-            ];
+            ]);
             // Per-task: tag the lean base evals/<b>-<task>--<a> (what compose,
             // container, and the chart all address), overriding the bake file's
             // shared-env default — else `build` and `run` disagree (RULES.md 24f).
@@ -532,6 +564,7 @@ fn docker_build(
     context: &str,
     build_args: &[String],
     labels: &[(String, String)],
+    platform: Option<&str>,
     dry_run: bool,
 ) -> Result<(), String> {
     let mut shown = format!("docker build -t {tag}");
@@ -540,6 +573,9 @@ fn docker_build(
     }
     for (k, v) in labels {
         shown.push_str(&format!(" --label {k}={v}"));
+    }
+    if let Some(p) = platform {
+        shown.push_str(&format!(" --platform {p}"));
     }
     // HF_TOKEN as an ephemeral build secret, never a --build-arg (rule 8a).
     if std::env::var("HF_TOKEN").is_ok() {
@@ -558,6 +594,9 @@ fn docker_build(
     }
     for (k, v) in labels {
         cmd.arg("--label").arg(format!("{k}={v}"));
+    }
+    if let Some(p) = platform {
+        cmd.arg("--platform").arg(p);
     }
     if std::env::var("HF_TOKEN").is_ok() {
         cmd.arg("--secret").arg("id=HF_TOKEN,env=HF_TOKEN");
