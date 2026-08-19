@@ -1,6 +1,6 @@
 ---
 benchmark: deepswe
-host: local docker (arm64 / Apple Silicon), kind v0.32.0 arm64 node
+host: (a) local docker arm64 / Apple Silicon, emulated; (b) OpenShift c111-e-us-east, native amd64
 commit: 91e97273
 ---
 # Audit — deepswe (Datacurve DeepSWE v1.1)
@@ -12,9 +12,9 @@ commit: 91e97273
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | building | ✓ | `build.sh` resolves the per-task base from the task's own `task.toml` (`[environment].docker_image`) and overlays the eval pipeline; built for `fastapi-implicit-head-options` (python) and `superjson-error-stack-serialization` (typescript) |
-| running | ✗ | **not run end-to-end with a live agent.** The upstream per-task base is amd64-only and the available kind node is arm64 with no in-node binfmt/QEMU, so the kubelet cannot run the image (`crictl` filters it as a foreign platform). Needs an amd64 node. |
+| running | ~ | Pipeline proven end-to-end on compose (all five units ran, `task/result.json` + `traces.jsonl` produced), but **no valid agent score yet**: the local attempt was killed by an under-set `EVAL_TIMEOUT` (exit 124). An arm64 **kind** node cannot run this at all — containerd rejects the amd64 base at pull time regardless of host binfmt. The OpenShift sweep on native amd64 is in progress. |
 | isolation | ✓ | gold not baked (fetched fresh by `solution.sh`); `/tests` root-only (`700`, root-owned) — hides `config.json`, the whitelist of graded node ids; `/task` holds only `instruction.md`; upstream base ships the repo at `base_commit` with `origin` removed + future history gc'd ("git time-travel"), so gold cannot leak from git |
-| oracle | ✓ | gold=1.0 / no-op=0.0 on `fastapi-implicit-head-options` — gold: `{"reward":1,"f2p_total":43,"f2p_passed":43,"p2p_total":3134,"p2p_passed":3134}`; no-op: `{"reward":0,"f2p_passed":0,"p2p_passed":3134}`. Graded with `--network none` (no-op), confirming offline grading. |
+| oracle | ✓ | gold=1.0 / no-op=0.0 on TWO tasks, TWO architectures, TWO builders. (a) `fastapi-implicit-head-options`, local emulated arm64, buildx — gold `{"f2p_passed":43/43,"p2p_passed":3134/3134}`, no-op `{"f2p_passed":0,"p2p_passed":3134}`, graded with `--network none` (offline grading confirmed). (b) `adaptix-name-mapping-aliases`, native amd64 on OpenShift, in-cluster BuildConfig — gold `{"reward":1,"f2p_passed":44/44,"p2p_passed":2738/2738,"partial":1.0}`, no-op `{"reward":0,"f2p_passed":0/44,"p2p_passed":2738/2738}`. |
 | traces-reviewed | ? | no human trajectory review |
 | replicate-official | ? | no known-model reproduction of a published score |
 
