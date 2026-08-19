@@ -33,7 +33,12 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
 # `--`: a task beginning with "--" is otherwise parsed as an option, and the
 # agent exits 1 without running.
-exec claude -p ${EVAL_AGENT_REASONING_EFFORT:+--effort $EVAL_AGENT_REASONING_EFFORT} --dangerously-skip-permissions -- "$TASK"
+# EVAL_AGENT_DISALLOWED_TOOLS: space-separated built-in tools to deny. Needed when
+# an upstream proxy rejects a tool definition the CLI always advertises — a
+# LiteLLM->Bedrock route 400s on the web-search payload
+# ("_websearch_interception_converted_stream: Extra inputs are not permitted")
+# and the agent then exits 1 without attempting the task.
+exec claude -p ${EVAL_AGENT_REASONING_EFFORT:+--effort $EVAL_AGENT_REASONING_EFFORT} ${EVAL_AGENT_DISALLOWED_TOOLS:+--disallowedTools $EVAL_AGENT_DISALLOWED_TOOLS} --dangerously-skip-permissions -- "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]
