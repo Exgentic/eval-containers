@@ -39,6 +39,20 @@ export MODEL="${MODEL:-${EVAL_MODEL:-}}"
 export BENCHMARK="${BENCHMARK:-${EVAL_BENCHMARK:-unknown}}"
 export AGENT="${AGENT:-${EVAL_AGENT:-unknown}}"
 export TASK="${TASK:-}"
+# EVAL_TASK_SUFFIX: appended to the problem text for every agent, unchanged. It
+# carries harness-level operating instructions the benchmark itself should not
+# encode — e.g. "work autonomously, do not ask for confirmation" for a CLI that
+# otherwise stops mid-task waiting for a human. Observed need: codex ended all ten
+# DeepSWE runs in 0.4-2.4 min with exit 0, having produced a plan and asked "Reply
+# 'continue' and I'll execute that end-to-end"; in a non-interactive eval nobody
+# answers, so it scored 0/10 without attempting the work. Applied here (not in an
+# agent's /run.sh) so the SAME text reaches every agent and the comparison stays
+# fair — an instruction given to one agent and not the others invalidates the run.
+if [ -n "${EVAL_TASK_SUFFIX:-}" ] && [ -n "$TASK" ]; then
+  export TASK="${TASK}
+
+${EVAL_TASK_SUFFIX}"
+fi
 
 # Defensive fallback (agent uid baked into image at build time).
 id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
