@@ -22,6 +22,25 @@ from --set and are never in a preset, so preset-wins is safe.
 
 {{/* Shared labels: benchmark/agent/model, sweep-id + Kueue queue only when set.
      `task` is dropped for a dataset eval (every index shares the Job). */}}
+{{/* eval.jobName — the Job's metadata.name, guaranteed to be a legal DNS-1123
+     name (<=63 chars). A per-task benchmark's task id can be long (DeepSWE's
+     `dynamodb-toolbox-conditional-attribute-requirements` yields a 73-char name),
+     and kubectl rejects the object outright — the render succeeds and the apply
+     fails, which reads like a cluster problem rather than a naming one. Long
+     names are truncated and suffixed with an 8-char sha1 of the full name, so the
+     mapping stays deterministic and collision-safe. `trimAll "-."` keeps the
+     truncation from ending on a separator, which DNS-1123 also forbids. */}}
+{{- define "eval.jobName" -}}
+{{- $base := printf "%s-%s" .benchmark .agent -}}
+{{- $n := ternary $base (printf "%s-task-%s" $base (toString .task)) (not (not .datasetSize)) -}}
+{{- $n = printf "%s%s" $n (.nameSuffix | default "") -}}
+{{- if gt (len $n) 63 -}}
+{{- printf "%s-%s" (trimAll "-." (trunc 54 $n)) (sha1sum $n | trunc 8) -}}
+{{- else -}}
+{{- $n -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "eval.labels" -}}
 benchmark: {{ required "benchmark is required (--set benchmark=<x>)" .Values.benchmark }}
 agent: {{ .Values.agent }}
