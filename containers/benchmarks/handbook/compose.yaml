@@ -1,0 +1,34 @@
+# HANDBOOK.md — compose surface.
+#
+# Single-service topology: the MCP proxy (all 6 servers, 82 tools) runs INSIDE
+# the runner on localhost:8000 — HANDBOOK's native co-located design, and file
+# permissions over extra containers (RULES.md rule 6). No sidecar, no preset, no
+# task-profiles: one image serves all 65 tasks, graded locally by /grade.sh.
+#
+# Task selection is the shared template's `EVAL_TASK_ID` (rule 24c):
+#   EVAL_TASK_ID=42 EVAL_AGENT=openclaw docker compose -f compose.yaml up --abort-on-container-exit
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/handbook--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: handbook
+      # Paper budget is 1 hour of agent wall-clock (rule 14).
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-3600}
+      TIMEOUT: ${EVAL_TIMEOUT:-3600}
+    deploy:
+      resources:
+        limits:
+          # task.toml: 2 CPU / 4 GB — the runner also hosts the MCP proxy.
+          cpus: "2"
+          memory: 4G
