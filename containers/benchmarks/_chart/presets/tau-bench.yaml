@@ -32,6 +32,7 @@ extraManifests:
         containers:
         - name: bridge
           image: ghcr.io/exgentic/benchmarks/tau-bench-bridge:latest
+          imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 8000
           readinessProbe:
@@ -72,6 +73,7 @@ extraManifests:
         containers:
         - name: user-gateway
           image: ghcr.io/exgentic/models/bifrost:latest
+          imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 4000
           env:
@@ -86,7 +88,7 @@ extraManifests:
                 name: eval-secrets
                 key: OPENAI_API_BASE
           - name: EVAL_MODEL
-            value: openai/azure/gpt-5.4
+            value: aws/claude-sonnet-4-5
           - name: HOST
             value: 0.0.0.0
           readinessProbe:
@@ -133,6 +135,7 @@ extraManifests:
         containers:
         - name: harness
           image: ghcr.io/exgentic/evals/tau-bench--claude-code:latest
+          imagePullPolicy: IfNotPresent
           command:
           - bash
           - -c

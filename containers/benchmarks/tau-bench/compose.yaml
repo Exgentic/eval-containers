@@ -18,7 +18,7 @@ services:
     environment:
       BENCHMARK: tau-bench
       BRIDGE_URL: http://bridge:8000
-      OPENAI_BASE_URL: http://gateway:4000
+      OPENAI_BASE_URL: http://gateway:4000/v1
       OPENAI_API_KEY: sk-proxy
     depends_on:
       otelcol:
@@ -53,7 +53,7 @@ services:
     networks:
       - internal
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 2s
       timeout: 3s
       retries: 10
