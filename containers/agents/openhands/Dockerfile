@@ -3,7 +3,7 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-python:latest
-ARG AGENT_VERSION=1.7.0
+ARG AGENT_VERSION=1.28.1
 LABEL eval.type="agent"
 LABEL eval.agent.name="openhands"
 LABEL eval.agent.description="OpenHands open-source AI software engineer"
@@ -11,15 +11,20 @@ LABEL eval.agent.runtime="python"
 LABEL eval.agent.url="https://github.com/All-Hands-AI/OpenHands"
 LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=openhands
-# openhands-ai requires Python >=3.12; several benchmark bases ship 3.10
+# openhands-sdk requires Python >=3.12; several benchmark bases ship 3.10
 # (aider-polyglot's ubuntu:22.04). Provision a self-contained venv via the
 # shared `/opt/agent/setup-uv-venv.sh` helper (core/agent-base-python). We
-# use the SDK package (openhands-ai) wrapped by run_openhands.py as a
-# one-shot CLI.
+# pin the modular SDK package (openhands-sdk) — the SAME package + version the
+# upstream HANDBOOK harness installs (handbook/docker/Dockerfile) — wrapped by
+# run_openhands.py as a one-shot CLI. Version parity with upstream is the point:
+# the wire API is chosen by the model *handle*, not the SDK version (a handle
+# containing "gpt-5"/"codex" routes onto the Responses API — see
+# compose/runner.yaml), so the neutral gateway handle is what keeps non-gpt-5
+# models like GLM on chat/completions; this pin just tracks the leaderboard SDK.
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-/opt/agent/setup-uv-venv.sh /opt/openhands-venv openhands-ai==${AGENT_VERSION} lmnr==0.7.51
+/opt/agent/setup-uv-venv.sh /opt/openhands-venv openhands-sdk==${AGENT_VERSION} lmnr==0.7.51
 I
 
 RUN /opt/agent/install.sh

@@ -112,6 +112,23 @@ def main() -> None:
     effort = _env("EVAL_AGENT_REASONING_EFFORT", default="").strip().lower()
     if effort:
         llm_kwargs["reasoning_effort"] = effort
+    # Output-token cap: leave UNSET by default to mirror the upstream HANDBOOK
+    # harness exactly (its openhands_runner passes llmKwargs={} — no
+    # max_output_tokens). Only pin it when EVAL_AGENT_MAX_OUTPUT_TOKENS is
+    # explicitly provided.
+    #
+    # Why unset matters: an agent can end up on the OpenAI Responses API if the
+    # model handle it is given contains "gpt-5"/"codex" (openhands infers the
+    # wire API from the handle by substring). On that path max_output_tokens
+    # counts reasoning tokens too, and sending *any* value was observed to come
+    # back clamped to 4096 -> `incomplete` responses that stall the agent
+    # mid-run. Leaving the field unset — exactly as upstream does — removes the
+    # truncation. Do NOT reintroduce a default value here. (The gateway handle
+    # itself is kept neutral in compose/runner.yaml so non-gpt-5 models such as
+    # GLM stay on chat/completions in the first place.)
+    max_out = _env("EVAL_AGENT_MAX_OUTPUT_TOKENS", default="").strip()
+    if max_out:
+        llm_kwargs["max_output_tokens"] = int(max_out)
     llm = LLM(**llm_kwargs)
 
     # Run in the benchmark's working directory (the framework entrypoint cd's
