@@ -42,4 +42,19 @@ timeout -k 30 "${TIMEOUT:-300}" gosu agent env -i \
   GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \
   /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log || rc=$?
 printf '%s' "$rc" > /output/agent/.exit-code
+
+# On a non-zero exit the agent's own diagnostics (upstream 4xx/5xx from the
+# gateway, connection refused, auth rejections) sit only in stderr.log, and the
+# verifier that runs next reports a downstream symptom ("answer file missing")
+# that hides the real cause. Echo a short banner + the stderr tail to THIS
+# process's stderr so the actual failure lands on the run's console/logs. Kept
+# to a tail so a normal streaming-client disconnect doesn't dump the whole log;
+# the full trace stays in /output/agent/stderr.log. rc 124 = timeout (rule 14).
+if [ "$rc" -ne 0 ]; then
+  {
+    echo "run-agent: agent '${EVAL_AGENT:-?}' exited $rc$( [ "$rc" -eq 124 ] && echo ' (timeout)' ) — last stderr (full log: /output/agent/stderr.log):"
+    tail -n 25 /output/agent/stderr.log 2>/dev/null | sed 's/^/  | /'
+  } >&2
+fi
+
 exit "$rc"

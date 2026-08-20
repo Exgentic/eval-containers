@@ -31,7 +31,17 @@ ENV EVAL_TASK_PROMPT="Solve the following problem. Reason step by step, create t
 RUN cat > /grade.sh <<'GRADE'
 #!/bin/bash
 mkdir -p /logs/verifier
-AGENT_ANSWER=$(tr -d '[:space:]' < /home/agent/answer.txt 2>/dev/null)
+# No answer file → the agent never produced output (e.g. the model call was
+# rejected upstream). Score 0 and say so plainly, rather than letting the shell
+# leak a bare "answer.txt: No such file or directory" that reads like a grader
+# bug instead of a missing agent result. run-agent already echoed the agent's
+# own stderr tail, which names the real cause.
+if [ ! -f /home/agent/answer.txt ]; then
+  echo "grade: no /home/agent/answer.txt — agent produced no answer (see agent stderr above); scoring 0" >&2
+  echo 0 > /logs/verifier/reward.txt
+  exit 0
+fi
+AGENT_ANSWER=$(tr -d '[:space:]' < /home/agent/answer.txt)
 EXPECTED=$(echo "$EXPECTED_ANSWER" | tr -d '[:space:]')
 if [[ "$AGENT_ANSWER" =~ ^[0-9]+$ ]] && [ "$((10#$AGENT_ANSWER))" = "$((10#$EXPECTED))" ]; then
   echo 1 > /logs/verifier/reward.txt
