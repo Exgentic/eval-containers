@@ -106,7 +106,13 @@ def main() -> None:
     api_key = _env("LLM_API_KEY", "OPENAI_API_KEY", default="sk-proxy")
     base_url = _env("LLM_BASE_URL", "OPENAI_BASE_URL", default="http://model:4000")
 
-    llm = LLM(model=model, api_key=api_key, base_url=base_url, usage_id="agent")
+    llm_kwargs = dict(model=model, api_key=api_key, base_url=base_url, usage_id="agent")
+    # Honor the framework's reasoning-effort allow-list var when set; otherwise
+    # leave the SDK default (high for the gpt-5 family). Values: minimal|low|medium|high.
+    effort = _env("EVAL_AGENT_REASONING_EFFORT", default="").strip().lower()
+    if effort:
+        llm_kwargs["reasoning_effort"] = effort
+    llm = LLM(**llm_kwargs)
 
     # Run in the benchmark's working directory (the framework entrypoint cd's
     # the agent into the task workspace before exec) so any local file tools
