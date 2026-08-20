@@ -67,6 +67,37 @@ The bind-mount is fixed at cluster creation; change `--output-dir` on an existin
 cluster by re-running with `--recreate`. Results also remain readable inside the
 node with `docker exec <cluster>-control-plane cat /eval-output/…`.
 
+## Private-CA upstreams (e.g. IBM internal)
+
+If your `OPENAI_API_BASE` is served behind a **private CA** — an internal endpoint
+whose TLS cert chains to a corporate root that your laptop trusts (via the system
+keychain) but a pod does not — the gateway pod fails TLS verification even though
+the host can reach the endpoint (`curl` exit 60 / Go `x509: certificate signed by
+unknown authority`). The pod's trust store ships only public roots.
+
+Fix it at deploy time — the CA stays **on the cluster** as a ConfigMap and is
+never baked into (or pushed with) any image. Point `EVAL_UPSTREAM_CA` at a PEM of
+the extra CA cert(s) when you provision:
+
+```bash
+# macOS: export the corporate root (+ intermediate) from the keychain to a PEM.
+# The endpoint's leaf chains to these; the served chain omits the root, so pull it
+# from the keychain where your IT already installed it.
+security find-certificate -a -c "IBM Internal Root CA"         -p > ibm-ca.pem
+security find-certificate -a -c "IBM INTERNAL INTERMEDIATE CA" -p >> ibm-ca.pem
+
+EVAL_UPSTREAM_CA=./ibm-ca.pem \
+  OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-internal-endpoint \
+  ./deploy/kind/create.sh
+```
+
+`create.sh` validates the file is CA certs (and refuses a private key), then stores
+it as the `eval-upstream-ca` ConfigMap. On the next `run.sh`, if that ConfigMap
+exists it is mounted into the gateway at `/etc/eval-ca/ca.pem` with
+`SSL_CERT_FILE` pointed at it — the Go gateway **appends** it to the public roots,
+so both public and private upstreams keep verifying. Omit `EVAL_UPSTREAM_CA` and
+nothing changes: no ConfigMap, no mount, public-roots-only trust as before.
+
 ## How images reach the cluster (and the `:latest` trap)
 
 `run.sh` builds `bench`, `agent`, `model` (the gateway), and the combined `eval`

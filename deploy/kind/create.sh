@@ -8,8 +8,15 @@
 # OPENAI_API_BASE (required) — the same two keys the chart's job.yaml mounts
 # (secretKeyRef eval-secrets). Export them, or source a .env, before running.
 #
+# EVAL_UPSTREAM_CA (optional): path to a PEM of extra CA cert(s) to trust when the
+# upstream serves a private-CA TLS cert (e.g. an IBM-internal endpoint whose root
+# is in your host keychain but not a pod's public trust store). Stored as the
+# eval-upstream-ca ConfigMap; run.sh mounts it into the gateway and points
+# SSL_CERT_FILE at it. The CA lives only on the cluster — never baked into an image.
+#
 #   OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-endpoint ./deploy/kind/create.sh
 #   ./deploy/kind/create.sh --cluster eval --namespace my-ns
+#   EVAL_UPSTREAM_CA=./ibm-ca.pem OPENAI_API_KEY=... OPENAI_API_BASE=... ./deploy/kind/create.sh
 #
 # --output-dir <host-path> bind-mounts a directory on your machine into the node
 # at the /eval-output hostPath (via a kind `extraMounts` config), so eval results
@@ -28,6 +35,12 @@ Usage:
 Environment (required — the gateway reads these via the eval-secrets Secret):
   OPENAI_API_KEY    the gateway's upstream API key
   OPENAI_API_BASE   the gateway's upstream base URL, reachable from your machine
+
+Environment (optional):
+  EVAL_UPSTREAM_CA  path to a PEM of extra CA cert(s) to trust, for an upstream
+                    served behind a private CA (e.g. an IBM-internal endpoint).
+                    Stored as the eval-upstream-ca ConfigMap; run.sh mounts it into
+                    the gateway and sets SSL_CERT_FILE. Never baked into an image.
 
 Flags:
   --cluster <name>    kind cluster name (default: eval)
@@ -117,6 +130,29 @@ else
     --from-literal=OPENAI_API_KEY="$OPENAI_API_KEY" \
     --from-literal=OPENAI_API_BASE="$OPENAI_API_BASE" \
     --dry-run=client -o yaml | kube apply -f -
+fi
+
+# ── 3. eval-upstream-ca ConfigMap (optional) ──────────────────────────────────
+# When EVAL_UPSTREAM_CA points at a PEM, store it as a ConfigMap so run.sh can
+# mount it into the gateway (SSL_CERT_FILE) for a private-CA upstream. The Go
+# gateway appends SSL_CERT_FILE to the system pool on Linux, so this file need
+# hold only the extra CA(s) — public roots are retained. Default-off: unset → no
+# ConfigMap and the gateway trusts only public roots, exactly as before.
+if [[ -n "${EVAL_UPSTREAM_CA:-}" ]]; then
+  [[ -f "$EVAL_UPSTREAM_CA" ]] || { echo "error: EVAL_UPSTREAM_CA not found: $EVAL_UPSTREAM_CA" >&2; exit 1; }
+  grep -q "BEGIN CERTIFICATE" "$EVAL_UPSTREAM_CA" || { echo "error: EVAL_UPSTREAM_CA has no PEM certificate: $EVAL_UPSTREAM_CA" >&2; exit 1; }
+  # A CA bundle is public material; a private key here would be a leak — refuse it.
+  if grep -q "PRIVATE KEY" "$EVAL_UPSTREAM_CA"; then
+    echo "error: EVAL_UPSTREAM_CA contains a PRIVATE KEY — pass CA certs only" >&2; exit 1
+  fi
+  if $DRY_RUN; then
+    log "[dry-run] apply ConfigMap eval-upstream-ca from $EVAL_UPSTREAM_CA in ${NAMESPACE:-default}"
+  else
+    log "=== apply ConfigMap eval-upstream-ca (from $EVAL_UPSTREAM_CA) in ${NAMESPACE:-default} ==="
+    kube create configmap eval-upstream-ca \
+      --from-file=ca.pem="$EVAL_UPSTREAM_CA" \
+      --dry-run=client -o yaml | kube apply -f -
+  fi
 fi
 
 log "ready. submit an eval with: ./deploy/kind/run.sh --benchmark <b> --agent <a> --model <m> --task 0 --watch"
