@@ -216,6 +216,28 @@ $PER_TASK && SET+=(--set "perTask=true")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
 
+# Private-CA upstream: if create.sh stored the eval-upstream-ca ConfigMap, mount
+# it into the gateway and point SSL_CERT_FILE at it (list-of-maps values are
+# awkward via --set, so pass a values overlay file). Absent → no overlay, gateway
+# trusts only public roots, exactly as before. A tempfile (not process
+# substitution) because helm re-opens the -f path, and a <(...) FD is already
+# closed by then; trap-clean it on exit.
+if kube get configmap eval-upstream-ca >/dev/null 2>&1; then
+  log "eval-upstream-ca present → mounting private CA into the gateway (SSL_CERT_FILE)"
+  CA_OVERLAY=$(mktemp "${TMPDIR:-/tmp}/eval-ca-overlay.XXXXXX.yaml")
+  trap 'rm -f "$CA_OVERLAY"' EXIT
+  cat > "$CA_OVERLAY" <<'EOF'
+extraVolumes:
+  - name: upstream-ca
+    configMap: { name: eval-upstream-ca }
+gatewayExtraVolumeMounts:
+  - { name: upstream-ca, mountPath: /etc/eval-ca, readOnly: true }
+gatewayExtraEnv:
+  - { name: SSL_CERT_FILE, value: /etc/eval-ca/ca.pem }
+EOF
+  SET+=(-f "$CA_OVERLAY")
+fi
+
 RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" "${SET[@]}")
 if $DRY_RUN; then echo "$RENDER"; exit 0; fi
 $RERUN && kube delete job "$JOB" --ignore-not-found >/dev/null   # a completed Job is immutable

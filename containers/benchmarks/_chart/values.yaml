@@ -104,6 +104,7 @@ initContainers: []          # e.g. a wait-for-<service> gate
 runnerExtraEnv: []          # e.g. DESKTOP_URL for osworld
 gatewayExtraEnv: []
 runnerExtraVolumeMounts: []
+gatewayExtraVolumeMounts: []  # e.g. a private-CA ConfigMap for an internal upstream (with SSL_CERT_FILE in gatewayExtraEnv)
 extraVolumes: []
 extraManifests: []          # extra Deployments/Services (full manifests)
 # Per-task service sidecars. A catalog of name → {image, port,
