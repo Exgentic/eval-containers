@@ -25,10 +25,55 @@ podman machine ssh 'sudo mkdir -p /etc/systemd/system/user@.service.d \
 export KIND_EXPERIMENTAL_PROVIDER=podman   # for all kind commands below
 ```
 
-## 2. Create the cluster
+## 2. The two scripts
 
-Mount a host directory into the node so the Job's `/output` lands on your
-machine and survives the pod (no PVC or fetch step needed):
+`deploy/kind/` wraps the whole flow in two scripts that split cluster lifecycle
+from eval submission:
+
+| script | what it does |
+|--------|--------------|
+| `create.sh` | provisions the kind cluster (if absent) **and** the `eval-secrets` Secret, once. |
+| `run.sh` | builds every image on the host, loads it into the node, and submits one eval. Errors if the cluster is absent. |
+
+Both take `--help`. `run.sh` builds on the host and `kind load`s into the node —
+kind has no registry to pull from — reloading only images whose content changed
+(see [`deploy/kind/README.md`](../../deploy/kind/README.md) for the `:latest`
+reload logic and the full flag list).
+
+## 3. Create the cluster and the Secret
+
+`create.sh` reads the gateway's upstream credentials from the environment and
+writes them into the `eval-secrets` Secret the chart mounts (the same two keys as
+[Deploy on Kubernetes](deploy-on-kubernetes.md); `OPENAI_API_BASE` must be
+reachable from your machine). Run it once:
+
+```bash
+OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-endpoint ./deploy/kind/create.sh
+```
+
+`create.sh` is idempotent — a re-run skips an existing cluster and refreshes the
+Secret in place. Flags: `--cluster <name>` (default `eval`), `--namespace <ns>`,
+`--recreate` (delete an existing cluster of this name and rebuild it fresh),
+`--dry-run`.
+
+## 4. Submit an eval
+
+```bash
+./deploy/kind/run.sh --benchmark aime --agent claude-code --model bifrost --task 0 --watch
+```
+
+`--watch` polls until the Job reaches a terminal state; drop it to submit and
+return. A whole dataset runs as an Indexed Job with `--dataset` (parallelism
+defaults to 2 on a laptop). Results land in the node's `/eval-output` hostPath:
+
+```bash
+docker exec eval-control-plane cat /eval-output/aime/claude-code/bifrost/0/result.json
+# {"task_id":"0","benchmark":"aime","reward":1,"passed":true}
+```
+
+To land results on your **host** filesystem instead, create the cluster from a
+kind config that bind-mounts a host dir into the node under the same path, then
+point `run.sh --output-path` at it:
 
 ```bash
 cat > kind.yaml <<EOF
@@ -41,60 +86,15 @@ nodes:
     containerPath: /eval-output
 EOF
 mkdir -p "$HOME/eval-output"
-kind create cluster --name eval-local --config kind.yaml
+kind create cluster --name eval --config kind.yaml   # then: ./deploy/kind/create.sh (skips the existing cluster, adds the Secret)
 ```
 
-kind nodes can't pull from a private registry, so load the three images the Job
-uses (eval combination + gateway + otelcol) from your local engine — the chart's
-`imagePullPolicy: IfNotPresent` then uses them as-is:
-
-```bash
-for img in core/otel:latest models/bifrost:latest evals/aime--claude-code:latest; do
-  kind load docker-image --name eval-local ghcr.io/exgentic/$img
-done
-```
-
-(Build images you don't have with `eval-containers build eval aime --agent claude-code`.)
-
-## 3. Secret and run
-
-The `eval-secrets` Secret is identical to
-[Deploy on Kubernetes](deploy-on-kubernetes.md) — the gateway's
-`OPENAI_API_BASE` must be reachable from your machine:
-
-```bash
-kubectl create secret generic eval-secrets \
-  --from-literal=OPENAI_API_KEY=sk-... \
-  --from-literal=OPENAI_API_BASE=https://your-endpoint
-```
-
-Run, pointing `/output` at the mounted hostPath via an overlay:
-
-```bash
-cat > output.yaml <<'EOF'
-outputVolume:
-  hostPath: { path: /eval-output }
-EOF
-eval-containers run aime --agent claude-code --task-id 0 --mode job --overlay output.yaml
-```
-
-Watch the gate hold the runner until the gateway sidecar is healthy:
-
-```bash
-kubectl get pod -l job-name=aime-claude-code-task-0 -w
-```
-
-When it finishes, the results are on your machine:
-
-```bash
-cat "$HOME/eval-output/task/result.json"   # {"task_id":"0","benchmark":"aime","reward":1,"passed":true}
-```
-
-Tear down with `kind delete cluster --name eval-local`.
+Tear down with `kind delete cluster --name eval`.
 
 ## Note
 
-`outputVolume` defaults to an ephemeral `emptyDir` (results die with the pod);
-the overlay above swaps it for the hostPath. The same value takes a
-`persistentVolumeClaim` on a real cluster. Or skip all of this and use
+`run.sh` renders the chart with `outputVolume.hostPath.path` set to
+`--output-path` (default `/eval-output`), so results survive the pod inside the
+node. The same value takes a `persistentVolumeClaim` on a real cluster
+([Deploy on Kubernetes](deploy-on-kubernetes.md)). Or skip all of this and use
 `--mode compose`, whose `output/` is already a host bind mount.
