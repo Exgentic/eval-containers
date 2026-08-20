@@ -47,7 +47,16 @@ services:
       EVAL_AGENT_REASONING_EFFORT: ${EVAL_AGENT_REASONING_EFFORT:-}
       BENCHMARK: ${EVAL_BENCHMARK:-aime}
       AGENT: ${EVAL_AGENT:-claude-code}
-      MODEL: ${EVAL_GATEWAY_LABEL:-gpt-5.4-bifrost}
+      # Client-facing handle the agent actually sees (run-agent passes MODEL,
+      # not EVAL_MODEL, through its scrubbed `env -i` allow-list). Some agents
+      # (openhands) infer the wire API from it: a handle containing "gpt-5" or
+      # "codex" forces the OpenAI Responses API onto EVERY model. Non-gpt-5
+      # models (GLM, Kimi, …) truncate to `incomplete` on that path and stall
+      # (task 44 GLM: 0.209 vs 0.845 on chat/completions). Keep the DEFAULT
+      # neutral so every model takes the universal chat/completions path; set
+      # EVAL_GATEWAY_LABEL to a "gpt-5*" string only to deliberately opt a
+      # gpt-5-family model into the Responses API.
+      MODEL: ${EVAL_GATEWAY_LABEL:-eval-model}
       TASK_ID: ${EVAL_TASK_ID:-0}
       TIMEOUT: ${EVAL_TIMEOUT:-300}
       ANTHROPIC_BASE_URL: http://gateway:4000/anthropic
