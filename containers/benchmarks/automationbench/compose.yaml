@@ -1,0 +1,37 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  # Model-only runner: AutomationBench's native harness runs one task
+  # (EVAL_TASK_ID) and drives the model through the gateway. No bridge and no
+  # user simulator — the harness is its own agent scaffold.
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/automationbench--${EVAL_AGENT:-claude-code}:latest
+    # Model-only: run the native harness directly (it needs the task id, which
+    # the scrubbed agent phase withholds), then always write the result. Each
+    # step runs regardless of the previous one's status — write-result grades
+    # whatever was produced, fail-closed to 0 (mirrors /usr/local/bin/run).
+    entrypoint:
+      - bash
+      - -c
+      - "/eval-materialize-task || true; python3 /app/run_automationbench.py || true; /usr/local/bin/write-result"
+    environment:
+      BENCHMARK: automationbench
+      # The harness talks to the gateway on the OpenAI-compatible surface.
+      OPENAI_BASE_URL: http://gateway:4000/openai/v1
+      # Multi-step tool-calling loop — give it more wall-clock than the default.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
+      TIMEOUT: ${EVAL_TIMEOUT:-1800}
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G

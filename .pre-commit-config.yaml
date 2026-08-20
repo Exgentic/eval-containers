@@ -92,7 +92,7 @@ repos:
   # (non-blocking); only parse/error-level issues fail. Ignored rules:
   #   DL3059 staged RUNs · DL3007 :latest (pinned via bake) · DL3008/DL3018 apt/apk
   #   version pins · DL3029 --platform in FROM (multi-arch bake).
-  # The 6 excluded images embed a `#!/bin/bash` shebang inside a heredoc, which
+  # The excluded images embed a `#!/bin/bash` shebang inside a heredoc, which
   # trips a separate hadolint parser bug (hadolint/hadolint#806) that formatting
   # can't fix. Everything else parses after the heredoc blank-line normalization.
   - repo: https://github.com/hadolint/hadolint
@@ -106,7 +106,7 @@ repos:
           - --ignore=DL3008
           - --ignore=DL3018
           - --ignore=DL3029
-        exclude: ^containers/benchmarks/(aider-polyglot|aime|bigcodebench|humaneval|humanevalplus|mbpp|mbppplus|skills-bench)/Dockerfile$
+        exclude: ^containers/benchmarks/(aider-polyglot|aime|automationbench|bigcodebench|humaneval|humanevalplus|mbpp|mbppplus|skills-bench)/Dockerfile$
 
   # --- Compose files: schema-validate against the Compose spec (no daemon) ---
   - repo: https://github.com/python-jsonschema/check-jsonschema
