@@ -4,16 +4,18 @@
 #   [verifier].timeout_sec     = 1800  -> deadlineGrace (grading runs after the agent)
 #   [environment].cpus/memory  = 2 / 8192 MiB -> resources.limits (rule 24e:
 #                                must match compose.yaml's deploy.resources.limits)
-# 14400 (4h), well above upstream's 5400. Measured, not guessed: at 7200 SEVEN of
-# ten claude-code runs were killed at exactly the cap (exit 124) while still
-# working — 203 and 120 model calls in flight at the kill. A too-small budget is
-# silently indistinguishable from a wrong answer, because the launcher kills the
-# agent and the verifier then grades a tree with no agent work (reward 0). The
-# openclaw runs that finished cleanly took 4-35 min, so this ceiling costs nothing
-# for faster agents; it only stops the slow ones being scored as failures.
+# 28800 (8h). Raised twice, each time on measurement rather than guesswork:
+#   7200  -> 7 of 10 claude-code runs killed at the cap, still working
+#   14400 -> 6 of 9 killed at the cap; the three that FINISHED took 112, 143.6 and
+#            169.7 min, so the distribution's tail clearly runs past 4h
+# A too-small budget is silently indistinguishable from a wrong answer: the launcher
+# kills the agent and the verifier then grades a tree with no agent work (reward 0).
+# The ceiling costs nothing for faster agents (openclaw's clean runs took 4-35 min);
+# it only stops slow ones being scored as failures. Watch exit_code 124 in
+# agent/result.json — if it reappears, raise this again rather than trusting a 0.
 # NOTE the preset WINS over `--set timeout=` (the chart mergeOverwrites the preset
 # last), so this file is the only place the value can change.
-timeout: '14400'
+timeout: '28800'
 deadlineGrace: 1800
 resources:
   requests:
