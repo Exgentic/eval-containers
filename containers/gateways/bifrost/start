@@ -22,6 +22,18 @@
 
 set -eu
 
+# Private-CA upstream: when the deploy mounts an extra CA at /etc/eval-ca/ca.pem
+# (see deploy/kind/README.md § 'Private-CA upstreams'), APPEND it to the system
+# roots rather than replace them — bifrost is Go, and Go's SSL_CERT_FILE OVERRIDES
+# the system pool, so pointing it at the CA-only file would drop every public
+# root. Concatenate the system bundle + the CA into a writable combined file and
+# point curl (health) + the Go runtime at that superset. No mount → unchanged,
+# public-roots-only trust.
+if [ -f /etc/eval-ca/ca.pem ]; then
+  cat /etc/ssl/certs/ca-certificates.crt /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  export SSL_CERT_FILE=/tmp/ca-bundle.pem CURL_CA_BUNDLE=/tmp/ca-bundle.pem
+fi
+
 TEMPLATE=/opt/gateway/data/config.json.template
 CONFIG=/opt/gateway/data/config.json
 
