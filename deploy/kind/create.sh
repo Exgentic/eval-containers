@@ -163,102 +163,102 @@ YAML
   kube delete pod "$name" --ignore-not-found >/dev/null 2>&1
 }
 
-# Report which models the upstream offers, or the most specific reason it can't be
-# reached — a private CA missing from the cluster (fixable), a wrong key, a network
-# error, or a server error. Read-only: writes nothing. Skipped under --dry-run.
-# Returns 0 only when an eval could actually run (upstream reachable, key accepted);
-# non-zero on any failure so the caller can withhold "ready" and exit dirty.
-# Probe the same GET /models from the HOST and log the result as one line, so
-# every cluster failure is paired with an explicit host verdict (does my machine
-# reach what the cluster can't?). Prints the human line to stderr (so the terminal
-# sees it) and echoes a machine verdict "ok <http>" / "fail <rc>" to stdout for the
-# caller to branch on. Uses the host's own trust store.
-host_probe() {
-  local out rc=0
-  out="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
-           -H "Authorization: Bearer $OPENAI_API_KEY" "${OPENAI_API_BASE%/}/models" 2>/dev/null)" || rc=$?
-  if [[ "$rc" -eq 0 && "$out" != "000" ]]; then
-    log "  host check: reachable from the host (HTTP $out)." >&2
-    echo "ok $out"
-  else
-    log "  host check: NOT reachable from the host either (curl $rc, http ${out:-000})." >&2
-    echo "fail $rc"
-  fi
+# Extract OpenAI-style model ids from a /models response body (one per line).
+models_from_body() {
+  printf '%s' "$1" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' \
+    | sed -E 's/.*"([^"]+)"$/\1/' || true
 }
 
+# Log a model summary: the count, then up to 10 ids. Arg: newline-separated ids.
+log_models() {  # arg: <ids>
+  local ids="$1" count
+  count=$(printf '%s' "$ids" | grep -c . || true)
+  log "the upstream offers $count model(s)$([[ "$count" -gt 10 ]] && echo ' (first 10)'):"
+  printf '%s' "$ids" | head -10 | while IFS= read -r m; do [[ -n "$m" ]] && log "  - $m"; done
+}
+
+# Verify OPENAI_API_BASE from the HOST first — the host is the source of truth. If
+# the host itself can't reach a usable /models, nothing downstream can, so we stop
+# there and tell the user to fix host access. Only once the host works do we probe
+# the cluster to see whether it, too, reaches the endpoint (CA/egress). Read-only.
+# Returns 0 only when an eval could actually run; non-zero on any failure.
 probe_and_report() {
   $DRY_RUN && { log "[dry-run] skip upstream reachability/model probe"; return 0; }
 
-  log "probing $OPENAI_API_BASE from the cluster (GET /models) …"
-  # Run the substitution where a failure is expected so set -e doesn't abort first.
+  # ── Host first ──────────────────────────────────────────────────────────────
+  log "checking $OPENAI_API_BASE from the host (GET /models) …"
+  local hbody="" hrc=0 host_http
+  hbody="$(curl -sS -w $'\n__http__=%{http_code}' --max-time 15 \
+             -H "Authorization: Bearer $OPENAI_API_KEY" "${OPENAI_API_BASE%/}/models" 2>/dev/null)" || hrc=$?
+  host_http="${hbody##*__http__=}"; host_http="${host_http%%[!0-9]*}"; [[ "$host_http" =~ ^[0-9]+$ ]] || host_http=000
+  hbody="${hbody%$'\n'__http__=*}"
+
+  if [[ "$hrc" -ne 0 || "$host_http" == 000 ]]; then
+    log "NOT reachable from the host (curl $hrc, http $host_http). Model list: unavailable."
+    log "Fix host access to OPENAI_API_BASE first — check the URL, your network/VPN, and"
+    log "that the endpoint is up — then re-run. (Nothing else was attempted.)"
+    return 1
+  fi
+  case "$host_http" in
+    2*) : ;;  # reachable + OK — fall through to model list + cluster check
+    401|403)
+      log "reachable from the host but the key was rejected (HTTP $host_http). Fix OPENAI_API_KEY,"
+      log "then re-run. (The cluster was not probed.)"; return 1;;
+    5*)
+      log "reachable from the host but it returned HTTP $host_http — the endpoint is up but"
+      log "unhealthy (model server down/scaling?). Retry later. (The cluster was not probed.)"; return 1;;
+    *)
+      log "reachable from the host but GET /models returned HTTP $host_http — check OPENAI_API_BASE"
+      log "points at the API root (…/v1), not a web page. (The cluster was not probed.)"; return 1;;
+  esac
+
+  local models; models="$(models_from_body "$hbody")"
+  local mcount; mcount=$(printf '%s' "$models" | grep -c . || true)
+  if [[ "$mcount" -eq 0 ]]; then
+    if printf '%s' "$hbody" | grep -q '"data"\|"object"\|\[\]'; then
+      log "reachable from the host (HTTP $host_http); /models is valid but lists no models."
+      log "The endpoint works but serves nothing to evaluate right now. (Cluster not probed.)"
+    else
+      log "reachable from the host (HTTP $host_http) but the response is not an OpenAI /models"
+      log "payload — check OPENAI_API_BASE points at the API root (…/v1). (Cluster not probed.)"
+    fi
+    return 1
+  fi
+  log "reachable from the host (HTTP $host_http)."
+  log_models "$models"
+
+  # ── Then the cluster ─────────────────────────────────────────────────────────
+  # The host works. Does the cluster reach it too (CA installed / egress OK)?
+  log "checking the same endpoint from the cluster …"
   local resp="" pipe_rc=0
   resp="$(probe_models_from_cluster)" || pipe_rc=$?
-  # Split off the trailer: curl exit code + HTTP status. curl %{exitcode} needs
-  # curl ≥8.7; on an older build it stays literal, so fall back to the pipe rc.
-  local curl_rc="$pipe_rc" http=000 body="$resp" trailer=""
+  local curl_rc="$pipe_rc" cluster_http=000
   if [[ "$resp" == *"__probe__="* ]]; then
-    trailer="${resp##*__probe__=}"
-    body="${resp%$'\n'__probe__=*}"
-    read -r curl_rc http <<<"$trailer"
-    [[ "$curl_rc" =~ ^[0-9]+$ ]] || curl_rc=1     # unparsed %{exitcode} ⇒ treat as failed
-    [[ "$http"    =~ ^[0-9]+$ ]] || http=000
+    local trailer="${resp##*__probe__=}"
+    read -r curl_rc cluster_http <<<"$trailer"
+    [[ "$curl_rc" =~ ^[0-9]+$ ]] || curl_rc=1
+    [[ "$cluster_http"   =~ ^[0-9]+$ ]] || cluster_http=000
   fi
 
-  # A clean success first: cluster reached the HTTP layer (curl 0, real status)
-  # AND got a 2xx. Anything else is a failure — and for every failure we then
-  # check the host explicitly and print its verdict (per the diagnostic contract).
-  if [[ "${curl_rc:-1}" -eq 0 && "$http" == 2* ]]; then
-    local models count
-    models="$(printf '%s' "$body" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' \
-                | sed -E 's/.*"([^"]+)"$/\1/' || true)"
-    count=$(printf '%s' "$models" | grep -c . || true)
-    if [[ "$count" -gt 0 ]]; then
-      log "OK — reachable from the cluster (HTTP $http); the upstream offers $count model(s):"
-      while IFS= read -r m; do log "  - $m"; done <<<"$models"
-      return 0
-    fi
-    if printf '%s' "$body" | grep -q '"data"\|"object"\|\[\]'; then
-      log "OK — reachable from the cluster (HTTP $http); /models returned an empty list."
-      log "The endpoint works but currently serves no models."
-      return 0
-    fi
-    log "reachable from the cluster (HTTP $http) but the response is not an OpenAI /models"
-    log "payload — check OPENAI_API_BASE points at the API root (…/v1), not a web page."
-    host_probe >/dev/null
-    return 1
+  if [[ "$curl_rc" -eq 0 && "$cluster_http" != 000 ]]; then
+    log "OK — the cluster reaches it too (HTTP $cluster_http). Ready to run evals."
+    return 0
   fi
 
-  # Failure. Always probe the host and print its result, then explain the cluster
-  # symptom in terms of that host verdict.
-  local host_verdict; host_verdict="$(host_probe)"
-
-  # Couldn't reach the HTTP layer at all (curl error, or http 000 = no response).
-  if [[ "${curl_rc:-1}" -ne 0 || "$http" == "000" ]]; then
-    local why="connect"; case "$curl_rc" in 35|51|58|59|60|66|77|80|82|83|91) why="TLS/cert";; esac
-    if [[ "$host_verdict" == ok* && "$why" == "TLS/cert" ]]; then
-      log "→ cluster fails TLS (curl $curl_rc) where the host succeeds: the cluster is missing"
-      log "  a private CA the host trusts. Install it: deploy/kind/README.md § 'Private-CA upstreams'."
-    elif [[ "$host_verdict" == ok* ]]; then
-      log "→ cluster can't connect (curl $curl_rc) but the host can: a cluster egress/network"
-      log "  issue. If it is a private-CA endpoint, see deploy/kind/README.md § 'Private-CA upstreams'."
-    else
-      log "→ neither the cluster nor the host reached it: a network/DNS/URL problem, not a"
-      log "  certificate. Check OPENAI_API_BASE and your connectivity."
-    fi
-    return 1
-  fi
-
-  # Reached the HTTP layer but a non-2xx status. The host verdict above already
-  # shows whether the host sees the same thing.
-  case "$http" in
-    401|403)
-      log "→ cluster reached the upstream but the key was rejected (HTTP $http). Check OPENAI_API_KEY.";;
-    5*)
-      log "→ cluster reached the upstream but it returned HTTP $http — up but unhealthy (model";
-      log "  server down/scaling?). TLS, URL and auth look fine; retry later.";;
+  # Cluster can't reach what the host can. Classify by curl's exit code; http=000
+  # with a 0 exit still means "no HTTP response", so treat it as a connect failure
+  # (never print 'curl 0' as the reason — it reads as a contradiction).
+  case "$curl_rc" in
+    35|51|58|59|60|66|77|80|82|83|91)
+      log "but the cluster CANNOT (curl $curl_rc: TLS/cert). The cluster is missing a private CA"
+      log "the host trusts — install it: deploy/kind/README.md § 'Private-CA upstreams', then re-run.";;
+    0)
+      log "but the cluster got no response (HTTP 000) — it opened a connection but the TLS/HTTP"
+      log "exchange did not complete. Often a private-CA/egress issue: see deploy/kind/README.md"
+      log "§ 'Private-CA upstreams'. Re-run to retry.";;
     *)
-      log "→ cluster reached the upstream but GET /models returned HTTP $http. Check the";
-      log "  OPENAI_API_BASE path (should end at the API root, …/v1).";;
+      log "but the cluster CANNOT (curl $curl_rc) — a cluster egress/network issue. If it is a"
+      log "private-CA endpoint, see deploy/kind/README.md § 'Private-CA upstreams'.";;
   esac
   return 1
 }
