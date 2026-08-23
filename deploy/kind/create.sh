@@ -8,11 +8,16 @@
 # OPENAI_API_BASE (required) — the same two keys the chart's job.yaml mounts
 # (secretKeyRef eval-secrets). Export them, or source a .env, before running.
 #
-# EVAL_UPSTREAM_CA (optional): path to a PEM of extra CA cert(s) to trust when the
-# upstream serves a private-CA TLS cert (e.g. an IBM-internal endpoint whose root
-# is in your host keychain but not a pod's public trust store). Stored as the
-# eval-upstream-ca ConfigMap; run.sh mounts it into the gateway and points
-# SSL_CERT_FILE at it. The CA lives only on the cluster — never baked into an image.
+# After provisioning, create.sh probes OPENAI_API_BASE from the cluster (GET
+# /models) and prints the models the upstream offers. If it is unreachable from
+# the cluster, it reports whether the host can reach it — a private CA the host
+# trusts but a pod does not is the usual cause — and points at deploy/kind/README.md
+# § 'Private-CA upstreams'. The probe is read-only; it writes nothing.
+#
+# EVAL_UPSTREAM_CA (optional): path to a PEM of extra CA cert(s) for a private-CA
+# upstream. Stored as the eval-upstream-ca ConfigMap; run.sh mounts it into the
+# gateway and points SSL_CERT_FILE at it. The CA lives only on the cluster —
+# never baked into an image. See the README section above.
 #
 #   OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-endpoint ./deploy/kind/create.sh
 #   ./deploy/kind/create.sh --cluster eval --namespace my-ns
@@ -36,11 +41,18 @@ Environment (required — the gateway reads these via the eval-secrets Secret):
   OPENAI_API_KEY    the gateway's upstream API key
   OPENAI_API_BASE   the gateway's upstream base URL, reachable from your machine
 
+Upstream probe:
+  After provisioning, create.sh probes OPENAI_API_BASE from the cluster (GET
+  /models) and lists the models the upstream offers. If it is unreachable from
+  the cluster, it reports whether the host can reach it (a private CA the host
+  trusts but a pod does not is the usual cause) and points at the README
+  § 'Private-CA upstreams'. Read-only — it writes nothing to the cluster.
+
 Environment (optional):
-  EVAL_UPSTREAM_CA  path to a PEM of extra CA cert(s) to trust, for an upstream
-                    served behind a private CA (e.g. an IBM-internal endpoint).
-                    Stored as the eval-upstream-ca ConfigMap; run.sh mounts it into
-                    the gateway and sets SSL_CERT_FILE. Never baked into an image.
+  EVAL_UPSTREAM_CA  path to a PEM of CA cert(s) to trust, for an upstream served
+                    behind a private CA. Stored as the eval-upstream-ca ConfigMap;
+                    run.sh mounts it into the gateway (SSL_CERT_FILE). Never baked
+                    into an image. See the README § 'Private-CA upstreams'.
 
 Flags:
   --cluster <name>    kind cluster name (default: eval)
@@ -73,6 +85,91 @@ log() { echo "[create] $*"; }
 
 KCTX="kind-$CLUSTER"   # kind's kubectl context naming convention
 kube() { command kubectl --context "$KCTX" ${NAMESPACE:+-n "$NAMESPACE"} "$@"; }
+
+# Validate a PEM of CA cert(s) and store it as the eval-upstream-ca ConfigMap that
+# run.sh mounts into the gateway (SSL_CERT_FILE), for a private-CA upstream.
+# Refuses a file that carries a private key. Arg: path to a PEM file.
+store_upstream_ca() {  # arg: <pem-file>
+  local pem="$1"
+  [[ -f "$pem" ]] || { echo "error: CA file not found: $pem" >&2; return 1; }
+  grep -q "BEGIN CERTIFICATE" "$pem" || { echo "error: no PEM certificate in: $pem" >&2; return 1; }
+  # A CA bundle is public material; a private key here would be a leak — refuse it.
+  if grep -q "PRIVATE KEY" "$pem"; then
+    echo "error: CA file contains a PRIVATE KEY — pass CA certs only: $pem" >&2; return 1
+  fi
+  log "=== apply ConfigMap eval-upstream-ca (from $pem) in ${NAMESPACE:-default} ==="
+  kube create configmap eval-upstream-ca \
+    --from-file=ca.pem="$pem" \
+    --dry-run=client -o yaml | kube apply -f -
+}
+
+# curl image for the throwaway in-cluster probe (a local dev diagnostic, not a
+# released fleet image — the fleet's digest-pin rule governs containers/, not
+# this). A probe pull uses the same cluster egress the probe tests, so a pull
+# failure degrades to "skip", never a hang.
+PROBE_IMAGE="curlimages/curl:8.11.1"
+
+# GET {base}/models from a throwaway pod — through the same egress + trust store
+# the gateway pod uses. Prints the full response body followed by a final line
+# `__rc__=<n>` carrying curl's own exit code, so the caller can tell "curl failed"
+# apart from "curl succeeded but the body held no model ids" (a grep on the body
+# alone conflates the two). Never fails the pipeline itself.
+probe_models_from_cluster() {
+  # No -o /dev/null: we want the body to parse model ids from. A non-2xx body still
+  # means TLS + network worked — reachability is curl's exit code, not HTTP status.
+  # KEY/URL come in via --env (kept out of the command args), read inside the pod.
+  kube run eval-upstream-probe --rm -i --restart=Never --quiet \
+    --pod-running-timeout=40s --image="$PROBE_IMAGE" \
+    --env="KEY=$OPENAI_API_KEY" --env="URL=${OPENAI_API_BASE%/}" --command -- \
+    sh -c 'curl -sS --max-time 15 -H "Authorization: Bearer $KEY" "$URL/models"; rc=$?; echo; echo "__rc__=$rc"' \
+    2>/dev/null
+}
+
+# Report which models the upstream offers and, if it is unreachable from the
+# cluster, whether the host can reach it — then point at the README for the fix.
+# Read-only: it never writes to the cluster. Skipped under --dry-run (it starts a
+# throwaway pod) and never fatal — a failed probe only prints a diagnosis.
+probe_and_report() {
+  $DRY_RUN && { log "[dry-run] skip upstream reachability/model probe"; return 0; }
+
+  log "probing $OPENAI_API_BASE from the cluster (GET /models) …"
+  # Run the substitution where a failure is expected so set -e doesn't abort first.
+  local resp="" rc=0
+  resp="$(probe_models_from_cluster)" || rc=$?
+  # Recover curl's real exit code from the trailer, then strip the trailer line.
+  local curl_rc="$rc" body="$resp"
+  if [[ "$resp" == *"__rc__="* ]]; then
+    curl_rc="${resp##*__rc__=}"; curl_rc="${curl_rc%%[!0-9]*}"
+    body="${resp%$'\n'__rc__=*}"
+  fi
+
+  if [[ "${curl_rc:-1}" -eq 0 ]]; then
+    local models
+    models="$(printf '%s' "$body" | grep -oE '"id"[[:space:]]*:[[:space:]]*"[^"]+"' \
+                | sed -E 's/.*"([^"]+)"$/\1/' || true)"
+    if [[ -n "$models" ]]; then
+      log "upstream reachable from the cluster. available models:"
+      while IFS= read -r m; do log "  - $m"; done <<<"$models"
+    else
+      log "upstream reachable from the cluster, but GET /models returned no model ids"
+      log "(the endpoint may not be OpenAI-/models-shaped — reachability is fine)."
+    fi
+    return 0
+  fi
+  rc="$curl_rc"
+
+  # Unreachable from the cluster. Is it the host's trust/network, or the cluster's?
+  log "upstream NOT reachable from the cluster (curl exit $rc)."
+  if curl -sS -o /dev/null --max-time 15 "$OPENAI_API_BASE" >/dev/null 2>&1; then
+    log "…but the HOST reaches $OPENAI_API_BASE. The cluster likely lacks a private CA"
+    log "the host trusts (curl 60 / x509: unknown authority). See deploy/kind/README.md"
+    log "§ 'Private-CA upstreams' to install the CA into the cluster."
+  else
+    log "…and the HOST cannot reach it either — likely a network/DNS/endpoint issue,"
+    log "not a certificate. Verify OPENAI_API_BASE and your connectivity. If it is a"
+    log "private-CA endpoint, see deploy/kind/README.md § 'Private-CA upstreams'."
+  fi
+}
 
 # Validate credentials up front, before creating the cluster — a missing key
 # should abort with no side effects, not leave a cluster and no Secret behind.
@@ -132,27 +229,25 @@ else
     --dry-run=client -o yaml | kube apply -f -
 fi
 
-# ── 3. eval-upstream-ca ConfigMap (optional) ──────────────────────────────────
-# When EVAL_UPSTREAM_CA points at a PEM, store it as a ConfigMap so run.sh can
-# mount it into the gateway (SSL_CERT_FILE) for a private-CA upstream. The Go
-# gateway appends SSL_CERT_FILE to the system pool on Linux, so this file need
-# hold only the extra CA(s) — public roots are retained. Default-off: unset → no
-# ConfigMap and the gateway trusts only public roots, exactly as before.
+# ── 3. eval-upstream-ca ConfigMap (optional, explicit) ────────────────────────
+# When EVAL_UPSTREAM_CA points at a PEM, store it as the eval-upstream-ca
+# ConfigMap that run.sh mounts into the gateway (SSL_CERT_FILE) for a private-CA
+# upstream; the Go gateway appends it to the system pool on Linux, so the file
+# need hold only the extra CA(s). Default-off: unset → no ConfigMap and the
+# gateway trusts only public roots, as before. See deploy/kind/README.md
+# § 'Private-CA upstreams'.
 if [[ -n "${EVAL_UPSTREAM_CA:-}" ]]; then
-  [[ -f "$EVAL_UPSTREAM_CA" ]] || { echo "error: EVAL_UPSTREAM_CA not found: $EVAL_UPSTREAM_CA" >&2; exit 1; }
-  grep -q "BEGIN CERTIFICATE" "$EVAL_UPSTREAM_CA" || { echo "error: EVAL_UPSTREAM_CA has no PEM certificate: $EVAL_UPSTREAM_CA" >&2; exit 1; }
-  # A CA bundle is public material; a private key here would be a leak — refuse it.
-  if grep -q "PRIVATE KEY" "$EVAL_UPSTREAM_CA"; then
-    echo "error: EVAL_UPSTREAM_CA contains a PRIVATE KEY — pass CA certs only" >&2; exit 1
-  fi
   if $DRY_RUN; then
     log "[dry-run] apply ConfigMap eval-upstream-ca from $EVAL_UPSTREAM_CA in ${NAMESPACE:-default}"
   else
-    log "=== apply ConfigMap eval-upstream-ca (from $EVAL_UPSTREAM_CA) in ${NAMESPACE:-default} ==="
-    kube create configmap eval-upstream-ca \
-      --from-file=ca.pem="$EVAL_UPSTREAM_CA" \
-      --dry-run=client -o yaml | kube apply -f -
+    store_upstream_ca "$EVAL_UPSTREAM_CA" || exit 1
   fi
 fi
+
+# ── 4. Upstream reachability + model report (read-only diagnostic) ────────────
+# Confirm the gateway's upstream is reachable from the cluster and list the models
+# it offers; if it is not, say whether the host can reach it and point at the
+# README. Purely informational — writes nothing to the cluster.
+probe_and_report
 
 log "ready. submit an eval with: ./deploy/kind/run.sh --benchmark <b> --agent <a> --model <m> --task 0 --watch"

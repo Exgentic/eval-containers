@@ -75,9 +75,16 @@ keychain) but a pod does not — the gateway pod fails TLS verification even tho
 the host can reach the endpoint (`curl` exit 60 / Go `x509: certificate signed by
 unknown authority`). The pod's trust store ships only public roots.
 
-Fix it at deploy time — the CA stays **on the cluster** as a ConfigMap and is
-never baked into (or pushed with) any image. Point `EVAL_UPSTREAM_CA` at a PEM of
-the extra CA cert(s) when you provision:
+**`create.sh` tells you when this is happening.** After provisioning it probes
+`OPENAI_API_BASE` from the cluster (a throwaway `curl` pod, `GET /models`) and
+prints the models the upstream offers. If the endpoint is unreachable from the
+cluster it also checks the **host** and reports which can reach it: a private CA
+the host trusts but a pod does not is the usual cause, and it points you back
+here. The probe is read-only — it never writes to the cluster.
+
+To fix it, install the CA. It stays **on the cluster** as a ConfigMap and is never
+baked into (or pushed with) any image. Point `EVAL_UPSTREAM_CA` at a PEM of the
+extra CA cert(s) when you provision:
 
 ```bash
 # macOS: export the corporate root (+ intermediate) from the keychain to a PEM.
