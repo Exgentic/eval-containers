@@ -129,6 +129,8 @@ probe_models_from_cluster() {
 # Report which models the upstream offers, or the most specific reason it can't be
 # reached — a private CA missing from the cluster (fixable), a wrong key, a network
 # error, or a server error. Read-only: writes nothing. Skipped under --dry-run.
+# Returns 0 only when an eval could actually run (upstream reachable, key accepted);
+# non-zero on any failure so the caller can withhold "ready" and exit dirty.
 probe_and_report() {
   $DRY_RUN && { log "[dry-run] skip upstream reachability/model probe"; return 0; }
 
@@ -164,10 +166,11 @@ probe_and_report() {
       log "→ a cluster egress/network issue, not a certificate. If it is a private-CA"
       log "  endpoint, see deploy/kind/README.md § 'Private-CA upstreams'."
     fi
-    return 0
+    return 1
   fi
 
-  # Reached the server; the HTTP status now tells us how it answered.
+  # Reached the server; the HTTP status now tells us how it answered. Only a 2xx
+  # means an eval could run → return 0; auth/other errors return 1.
   case "$http" in
     2*)
       local models
@@ -179,15 +182,17 @@ probe_and_report() {
       else
         log "reachable from the cluster (HTTP $http) but no model ids in the response"
         log "(the endpoint may not be OpenAI-/models-shaped — reachability is fine)."
-      fi;;
+      fi
+      return 0;;
     401|403)
       log "reachable from the cluster, but the upstream rejected the key (HTTP $http)."
-      log "Check OPENAI_API_KEY.";;
+      log "Check OPENAI_API_KEY."
+      return 1;;
     *)
       log "reachable from the cluster, but GET /models returned HTTP $http."
-      log "The endpoint is up; check OPENAI_API_BASE path and the upstream's health.";;
+      log "The endpoint is up; check OPENAI_API_BASE path and the upstream's health."
+      return 1;;
   esac
-  return 0
 }
 
 # Validate credentials up front, before creating the cluster — a missing key
@@ -266,7 +271,17 @@ fi
 # ── 4. Upstream reachability + model report (read-only diagnostic) ────────────
 # Confirm the gateway's upstream is reachable from the cluster and list the models
 # it offers; if it is not, say whether the host can reach it and point at the
-# README. Purely informational — writes nothing to the cluster.
-probe_and_report
+# README. Writes nothing to the cluster. The cluster + Secret are already created
+# (side effects kept) — but if the upstream isn't usable an eval can't run, so we
+# withhold the "ready" line and exit non-zero. Capture the status (don't let set
+# -e abort) so the caller reports the right ending.
+probe_status=0
+probe_and_report || probe_status=$?
+
+if [[ "$probe_status" -ne 0 ]]; then
+  log "cluster provisioned, but the upstream above is not usable yet — fix it, then"
+  log "re-run this script (idempotent) before submitting an eval."
+  exit "$probe_status"
+fi
 
 log "ready. submit an eval with: ./deploy/kind/run.sh --benchmark <b> --agent <a> --model <m> --task 0 --watch"
