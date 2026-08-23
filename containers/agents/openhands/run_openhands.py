@@ -107,7 +107,7 @@ def _parse_task(task: str):
         instruction = req_match.group(1).strip()
     else:
         # No explicit request delimiter — everything after the MCP block.
-        instruction = task[mcp_match.end():].strip()
+        instruction = task[mcp_match.end() :].strip()
 
     return system_prompt or None, mcp_url, instruction
 
@@ -143,7 +143,10 @@ def main() -> None:
     base_url = _env("LLM_BASE_URL", "OPENAI_BASE_URL", default="http://model:4000")
 
     llm_kwargs = dict(
-        model=model, api_key=api_key, base_url=base_url, usage_id="agent",
+        model=model,
+        api_key=api_key,
+        base_url=base_url,
+        usage_id="agent",
         timeout=LLM_TIMEOUT,
     )
     # Honor the framework's reasoning-effort allow-list var when set; otherwise
