@@ -75,7 +75,10 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     rm -rf /tmp/hb
 
 # Verifier deps baked in so /grade.sh is fast and network-independent.
-RUN pip install --no-cache-dir openpyxl pdfplumber python-docx
+RUN pip install --no-cache-dir \
+        openpyxl==3.1.5 \
+        pdfplumber==0.11.10 \
+        python-docx==1.2.0
 
 RUN mkdir -p ${WORKDIR} /data /initial_data /tests /var/eval-state && \
     chown -R model:model ${WORKDIR}
