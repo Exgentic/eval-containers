@@ -229,16 +229,28 @@ probe_and_report() {
 
   # ── Then the cluster ─────────────────────────────────────────────────────────
   # The host works. Does the cluster reach it too (CA installed / egress OK)?
+  # Retry a few times on a bare connect failure (curl rc=0, http=000): right after
+  # --recreate the node's CNI/DNS/egress are still settling, so the first probe on
+  # a seconds-old cluster often opens a connection that never completes. A real
+  # CA/auth/network fault reproduces on every attempt, so retrying costs nothing
+  # but absorbs the cold-cluster warmup window.
   log "checking the same endpoint from the cluster …"
-  local resp="" pipe_rc=0
-  resp="$(probe_models_from_cluster)" || pipe_rc=$?
-  local curl_rc="$pipe_rc" cluster_http=000
-  if [[ "$resp" == *"__probe__="* ]]; then
-    local trailer="${resp##*__probe__=}"
-    read -r curl_rc cluster_http <<<"$trailer"
-    [[ "$curl_rc" =~ ^[0-9]+$ ]] || curl_rc=1
-    [[ "$cluster_http"   =~ ^[0-9]+$ ]] || cluster_http=000
-  fi
+  local curl_rc cluster_http attempt
+  for attempt in 1 2 3; do
+    local resp="" pipe_rc=0
+    resp="$(probe_models_from_cluster)" || pipe_rc=$?
+    curl_rc="$pipe_rc" cluster_http=000
+    if [[ "$resp" == *"__probe__="* ]]; then
+      local trailer="${resp##*__probe__=}"
+      read -r curl_rc cluster_http <<<"$trailer"
+      [[ "$curl_rc" =~ ^[0-9]+$ ]] || curl_rc=1
+      [[ "$cluster_http"   =~ ^[0-9]+$ ]] || cluster_http=000
+    fi
+    # Only a bare connect failure is worth retrying; any other outcome is terminal.
+    [[ "$curl_rc" -eq 0 && "$cluster_http" == 000 && "$attempt" -lt 3 ]] || break
+    log "no response yet (cluster may still be warming up) — retry $attempt/2 …"
+    sleep 5
+  done
 
   if [[ "$curl_rc" -eq 0 && "$cluster_http" != 000 ]]; then
     log "OK — the cluster reaches it too (HTTP $cluster_http). Ready to run evals."
