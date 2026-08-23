@@ -67,7 +67,7 @@ The bind-mount is fixed at cluster creation; change `--output-dir` on an existin
 cluster by re-running with `--recreate`. Results also remain readable inside the
 node with `docker exec <cluster>-control-plane cat /eval-output/…`.
 
-## Private-CA upstreams (e.g. IBM internal)
+## Private-CA upstreams (e.g. a corporate-internal endpoint)
 
 If your `OPENAI_API_BASE` is served behind a **private CA** — an internal endpoint
 whose TLS cert chains to a corporate root that your laptop trusts (via the system
@@ -90,10 +90,10 @@ extra CA cert(s) when you provision:
 # macOS: export the corporate root (+ intermediate) from the keychain to a PEM.
 # The endpoint's leaf chains to these; the served chain omits the root, so pull it
 # from the keychain where your IT already installed it.
-security find-certificate -a -c "IBM Internal Root CA"         -p > ibm-ca.pem
-security find-certificate -a -c "IBM INTERNAL INTERMEDIATE CA" -p >> ibm-ca.pem
+security find-certificate -a -c "Corp Internal Root CA"         -p > corp-ca.pem
+security find-certificate -a -c "Corp Internal Intermediate CA" -p >> corp-ca.pem
 
-EVAL_UPSTREAM_CA=./ibm-ca.pem \
+EVAL_UPSTREAM_CA=./corp-ca.pem \
   OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-internal-endpoint \
   ./deploy/kind/create.sh
 ```
