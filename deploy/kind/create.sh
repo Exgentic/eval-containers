@@ -16,8 +16,8 @@
 #
 # EVAL_UPSTREAM_CA (optional): path to a PEM of extra CA cert(s) for a private-CA
 # upstream. Stored as the eval-upstream-ca ConfigMap; run.sh mounts it into the
-# gateway and points SSL_CERT_FILE at it. The CA lives only on the cluster —
-# never baked into an image. See the README section above.
+# gateway, whose start script appends it to the system roots. The CA lives only
+# on the cluster — never baked into an image. See the README section above.
 #
 #   OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-endpoint ./deploy/kind/create.sh
 #   ./deploy/kind/create.sh --cluster eval --namespace my-ns
@@ -51,8 +51,9 @@ Upstream probe:
 Environment (optional):
   EVAL_UPSTREAM_CA  path to a PEM of CA cert(s) to trust, for an upstream served
                     behind a private CA. Stored as the eval-upstream-ca ConfigMap;
-                    run.sh mounts it into the gateway (SSL_CERT_FILE). Never baked
-                    into an image. See the README § 'Private-CA upstreams'.
+                    run.sh mounts it into the gateway, whose start script appends
+                    it to the system roots. Never baked into an image. See the
+                    README § 'Private-CA upstreams'.
 
 Flags:
   --cluster <name>    kind cluster name (default: eval)
@@ -111,12 +112,12 @@ PROBE_IMAGE="curlimages/curl:8.11.1"
 
 # GET {base}/models from a throwaway pod — through the same egress AND trust store
 # the gateway pod will have: when the eval-upstream-ca ConfigMap exists it is
-# mounted at /etc/eval-ca and appended to curl's CA bundle, exactly as run.sh's
-# gateway does with SSL_CERT_FILE. Otherwise the probe would report a bogus cert
-# failure on a cluster whose CA is already installed. Emits the pod's stdout: the
-# response body then a trailer `__probe__=<curl-rc> <http-status>` — curl's exit
-# code says whether TLS + network reached the server; the HTTP status then
-# separates a good response from an auth rejection (401/403) or a server error.
+# mounted at /etc/eval-ca and appended to curl's CA bundle, the same way the
+# gateway's start script appends it to the system roots. Otherwise the probe would
+# report a bogus cert failure on a cluster whose CA is already installed. Emits the
+# pod's stdout: the response body then a trailer `__probe__=<curl-rc> <http-status>`
+# — curl's exit code says whether TLS + network reached the server; the HTTP status
+# then separates a good response from an auth rejection (401/403) or a server error.
 #
 # A hand-applied Pod (not `kubectl run`) because run's --overrides fights the
 # --command/-i merge; a full manifest gives unambiguous control of the CA volume.
@@ -128,11 +129,19 @@ probe_models_from_cluster() {
   # Optional YAML fragments are built as whole lines (no braces inside ${:+}, which
   # would swallow a closing brace). The command is static + env-driven.
   # When the CA is installed, trust public roots + the private CA — matching the
-  # gateway (which appends via SSL_CERT_FILE), not a bare CURL_CA_BUNDLE that would
-  # REPLACE public roots. The image runs as non-root and its system bundle is
-  # read-only, so build a COMBINED bundle in writable /tmp and point curl there.
+  # gateway (whose start script builds the same combined bundle), not a bare
+  # CURL_CA_BUNDLE that would REPLACE public roots. The image runs as non-root and
+  # its system bundle is read-only, so build a COMBINED bundle in writable /tmp and
+  # point curl there.
+  # KEY and URL come from the eval-secrets Secret (created in step 2, before this
+  # probe) via secretKeyRef — the SAME path the gateway reads them from — never
+  # interpolated as plaintext into the pod spec. That keeps the key out of
+  # `kubectl get pod -o yaml`/audit logs, and means neither the key nor the URL is
+  # spliced into the manifest text, so a value containing a quote or YAML
+  # metacharacter can't corrupt the manifest. curl strips a trailing slash off the
+  # base with ${URL%/} at request time (the Secret stores it verbatim).
   local vol="" mnt="" cmd
-  cmd='curl -sS --max-time 15 -w "\n__probe__=%{exitcode} %{http_code}" -H "Authorization: Bearer $KEY" "$URL/models"'
+  cmd='curl -sS --max-time 15 -w "\n__probe__=%{exitcode} %{http_code}" -H "Authorization: Bearer $KEY" "${URL%/}/models"'
   if kube get configmap eval-upstream-ca >/dev/null 2>&1; then
     vol='  volumes: [{ name: upstream-ca, configMap: { name: eval-upstream-ca } }]'
     mnt='      volumeMounts: [{ name: upstream-ca, mountPath: /etc/eval-ca, readOnly: true }]'
@@ -151,8 +160,8 @@ $vol
       image: $PROBE_IMAGE
       command: ["sh", "-c", "$(printf '%s' "$cmd" | sed 's/\\/\\\\/g; s/"/\\"/g')"]
       env:
-        - { name: KEY, value: "$OPENAI_API_KEY" }
-        - { name: URL, value: "${OPENAI_API_BASE%/}" }
+        - { name: KEY, valueFrom: { secretKeyRef: { name: eval-secrets, key: OPENAI_API_KEY } } }
+        - { name: URL, valueFrom: { secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE } } }
 $mnt
 YAML
   # Wait for it to finish (bounded), then hand back its logs. Any failure to
@@ -215,7 +224,11 @@ probe_and_report() {
   local models; models="$(models_from_body "$hbody")"
   local mcount; mcount=$(printf '%s' "$models" | grep -c . || true)
   if [[ "$mcount" -eq 0 ]]; then
-    if printf '%s' "$hbody" | grep -q '"data"\|"object"\|\[\]'; then
+    # A valid-but-empty /models list is specifically {"object": "list", "data": []}.
+    # Match that shape, not a bare "data"/"object"/"[]" anywhere — an error payload
+    # like {"object": "error", …} carries "object" too and would otherwise be
+    # misreported as "works but serves nothing" instead of "not a /models payload".
+    if printf '%s' "$hbody" | tr -d '[:space:]' | grep -q '"object":"list"'; then
       log "reachable from the host (HTTP $host_http); /models is valid but lists no models."
       log "The endpoint works but serves nothing to evaluate right now. (Cluster not probed.)"
     else
@@ -237,9 +250,15 @@ probe_and_report() {
   log "checking the same endpoint from the cluster …"
   local curl_rc cluster_http attempt
   for attempt in 1 2 3; do
-    local resp="" pipe_rc=0
-    resp="$(probe_models_from_cluster)" || pipe_rc=$?
-    curl_rc="$pipe_rc" cluster_http=000
+    # probe_models_from_cluster's own exit status is its final `kube delete pod`,
+    # NOT curl's — so read the outcome only from the __probe__=<rc> <http> trailer
+    # the probe pod prints. No trailer means the pod never ran curl (failed to
+    # schedule/pull, or empty logs); that is an inconclusive "no response", so
+    # default to rc=0/http=000 and let the retry/again-warming-up path handle it,
+    # rather than mistaking kube's exit code for a curl network error.
+    local resp
+    resp="$(probe_models_from_cluster || true)"
+    curl_rc=0 cluster_http=000
     if [[ "$resp" == *"__probe__="* ]]; then
       local trailer="${resp##*__probe__=}"
       read -r curl_rc cluster_http <<<"$trailer"
@@ -335,11 +354,11 @@ fi
 
 # ── 3. eval-upstream-ca ConfigMap (optional, explicit) ────────────────────────
 # When EVAL_UPSTREAM_CA points at a PEM, store it as the eval-upstream-ca
-# ConfigMap that run.sh mounts into the gateway (SSL_CERT_FILE) for a private-CA
-# upstream; the Go gateway appends it to the system pool on Linux, so the file
-# need hold only the extra CA(s). Default-off: unset → no ConfigMap and the
-# gateway trusts only public roots, as before. See deploy/kind/README.md
-# § 'Private-CA upstreams'.
+# ConfigMap that run.sh mounts into the gateway at /etc/eval-ca/ca.pem for a
+# private-CA upstream; the gateway's start script appends it to the system roots
+# (a combined bundle), so the file need hold only the extra CA(s). Default-off:
+# unset → no ConfigMap and the gateway trusts only public roots, as before. See
+# deploy/kind/README.md § 'Private-CA upstreams'.
 if [[ -n "${EVAL_UPSTREAM_CA:-}" ]]; then
   if $DRY_RUN; then
     log "[dry-run] apply ConfigMap eval-upstream-ca from $EVAL_UPSTREAM_CA in ${NAMESPACE:-default}"

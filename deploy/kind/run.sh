@@ -217,23 +217,26 @@ $PER_TASK && SET+=(--set "perTask=true")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
 
 # Private-CA upstream: if create.sh stored the eval-upstream-ca ConfigMap, mount
-# it into the gateway and point SSL_CERT_FILE at it (list-of-maps values are
-# awkward via --set, so pass a values overlay file). Absent → no overlay, gateway
-# trusts only public roots, exactly as before. A tempfile (not process
-# substitution) because helm re-opens the -f path, and a <(...) FD is already
-# closed by then; trap-clean it on exit.
+# it into the gateway at /etc/eval-ca/ca.pem (list-of-maps values are awkward via
+# --set, so pass a values overlay file). The gateway's own `start` script detects
+# the mounted CA and APPENDS it to the system roots (a combined bundle it points
+# its TLS stack at) — we must NOT set SSL_CERT_FILE to the CA-only file here,
+# because Go's SSL_CERT_FILE replaces rather than augments the root pool, which
+# would drop every public root. Absent → no overlay, gateway trusts only public
+# roots, exactly as before. A tempfile (not process substitution) because helm
+# re-opens the -f path, and a <(...) FD is already closed by then. This is the
+# script's only EXIT trap; the ${CA_OVERLAY:-} guard keeps it safe even if the
+# var is somehow unset when the trap fires.
 if kube get configmap eval-upstream-ca >/dev/null 2>&1; then
-  log "eval-upstream-ca present → mounting private CA into the gateway (SSL_CERT_FILE)"
+  log "eval-upstream-ca present → mounting private CA into the gateway (/etc/eval-ca/ca.pem)"
   CA_OVERLAY=$(mktemp "${TMPDIR:-/tmp}/eval-ca-overlay.XXXXXX.yaml")
-  trap 'rm -f "$CA_OVERLAY"' EXIT
+  trap 'rm -f "${CA_OVERLAY:-}"' EXIT
   cat > "$CA_OVERLAY" <<'EOF'
 extraVolumes:
   - name: upstream-ca
     configMap: { name: eval-upstream-ca }
 gatewayExtraVolumeMounts:
   - { name: upstream-ca, mountPath: /etc/eval-ca, readOnly: true }
-gatewayExtraEnv:
-  - { name: SSL_CERT_FILE, value: /etc/eval-ca/ca.pem }
 EOF
   SET+=(-f "$CA_OVERLAY")
 fi
