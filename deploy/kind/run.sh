@@ -132,8 +132,8 @@ if ! $NO_BUILD; then
     if ! $REBUILD && have "$GATEWAY"; then log "skip gateway (exists: $GATEWAY)"
     else ec model "$MODEL"; fi
     if ! $REBUILD && have "$OTEL"; then log "skip otel (exists: $OTEL)"
-    elif $DRY_RUN; then echo "[dry-run] REGISTRY=$REGISTRY docker buildx bake otel --load"
-    else log "build otel (bake)"; REGISTRY="$REGISTRY" docker buildx bake otel --load; fi )
+    elif $DRY_RUN; then echo "[dry-run] REGISTRY=$REGISTRY docker buildx bake -f containers/docker-bake.hcl -f containers/core/otel/docker-bake.hcl otel --load"
+    else log "build otel (bake)"; REGISTRY="$REGISTRY" docker buildx bake -f containers/docker-bake.hcl -f containers/core/otel/docker-bake.hcl otel --load; fi )
 fi
 $NO_RUN && { log "--no-run: built only, not loaded/submitted."; exit 0; }
 
