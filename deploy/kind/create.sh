@@ -109,21 +109,54 @@ store_upstream_ca() {  # arg: <pem-file>
 # failure degrades to "skip", never a hang.
 PROBE_IMAGE="curlimages/curl:8.11.1"
 
-# GET {base}/models from a throwaway pod — through the same egress + trust store
-# the gateway pod uses. Prints the response body, then a trailer line
-# `__probe__=<curl-rc> <http-status>`. Two signals, because they answer different
-# questions: curl's exit code says whether TLS + network reached the server at
-# all; the HTTP status then separates a good response from an auth rejection
-# (401/403 = wrong key) or another server error. Never fails the pipeline itself.
+# GET {base}/models from a throwaway pod — through the same egress AND trust store
+# the gateway pod will have: when the eval-upstream-ca ConfigMap exists it is
+# mounted at /etc/eval-ca and appended to curl's CA bundle, exactly as run.sh's
+# gateway does with SSL_CERT_FILE. Otherwise the probe would report a bogus cert
+# failure on a cluster whose CA is already installed. Emits the pod's stdout: the
+# response body then a trailer `__probe__=<curl-rc> <http-status>` — curl's exit
+# code says whether TLS + network reached the server; the HTTP status then
+# separates a good response from an auth rejection (401/403) or a server error.
+#
+# A hand-applied Pod (not `kubectl run`) because run's --overrides fights the
+# --command/-i merge; a full manifest gives unambiguous control of the CA volume.
 probe_models_from_cluster() {
-  # No -o /dev/null: we parse model ids from the body. KEY/URL come in via --env
-  # (kept out of the command args) and are read inside the pod.
-  kube run eval-upstream-probe --rm -i --restart=Never --quiet \
-    --pod-running-timeout=40s --image="$PROBE_IMAGE" \
-    --env="KEY=$OPENAI_API_KEY" --env="URL=${OPENAI_API_BASE%/}" --command -- \
-    sh -c 'body=$(curl -sS --max-time 15 -w "\n__probe__=%{exitcode} %{http_code}" \
-                    -H "Authorization: Bearer $KEY" "$URL/models"); printf "%s" "$body"' \
-    2>/dev/null
+  local name=eval-upstream-probe
+  # When the CA is installed, mount it and point curl at it (CURL_CA_BUNDLE). For a
+  # private-CA endpoint that one CA is what verifies it; a public endpoint has no
+  # ConfigMap installed, so this only narrows trust to the CA the gateway uses too.
+  # Optional YAML fragments are built as whole lines (no braces inside ${:+}, which
+  # would swallow a closing brace). The command is static + env-driven.
+  local vol="" mnt="" caenv=""
+  if kube get configmap eval-upstream-ca >/dev/null 2>&1; then
+    vol='  volumes: [{ name: upstream-ca, configMap: { name: eval-upstream-ca } }]'
+    mnt='      volumeMounts: [{ name: upstream-ca, mountPath: /etc/eval-ca, readOnly: true }]'
+    caenv='        - { name: CURL_CA_BUNDLE, value: /etc/eval-ca/ca.pem }'
+  fi
+  kube delete pod "$name" --ignore-not-found >/dev/null 2>&1
+  kube apply -f - >/dev/null 2>&1 <<YAML
+apiVersion: v1
+kind: Pod
+metadata: { name: $name }
+spec:
+  restartPolicy: Never
+$vol
+  containers:
+    - name: probe
+      image: $PROBE_IMAGE
+      command: ["sh", "-c", 'curl -sS --max-time 15 -w "\n__probe__=%{exitcode} %{http_code}" -H "Authorization: Bearer \$KEY" "\$URL/models"']
+      env:
+        - { name: KEY, value: "$OPENAI_API_KEY" }
+        - { name: URL, value: "${OPENAI_API_BASE%/}" }
+$caenv
+$mnt
+YAML
+  # Wait for it to finish (bounded), then hand back its logs. Any failure to
+  # schedule/pull surfaces as empty logs → the caller reads that as unreachable.
+  kube wait --for=jsonpath='{.status.phase}'=Succeeded pod/"$name" --timeout=40s >/dev/null 2>&1 \
+    || kube wait --for=jsonpath='{.status.phase}'=Failed pod/"$name" --timeout=5s >/dev/null 2>&1 || true
+  kube logs "$name" 2>/dev/null
+  kube delete pod "$name" --ignore-not-found >/dev/null 2>&1
 }
 
 # Report which models the upstream offers, or the most specific reason it can't be
@@ -188,9 +221,13 @@ probe_and_report() {
       log "reachable from the cluster, but the upstream rejected the key (HTTP $http)."
       log "Check OPENAI_API_KEY."
       return 1;;
+    5*)
+      log "reachable from the cluster, but the upstream returned HTTP $http — it is up but"
+      log "unhealthy (model server down/scaling?). TLS, URL and auth look fine; retry later."
+      return 1;;
     *)
       log "reachable from the cluster, but GET /models returned HTTP $http."
-      log "The endpoint is up; check OPENAI_API_BASE path and the upstream's health."
+      log "The endpoint answered; check the OPENAI_API_BASE path (should end at the API root)."
       return 1;;
   esac
 }
