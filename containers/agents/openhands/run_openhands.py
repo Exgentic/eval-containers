@@ -147,10 +147,24 @@ def main() -> None:
         timeout=LLM_TIMEOUT,
     )
     # Honor the framework's reasoning-effort allow-list var when set; otherwise
-    # leave the SDK default (high for the gpt-5 family). Values: minimal|low|medium|high.
+    # leave the SDK default (native reasoning_effort="high").
+    #
+    # Inject via litellm_extra_body as {"reasoning": {"effort": <v>}} rather than
+    # the SDK's native `reasoning_effort` kwarg — mirroring upstream HANDBOOK's
+    # openhands_runner for the non-Anthropic path (the handle here is always
+    # `openai/...`). Two reasons:
+    #   1. The SDK's native field is a strict Literal["low","medium","high",
+    #      "xhigh","none"]; feeding it into LLM(**kwargs) raises a pydantic
+    #      ValidationError on any other value. The HANDBOOK leaderboard runs
+    #      several models (e.g. Kimi K3) at "max", which the Literal rejects —
+    #      extra_body passes the value through untouched.
+    #   2. It reproduces the exact request body upstream sent for OpenAI-
+    #      compatible endpoints, so a replica matches the published run.
+    # GLM (and any model reasoning natively) leaves this var unset, so this
+    # branch never fires for it — the validated GLM runs are unaffected.
     effort = _env("EVAL_AGENT_REASONING_EFFORT", default="").strip().lower()
     if effort:
-        llm_kwargs["reasoning_effort"] = effort
+        llm_kwargs["litellm_extra_body"] = {"reasoning": {"effort": effort}}
     # Output-token cap: leave UNSET by default to mirror the upstream HANDBOOK
     # harness exactly (its openhands_runner passes llmKwargs={} — no
     # max_output_tokens). Only pin it when EVAL_AGENT_MAX_OUTPUT_TOKENS is
