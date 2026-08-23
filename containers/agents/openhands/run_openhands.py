@@ -28,6 +28,37 @@ MCP_TOOL_TIMEOUT = 300
 # is still bounded by EVAL_TIMEOUT.
 MAX_ITERATIONS = int(os.environ.get("EVAL_MAX_ITERATIONS", "200"))
 
+# Per-call LLM timeout (seconds). The SDK default is 300s, and litellm.Timeout
+# is NOT in the SDK's retryable set, so a slow proxy call surfaces as a fatal
+# error and drops the run. Upstream HANDBOOK bumps this to 600 to match the
+# worldbench ~10-min per-call ceiling and cut spurious timeouts on big-context
+# SOP tasks; mirror it so the port doesn't abort where upstream would retry.
+LLM_TIMEOUT = int(os.environ.get("EVAL_AGENT_LLM_TIMEOUT", "600"))
+
+# Tool observations larger than this (chars) are kept intact. The OpenHands SDK
+# otherwise hard-truncates every tool result at DEFAULT_TEXT_CONTENT_LIMIT
+# (50_000) — see openhands/sdk/utils/truncate.py — silently dropping the tail of
+# large reads (a 24-page SOP PDF is ~56 KB; big spreadsheet dumps similar). The
+# worldbench baseline (and upstream HANDBOOK's runner) feed tool outputs to the
+# model untruncated, so the 50K cap is a parity gap that silently costs rubric
+# points on SOP-heavy tasks. 1 MB clears every realistic read with headroom
+# while still guarding against a pathological multi-MB blob.
+TOOL_OBSERVATION_CHAR_LIMIT = 1_000_000
+
+
+def _raise_tool_observation_limit() -> None:
+    """Lift the SDK's hardcoded 50K tool-observation truncation cap.
+
+    The limit is a module-level constant and ``message.py`` binds it at import
+    time, so both the source module and that imported reference must be patched.
+    Mirrors upstream HANDBOOK's openhands_runner._raise_tool_observation_limit.
+    """
+    import openhands.sdk.llm.message as _message
+    import openhands.sdk.utils.truncate as _truncate
+
+    _truncate.DEFAULT_TEXT_CONTENT_LIMIT = TOOL_OBSERVATION_CHAR_LIMIT
+    _message.DEFAULT_TEXT_CONTENT_LIMIT = TOOL_OBSERVATION_CHAR_LIMIT
+
 
 def _env(*keys: str, default: str) -> str:
     """First non-empty env var from `keys`, else `default`."""
@@ -100,13 +131,21 @@ def main() -> None:
         TextContent,
     )
 
+    # Lift the SDK's 50K tool-observation truncation to 1 MB (parity with the
+    # upstream HANDBOOK runner). Must run after the SDK import, before any tool
+    # result is built. Harmless for non-MCP benchmarks.
+    _raise_tool_observation_limit()
+
     model = _env("LLM_MODEL", "EVAL_MODEL", default="openai/default")
     if "/" not in model:
         model = f"openai/{model}"
     api_key = _env("LLM_API_KEY", "OPENAI_API_KEY", default="sk-proxy")
     base_url = _env("LLM_BASE_URL", "OPENAI_BASE_URL", default="http://model:4000")
 
-    llm_kwargs = dict(model=model, api_key=api_key, base_url=base_url, usage_id="agent")
+    llm_kwargs = dict(
+        model=model, api_key=api_key, base_url=base_url, usage_id="agent",
+        timeout=LLM_TIMEOUT,
+    )
     # Honor the framework's reasoning-effort allow-list var when set; otherwise
     # leave the SDK default (high for the gpt-5 family). Values: minimal|low|medium|high.
     effort = _env("EVAL_AGENT_REASONING_EFFORT", default="").strip().lower()
