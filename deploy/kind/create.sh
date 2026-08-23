@@ -21,7 +21,7 @@
 #
 #   OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-endpoint ./deploy/kind/create.sh
 #   ./deploy/kind/create.sh --cluster eval --namespace my-ns
-#   EVAL_UPSTREAM_CA=./ibm-ca.pem OPENAI_API_KEY=... OPENAI_API_BASE=... ./deploy/kind/create.sh
+#   EVAL_UPSTREAM_CA=./corp-ca.pem OPENAI_API_KEY=... OPENAI_API_BASE=... ./deploy/kind/create.sh
 #
 # --output-dir <host-path> bind-mounts a directory on your machine into the node
 # at the /eval-output hostPath (via a kind `extraMounts` config), so eval results
