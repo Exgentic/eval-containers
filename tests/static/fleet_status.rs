@@ -183,7 +183,7 @@ esac
         arc_json = r#"{"image":{"linux/amd64":{"config":{"Labels":{"other":"x"}}}},"manifest":{"manifests":[{"platform":{"os":"linux","architecture":"amd64"}}]}}"#,
     ));
     let rows = fleet_status(&stub);
-    assert_eq!(rows.len(), 155, "one row per static bake target");
+    assert_eq!(rows.len(), 156, "one row per static bake target");
 
     let (v, want, got, plats) = &rows["ghcr.io/exgentic/benchmarks/aime:latest"];
     assert_eq!((v.as_str(), got), ("fresh", want));
