@@ -12,8 +12,11 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   # A dataset eval (datasetSize set) is named <benchmark>-<agent>; a single-task
-  # debug run keeps the task in the name so several can coexist.
-  name: {{ if $v.datasetSize }}{{ $v.benchmark }}-{{ $v.agent }}{{ else }}{{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}{{ end }}{{ $v.nameSuffix }}
+  # debug run keeps the task in the name so several can coexist. The task id is
+  # sanitized for the k8s object name only (labels below keep the real value) —
+  # per-task task ids may contain `_` (SWE-bench's sympy__sympy-24066), which
+  # RFC 1123 subdomain names forbid (benchmarks/RULES.md 24f).
+  name: {{ if $v.datasetSize }}{{ $v.benchmark }}-{{ $v.agent }}{{ else }}{{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task | toString | replace "_" "-" }}{{ end }}{{ $v.nameSuffix }}
   labels:
     {{- include "eval.labels" . | nindent 4 }}
 spec:
