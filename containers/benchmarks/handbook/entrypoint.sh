@@ -91,7 +91,10 @@ done
 
 # ── 3. Build the TASK string (prose-advertised MCP endpoint) ──────────
 python3 /app/setup_task.py
-export TASK="$(cat /var/eval-state/task.txt)"
+# Declare then assign (SC2155): a combined `export TASK=$(...)` would mask the
+# command substitution's exit status behind export's.
+TASK="$(cat /var/eval-state/task.txt)"
+export TASK
 
 # ── 4. Hand off to the framework launcher (agent → grade → result) ────
 # Land in the workspace so the agent's cwd is /workdir (HANDBOOK's native
