@@ -100,10 +100,15 @@ EVAL_UPSTREAM_CA=./ibm-ca.pem \
 
 `create.sh` validates the file is CA certs (and refuses a private key), then stores
 it as the `eval-upstream-ca` ConfigMap. On the next `run.sh`, if that ConfigMap
-exists it is mounted into the gateway at `/etc/eval-ca/ca.pem` with
-`SSL_CERT_FILE` pointed at it — the Go gateway **appends** it to the public roots,
-so both public and private upstreams keep verifying. Omit `EVAL_UPSTREAM_CA` and
-nothing changes: no ConfigMap, no mount, public-roots-only trust as before.
+exists it is mounted into the gateway at `/etc/eval-ca/ca.pem`. The gateway's
+`start` script detects the mounted CA and **appends** it to the system roots — it
+concatenates the two into a combined bundle and points the gateway's TLS stack at
+that superset (`SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` for the Go/Python gateways,
+`NODE_EXTRA_CA_CERTS` for the Node one), so both public and private upstreams keep
+verifying. The mount alone does **not** set `SSL_CERT_FILE` to the CA-only file:
+for the Go gateway that variable *replaces* the root pool rather than augmenting
+it, which would drop every public root. Omit `EVAL_UPSTREAM_CA` and nothing
+changes: no ConfigMap, no mount, public-roots-only trust as before.
 
 ## How images reach the cluster (and the `:latest` trap)
 
