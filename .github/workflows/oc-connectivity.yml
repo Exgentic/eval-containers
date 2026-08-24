@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v7.0.1
 
       - name: Install oc CLI
-        uses: redhat-actions/openshift-tools-installer@144527c7d98999f2652264c048c7a9bd103f8a82 # v1
+        uses: redhat-actions/openshift-tools-installer@e3b32c2ab7b064b2ce189121c4a49f509a99a7b4 # v3.0
         with:
           oc: latest
 
