@@ -9,7 +9,8 @@
 # (secretKeyRef eval-secrets). Export them, or source a .env, before running.
 #
 # After provisioning, create.sh probes OPENAI_API_BASE from the cluster (GET
-# /models) and prints the models the upstream offers. If it is unreachable from
+# /v1/models — the base is the upstream root, so the probe appends /v1 just as
+# the gateway does) and prints the models the upstream offers. If it is unreachable from
 # the cluster, it reports whether the host can reach it — a private CA the host
 # trusts but a pod does not is the usual cause — and points at deploy/kind/README.md
 # § 'Private-CA upstreams'. The probe is read-only; it writes nothing.
@@ -43,7 +44,8 @@ Environment (required — the gateway reads these via the eval-secrets Secret):
 
 Upstream probe:
   After provisioning, create.sh probes OPENAI_API_BASE from the cluster (GET
-  /models) and lists the models the upstream offers. If it is unreachable from
+  /v1/models — OPENAI_API_BASE is the upstream root, so the probe appends /v1
+  exactly as the gateway does) and lists the models the upstream offers. If it is unreachable from
   the cluster, it reports whether the host can reach it (a private CA the host
   trusts but a pod does not is the usual cause) and points at the README
   § 'Private-CA upstreams'. Read-only — it writes nothing to the cluster.
@@ -110,7 +112,7 @@ store_upstream_ca() {  # arg: <pem-file>
 # failure degrades to "skip", never a hang.
 PROBE_IMAGE="curlimages/curl:8.11.1"
 
-# GET {base}/models from a throwaway pod — through the same egress AND trust store
+# GET {base}/v1/models from a throwaway pod — through the same egress AND trust store
 # the gateway pod will have: when the eval-upstream-ca ConfigMap exists it is
 # mounted at /etc/eval-ca and appended to curl's CA bundle, the same way the
 # gateway's start script appends it to the system roots. Otherwise the probe would
@@ -140,8 +142,14 @@ probe_models_from_cluster() {
   # spliced into the manifest text, so a value containing a quote or YAML
   # metacharacter can't corrupt the manifest. curl strips a trailing slash off the
   # base with ${URL%/} at request time (the Secret stores it verbatim).
+  #
+  # Path is /v1/models, NOT /models: OPENAI_API_BASE is the upstream ROOT (the
+  # gateway's own contract — bifrost's start script appends each provider's native
+  # path, e.g. /v1/responses, /v1beta). A vLLM upstream serves only under /v1, so
+  # probing the root's /models 404s there; /v1/models is the OpenAI-standard path
+  # both LiteLLM and vLLM answer.
   local vol="" mnt="" cmd
-  cmd='curl -sS --max-time 15 -w "\n__probe__=%{exitcode} %{http_code}" -H "Authorization: Bearer $KEY" "${URL%/}/models"'
+  cmd='curl -sS --max-time 15 -w "\n__probe__=%{exitcode} %{http_code}" -H "Authorization: Bearer $KEY" "${URL%/}/v1/models"'
   if kube get configmap eval-upstream-ca >/dev/null 2>&1; then
     vol='  volumes: [{ name: upstream-ca, configMap: { name: eval-upstream-ca } }]'
     mnt='      volumeMounts: [{ name: upstream-ca, mountPath: /etc/eval-ca, readOnly: true }]'
@@ -195,10 +203,10 @@ probe_and_report() {
   $DRY_RUN && { log "[dry-run] skip upstream reachability/model probe"; return 0; }
 
   # ── Host first ──────────────────────────────────────────────────────────────
-  log "checking $OPENAI_API_BASE from the host (GET /models) …"
+  log "checking $OPENAI_API_BASE from the host (GET /v1/models) …"
   local hbody="" hrc=0 host_http
   hbody="$(curl -sS -w $'\n__http__=%{http_code}' --max-time 15 \
-             -H "Authorization: Bearer $OPENAI_API_KEY" "${OPENAI_API_BASE%/}/models" 2>/dev/null)" || hrc=$?
+             -H "Authorization: Bearer $OPENAI_API_KEY" "${OPENAI_API_BASE%/}/v1/models" 2>/dev/null)" || hrc=$?
   host_http="${hbody##*__http__=}"; host_http="${host_http%%[!0-9]*}"; [[ "$host_http" =~ ^[0-9]+$ ]] || host_http=000
   hbody="${hbody%$'\n'__http__=*}"
 
@@ -217,8 +225,9 @@ probe_and_report() {
       log "reachable from the host but it returned HTTP $host_http — the endpoint is up but"
       log "unhealthy (model server down/scaling?). Retry later. (The cluster was not probed.)"; return 1;;
     *)
-      log "reachable from the host but GET /models returned HTTP $host_http — check OPENAI_API_BASE"
-      log "points at the API root (…/v1), not a web page. (The cluster was not probed.)"; return 1;;
+      log "reachable from the host but GET /v1/models returned HTTP $host_http — check OPENAI_API_BASE"
+      log "points at the upstream root (host only, no /v1 — the gateway appends it), not a web page."
+      log "(The cluster was not probed.)"; return 1;;
   esac
 
   local models; models="$(models_from_body "$hbody")"
@@ -233,7 +242,8 @@ probe_and_report() {
       log "The endpoint works but serves nothing to evaluate right now. (Cluster not probed.)"
     else
       log "reachable from the host (HTTP $host_http) but the response is not an OpenAI /models"
-      log "payload — check OPENAI_API_BASE points at the API root (…/v1). (Cluster not probed.)"
+      log "payload — check OPENAI_API_BASE points at the upstream root (host only, no /v1 — the"
+      log "gateway appends it). (Cluster not probed.)"
     fi
     return 1
   fi
