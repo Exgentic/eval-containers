@@ -132,8 +132,8 @@ if ! $NO_BUILD; then
     if ! $REBUILD && have "$GATEWAY"; then log "skip gateway (exists: $GATEWAY)"
     else ec model "$MODEL"; fi
     if ! $REBUILD && have "$OTEL"; then log "skip otel (exists: $OTEL)"
-    elif $DRY_RUN; then echo "[dry-run] REGISTRY=$REGISTRY docker buildx bake otel --load"
-    else log "build otel (bake)"; REGISTRY="$REGISTRY" docker buildx bake otel --load; fi )
+    elif $DRY_RUN; then echo "[dry-run] REGISTRY=$REGISTRY docker buildx bake -f containers/docker-bake.hcl -f containers/core/otel/docker-bake.hcl otel --load"
+    else log "build otel (bake)"; REGISTRY="$REGISTRY" docker buildx bake -f containers/docker-bake.hcl -f containers/core/otel/docker-bake.hcl otel --load; fi )
 fi
 $NO_RUN && { log "--no-run: built only, not loaded/submitted."; exit 0; }
 
@@ -215,6 +215,38 @@ $PER_TASK && SET+=(--set "perTask=true")
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
+
+# Private-CA upstream: if create.sh stored the eval-upstream-ca ConfigMap, mount
+# it into the gateway at /etc/eval-ca/ca.pem (list-of-maps values are awkward via
+# --set, so pass a values overlay file). The gateway's own `start` script detects
+# the mounted CA and APPENDS it to the system roots (a combined bundle it points
+# its TLS stack at) — we deliberately do NOT set SSL_CERT_FILE here, because that
+# var (like CURL_CA_BUNDLE) sets the whole trust store, so pointing it at the
+# CA-only file would drop every public root. Trust-combining is the start script's
+# job. Absent → no overlay, gateway trusts only public roots, exactly as before. A
+# tempfile (not process substitution) because helm re-opens the -f path, and a
+# <(...) FD is already closed by then. This is the script's only EXIT trap; the
+# ${CA_OVERLAY:-} guard keeps it safe even if the var is somehow unset when the
+# trap fires.
+#
+# NOTE: this overlay sets extraVolumes wholesale. Helm `-f` REPLACES list values
+# rather than merging them, so if a benchmark ever ships its own extraVolumes this
+# overlay would drop them. No benchmark sets extraVolumes today (only the chart
+# default and job.yaml reference it), so there is no collision now — revisit if one
+# does (merge the two lists, or move the CA mount to its own values key).
+if kube get configmap eval-upstream-ca >/dev/null 2>&1; then
+  log "eval-upstream-ca present → mounting private CA into the gateway (/etc/eval-ca/ca.pem)"
+  CA_OVERLAY=$(mktemp "${TMPDIR:-/tmp}/eval-ca-overlay.XXXXXX.yaml")
+  trap 'rm -f "${CA_OVERLAY:-}"' EXIT
+  cat > "$CA_OVERLAY" <<'EOF'
+extraVolumes:
+  - name: upstream-ca
+    configMap: { name: eval-upstream-ca }
+gatewayExtraVolumeMounts:
+  - { name: upstream-ca, mountPath: /etc/eval-ca, readOnly: true }
+EOF
+  SET+=(-f "$CA_OVERLAY")
+fi
 
 RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" "${SET[@]}")
 if $DRY_RUN; then echo "$RENDER"; exit 0; fi

@@ -22,6 +22,26 @@
 
 set -eu
 
+# Private-CA upstream: when the deploy mounts an extra CA at /etc/eval-ca/ca.pem
+# (see deploy/kind/README.md § 'Private-CA upstreams'), APPEND it to the system
+# roots rather than replace them. Point the TLS knobs at a COMBINED bundle
+# (public roots + the extra CA), never at the CA-only file: SSL_CERT_FILE and
+# CURL_CA_BUNDLE set the whole trust store, so a CA-only file would drop every
+# public root on the stacks that honour them. Concatenate into a writable file
+# and point curl (health) + the Go runtime at that superset. Guard the read: if
+# the system bundle is missing (e.g. a base-image change), fall back to CA-only
+# rather than letting `cat` abort the gateway under `set -eu`. No mount →
+# unchanged, public-roots-only trust.
+if [ -f /etc/eval-ca/ca.pem ]; then
+  if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+    cat /etc/ssl/certs/ca-certificates.crt /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  else
+    echo "warn: /etc/ssl/certs/ca-certificates.crt missing — trusting the mounted CA only" >&2
+    cat /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  fi
+  export SSL_CERT_FILE=/tmp/ca-bundle.pem CURL_CA_BUNDLE=/tmp/ca-bundle.pem
+fi
+
 TEMPLATE=/opt/gateway/data/config.json.template
 CONFIG=/opt/gateway/data/config.json
 

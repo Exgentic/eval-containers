@@ -67,6 +67,51 @@ The bind-mount is fixed at cluster creation; change `--output-dir` on an existin
 cluster by re-running with `--recreate`. Results also remain readable inside the
 node with `docker exec <cluster>-control-plane cat /eval-output/…`.
 
+## Private-CA upstreams (e.g. a corporate-internal endpoint)
+
+If your `OPENAI_API_BASE` is served behind a **private CA** — an internal endpoint
+whose TLS cert chains to a corporate root that your laptop trusts (via the system
+keychain) but a pod does not — the gateway pod fails TLS verification even though
+the host can reach the endpoint (`curl` exit 60 / Go `x509: certificate signed by
+unknown authority`). The pod's trust store ships only public roots.
+
+**`create.sh` tells you when this is happening.** After provisioning it probes
+`OPENAI_API_BASE` from the cluster (a throwaway `curl` pod, `GET /v1/models` — the
+base is the upstream root, so the probe appends `/v1` just as the gateway does) and
+prints the models the upstream offers. If the endpoint is unreachable from the
+cluster it also checks the **host** and reports which can reach it: a private CA
+the host trusts but a pod does not is the usual cause, and it points you back
+here. The probe runs in an ephemeral pod it creates and then deletes — it leaves
+no lasting state on the cluster.
+
+To fix it, install the CA. It stays **on the cluster** as a ConfigMap and is never
+baked into (or pushed with) any image. Point `EVAL_UPSTREAM_CA` at a PEM of the
+extra CA cert(s) when you provision:
+
+```bash
+# macOS: export the corporate root (+ intermediate) from the keychain to a PEM.
+# The endpoint's leaf chains to these; the served chain omits the root, so pull it
+# from the keychain where your IT already installed it.
+security find-certificate -a -c "Corp Internal Root CA"         -p > corp-ca.pem
+security find-certificate -a -c "Corp Internal Intermediate CA" -p >> corp-ca.pem
+
+EVAL_UPSTREAM_CA=./corp-ca.pem \
+  OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-internal-endpoint \
+  ./deploy/kind/create.sh
+```
+
+`create.sh` validates the file is CA certs (and refuses a private key), then stores
+it as the `eval-upstream-ca` ConfigMap. On the next `run.sh`, if that ConfigMap
+exists it is mounted into the gateway at `/etc/eval-ca/ca.pem`. The gateway's
+`start` script detects the mounted CA and **appends** it to the system roots — it
+concatenates the two into a combined bundle and points the gateway's TLS stack at
+that superset (`SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE` for the Go/Python gateways,
+`NODE_EXTRA_CA_CERTS` for the Node one), so both public and private upstreams keep
+verifying. The mount alone does **not** set `SSL_CERT_FILE` to the CA-only file:
+for the Go gateway that variable *replaces* the root pool rather than augmenting
+it, which would drop every public root. Omit `EVAL_UPSTREAM_CA` and nothing
+changes: no ConfigMap, no mount, public-roots-only trust as before.
+
 ## How images reach the cluster (and the `:latest` trap)
 
 `run.sh` builds `bench`, `agent`, `model` (the gateway), and the combined `eval`
