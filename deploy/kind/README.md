@@ -76,7 +76,8 @@ the host can reach the endpoint (`curl` exit 60 / Go `x509: certificate signed b
 unknown authority`). The pod's trust store ships only public roots.
 
 **`create.sh` tells you when this is happening.** After provisioning it probes
-`OPENAI_API_BASE` from the cluster (a throwaway `curl` pod, `GET /models`) and
+`OPENAI_API_BASE` from the cluster (a throwaway `curl` pod, `GET /v1/models` — the
+base is the upstream root, so the probe appends `/v1` just as the gateway does) and
 prints the models the upstream offers. If the endpoint is unreachable from the
 cluster it also checks the **host** and reports which can reach it: a private CA
 the host trusts but a pod does not is the usual cause, and it points you back
