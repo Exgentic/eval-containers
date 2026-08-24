@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run OpenHands on $TASK, print final answer to stdout.
 
-The `openhands-ai` SDK is the entry point. It requires Python >=3.12,
+The `openhands-sdk` package is the entry point. It requires Python >=3.12,
 but several benchmark bases ship 3.10/3.11 (aider-polyglot's ubuntu:22.04
 is 3.10). We sidestep that by provisioning a self-contained Python 3.12
 venv at /opt/openhands-venv via uv-managed Python during install.sh, and
@@ -22,18 +22,24 @@ import re
 import sys
 import tempfile
 
+# These are fixed constants, not env knobs: the agent runs under run-agent's
+# `env -i` allow-list (containers/core/runner/run-agent), which forwards only the
+# framework contract vars (TASK, MODEL, TIMEOUT, EVAL_AGENT_REASONING_EFFORT, the
+# gateway URLs). Any other os.environ read here can never see a runtime value, so
+# these mirror upstream HANDBOOK's runner directly rather than pretending to be
+# tunable. Wall-clock is bounded independently by EVAL_TIMEOUT via run-agent.
+
 # MCP tool-call timeout (seconds) — mirrors upstream HANDBOOK's runner.
 MCP_TOOL_TIMEOUT = 300
-# Iteration budget: tracks the common 200-tool-call agentic cap. Wall-clock
-# is still bounded by EVAL_TIMEOUT.
-MAX_ITERATIONS = int(os.environ.get("EVAL_MAX_ITERATIONS", "200"))
+# Iteration budget: tracks the common 200-tool-call agentic cap.
+MAX_ITERATIONS = 200
 
 # Per-call LLM timeout (seconds). The SDK default is 300s, and litellm.Timeout
 # is NOT in the SDK's retryable set, so a slow proxy call surfaces as a fatal
 # error and drops the run. Upstream HANDBOOK bumps this to 600 to match the
 # worldbench ~10-min per-call ceiling and cut spurious timeouts on big-context
 # SOP tasks; mirror it so the port doesn't abort where upstream would retry.
-LLM_TIMEOUT = int(os.environ.get("EVAL_AGENT_LLM_TIMEOUT", "600"))
+LLM_TIMEOUT = 600
 
 # Tool observations larger than this (chars) are kept intact. The OpenHands SDK
 # otherwise hard-truncates every tool result at DEFAULT_TEXT_CONTENT_LIMIT
@@ -168,10 +174,8 @@ def main() -> None:
     effort = _env("EVAL_AGENT_REASONING_EFFORT", default="").strip().lower()
     if effort:
         llm_kwargs["litellm_extra_body"] = {"reasoning": {"effort": effort}}
-    # Output-token cap: leave UNSET by default to mirror the upstream HANDBOOK
-    # harness exactly (its openhands_runner passes llmKwargs={} — no
-    # max_output_tokens). Only pin it when EVAL_AGENT_MAX_OUTPUT_TOKENS is
-    # explicitly provided.
+    # Output-token cap: left UNSET, mirroring the upstream HANDBOOK harness
+    # exactly (its openhands_runner passes llmKwargs={} — no max_output_tokens).
     #
     # Why unset matters: an agent can end up on the OpenAI Responses API if the
     # model handle it is given contains "gpt-5"/"codex" (openhands infers the
@@ -179,12 +183,9 @@ def main() -> None:
     # counts reasoning tokens too, and sending *any* value was observed to come
     # back clamped to 4096 -> `incomplete` responses that stall the agent
     # mid-run. Leaving the field unset — exactly as upstream does — removes the
-    # truncation. Do NOT reintroduce a default value here. (The gateway handle
-    # itself is kept neutral in compose/runner.yaml so non-gpt-5 models such as
-    # GLM stay on chat/completions in the first place.)
-    max_out = _env("EVAL_AGENT_MAX_OUTPUT_TOKENS", default="").strip()
-    if max_out:
-        llm_kwargs["max_output_tokens"] = int(max_out)
+    # truncation. Do NOT reintroduce a value here. (The gateway handle itself is
+    # kept neutral in compose/runner.yaml so non-gpt-5 models such as GLM stay on
+    # chat/completions in the first place.)
     llm = LLM(**llm_kwargs)
 
     # Run in the benchmark's working directory (the framework entrypoint cd's

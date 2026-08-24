@@ -30,12 +30,20 @@ mkdir -p "$HOME/.config/opencode"
 # `remote` MCP server so the agent calls the 82 tools directly instead of
 # bootstrapping an MCP client over bash. No block (a non-MCP benchmark, or the
 # agents-smoke carrier) -> empty fragment -> behavior is unchanged.
-MCP_URL="$(printf '%s\n' "$TASK" | awk '/=== MCP SERVER ===/{f=1} f && /url:/ {line=$0; sub(/^[[:space:]]*url:[[:space:]]*/,"",line); print line; exit}')"
+# Match the first whitespace-delimited token after `url:` inside the block —
+# equivalent to run_openhands.py's `re.search(r"url:\s*(\S+)")`, so both agents
+# extract the identical endpoint from the same prose.
+MCP_URL="$(printf '%s\n' "$TASK" | awk '/=== MCP SERVER ===/{f=1} f && /url:/ {sub(/^.*url:[[:space:]]*/,""); print $1; exit}')"
 MCP_JSON=""
 if [ -n "$MCP_URL" ]; then
+  # Escape backslashes then double quotes so the url can never break out of its
+  # JSON string (the endpoint is fixed benchmark prose today, but a stray quote
+  # would otherwise emit invalid JSON and silently drop MCP).
+  MCP_URL_ESC="${MCP_URL//\\/\\\\}"
+  MCP_URL_ESC="${MCP_URL_ESC//\"/\\\"}"
   # `timeout` is opencode's per-fetch cap in ms (default 5000 — far below the
   # 300s a handbook tool call may take); match the servers' 300s tool timeout.
-  MCP_JSON=",\"mcp\":{\"syntara\":{\"type\":\"remote\",\"url\":\"$MCP_URL\",\"enabled\":true,\"timeout\":300000}}"
+  MCP_JSON=",\"mcp\":{\"syntara\":{\"type\":\"remote\",\"url\":\"$MCP_URL_ESC\",\"enabled\":true,\"timeout\":300000}}"
 fi
 
 cat > "$HOME/.config/opencode/opencode.json" <<CONF
