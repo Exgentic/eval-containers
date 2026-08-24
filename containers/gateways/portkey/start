@@ -22,12 +22,20 @@ set -eu
 # Private-CA upstream: when the deploy mounts an extra CA at /etc/eval-ca/ca.pem
 # (see deploy/kind/README.md § 'Private-CA upstreams'), trust it IN ADDITION to
 # the built-in roots. Node ignores SSL_CERT_FILE; NODE_EXTRA_CA_CERTS is the
-# supported knob and APPENDS the file to the bundled roots (no public roots lost).
-# The health probe's curl gets the combined bundle via CURL_CA_BUNDLE. No mount →
-# unchanged, public-roots-only trust.
+# supported knob and APPENDS the file to the bundled roots (no public roots lost),
+# so it takes the CA-only file directly. curl, by contrast, uses CURL_CA_BUNDLE as
+# its whole trust store, so it gets a COMBINED bundle (public roots + the extra CA).
+# Guard the read: if the system bundle is missing (e.g. a base-image change), fall
+# back to CA-only for curl rather than letting `cat` abort the gateway under
+# `set -eu`. No mount → unchanged, public-roots-only trust.
 if [ -f /etc/eval-ca/ca.pem ]; then
   export NODE_EXTRA_CA_CERTS=/etc/eval-ca/ca.pem
-  cat /etc/ssl/certs/ca-certificates.crt /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+    cat /etc/ssl/certs/ca-certificates.crt /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  else
+    echo "warn: /etc/ssl/certs/ca-certificates.crt missing — trusting the mounted CA only" >&2
+    cat /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  fi
   export CURL_CA_BUNDLE=/tmp/ca-bundle.pem
 fi
 

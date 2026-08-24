@@ -104,7 +104,7 @@ initContainers: []          # e.g. a wait-for-<service> gate
 runnerExtraEnv: []          # e.g. DESKTOP_URL for osworld
 gatewayExtraEnv: []
 runnerExtraVolumeMounts: []
-gatewayExtraVolumeMounts: []  # e.g. mount a private-CA ConfigMap at /etc/eval-ca for an internal upstream; the gateway's start script appends it to the system roots (do NOT set SSL_CERT_FILE to the CA-only file — Go replaces the root pool with it)
+gatewayExtraVolumeMounts: []  # e.g. mount a private-CA ConfigMap at /etc/eval-ca for an internal upstream; the gateway's start script appends it to the system roots (do NOT set SSL_CERT_FILE to the CA-only file — that var sets the whole trust store, dropping the public roots)
 extraVolumes: []
 extraManifests: []          # extra Deployments/Services (full manifests)
 # Per-task service sidecars. A catalog of name → {image, port,

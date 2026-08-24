@@ -24,13 +24,20 @@ set -eu
 
 # Private-CA upstream: when the deploy mounts an extra CA at /etc/eval-ca/ca.pem
 # (see deploy/kind/README.md § 'Private-CA upstreams'), APPEND it to the system
-# roots rather than replace them. Concatenate the system bundle + the CA into a
-# writable combined file and point Python's TLS stacks at that superset:
-# SSL_CERT_FILE (ssl/OpenSSL), REQUESTS_CA_BUNDLE (requests/httpx, which litellm
-# uses), and CURL_CA_BUNDLE (the health probe's curl). No mount → unchanged,
-# public-roots-only trust.
+# roots rather than replace them. Point Python's TLS knobs at a COMBINED bundle
+# (public roots + the extra CA), never at the CA-only file: these vars set the
+# whole trust store, so a CA-only file would drop every public root — SSL_CERT_FILE
+# (ssl/OpenSSL), REQUESTS_CA_BUNDLE (requests/httpx, which litellm uses), and
+# CURL_CA_BUNDLE (the health probe's curl). Guard the read: if the system bundle is
+# missing (e.g. a base-image change), fall back to CA-only rather than letting `cat`
+# abort the gateway under `set -eu`. No mount → unchanged, public-roots-only trust.
 if [ -f /etc/eval-ca/ca.pem ]; then
-  cat /etc/ssl/certs/ca-certificates.crt /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  if [ -f /etc/ssl/certs/ca-certificates.crt ]; then
+    cat /etc/ssl/certs/ca-certificates.crt /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  else
+    echo "warn: /etc/ssl/certs/ca-certificates.crt missing — trusting the mounted CA only" >&2
+    cat /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem
+  fi
   export SSL_CERT_FILE=/tmp/ca-bundle.pem REQUESTS_CA_BUNDLE=/tmp/ca-bundle.pem \
          CURL_CA_BUNDLE=/tmp/ca-bundle.pem
 fi
