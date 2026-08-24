@@ -81,7 +81,8 @@ base is the upstream root, so the probe appends `/v1` just as the gateway does) 
 prints the models the upstream offers. If the endpoint is unreachable from the
 cluster it also checks the **host** and reports which can reach it: a private CA
 the host trusts but a pod does not is the usual cause, and it points you back
-here. The probe is read-only — it never writes to the cluster.
+here. The probe runs in an ephemeral pod it creates and then deletes — it leaves
+no lasting state on the cluster.
 
 To fix it, install the CA. It stays **on the cluster** as a ConfigMap and is never
 baked into (or pushed with) any image. Point `EVAL_UPSTREAM_CA` at a PEM of the
