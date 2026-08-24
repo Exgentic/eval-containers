@@ -13,7 +13,8 @@
 # the gateway does) and prints the models the upstream offers. If it is unreachable from
 # the cluster, it reports whether the host can reach it — a private CA the host
 # trusts but a pod does not is the usual cause — and points at deploy/kind/README.md
-# § 'Private-CA upstreams'. The probe is read-only; it writes nothing.
+# § 'Private-CA upstreams'. The probe creates and deletes an ephemeral pod; it
+# leaves no lasting state on the cluster.
 #
 # EVAL_UPSTREAM_CA (optional): path to a PEM of extra CA cert(s) for a private-CA
 # upstream. Stored as the eval-upstream-ca ConfigMap; run.sh mounts it into the
@@ -48,7 +49,8 @@ Upstream probe:
   exactly as the gateway does) and lists the models the upstream offers. If it is unreachable from
   the cluster, it reports whether the host can reach it (a private CA the host
   trusts but a pod does not is the usual cause) and points at the README
-  § 'Private-CA upstreams'. Read-only — it writes nothing to the cluster.
+  § 'Private-CA upstreams'. The probe creates and deletes an ephemeral pod —
+  it leaves no lasting state on the cluster.
 
 Environment (optional):
   EVAL_UPSTREAM_CA  path to a PEM of CA cert(s) to trust, for an upstream served
@@ -100,6 +102,18 @@ store_upstream_ca() {  # arg: <pem-file>
   if grep -q "PRIVATE KEY" "$pem"; then
     echo "error: CA file contains a PRIVATE KEY — pass CA certs only: $pem" >&2; return 1
   fi
+  # Parse it, don't just trust the header: a file with a valid BEGIN CERTIFICATE line
+  # but a corrupt body passes the grep yet, once concatenated into the gateway's
+  # combined bundle, breaks TLS differently on each runtime — OpenSSL (litellm)
+  # rejects the whole bundle so EVERY upstream call fails, Node (portkey) silently
+  # drops the CA and fails open, Go (bifrost) skips the bad block. Reject it here,
+  # loud, at the one place a human is watching. `crl2pkcs7 | pkcs7 -print_certs`
+  # parses every cert and lists none if the body is unparsable.
+  if ! openssl crl2pkcs7 -nocrl -certfile "$pem" 2>/dev/null \
+       | openssl pkcs7 -print_certs -noout 2>/dev/null | grep -q .; then
+    echo "error: no parseable certificate in: $pem (header present but body is not valid PEM/DER)" >&2
+    return 1
+  fi
   log "=== apply ConfigMap eval-upstream-ca (from $pem) in ${NAMESPACE:-default} ==="
   kube create configmap eval-upstream-ca \
     --from-file=ca.pem="$pem" \
@@ -124,7 +138,13 @@ PROBE_IMAGE="curlimages/curl:8.11.1"
 # A hand-applied Pod (not `kubectl run`) because run's --overrides fights the
 # --command/-i merge; a full manifest gives unambiguous control of the CA volume.
 probe_models_from_cluster() {
-  local name=eval-upstream-probe
+  # Collision-resistant name: a fixed name would let a concurrent run (or an
+  # unrelated pod that happens to share it) be deleted by the unconditional
+  # pre-apply delete below. $$ + $RANDOM is unique enough for a local dev probe.
+  local name="eval-upstream-probe-$$-${RANDOM}"
+  # Always clean the probe pod up, even on Ctrl-C between apply and the final
+  # delete — without this a mid-probe interrupt leaks the pod on the cluster.
+  trap 'kube delete pod "$name" --ignore-not-found >/dev/null 2>&1 || true' RETURN
   # When the CA is installed, mount it and point curl at it (CURL_CA_BUNDLE). For a
   # private-CA endpoint that one CA is what verifies it; a public endpoint has no
   # ConfigMap installed, so this only narrows trust to the CA the gateway uses too.
@@ -153,9 +173,14 @@ probe_models_from_cluster() {
   if kube get configmap eval-upstream-ca >/dev/null 2>&1; then
     vol='  volumes: [{ name: upstream-ca, configMap: { name: eval-upstream-ca } }]'
     mnt='      volumeMounts: [{ name: upstream-ca, mountPath: /etc/eval-ca, readOnly: true }]'
-    cmd='cat /etc/ssl/certs/ca-certificates.crt /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem; export CURL_CA_BUNDLE=/tmp/ca-bundle.pem; '"$cmd"
+    # Guard the system-bundle read the same way the gateway start scripts do: build
+    # the combined bundle from whichever of the two files exist rather than letting a
+    # missing system bundle abort the probe. The probe image (curlimages/curl:alpine)
+    # ships the file, so this is belt-and-suspenders parity with the gateways.
+    cmd='cat /etc/ssl/certs/ca-certificates.crt /etc/eval-ca/ca.pem 2>/dev/null > /tmp/ca-bundle.pem || cat /etc/eval-ca/ca.pem > /tmp/ca-bundle.pem; export CURL_CA_BUNDLE=/tmp/ca-bundle.pem; '"$cmd"
   fi
-  kube delete pod "$name" --ignore-not-found >/dev/null 2>&1
+  # The name is unique per invocation (no pre-delete needed) and the RETURN trap
+  # deletes it; apply straight away.
   kube apply -f - >/dev/null 2>&1 <<YAML
 apiVersion: v1
 kind: Pod
@@ -177,7 +202,7 @@ YAML
   kube wait --for=jsonpath='{.status.phase}'=Succeeded pod/"$name" --timeout=40s >/dev/null 2>&1 \
     || kube wait --for=jsonpath='{.status.phase}'=Failed pod/"$name" --timeout=5s >/dev/null 2>&1 || true
   kube logs "$name" 2>/dev/null
-  kube delete pod "$name" --ignore-not-found >/dev/null 2>&1
+  # The RETURN trap deletes the pod (covers the interrupt case too).
 }
 
 # Extract OpenAI-style model ids from a /models response body (one per line).
@@ -197,7 +222,8 @@ log_models() {  # arg: <ids>
 # Verify OPENAI_API_BASE from the HOST first — the host is the source of truth. If
 # the host itself can't reach a usable /models, nothing downstream can, so we stop
 # there and tell the user to fix host access. Only once the host works do we probe
-# the cluster to see whether it, too, reaches the endpoint (CA/egress). Read-only.
+# the cluster to see whether it, too, reaches the endpoint (CA/egress). The
+# cluster probe runs in an ephemeral pod it creates and deletes (no lasting state).
 # Returns 0 only when an eval could actually run; non-zero on any failure.
 probe_and_report() {
   $DRY_RUN && { log "[dry-run] skip upstream reachability/model probe"; return 0; }
@@ -281,9 +307,27 @@ probe_and_report() {
     sleep 5
   done
 
+  # The cluster reached the endpoint (curl exit 0, an HTTP status came back). Judge
+  # that status the SAME way the host leg does — reachability alone is not readiness.
+  # A 401/403 (egress proxy or a route to a different backend), a 404 (wrong
+  # in-cluster route), or a 5xx all mean an eval can't run, so they MUST withhold the
+  # "ready" verdict, not pass on "status != 000". Only 2xx is ready.
   if [[ "$curl_rc" -eq 0 && "$cluster_http" != 000 ]]; then
-    log "OK — the cluster reaches it too (HTTP $cluster_http). Ready to run evals."
-    return 0
+    case "$cluster_http" in
+      2*)
+        log "OK — the cluster reaches it too (HTTP $cluster_http). Ready to run evals."
+        return 0;;
+      401|403)
+        log "reachable from the cluster but the key was rejected (HTTP $cluster_http) — the cluster's"
+        log "egress may route to a different backend than the host. Not ready.";;
+      5*)
+        log "reachable from the cluster but it returned HTTP $cluster_http — the upstream is up but"
+        log "unhealthy from inside the cluster (egress proxy? model server down?). Not ready.";;
+      *)
+        log "reachable from the cluster but GET /v1/models returned HTTP $cluster_http — the cluster's"
+        log "in-cluster route likely resolves to a different backend than the host. Not ready.";;
+    esac
+    return 1
   fi
 
   # Cluster can't reach what the host can. Classify by curl's exit code; http=000
@@ -349,6 +393,22 @@ else
   else log "=== create kind cluster $CLUSTER ==="; create_cluster; fi
 fi
 
+# ── 1b. Namespace (only when --namespace was given) ───────────────────────────
+# The default namespace always exists; a custom one may not. Create it up front so
+# the Secret/ConfigMap applies (and the probe pod) land in a real namespace. Absent
+# this, a namespace typo made every later `kube apply` fail — and the probe swallows
+# apply errors, so the failure surfaced as an empty probe → a misleading "private-CA
+# /egress issue" hint pointing at the wrong docs. `apply` is idempotent.
+if [[ -n "$NAMESPACE" ]]; then
+  if $DRY_RUN; then
+    log "[dry-run] ensure namespace $NAMESPACE"
+  else
+    log "=== ensure namespace $NAMESPACE ==="
+    command kubectl --context "$KCTX" create namespace "$NAMESPACE" \
+      --dry-run=client -o yaml | command kubectl --context "$KCTX" apply -f -
+  fi
+fi
+
 # ── 2. eval-secrets Secret from the environment ───────────────────────────────
 # `apply` (not `create`) via a client-side render so a re-run refreshes rotated
 # credentials in place rather than erroring on an existing Secret.
@@ -377,20 +437,30 @@ if [[ -n "${EVAL_UPSTREAM_CA:-}" ]]; then
   fi
 fi
 
-# ── 4. Upstream reachability + model report (read-only diagnostic) ────────────
+# ── 4. Upstream reachability + model report (ephemeral-pod diagnostic) ────────
 # Confirm the gateway's upstream is reachable from the cluster and list the models
 # it offers; if it is not, say whether the host can reach it and point at the
-# README. Writes nothing to the cluster. The cluster + Secret are already created
-# (side effects kept) — but if the upstream isn't usable an eval can't run, so we
-# withhold the "ready" line and exit non-zero. Capture the status (don't let set
-# -e abort) so the caller reports the right ending.
+# README. The probe creates and deletes an ephemeral pod, leaving no lasting state.
+# The cluster + Secret are already created (side effects kept) — but if the
+# upstream isn't usable an eval can't run, so we withhold the "ready" line and exit
+# non-zero. Capture the status (don't let set -e abort) so the caller reports the
+# right ending.
+#
+# Exit codes distinguish the two failure kinds a caller might treat differently:
+# a hard failure above (bad flag, missing CA, cluster create) exits 1; a fully
+# provisioned cluster whose upstream is merely unreachable/unhealthy exits 3. So
+# `create.sh && run.sh` still stops on 3 (the upstream can't serve an eval), but a
+# wrapper that wants to provision now and retry the upstream later can tell "the
+# cluster is up, only the upstream is down" (3) apart from "provisioning failed" (1).
+UPSTREAM_UNUSABLE=3
 probe_status=0
 probe_and_report || probe_status=$?
 
 if [[ "$probe_status" -ne 0 ]]; then
   log "cluster provisioned, but the upstream above is not usable yet — fix it, then"
-  log "re-run this script (idempotent) before submitting an eval."
-  exit "$probe_status"
+  log "re-run this script (idempotent) before submitting an eval. (exit $UPSTREAM_UNUSABLE:"
+  log "provisioning succeeded; only the upstream check failed.)"
+  exit "$UPSTREAM_UNUSABLE"
 fi
 
 log "ready. submit an eval with: ./deploy/kind/run.sh --benchmark <b> --agent <a> --model <m> --task 0 --watch"
