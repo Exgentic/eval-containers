@@ -37,6 +37,10 @@ Selection:
   --parallelism <n>     concurrent indices for a dataset run (default: 2)
   --retry <n>           backoffLimitPerIndex for a dataset run
   --eval-model <h>      upstream <provider>/<model> handle (default: derived from --model)
+  --eval-model-api <w>  force the gateway's upstream wire (anthropic|openai|gemini),
+                        translating the agent's inbound protocol to it — needed when
+                        the agent's native wire differs from a single-protocol upstream
+                        (gateways/RULES.md rule 2b). Default: EVAL_MODEL_API env, else unset.
 
 Cluster / output:
   --namespace <ns>      target namespace
@@ -57,7 +61,8 @@ EOF
 }
 
 BENCHMARK="" AGENT="" MODEL="" TASK="0" DATASET="" PARALLELISM="" RETRY=""
-EVAL_MODEL="" NAMESPACE="" REGISTRY="$REGISTRY_DEFAULT" CLUSTER="$CLUSTER_DEFAULT"
+EVAL_MODEL="" EVAL_MODEL_API="${EVAL_MODEL_API:-}"
+NAMESPACE="" REGISTRY="$REGISTRY_DEFAULT" CLUSTER="$CLUSTER_DEFAULT"
 OUTPUT_PATH="$OUTPUT_HOSTPATH"
 DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false RERUN=false
 WATCH=false DRY_RUN=false
@@ -66,7 +71,8 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --model) MODEL="$2"; shift 2;; --task) TASK="$2"; shift 2;;
   --dataset) DATASET_MODE=true; shift;; --dataset-size) DATASET="$2"; DATASET_MODE=true; shift 2;;
   --parallelism) PARALLELISM="$2"; shift 2;; --retry) RETRY="$2"; shift 2;;
-  --eval-model) EVAL_MODEL="$2"; shift 2;; --namespace) NAMESPACE="$2"; shift 2;;
+  --eval-model) EVAL_MODEL="$2"; shift 2;; --eval-model-api) EVAL_MODEL_API="$2"; shift 2;;
+  --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --cluster) CLUSTER="$2"; shift 2;;
   --output-path) OUTPUT_PATH="$2"; shift 2;; --repo-dir) REPO_DIR="$2"; shift 2;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
@@ -212,6 +218,14 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
 # Per-task benchmarks render the task-aware runner (evals/<b>-<task>--<a>) — the
 # chart needs perTask=true to match the image built + loaded above.
 $PER_TASK && SET+=(--set "perTask=true")
+# Wire override (gateways/RULES.md rule 2b): force the gateway's upstream wire and
+# translate the agent's inbound protocol to it. Needed when the agent's native wire
+# (e.g. OpenAI Responses) differs from what a single-protocol upstream accepts (e.g.
+# Kimi-K3 speaks only classic Chat). Forwarded into the gateway container via the
+# chart's gatewayExtraEnv; the gateway's `start` validates the value and fails loud
+# on a bad wire, so no validation is duplicated here.
+[[ -n "$EVAL_MODEL_API" ]] && SET+=(--set "gatewayExtraEnv[0].name=EVAL_MODEL_API"
+                                    --set "gatewayExtraEnv[0].value=$EVAL_MODEL_API")
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
