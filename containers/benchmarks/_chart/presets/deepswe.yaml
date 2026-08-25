@@ -17,10 +17,20 @@
 # last), so this file is the only place the value can change.
 timeout: '28800'
 deadlineGrace: 1800
+# ephemeral-storage is NOT in compose (Docker has no such limit), so rule 24e
+# parity is unaffected — it is a k8s-only concern. Without it every pod inherits
+# the namespace LimitRange default of 4Gi, which is too small here: the upstream
+# per-task base is ~880 MB and a task that builds its repo, installs deps and
+# writes suite artifacts on top of that exceeds 4Gi. The pod is then EVICTED
+# ("Container runner exceeded its local ephemeral storage limit"), which kills the
+# gateway sidecar with exit 137 and looks like a crash rather than a disk limit.
+# Observed on boa-hierarchical-evaluation-cancellation: evicted on both attempts.
 resources:
   requests:
     cpu: 500m
     memory: 512Mi
+    ephemeral-storage: 2Gi
   limits:
     cpu: '2'
     memory: 8Gi
+    ephemeral-storage: 24Gi

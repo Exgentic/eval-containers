@@ -12,7 +12,7 @@ commit: 91e97273
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | building | ✓ | `build.sh` resolves the per-task base from the task's own `task.toml` (`[environment].docker_image`) and overlays the eval pipeline; built for `fastapi-implicit-head-options` (python) and `superjson-error-stack-serialization` (typescript) |
-| running | ~ | Pipeline proven end-to-end on compose (all five units ran, `task/result.json` + `traces.jsonl` produced), but **no valid agent score yet**: the local attempt was killed by an under-set `EVAL_TIMEOUT` (exit 124). An arm64 **kind** node cannot run this at all — containerd rejects the amd64 base at pull time regardless of host binfmt. The OpenShift sweep on native amd64 is in progress. |
+| running | ✓ | Live agent scores on native amd64 (OpenShift `c111-e-us-east`), 3 agents × 10 tasks, 20 distinct tasks (5 shared by all three). Two runs complete: **opencode**/`gpt-5.5` 6/10, **gemini-cli**/`gemini-3.5-flash-lite` 1/10; **claude-code**/`claude-sonnet-5` 2/4 with 6 tasks still running. All 30 tasks produced `traces.jsonl` (~1.1k spans each). Every result carried `exit_code 0` — no timeouts at the 28800s budget. An arm64 **kind** node still cannot run this at all — containerd rejects the amd64 base at pull time regardless of host binfmt. |
 | isolation | ✓ | gold not baked (fetched fresh by `solution.sh`); `/tests` root-only (`700`, root-owned) — hides `config.json`, the whitelist of graded node ids; `/task` holds only `instruction.md`; upstream base ships the repo at `base_commit` with `origin` removed + future history gc'd ("git time-travel"), so gold cannot leak from git |
 | oracle | ✓ | gold=1.0 / no-op=0.0 on TWO tasks, TWO architectures, TWO builders. (a) `fastapi-implicit-head-options`, local emulated arm64, buildx — gold `{"f2p_passed":43/43,"p2p_passed":3134/3134}`, no-op `{"f2p_passed":0,"p2p_passed":3134}`, graded with `--network none` (offline grading confirmed). (b) `adaptix-name-mapping-aliases`, native amd64 on OpenShift, in-cluster BuildConfig — gold `{"reward":1,"f2p_passed":44/44,"p2p_passed":2738/2738,"partial":1.0}`, no-op `{"reward":0,"f2p_passed":0/44,"p2p_passed":2738/2738}`. |
 | traces-reviewed | ? | no human trajectory review |
@@ -52,14 +52,14 @@ subset on native amd64.
 |--------|-------|
 | build | ~1 min per task with a warm base (pull + overlay only; no source build) |
 | grade | `fastapi-implicit-head-options`: ~3 min under emulation (3134 p2p + 43 f2p tests) |
-| end-to-end | ? (never run with a live agent) |
+| end-to-end | native amd64, agent+verify, n=24: min 5.8 / median 11.8 / max 86.8 min. Strongly agent-dependent — `gemini-cli` med 9.8 (fails fast), `opencode` med 12.1 (max 69.4), `claude-code` med 55.6 (max 86.8). The tail is real and is why the budget is 28800s: solves at 86.8 and 69.4 min would both be truncated by a 90-min cap. |
 
 ## Cost
 
 | Metric | Value |
 |--------|-------|
-| per task | ? |
-| full suite | ? |
+| per task | Tokens, from `traces.jsonl` (30 tasks, 10 per agent): `claude-code` 116.6M in / 3.77M out; `gemini-cli` 156.3M in / 0.45M out; `opencode` 60.0M in / 0.33M out. Input dominates by 30-350x — these are long agentic loops replaying a growing context, so **input** tokens are the cost driver, not output. |
+| full suite | **Not derivable.** `gen_ai.usage.cost` is emitted for every call but the upstream only prices the openai route: `opencode` totals $70.11 (~$7/task), while `claude-code` and `gemini-cli` report a literal `doubleValue: 0` on all 271 / 117 cost spans. A suite figure would need per-model rates applied to the token counts above. 113 tasks x 3 agents at opencode's rate would be ~$2.4k, but that extrapolates one model's pricing and should not be quoted as the suite cost. |
 
 ## Distribution — is it shipped?
 
@@ -93,6 +93,30 @@ subset on native amd64.
    transcript there makes it read the file it is writing — `grader.py grade` is
    never reached and the run reports `reward.txt=-1`. It goes to
    `/logs/deepswe-verifier.log` instead.
+
+## Agent-interactivity artifact (not a packaging defect)
+
+`claude-code` ended **3 of its 5 settled DeepSWE results** in an approval-seeking
+state — "the plan is ready for review", "awaiting your input… I'll pause here for
+your answers on the three design questions", "work *will* happen on a new branch" —
+against **0 of 10** for `opencode` and **0 of 10** for `gemini-cli`. In a batch eval
+nobody answers, so the run scores 0 without the work being attempted; `awilix`
+produced only 35 trace batches versus 132-276 for the same agent's solves.
+
+This is NOT fixed by the autonomy flag. `--dangerously-skip-permissions` has been
+in the claude-code image since 2026-06-14 (commit c8475925) and was therefore
+already active for the 2026-08-23 sweep. The flag suppresses *tool-permission*
+prompts; it does not stop the model from choosing to end its turn and ask a
+question. Every agent in the fleet already carries the equivalent
+(`--yolo` for gemini-cli/mini-swe-agent, `--dangerously-bypass-approvals-and-sandbox`
+for codex, `permission.{edit,bash}=allow` for opencode), so the difference is model
+behaviour, not harness configuration.
+
+Deliberately NOT worked around by appending text to the task. A suffix reaches the
+model as part of the problem statement, which makes the score non-comparable to
+DeepSWE's published leaderboard — the benchmark's prompt must stay byte-identical
+to upstream. Treat an approval-stop as a real (recorded) failure of that
+agent+model pairing, and read `claude-code`'s DeepSWE number as a floor.
 
 ## Open questions
 
