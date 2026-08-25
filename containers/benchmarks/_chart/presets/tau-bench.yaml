@@ -88,7 +88,7 @@ extraManifests:
                 name: eval-secrets
                 key: OPENAI_API_BASE
           - name: EVAL_MODEL
-            value: aws/claude-sonnet-4-5
+            value: azure/gpt-5.5
           - name: HOST
             value: 0.0.0.0
           readinessProbe:
