@@ -169,7 +169,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 // build` outside bake's static graph. (benchmarks/RULES.md 24g.)
                 let script = format!("containers/benchmarks/{benchmark}/build.sh");
                 if std::path::Path::new(&script).is_file() {
-                    run_build_script(&script, &image, &tid, dry_run)
+                    run_build_script(&script, &image, &tid, None, dry_run)
                 } else {
                     // Per-task variants build via `docker build`, outside the
                     // bake graph — so the `*` source-label wildcard in
@@ -211,35 +211,74 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 benchmark_image(registry, &benchmark, &tag)
             };
             let agent_tag = agent_image(registry, &agent, &tag);
-            // --no-pull on a base (non-task) build: use eval-local, which wires
-            // bench+agent in-graph via named contexts. This avoids registry manifest
-            // checks that fail on arm64 Mac (docker-container driver isolation means
-            // --load'd images are not visible in the BuildKit content store). The
-            // eval-local target produces the same image tag as eval. Per-task builds
-            // always use the plain eval target — their BENCHMARK_IMAGE is a task-
-            // specific image built outside bake, not a named bake target.
+            // A per-task --no-pull lean build wires the benchmark as an OCI-layout
+            // context (see the layout dance below); its `FROM` binds to a bare
+            // context name, not the registry ref. Everything else uses the real
+            // benchmark ref for BENCHMARK_IMAGE.
+            let per_task_local = no_pull && task_id.is_some() && !standalone;
+            // --no-pull selects an in-graph target that wires the bases as named
+            // contexts instead of registry pulls — avoiding the docker-container
+            // driver's stale/wrong-arch pull (--load'd images aren't visible in the
+            // BuildKit content store; arm64 Mac + CI). Non-task builds use eval-local
+            // (benchmark is a bake target). Per-task builds have no benchmark bake
+            // target, so they use eval-local-task and inject the benchmark as an
+            // OCI-layout context built inline below. Without --no-pull, plain `eval`.
             let eval_target = if no_pull && task_id.is_none() {
                 "eval-local"
+            } else if per_task_local {
+                "eval-local-task"
             } else {
                 "eval"
             };
+            // The benchmark FROM binds via a bare context name only in the per-task
+            // local case (registry-ref keys are pre-resolved to a digest before
+            // context matching, so a bare name is required to make the override bind
+            // — mirrors build.sh's `TASK_BASE=task-env`). Elsewhere it is the real ref.
+            let bench_from = if per_task_local {
+                "eval-benchmark-base".to_string()
+            } else {
+                bench_tag.clone()
+            };
             // Pass image refs as env vars so the bake HCL variables resolve for the
-            // eval-local context keys ("${BENCHMARK_IMAGE}" / "${AGENT_IMAGE}").
+            // eval-local[-task] context keys ("${BENCHMARK_IMAGE}" / "${AGENT_IMAGE}").
             // --set target.args.X only sets the build arg; setting as an env var also
             // populates the HCL variable used in the contexts map key.
             let mut bake_env = vec![
                 ("EVAL_BENCHMARK", benchmark.clone()),
                 ("EVAL_AGENT", agent.clone()),
-                ("BENCHMARK_IMAGE", bench_tag.clone()),
+                ("BENCHMARK_IMAGE", bench_from.clone()),
                 ("AGENT_IMAGE", agent_tag.clone()),
             ];
             // The lean `eval` base's two source images. (When --standalone layers
             // the bundle on top, the `eval-standalone` target builds `eval` first
             // as a wired dependency via the `eval-base` context, so these still apply.)
             let mut overrides = vec![
-                format!("{eval_target}.args.BENCHMARK_IMAGE={bench_tag}"),
+                format!("{eval_target}.args.BENCHMARK_IMAGE={bench_from}"),
                 format!("{eval_target}.args.AGENT_IMAGE={agent_tag}"),
             ];
+            // Per-task local: build the benchmark to a platform-carrying OCI layout
+            // (build.sh EVAL_LAYOUT_OUT) and bind it as the benchmark context, so the
+            // eval overlay's `FROM ${BENCHMARK_IMAGE}` uses THIS freshly-built base
+            // (native arch) rather than a registry pull. The layout dir is a
+            // per-process scratch dir; keep the guard alive until bake returns.
+            let _layout_guard;
+            if per_task_local {
+                let tid = task_id.as_ref().expect("per_task_local implies task_id");
+                let dir = std::env::temp_dir()
+                    .join(format!("eval-containers-bench-{}", std::process::id()));
+                std::fs::create_dir_all(&dir)
+                    .map_err(|e| format!("failed to create {}: {e}", dir.display()))?;
+                let layout = dir.join("layout");
+                let layout_str = layout
+                    .to_str()
+                    .ok_or_else(|| "layout path is not valid UTF-8".to_string())?
+                    .to_string();
+                build_benchmark_layout(registry, &benchmark, tid, &tag, &layout_str, dry_run)?;
+                _layout_guard = TempPath(dir);
+                overrides.push(format!(
+                    "{eval_target}.contexts.{bench_from}=oci-layout://{layout_str}"
+                ));
+            }
             // Per-task: tag the lean base evals/<b>-<task>--<a> (what compose,
             // container, and the chart all address), overriding the bake file's
             // shared-env default — else `build` and `run` disagree (RULES.md 24f).
@@ -580,23 +619,136 @@ fn docker_build(
     Err(last_err)
 }
 
-/// Run a benchmark's `build.sh <image> <task-id>` — for per-task benchmarks whose
-/// environment must be built from source (terminal-bench), a two-step build the
-/// bake graph and a single `docker build` can't express (benchmarks/RULES.md 24g).
-/// The script is responsible for tagging `image`.
-fn run_build_script(script: &str, image: &str, task_id: &str, dry_run: bool) -> Result<(), String> {
-    eprintln!("$ bash {script} {image} {task_id}");
+/// Like [`docker_build`] but exports the result to an OCI layout at `layout_out`
+/// (`--output type=oci`, which carries the built platform) instead of tagging and
+/// `--load`ing it — for the per-task benchmarks WITHOUT a `build.sh` (a plain
+/// single `docker build`), so the per-task eval build can bind the layout as a
+/// build context. `name` labels the image inside the layout.
+fn docker_build_layout(
+    name: &str,
+    context: &str,
+    build_args: &[String],
+    labels: &[(String, String)],
+    layout_out: &str,
+    dry_run: bool,
+) -> Result<(), String> {
+    let output = format!("type=oci,tar=false,dest={layout_out},name={name}");
+    let mut shown = format!("docker build --output {output}");
+    for arg in build_args {
+        shown.push_str(&format!(" --build-arg {arg}"));
+    }
+    for (k, v) in labels {
+        shown.push_str(&format!(" --label {k}={v}"));
+    }
+    if std::env::var("HF_TOKEN").is_ok() {
+        shown.push_str(" --secret id=HF_TOKEN,env=HF_TOKEN");
+    }
+    shown.push_str(&format!(" {context}"));
+    eprintln!("$ {shown}");
     if dry_run {
         return Ok(());
     }
-    let status = Command::new("bash")
-        .args([script, image, task_id])
+
+    let mut cmd = Command::new("docker");
+    cmd.arg("build").arg("--output").arg(&output);
+    for arg in build_args {
+        cmd.arg("--build-arg").arg(arg);
+    }
+    for (k, v) in labels {
+        cmd.arg("--label").arg(format!("{k}={v}"));
+    }
+    if std::env::var("HF_TOKEN").is_ok() {
+        cmd.arg("--secret").arg("id=HF_TOKEN,env=HF_TOKEN");
+    }
+    cmd.arg(context);
+
+    let mut last_err = String::new();
+    for attempt in 1..=3 {
+        let status = cmd
+            .status()
+            .map_err(|e| format!("failed to run docker: {e}"))?;
+        if status.success() {
+            return Ok(());
+        }
+        last_err = format!("docker build failed with {status}");
+        if attempt < 3 {
+            eprintln!("retry {attempt}/3 after build failure");
+        }
+    }
+    Err(last_err)
+}
+
+/// Run a benchmark's `build.sh <image> <task-id>` — for per-task benchmarks whose
+/// environment must be built from source (terminal-bench), a two-step build the
+/// bake graph and a single `docker build` can't express (benchmarks/RULES.md 24g).
+/// The script is responsible for tagging `image`. When `layout_out` is set, the
+/// script exports an OCI layout to that dir (via EVAL_LAYOUT_OUT) instead of
+/// `--load`ing the image — consumed as a build context by the per-task eval build.
+fn run_build_script(
+    script: &str,
+    image: &str,
+    task_id: &str,
+    layout_out: Option<&str>,
+    dry_run: bool,
+) -> Result<(), String> {
+    match layout_out {
+        Some(dir) => eprintln!("$ EVAL_LAYOUT_OUT={dir} bash {script} {image} {task_id}"),
+        None => eprintln!("$ bash {script} {image} {task_id}"),
+    }
+    if dry_run {
+        return Ok(());
+    }
+    let mut cmd = Command::new("bash");
+    cmd.args([script, image, task_id]);
+    if let Some(dir) = layout_out {
+        cmd.env("EVAL_LAYOUT_OUT", dir);
+    }
+    let status = cmd
         .status()
         .map_err(|e| format!("failed to run {script}: {e}"))?;
     if status.success() {
         Ok(())
     } else {
         Err(format!("{script} failed with {status}"))
+    }
+}
+
+/// Build a per-task benchmark image to an OCI layout at `layout_out` (a
+/// platform-carrying `--output type=oci` dir). Used by the per-task `--no-pull`
+/// eval build to wire the freshly-built, native-arch benchmark as a build context
+/// rather than pulling a (possibly stale / wrong-arch) copy from the registry.
+/// Prefers the benchmark's `build.sh` (which honours EVAL_LAYOUT_OUT); falls back
+/// to a plain `docker build` OCI-layout export for per-task benchmarks without one.
+fn build_benchmark_layout(
+    registry: &str,
+    benchmark: &str,
+    task_id: &str,
+    tag: &str,
+    layout_out: &str,
+    dry_run: bool,
+) -> Result<(), String> {
+    let image = benchmark_task_image(registry, benchmark, task_id, tag);
+    let script = format!("containers/benchmarks/{benchmark}/build.sh");
+    if std::path::Path::new(&script).is_file() {
+        run_build_script(&script, &image, task_id, Some(layout_out), dry_run)
+    } else {
+        docker_build_layout(
+            &image,
+            &format!("./containers/benchmarks/{benchmark}"),
+            &[format!("EVAL_TASK_ID={task_id}")],
+            &[(OCI_SOURCE.to_string(), REPO_URL.to_string())],
+            layout_out,
+            dry_run,
+        )
+    }
+}
+
+/// A scratch directory removed when dropped (best-effort). Keeps a per-task
+/// benchmark OCI layout alive across the eval bake, then cleans it up.
+struct TempPath(std::path::PathBuf);
+impl Drop for TempPath {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
     }
 }
 
