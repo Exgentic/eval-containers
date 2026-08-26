@@ -11,18 +11,19 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- define "eval.values" -}}
 {{- $name := required "benchmark is required (--set benchmark=<x>)" .Values.benchmark -}}
 {{- $preset := .Files.Get (printf "presets/%s.yaml" $name) | fromYaml | default dict -}}
-{{- $merged := mergeOverwrite (deepCopy .Values) $preset -}}
-{{/* `timeout` is the one preset key an operator MUST be able to override per run:
-     the right agent budget is a property of the model, not the benchmark (deepswe
-     needs 90 min for gpt-5.5 and 8h for GLM-5.2 / claude-sonnet-5). Everything else
-     in a preset is structural topology that --set has no business changing, so the
-     preset still wins there. Without this, `--set timeout=` was silently ignored
-     for any benchmark carrying a preset — the rendered EVAL_TIMEOUT kept the preset
-     value and the override looked applied but was not. */}}
-{{- if .Values.timeoutOverride -}}
-{{- $_ := set $merged "timeout" (.Values.timeoutOverride | toString) -}}
-{{- end -}}
-{{- $merged | toYaml -}}
+{{- /* `timeout` is the one preset key an operator MUST be able to override per run:
+       the right agent budget is a property of the model, not the benchmark (deepswe
+       wants 90 min for gpt-5.5 and 8h for GLM-5.2 / claude-sonnet-5). Every other
+       preset key is structural topology that --set has no business changing, so the
+       preset still wins there. Without this, `--set timeout=` was silently ignored
+       for any benchmark carrying a preset: the rendered EVAL_TIMEOUT kept the preset
+       value, so the override looked applied but was not.
+       Written as a single mergeOverwrite chain (not a $merged variable + `set`) so
+       this define's output stays byte-identical in shape to what callers already
+       parse as YAML — an intermediate variable changed how empty string values
+       survived the round-trip and broke `helm lint`. */ -}}
+{{- $over := empty .Values.timeoutOverride | ternary dict (dict "timeout" (.Values.timeoutOverride | toString)) -}}
+{{- mergeOverwrite (deepCopy .Values) $preset $over | toYaml -}}
 {{- end -}}
 
 {{/* The runner's clean model name: the last segment of the <provider>/<model>
@@ -33,6 +34,21 @@ from --set and are never in a preset, so preset-wins is safe.
 
 {{/* Shared labels: benchmark/agent/model, sweep-id + Kueue queue only when set.
      `task` is dropped for a dataset eval (every index shares the Job). */}}
+{{- define "eval.labels" -}}
+benchmark: {{ required "benchmark is required (--set benchmark=<x>)" .Values.benchmark }}
+agent: {{ .Values.agent }}
+model: {{ include "eval.modelLabel" .Values | quote }}
+{{- if not .Values.datasetSize }}
+task: {{ .Values.task | quote }}
+{{- end }}
+{{- with .Values.sweepId }}
+sweep-id: {{ . | quote }}
+{{- end }}
+{{- with .Values.queueName }}
+kueue.x-k8s.io/queue-name: {{ . | quote }}
+{{- end }}
+{{- end -}}
+
 {{/* eval.jobName — the Job's metadata.name, guaranteed to be a legal DNS-1123
      name (<=63 chars). A per-task benchmark's task id can be long (DeepSWE's
      `dynamodb-toolbox-conditional-attribute-requirements` yields a 73-char name),
@@ -50,21 +66,6 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- else -}}
 {{- $n -}}
 {{- end -}}
-{{- end -}}
-
-{{- define "eval.labels" -}}
-benchmark: {{ required "benchmark is required (--set benchmark=<x>)" .Values.benchmark }}
-agent: {{ .Values.agent }}
-model: {{ include "eval.modelLabel" .Values | quote }}
-{{- if not .Values.datasetSize }}
-task: {{ .Values.task | quote }}
-{{- end }}
-{{- with .Values.sweepId }}
-sweep-id: {{ . | quote }}
-{{- end }}
-{{- with .Values.queueName }}
-kueue.x-k8s.io/queue-name: {{ . | quote }}
-{{- end }}
 {{- end -}}
 
 {{/* Image refs. Default to the nested registry path; when
