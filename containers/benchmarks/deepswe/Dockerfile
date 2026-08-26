@@ -35,6 +35,10 @@ LABEL eval.benchmark.tasks="113"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 LABEL eval.benchmark.url="https://github.com/datacurve-ai/deep-swe"
+# No paper: DeepSWE is a dataset + leaderboard release, not a publication. The
+# label is required by the benchmark PR template, so it is set explicitly to "n/a"
+# rather than omitted, so a reader can tell "none exists" from "nobody checked".
+LABEL eval.benchmark.paper="n/a"
 LABEL eval.benchmark.upstream_base="public.ecr.aws/d3j8x8q7/swe-bench-202605 (per-task tag from task.toml)"
 
 # EVAL_TASK_ID is consumed here (the per-task marker, rules 24a/24f).
