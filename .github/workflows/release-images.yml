@@ -25,7 +25,7 @@ name: Release the fleet
 #                         each pushing :TAG-<arch>; the `merge` job then stitches the
 #                         :TAG manifest list. Shared combos build multi-arch directly
 #                         (buildx --platform — thin overlays are QEMU-safe); per-task
-#                         combos (swe-bench/terminal-bench/skills-bench — heavy
+#                         combos (swe-bench/terminal-bench/skills-bench/deepswe — heavy
 #                         testbed bases QEMU can't cross-build reliably) get the same
 #                         native-per-arch + merge treatment as bases/per-task, via
 #                         `combos-pertask` + `merge-pertask-combos`. The
@@ -67,7 +67,7 @@ on:
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack opencode pi"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench, swe-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -215,7 +215,7 @@ jobs:
       leaves: ${{ steps.l.outputs.leaves }}        # bake targets: benchmarks(shared)+agents+models
       benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
       combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256 (shared combos only, task=="")
-      pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
+      pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench/deepswe), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
       has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a main push with no stale leaf
       dirty: ${{ steps.l.outputs.dirty }}           # main push: anything at all to publish?
@@ -313,7 +313,7 @@ jobs:
           pertask='[]'
           if [ "$INCLUDE_PER_TASK" = "true" ]; then
             acc='[]'
-            for B in terminal-bench skills-bench; do
+            for B in terminal-bench skills-bench deepswe; do
               bs="containers/benchmarks/$B/build.sh"; [ -f "$bs" ] || continue
               repo=$(grep -oE 'github\.com/[A-Za-z0-9_./-]+' "$bs" | head -1 | sed -E 's#github\.com/##; s#\.git$##')
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
@@ -358,7 +358,7 @@ jobs:
             echo "main push -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
           fi
 
-          # Every per-task combo (swe-bench, terminal-bench, skills-bench) is the
+          # Every per-task combo (swe-bench, terminal-bench, skills-bench, deepswe) is the
           # one class QEMU can't reliably cross-build (heavy testbed bases —
           # swe-bench alone hung 90min/shard in #226). Split ALL of them out: they
           # build natively per-arch via combos-pertask + merge-pertask-combos

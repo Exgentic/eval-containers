@@ -75,10 +75,11 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     mle.insert("EVAL_TASK_ID".into(), "spaceship-titanic".into());
     out.insert("mle-bench", mle);
 
-    // swe-bench-pro, terminal-bench, and swe-lancer build per-task via build.sh
-    // (rule 24g), not a single `docker build`; their builds are exercised by the
-    // oracle daemon-lane test (tests/oracle), so they are intentionally absent
-    // here (and thus skipped).
+    // swe-bench-pro, terminal-bench, swe-lancer and deepswe build per-task via
+    // build.sh (rule 24g), not a single `docker build`; their builds are exercised by
+    // the oracle daemon-lane test (tests/oracle), so they are intentionally absent
+    // here (and thus skipped). deepswe additionally resolves its base from the task's
+    // own task.toml at build time, so there is no static BASE_IMAGE to pin here.
 
     out.remove(benchmark)
 }
