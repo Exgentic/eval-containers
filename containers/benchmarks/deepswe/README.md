@@ -90,12 +90,32 @@ helm template deepswe containers/benchmarks/_chart \
 
 ## Timeout — the most likely cause of a false zero
 
-Upstream allows the agent **5400s** (90 min) per task (`[agent].timeout_sec`), and
-the chart preset matches. Under-budgeting is silent and looks exactly like failure:
-the shared launcher kills the agent with **exit 124**, the verifier then grades a
-tree with no agent work, and `result.json` reports `reward: 0` — indistinguishable
-from an honest wrong answer. Observed locally with `EVAL_TIMEOUT=1500`: the agent
-worked the full 29 minutes, was killed at the limit, and scored 0.
+Upstream allows the agent **5400s** (90 min) per task (`[agent].timeout_sec`, set
+identically by all 113 tasks) and the chart preset defaults to it. Under-budgeting is
+silent and looks exactly like failure: the shared launcher kills the agent with
+**exit 124**, the verifier then grades a tree with no agent work, and `result.json`
+reports `reward: 0` — indistinguishable from an honest wrong answer. Observed locally
+with `EVAL_TIMEOUT=1500`: the agent worked the full 29 minutes, was killed at the
+limit, and scored 0.
+
+**The right budget is a property of the model, not the benchmark**, so raise it per
+run rather than editing the preset:
+
+```bash
+helm template … --set benchmark=deepswe --set timeoutOverride=28800
+```
+
+Measured medians on the same task pool: `gemini-3.5-flash-lite` 10 min and `gpt-5.5`
+12 min both fit inside the default, while `azure/FW-GLM-5.2` (100 min) and
+`claude-sonnet-5` (220 min) do not — GLM scores **9/25 at 28800s vs ~2/25 at 5400s**.
+`presets/deepswe.yaml` carries the full table.
+
+Note that upstream's leaderboard does not bound the agent on wall clock at all: every
+published score was produced by Pier running `mini-swe-agent`, whose defaults are
+`cost_limit = 3.0` USD/task and `step_limit = 0` (unlimited). The 5400s in `task.toml`
+is Harbor's sandbox ceiling, not the evaluation protocol. Measured spend here stays
+inside that $3 regardless of the wall-clock budget (GLM $1.06 mean / $1.76 max over 24
+tasks), so a longer budget is not an unfair advantage relative to the leaderboard.
 
 Check `agent/result.json` for `"exit_code": 124` before believing any zero. On
 emulated (arm64) hosts, allow *more* than 5400s — everything runs several times

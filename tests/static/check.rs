@@ -204,6 +204,9 @@ fn extract_count_before(text: &str, suffix: &str) -> Option<u32> {
 /// cannot quietly drop it.
 #[test]
 fn timeout_override_beats_a_preset() {
+    let read = |p: &str| {
+        fs::read_to_string(repo_root().join(p)).unwrap_or_else(|_| panic!("missing {p}"))
+    };
     let helpers = read("containers/benchmarks/_chart/templates/_helpers.tpl");
     assert!(
         helpers.contains("timeoutOverride"),
