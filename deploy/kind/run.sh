@@ -212,6 +212,20 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
 # Per-task benchmarks render the task-aware runner (evals/<b>-<task>--<a>) — the
 # chart needs perTask=true to match the image built + loaded above.
 $PER_TASK && SET+=(--set "perTask=true")
+# Per-task agent wall clock: a per-task benchmark may bake eval.benchmark.timeout
+# (the upstream [agent] timeout_sec — terminal-bench does; benchmarks/RULES.md
+# rule 14) into its per-task benchmark image. When present, honor it verbatim so
+# the agent gets the exact budget upstream intends (the chart default of 300s
+# starves long tasks). Read off the LOCAL image (kind builds on the host). Absent
+# / empty → no override, chart (or preset) default applies.
+if $PER_TASK && ! $DRY_RUN; then
+  TB_TIMEOUT=$(docker image inspect "$REGISTRY/benchmarks/$BENCHMARK-$TASK:latest" \
+    --format '{{ index .Config.Labels "eval.benchmark.timeout" }}' 2>/dev/null || true)
+  if [[ -n "$TB_TIMEOUT" && "$TB_TIMEOUT" != "<no value>" ]]; then
+    log "per-task agent timeout from image label: ${TB_TIMEOUT}s"
+    SET+=(--set "timeout=$TB_TIMEOUT")
+  fi
+fi
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
