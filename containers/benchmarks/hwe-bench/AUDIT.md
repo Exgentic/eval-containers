@@ -3,7 +3,7 @@ benchmark: hwe-bench
 host: local docker (macOS, linux/amd64 emulation)
 commit: add-hwe-bench
 ---
-# Audit — hwe-bench (pku-liang/hwe-bench, 5 projects / 172 cases)
+# Audit — hwe-bench (pku-liang/hwe-bench, 5 projects / 169 cases)
 
 `✓` verified (a check passed) · `✗` failing · `?` unchecked · `n/a` not applicable
 
@@ -32,7 +32,7 @@ commit: add-hwe-bench
 | Metric | Value |
 |--------|-------|
 | base image | per-task; the published `ghcr.io/pku-liang/<org>_m_<repo>:pr-<number>` (design repo at `/home/<repo>` + git + sim toolchain baked in). ibex base ≈ **1.42 GB** uncompressed; the Chisel repos (rocket-chip, XiangShan) carry a Mill/Scala toolchain and are larger |
-| per-task image | base + eval overlay (apt `curl python3` + task metadata + `tb_script` + grader); one image per case. Cases in the same project share that project's `:base` layers (35/35/16/32/54 across the 5 projects) |
+| per-task image | base + eval overlay (apt `curl python3` + task metadata + `tb_script` + grader); one image per case. Cases in the same project share that project's `:base` layers (35/35/16/31/52 across the 5 projects) |
 
 ## Speed
 
@@ -59,12 +59,21 @@ commit: add-hwe-bench
 
 ## Coverage / status
 
-All five source-buildable projects (172 cases) ship together, one grader for all.
-OpenTitan (245 cases, 59% of the full 417) is permanently dropped — commercial
-Synopsys VCS, images not distributed.
+All five source-buildable projects (169 gradeable cases) ship together, one grader
+for all. OpenTitan (245 cases, 59% of the full 417) is permanently dropped —
+commercial Synopsys VCS, images not distributed. Of the 172 open-tooling cases, 3
+are excluded because their gold fix lives entirely or partly in a git submodule
+(`Subproject commit` pointer bump), which the grader cannot score under the
+contract that the agent edits only tracked superproject HDL source:
+`chipsalliance__rocket-chip-177` (fix is *only* a submodule bump — unsolvable), and
+`openxiangshan__xiangshan-2246` / `openxiangshan__xiangshan-2781` (mixed
+submodule + source, where the source hunk alone does not pass the failing test —
+verified: gold scores 0 under the fixed grader). The remaining 11 mixed
+submodule+source cases are kept (source hunk alone resolves the test, gold=1); both
+`grade.sh` and `solution.sh` ignore submodule-pointer hunks. Net: 169.
 
 - **Shipped, unreleased-but-runnable:** ibex (35), cva6 (35), caliptra-rtl (16),
-  rocket-chip (32), XiangShan (54). One representative per project is oracle-proven
+  rocket-chip (31), XiangShan (52). One representative per project is oracle-proven
   and registered in the oracle `SPECIAL` gate.
 - **Release (deferred, rule 21a):** record a replay fixture from a live agent sweep,
   then set `LABEL eval.benchmark.released="true"`.

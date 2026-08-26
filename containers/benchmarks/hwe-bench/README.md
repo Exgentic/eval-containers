@@ -6,7 +6,7 @@ HWE-Bench — real fail-to-pass RTL bug-repair tasks graded by simulation ("SWE-
 
 | Field | Value |
 |-------|-------|
-| Tasks | 172 (5 projects) |
+| Tasks | 169 (5 projects) |
 | Environment | per-task |
 | Internet required | false |
 | Released | no |
@@ -24,13 +24,24 @@ the markers, so it is agnostic to the underlying toolchain):
 | lowRISC/ibex | SystemVerilog | Verilator | 35 |
 | openhwgroup/cva6 | SystemVerilog | Spike (ISA) | 35 |
 | chipsalliance/caliptra-rtl | SystemVerilog | Verilator | 16 |
-| chipsalliance/rocket-chip | Chisel → Verilog | Mill + Verilator | 32 |
-| OpenXiangShan/XiangShan | Chisel → Verilog | Mill + Verilator | 54 |
-| **total** | | | **172** |
+| chipsalliance/rocket-chip | Chisel → Verilog | Mill + Verilator | 31 |
+| OpenXiangShan/XiangShan | Chisel → Verilog | Mill + Verilator | 52 |
+| **total** | | | **169** |
 
 **OpenTitan is out of scope** — its 245 cases need commercial Synopsys VCS and its
-images are not distributed. It is 59% of the full 417-case benchmark, so 172 is the
-runnable ceiling with open tooling.
+images are not distributed. It is 59% of the full 417-case benchmark, so 172 cases
+are runnable with open tooling.
+
+**3 of those 172 are excluded** because their gold fix lives entirely or partly in a
+git submodule (a `Subproject commit` pointer bump), which the grader cannot score
+under this benchmark's contract that the agent edits only tracked superproject HDL
+source: `chipsalliance__rocket-chip-177` (fix is *only* a submodule bump — unsolvable
+by editing the superproject), and `openxiangshan__xiangshan-2246` /
+`openxiangshan__xiangshan-2781` (mixed submodule + source, where the source hunk
+alone does not make the failing test pass — verified: gold scores 0). The remaining
+11 mixed submodule+source cases are kept: their source hunk alone resolves the test
+(gold scores 1), and both the grader (`grade.sh`) and the oracle (`solution.sh`)
+ignore submodule-pointer hunks so those cases grade correctly. Net: **169 gradeable**.
 
 ## What the agent sees
 
@@ -95,5 +106,5 @@ commit, `tb_script`, and fail-to-pass list root-only.
 - `entrypoint.sh` — seeds `TASK`, hands the repo to the agent
 - `solution.sh` — oracle gold (applies the dataset `fix_patch`)
 - `compose.yaml` / `docker-bake.hcl` — run + bake wiring
-- `tasks.txt` — the 172 task ids, grouped by project (documentation only; not parsed by the harness)
+- `tasks.txt` — the 169 task ids, grouped by project (documentation only; not parsed by the harness)
 - `README.md` / `AUDIT.md` — this file + the audit report
