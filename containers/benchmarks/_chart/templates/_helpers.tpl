@@ -11,7 +11,18 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- define "eval.values" -}}
 {{- $name := required "benchmark is required (--set benchmark=<x>)" .Values.benchmark -}}
 {{- $preset := .Files.Get (printf "presets/%s.yaml" $name) | fromYaml | default dict -}}
-{{- mergeOverwrite (deepCopy .Values) $preset | toYaml -}}
+{{- $merged := mergeOverwrite (deepCopy .Values) $preset -}}
+{{/* `timeout` is the one preset key an operator MUST be able to override per run:
+     the right agent budget is a property of the model, not the benchmark (deepswe
+     needs 90 min for gpt-5.5 and 8h for GLM-5.2 / claude-sonnet-5). Everything else
+     in a preset is structural topology that --set has no business changing, so the
+     preset still wins there. Without this, `--set timeout=` was silently ignored
+     for any benchmark carrying a preset — the rendered EVAL_TIMEOUT kept the preset
+     value and the override looked applied but was not. */}}
+{{- if .Values.timeoutOverride -}}
+{{- $_ := set $merged "timeout" (.Values.timeoutOverride | toString) -}}
+{{- end -}}
+{{- $merged | toYaml -}}
 {{- end -}}
 
 {{/* The runner's clean model name: the last segment of the <provider>/<model>

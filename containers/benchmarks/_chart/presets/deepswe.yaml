@@ -1,30 +1,43 @@
-# DeepSWE v1.1 — long-horizon tasks, so the agent budget and the per-task
-# resources both come from upstream's task.toml rather than the chart defaults.
-#   [agent].timeout_sec        = 5400  -> upstream's budget; we allow MORE (see below)
+# DeepSWE v1.1 — per-task resources come from upstream's task.toml, which every
+# one of the 113 tasks sets identically:
+#   [agent].timeout_sec        = 5400  -> the default below
 #   [verifier].timeout_sec     = 1800  -> deadlineGrace (grading runs after the agent)
 #   [environment].cpus/memory  = 2 / 8192 MiB -> resources.limits (rule 24e:
 #                                must match compose.yaml's deploy.resources.limits)
-# 28800 (8h). Raised twice, each time on measurement rather than guesswork:
-#   7200  -> 7 of 10 claude-code runs killed at the cap, still working
-#   14400 -> 6 of 9 killed at the cap; the three that FINISHED took 112, 143.6 and
-#            169.7 min, so the distribution's tail clearly runs past 4h
-# A too-small budget is silently indistinguishable from a wrong answer: the launcher
-# kills the agent and the verifier then grades a tree with no agent work (reward 0).
-# The ceiling costs nothing for faster agents (openclaw's clean runs took 4-35 min);
-# it only stops slow ones being scored as failures. Watch exit_code 124 in
-# agent/result.json — if it reappears, raise this again rather than trusting a 0.
-# NOTE the preset WINS over `--set timeout=` (the chart mergeOverwrites the preset
-# last), so this file is the only place the value can change.
-timeout: '28800'
+#
+# TIMEOUT IS UPSTREAM'S 5400s (90 min) AND IS MEANT TO BE OVERRIDDEN PER MODEL.
+#   helm template … --set benchmark=deepswe --set timeout=28800
+# Upstream's own leaderboard does NOT bound the agent on wall clock: every published
+# score was produced by Pier running mini-swe-agent, whose default limit is
+# `cost_limit = 3.0` USD per task with `step_limit = 0` (unlimited) — the 5400s in
+# task.toml is the Harbor sandbox's safety ceiling, not the evaluation protocol.
+# So a wall-clock cap is OUR constraint, and too small a value silently converts a
+# working agent into a reward-0: the launcher kills it (exit 124) and the verifier
+# grades a tree with no agent work.
+#
+# Measured wall clock per task on native amd64 (n=24 GLM / 10 gpt-5.5 / 9 sonnet /
+# 10 flash-lite), and the spend against upstream's $3 budget:
+#
+#   model                   median   p90    max    $/task   over $3?
+#   gpt-5.5                  12m     69m    69m    $2.23    no
+#   gemini-3.5-flash-lite    10m     48m    48m    $0.21    no
+#   claude-sonnet-5         220m    480m   480m    $2.25    no
+#   azure/FW-GLM-5.2        120m    454m   480m    $1.06    no  (max $1.76)
+#
+# RECOMMENDED OVERRIDES
+#   gpt-5.5, gemini-3.5-flash-lite   5400 (the default is ample; p90 is inside it)
+#   azure/FW-GLM-5.2                28800 (8h) — median 120m is already 1.3x the
+#     default and 7 of its 9 solves landed past 90 min. It is slow, not expensive:
+#     no task exceeded $1.76, so it stays well inside upstream's $3 budget even at
+#     8h. At the 5400s default GLM scores ~2/24; at 28800s it scores 9/24.
+#   claude-sonnet-5                 28800 (8h) — median 220m, p90 at the ceiling.
+#
+# We deliberately do NOT enforce a cost cap: upstream's $3 is a property of
+# mini-swe-agent's loop, not of the task, and the agents here have no equivalent
+# knob. Cost is reported per run instead (the dashboard sums gen_ai.usage.cost),
+# so a run that would have breached $3 is visible after the fact.
+timeout: '5400'
 deadlineGrace: 1800
-# ephemeral-storage is NOT in compose (Docker has no such limit), so rule 24e
-# parity is unaffected — it is a k8s-only concern. Without it every pod inherits
-# the namespace LimitRange default of 4Gi, which is too small here: the upstream
-# per-task base is ~880 MB and a task that builds its repo, installs deps and
-# writes suite artifacts on top of that exceeds 4Gi. The pod is then EVICTED
-# ("Container runner exceeded its local ephemeral storage limit"), which kills the
-# gateway sidecar with exit 137 and looks like a crash rather than a disk limit.
-# Observed on boa-hierarchical-evaluation-cancellation: evicted on both attempts.
 resources:
   requests:
     cpu: 500m
