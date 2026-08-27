@@ -3,15 +3,15 @@
   "providers": {
     "anthropic": {
       "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
-      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true }
+      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true, "max_retries": 5, "retry_backoff_initial": 500, "retry_backoff_max": 15000 }
     },
     "openai": {
       "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
-      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true }
+      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true, "max_retries": 5, "retry_backoff_initial": 500, "retry_backoff_max": 15000 }
     },
     "gemini": {
       "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
-      "network_config": { "base_url": "${OPENAI_API_BASE}/v1beta", "allow_private_network": true }
+      "network_config": { "base_url": "${OPENAI_API_BASE}/v1beta", "allow_private_network": true, "max_retries": 5, "retry_backoff_initial": 500, "retry_backoff_max": 15000 }
     }
   },
   ${GOVERNANCE}
