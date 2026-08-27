@@ -27,15 +27,7 @@ export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 # `script -qec` provides a fake-PTY — mini's typer CLI aborts on non-TTY stdin
 # even with --yolo.
 export MSWEA_CONFIGURED=1
-# The task text MUST NOT be interpolated into script's command string: `script -c`
-# hands that string to `sh -c`, so a task containing backticks, quotes or newlines
-# is re-parsed as shell (observed: DeepSWE instructions carry `require()` and
-# 'demo', which produced `sh: 1: Syntax error: end of file unexpected` and exit 2
-# before mini ever started). Write the task to a file and have the inner shell read
-# it into an argv element via "$(cat ...)" — the command string then contains no
-# task bytes at all, only a fixed path.
-printf '%s' "${TASK:-}" > /tmp/mswea-task.txt
-exec script -qec '/opt/mini-venv/bin/mini --model "openai/${EVAL_MODEL:-default}" --yolo --task "$(cat /tmp/mswea-task.txt)"' /dev/null
+exec script -qec "/opt/mini-venv/bin/mini --model openai/${EVAL_MODEL:-default} --yolo --task \"$TASK\"" /dev/null
 E
 
 ENTRYPOINT ["/run.sh"]

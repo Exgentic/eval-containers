@@ -22,19 +22,12 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 set -euo pipefail
 mkdir -p ~/.openclaw
-# maxTokens caps the model's OUTPUT per response. Without it openclaw inherits the
-# provider default (8192 on this proxy) and long-horizon work is silently truncated
-# mid-response: a DeepSWE run ended at 4 min with gen_ai.response.finish_reason
-# "length" and exactly 8192 output tokens, having only explored the repo. The key is
-# `maxTokens` (openclaw's own config schema) — NOT the `maxOutputTokens` the docs
-# suggest, which does not exist in this version. claude-code sets the equivalent via
-# CLAUDE_CODE_MAX_OUTPUT_TOKENS; every other agent still relies on provider defaults.
 # agents.defaults.workspace pins the agent's cwd to the benchmark's own
 # WORKDIR (wherever the task files actually landed — /app for most
 # benchmarks, /testbed for swe-bench, etc.); without it openclaw defaults to
 # ~/.openclaw/workspace and can't see the task files.
 cat > ~/.openclaw/openclaw.json <<CONF
-{"models":{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000}","apiKey":"${OPENAI_API_KEY:-sk-proxy}","api":"openai-completions","models":[{"id":"eval-model","name":"Eval Containers Proxy Model","maxTokens":${EVAL_AGENT_MAX_OUTPUT_TOKENS:-64000}}]}}},"agents":{"defaults":{"model":{"primary":"eval-containers/eval-model"},"workspace":"$(pwd)"}},"tools":{"exec":{"security":"full","ask":"off"}}}
+{"models":{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000}","apiKey":"${OPENAI_API_KEY:-sk-proxy}","api":"openai-completions","models":[{"id":"eval-model","name":"Eval Containers Proxy Model"}]}}},"agents":{"defaults":{"model":{"primary":"eval-containers/eval-model"},"workspace":"$(pwd)"}},"tools":{"exec":{"security":"full","ask":"off"}}}
 CONF
 cat > ~/.openclaw/exec-approvals.json <<CONF
 {"version":1,"defaults":{"security":"full","ask":"off","askFallback":"full"},"agents":{"*":{"security":"full","ask":"off","askFallback":"full","allowlist":[{"pattern":"**"}]}}}
