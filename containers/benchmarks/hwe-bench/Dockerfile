@@ -34,9 +34,10 @@ LABEL eval.benchmark.env="per-task"
 # Internet policy: grading is fully offline and a web fetch could leak the
 # reference fix (some task ids encode their upstream source), so the agent runs
 # web-tools-off. One ARG drives BOTH the declarative label and the EVAL_INTERNET
-# env the agent gates on, so the two can never disagree. Because the combination
-# image is `FROM` this benchmark, this ENV persists into the eval image; the
-# runner allow-lists EVAL_INTERNET through to the agent (rule 7).
+# env, so the two can never disagree. Because the combination image is `FROM`
+# this benchmark, this ENV persists into the eval image, where the framework's
+# generic web-tools gating enforces it (runner passthrough + agent deny). That
+# mechanism ships separately; this benchmark only declares the policy.
 ARG EVAL_INTERNET=false
 LABEL eval.benchmark.internet="${EVAL_INTERNET}"
 ENV EVAL_INTERNET=${EVAL_INTERNET}

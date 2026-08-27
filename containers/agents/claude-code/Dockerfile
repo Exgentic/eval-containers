@@ -31,18 +31,9 @@ export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
-# Web tools are gated on the benchmark's declared internet policy: when the
-# benchmark sets EVAL_INTERNET=false (mirrors its eval.benchmark.internet label),
-# deny WebSearch/WebFetch so the fix comes from the agent, not a search — some
-# task ids encode their upstream source, so a web fetch could leak the reference
-# fix. Unset (the default) leaves web tools enabled, so the reproducible no-env
-# run is unchanged (agents rule 12) and the flag stays a generic capability
-# toggle, not benchmark knowledge (rule 4).
-DENY_WEB=""
-if [ "${EVAL_INTERNET:-}" = "false" ]; then DENY_WEB="--disallowed-tools WebSearch,WebFetch"; fi
 # `--`: a task beginning with "--" is otherwise parsed as an option, and the
 # agent exits 1 without running.
-exec claude -p ${EVAL_AGENT_REASONING_EFFORT:+--effort $EVAL_AGENT_REASONING_EFFORT} ${DENY_WEB} --dangerously-skip-permissions -- "$TASK"
+exec claude -p ${EVAL_AGENT_REASONING_EFFORT:+--effort $EVAL_AGENT_REASONING_EFFORT} --dangerously-skip-permissions -- "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]
