@@ -107,7 +107,9 @@ helm template … --set benchmark=deepswe --set timeoutOverride=28800
 
 Measured medians on the same task pool: `gemini-3.5-flash-lite` 10 min and `gpt-5.5`
 12 min both fit inside the default, while `azure/FW-GLM-5.2` (100 min) and
-`claude-sonnet-5` (220 min) do not — GLM scores **9/25 at 28800s vs ~2/25 at 5400s**.
+`claude-sonnet-5` (220 min) do not. In a 25-task GLM sweep the override was worth **9 solves
+instead of about 2**: only 11 of the 25 finished inside 90 minutes at all, and just 2 of those
+11 passed — so at the 5400s default the other 14 would have been killed mid-work and scored 0.
 `presets/deepswe.yaml` carries the full table.
 
 Note that upstream's leaderboard does not bound the agent on wall clock at all: every

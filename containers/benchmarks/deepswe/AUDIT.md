@@ -12,7 +12,7 @@ commit: 91e97273
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | building | ✓ | `build.sh` resolves the per-task base from the task's own `task.toml` (`[environment].docker_image`) and overlays the eval pipeline; built for `fastapi-implicit-head-options` (python) and `superjson-error-stack-serialization` (typescript) |
-| running | ✓ | Live agent scores on native amd64 (OpenShift `c111-e-us-east`), **4 agent×model pairings, 74 task executions**: `opencode`/`gpt-5.5` 6/10 · `opencode`/`azure/FW-GLM-5.2` **9/25** · `claude-code`/`claude-sonnet-5` 3/9 · `gemini-cli`/`gemini-3.5-flash-lite` 1/10. Every pairing produced verified `reward: 1` passes, so the grading path is proven across four independent agent implementations. Traces on every task (`traces.jsonl` plus, post-edge, `model/calls.jsonl`). 1 timeout (`exit_code 124`) in 74 at the 28800s override; 0 crashes. An arm64 **kind** node still cannot run this at all — containerd rejects the amd64 base at pull time regardless of host binfmt. |
+| running | ✓ | Live agent scores on native amd64 (OpenShift `c111-e-us-east`), **5 agent×model pairings, 82 graded task executions, 25 solved**: `opencode`/`azure/FW-GLM-5.2` 11/27 · `opencode`/`gpt-5.5` 6/10 · `claude-code`/`claude-sonnet-5` 7/24 · `gemini-cli`/`gemini-3.5-flash-lite` 1/10 · `claude-code`/`azure/FW-GLM-5.2` 0/11. Four of the five produced verified `reward: 1` passes, so the grading path is proven across three independent agent implementations rather than one happy path. Traces on every task (`traces.jsonl`, plus `model/calls.jsonl` post-#389). 2 timeouts (`exit_code 124`) in 82; 0 crashes. An arm64 **kind** node still cannot run this at all — containerd rejects the amd64 base at pull time regardless of host binfmt. |
 | isolation | ✓ | gold not baked (fetched fresh by `solution.sh`); `/tests` root-only (`700`, root-owned) — hides `config.json`, the whitelist of graded node ids; `/task` holds only `instruction.md`; upstream base ships the repo at `base_commit` with `origin` removed + future history gc'd ("git time-travel"), so gold cannot leak from git |
 | oracle | ✓ | gold=1.0 / no-op=0.0 on TWO tasks, TWO architectures, TWO builders. (a) `fastapi-implicit-head-options`, local emulated arm64, buildx — gold `{"f2p_passed":43/43,"p2p_passed":3134/3134}`, no-op `{"f2p_passed":0,"p2p_passed":3134}`, graded with `--network none` (offline grading confirmed). (b) `adaptix-name-mapping-aliases`, native amd64 on OpenShift, in-cluster BuildConfig — gold `{"reward":1,"f2p_passed":44/44,"p2p_passed":2738/2738,"partial":1.0}`, no-op `{"reward":0,"f2p_passed":0/44,"p2p_passed":2738/2738}`. |
 | traces-reviewed | ? | no human trajectory review |
@@ -96,12 +96,18 @@ subset on native amd64.
 
 ## Agent-interactivity artifact (not a packaging defect)
 
-`claude-code` ended **3 of its 5 settled DeepSWE results** in an approval-seeking
-state — "the plan is ready for review", "awaiting your input… I'll pause here for
-your answers on the three design questions", "work *will* happen on a new branch" —
-against **0 of 10** for `opencode` and **0 of 10** for `gemini-cli`. In a batch eval
-nobody answers, so the run scores 0 without the work being attempted; `awilix`
-produced only 35 trace batches versus 132-276 for the same agent's solves.
+Early in the first `claude-code` sweep, **3 of its 5 settled results** ended in an
+approval-seeking state — "the plan is ready for review", "awaiting your input… I'll
+pause here for your answers on the three design questions", "work *will* happen on a
+new branch" — against **0 of 10** for `opencode` and **0 of 10** for `gemini-cli`. In a
+batch eval nobody answers, so the run scores 0 without the work being attempted;
+`awilix` produced only 35 trace batches versus 132-276 for the same agent's solves.
+
+The effect is real but partial, and the wider sample matters: `claude-code` finished
+**7/24** with `claude-sonnet-5` overall, so it is not uniformly blocked by this. It is
+however the agent most sensitive to scaffold — paired with `azure/FW-GLM-5.2` it scored
+**0/11** on tasks `opencode` had solved with the same model, so a single agent's DeepSWE
+number should be read as a floor for that pairing rather than a capability ceiling.
 
 This is NOT fixed by the autonomy flag. `--dangerously-skip-permissions` has been
 in the claude-code image since 2026-06-14 (commit c8475925) and was therefore
