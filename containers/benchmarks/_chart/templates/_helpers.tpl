@@ -11,7 +11,19 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- define "eval.values" -}}
 {{- $name := required "benchmark is required (--set benchmark=<x>)" .Values.benchmark -}}
 {{- $preset := .Files.Get (printf "presets/%s.yaml" $name) | fromYaml | default dict -}}
-{{- mergeOverwrite (deepCopy .Values) $preset | toYaml -}}
+{{- /* `timeout` is the one preset key an operator MUST be able to override per run:
+       the right agent budget is a property of the model, not the benchmark (deepswe
+       wants 90 min for gpt-5.5 and 8h for GLM-5.2 / claude-sonnet-5). Every other
+       preset key is structural topology that --set has no business changing, so the
+       preset still wins there. Without this, `--set timeout=` was silently ignored
+       for any benchmark carrying a preset: the rendered EVAL_TIMEOUT kept the preset
+       value, so the override looked applied but was not.
+       Written as a single mergeOverwrite chain (not a $merged variable + `set`) so
+       this define's output stays byte-identical in shape to what callers already
+       parse as YAML — an intermediate variable changed how empty string values
+       survived the round-trip and broke `helm lint`. */ -}}
+{{- $over := empty .Values.timeoutOverride | ternary dict (dict "timeout" (.Values.timeoutOverride | toString)) -}}
+{{- mergeOverwrite (deepCopy .Values) $preset $over | toYaml -}}
 {{- end -}}
 
 {{/* The runner's clean model name: the last segment of the <provider>/<model>
@@ -35,6 +47,25 @@ sweep-id: {{ . | quote }}
 {{- with .Values.queueName }}
 kueue.x-k8s.io/queue-name: {{ . | quote }}
 {{- end }}
+{{- end -}}
+
+{{/* eval.jobName — the Job's metadata.name, guaranteed to be a legal DNS-1123
+     name (<=63 chars). A per-task benchmark's task id can be long (DeepSWE's
+     `dynamodb-toolbox-conditional-attribute-requirements` yields a 73-char name),
+     and kubectl rejects the object outright — the render succeeds and the apply
+     fails, which reads like a cluster problem rather than a naming one. Long
+     names are truncated and suffixed with an 8-char sha1 of the full name, so the
+     mapping stays deterministic and collision-safe. `trimAll "-."` keeps the
+     truncation from ending on a separator, which DNS-1123 also forbids. */}}
+{{- define "eval.jobName" -}}
+{{- $base := printf "%s-%s" .benchmark .agent -}}
+{{- $n := ternary $base (printf "%s-task-%s" $base (toString .task)) (not (not .datasetSize)) -}}
+{{- $n = printf "%s%s" $n (.nameSuffix | default "") -}}
+{{- if gt (len $n) 63 -}}
+{{- printf "%s-%s" (trimAll "-." (trunc 54 $n)) (sha1sum $n | trunc 8) -}}
+{{- else -}}
+{{- $n -}}
+{{- end -}}
 {{- end -}}
 
 {{/* Image refs. Default to the nested registry path; when

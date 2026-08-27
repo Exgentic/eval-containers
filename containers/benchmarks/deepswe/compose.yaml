@@ -1,0 +1,25 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    # Per-task: the task id is part of the image name (rule 24f), so EVAL_TASK_ID
+    # is required — there is no shared-env default to fall back to.
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/deepswe-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: deepswe
+    # Rule 10 / 24e — matches the chart's per-benchmark preset (2 CPU / 8Gi),
+    # taken from each task.toml's [environment] cpus/memory_mb.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8G

@@ -55,6 +55,12 @@ maxBudget: ""
 
 # ── Knobs a benchmark MAY override in its values.yaml ────────────────────────
 timeout: "300"
+# Overrides a preset's `timeout` for this run (`--set timeoutOverride=28800`). Plain
+# `--set timeout=` cannot win: a preset is mergeOverwrite'd on top of .Values, so a
+# benchmark that pins a timeout would ignore it. The right budget is a property of
+# the MODEL, not the benchmark — see presets/deepswe.yaml for measured per-model
+# recommendations. Empty -> the preset (or this default) applies.
+timeoutOverride: ""
 # Per-task wall clock, set on the pod. Unset -> timeout + deadlineGrace; grace
 # must cover grading (scicode's is 600s).
 deadlineGrace: 600

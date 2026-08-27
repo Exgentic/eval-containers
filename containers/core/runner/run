@@ -39,7 +39,6 @@ export MODEL="${MODEL:-${EVAL_MODEL:-}}"
 export BENCHMARK="${BENCHMARK:-${EVAL_BENCHMARK:-unknown}}"
 export AGENT="${AGENT:-${EVAL_AGENT:-unknown}}"
 export TASK="${TASK:-}"
-
 # Defensive fallback (agent uid baked into image at build time).
 id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
 

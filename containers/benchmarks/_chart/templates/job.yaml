@@ -13,7 +13,7 @@ kind: Job
 metadata:
   # A dataset eval (datasetSize set) is named <benchmark>-<agent>; a single-task
   # debug run keeps the task in the name so several can coexist.
-  name: {{ if $v.datasetSize }}{{ $v.benchmark }}-{{ $v.agent }}{{ else }}{{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}{{ end }}{{ $v.nameSuffix }}
+  name: {{ $jn := printf "%s%s" (ternary (printf "%s-%s" ($v.benchmark | toString) ($v.agent | toString)) (printf "%s-%s-task-%s" ($v.benchmark | toString) ($v.agent | toString) ($v.task | toString)) (not (not $v.datasetSize))) ($v.nameSuffix | default "") }}{{ if gt (len $jn) 63 }}{{ printf "%s-%s" (trimAll "-." (trunc 54 $jn)) (sha1sum $jn | trunc 8) }}{{ else }}{{ $jn }}{{ end }}
   labels:
     {{- include "eval.labels" . | nindent 4 }}
 spec:
