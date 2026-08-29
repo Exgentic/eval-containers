@@ -65,4 +65,13 @@ networks:
   upstream: {}
 
 volumes:
+  # Bind to the host so results land at ./output/{benchmark}/{task-id}/
+  # (compose/RULES.md rule 18) instead of an anonymous managed volume with no
+  # host-visible path. `${PWD}` resolves to the CLI's invocation directory,
+  # not this file's directory, regardless of `include:` nesting.
   output:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/output/${EVAL_BENCHMARK:-aime}/${EVAL_TASK_ID:-0}

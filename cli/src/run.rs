@@ -253,6 +253,20 @@ fn run_compose(
         return Ok(());
     }
 
+    // `services.yaml`'s `output` volume binds to `./output/{benchmark}/{task}`
+    // (compose/RULES.md rule 18) via a `driver_opts.device:` path — unlike a
+    // short-syntax host bind, that form does not auto-create the directory,
+    // so pre-create it here (as the invoking user, so the agent's uid-1002
+    // process can still write into it — Docker would otherwise make it
+    // root-owned on first mount).
+    let task_id = envs
+        .iter()
+        .find(|(k, _)| *k == "EVAL_TASK_ID")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("0");
+    std::fs::create_dir_all(format!("output/{benchmark}/{task_id}"))
+        .map_err(|e| format!("failed to create host output dir: {e}"))?;
+
     let mut cmd = Command::new("docker");
     cmd.arg("compose").arg("-f").arg(&compose_ref);
     // `-y`: a published `oci://` stack prompts to confirm (and echoes) the
