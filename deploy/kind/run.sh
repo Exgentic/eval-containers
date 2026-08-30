@@ -209,6 +209,23 @@ else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; fi
 # collapses cleanly. Also trim leading/trailing '-'.
 JOB=$(printf '%s' "$JOB" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | tr -s '-')
 JOB="${JOB#-}"; JOB="${JOB%-}"
+# Helm caps a release name at 53 chars. Long per-task ids blow past it (e.g.
+# terminal-bench-codex-task-llm-inference-batching-scheduler = 58), and Helm
+# rejects the render outright, so the task can never run. Truncate to 53 but
+# keep a 6-hex digest of the FULL name so two long ids that share a 46-char
+# prefix don't collapse onto the same release.
+#
+# This is where we DIVERGE from naming.rs release_name, which the sanitize above
+# mirrors: it does a plain truncate(53) and lets a shared 53-char prefix collide
+# silently. $JOB is local to this script (the Helm release + our own kubectl
+# calls) and never has to match a name the CLI computes, so the stronger rule is
+# safe here. Porting the digest into naming.rs is a separate change.
+if [[ ${#JOB} -gt 53 ]]; then
+  JOB_SUM=$(printf '%s' "$JOB" | shasum | cut -c1-6)
+  JOB="${JOB:0:46}-${JOB_SUM}"
+  JOB=$(printf '%s' "$JOB" | tr -s '-'); JOB="${JOB%-}"
+  log "release name too long for Helm; shortened to '$JOB'"
+fi
 
 # No flatImages (kind serves the nested ghcr refs from the node's containerd);
 # hostPath output instead of a PVC; chart defaults (empty SA, IfNotPresent) suit
