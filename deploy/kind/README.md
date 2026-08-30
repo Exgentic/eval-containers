@@ -84,6 +84,17 @@ the host trusts but a pod does not is the usual cause, and it points you back
 here. The probe runs in an ephemeral pod it creates and then deletes — it leaves
 no lasting state on the cluster.
 
+The probe pod's image comes from `mirror.gcr.io` (Google's pull-through cache of
+Docker Hub) rather than `docker.io`, because Docker Hub rate-limits anonymous pulls
+per source IP — behind a shared office or VPN address the node's pull fails with
+`429 Too Many Requests`. If the node cannot pull the probe image at all, `create.sh`
+says so explicitly and does **not** blame your upstream (the host leg has already
+passed by that point). Point `PROBE_IMAGE` at a mirror you can reach if needed:
+
+```bash
+PROBE_IMAGE=<your-mirror>/curlimages/curl:8.11.1 ./deploy/kind/create.sh --cluster eval
+```
+
 To fix it, install the CA. It stays **on the cluster** as a ConfigMap and is never
 baked into (or pushed with) any image. Point `EVAL_UPSTREAM_CA` at a PEM of the
 extra CA cert(s) when you provision:
