@@ -190,6 +190,23 @@ else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; SUB="${BENCHMARK}/${AGENT}/${MODE
 # collapses cleanly. Also trim leading/trailing '-'.
 JOB=$(printf '%s' "$JOB" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | tr -s '-')
 JOB="${JOB#-}"; JOB="${JOB%-}"
+# Helm caps a release name at 53 chars. Long per-task ids blow past it (e.g.
+# terminal-bench-codex-task-llm-inference-batching-scheduler = 58), and Helm
+# rejects the render outright, so the task can never run. Truncate to 53 but
+# keep a 6-hex digest of the FULL name so two long ids that share a 46-char
+# prefix don't collapse onto the same release.
+#
+# This is where we DIVERGE from naming.rs release_name, which the sanitize above
+# mirrors: it does a plain truncate(53) and lets a shared 53-char prefix collide
+# silently. $JOB is local to this script (the Helm release + our own kubectl
+# calls) and never has to match a name the CLI computes, so the stronger rule is
+# safe here. Porting the digest into naming.rs is a separate change.
+if [[ ${#JOB} -gt 53 ]]; then
+  JOB_SUM=$(printf '%s' "$JOB" | shasum | cut -c1-6)
+  JOB="${JOB:0:46}-${JOB_SUM}"
+  JOB=$(printf '%s' "$JOB" | tr -s '-'); JOB="${JOB%-}"
+  log "release name too long for Helm; shortened to '$JOB'"
+fi
 
 # --model names the gateway IMAGE to build/load/run (bifrost, litellm, a pinned
 # gpt-5.4, …) — it drives the build, the image refs, the output subpath and the
