@@ -48,7 +48,17 @@ LABEL eval.benchmark.timeout="${EVAL_AGENT_TIMEOUT}"
 # without this the agent cannot write its workspace and every build/write task
 # loops on EACCES until timeout. Numeric 1002:0 — the named user is added later
 # in the eval merge. Tests stay root-only 700 (below), so grading is unaffected.
-RUN chown -R 1002:0 /app && chmod -R g+w /app
+# `/app` is the workdir for 86 of the 89 tasks, but not all: prove-plus-comm uses
+# `WORKDIR /workspace`, and a hardcoded `chown /app` fails the build outright
+# ("chown: cannot access '/app'"). Grant the agent its workspace wherever the
+# task env actually put it -- the image's own WORKDIR -- and fall back to /app.
+# Guarded so a task whose workdir is / or missing cannot fail the build.
+RUN set -eu; \
+    d="$(pwd)"; \
+    case "$d" in /|"") d=/app ;; esac; \
+    [ -d "$d" ] || d=/app; \
+    if [ -d "$d" ]; then chown -R 1002:0 "$d" && chmod -R g+w "$d"; fi; \
+    printf '%s' "$d" > /.eval-workdir
 
 # Same rule-13/17 tension as /app, one layer up. Some tasks (e.g. build-cython-ext)
 # instruct the agent to install into the *system global* Python environment, which
@@ -72,10 +82,14 @@ COPY tests /tests
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 # Grader: run the upstream tests/test.sh, which writes /logs/verifier/reward.txt.
+# /.eval-workdir holds the task env's own WORKDIR, resolved above (86/89 use /app;
+# prove-plus-comm uses /workspace). A hardcoded `cd /app` silently no-ops for the
+# others, running the tests from / instead of the task dir, so a correct solution
+# could still score 0.
 RUN printf '%s\n' \
   '#!/bin/bash' \
   'mkdir -p /logs/verifier' \
-  'cd /app 2>/dev/null || true' \
+  'cd "$(cat /.eval-workdir 2>/dev/null || echo /app)" 2>/dev/null || cd /app 2>/dev/null || true' \
   'bash /tests/test.sh > /logs/verifier/test.log 2>&1 || true' \
   '[ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt' \
   > /grade.sh && chmod +x /grade.sh
