@@ -57,10 +57,13 @@ target "eval-local" {
 # an OCI layout (build.sh EVAL_LAYOUT_OUT) and injects the benchmark context here
 # via `--set eval-local-task.contexts.<BENCHMARK_IMAGE>=oci-layout://<dir>` — a
 # platform-carrying layout, so the eval image is single-arch native. Agent, gosu,
-# and edge stay real bake targets, exactly as in eval-local. BENCHMARK_IMAGE is a
-# bare context name (not a registry ref): BuildKit pre-resolves a registry-ref FROM
-# to a digest before consulting contexts, so a bare name is what makes the override
-# bind (mirrors build.sh's own `TASK_BASE=task-env` context).
+# and edge stay real bake targets, exactly as in eval-local. BENCHMARK_IMAGE and
+# AGENT_IMAGE are both bare context names (not registry refs): BuildKit pre-resolves
+# a registry-ref FROM to a digest before consulting contexts, so a bare name is what
+# makes the override bind (mirrors build.sh's own `TASK_BASE=task-env` context). The
+# CLI supplies those bare names for `--no-pull` builds (src/build.rs bench_from /
+# agent_from); with a registry ref the `target:` override is silently ignored and a
+# PUBLISHED base is baked in instead of the freshly built local one.
 target "eval-local-task" {
   inherits = ["eval"]
   contexts = {

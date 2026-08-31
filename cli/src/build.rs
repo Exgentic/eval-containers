@@ -239,6 +239,22 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             } else {
                 bench_tag.clone()
             };
+            // The agent FROM has the SAME pre-resolution hazard as the benchmark
+            // above: `eval-local[-task]` binds the agent to `target:agent-<a>`, but a
+            // registry-ref context key is pre-resolved to a digest against the registry
+            // before contexts are consulted, so the override never binds and a
+            // PUBLISHED agent image is baked in — silently ignoring the freshly built
+            // local one. Observed: a repo-local fix to the openhands agent could not
+            // reach any per-task eval image (the stale published agent won every time,
+            // through empty BuildKit caches and deleted local tags alike). A bare
+            // context name makes the `target:` override bind, exactly as the benchmark
+            // does. Only for the in-graph (`--no-pull`) targets; the plain `eval`
+            // target legitimately pulls the agent by ref.
+            let agent_from = if no_pull {
+                "eval-agent-base".to_string()
+            } else {
+                agent_tag.clone()
+            };
             // Pass image refs as env vars so the bake HCL variables resolve for the
             // eval-local[-task] context keys ("${BENCHMARK_IMAGE}" / "${AGENT_IMAGE}").
             // --set target.args.X only sets the build arg; setting as an env var also
@@ -247,14 +263,14 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 ("EVAL_BENCHMARK", benchmark.clone()),
                 ("EVAL_AGENT", agent.clone()),
                 ("BENCHMARK_IMAGE", bench_from.clone()),
-                ("AGENT_IMAGE", agent_tag.clone()),
+                ("AGENT_IMAGE", agent_from.clone()),
             ];
             // The lean `eval` base's two source images. (When --standalone layers
             // the bundle on top, the `eval-standalone` target builds `eval` first
             // as a wired dependency via the `eval-base` context, so these still apply.)
             let mut overrides = vec![
                 format!("{eval_target}.args.BENCHMARK_IMAGE={bench_from}"),
-                format!("{eval_target}.args.AGENT_IMAGE={agent_tag}"),
+                format!("{eval_target}.args.AGENT_IMAGE={agent_from}"),
             ];
             // Per-task local: build the benchmark to a platform-carrying OCI layout
             // (build.sh EVAL_LAYOUT_OUT) and bind it as the benchmark context, so the
