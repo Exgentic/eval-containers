@@ -246,6 +246,15 @@ fi
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
+# Escape hatch for chart values this script has no flag for (a sweep raising the
+# runner memory limit for a memory-hungry task, say). Space-separated
+# `key=value` pairs, each forwarded verbatim as one `--set`. Kept out of the
+# flag surface deliberately: it is an override for the caller's own scripts, not
+# a documented knob, and anything worth a flag should get one.
+if [[ -n "${EVAL_HELM_SET:-}" ]]; then
+  for kv in $EVAL_HELM_SET; do SET+=(--set "$kv"); done
+  log "extra chart values from EVAL_HELM_SET: $EVAL_HELM_SET"
+fi
 
 # Private-CA upstream: if create.sh stored the eval-upstream-ca ConfigMap, mount
 # it into the gateway at /etc/eval-ca/ca.pem (list-of-maps values are awkward via
