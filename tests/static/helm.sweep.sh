@@ -97,5 +97,35 @@ if [ "${dl:-0}" -le 3000 ]; then
   fail=$((fail + 1))
 fi
 
+# 6. results outlive the pod, or the render refuses. Every other check here
+# asserts on a manifest; this one asserts that a manifest is NOT produced, which
+# is the only way to test a guard whose whole job is to stop one existing. The
+# emptyDir default it replaced discarded a whole run and still exited 0 (#428).
+probe() { helm template vol-probe "$CHART" --set benchmark=humaneval "$@" 2>&1; }
+
+if out=$(probe) && [ -n "$out" ]; then
+  echo "FAIL outputVolume: a run with no volume rendered instead of being refused — its results would go to an emptyDir the kubelet deletes with the pod"
+  fail=$((fail + 1))
+elif ! printf '%s' "$out" | grep -q -- "--set ephemeral=true"; then
+  echo "FAIL outputVolume: the refusal must name both ways forward; got: $out"
+  fail=$((fail + 1))
+fi
+
+# …and each way forward really does render the volume it names.
+for probe_args in \
+  "--set ephemeral=true|emptyDir" \
+  "--set outputVolume.persistentVolumeClaim.claimName=probe-claim|claimName: probe-claim" \
+  "--set outputVolume.hostPath.path=/probe/out|path: /probe/out"; do
+  args=${probe_args%%|*}; want=${probe_args#*|}
+  # $args is a controlled, space-separated flag list, so it must word-split.
+  # shellcheck disable=SC2086
+  got=$(probe $args | awk '/^ *- name: output$/{f=1;next} /^ *- /{f=0} f')
+  case "$got" in
+    *"$want"*) ;;
+    *) echo "FAIL outputVolume: '$args' did not render '$want' on the output volume; got:$got"
+       fail=$((fail + 1)) ;;
+  esac
+done
+
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]
