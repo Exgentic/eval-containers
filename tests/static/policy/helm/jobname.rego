@@ -11,10 +11,6 @@
 # the literal `%!s(<nil>)` — which, since `%` cannot start a YAML token, did not
 # even parse. Hence the template-artifact rule below.
 #
-# Charset is deliberately not asserted here yet: per-task task ids may carry `_`,
-# which RFC 1123 forbids, and sanitizing them is #372/#373's contract to add. A
-# rule that passes only because this matrix renders no such id would assert
-# nothing.
 package main
 
 import rego.v1
@@ -51,5 +47,18 @@ deny contains msg if {
 	msg := sprintf(
 		"Job/%s: name is %d characters — RFC 1123 bounds it at 63, which eval.jobName truncates to hold",
 		[job_name, count(job_name)],
+	)
+}
+
+# RFC 1123 also fixes the alphabet: lowercase alphanumerics, `-` and `.`, and
+# neither end a separator. Per-task ids arrive as upstream named them —
+# SWE-bench's `sympy__sympy-24066`, mixed case — so this is the half of the
+# contract that a raw id would break (#372).
+deny contains msg if {
+	not regex.match(`^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$`, job_name)
+	job_name != ""
+	msg := sprintf(
+		"Job/%s: name is not an RFC 1123 subdomain — eval.jobName lowercases and collapses every illegal run to `-` (#372)",
+		[job_name],
 	)
 }
