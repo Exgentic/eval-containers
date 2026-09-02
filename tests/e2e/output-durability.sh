@@ -81,7 +81,11 @@ job_ok=$?
 if [ "$job_ok" -ne 0 ]; then
   echo "FAIL: the Job did not complete"
   kubectl get pods -o wide
-  kubectl describe job humaneval-stub-task-probe | tail -20
+  # Why a container never started is on the POD's events, not the Job's — a
+  # CreateContainerConfigError names the unresolvable reference only there.
+  kubectl describe pod -l job-name=humaneval-stub-task-probe | sed -n '/Events:/,$p'
+  kubectl get pod -l job-name=humaneval-stub-task-probe \
+    -o jsonpath='{range .items[*].status.initContainerStatuses[*]}{.name}: {.state}{"\n"}{end}{range .items[*].status.containerStatuses[*]}{.name}: {.state}{"\n"}{end}'
   kubectl logs -l job-name=humaneval-stub-task-probe --all-containers --tail=30
   exit 1
 fi
