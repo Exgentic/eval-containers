@@ -19,8 +19,9 @@ eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4
 ```
 
 `EVAL_MODEL` must be `<provider>/<model>` form — the generic gateway errors on a
-bare name or an empty value (no silent default). Pick the proxy backend with
-`EVAL_GATEWAY_IMAGE` (default `bifrost`; `litellm` and `portkey` also ship).
+bare name or an empty value (no silent default). `--model` is the model axis only;
+pick the proxy backend on its own axis with `--gateway` / `EVAL_GATEWAY`
+(default `bifrost`; `litellm` and `portkey` also ship).
 
 ## Pinned per-model image — a shared, custom artifact (still zero build)
 
@@ -31,7 +32,7 @@ for cross-team reproducibility and per-model customization. Use a published one
 with no build and no `EVAL_MODEL` (the model is baked):
 
 ```bash
-EVAL_GATEWAY_IMAGE=gpt-5.4 eval-containers run aime --task-id 0 --agent codex
+eval-containers run aime --task-id 0 --agent codex --gateway gpt-5.4
 ```
 
 The gateway holds the real provider key; the runner only ever sees the proxy —

@@ -94,8 +94,17 @@ pub enum BuildTarget {
         /// + label). Empty uses the agent image's pin. Distinct from `TAG`.
         #[arg(long, default_value = "")]
         agent_version: String,
-        #[arg(long, default_value = "bifrost")]
-        model: String,
+        /// Gateway image baked into the `--standalone` bundle: a generic proxy
+        /// (`bifrost`, `litellm`, `portkey`) or a pinned per-model image. The
+        /// gateway axis, not the model — the model handle is a run-time value
+        /// (`run --model`), never baked (gateways/RULES.md).
+        #[arg(long)]
+        gateway: Option<String>,
+        /// The pre-2c spelling of --gateway. Accepted only so the build can say
+        /// what to use instead: it named a gateway image, never a model
+        /// (gateways/RULES.md rule 2c). Hidden — `--help` teaches one name.
+        #[arg(long = "model", hide = true)]
+        renamed_model: Option<String>,
         /// Also build the single-container standalone bundle
         /// (`evals/<b>--<a>-standalone:<tag>`) — FROM the lean base + the
         /// in-process gateway/otelcol/process-compose — via the `eval-standalone`
@@ -200,10 +209,20 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             agent,
             task_id,
             agent_version,
-            model,
+            gateway,
+            renamed_model,
             standalone,
             no_pull,
         } => {
+            // Rejected by name rather than aliased: two live spellings of one
+            // axis is what rule 2c exists to end. Artifact renames get their
+            // compatibility at the registry, not in the CLI.
+            if renamed_model.is_some() {
+                return Err("`build eval --model` was renamed --gateway: it names the \
+                            gateway image baked into the bundle, never a model"
+                    .into());
+            }
+            let gateway = gateway.unwrap_or_else(|| "bifrost".to_string());
             let tag = std::env::var("TAG").unwrap_or_else(|_| "latest".to_string());
             let bench_tag = if let Some(ref tid) = task_id {
                 benchmark_task_image(registry, &benchmark, tid, &tag)
@@ -269,9 +288,9 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             // target in-graph (wired via the `eval-base` context in the bake file)
             // and layers onto its output directly, so the only extra input here is
             // the gateway — MODEL_IMAGE lives ONLY in the bundle.
-            let model_tag = model_image(registry, &model, &tag);
-            bake_env.push(("MODEL_IMAGE", model_tag.clone()));
-            overrides.push(format!("eval-standalone.args.MODEL_IMAGE={model_tag}"));
+            let gateway_ref = model_image(registry, &gateway, &tag);
+            bake_env.push(("MODEL_IMAGE", gateway_ref.clone()));
+            overrides.push(format!("eval-standalone.args.MODEL_IMAGE={gateway_ref}"));
             // Per-task: override the shared-env default with the task-aware
             // standalone name, mirroring the lean `eval.tags` override above.
             if let Some(ref tid) = task_id {
@@ -739,7 +758,8 @@ fn oc_execute(target: BuildTarget, dry_run: bool, is_suffix: &str) -> Result<(),
             agent,
             task_id,
             agent_version,
-            model: _,
+            gateway: _,
+            renamed_model: _,
             standalone,
             no_pull: _,
         } => {
