@@ -106,9 +106,15 @@ probe() { helm template vol-probe "$CHART" --set benchmark=humaneval "$@" 2>&1; 
 if out=$(probe) && [ -n "$out" ]; then
   echo "FAIL outputVolume: a run with no volume rendered instead of being refused — its results would go to an emptyDir the kubelet deletes with the pod"
   fail=$((fail + 1))
-elif ! printf '%s' "$out" | grep -q -- "--set ephemeral=true"; then
-  echo "FAIL outputVolume: the refusal must name both ways forward; got: $out"
-  fail=$((fail + 1))
+else
+  # A refusal is only useful if it says what to do instead, and there are two
+  # answers — name a volume, or declare the run disposable. Assert both, or the
+  # message can quietly lose half its value.
+  for way in "outputVolume" "--set ephemeral=true"; do
+    printf '%s' "$out" | grep -qF -- "$way" || {
+      echo "FAIL outputVolume: the refusal never mentions '$way'; got: $out"
+      fail=$((fail + 1)); }
+  done
 fi
 
 # …and each way forward really does render the volume it names.
