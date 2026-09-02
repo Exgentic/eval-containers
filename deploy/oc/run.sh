@@ -8,7 +8,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
 BENCHMARK="" AGENT="" MODEL="" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
-EVAL_MODEL="" NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX=""
+EVAL_MODEL="" NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" PER_TASK_OVERRIDE=""
 DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
@@ -19,6 +19,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --eval-model) EVAL_MODEL="$2"; shift 2;; --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --pvc) PVC="$2"; shift 2;;
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
+  --per-task) PER_TASK_OVERRIDE=true; shift;; --no-per-task) PER_TASK_OVERRIDE=false; shift;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --test) TEST=true; shift;;
   --test-suffix) TEST=true; SUFFIX="$2"; shift 2;;
@@ -67,6 +68,20 @@ if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
   log "dataset size for $BENCHMARK (from image label): $DATASET"
 fi
 
+# Auto-detect per-task vs shared-env from the bench image's own label — the same
+# label the Rust CLI's `eval-containers run --mode job` already reads
+# (cli/src/benchmark.rs), so this mirrors the dataset-size auto-detect above
+# rather than inventing a new idiom. --per-task/--no-per-task override the
+# label read, same escape-hatch pattern as --dataset-size overriding auto-size.
+PER_TASK=false
+if [[ -n "$PER_TASK_OVERRIDE" ]]; then
+  PER_TASK="$PER_TASK_OVERRIDE"
+elif ! $DRY_RUN; then
+  ENV_LABEL=$(command oc get istag "$(flat "$BENCHMARK")$SUFFIX:latest" -n "$NAMESPACE" \
+    -o jsonpath='{.image.dockerImageMetadata.Config.Labels.eval\.benchmark\.env}' 2>/dev/null || true)
+  [[ "$ENV_LABEL" == "per-task" ]] && PER_TASK=true
+fi
+
 if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}";
 else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"; fi
 
@@ -82,6 +97,7 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
 [[ -n "$QUEUE"       ]] && SET+=(--set "queueName=$QUEUE")
 [[ -n "$SWEEP_ID"    ]] && SET+=(--set "sweepId=$SWEEP_ID")
+$PER_TASK && SET+=(--set "perTask=true")
 
 RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
 if $DRY_RUN; then echo "$RENDER"; exit 0; fi
