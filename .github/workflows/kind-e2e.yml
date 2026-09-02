@@ -1,0 +1,54 @@
+name: Kind E2E
+
+# The one gate that runs a Job on a real API server. Everything else about the
+# chart is checked by rendering it (pre-commit's `helm lint`, test.yml's static
+# composition sweep) — which can prove a manifest says the right thing and never
+# that the cluster does the right thing with it.
+#
+# Today it asserts exactly one property: a run's results are still on the volume
+# after the pod that wrote them is gone (#428). That is the half of the
+# outputVolume contract no render can reach.
+#
+# It is fast because it does not use the fleet's images: the agent, benchmark and
+# gateway are megabytes-to-gigabytes of things this does not exercise, so the
+# three containers are stood in for by ~4 MB busybox stubs satisfying exactly what
+# the chart gates on. The chart itself, its volume wiring and its sidecar ordering
+# are the real ones. Keep it that way — the moment this needs a real agent image
+# it stops being a per-PR gate and belongs in nightly-*.yml.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - containers/benchmarks/_chart/**
+      - tests/e2e/**
+      - .github/workflows/kind-e2e.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kind-e2e-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  output-durability:
+    name: results outlive the pod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      # kind, kubectl and helm; docker is already on the runner.
+      - uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: eval-e2e
+          # The script creates and deletes its own cluster, so this step is here
+          # only to install the binaries at a pinned version.
+          install_only: true
+
+      - name: results outlive the pod
+        run: bash tests/e2e/output-durability.sh
