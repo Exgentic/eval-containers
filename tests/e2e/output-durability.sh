@@ -41,13 +41,14 @@ step() { printf '\n== %s (%ss)\n' "$1" "$((SECONDS))"; }
 step "build the stub sidecars"
 docker build -q --load -t eval-e2e/otel:stub -f "$STUB/otel.Dockerfile" "$STUB" >/dev/null || exit 1
 docker build -q --load -t eval-e2e/gateway:stub -f "$STUB/gateway.Dockerfile" "$STUB" >/dev/null || exit 1
-docker pull -q bash:5 >/dev/null || exit 1
+docker build -q --load -t eval-e2e/runner:stub -f "$STUB/runner.Dockerfile" "$STUB" >/dev/null || exit 1
 
 step "create the cluster"
 kind create cluster --name "$CLUSTER" --wait 60s >/dev/null || exit 1
 
 step "load the images"
-kind load docker-image --name "$CLUSTER" eval-e2e/otel:stub eval-e2e/gateway:stub bash:5 >/dev/null || exit 1
+kind load docker-image --name "$CLUSTER" \
+  eval-e2e/otel:stub eval-e2e/gateway:stub eval-e2e/runner:stub >/dev/null || exit 1
 
 step "apply the Job"
 # The chart's gateway sidecar always references this Secret, whether or not the
@@ -71,7 +72,7 @@ helm template probe "$CHART" \
   --set benchmark=humaneval --set agent=stub --set task=probe \
   --set otelImage=eval-e2e/otel:stub \
   --set gatewayImageRef=eval-e2e/gateway:stub \
-  --set runnerImageRef=bash:5 \
+  --set runnerImageRef=eval-e2e/runner:stub \
   --set outputVolume.hostPath.path="$OUT_ON_NODE" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
   --set outputSubPath="$RUN_ROOT" \
