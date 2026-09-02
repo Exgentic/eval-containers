@@ -58,7 +58,10 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
      mapping stays deterministic and collision-safe. `trimAll "-."` keeps the
      truncation from ending on a separator, which DNS-1123 also forbids. */}}
 {{- define "eval.jobName" -}}
-{{- $base := printf "%s-%s" .benchmark .agent -}}
+{{- /* toString on every axis: an un-set value is nil, and printf renders that
+       as the literal `%!s(<nil>)` — a `%` cannot start a YAML token, so the
+       Job would not parse at all rather than come out mis-named. */ -}}
+{{- $base := printf "%s-%s" (toString .benchmark) (toString .agent) -}}
 {{- $n := ternary $base (printf "%s-task-%s" $base (toString .task)) (not (not .datasetSize)) -}}
 {{- $n = printf "%s%s" $n (.nameSuffix | default "") -}}
 {{- if gt (len $n) 63 -}}

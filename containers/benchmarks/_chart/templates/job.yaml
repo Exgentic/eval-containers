@@ -12,8 +12,11 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   # A dataset eval (datasetSize set) is named <benchmark>-<agent>; a single-task
-  # debug run keeps the task in the name so several can coexist.
-  name: {{ $jn := printf "%s%s" (ternary (printf "%s-%s" ($v.benchmark | toString) ($v.agent | toString)) (printf "%s-%s-task-%s" ($v.benchmark | toString) ($v.agent | toString) ($v.task | toString)) (not (not $v.datasetSize))) ($v.nameSuffix | default "") }}{{ if gt (len $jn) 63 }}{{ printf "%s-%s" (trimAll "-." (trunc 54 $jn)) (sha1sum $jn | trunc 8) }}{{ else }}{{ $jn }}{{ end }}
+  # debug run keeps the task in the name so several can coexist. The rule itself
+  # lives in eval.jobName (_helpers.tpl) and is named from there, never restated:
+  # readers outside this chart mirror that helper to find a Job by name, so a
+  # second copy here is a copy that can silently stop agreeing with it.
+  name: {{ include "eval.jobName" $v }}
   labels:
     {{- include "eval.labels" . | nindent 4 }}
 spec:
