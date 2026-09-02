@@ -110,7 +110,9 @@ else
   # A refusal is only useful if it says what to do instead, and there are two
   # answers — name a volume, or declare the run disposable. Assert both, or the
   # message can quietly lose half its value.
-  for way in "outputVolume" "--set ephemeral=true"; do
+  # Both tokens are the *actionable* form — a bare "outputVolume" would be
+  # satisfied by the error's own opening words rather than by any guidance.
+  for way in "--set outputVolume." "--set ephemeral=true"; do
     printf '%s' "$out" | grep -qF -- "$way" || {
       echo "FAIL outputVolume: the refusal never mentions '$way'; got: $out"
       fail=$((fail + 1)); }
