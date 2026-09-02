@@ -152,6 +152,18 @@ pub struct RunArgs {
     /// the anyuid SCC service account. Passed to helm as an extra `-f`.
     #[arg(long)]
     overlay: Option<String>,
+
+    /// (`--mode job`) Accept that this run's results are thrown away.
+    ///
+    /// With no `outputVolume` the chart parks `/output` on an `emptyDir`, which
+    /// the kubelet deletes with the pod: the Job goes green and every
+    /// `result.json`, log and trace it produced is gone. That is a fine way to
+    /// smoke-test the plumbing and a poor way to run an eval, and the two are
+    /// indistinguishable from the exit code — so `--mode job` refuses unless you
+    /// say which one you meant. To keep the results instead, point `--overlay`
+    /// at a values file that sets `outputVolume`.
+    #[arg(long)]
+    ephemeral: bool,
 }
 
 /// The pre-2c `EVAL_*` spellings, and what replaced each. Both addressed the
@@ -641,6 +653,24 @@ fn run_job(
         return Err(format!("helm template failed: {stderr}"));
     }
 
+    // Results outlive the Job or they may as well not exist. A dry run creates
+    // nothing, so it is exempt.
+    let manifest = String::from_utf8_lossy(&helm_out.stdout);
+    if !args.dry_run && !args.ephemeral && output_is_ephemeral(&manifest) {
+        return Err(
+            "this run would write its results to an emptyDir, which the kubelet \
+             deletes with the pod — the Job goes green and every result.json, log \
+             and trace it produced is gone.\n\n\
+             Give the output a home: a values file setting outputVolume, e.g.\n\n  \
+             outputVolume:\n    \
+             persistentVolumeClaim:\n      \
+             claimName: <your-claim>\n\n\
+             then pass it as --overlay <file>. If the results genuinely do not \
+             matter (a plumbing smoke test), say so with --ephemeral."
+                .into(),
+        );
+    }
+
     use std::process::Stdio;
     let mut apply_cmd = Command::new("kubectl");
     for a in &apply_args {
@@ -669,9 +699,36 @@ fn run_job(
     Ok(())
 }
 
+/// True when the rendered manifest parks the `output` volume on an `emptyDir`.
+///
+/// Read off the rendered artifact rather than the flags that produced it, because
+/// the manifest is what the cluster acts on: an overlay, a preset or a chart
+/// default could each supply the volume, and only the render knows which won. No
+/// YAML dependency for one question (RULES.md 8) — the chart emits volumes as
+/// `- name: <n>` items, so read our item's own block and stop at the next one.
+fn output_is_ephemeral(manifest: &str) -> bool {
+    let mut in_output = false;
+    let mut item_indent = 0;
+    for line in manifest.lines() {
+        let trimmed = line.trim_start();
+        let indent = line.len() - trimmed.len();
+        if trimmed.starts_with("- ") {
+            in_output = trimmed.trim_end() == "- name: output";
+            item_indent = indent;
+        } else if in_output {
+            if indent <= item_indent {
+                in_output = false; // dedented back out of the item
+            } else if trimmed.starts_with("emptyDir") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{CHART_NAME, CHART_VERSION, is_registry_denied};
+    use super::{CHART_NAME, CHART_VERSION, is_registry_denied, output_is_ephemeral};
 
     // A denied OCI chart pull must be recognized so `run --mode job` can print
     // the auth / `--local` hint instead of a raw "helm template failed".
@@ -725,5 +782,43 @@ mod tests {
                 .any(|l| l.trim() == format!("version: {CHART_VERSION}")),
             "CHART_VERSION ({CHART_VERSION}) must match Chart.yaml `version`"
         );
+    }
+
+    // The chart's default when nobody supplies a volume — and the reason
+    // `--mode job` ever discarded a run's results silently.
+    #[test]
+    fn an_unset_output_volume_renders_as_ephemeral() {
+        assert!(output_is_ephemeral(
+            "      volumes:\n        - name: output\n          emptyDir: {}\n"
+        ));
+    }
+
+    #[test]
+    fn a_claim_backed_output_volume_is_not_ephemeral() {
+        assert!(!output_is_ephemeral(
+            "      volumes:\n        - name: output\n          \
+             persistentVolumeClaim:\n            claimName: eval-output-cos\n"
+        ));
+    }
+
+    // Another volume's emptyDir says nothing about where the results go: the
+    // runner's scratch dirs are emptyDir by design.
+    #[test]
+    fn an_unrelated_ephemeral_volume_does_not_count() {
+        assert!(!output_is_ephemeral(
+            "      volumes:\n        - name: tmp\n          emptyDir: {}\n        \
+             - name: output\n          persistentVolumeClaim:\n            \
+             claimName: eval-output-cos\n"
+        ));
+    }
+
+    // …and the reverse order, so the scan really does end at the next item.
+    #[test]
+    fn a_later_volume_does_not_leak_into_the_verdict() {
+        assert!(!output_is_ephemeral(
+            "      volumes:\n        - name: output\n          \
+             persistentVolumeClaim:\n            claimName: c\n        \
+             - name: logs\n          emptyDir: {}\n"
+        ));
     }
 }
