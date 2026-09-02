@@ -63,6 +63,25 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
      API-token Secret) — so a second copy of the rule is a copy that can stop
      agreeing with the mirrors outside this chart. tests/static/policy/helm/
      jobname.rego gates the rendered name for exactly that. */}}
+{{/* eval.outputVolume — where /output goes, and a refusal to guess.
+
+     With no outputVolume the only sane default is an emptyDir, which the kubelet
+     deletes with the pod: the Job goes green and every result.json, log and trace
+     it produced is gone, with nothing in the exit code to say so. That is exactly
+     right for a plumbing smoke test and exactly wrong for an eval, and only the
+     caller knows which this is — so ask instead of defaulting to the lossy one.
+
+     `--set ephemeral=true` is the smoke test. Anything else supplies a volume. */}}
+{{- define "eval.outputVolume" -}}
+{{- if .outputVolume -}}
+{{- .outputVolume | toYaml -}}
+{{- else if .ephemeral -}}
+emptyDir: {}
+{{- else -}}
+{{- fail "no outputVolume: this run's results would go to an emptyDir, which the kubelet deletes with the pod — the Job would go green and every result.json, log and trace would be gone. Set outputVolume (e.g. --set outputVolume.persistentVolumeClaim.claimName=<claim>, or --set outputVolume.hostPath.path=/some/dir), or say the results do not matter with --set ephemeral=true." -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "eval.jobName" -}}
 {{- /* toString on every axis: an un-set value is nil, and printf renders that as
        the literal `%!s(<nil>)` — a `%` cannot start a YAML token, so the Job

@@ -38,7 +38,10 @@ export CHART OUT
 # (collected as a render failure) with the error captured beside it.
 render_one() {
   local name=$1
-  if ! helm template "$name" "$CHART" --set "benchmark=$name" >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
+  # ephemeral=true: these renders exist to be inspected, never applied, so they
+  # name no output volume — which the chart otherwise refuses (eval.outputVolume).
+  if ! helm template "$name" "$CHART" --set "benchmark=$name" --set ephemeral=true \
+    >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
     echo "$name"
   fi
 }
@@ -86,7 +89,8 @@ fi
 # 5. the pod backstop must track --timeout, not a fixed constant: a larger
 # --timeout must not be killed early by a stale activeDeadlineSeconds (the
 # derivation regression — see containers/benchmarks/_chart/values.yaml).
-dl=$(helm template deadline-probe "$CHART" --set benchmark=humaneval --set timeout=3000 2>/dev/null |
+dl=$(helm template deadline-probe "$CHART" --set benchmark=humaneval --set timeout=3000 \
+  --set ephemeral=true 2>/dev/null |
   awk '/activeDeadlineSeconds:/{print $2; exit}')
 if [ "${dl:-0}" -le 3000 ]; then
   echo "FAIL deadline: --timeout 3000 rendered activeDeadlineSeconds=${dl:-<none>} (<=3000) — backstop would kill the run before its own timeout"

@@ -82,6 +82,12 @@ outputVolume: {}
 # In Indexed mode it's the run root; each example lands in <outputSubPath>/<index>.
 outputSubPath: ""
 
+# Say that this run's results are meant to be thrown away. Without it, a run with
+# no `outputVolume` is refused rather than quietly writing to an emptyDir the
+# kubelet deletes with the pod (see eval.outputVolume). True only for smoke tests
+# — a real eval names a volume.
+ephemeral: false
+
 # ── Sweep model: a dataset eval is ONE Indexed Job ───────────────────────────
 # datasetSize empty → a single-task Job (debug: runs exactly `task`). Set it and
 # the Job becomes Indexed with one completion per example (task id = the index).

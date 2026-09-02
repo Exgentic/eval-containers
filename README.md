@@ -35,8 +35,14 @@ The exact same evaluation runs at scale on a cluster — the `oci://` Compose re
 
 ```bash
 helm template eval-aime oci://ghcr.io/exgentic/charts/eval \
-  --set benchmark=aime --set task=0 --set agent=codex --set model=openai/gpt-5.4 | kubectl apply -f -
+  --set benchmark=aime --set task=0 --set agent=codex --set model=openai/gpt-5.4 \
+  --set ephemeral=true | kubectl apply -f -
 ```
+
+`ephemeral=true` says this run's results are disposable — read them from
+`kubectl logs` and let them go with the pod. To keep them, name a volume instead:
+`--set outputVolume.persistentVolumeClaim.claimName=<claim>`. The chart refuses to
+run without one of the two rather than silently discarding the results.
 
 → [Triple-mode](docs/concepts/triple-mode.md) (compose / container / job) · [Deploy on Kubernetes](docs/guides/deploy-on-kubernetes.md) · [OpenShift](docs/guides/deploy-on-openshift.md)
 
