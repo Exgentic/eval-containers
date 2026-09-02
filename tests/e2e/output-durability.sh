@@ -21,6 +21,8 @@ CLUSTER=${CLUSTER:-eval-e2e}
 STUB="$ROOT/tests/e2e/stub"
 # hostPath inside the kind node — the point of the test is that the file is there
 # after the pod exits, so it must live somewhere the pod cannot take with it.
+# DirectoryOrCreate (below) is required: an untyped hostPath is not created, and
+# the kubelet stats the base path before applying the subPath.
 OUT_ON_NODE=/tmp/eval-e2e-output
 RUN_ROOT=runs/humaneval/stub/stub/probe
 
@@ -71,6 +73,7 @@ helm template probe "$CHART" \
   --set gatewayImageRef=eval-e2e/gateway:stub \
   --set runnerImageRef=bash:5 \
   --set outputVolume.hostPath.path="$OUT_ON_NODE" \
+  --set outputVolume.hostPath.type=DirectoryOrCreate \
   --set outputSubPath="$RUN_ROOT" \
   -f "$ARGS_FILE" \
   | kubectl apply -f - >/dev/null || exit 1
