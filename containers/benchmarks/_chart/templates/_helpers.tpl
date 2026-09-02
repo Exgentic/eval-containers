@@ -11,6 +11,19 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- define "eval.values" -}}
 {{- $name := required "benchmark is required (--set benchmark=<x>)" .Values.benchmark -}}
 {{- $preset := .Files.Get (printf "presets/%s.yaml" $name) | fromYaml | default dict -}}
+{{- /* Per-task environment (rule 24f): the benchmark bakes one eval image per
+       task, so its runner is evals/<b>-<task>--<a>. Resolved HERE from the chart's
+       own committed set, not from a `--set perTask=` every caller has to remember:
+       rules 1 and 24h mean `helm template --set benchmark=<x> --set task=<id>` must
+       be right on its own, from the packaged chart, with no eval-containers checkout
+       in sight. Callers that forgot it silently rendered the shared-env image name
+       for a per-task benchmark and got an ImagePullBackOff with nothing to read.
+       per-task.json is derived from the benchmarks' `eval.benchmark.env="per-task"`
+       labels; cli/tests/cli_conformance.rs asserts the two agree. It merges after
+       the preset because that label is the truth — nothing may declare a per-task
+       benchmark shared-env. */ -}}
+{{- $perTask := .Files.Get "per-task.json" | default "[]" | fromJsonArray -}}
+{{- $env := has $name $perTask | ternary (dict "perTask" true) dict -}}
 {{- /* `timeout` is the one preset key an operator MUST be able to override per run:
        the right agent budget is a property of the model, not the benchmark (deepswe
        wants 90 min for gpt-5.5 and 8h for GLM-5.2 / claude-sonnet-5). Every other
@@ -23,7 +36,7 @@ from --set and are never in a preset, so preset-wins is safe.
        parse as YAML — an intermediate variable changed how empty string values
        survived the round-trip and broke `helm lint`. */ -}}
 {{- $over := empty .Values.timeoutOverride | ternary dict (dict "timeout" (.Values.timeoutOverride | toString)) -}}
-{{- mergeOverwrite (deepCopy .Values) $preset $over | toYaml -}}
+{{- mergeOverwrite (deepCopy .Values) $preset $env $over | toYaml -}}
 {{- end -}}
 
 {{/* The runner's clean model name: the last segment of the <provider>/<model>

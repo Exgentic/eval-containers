@@ -269,3 +269,37 @@ fn build_script_benchmarks_overlay_a_task_env() {
         );
     }
 }
+
+/// The chart resolves `perTask` from its own committed `per-task.json` so that
+/// `helm template --set benchmark=<x> --set task=<id>` is correct with no CLI and
+/// no checkout (rules 1, 24f, 24h). That set is DERIVED from the per-task labels,
+/// so it MUST equal them: a benchmark that gains the label but not the list
+/// renders `evals/<b>--<a>` — an image that does not exist for a per-task family —
+/// and the Job dies in ImagePullBackOff with nothing to read.
+///
+/// Regenerate (this is the whole derivation):
+///
+///   grep -lE '^[[:space:]]*LABEL .*eval\.benchmark\.env="per-task"' \
+///       containers/benchmarks/*/Dockerfile |
+///     sed 's|containers/benchmarks/||; s|/Dockerfile||' | sort |
+///     jq -R . | jq -s . > containers/benchmarks/_chart/per-task.json
+#[test]
+fn chart_per_task_set_matches_labels() {
+    enter_repo_root();
+    let path = Path::new("containers/benchmarks/_chart/per-task.json");
+    let listed: Vec<String> = serde_json::from_str(&read(path))
+        .unwrap_or_else(|e| panic!("{}: not a JSON array of names: {e}", path.display()));
+    let labelled: Vec<String> = catalog_dirs("benchmarks")
+        .into_iter()
+        .filter(|(_, dir)| is_per_task(&read(&dir.join("Dockerfile"))))
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(
+        listed,
+        labelled,
+        "{} is stale — it must list exactly the benchmarks whose Dockerfile \
+         carries LABEL eval.benchmark.env=\"per-task\", sorted (see this test's \
+         doc comment for the one-liner that regenerates it)",
+        path.display()
+    );
+}
