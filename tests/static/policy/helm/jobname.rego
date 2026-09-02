@@ -1,12 +1,10 @@
 # tests/static/policy/helm/jobname.rego — the Job name is an interface, so assert
 # on it rather than trusting whichever template happens to produce it (#426).
 #
-# The name is how a launcher finds the Job it just applied: the dashboard looks
-# it up by name to attach an owner reference to the run's API-token Secret, so a
-# name that renders differently than the launcher predicted leaves that Secret
-# un-owned and uncollected. `eval.jobName` (_helpers.tpl) is the one definition;
-# this gate holds whoever calls it to the two properties the definition exists to
-# guarantee, so a second copy of the rule cannot quietly reappear and drift.
+# `eval.jobName` (_helpers.tpl) is the one definition; this gate holds whatever
+# renders the name to the properties that definition exists to guarantee, so a
+# second copy of the rule cannot quietly reappear and drift away from the
+# launchers that mirror it.
 #
 # #426 was exactly that drift: the rule lived twice, and the copy nobody called
 # had lost its `toString`, so an unset axis reached printf as nil and rendered

@@ -56,7 +56,13 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
      fails, which reads like a cluster problem rather than a naming one. Long
      names are truncated and suffixed with an 8-char sha1 of the full name, so the
      mapping stays deterministic and collision-safe. `trimAll "-."` keeps the
-     truncation from ending on a separator, which DNS-1123 also forbids. */}}
+     truncation from ending on a separator, which DNS-1123 also forbids.
+
+     Call this; never restate it. The name is an interface — a launcher finds
+     the Job it just applied by name (the dashboard does, to own the run's
+     API-token Secret) — so a second copy of the rule is a copy that can stop
+     agreeing with the mirrors outside this chart. tests/static/policy/helm/
+     jobname.rego gates the rendered name for exactly that. */}}
 {{- define "eval.jobName" -}}
 {{- /* toString on every axis: an un-set value is nil, and printf renders that
        as the literal `%!s(<nil>)` — a `%` cannot start a YAML token, so the
