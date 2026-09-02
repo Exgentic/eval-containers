@@ -28,7 +28,10 @@ for tool in kind kubectl helm docker; do
   command -v "$tool" >/dev/null || { echo "$tool not found"; exit 1; }
 done
 
-cleanup() { [ -n "${KEEP:-}" ] || kind delete cluster --name "$CLUSTER" >/dev/null 2>&1; }
+cleanup() {
+  rm -f "${ARGS_FILE:-}"
+  [ -n "${KEEP:-}" ] || kind delete cluster --name "$CLUSTER" >/dev/null 2>&1
+}
 trap cleanup EXIT
 
 step() { printf '\n== %s (%ss)\n' "$1" "$((SECONDS))"; }
@@ -50,6 +53,15 @@ step "apply the Job"
 kubectl create secret generic eval-secrets \
   --from-literal=OPENAI_API_KEY=stub --from-literal=OPENAI_API_BASE=http://stub >/dev/null || exit 1
 
+# The runner's command rides a values file, not --set-string: helm splits --set
+# values on commas, and the JSON this writes is full of them.
+ARGS_FILE=$(mktemp)
+cat >"$ARGS_FILE" <<'ARGS'
+runnerArgs: >-
+  mkdir -p /output/task &&
+  printf '{"task_id":"probe","reward":1,"passed":true}\n' > /output/task/result.json
+ARGS
+
 # A real render of the real chart. Only the images and the runner's command are
 # stubbed; the volume wiring, the sidecar gating and the output subpath are the
 # chart's own. No `ephemeral` — naming a volume is the path under test.
@@ -60,7 +72,7 @@ helm template probe "$CHART" \
   --set runnerImageRef=bash:5 \
   --set outputVolume.hostPath.path="$OUT_ON_NODE" \
   --set outputSubPath="$RUN_ROOT" \
-  --set-string runnerArgs='mkdir -p /output/task && printf "{\"task_id\":\"probe\",\"reward\":1,\"passed\":true}\n" > /output/task/result.json' \
+  -f "$ARGS_FILE" \
   | kubectl apply -f - >/dev/null || exit 1
 
 step "wait for it to finish"
