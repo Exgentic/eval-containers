@@ -59,15 +59,16 @@ Secret in place. Flags: `--cluster <name>` (default `eval`), `--namespace <ns>`,
 ## 4. Submit an eval
 
 ```bash
-./deploy/kind/run.sh --benchmark aime --agent claude-code --model bifrost --task 0 --watch
+./deploy/kind/run.sh --benchmark aime --agent claude-code --model openai/azure/gpt-5.4 --task 0 --watch
 ```
 
-`--watch` polls until the Job reaches a terminal state; drop it to submit and
-return. A whole dataset runs as an Indexed Job with `--dataset` (parallelism
+`--model` is the upstream `<provider>/<model>` handle; which proxy serves it is
+a separate axis, `--gateway` (default `bifrost`). `--watch` polls until the Job
+reaches a terminal state; drop it to submit and return. A whole dataset runs as an Indexed Job with `--dataset` (parallelism
 defaults to 2 on a laptop). Results land in the node's `/eval-output` hostPath:
 
 ```bash
-docker exec eval-control-plane cat /eval-output/aime/claude-code/bifrost/0/result.json
+docker exec eval-control-plane cat /eval-output/aime/claude-code/gpt-5.4/0/result.json
 # {"task_id":"0","benchmark":"aime","reward":1,"passed":true}
 ```
 

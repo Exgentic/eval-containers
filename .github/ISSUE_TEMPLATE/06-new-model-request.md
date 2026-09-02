@@ -17,7 +17,7 @@ bifrost / litellm / portkey.
 
 ## Model: `<provider>/<model>`
 
-<!-- What you ran (EVAL_MODEL=…, EVAL_GATEWAY_IMAGE=…) and what happened. -->
+<!-- What you ran (--model …, --gateway …) and what happened. -->
 
 ## Upstream
 
@@ -32,7 +32,7 @@ bifrost / litellm / portkey.
 
 - [ ] LiteLLM doesn't support this provider in the pinned `core/litellm` version — link a version bump
 - [ ] Needs a new gateway backend (the existing bifrost / litellm / portkey can't reach it) — describe why
-- [ ] Want a **pinned per-model image** (a shared, custom-configured artifact teams run against via `EVAL_GATEWAY_IMAGE=<name>`) — not just runtime `EVAL_MODEL`
+- [ ] Want a **pinned per-model image** (a shared, custom-configured artifact teams run against via `--gateway <name>`) — not just runtime `--model`
 - [ ] It works already; requesting it be added to the docs / examples
 
 ## Who implements
