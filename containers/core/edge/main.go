@@ -5,9 +5,10 @@
 // (rule 11), and write the exchange as the agent sent it (rules 6-8). The
 // injected upstream credential never enters a record (rule 9).
 //
-// Stdlib only, so the binary is static and runs with no runtime dependency
-// (rule 15): the same file is a scratch image and a process inside every eval
-// image.
+// One static binary with no runtime dependency (rule 15): the same file is a
+// scratch image and a process inside every eval image. Stdlib apart from
+// klauspost/compress, which is pure Go — it links statically and costs 256 KB on
+// a 6.4 MB binary, for a record that compresses ~138x instead of gzip's ~4x.
 package main
 
 import (
@@ -24,6 +25,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // One recorded call. Headers exclude every credential-bearing one, so rule 9
@@ -46,8 +49,19 @@ type call struct {
 }
 
 var (
-	mu     sync.Mutex
-	out    = envOr("OUT", "/output/model/calls.jsonl")
+	mu sync.Mutex
+	// Compression is chosen by the caller, through the name it asks for: an OUT
+	// ending .zst is written through ONE encoder held open for the run. Each
+	// request repeats the whole conversation, so nearly all of a record is the
+	// previous one — a compressor that sees across records shrinks a real
+	// trajectory ~138x, where one that restarts per record manages ~7x. Held
+	// open, therefore, rather than reopened per call (rule 8 is about what is
+	// recorded, not how it is framed). Default stays uncompressed, so nothing
+	// that reads this file today has to change until it asks for the .zst name.
+	recFile *os.File
+	recZstd *zstd.Encoder
+	recPath string // what recFile was opened for; reopen if OUT is repointed
+	out     = envOr("OUT", "/output/model/calls.jsonl")
 	// 4100, not 4000: a gateway owns 4000, and in k8s it shares this pod's
 	// network namespace (edge rule 13).
 	listen = envOr("LISTEN", ":4100")
@@ -177,14 +191,42 @@ func record(c call) {
 			return
 		}
 	}
-	f, err := os.OpenFile(out, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
+	if recFile == nil || recPath != out {
+		if recZstd != nil {
+			recZstd.Close()
+			recZstd = nil
+		}
+		if recFile != nil {
+			recFile.Close()
+			recFile = nil
+		}
+		f, err := os.OpenFile(out, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		if err != nil {
+			log.Println("record:", err)
+			return
+		}
+		recFile, recPath = f, out
+		if strings.HasSuffix(out, ".zst") {
+			// Errors only on a bad option, which is compile-time constant here.
+			recZstd, _ = zstd.NewWriter(f,
+				zstd.WithEncoderLevel(zstd.SpeedBetterCompression))
+		}
+	}
+	var w io.Writer = recFile
+	if recZstd != nil {
+		w = recZstd
+	}
+	if err := json.NewEncoder(w).Encode(c); err != nil {
 		log.Println("record:", err)
 		return
 	}
-	defer f.Close()
-	if err := json.NewEncoder(f).Encode(c); err != nil {
-		log.Println("record:", err)
+	// There is no graceful shutdown — the pod SIGKILLs this process — so the
+	// frame is never closed. Flushing after every record is what makes the file
+	// readable anyway: a reader gets every record written so far.
+	if recZstd != nil {
+		if err := recZstd.Flush(); err != nil {
+			log.Println("record:", err)
+		}
 	}
 }
 
