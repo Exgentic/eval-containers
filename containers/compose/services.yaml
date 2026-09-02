@@ -23,7 +23,7 @@ services:
       - internal
 
   gateway:
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/${EVAL_GATEWAY_IMAGE:-bifrost}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/${EVAL_GATEWAY:-bifrost}:${EVAL_GATEWAY_TAG:-latest}
     environment:
       OPENAI_API_KEY: ${OPENAI_API_KEY:?}
       OPENAI_API_BASE: ${OPENAI_API_BASE:?}

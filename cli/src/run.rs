@@ -15,7 +15,7 @@
 //!     mode hands them in via `docker run -e`.
 //!   - **job** renders the shared Helm chart (`oci://<registry>/charts/eval`,
 //!     or `containers/benchmarks/_chart` with `--local`) with a
-//!     `--set` for each axis (benchmark/agent/task/model/tags), then
+//!     `--set` for each axis (benchmark/agent/task/model/gateway/tags), then
 //!     `helm template … | kubectl apply -f -`. A benchmark's bespoke
 //!     topology, if any, lives in the chart at `presets/<x>.yaml`.
 //!     Helm interpolates the values (kubectl can't), keeps numeric fields
@@ -74,9 +74,16 @@ pub struct RunArgs {
     #[arg(long)]
     agent: Option<String>,
 
-    /// Model to use (maps to $EVAL_MODEL)
+    /// Upstream model handle, e.g. `openai/gpt-5.4` (maps to $EVAL_MODEL).
+    /// The model axis only — which proxy serves it is `--gateway`.
     #[arg(long)]
     model: Option<String>,
+
+    /// Gateway image that serves the model: a generic proxy (`bifrost`,
+    /// `litellm`, `portkey`) or a pinned per-model image (maps to
+    /// $EVAL_GATEWAY; chart value `gatewayImage`). Default: `bifrost`.
+    #[arg(long)]
+    gateway: Option<String>,
 
     /// Agent reasoning effort, e.g. `high` (maps to $EVAL_AGENT_REASONING_EFFORT)
     #[arg(long)]
@@ -95,9 +102,9 @@ pub struct RunArgs {
     #[arg(long)]
     agent_tag: Option<String>,
 
-    /// Model image tag (maps to $EVAL_MODEL_TAG)
+    /// Gateway image tag (maps to $EVAL_GATEWAY_TAG)
     #[arg(long)]
-    model_tag: Option<String>,
+    gateway_tag: Option<String>,
 
     // NOTE: upstream versions (benchmark dataset revision, agent CLI version,
     // litellm version) are a BUILD-time axis (RULES.md principle 9): pinned via
@@ -172,6 +179,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if let Some(ref v) = args.model {
         envs.push(("EVAL_MODEL", v.clone()));
     }
+    if let Some(ref v) = args.gateway {
+        envs.push(("EVAL_GATEWAY", v.clone()));
+    }
     if let Some(ref v) = args.agent_reasoning_effort {
         envs.push(("EVAL_AGENT_REASONING_EFFORT", v.clone()));
     }
@@ -186,8 +196,8 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if let Some(ref v) = args.agent_tag {
         envs.push(("EVAL_AGENT_TAG", v.clone()));
     }
-    if let Some(ref v) = args.model_tag {
-        envs.push(("EVAL_MODEL_TAG", v.clone()));
+    if let Some(ref v) = args.gateway_tag {
+        envs.push(("EVAL_GATEWAY_TAG", v.clone()));
     }
 
     if let Some(timeout) = args.timeout {
@@ -199,6 +209,19 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
 
     if args.overlay.is_some() && !matches!(args.mode, Mode::Job) {
         return Err("--overlay applies only to `--mode job`".into());
+    }
+    // The standalone bundle bakes its gateway (it runs in-process), so the
+    // gateway axis is a BUILD-time choice there. Fail loud rather than accept a
+    // selector this mode cannot honor (gateways/RULES.md rules 2c, 22).
+    if matches!(args.mode, Mode::Container)
+        && (args.gateway.is_some() || args.gateway_tag.is_some())
+    {
+        return Err(
+            "--gateway/--gateway-tag do not apply to `--mode container`: the \
+                    standalone bundle runs its gateway in-process, baked at build time \
+                    (`build eval <benchmark> --agent <a> --gateway <name> --standalone`)"
+                .into(),
+        );
     }
 
     match args.mode {
@@ -484,8 +507,10 @@ fn run_job(
     }
 
     // Per-run axes → --set (one each, so values containing commas are safe).
-    // --model is the <provider>/<model> handle → the gateway's EVAL_MODEL; the
-    // chart derives the runner's clean MODEL label from it (last path segment).
+    // Two independent axes (gateways/RULES.md): --model is the <provider>/<model>
+    // handle → the gateway's EVAL_MODEL (the chart derives the runner's clean
+    // MODEL label from its last path segment); --gateway is the proxy IMAGE that
+    // serves it → chart `gatewayImage`.
     let mut sets: Vec<String> = vec![
         format!("benchmark={benchmark}"),
         format!("registry={registry}"),
@@ -502,13 +527,16 @@ fn run_job(
     if let Some(m) = &args.model {
         sets.push(format!("model={m}"));
     }
+    if let Some(g) = &args.gateway {
+        sets.push(format!("gatewayImage={g}"));
+    }
     if let Some(e) = &args.agent_reasoning_effort {
         sets.push(format!("reasoningEffort={e}"));
     }
     if let Some(t) = args.timeout {
         sets.push(format!("timeout={t}"));
     }
-    if let Some(t) = &args.model_tag {
+    if let Some(t) = &args.gateway_tag {
         sets.push(format!("gatewayTag={t}"));
     }
     // The combined runner image is produced per-agent, so --agent-tag wins over

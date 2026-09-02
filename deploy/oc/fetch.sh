@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # fetch.sh — `oc cp` eval output off the PVC (paths read from Job labels).
 #
-#   ./oc/fetch.sh --benchmark aime --agent codex --model bifrost   # whole dataset
+#   ./oc/fetch.sh --benchmark aime --agent codex --model openai/azure/gpt-5.4   # whole dataset
 #   ./oc/fetch.sh --sweep-id <id>                                           # every Job in a sweep
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
@@ -22,8 +22,8 @@ oc get pod eval-reader -n "$NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null
   || { log "starting eval-reader pod…"; oc apply -f "$REPO_DIR/deploy/eval-reader-pod.yaml" -n "$NAMESPACE" >/dev/null
        oc wait --for=condition=ready pod/eval-reader -n "$NAMESPACE" --timeout=60s >/dev/null; }
 
-copy() {  # $1=benchmark $2=agent $3=model
-  local sub="runs/$1/$2/$3" dest="$DEST_ROOT/$1/$2/$3"
+copy() {  # $1=benchmark $2=agent $3=model (clean label, or a full handle)
+  local m="${3##*/}" ; local sub="runs/$1/$2/$m" dest="$DEST_ROOT/$1/$2/$m"
   mkdir -p "$dest"; log "oc cp $sub → $dest"
   oc cp "$NAMESPACE/eval-reader:/data/${sub}/." "$dest/" 2>/dev/null || log "  (nothing at $sub yet)"
 }

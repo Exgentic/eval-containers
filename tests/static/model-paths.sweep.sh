@@ -5,7 +5,7 @@
 #
 #   1. GENERIC (default): EVAL_MODEL=<provider>/<model> through the default `bifrost`
 #      gateway → the gateway image is models/bifrost and the handle reaches it.
-#   2. PINNED per-model image: EVAL_GATEWAY_IMAGE=<model> with NO EVAL_MODEL → the
+#   2. PINNED per-model image: EVAL_GATEWAY=<model> with NO EVAL_MODEL → the
 #      gateway image is models/<model> and the stack STILL LOADS — the pinned image
 #      bakes its model, so it needs no handle and no compose-level require blocks it.
 #
@@ -33,7 +33,7 @@ else
 fi
 
 # 2. PINNED per-model image, NO EVAL_MODEL — must still load (the model is baked).
-if out=$(OPENAI_API_KEY=x OPENAI_API_BASE=x EVAL_GATEWAY_IMAGE=gpt-5.4 \
+if out=$(OPENAI_API_KEY=x OPENAI_API_BASE=x EVAL_GATEWAY=gpt-5.4 \
           docker compose --env-file /dev/null -f "$C" config 2>&1); then
   grep -qE 'image:.*/models/gpt-5\.4:' <<<"$out" \
     || { echo "FAIL pinned: gateway is not the pinned models/gpt-5.4"; fail=$((fail + 1)); }

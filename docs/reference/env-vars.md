@@ -15,13 +15,14 @@ env var.
 | `EVAL_AGENT` | Which agent to run | — |
 | `EVAL_MODEL` | LiteLLM handle `<provider>/<model>` the gateway routes to (e.g. `openai/gpt-5.4`) — **required**, must be `<provider>/<model>` form | — |
 | `EVAL_TASK_ID` | Which task within the benchmark | `0` |
-| `EVAL_GATEWAY_IMAGE` | Which proxy backend serves the model | `bifrost` |
+| `EVAL_GATEWAY` | Which proxy image serves the model | `bifrost` |
 
-`EVAL_MODEL` is a *runtime handle, not an image*: any LiteLLM-supported
-provider/model works with no per-model build — the generic gateway
-(`EVAL_GATEWAY_IMAGE`, default `bifrost`; also `litellm`, `portkey`) routes it.
-Or set `EVAL_GATEWAY_IMAGE` to a **pinned per-model image** (e.g. `gpt-5.4`) — a
-baked, shared artifact that ignores `EVAL_MODEL`. Both are pull-not-build; see
+Model and gateway are **independent axes** ([gateways/RULES.md](../../.agents/gateways/RULES.md)):
+`EVAL_MODEL` is a *runtime handle, not an image* — any LiteLLM-supported
+provider/model works with no per-model build — and `EVAL_GATEWAY` names the
+proxy image that routes it (default `bifrost`; also `litellm`, `portkey`).
+Set `EVAL_GATEWAY` to a **pinned per-model image** (e.g. `gpt-5.4`) — a baked,
+shared artifact that ignores `EVAL_MODEL`. Both are pull-not-build; see
 [Use a model](../guides/add-a-model.md).
 
 ## Container versions — *which image tag to pull*
@@ -30,7 +31,7 @@ baked, shared artifact that ignores `EVAL_MODEL`. Both are pull-not-build; see
 |---|---|---|
 | `EVAL_BENCHMARK_TAG` | Benchmark container version | `latest` |
 | `EVAL_AGENT_TAG` | Agent container version | `latest` |
-| `EVAL_MODEL_TAG` | Model container version | `latest` |
+| `EVAL_GATEWAY_TAG` | Gateway container version | `latest` |
 
 ## Internal software versions — *what runs inside the container*
 
