@@ -5,9 +5,10 @@ name: Kind E2E
 # composition sweep) — which can prove a manifest says the right thing and never
 # that the cluster does the right thing with it.
 #
-# Today it asserts exactly one property: a run's results are still on the volume
-# after the pod that wrote them is gone (#428). That is the half of the
-# outputVolume contract no render can reach.
+# It asserts the four properties no render can reach: results outlive their pod
+# (#428), an Indexed run fans out into <run-root>/<index>/ behind healthy sidecars
+# (#18/#21), the deadline bounds one pod rather than the whole sweep, and the API
+# server accepts the Job name minted for a per-task id carrying `_` (#372/#426).
 #
 # It is fast because it does not use the fleet's images: the agent, benchmark and
 # gateway are megabytes-to-gigabytes of things this does not exercise, so the
@@ -35,8 +36,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  output-durability:
-    name: results outlive the pod
+  cluster-contract:
+    name: what only a cluster can settle
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -50,5 +51,5 @@ jobs:
           # only to install the binaries at a pinned version.
           install_only: true
 
-      - name: results outlive the pod
-        run: bash tests/e2e/output-durability.sh
+      - name: what only a cluster can settle
+        run: bash tests/e2e/cluster-contract.sh
