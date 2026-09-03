@@ -976,3 +976,41 @@ fn a_main_push_publishes_the_compose_artifacts_that_moved() {
          change leaves no image stale, and the stack references images by tag"
     );
 }
+
+/// Per-task images and their combos ride the continuous channel like every other
+/// image (#452). A main push enumerates them and prunes to the set whose input
+/// hashes moved, rather than excluding the class outright; and because a
+/// per-task benchmark publishes no `benchmarks/<b>:latest` of its own, the
+/// combo filter judges a per-task pair by its own task base, never by the
+/// benchmark target's (permanently absent) staleness.
+#[test]
+fn a_main_push_publishes_the_per_task_images_that_moved() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+
+    assert!(
+        !enumerate.contains("INCLUDE_PER_TASK=false"),
+        "a main push must not switch the per-task class off wholesale — rule 16 \
+         selects by changed build inputs, not by image class"
+    );
+    assert!(
+        enumerate.contains("fleet-hash.sh per-task") && enumerate.contains("fleet-status.sh check"),
+        "the main-push per-task list must be pruned by comparing each image's \
+         input hash against the registry, or every push rebuilds ~660 images"
+    );
+    assert!(
+        enumerate.contains("pertask_all"),
+        "combos must expand over the FULL per-task list — a stale agent dirties \
+         every task's combo, not only the tasks whose base moved"
+    );
+    assert!(
+        enumerate.contains(r#"[ "$pertask" = "[]" ]"#),
+        "`dirty` must count per-task images: merge stitches their per-arch tags, \
+         so a push that moved only per-task images is not clean"
+    );
+}
