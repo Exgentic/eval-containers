@@ -96,8 +96,16 @@ if [ -f "$TEMPLATE" ]; then
   : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
 
+  # bifrost's openai/anthropic provider clients append their own /v1/... path,
+  # so network_config.base_url must be the bare root — but OPENAI_API_BASE
+  # follows the OpenAI-SDK convention of already including /v1 (see
+  # docs/guides/deploy-on-kubernetes.md). Strip it here so the template's
+  # ${OPENAI_API_BASE} substitution lands on the root the client expects
+  # (mirrors litellm/start's identical normalization).
+  ROOT_API_BASE=${OPENAI_API_BASE:-}; ROOT_API_BASE=${ROOT_API_BASE%/}; ROOT_API_BASE=${ROOT_API_BASE%/v1}
+
   sed -e "s|\${GOVERNANCE}|${GOVERNANCE}|g" \
-      -e "s|\${OPENAI_API_BASE}|${OPENAI_API_BASE-}|g" \
+      -e "s|\${OPENAI_API_BASE}|${ROOT_API_BASE}|g" \
       -e "s|\${OTEL_COLLECTOR_URL}|${OTEL_COLLECTOR_URL}|g" \
       < "$TEMPLATE" > "$CONFIG"
 fi
