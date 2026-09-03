@@ -88,6 +88,11 @@ outputSubPath: ""
 # — a real eval names a volume.
 ephemeral: false
 
+# A unique id for THIS run, appended to outputSubPath so two runs of one
+# benchmark/agent/model never write to the same directory (see eval.outputRoot).
+# Required unless `ephemeral`. Any unique string: `$(date -u +%Y%m%d-%H%M%S)-$RANDOM`.
+runId: ""
+
 # ── Sweep model: a dataset eval is ONE Indexed Job ───────────────────────────
 # datasetSize empty → a single-task Job (debug: runs exactly `task`). Set it and
 # the Job becomes Indexed with one completion per example (task id = the index).

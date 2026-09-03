@@ -15,6 +15,9 @@
 #                                                          move onto the pod spec)
 #   D. the API server accepts the Job name the chart mints for a per-task id
 #      carrying `_`                                       (#372/#426)
+#   E. two runs of one benchmark/agent/model keep their own results — the
+#      uniqueness the chart's runId exists to guarantee, which both shell
+#      launchers used to break by composing a leaf that never changed
 #
 # The fleet's own images are deliberately NOT used: the agent, benchmark and
 # gateway are megabytes-to-gigabytes of things none of these claims exercise. The
@@ -110,7 +113,7 @@ ROOT_B=runs/humaneval/stub/stub/indexed
 A_ARGS=$(argsfile 'mkdir -p /output/task &&
   wget -q -O- http://localhost:13133/ >/dev/null && otel=up || otel=down &&
   printf %s "{\"index\":\"$EVAL_TASK_ID\",\"otel\":\"$otel\",\"passed\":true}" > /output/task/result.json')
-render indexed "$A_ARGS" --set task=0 --set datasetSize=2 --set outputSubPath="$ROOT_B" |
+render indexed "$A_ARGS" --set task=0 --set datasetSize=2 --set outputSubPath="$ROOT_B" --set runId=r1 |
   kubectl apply -f - >/dev/null || bad "B: the Indexed render did not apply"
 # A Job reports every true condition, so a completed one reads
 # "SuccessCriteriaMet Complete" — match, don't compare.
@@ -122,10 +125,10 @@ esac
 if [ "$fail" -ne 0 ]; then :; else
   kubectl delete job humaneval-stub --wait=true >/dev/null 2>&1
   for i in 0 1; do
-    r=$(onnode cat "$OUT/$ROOT_B/$i/task/result.json")
+    r=$(onnode cat "$OUT/$ROOT_B/r1/$i/task/result.json")
     case "$r" in
       *"\"index\":\"$i\""*) ;;
-      *) bad "B: index $i wrote nothing to <run-root>/$i/task/result.json (got: ${r:-<empty>})" ;;
+      *) bad "B: index $i wrote nothing to <prefix>/r1/$i/task/result.json (got: ${r:-<empty>})" ;;
     esac
     case "$r" in
       *'"otel":"up"'*) ;;
@@ -148,7 +151,7 @@ ROOT_C=runs/humaneval/stub/stub/deadline
 C_ARGS=$(argsfile 'mkdir -p /output/task &&
   if [ "$EVAL_TASK_ID" = "0" ]; then sleep 300; fi &&
   printf %s "{\"index\":\"$EVAL_TASK_ID\",\"passed\":true}" > /output/task/result.json')
-render deadline "$C_ARGS" --set task=0 --set datasetSize=2 --set outputSubPath="$ROOT_C" \
+render deadline "$C_ARGS" --set task=0 --set datasetSize=2 --set outputSubPath="$ROOT_C" --set runId=r1 \
   --set timeout=5 --set deadlineGrace=5 --set nameSuffix=-dl |
   kubectl apply -f - >/dev/null || bad "C: the deadline render did not apply"
 got=$(settle humaneval-stub-dl 120)
@@ -156,7 +159,7 @@ case "$got" in
   *Failed*|*Complete*) ;;
   *) bad "C: the Job never settled (got '$got')"; diagnose humaneval-stub-dl ;;
 esac
-r=$(onnode cat "$OUT/$ROOT_C/1/task/result.json")
+r=$(onnode cat "$OUT/$ROOT_C/r1/1/task/result.json")
 case "$r" in
   *'"index":"1"'*) echo "PASS C: the fast index finished while the overrunning one was killed" ;;
   *) bad "C: index 1 has no result — the deadline took the sweep down with the slow task (got: ${r:-<empty>})" ;;
@@ -170,15 +173,47 @@ rm -f "$C_ARGS"
 step "D: a per-task id carrying '_' renders a name the API server accepts"
 D_ARGS=$(argsfile 'true')
 if render underscore "$D_ARGS" --set task=sympy__sympy-24066 --set perTask=true \
-     --set outputSubPath=runs/humaneval/stub/stub/us |
+     --set outputSubPath=runs/humaneval/stub/stub/us --set runId=r1 |
    kubectl apply --dry-run=server -f - >/dev/null 2>&1; then
   echo "PASS D: sympy__sympy-24066 → a name the API server admits"
 else
   bad "D: the API server rejected the Job name minted for sympy__sympy-24066"
   render underscore "$D_ARGS" --set task=sympy__sympy-24066 --set perTask=true \
-    --set outputSubPath=runs/humaneval/stub/stub/us | kubectl apply --dry-run=server -f - 2>&1 | head -5
+    --set outputSubPath=runs/humaneval/stub/stub/us --set runId=r1 |
+    kubectl apply --dry-run=server -f - 2>&1 | head -5
 fi
 rm -f "$D_ARGS"
+
+# ── E: a second run of one combo does not land on the first ─────────────────
+# The claim the runId exists for, and the one every launcher used to get wrong by
+# composing a leaf that never changed. Same benchmark, same agent, same model,
+# same prefix — twice. Both results must still be there.
+step "E: two runs of one combo keep their own results"
+ROOT_E=runs/humaneval/stub/stub
+# shellcheck disable=SC2016
+E_ARGS=$(argsfile 'mkdir -p /output/task &&
+  printf %s "{\"run\":\"$EVAL_RUN_MARK\",\"passed\":true}" > /output/task/result.json')
+for id in first second; do
+  render "rerun-$id" "$E_ARGS" --set task=0 --set outputSubPath="$ROOT_E" \
+    --set runId="$id" --set nameSuffix="-$id" \
+    --set-json runnerExtraEnv="[{\"name\":\"EVAL_RUN_MARK\",\"value\":\"$id\"}]" |
+    kubectl apply -f - >/dev/null || bad "E: the $id run did not apply"
+done
+for id in first second; do
+  got=$(settle "humaneval-stub-task-0-$id" 120)
+  case "$got" in *Complete*) ;; *) bad "E: the $id run ended '$got'"; diagnose "humaneval-stub-task-0-$id" ;; esac
+done
+for id in first second; do
+  r=$(onnode cat "$OUT/$ROOT_E/$id/task/result.json")
+  case "$r" in
+    *"\"run\":\"$id\""*) ;;
+    *) bad "E: the $id run's result is missing or was overwritten (got: ${r:-<empty>})" ;;
+  esac
+done
+if [ "$fail" -eq 0 ]; then
+  echo "PASS E: both runs of one combo kept their own results"
+fi
+rm -f "$E_ARGS"
 
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
 [ "$fail" -eq 0 ]

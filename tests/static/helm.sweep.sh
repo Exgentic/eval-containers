@@ -103,7 +103,9 @@ fi
 # emptyDir default it replaced discarded a whole run and still exited 0 (#428).
 probe() { helm template vol-probe "$CHART" --set benchmark=humaneval "$@" 2>&1; }
 
-if out=$(probe) && [ -n "$out" ]; then
+# runId first, so this probe reaches the volume guard rather than tripping the
+# uniqueness one — the two are separate refusals and each is checked on its own.
+if out=$(probe --set runId=probe) && [ -n "$out" ]; then
   echo "FAIL outputVolume: a run with no volume rendered instead of being refused — its results would go to an emptyDir the kubelet deletes with the pod"
   fail=$((fail + 1))
 else
@@ -122,8 +124,8 @@ fi
 # …and each way forward really does render the volume it names.
 for probe_args in \
   "--set ephemeral=true|emptyDir" \
-  "--set outputVolume.persistentVolumeClaim.claimName=probe-claim|claimName: probe-claim" \
-  "--set outputVolume.hostPath.path=/probe/out|path: /probe/out"; do
+  "--set runId=probe --set outputVolume.persistentVolumeClaim.claimName=probe-claim|claimName: probe-claim" \
+  "--set runId=probe --set outputVolume.hostPath.path=/probe/out|path: /probe/out"; do
   args=${probe_args%%|*}; want=${probe_args#*|}
   # $args is a controlled, space-separated flag list, so it must word-split.
   # shellcheck disable=SC2086
@@ -134,6 +136,30 @@ for probe_args in \
        fail=$((fail + 1)) ;;
   esac
 done
+
+# 7. …and a run that would land on another run's results is refused too. The
+# leaf was the caller's to compose, and both shell launchers composed one that
+# never changed, so every re-run of a combo overwrote the one before it.
+out=$(probe --set outputVolume.hostPath.path=/probe/out)
+if [ -z "$out" ]; then
+  echo "FAIL runId: a run with a volume and no runId rendered — it would overwrite the previous run of this combo"
+  fail=$((fail + 1))
+elif ! printf '%s' "$out" | grep -qF -- "--set runId="; then
+  echo "FAIL runId: the refusal must name the way forward; got: $out"
+  fail=$((fail + 1))
+fi
+
+# The id has to actually reach the path, below the caller's prefix and above the
+# index — that ordering is the whole guarantee.
+got=$(probe --set ephemeral=true --set outputSubPath=pre/fix --set runId=rid --set datasetSize=2 |
+  awk '/subPathExpr:/{print $2; exit}')
+# $(JOB_COMPLETION_INDEX) is the kubelet's to expand, not this shell's.
+# shellcheck disable=SC2016
+case "$got" in
+  'pre/fix/rid/$(JOB_COMPLETION_INDEX)') ;;
+  *) echo "FAIL runId: an Indexed run mounted '$got', not <prefix>/<runId>/<index>"
+     fail=$((fail + 1)) ;;
+esac
 
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]

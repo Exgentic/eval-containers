@@ -20,6 +20,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --pvc) PVC="$2"; shift 2;;
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
+  --run-id) RUN_ID="$2"; shift 2;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --test) TEST=true; shift;;
   --test-suffix) TEST=true; SUFFIX="$2"; shift 2;;
@@ -43,6 +44,9 @@ log() { echo "[run] $*"; }
 # --test / --test-suffix: isolate behind a suffix so production is untouched.
 if $TEST && [[ -z "$SUFFIX" ]]; then SUFFIX="-test"; fi
 RESULT_PREFIX="runs${SUFFIX}"
+# This run's own directory under the prefix. Sortable, and unique enough that two
+# runs started in the same second still separate (--run-id pins it for a rerun).
+RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$RANDOM}"
 [[ -n "$SUFFIX" ]] && log "TEST MODE (${SUFFIX} imagestreams → ${RESULT_PREFIX}/)" || true
 
 # ── 1. Build (CLI; skip if imagestream exists, unless --rebuild) ──────────────
@@ -76,12 +80,16 @@ if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
   log "dataset size for $BENCHMARK (from image label): $DATASET"
 fi
 
-# Results are keyed by the model's clean label (the chart's `model` Job label:
-# the handle's last segment, what fetch.sh reads back), not by the gateway — two
-# models served by one gateway must not write to the same directory.
+# Two things decide where results land, and both matter. The model's clean label
+# (the chart's `model` Job label: the handle's last segment, what fetch.sh reads
+# back) keys the prefix, so two models behind one gateway cannot share a
+# directory. The leaf is the chart's: it appends this run's id, then the
+# completion index or the task — composing one here is what let a re-run land on
+# the previous run's results, and a sweep re-run on the whole previous sweep.
 MODEL_LABEL="${MODEL##*/}"
-if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_LABEL}";
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_LABEL}/${TASK}/${JOB}"; fi
+SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_LABEL}"
+if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"
+else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; fi
 
 # flatImages=true → the chart composes flat ImageStream refs for the OC registry.
 # Two independent axes (gateways/RULES.md): `model` = the upstream handle → the
@@ -89,7 +97,8 @@ else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${
 SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "model=$MODEL" --set "gatewayImage=$GATEWAY"
      --set "registry=$REGISTRY" --set "flatImages=true"
-     --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB")
+     --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB"
+     --set "runId=$RUN_ID")
 [[ -n "$SUFFIX"      ]] && SET+=(--set "imageSuffix=$SUFFIX" --set "nameSuffix=$SUFFIX")
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")

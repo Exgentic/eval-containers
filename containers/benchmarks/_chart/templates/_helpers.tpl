@@ -127,13 +127,45 @@ emptyDir: {}
 {{/* The /output mount. In Indexed mode each example gets its own per-index dir
      via subPathExpr + the k8s-injected $(JOB_COMPLETION_INDEX); otherwise a fixed
      subPath (or the volume root). Called with the merged values ($v). */}}
+{{/* eval.outputRoot — where this run writes, and the one guarantee the chart
+     makes about it: a run never lands on top of another run's results.
+
+     The prefix is the caller's. runs/<benchmark>/<agent>/<model> is the shape the
+     dashboard reads, deploy/kind uses its own, a bare `helm template` may pass
+     none — the chart imposes no layout, because a layout is a reader's model and
+     readers differ. What it does impose is the leaf: every run appends its own
+     runId, so two runs of one combo cannot collide however the caller names the
+     rest. Without it they did: `deploy/oc/run.sh --dataset` and
+     deploy/kind/run.sh both composed <benchmark>/<agent>/<model> and nothing
+     more, so every re-run of a combo overwrote the one before it, and a sweep
+     re-run overwrote the whole sweep.
+
+     runId is required exactly when the results are meant to survive — an
+     ephemeral run has nothing to collide with. */}}
+{{- define "eval.outputRoot" -}}
+{{- if and (not .runId) (not .ephemeral) -}}
+{{- fail "no runId: two runs of this benchmark/agent/model would write to the same directory and the second would overwrite the first. Pass a unique id per run — `--set runId=$(date -u +%Y%m%d-%H%M%S)-$RANDOM` is enough — or say the results do not matter with --set ephemeral=true." -}}
+{{- end -}}
+{{- $parts := list -}}
+{{- with .outputSubPath }}{{- $parts = append $parts . -}}{{- end -}}
+{{- with .runId }}{{- $parts = append $parts (toString .) -}}{{- end -}}
+{{- join "/" $parts -}}
+{{- end -}}
+
+{{/* eval.outputMount — the run root, plus the one level the chart knows how to
+     fill in: an Indexed run's completion index, or a per-task run's task id. A
+     mount with no path at all is the ephemeral case; there is nothing to keep
+     apart. */}}
 {{- define "eval.outputMount" -}}
-{{- if and .datasetSize .outputSubPath -}}
+{{- $root := include "eval.outputRoot" . -}}
+{{- if and .datasetSize $root -}}
 - name: output
   mountPath: /output
-  subPathExpr: {{ .outputSubPath }}/$(JOB_COMPLETION_INDEX)
-{{- else if .outputSubPath -}}
-- { name: output, mountPath: /output, subPath: {{ .outputSubPath }} }
+  subPathExpr: {{ $root }}/$(JOB_COMPLETION_INDEX)
+{{- else if and .perTask $root -}}
+- { name: output, mountPath: /output, subPath: {{ $root }}/{{ .task }} }
+{{- else if $root -}}
+- { name: output, mountPath: /output, subPath: {{ $root }} }
 {{- else -}}
 - { name: output, mountPath: /output }
 {{- end -}}

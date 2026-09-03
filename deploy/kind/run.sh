@@ -191,12 +191,15 @@ if $DATASET_MODE && [[ -z "$PARALLELISM" ]]; then
   PARALLELISM=2; log "no --parallelism given; defaulting to $PARALLELISM for a local cluster"
 fi
 
-# Results are keyed by the model's clean label (the chart's `model` Job label:
-# the handle's last segment), not by the gateway — two models served by one
-# gateway must not write to the same directory.
+# The model's clean label keys the prefix (the chart's `model` Job label: the
+# handle's last segment), so two models behind one gateway cannot share a
+# directory. The leaf is the chart's: it appends this run's id, then the index or
+# the task — composing one here meant a re-run overwrote the run before it.
 MODEL_LABEL="${MODEL##*/}"
-if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}"; SUB="${BENCHMARK}/${AGENT}/${MODEL_LABEL}";
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; SUB="${BENCHMARK}/${AGENT}/${MODEL_LABEL}/${TASK}"; fi
+SUB="${BENCHMARK}/${AGENT}/${MODEL_LABEL}"
+RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$RANDOM}"
+if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}"
+else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; fi
 # DNS-1123 sanitize, mirroring naming.rs release_name: lowercase, every run of
 # non-alnum → a single '-'. `tr -s` (squeeze) is portable across GNU/BSD, unlike
 # sed's \+ (BSD sed treats \+ literally). A per-task id like sympy__sympy-24066
@@ -214,7 +217,8 @@ JOB="${JOB#-}"; JOB="${JOB%-}"
 SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "model=$MODEL" --set "gatewayImage=$GATEWAY"
      --set "registry=$REGISTRY"
-     --set "outputVolume.hostPath.path=$OUTPUT_PATH" --set "outputSubPath=$SUB")
+     --set "outputVolume.hostPath.path=$OUTPUT_PATH" --set "outputSubPath=$SUB"
+     --set "runId=$RUN_ID")
 # Per-task benchmarks render the task-aware runner (evals/<b>-<task>--<a>) — the
 # chart needs perTask=true to match the image built + loaded above.
 $PER_TASK && SET+=(--set "perTask=true")
