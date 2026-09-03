@@ -944,3 +944,40 @@ fn the_retry_round_is_driven_from_grade_sh() {
         "the shared runner stays retry-agnostic — one benchmark does not change the fleet"
     );
 }
+
+/// The Helm chart rides the same channel as every image (RULES.md principle 9):
+/// a push to `main` publishes `charts/eval`, not only a version tag — publishing
+/// it tag-only is what left the registry with no chart at all (#449, #440). A
+/// chart's OCI tag IS its SemVer, so the rolling channel is `Chart.yaml`'s
+/// version; the publish must therefore also refuse a version that is already
+/// released, and confirm the artifact landed (delivery/RULES.md:16, :17).
+#[test]
+fn the_chart_publishes_on_the_continuous_channel() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  chart:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  report:").next())
+        .expect("no `chart` job in release-images.yml");
+
+    assert!(
+        job.contains("github.event_name == 'push' && github.ref_type == 'branch'"),
+        "the chart job must also run on a default-branch push — tag-only leaves \
+         charts/eval arbitrarily far behind the images main publishes at :latest"
+    );
+    assert!(
+        job.contains("containers/benchmarks/_chart/Chart.yaml"),
+        "the rolling publish must read its version from Chart.yaml — TAG is `latest` \
+         on main and `helm package --version latest` is not SemVer"
+    );
+    assert!(
+        job.contains("gh release view") && job.contains("::error::"),
+        "the rolling publish must refuse a version whose release is already out, or \
+         every main push overwrites a released chart"
+    );
+    assert!(
+        job.contains("helm show chart"),
+        "the publish must read the chart back from the registry (delivery/RULES.md:17)"
+    );
+}

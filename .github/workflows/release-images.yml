@@ -987,20 +987,42 @@ jobs:
             done
           done
 
-  # ── Helm chart at the tag (versioned releases only) ───────────────────────
+  # ── Helm chart — the same channel as every image (RULES.md principle 9) ───
+  # A chart's OCI tag IS its SemVer, so `charts/eval` has no literal `:latest`:
+  # its continuous channel (delivery/RULES.md:16) is Chart.yaml's version,
+  # republished on every main push and frozen by the tag at a release. A
+  # released version is immutable, so the rolling publish refuses one whose
+  # GitHub Release is already out — the signal to open the next dev version
+  # (delivery/release/SKILL.md step 9).
   chart:
     needs: [release-gate]
-    if: github.ref_type == 'tag' || inputs.tag != ''
+    # Versioned channel: the tag, after the CVE gate. Continuous channel: a push
+    # to the default branch, where release-gate does not run at all.
+    if: >-
+      always() && !inputs.dry_run &&
+      ((needs.release-gate.result == 'success' && (github.ref_type == 'tag' || inputs.tag != ''))
+      || (github.event_name == 'push' && github.ref_type == 'branch'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: azure/setup-helm@v5
-      - name: Publish charts/eval at the tag
+      - name: Publish charts/eval at ${{ env.TAG }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           ver="${TAG#v}"
+          if [ "$TAG" = latest ]; then
+            ver=$(grep -m1 '^version: ' containers/benchmarks/_chart/Chart.yaml | awk '{print $2}')
+            if [ "$(gh release view "v$ver" --json isDraft -q .isDraft 2>/dev/null)" = false ]; then
+              echo "::error::v$ver is released and immutable — bump Chart.yaml + cli/Cargo.toml to the next dev version"
+              exit 1
+            fi
+          fi
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
           helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
           helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"
+          # delivery/RULES.md:17 — a zero exit is not evidence; read the artifact back.
+          helm show chart "oci://${REGISTRY}/charts/eval" --version "$ver" >/dev/null
 
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:
