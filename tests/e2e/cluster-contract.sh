@@ -112,10 +112,14 @@ A_ARGS=$(argsfile 'mkdir -p /output/task &&
   printf %s "{\"index\":\"$EVAL_TASK_ID\",\"otel\":\"$otel\",\"passed\":true}" > /output/task/result.json')
 render indexed "$A_ARGS" --set task=0 --set datasetSize=2 --set outputSubPath="$ROOT_B" |
   kubectl apply -f - >/dev/null || bad "B: the Indexed render did not apply"
+# A Job reports every true condition, so a completed one reads
+# "SuccessCriteriaMet Complete" — match, don't compare.
 got=$(settle humaneval-stub 120)
-if [ "$got" != "Complete" ]; then
-  bad "B: the Indexed Job ended '$got', not Complete"; diagnose humaneval-stub
-else
+case "$got" in
+  *Complete*) ;;
+  *) bad "B: the Indexed Job ended '$got', not Complete"; diagnose humaneval-stub ;;
+esac
+if [ "$fail" -ne 0 ]; then :; else
   kubectl delete job humaneval-stub --wait=true >/dev/null 2>&1
   for i in 0 1; do
     r=$(onnode cat "$OUT/$ROOT_B/$i/task/result.json")
