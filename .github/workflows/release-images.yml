@@ -307,9 +307,14 @@ jobs:
           # — so its freshness is judged against the published layer digest, not
           # against the benchmark image's staleness (#451).
           if [ "$IS_MAIN_PUSH" = "true" ]; then
+            # Into a file, not a process substitution: a sweep that dies would
+            # otherwise read as "nothing moved" and publish nothing, the
+            # fail-clean rule 14 forbids.
+            cs=$(mktemp)
+            bash containers/scripts/fleet-status.sh compose latest > "$cs" \
+              || { echo "::error::compose freshness sweep failed"; exit 1; }
             bench_src=$(comm -12 \
-              <(bash containers/scripts/fleet-status.sh compose latest \
-                  | awk -F'\t' '$2!="fresh" && $2!="declined"{print $1}' \
+              <(awk -F'\t' '$2!="fresh" && $2!="declined"{print $1}' "$cs" \
                   | sed -E "s#^${REGISTRY}/eval-##; s#:latest\$##" | sort -u) \
               <(printf '%s\n' "$bench_all" | sort -u))
             echo "main push -> $(printf '%s\n' "$bench_src" | grep -c .) compose artifact(s) to publish"
