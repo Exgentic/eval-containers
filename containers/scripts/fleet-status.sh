@@ -22,13 +22,18 @@
 # merge still stitches a :TAG from the surviving arch, whose config carries the
 # matching hash. Expected platforms are linux/amd64,linux/arm64 unless the
 # Dockerfile declares `LABEL eval.platforms`, read from the repo at REF so a
-# broken image cannot vouch for itself. Only the report form checks this — the
-# `check` callers all pass a per-arch :TAG-<arch> ref.
+# broken image cannot vouch for itself. The report form always checks this; a
+# `check` caller opts in by passing the platform set (a per-arch :TAG-<arch> ref
+# carries one platform by definition, so those callers pass none).
 #
 # Usage:
 #   fleet-status.sh [tag]                 # full-fleet report (default: latest)
-#   fleet-status.sh check <ref> <hash>    # one ref: prints the verdict;
-#                                         # exit 0 = fresh, 1 = not fresh
+#   fleet-status.sh check <ref> <hash> [platforms]
+#                                         # one ref: prints the verdict;
+#                                         # exit 0 = fresh, 1 = not fresh.
+#                                         # Platforms (e.g. linux/amd64,linux/arm64)
+#                                         # make one read of a merged :TAG answer
+#                                         # completeness too (`partial`)
 #   fleet-status.sh compose [tag]         # per-benchmark eval-<b> artifacts:
 #                                         # published layer digest vs the local
 #                                         # flatten (+ `declined` for a stack
@@ -120,9 +125,12 @@ check_one() {
 export -f check_one
 
 if [ "${1:-}" = "check" ]; then
-  { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } \
-    || { echo "fleet-status: usage: fleet-status.sh check <ref> <expected-hash>" >&2; exit 2; }
-  out=$(check_one "$2" "$3")
+  # The optional 4th arg is the expected platform set: pass it when checking a
+  # merged multi-arch :TAG (one read answers hash AND completeness) instead of
+  # the per-arch :TAG-<arch> refs, which carry one platform each by definition.
+  { [ $# -ge 3 ] && [ $# -le 4 ] && [ -n "$2" ] && [ -n "$3" ]; } \
+    || { echo "fleet-status: usage: fleet-status.sh check <ref> <expected-hash> [platforms]" >&2; exit 2; }
+  out=$(check_one "$2" "$3" "${4:-}")
   printf '%s\n' "$out"
   [ "$(cut -f2 <<< "$out")" = "fresh" ]
   exit

@@ -242,12 +242,12 @@ jobs:
           # INCLUDE_PER_TASK arrive empty and combos + per-task would be skipped. On
           # any non-dispatch trigger (the vX.Y.Z release tag) force the full published
           # lineup; a manual dispatch keeps its inputs (blank combo_agents = skip).
-          # A main push keeps the combo lineup (pruned to stale parents below) but
-          # never builds per-task (~600 heavy images stay tag/dispatch-only).
+          # A main push keeps the combo lineup and the per-task lineup; both are
+          # pruned below to what actually moved (#452), so the ~660 heavy per-task
+          # images cost nothing on a push that did not touch them.
           if [ "$IS_DISPATCH" != "true" ]; then
             COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi"
             INCLUDE_PER_TASK=true
-            [ "$IS_MAIN_PUSH" != "true" ] || INCLUDE_PER_TASK=false
           fi
           # The :latest channel (delivery/RULES.md:16): a main push publishes only
           # images whose inputs changed. Compute the stale set once; every matrix
@@ -355,6 +355,47 @@ jobs:
             # --only mode: one task per benchmark as a smoke, not all ~600.
             [ -n "${ONLY:-}" ] && pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
           fi
+          # Combos expand over the FULL list (a stale agent dirties every task's
+          # combo, not only the tasks whose base moved); the base matrix below is
+          # pruned to what moved.
+          pertask_all="$pertask"
+          # Main push: keep only the per-task images whose inputs moved (#452).
+          # One fleet-hash pass per benchmark yields every task's hash (they share
+          # the benchmark's closure), then one read of the merged :latest per image
+          # — passing the expected platform set so that same read also catches an
+          # image that is missing an arch, which is changed too (rule 14).
+          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$pertask" != "[]" ]; then
+            T=$(mktemp -d); : > "$T/pairs"; : > "$T/map"
+            for B in $(jq -r '[.[].b] | unique | .[]' <<< "$pertask"); do
+              plat=$(sed -nE 's/.*eval\.platforms="([^"]*)".*/\1/p' "containers/benchmarks/$B/Dockerfile" | head -1)
+              [ -n "$plat" ] || plat="linux/amd64,linux/arm64"
+              jq -r --arg b "$B" '.[] | select(.b==$b) | .task' <<< "$pertask" \
+                | bash containers/scripts/fleet-hash.sh per-task "$B" \
+                | while IFS=$'\t' read -r name h _; do
+                    task=${name##*/}; tid=$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')
+                    ref="${REGISTRY}/benchmarks/${B}-${tid}:latest"
+                    printf '%s %s %s\n' "$ref" "$h" "$plat" >> "$T/pairs"
+                    printf '%s\t%s\t%s\n' "$ref" "$B" "$task" >> "$T/map"
+                  done
+            done
+            # `check` exits non-zero per non-fresh ref, so xargs ends 123 — the
+            # verdict rows on stdout are the answer, not the exit code. A sweep
+            # that answered fewer refs than it was asked is NOT "nothing moved":
+            # publishing nothing on a broken read is the fail-clean rule 14
+            # forbids, so the row count is the post-condition.
+            xargs -P "${STATUS_JOBS:-16}" -n3 bash containers/scripts/fleet-status.sh check \
+              < "$T/pairs" > "$T/verdicts" || true
+            asked=$(wc -l < "$T/pairs"); answered=$(wc -l < "$T/verdicts")
+            [ "$answered" -eq "$asked" ] \
+              || { echo "::error::per-task freshness sweep answered $answered of $asked refs"; exit 1; }
+            awk -F'\t' 'NR==FNR{ if ($2!="fresh") m[$1]; next } $1 in m { print $2 "\t" $3 }' \
+              "$T/verdicts" "$T/map" | LC_ALL=C sort -u > "$T/keep"
+            pertask=$(jq -c --rawfile keep "$T/keep" '
+              ($keep | split("\n") | map(select(length>0)) | INDEX(.)) as $k
+              | map(select($k[.b + "\t" + .task] != null))' <<< "$pertask")
+            PT_KEEP="$T/keep"
+            echo "main push -> $(jq length <<< "$pertask") of $(jq length <<< "$pertask_all") per-task image(s) moved"
+          fi
 
           # ── combos: shared (task="") + per-task, all as {b,a,task,kind} ──
           # Both build via one downstream bake-eval call (per-task just points at the
@@ -368,7 +409,7 @@ jobs:
             # Only the small agents list rides argv.
             shared=$(printf '%s' "$combo_bench" | jq -c --argjson as "$agents" \
               '[.[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
-            ptc=$(printf '%s' "$pertask" | jq -c --argjson as "$agents" \
+            ptc=$(printf '%s' "$pertask_all" | jq -c --argjson as "$agents" \
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
           fi
@@ -378,8 +419,16 @@ jobs:
           if [ "$IS_MAIN_PUSH" = "true" ] && [ "$CANARY_DIRTY" != "true" ]; then
             sb=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^benchmark-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
             sa=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^agent-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
+            # A per-task pair's benchmark side is its own task base, not `sb`: a
+            # per-task benchmark publishes no `benchmarks/<b>:latest` of its own,
+            # so it reads absent → stale forever and would keep every pair. Use
+            # the moved set computed above; the agent side is shared (#452).
             combos=$(printf '%s' "$combos" | jq -c --argjson sb "$sb" --argjson sa "$sa" \
-              '[.[] | select((.b as $b | $sb | index($b) != null) or (.a as $a | $sa | index($a) != null))]')
+              --rawfile moved "${PT_KEEP:-/dev/null}" '
+              ($moved | split("\n") | map(select(length>0)) | INDEX(.)) as $mv
+              | [ .[] | . as $p | select(($sa | index($p.a)) != null
+                    or (if $p.task == "" then ($sb | index($p.b)) != null
+                        else $mv[$p.b + "\t" + $p.task] != null end)) ]')
             echo "main push -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
           fi
 
@@ -396,10 +445,16 @@ jobs:
           # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
           # GitHub caps a matrix at 256 jobs; each shard job loops its items. Chunk
           # combos by 25 (thin overlays) and per-task bases by 10 (heavier builds).
+          # The per-task lists fan out per shard × 2 arches, so a full fleet (every
+          # task × 7 agents) would need >128 shards at chunk 10 and the guard below
+          # would fail the run outright. Double the chunk until it fits: a longer
+          # shard is a slower release, a failed enumerate is no release (#452).
           shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
+          chunk() { local n k; n=$(jq length <<< "$1"); k=$2
+                    while [ "$(( (n + k - 1) / k ))" -gt 128 ]; do k=$((k * 2)); done; echo "$k"; }
           combo_shards=$(shard "$combos" 25)
-          pertask_combo_shards=$(shard "$pertask_combo_items" 10)
-          pertask_shards=$(shard "$pertask" 10)
+          pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 10)")
+          pertask_shards=$(shard "$pertask" "$(chunk "$pertask" 10)")
           # combos build per shard via buildx --platform (one job/shard) → ≤256;
           # per-task and pertask-combo fan out per shard × 2 arches → matrix must fit 256.
           cn=$(printf '%s' "$combo_shards" | jq length); ptn=$(printf '%s' "$pertask_shards" | jq length)
@@ -410,7 +465,10 @@ jobs:
 
           has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
           dirty=true
-          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$n" -eq 0 ] && [ "$combos" = "[]" ] && [ "$BASES_DIRTY" != "true" ]; then dirty=false; fi
+          # `merge` stitches the per-arch tags of leaves AND per-task images, so a
+          # push that moved only per-task images is still dirty (#452).
+          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$n" -eq 0 ] && [ "$combos" = "[]" ] \
+             && [ "$pertask" = "[]" ] && [ "$BASES_DIRTY" != "true" ]; then dirty=false; fi
           {
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
