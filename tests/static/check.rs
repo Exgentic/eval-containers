@@ -981,3 +981,35 @@ fn the_chart_publishes_on_the_continuous_channel() {
         "the publish must read the chart back from the registry (delivery/RULES.md:17)"
     );
 }
+
+/// A published `eval-<benchmark>` artifact republishes when *its* inputs move,
+/// not when its benchmark image happens to be stale (#451): the flattened
+/// compose bytes include the shared `containers/compose/` half, which sits in no
+/// image's build context, so a main push judges freshness with the compose sweep
+/// and publishes even when nothing needed rebuilding.
+#[test]
+fn a_main_push_publishes_the_compose_artifacts_that_moved() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+    assert!(
+        enumerate.contains("fleet-status.sh compose"),
+        "the main-push compose list must come from the compose freshness sweep — \
+         deriving it from the stale *leaf* list misses every change to \
+         containers/compose/, which is inside no image's build context"
+    );
+    let compose = wf
+        .split("\n  compose:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  combos:").next())
+        .expect("no `compose` job in release-images.yml");
+    assert!(
+        compose.contains("needs.merge.result == 'skipped'"),
+        "the compose job must still run when `merge` is skipped — a compose-only \
+         change leaves no image stale, and the stack references images by tag"
+    );
+}
