@@ -105,11 +105,26 @@ printf '%s\n' "$RENDER" | command oc apply -n "$NAMESPACE" -f -
 
 # ── 3. Watch (opt-in; with Kueue the Job may sit Suspended until admitted) ───
 $WATCH || { log "submitted. status: ./oc/status.sh --benchmark $BENCHMARK"; exit 0; }
-# Poll for a terminal condition. `oc wait` can't OR two conditions — passing both
-# --for=complete --for=failed waits for *failed* and hangs on a successful job.
-for _ in $(seq 1 1800); do
-  st=$(command oc get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.conditions[*].type}' 2>/dev/null || true)
-  [[ "$st" == *Complete* || "$st" == *Failed* ]] && break
+# Poll until the Job reaches a terminal condition — no deadline: --watch means
+# "block until this job is done", however long that takes. With Kueue that includes
+# time spent Suspended awaiting admission, during which the counters stay empty.
+# Ctrl-C is the way out; the Job is server-side and keeps running regardless.
+# `oc wait` can't OR two conditions — passing both --for=complete --for=failed waits
+# for *failed* and hangs on a successful job, and prints nothing meanwhile.
+# Re-GETting each tick also rides out API-server disconnects, which a `wait`/`-w`
+# stream would not, and yields the progress counters from the same call.
+# succeeded/failed are absent until non-zero, so early ticks read `/90/`.
+# Split on an explicit `|`, not whitespace: the condition field is empty for the
+# whole run until the Job finishes, and `read` would collapse the leading space and
+# shift the counters into $st.
+st="" last=""
+while [[ "$st" != *Complete* && "$st" != *Failed* ]]; do
   sleep 2
+  raw=$(command oc get job "$JOB" -n "$NAMESPACE" -o \
+    jsonpath='{.status.conditions[*].type}|{.status.succeeded}/{.spec.completions}/{.status.failed}' \
+    2>/dev/null || echo "|")
+  st="${raw%%|*}" now="${raw#*|}"
+  [[ -n "$now" && "$now" != "$last" ]] && { log "progress: $now"; last="$now"; }
 done
 command oc get job "$JOB" -n "$NAMESPACE" -o jsonpath='Job {.metadata.name}: succeeded={.status.succeeded}/{.spec.completions} failed={.status.failed}{"\n"}'
+[[ "$st" == *Failed* ]] && exit 1 || exit 0
