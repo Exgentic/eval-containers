@@ -262,11 +262,26 @@ printf '%s\n' "$RENDER" | kube apply -f -
 
 # ── 3. Watch (opt-in) ─────────────────────────────────────────────────────────
 $WATCH || { log "submitted. status: kubectl --context $KCTX get job $JOB"; exit 0; }
-# Poll for a terminal condition. `kubectl wait` can't OR two conditions — passing
-# both --for=complete --for=failed waits for *failed* and hangs on a successful job.
-for _ in $(seq 1 1800); do
-  st=$(kube get job "$JOB" -o jsonpath='{.status.conditions[*].type}' 2>/dev/null || true)
-  [[ "$st" == *Complete* || "$st" == *Failed* ]] && break
+# Poll until the Job reaches a terminal condition — no deadline: --watch means
+# "block until this job is done", however long that takes (a 90-example dataset at
+# parallelism=2 runs far past any fixed bound). Ctrl-C is the way out; the Job is
+# server-side and keeps running regardless.
+# `kubectl wait` can't OR two conditions — passing both --for=complete --for=failed
+# waits for *failed* and hangs on a successful job, and prints nothing meanwhile.
+# Re-GETting each tick also rides out API-server disconnects, which a `wait`/`-w`
+# stream would not, and yields the progress counters from the same call.
+# succeeded/failed are absent until non-zero, so early ticks read `/90/`.
+# Split on an explicit `|`, not whitespace: the condition field is empty for the
+# whole run until the Job finishes, and `read` would collapse the leading space and
+# shift the counters into $st.
+st="" last=""
+while [[ "$st" != *Complete* && "$st" != *Failed* ]]; do
   sleep 2
+  raw=$(kube get job "$JOB" -o \
+    jsonpath='{.status.conditions[*].type}|{.status.succeeded}/{.spec.completions}/{.status.failed}' \
+    2>/dev/null || echo "|")
+  st="${raw%%|*}" now="${raw#*|}"
+  [[ -n "$now" && "$now" != "$last" ]] && { log "progress: $now"; last="$now"; }
 done
 kube get job "$JOB" -o jsonpath='Job {.metadata.name}: succeeded={.status.succeeded}/{.spec.completions} failed={.status.failed}{"\n"}'
+[[ "$st" == *Failed* ]] && exit 1 || exit 0
