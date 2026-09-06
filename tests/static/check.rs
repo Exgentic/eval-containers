@@ -1008,3 +1008,110 @@ fn the_retry_round_is_driven_from_grade_sh() {
         "the shared runner stays retry-agnostic — one benchmark does not change the fleet"
     );
 }
+
+/// A published `eval-<benchmark>` artifact republishes when *its* inputs move,
+/// not when its benchmark image happens to be stale (#451): the flattened
+/// compose bytes include the shared `containers/compose/` half, which sits in no
+/// image's build context, so a main push judges freshness with the compose sweep
+/// and publishes even when nothing needed rebuilding.
+#[test]
+fn a_main_push_publishes_the_compose_artifacts_that_moved() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+    assert!(
+        enumerate.contains("fleet-status.sh compose"),
+        "the main-push compose list must come from the compose freshness sweep — \
+         deriving it from the stale *leaf* list misses every change to \
+         containers/compose/, which is inside no image's build context"
+    );
+    let compose = wf
+        .split("\n  compose:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  combos:").next())
+        .expect("no `compose` job in release-images.yml");
+    assert!(
+        compose.contains("needs.merge.result == 'skipped'"),
+        "the compose job must still run when `merge` is skipped — a compose-only \
+         change leaves no image stale, and the stack references images by tag"
+    );
+}
+
+/// Per-task images and their combos ride the continuous channel like every other
+/// image (#452). A main push enumerates them and prunes to the set whose input
+/// hashes moved, rather than excluding the class outright; and because a
+/// per-task benchmark publishes no `benchmarks/<b>:latest` of its own, the
+/// combo filter judges a per-task pair by its own task base, never by the
+/// benchmark target's (permanently absent) staleness.
+#[test]
+fn a_main_push_publishes_the_per_task_images_that_moved() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+
+    assert!(
+        !enumerate.contains("INCLUDE_PER_TASK=false"),
+        "a main push must not switch the per-task class off wholesale — rule 16 \
+         selects by changed build inputs, not by image class"
+    );
+    assert!(
+        enumerate.contains("fleet-hash.sh per-task") && enumerate.contains("fleet-status.sh check"),
+        "the main-push per-task list must be pruned by comparing each image's \
+         input hash against the registry, or every push rebuilds ~660 images"
+    );
+    assert!(
+        enumerate.contains("pertask_all"),
+        "combos must expand over the FULL per-task list — a stale agent dirties \
+         every task's combo, not only the tasks whose base moved"
+    );
+    assert!(
+        enumerate.contains(r#"[ "$pertask" = "[]" ]"#),
+        "`dirty` must count per-task images: merge stitches their per-arch tags, \
+         so a push that moved only per-task images is not clean"
+    );
+}
+
+/// The Helm chart rides the same channel as every image (RULES.md principle 9):
+/// a push to `main` publishes `charts/eval`, not only a version tag — publishing
+/// it tag-only is what left the registry with no chart at all (#449, #440). A
+/// chart's OCI tag IS its SemVer, so the rolling channel is `Chart.yaml`'s
+/// version; the publish must therefore also refuse a version that is already
+/// released, and confirm the artifact landed (delivery/RULES.md:16, :17).
+#[test]
+fn the_chart_publishes_on_the_continuous_channel() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  chart:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  report:").next())
+        .expect("no `chart` job in release-images.yml");
+
+    assert!(
+        job.contains("github.event_name == 'push' && github.ref_type == 'branch'"),
+        "the chart job must also run on a default-branch push — tag-only leaves \
+         charts/eval arbitrarily far behind the images main publishes at :latest"
+    );
+    assert!(
+        job.contains("containers/benchmarks/_chart/Chart.yaml"),
+        "the rolling publish must read its version from Chart.yaml — TAG is `latest` \
+         on main and `helm package --version latest` is not SemVer"
+    );
+    assert!(
+        job.contains("gh release view") && job.contains("::error::"),
+        "the rolling publish must refuse a version whose release is already out, or \
+         every main push overwrites a released chart"
+    );
+    assert!(
+        job.contains("helm show chart"),
+        "the publish must read the chart back from the registry (delivery/RULES.md:17)"
+    );
+}
