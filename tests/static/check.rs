@@ -1087,31 +1087,49 @@ fn a_main_push_publishes_the_per_task_images_that_moved() {
 /// released, and confirm the artifact landed (delivery/RULES.md:16, :17).
 #[test]
 fn the_chart_publishes_on_the_continuous_channel() {
-    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+    // The channel moved out of release-images.yml, where it waited behind a full
+    // fleet build for work that is `helm package` + `helm push`. What the channel
+    // must still guarantee is unchanged, so assert it wherever it now lives.
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/publish-chart.yml"))
+        .expect("read .github/workflows/publish-chart.yml");
+
+    assert!(
+        wf.contains("branches: [main]"),
+        "the chart must publish on a default-branch push — otherwise charts/eval \
+         sits arbitrarily far behind the images main publishes at :latest"
+    );
+    // The key at job indentation, not the word: the header explains the coupling
+    // this replaced, and a substring check matched its own prose.
+    assert!(
+        !wf.contains("\n    needs:"),
+        "the publish must not wait on another job: it is package + push, and \
+         coupling it to the image build is what left the channel hours stale"
+    );
+    assert!(
+        wf.contains("containers/benchmarks/_chart/Chart.yaml"),
+        "the publish must read its version from Chart.yaml — a chart's OCI tag is \
+         its SemVer, so there is no literal `latest` to package"
+    );
+    assert!(
+        wf.contains("gh release view") && wf.contains("::error::"),
+        "the publish must refuse a version whose release is already out, or every \
+         main push overwrites a released chart"
+    );
+    assert!(
+        wf.contains("helm show chart"),
+        "the publish must read the chart back from the registry (delivery/RULES.md:17)"
+    );
+
+    // …and the versioned channel stays where its CVE gate is.
+    let rel = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");
-    let job = wf
+    let job = rel
         .split("\n  chart:\n")
         .nth(1)
         .and_then(|s| s.split("\n  report:").next())
         .expect("no `chart` job in release-images.yml");
-
     assert!(
-        job.contains("github.event_name == 'push' && github.ref_type == 'branch'"),
-        "the chart job must also run on a default-branch push — tag-only leaves \
-         charts/eval arbitrarily far behind the images main publishes at :latest"
-    );
-    assert!(
-        job.contains("containers/benchmarks/_chart/Chart.yaml"),
-        "the rolling publish must read its version from Chart.yaml — TAG is `latest` \
-         on main and `helm package --version latest` is not SemVer"
-    );
-    assert!(
-        job.contains("gh release view") && job.contains("::error::"),
-        "the rolling publish must refuse a version whose release is already out, or \
-         every main push overwrites a released chart"
-    );
-    assert!(
-        job.contains("helm show chart"),
-        "the publish must read the chart back from the registry (delivery/RULES.md:17)"
+        job.contains("release-gate.result == 'success'"),
+        "a released chart must not publish before the CVE gate has passed"
     );
 }
