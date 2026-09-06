@@ -34,6 +34,7 @@ LABEL eval.benchmark.description="DeepSWE v1.1 - long-horizon software engineeri
 LABEL eval.benchmark.tasks="113"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/datacurve-ai/deep-swe"
 # No paper: DeepSWE is a dataset + leaderboard release, not a publication. The
 # label is required by the benchmark PR template, so it is set explicitly to "n/a"

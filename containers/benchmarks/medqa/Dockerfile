@@ -22,6 +22,7 @@ LABEL eval.benchmark.description="MedQA - USMLE-style medical licensing exam que
 LABEL eval.benchmark.tasks="1273"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="0fb93dd23a7339b6dcd27e241cb9b5eca62d4d18"
 LABEL eval.benchmark.url="https://github.com/jind11/MedQA"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2009.13081"

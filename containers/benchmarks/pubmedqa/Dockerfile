@@ -24,6 +24,7 @@ LABEL eval.benchmark.description="PubMedQA - biomedical research question answer
 LABEL eval.benchmark.tasks="1000"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="9001f2853fb87cab8d220904e0de81ac6973b318"
 LABEL eval.benchmark.url="https://github.com/pubmedqa/pubmedqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1909.06146"

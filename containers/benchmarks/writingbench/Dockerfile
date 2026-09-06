@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="WritingBench - generative writing evaluation a
 LABEL eval.benchmark.tasks="1000"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="ae2d5176449b7b769815482641d35926f26793eb"
 LABEL eval.benchmark.url="https://github.com/X-PLUG/WritingBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2503.05244"

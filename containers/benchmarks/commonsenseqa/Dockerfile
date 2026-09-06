@@ -22,6 +22,7 @@ LABEL eval.benchmark.description="CommonsenseQA - commonsense multiple choice QA
 LABEL eval.benchmark.tasks="1221"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="94630fe30dad47192a8546eb75f094926d47e155"
 LABEL eval.benchmark.url="https://www.tau-nlp.sites.tau.ac.il/commonsenseqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1811.00937"

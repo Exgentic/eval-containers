@@ -20,6 +20,7 @@ LABEL eval.benchmark.description="GSM8K - grade school math word problems requir
 LABEL eval.benchmark.tasks="1319"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="740312add88f781978c0658806c59bc2815b9866"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/gsm8k"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2110.14168"

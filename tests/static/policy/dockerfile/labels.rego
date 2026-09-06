@@ -55,6 +55,37 @@ label_value(key) := value if {
 	value := p.value
 }
 
+# ── ENV extraction ──────────────────────────────────────────────────
+#
+# Same flat (key, value, "=") triple shape as LABEL, but ENV values are NOT
+# quoted by buildkit (`ENV EVAL_INTERNET=false` -> Value = ["EVAL_INTERNET",
+# "false", "="]), unlike LABEL's `"false"`. env_value strips the LABEL side's
+# quotes so the two are comparable as plain strings.
+
+env_pairs contains {"key": key, "value": value} if {
+	some instr in input
+	instr.Cmd == "env"
+	some idx, key in instr.Value
+	idx % 3 == 0
+	value := instr.Value[idx + 1]
+}
+
+env_value(key) := value if {
+	some p in env_pairs
+	p.key == key
+	value := p.value
+}
+
+env_keys contains key if {
+	some p in env_pairs
+	key := p.key
+}
+
+# Strip one layer of surrounding double quotes from a LABEL value token, so
+# `"false"` and `false` compare equal — LABEL values are always quoted,
+# ENV values never are.
+unquote(s) := trim(s, `"`)
+
 # ── Type classification (by the eval.type label) ────────────────────
 
 is_benchmark if label_value("eval.type") == `"benchmark"`
@@ -75,6 +106,29 @@ deny contains msg if {
 	some key in required_benchmark_keys
 	not label_keys[key]
 	msg := sprintf("benchmark Dockerfile is missing LABEL %s= (check.rs structural contract)", [key])
+}
+
+# eval.benchmark.internet MUST be enforced, not just declared: every benchmark
+# MUST also carry a matching `ENV EVAL_INTERNET` (agents/RULES.md 20). A label
+# with no ENV leaves the declared policy unenforced by containers/core/runner/
+# run-agent; the two disagreeing is worse than either being absent.
+
+deny contains msg if {
+	is_benchmark
+	label_keys["eval.benchmark.internet"]
+	not env_keys["EVAL_INTERNET"]
+	msg := "benchmark Dockerfile declares LABEL eval.benchmark.internet but has no ENV EVAL_INTERNET — the declared policy is unenforced (agents/RULES.md 20)"
+}
+
+deny contains msg if {
+	is_benchmark
+	label_keys["eval.benchmark.internet"]
+	env_keys["EVAL_INTERNET"]
+	unquote(label_value("eval.benchmark.internet")) != env_value("EVAL_INTERNET")
+	msg := sprintf(
+		"benchmark Dockerfile's eval.benchmark.internet label (%s) disagrees with ENV EVAL_INTERNET (%s) (agents/RULES.md 20)",
+		[label_value("eval.benchmark.internet"), env_value("EVAL_INTERNET")],
+	)
 }
 
 # ── Agent contract ──────────────────────────────────────────────────

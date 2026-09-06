@@ -32,6 +32,7 @@ LABEL eval.benchmark.description="Kumo - diagnostic reasoning"
 LABEL eval.benchmark.tasks="250"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/Haowei-PKU/Kumo"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/kumo"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.08857"

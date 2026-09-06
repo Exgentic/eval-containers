@@ -56,6 +56,7 @@ LABEL eval.benchmark.description="AlpacaEval 2.0 - instruction following pairwis
 LABEL eval.benchmark.tasks="805"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="2edc6fad8be6b14ea7230aabfd08188da6b8b814"
 LABEL eval.benchmark.url="https://github.com/tatsu-lab/alpaca_eval"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.04475"

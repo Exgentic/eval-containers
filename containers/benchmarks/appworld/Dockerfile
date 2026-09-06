@@ -19,6 +19,7 @@ LABEL eval.benchmark.description="AppWorld - 9 simulated apps with 457 APIs"
 LABEL eval.benchmark.tasks="732"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="refs/convert/parquet"
 LABEL eval.benchmark.url="https://github.com/stonybrooknlp/appworld"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.18901"

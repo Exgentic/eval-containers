@@ -19,6 +19,7 @@ LABEL eval.benchmark.description="CodeRefine (CodeXGLUE) - Java bug-fix code ref
 LABEL eval.benchmark.tasks="6545"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="07ab797a018d0d5c448b56eb26b5e11aa5ad7659"
 LABEL eval.benchmark.url="https://github.com/microsoft/CodeXGLUE/tree/main/Code-Code/code-refinement"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2102.04664"

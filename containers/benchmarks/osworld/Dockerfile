@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="OSWorld - real computer environment for multim
 LABEL eval.benchmark.tasks="369"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/xlang-ai/OSWorld"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/osworld"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.07972"

@@ -33,6 +33,7 @@ LABEL eval.benchmark.env="per-task"
 # (rule 9 — "unless the benchmark explicitly requires it"). Label-only, as for the
 # other internet=true benchmarks (gaia, assistantbench) and upstream skills-bench.
 LABEL eval.benchmark.internet="true"
+ENV EVAL_INTERNET=true
 LABEL eval.benchmark.url="https://www.skillsbench.ai/"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2602.12670"
 # Record the pinned upstream revision (rule 3/4) — driven by the same SB_REF that

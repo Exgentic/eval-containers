@@ -687,39 +687,14 @@ fn internet_policy_wired_through_to_agents() {
     eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based loud-reject");
 }
 
-/// A benchmark that sets `ENV EVAL_INTERNET` MUST also carry the
-/// `eval.benchmark.internet` label — the design (agents/RULES.md 19) rests on
-/// the declarative label and the enforcement ENV never disagreeing, and the
-/// label is the source of truth. This is the direction that catches an actual
-/// score-validity bug (an ENV that contradicts, or is unmoored from, the
-/// declared policy); the converse — ~100 benchmarks that declare the label
-/// without yet wiring the ENV — is a defensible incremental rollout (agents/
-/// RULES.md 19 note), not asserted here.
-#[test]
-fn benchmark_internet_env_implies_label() {
-    for (name, dir) in sibling_dirs("benchmarks") {
-        let dockerfile = dir.join("Dockerfile");
-        if !dockerfile.exists() {
-            continue;
-        }
-        let text = fs::read_to_string(&dockerfile).unwrap_or_else(|e| panic!("read {name}: {e}"));
-
-        let has_label = text.contains("eval.benchmark.internet=");
-        let has_env = text
-            .lines()
-            .any(|l| l.trim_start().starts_with("ENV") && l.contains("EVAL_INTERNET"));
-
-        assert!(
-            !(has_env && !has_label),
-            "{name}: sets ENV EVAL_INTERNET but has no eval.benchmark.internet label — the \
-             label is the declarative source of truth (agents/RULES.md 19)"
-        );
-    }
-
-    eprintln!(
-        "✓ every benchmark setting ENV EVAL_INTERNET also carries the eval.benchmark.internet label (agents/RULES.md 19)"
-    );
-}
+// The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
+// (agents/RULES.md 20) is artifact-shaped Dockerfile structure, so per this
+// file's own module doc it lives in conftest, not here — see
+// tests/static/policy/dockerfile/labels.rego (env_value/env_keys + the two
+// `deny` rules right after required_benchmark_keys) and its unit tests in
+// labels_test.rego (test_internet_label_without_env_denies,
+// test_internet_label_env_disagreement_denies,
+// test_internet_label_env_argdriven_passes).
 
 /// agents/RULES.md 23: when EVAL_INTERNET=false, the runner MUST tell the agent
 /// in the task text itself that no internet is needed, so it doesn't burn turns

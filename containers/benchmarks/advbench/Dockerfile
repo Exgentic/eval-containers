@@ -13,6 +13,7 @@ LABEL eval.benchmark.description="AdvBench - adversarial harmful behaviors from 
 LABEL eval.benchmark.tasks="520"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="098262edf85f807224e70ecd87b9d83716bf6b73"
 LABEL eval.benchmark.url="https://github.com/llm-attacks/llm-attacks"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2307.15043"

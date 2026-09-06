@@ -38,6 +38,7 @@ LABEL eval.benchmark.description="WMDP - Weapons of Mass Destruction Proxy (bio/
 LABEL eval.benchmark.tasks="3668"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="7125571f22f032c56415e7980f48d877dd830ff8"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/cais/wmdp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.03218"

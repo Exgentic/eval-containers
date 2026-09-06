@@ -31,6 +31,7 @@ LABEL eval.benchmark.description="SWE-bench Verified - software engineering"
 LABEL eval.benchmark.tasks="500"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="c104f840cc67f8c6eec6f759ebc8b2693d585d4a"
 LABEL eval.benchmark.url="https://github.com/princeton-nlp/SWE-bench"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/swebench-verified"

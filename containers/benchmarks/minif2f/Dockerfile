@@ -62,6 +62,7 @@ LABEL eval.benchmark.description="MiniF2F - formal-math competition problems (ol
 LABEL eval.benchmark.tasks="244"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="c605019c4ebfda74d37bbb83e9c5774fc8b67c14"
 LABEL eval.benchmark.url="https://github.com/yangky11/miniF2F"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2109.00110"
