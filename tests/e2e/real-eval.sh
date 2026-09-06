@@ -81,17 +81,41 @@ for f in task/result.json agent/result.json model/result.json; do
   [ -n "$r" ] || { bad "$f is missing"; continue; }
   echo "  $f: $r"
 done
+# Presence is the weakest thing worth asserting, so assert the fields the
+# dashboard actually keys off: the grader's verdict, and the exit code it uses to
+# tell a failed run from an unscored one.
 r=$(docker exec "$NODE" cat "$OUT/$SUB/$RUN/task/result.json" 2>/dev/null)
 case "$r" in
   *'"passed":true'*|*'"passed": true'*) ;;
   *) bad "the grader's verdict never reached task/result.json (got: ${r:-<empty>})" ;;
 esac
-# The agent's own streams: the run page shows these when a trace is empty, so
-# losing them loses the only record of what the agent did.
-for log in stdout stderr; do
-  docker exec "$NODE" test -s "$OUT/$SUB/$RUN/agent/$log.log" 2>/dev/null ||
-    bad "agent/$log.log is missing or empty — the runner captured no $log"
-done
+case "$r" in
+  *'"reward":1'*|*'"reward": 1'*) ;;
+  *) bad "task/result.json carries no reward from the grader (got: $r)" ;;
+esac
+a=$(docker exec "$NODE" cat "$OUT/$SUB/$RUN/agent/result.json" 2>/dev/null)
+case "$a" in
+  *'"exit_code":0'*|*'"exit_code": 0'*) ;;
+  *) bad "agent/result.json has no exit_code — a crashed run would be indistinguishable from a clean one (got: ${a:-<empty>})" ;;
+esac
+
+# The agent's own streams. The run page falls back to these whenever a trace is
+# empty, so it is not enough that both files exist: each has to hold the stream
+# it is named for. mock writes a different marker to each precisely so a runner
+# that merged or swapped them fails here.
+out=$(docker exec "$NODE" cat "$OUT/$SUB/$RUN/agent/stdout.log" 2>/dev/null)
+err=$(docker exec "$NODE" cat "$OUT/$SUB/$RUN/agent/stderr.log" 2>/dev/null)
+case "$out" in
+  *"OK"*) ;;
+  *) bad "agent/stdout.log did not capture the agent's answer (got: ${out:-<empty>})" ;;
+esac
+case "$err" in
+  *"mock agent"*) ;;
+  *) bad "agent/stderr.log did not capture the agent's stderr (got: ${err:-<empty>})" ;;
+esac
+case "$out" in
+  *"mock agent"*) bad "stderr leaked into agent/stdout.log — the two streams are not being kept apart" ;;
+esac
 
 [ "$fail" -eq 0 ] && echo "PASS: a real eval left every artifact the dashboard reads"
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
