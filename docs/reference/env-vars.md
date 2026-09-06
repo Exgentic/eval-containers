@@ -100,5 +100,10 @@ that make the *agent's own behavior* match that reality instead of fighting it:
   gateway is tracked as future work.)
 
 Supported agents: **claude-code, claude-code-rtk**. Selecting a benchmark that
-declares `EVAL_INTERNET=false` with any other agent **fails loud** (the run
-exits non-zero) rather than silently leaving its web tools enabled.
+declares `EVAL_INTERNET=false` with any other agent **warns** (the run still
+completes) rather than silently saying nothing — the pairing is still valid,
+since network isolation (rule 9) holds regardless of agent support; the agent
+just doesn't get the UX benefit of an explicit no-internet note and a pruned
+tool list. Warn, not fail, because the run is still correctly isolated, and
+most of the fleet's agents don't support this yet — most `EVAL_INTERNET=false`
+benchmarks are routinely run with unsupported agents today.

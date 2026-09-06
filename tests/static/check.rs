@@ -657,11 +657,13 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
-/// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —
+/// `EVAL_INTERNET` (agents/RULES.md 19-21): image-baked, not operator-settable —
 /// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
-/// run-agent forwards it and rejects it loudly for an agent whose /run.sh
-/// doesn't use it (an agent that can't deny its web tools is an invalid pairing
-/// for a benchmark that declared internet=false, not a degraded one).
+/// run-agent forwards it and WARNS (does not fail) for an agent whose /run.sh
+/// doesn't use it — network isolation (rule 22) holds regardless of agent
+/// support, so an unsupported agent is still a valid pairing, just without the
+/// UX benefit; failing the run would break every existing fixture pairing an
+/// internet=false benchmark with one of the many agents that don't support it.
 #[test]
 fn internet_policy_wired_through_to_agents() {
     let root = repo_root();
@@ -674,8 +676,29 @@ fn internet_policy_wired_through_to_agents() {
         "run-agent's `env -i` allow-list must pass EVAL_INTERNET or the agent can't read it"
     );
     assert!(
-        run_agent.contains("grep -q EVAL_INTERNET /run.sh") && run_agent.contains("exit 2"),
-        "run-agent must reject EVAL_INTERNET=false loudly when the agent's /run.sh doesn't use it"
+        run_agent.contains("grep -q EVAL_INTERNET /run.sh"),
+        "run-agent must check whether the agent's /run.sh references EVAL_INTERNET"
+    );
+    // The check must warn, not fail: find its `if` block and confirm it echoes
+    // to stderr but never exits. (EVAL_AGENT_REASONING_EFFORT's block, just
+    // above, DOES exit 2 — scope the search to the EVAL_INTERNET block only.)
+    let internet_block_start = run_agent
+        .find("grep -q EVAL_INTERNET /run.sh")
+        .expect("checked above");
+    let internet_block_end = run_agent[internet_block_start..]
+        .find("\nfi")
+        .map(|i| internet_block_start + i)
+        .expect("run-agent's EVAL_INTERNET guard must close with `fi`");
+    let internet_block = &run_agent[internet_block_start..internet_block_end];
+    assert!(
+        !internet_block.contains("exit"),
+        "run-agent's EVAL_INTERNET guard must WARN, not exit/fail the run — network isolation \
+         (rule 22) holds regardless of agent support, so an unsupported agent is still a valid \
+         pairing"
+    );
+    assert!(
+        internet_block.contains(">&2"),
+        "run-agent's EVAL_INTERNET guard must still print a warning to stderr"
     );
     for a in ["claude-code", "claude-code-rtk"] {
         assert!(
@@ -684,7 +707,7 @@ fn internet_policy_wired_through_to_agents() {
         );
     }
 
-    eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based loud-reject");
+    eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based warn-not-fail");
 }
 
 // The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
