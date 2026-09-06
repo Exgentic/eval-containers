@@ -42,6 +42,7 @@ LABEL eval.benchmark.description="AgentHarm - harmfulness evaluation for LLM age
 LABEL eval.benchmark.tasks="176"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="e23b3fe60a0da9037314b88e5ee3a0c054970dad"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/ai-safety-institute/AgentHarm"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.09024"

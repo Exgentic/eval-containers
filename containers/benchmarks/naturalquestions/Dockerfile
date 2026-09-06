@@ -26,6 +26,7 @@ LABEL eval.benchmark.description="NaturalQuestions - Google search queries (open
 LABEL eval.benchmark.tasks="3610"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="5dd9790a83002ad084ddeb7c420dc716852c6f28"
 LABEL eval.benchmark.url="https://ai.google.com/research/NaturalQuestions"
 LABEL eval.benchmark.paper="https://aclanthology.org/Q19-1026/"

@@ -13,6 +13,7 @@ LABEL eval.benchmark.description="WebArena Verified - web browsing with sidecars
 LABEL eval.benchmark.tasks="812"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/web-arena-x/webarena"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2307.13854"
 

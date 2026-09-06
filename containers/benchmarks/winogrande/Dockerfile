@@ -19,6 +19,7 @@ LABEL eval.benchmark.description="WinoGrande - large-scale Winograd-style common
 LABEL eval.benchmark.tasks="1267"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="01e74176c63542e6b0bcb004dcdea22d94fb67b5"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/allenai/winogrande"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1907.10641"
