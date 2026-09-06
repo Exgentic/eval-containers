@@ -142,17 +142,26 @@ rm -f "$C_ARGS"
 # The chart sanitises a per-task id into an RFC-1123 name; only the API server
 # can say whether it got it right. --dry-run=server validates without running.
 step "D: RFC-1123 Job name for a per-task id containing _"
+# Both ways a run becomes per-task are covered, because both mint this name and
+# only one of them used to exist: the chart resolving it from its own
+# per-task.json (swe-bench, no flag — what every caller gets now), and an
+# explicit --set perTask on a benchmark outside that set (the override that must
+# keep working). A later --set wins in helm, so the benchmark override rides in
+# the same list.
 D_ARGS=$(argsfile 'true')
-if render underscore "$D_ARGS" --set task=sympy__sympy-24066 --set perTask=true \
-     --set outputSubPath=runs/humaneval/stub/stub/us --set runId=r1 |
-   kubectl apply --dry-run=server -f - >/dev/null 2>&1; then
-  echo "PASS D: sympy__sympy-24066 accepted by the API server"
-else
-  bad "D: the API server rejected the Job name minted for sympy__sympy-24066"
-  render underscore "$D_ARGS" --set task=sympy__sympy-24066 --set perTask=true \
-    --set outputSubPath=runs/humaneval/stub/stub/us --set runId=r1 |
-    kubectl apply --dry-run=server -f - 2>&1 | head -5
-fi
+for shape in "resolved:--set benchmark=swe-bench" "forced:--set perTask=true"; do
+  how=${shape%%:*}
+  # Deliberately unquoted: the flag pair has to split into two arguments.
+  # shellcheck disable=SC2086
+  set -- --set task=sympy__sympy-24066 ${shape#*:} \
+    --set outputSubPath=runs/pertask/stub/stub/us --set runId=r1
+  if render underscore "$D_ARGS" "$@" | kubectl apply --dry-run=server -f - >/dev/null 2>&1; then
+    echo "PASS D ($how): sympy__sympy-24066 accepted by the API server"
+  else
+    bad "D ($how): the API server rejected the Job name minted for sympy__sympy-24066"
+    render underscore "$D_ARGS" "$@" | kubectl apply --dry-run=server -f - 2>&1 | head -5
+  fi
+done
 rm -f "$D_ARGS"
 
 # ── E: a second run of one combo does not land on the first ─────────────────
