@@ -36,73 +36,20 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
 CHART="$ROOT/containers/benchmarks/_chart"
 CLUSTER=${CLUSTER:-eval-e2e}
 STUB="$ROOT/tests/e2e/stub"
-NODE="${CLUSTER}-control-plane"
 # hostPath on the kind node: the results have to land somewhere the pod cannot
 # take with it. DirectoryOrCreate is required — an untyped hostPath is not
 # created, and the kubelet stats the base before applying a subPath.
 OUT=/tmp/eval-e2e-output
 
-fail=0
-for tool in kind kubectl helm docker; do
-  command -v "$tool" >/dev/null || { echo "$tool not found"; exit 1; }
-done
-
-cleanup() { [ -n "${KEEP:-}" ] || kind delete cluster --name "$CLUSTER" >/dev/null 2>&1; }
-trap cleanup EXIT
-step()  { printf '\n== %s (%ss)\n' "$1" "$SECONDS"; }
-bad()   { echo "FAIL $*"; fail=$((fail + 1)); }
-onnode() { docker exec "$NODE" "$@" 2>/dev/null; }
-
-# Render the real chart with only the images and the runner's command stubbed.
-# $1 is the release/Job name, $2 a values file for runnerArgs, rest extra --sets.
-render() {
-  local name=$1 args=$2; shift 2
-  helm template "$name" "$CHART" \
-    --set benchmark=humaneval --set agent=stub \
-    --set otelImage=eval-e2e/otel:stub \
-    --set gatewayImageRef=eval-e2e/gateway:stub \
-    --set runnerImageRef=eval-e2e/runner:stub \
-    --set outputVolume.hostPath.path="$OUT" \
-    --set outputVolume.hostPath.type=DirectoryOrCreate \
-    -f "$args" "$@"
-}
-
-# runnerArgs rides a values file: helm splits --set on commas and these write JSON.
-argsfile() { local f; f=$(mktemp); printf 'runnerArgs: >-\n  %s\n' "$1" >"$f"; echo "$f"; }
-
-# Wait for a Job to reach any terminal condition; print which.
-settle() {
-  local job=$1 deadline=$((SECONDS + ${2:-120}))
-  while [ "$SECONDS" -lt "$deadline" ]; do
-    local c
-    c=$(kubectl get job "$job" -o jsonpath='{.status.conditions[?(@.status=="True")].type}' 2>/dev/null)
-    case "$c" in *Complete*|*Failed*) echo "$c"; return 0 ;; esac
-    sleep 2
-  done
-  echo timeout
-}
-
-diagnose() {
-  kubectl get pods -o wide
-  kubectl describe pod -l job-name="$1" | sed -n '/Events:/,$p' | head -30
-  kubectl logs -l job-name="$1" --all-containers --tail=20
-}
+# shellcheck source=tests/e2e/_lib.sh
+. "$ROOT/tests/e2e/_lib.sh"
+require_tools
 
 step "build the stubs"
-for img in otel gateway runner; do
-  docker build -q --load -t "eval-e2e/$img:stub" -f "$STUB/$img.Dockerfile" "$STUB" >/dev/null || exit 1
-done
+build_stubs otel gateway runner
 
 step "create the cluster"
-kind create cluster --name "$CLUSTER" --wait 60s >/dev/null || exit 1
-
-step "load the stubs"
-kind load docker-image --name "$CLUSTER" \
-  eval-e2e/otel:stub eval-e2e/gateway:stub eval-e2e/runner:stub >/dev/null || exit 1
-
-# The gateway sidecar always references this Secret, whether or not a model is called.
-kubectl create secret generic eval-secrets \
-  --from-literal=OPENAI_API_KEY=stub --from-literal=OPENAI_API_BASE=http://stub >/dev/null || exit 1
+start_cluster eval-e2e/otel:stub eval-e2e/gateway:stub eval-e2e/runner:stub
 
 # ── A + B: one Indexed run settles both ──────────────────────────────────────
 # datasetSize=2 makes this the shape a real dataset eval has, so the same Job
