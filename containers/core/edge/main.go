@@ -207,9 +207,18 @@ func record(c call) {
 		}
 		recFile, recPath = f, out
 		if strings.HasSuffix(out, ".zst") {
-			// Errors only on a bad option, which is compile-time constant here.
-			recZstd, _ = zstd.NewWriter(f,
+			enc, err := zstd.NewWriter(f,
 				zstd.WithEncoderLevel(zstd.SpeedBetterCompression))
+			if err != nil {
+				// Falling through here would write plain JSON under a .zst
+				// name — a record nothing downstream can read, and no error to
+				// say so. Refuse the file instead, and try again next record.
+				log.Println("record:", err)
+				f.Close()
+				recFile, recPath = nil, ""
+				return
+			}
+			recZstd = enc
 		}
 	}
 	var w io.Writer = recFile
