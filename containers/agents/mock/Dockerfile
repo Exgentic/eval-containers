@@ -29,27 +29,41 @@ RUN mkdir -p /opt/agent && echo "${AGENT_VERSION}" > /opt/agent/VERSION \
 # The contract a runner expects: read $TASK, work, leave the answer on stdout.
 # Both streams are written to, because the harness captures them separately and a
 # test that only ever sees stdout cannot tell that stderr was dropped.
-# One GET at the configured endpoint, with whatever HTTP client the base image
-# happens to carry (agents/RULES.md 11 — assume no runtime). It is not a model
-# call and does not pretend to be: it answers the one question a real agent asks
-# first, whether OPENAI_API_BASE points somewhere this container can reach, and
-# reports it on stdout so a smoke test can see the answer rather than infer it.
-RUN printf '%s\n' \
-    '#!/bin/sh' \
-    'set -eu' \
-    'base="${OPENAI_BASE_URL:-${OPENAI_API_BASE:-}}"' \
-    'reach() {' \
-    '  [ -n "$base" ] || return 1' \
-    '  if command -v curl >/dev/null; then curl -sfm 5 "$base/v1/models" >/dev/null' \
-    '  elif command -v wget >/dev/null; then wget -qT 5 -O- "$base/v1/models" >/dev/null' \
-    '  elif command -v python3 >/dev/null; then' \
-    '    python3 -c "import sys,urllib.request;urllib.request.urlopen(sys.argv[1],timeout=5)" "$base/v1/models"' \
-    '  else return 2; fi' \
-    '}' \
-    'if reach; then gw=up; elif [ $? = 2 ]; then gw=unprobed; else gw=down; fi' \
-    'echo "mock agent, task: ${EVAL_TASK_ID:-?}, gateway: $gw at ${base:-<unset>}" >&2' \
-    'echo "gateway:$gw"' \
-    'echo "${EXPECTED_ANSWER:-OK}"' \
-    > /run.sh && chmod +x /run.sh
+# One request at the configured endpoint, with whatever HTTP client the base
+# image happens to carry (agents/RULES.md 11 — assume no runtime). It is not a
+# model call and does not pretend to be: it answers the one question a real agent
+# asks first — is there anything at OPENAI_API_BASE — and reports the answer on
+# stdout, where a smoke test can read it instead of inferring it.
+#
+# Any HTTP status counts as reachable. What the endpoint thinks of this
+# particular path is a different question, and in a real pod the agent is talking
+# to the edge recorder rather than the gateway directly.
+RUN cat > /run.sh <<'E' && chmod +x /run.sh
+#!/bin/sh
+set -eu
+base="${OPENAI_BASE_URL:-${OPENAI_API_BASE:-}}"
+probe() {
+  [ -n "$base" ] || return 1
+  if command -v curl >/dev/null; then
+    curl -sSm 5 -o /dev/null "$base/v1/models"
+  elif command -v python3 >/dev/null; then
+    python3 - "$base/v1/models" <<'P'
+import sys, urllib.request, urllib.error
+try:
+    urllib.request.urlopen(sys.argv[1], timeout=5)
+except urllib.error.HTTPError:
+    pass   # an answer is an answer
+P
+  elif command -v wget >/dev/null; then
+    wget -qT 5 -O- "$base/v1/models" >/dev/null
+  else
+    return 2
+  fi
+}
+if probe; then gw=up; elif [ $? = 2 ]; then gw=unprobed; else gw=down; fi
+echo "mock agent, task: ${EVAL_TASK_ID:-?}, gateway: $gw at ${base:-<unset>}" >&2
+echo "gateway:$gw"
+echo "${EXPECTED_ANSWER:-OK}"
+E
 
 ENTRYPOINT ["/run.sh"]
