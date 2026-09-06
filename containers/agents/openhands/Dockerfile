@@ -21,10 +21,17 @@ ENV EVAL_AGENT=openhands
 # containing "gpt-5"/"codex" routes onto the Responses API — see
 # compose/runner.yaml), so the neutral gateway handle is what keeps non-gpt-5
 # models like GLM on chat/completions; this pin just tracks the leaderboard SDK.
+#
+# openhands-tools (SAME pin) ships the actual tool implementations (terminal,
+# file editor, task tracker, …) — openhands-sdk alone declares the Tool/Agent
+# types but registers none. Without this package `Agent(llm=llm)` on the
+# non-MCP path (run_openhands.py) boots with zero tools ("Loaded 0 tools from
+# spec") and can only emit text — it can never run a command or edit a file,
+# so every non-MCP benchmark scores 0 regardless of model capability.
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-/opt/agent/setup-uv-venv.sh /opt/openhands-venv openhands-sdk==${AGENT_VERSION} lmnr==0.7.51
+/opt/agent/setup-uv-venv.sh /opt/openhands-venv openhands-sdk==${AGENT_VERSION} openhands-tools==${AGENT_VERSION} lmnr==0.7.51
 I
 
 RUN /opt/agent/install.sh
