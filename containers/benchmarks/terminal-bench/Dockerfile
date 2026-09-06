@@ -18,7 +18,7 @@ LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="terminal-bench"
 LABEL eval.benchmark.tasks="89"
 LABEL eval.benchmark.env="per-task"
-LABEL eval.benchmark.internet="false"
+LABEL eval.benchmark.internet="true"
 LABEL eval.benchmark.url="https://github.com/harbor-framework/terminal-bench-2-1"
 # EVAL_TASK_ID is consumed here (the per-task marker, benchmarks/RULES.md 24a/24f).
 # TBENCH_TASK pins the real task name for solution.sh: the oracle/runner override
@@ -30,6 +30,29 @@ ENV EVAL_BENCHMARK=tbench \
     EVAL_TASK_ID=${EVAL_TASK_ID} \
     TBENCH_TASK=${EVAL_TASK_ID} \
     TBENCH_REF=${TBENCH_REF}
+
+# Give the agent its workspace. terminal-bench tasks are authored for agent=root
+# (daytona) and ship /app root-owned, but the eval pipeline runs the agent
+# non-root (uid 1002, rule 13) and /app is the agent's own area (rule 17). The
+# framework launcher chowns /tmp + /output/agent to the agent yet not /app, so
+# without this the agent cannot write its workspace and every build/write task
+# loops on EACCES until timeout. Numeric 1002:0 — the named user is added later
+# in the eval merge. Tests stay root-only 700 (below), so grading is unaffected.
+RUN chown -R 1002:0 /app && chmod -R g+w /app
+
+# Same rule-13/17 tension as /app, one layer up. Some tasks (e.g. build-cython-ext)
+# instruct the agent to install into the *system global* Python environment, which
+# upstream's root agent does freely. Our agent is uid 1002 and the global
+# site-packages / bin are root-owned 0755, so it cannot write there — it falls back
+# to `pip install --user`, which the root grader (uid 0) cannot import, so the task
+# scores 0 regardless of how correct the solution is. Grant gid-0 write on the
+# global Python dirs (mirroring the /app fix) so a correct global install lands
+# where the grader looks. Tests stay root-only 700 (below), so grading is unaffected.
+# Guarded + non-fatal: tasks whose base lacks these paths are untouched.
+RUN for d in /usr/local/lib/python3.*/site-packages /usr/local/bin \
+             /usr/lib/python3.*/site-packages /usr/lib/python3/dist-packages; do \
+      [ -d "$d" ] && chmod -R g+w "$d" || true; \
+    done; true
 
 # The instruction the agent sees (TASK) — agent-readable by design.
 COPY instruction.md /task/instruction.md
