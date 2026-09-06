@@ -47,7 +47,7 @@ RUN printf '%s\n' \
     '  else return 2; fi' \
     '}' \
     'if reach; then gw=up; elif [ $? = 2 ]; then gw=unprobed; else gw=down; fi' \
-    'echo "mock agent, task: ${EVAL_TASK_ID:-?}, gateway: $gw" >&2' \
+    'echo "mock agent, task: ${EVAL_TASK_ID:-?}, gateway: $gw at ${base:-<unset>}" >&2' \
     'echo "gateway:$gw"' \
     'echo "${EXPECTED_ANSWER:-OK}"' \
     > /run.sh && chmod +x /run.sh
