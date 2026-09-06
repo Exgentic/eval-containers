@@ -38,7 +38,10 @@ export CHART OUT
 # (collected as a render failure) with the error captured beside it.
 render_one() {
   local name=$1
-  if ! helm template "$name" "$CHART" --set "benchmark=$name" >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
+  # ephemeral=true: these renders exist to be inspected, never applied, so they
+  # name no output volume — which the chart otherwise refuses (eval.outputVolume).
+  if ! helm template "$name" "$CHART" --set "benchmark=$name" --set ephemeral=true \
+    >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
     echo "$name"
   fi
 }
@@ -86,12 +89,77 @@ fi
 # 5. the pod backstop must track --timeout, not a fixed constant: a larger
 # --timeout must not be killed early by a stale activeDeadlineSeconds (the
 # derivation regression — see containers/benchmarks/_chart/values.yaml).
-dl=$(helm template deadline-probe "$CHART" --set benchmark=humaneval --set timeout=3000 2>/dev/null |
+dl=$(helm template deadline-probe "$CHART" --set benchmark=humaneval --set timeout=3000 \
+  --set ephemeral=true 2>/dev/null |
   awk '/activeDeadlineSeconds:/{print $2; exit}')
 if [ "${dl:-0}" -le 3000 ]; then
   echo "FAIL deadline: --timeout 3000 rendered activeDeadlineSeconds=${dl:-<none>} (<=3000) — backstop would kill the run before its own timeout"
   fail=$((fail + 1))
 fi
+
+# 6. results outlive the pod, or the render refuses. Every other check here
+# asserts on a manifest; this one asserts that a manifest is NOT produced, which
+# is the only way to test a guard whose whole job is to stop one existing. The
+# emptyDir default it replaced discarded a whole run and still exited 0 (#428).
+probe() { helm template vol-probe "$CHART" --set benchmark=humaneval "$@" 2>&1; }
+
+# runId first, so this probe reaches the volume guard rather than tripping the
+# uniqueness one — the two are separate refusals and each is checked on its own.
+if out=$(probe --set runId=probe) && [ -n "$out" ]; then
+  echo "FAIL outputVolume: a run with no volume rendered instead of being refused — its results would go to an emptyDir the kubelet deletes with the pod"
+  fail=$((fail + 1))
+else
+  # A refusal is only useful if it says what to do instead, and there are two
+  # answers — name a volume, or declare the run disposable. Assert both, or the
+  # message can quietly lose half its value.
+  # Both tokens are the *actionable* form — a bare "outputVolume" would be
+  # satisfied by the error's own opening words rather than by any guidance.
+  for way in "--set outputVolume." "--set ephemeral=true"; do
+    printf '%s' "$out" | grep -qF -- "$way" || {
+      echo "FAIL outputVolume: the refusal never mentions '$way'; got: $out"
+      fail=$((fail + 1)); }
+  done
+fi
+
+# …and each way forward really does render the volume it names.
+for probe_args in \
+  "--set ephemeral=true|emptyDir" \
+  "--set runId=probe --set outputVolume.persistentVolumeClaim.claimName=probe-claim|claimName: probe-claim" \
+  "--set runId=probe --set outputVolume.hostPath.path=/probe/out|path: /probe/out"; do
+  args=${probe_args%%|*}; want=${probe_args#*|}
+  # $args is a controlled, space-separated flag list, so it must word-split.
+  # shellcheck disable=SC2086
+  got=$(probe $args | awk '/^ *- name: output$/{f=1;next} /^ *- /{f=0} f')
+  case "$got" in
+    *"$want"*) ;;
+    *) echo "FAIL outputVolume: '$args' did not render '$want' on the output volume; got:$got"
+       fail=$((fail + 1)) ;;
+  esac
+done
+
+# 7. …and a run that would land on another run's results is refused too. The
+# leaf was the caller's to compose, and both shell launchers composed one that
+# never changed, so every re-run of a combo overwrote the one before it.
+out=$(probe --set outputVolume.hostPath.path=/probe/out)
+if [ -z "$out" ]; then
+  echo "FAIL runId: a run with a volume and no runId rendered — it would overwrite the previous run of this combo"
+  fail=$((fail + 1))
+elif ! printf '%s' "$out" | grep -qF -- "--set runId="; then
+  echo "FAIL runId: the refusal must name the way forward; got: $out"
+  fail=$((fail + 1))
+fi
+
+# The id has to actually reach the path, below the caller's prefix and above the
+# index — that ordering is the whole guarantee.
+got=$(probe --set ephemeral=true --set outputSubPath=pre/fix --set runId=rid --set datasetSize=2 |
+  awk '/subPathExpr:/{print $2; exit}')
+# $(JOB_COMPLETION_INDEX) is the kubelet's to expand, not this shell's.
+# shellcheck disable=SC2016
+case "$got" in
+  'pre/fix/rid/$(JOB_COMPLETION_INDEX)') ;;
+  *) echo "FAIL runId: an Indexed run mounted '$got', not <prefix>/<runId>/<index>"
+     fail=$((fail + 1)) ;;
+esac
 
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]
