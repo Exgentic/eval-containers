@@ -15,6 +15,10 @@
 #                                                          move onto the pod spec)
 #   D. the API server accepts the Job name the chart mints for a per-task id
 #      carrying `_`                                       (#372/#426)
+#   F. results land in a PersistentVolumeClaim — the branch production uses,
+#      where every other check here uses a hostPath because it reads back easily
+#   G. a Job with a queueName starts suspended and runs only once admitted — the
+#      namespace-wide budget every launcher hands admission to
 #   E. two runs of one benchmark/agent/model keep their own results — the
 #      uniqueness the chart's runId exists to guarantee, which both shell
 #      launchers used to break by composing a leaf that never changed
@@ -214,6 +218,78 @@ if [ "$fail" -eq 0 ]; then
   echo "PASS E: both runs of one combo kept their own results"
 fi
 rm -f "$E_ARGS"
+
+# ── F: the claim path, not just a hostPath ──────────────────────────────────
+# Production mounts a PersistentVolumeClaim; every check above used a hostPath
+# because it is easy to read back. The claim branch of outputVolume has never run
+# on a cluster, so run one Job through it and read the result out of the volume
+# with a reader pod — the same way deploy/eval-reader-pod.yaml does.
+step "F: results land in a PersistentVolumeClaim"
+kubectl apply -f - >/dev/null <<'PVC'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eval-e2e-output
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+PVC
+ROOT_F=runs/humaneval/stub/stub
+# shellcheck disable=SC2016
+F_ARGS=$(argsfile 'mkdir -p /output/task &&
+  printf %s "{\"where\":\"pvc\",\"passed\":true}" > /output/task/result.json')
+helm template pvc "$CHART" \
+  --set benchmark=humaneval --set agent=stub --set task=0 \
+  --set otelImage=eval-e2e/otel:stub \
+  --set gatewayImageRef=eval-e2e/gateway:stub \
+  --set runnerImageRef=eval-e2e/runner:stub \
+  --set outputVolume.persistentVolumeClaim.claimName=eval-e2e-output \
+  --set outputSubPath="$ROOT_F" --set runId=onpvc --set nameSuffix=-pvc \
+  -f "$F_ARGS" | kubectl apply -f - >/dev/null || bad "F: the claim render did not apply"
+got=$(settle humaneval-stub-task-0-pvc 120)
+case "$got" in
+  *Complete*)
+    # A reader pod is the only way into an RWO claim once the writer is gone.
+    kubectl run pvc-reader --image=eval-e2e/runner:stub --restart=Never \
+      --overrides='{"spec":{"containers":[{"name":"pvc-reader","image":"eval-e2e/runner:stub","command":["cat","/out/'"$ROOT_F"'/onpvc/task/result.json"],"volumeMounts":[{"name":"out","mountPath":"/out"}]}],"volumes":[{"name":"out","persistentVolumeClaim":{"claimName":"eval-e2e-output"}}]}}' \
+      >/dev/null 2>&1
+    kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/pvc-reader --timeout=60s >/dev/null 2>&1
+    r=$(kubectl logs pvc-reader 2>/dev/null)
+    case "$r" in
+      *'"where":"pvc"'*) echo "PASS F: the run's result is in the claim after the Job is gone" ;;
+      *) bad "F: nothing readable in the claim (got: ${r:-<empty>})" ;;
+    esac ;;
+  *) bad "F: the claim-backed Job ended '$got'"; diagnose humaneval-stub-task-0-pvc ;;
+esac
+rm -f "$F_ARGS"
+
+# ── G: a queued Job starts suspended and waits ──────────────────────────────
+# queueName is how every launcher hands admission to something else — the
+# dashboard's admitter unsuspends within a namespace-wide budget. If the chart
+# stopped suspending, every launch would start at once and blow the budget.
+step "G: a queued Job is suspended until something admits it"
+# shellcheck disable=SC2016
+G_ARGS=$(argsfile 'mkdir -p /output/task && printf %s "{\"admitted\":true}" > /output/task/result.json')
+render queued "$G_ARGS" --set task=0 --set outputSubPath=runs/humaneval/stub/stub \
+  --set runId=queued --set nameSuffix=-q --set queueName=e2e |
+  kubectl apply -f - >/dev/null || bad "G: the queued render did not apply"
+sleep 5
+susp=$(kubectl get job humaneval-stub-task-0-q -o jsonpath='{.spec.suspend}' 2>/dev/null)
+pods=$(kubectl get pods -l job-name=humaneval-stub-task-0-q --no-headers 2>/dev/null | wc -l | tr -d ' ')
+if [ "$susp" != "true" ] || [ "$pods" != "0" ]; then
+  bad "G: a queued Job should start suspended with no pods (suspend=$susp, pods=$pods)"
+else
+  # …and run the moment it is admitted, which is all the admitter does.
+  kubectl patch job humaneval-stub-task-0-q --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
+  got=$(settle humaneval-stub-task-0-q 120)
+  case "$got" in
+    *Complete*) echo "PASS G: suspended until admitted, then ran" ;;
+    *) bad "G: the Job did not run once unsuspended (ended '$got')"; diagnose humaneval-stub-task-0-q ;;
+  esac
+fi
+rm -f "$G_ARGS"
 
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
 [ "$fail" -eq 0 ]
