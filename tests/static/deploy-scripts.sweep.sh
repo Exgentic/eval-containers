@@ -26,6 +26,24 @@ command -v helm >/dev/null || { echo "helm not found — required for the deploy
 fail=0
 bad() { echo "FAIL $*"; fail=$((fail + 1)); }
 
+# The chart appends a runId when it is given one, but cannot check that the id
+# changes: it sees a single render, and a constant would satisfy any test it
+# could make. Uniqueness is the launcher's to hold, so it is checked here, where
+# two renders can be compared — the leaf must differ between them, or a re-run of
+# a combo lands on the previous run's results (#428). Both wrappers once composed
+# a leaf that never changed, and every re-run overwrote the one before it.
+subpath_of() { grep -oE "subPath(Expr)?: [^ ]+" <<<"$1" | head -1; }
+
+varies() {   # $1 = label, rest = the launcher invocation
+  local what=$1; shift
+  local a b
+  a=$(subpath_of "$("$@" 2>&1)")
+  b=$(subpath_of "$("$@" 2>&1)")
+  [ -n "$a" ] || { bad "$what: no output subPath in the render"; return; }
+  [ "$a" != "$b" ] \
+    || bad "$what: two runs of one combo render the same path ($a) — the second would overwrite the first"
+}
+
 # ── 1. oc render: each axis lands where it belongs ──────────────────────────
 if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
            --registry "$REG" --task 0 --no-build --dry-run 2>&1); then
@@ -70,6 +88,14 @@ rc=$?
 [ "$rc" -ne 0 ] || bad "oc: --eval-model was accepted; it was renamed --model"
 grep -q -- "--model" <<<"$out" \
   || bad "oc: the --eval-model rejection doesn't name --model as the replacement"
+
+# ── each launcher's path must differ between two runs of one combo ──────────
+varies "oc" bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
+  --gateway "$GATEWAY" --registry "$REG" --task 0 --no-build --dry-run
+# deploy/kind/run.sh is not checked here: it refuses to render without a live
+# cluster ("kind cluster not found — provision it first"), so its leaf can only
+# be compared where a cluster exists. It composes the path the same way, from the
+# same helper.
 
 echo "deploy scripts: one spelling per axis (oc render + guards + rename errors) — $fail failed"
 [ "$fail" -eq 0 ]

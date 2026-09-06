@@ -137,20 +137,16 @@ for probe_args in \
   esac
 done
 
-# 7. …and a run that would land on another run's results is refused too. The
-# leaf was the caller's to compose, and both shell launchers composed one that
-# never changed, so every re-run of a combo overwrote the one before it.
-out=$(probe --set outputVolume.hostPath.path=/probe/out)
-if [ -z "$out" ]; then
-  echo "FAIL runId: a run with a volume and no runId rendered — it would overwrite the previous run of this combo"
-  fail=$((fail + 1))
-elif ! printf '%s' "$out" | grep -qF -- "--set runId="; then
-  echo "FAIL runId: the refusal must name the way forward; got: $out"
-  fail=$((fail + 1))
-fi
+# 7. runId is offered, not demanded: the chart sees one render and cannot tell a
+# fresh id from a constant, so it composes and the caller stays responsible. A
+# render without one must therefore still work — the dashboard composes its own
+# leaf and passes none.
+probe --set outputVolume.hostPath.path=/probe/out >/dev/null || {
+  echo "FAIL runId: a render without one was refused, but composing the leaf is a caller's right"
+  fail=$((fail + 1)); }
 
-# The id has to actually reach the path, below the caller's prefix and above the
-# index — that ordering is the whole guarantee.
+# What the chart does owe: when an id IS given it lands below the caller's prefix
+# and above the index. That ordering is what makes the directory per-run.
 got=$(probe --set ephemeral=true --set outputSubPath=pre/fix --set runId=rid --set datasetSize=2 |
   awk '/subPathExpr:/{print $2; exit}')
 # $(JOB_COMPLETION_INDEX) is the kubelet's to expand, not this shell's.
