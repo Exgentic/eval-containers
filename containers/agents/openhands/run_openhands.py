@@ -31,8 +31,15 @@ import tempfile
 
 # MCP tool-call timeout (seconds) — mirrors upstream HANDBOOK's runner.
 MCP_TOOL_TIMEOUT = 300
-# Iteration budget: tracks the common 200-tool-call agentic cap.
-MAX_ITERATIONS = 200
+# No turn/iteration cap. HANDBOOK's own MAX_TOOL_CALLS=200 (which the SDK's
+# max_iteration_per_run inherits there) is a HANDBOOK-specific budget, not one
+# intrinsic to openhands or to any other benchmark — no other agent in this
+# fleet hardcodes a turn cap, and terminal-bench expresses its own per-task
+# budget as wall clock only (eval.benchmark.timeout -> EVAL_TIMEOUT, enforced
+# independently by run-agent). Baking HANDBOOK's number in here meant every
+# benchmark silently inherited it, whether or not it was the right ceiling for
+# that benchmark's tasks. Leave max_iteration_per_run at the SDK's own default
+# (500) and let EVAL_TIMEOUT be the only bound.
 
 # Per-call LLM timeout (seconds). The SDK default is 300s, and litellm.Timeout
 # is NOT in the SDK's retryable set, so a slow proxy call surfaces as a fatal
@@ -136,6 +143,7 @@ def main() -> None:
         Message,
         TextContent,
     )
+    from openhands.tools import get_default_agent
 
     # Lift the SDK's 50K tool-observation truncation to 1 MB (parity with the
     # upstream HANDBOOK runner). Must run after the SDK import, before any tool
@@ -218,16 +226,17 @@ def main() -> None:
         if system_prompt:
             agent_kwargs["system_prompt"] = system_prompt
         agent = Agent(**agent_kwargs)
-        conversation = Conversation(
-            agent=agent, workspace=workspace, max_iteration_per_run=MAX_ITERATIONS
-        )
+        conversation = Conversation(agent=agent, workspace=workspace)
         conversation.send_message(instruction)
     else:
-        # Non-MCP benchmark: default agent, whole task verbatim.
-        agent = Agent(llm=llm)
-        conversation = Conversation(
-            agent=agent, workspace=workspace, max_iteration_per_run=MAX_ITERATIONS
-        )
+        # Non-MCP benchmark: the SDK's default agent (terminal + file-editor +
+        # task-tracker tools, no browser — get_default_agent(cli_mode=True) is
+        # openhands-tools' own CLI preset), whole task sent verbatim. Agent(llm=llm)
+        # alone has NO tools (openhands-sdk declares the Tool/Agent types but
+        # registers none — that lives in the separate openhands-tools package),
+        # so it can only emit text and never run a command or edit a file.
+        agent = get_default_agent(llm=llm, cli_mode=True)
+        conversation = Conversation(agent=agent, workspace=workspace)
         conversation.send_message(
             Message(role="user", content=[TextContent(text=task)])
         )
