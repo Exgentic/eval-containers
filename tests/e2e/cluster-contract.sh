@@ -65,10 +65,10 @@ render() {
 # runnerArgs rides a values file: helm splits --set on commas and these write JSON.
 argsfile() { local f; f=$(mktemp); printf 'runnerArgs: >-\n  %s\n' "$1" >"$f"; echo "$f"; }
 
-step "build the stubs"
+step "build stubs"
 build_stubs otel gateway runner
 
-step "create the cluster"
+step "create cluster"
 start_cluster eval-e2e/otel:stub eval-e2e/gateway:stub eval-e2e/runner:stub
 
 # ── A + B: one Indexed run settles both ──────────────────────────────────────
@@ -76,7 +76,7 @@ start_cluster eval-e2e/otel:stub eval-e2e/gateway:stub eval-e2e/runner:stub
 # proves the results survive AND that each index landed in its own subdir. The
 # runner also probes the collector's health port: it can only answer if the
 # sidecar was up before the runner started, which is the gating the chart claims.
-step "A+B: an Indexed run's results survive, per index, behind healthy sidecars"
+step "A+B: indexed output persists per index, gated on sidecar readiness"
 ROOT_B=runs/humaneval/stub/stub/indexed
 # $EVAL_TASK_ID is the container's, expanded by the runner's shell inside the
 # pod — the point is that the chart injected it. Single quotes on purpose.
@@ -106,7 +106,7 @@ if [ "$fail" -ne 0 ]; then :; else
       *) bad "B: index $i ran before its collector was serving — the sidecar gate did not hold" ;;
     esac
   done
-  [ "$fail" -eq 0 ] && echo "PASS A+B: both indices survived the pod, each under its own subdir, both gated on a healthy collector"
+  [ "$fail" -eq 0 ] && echo "PASS A+B: both indices persisted under <run-root>/<index>, collector healthy first"
 fi
 rm -f "$A_ARGS"
 
@@ -114,7 +114,7 @@ rm -f "$A_ARGS"
 # On the Job, activeDeadlineSeconds bounded every index at once, so one slow task
 # killed its siblings mid-run. Index 0 sleeps past the deadline; index 1 must
 # still have written its result.
-step "C: a task that overruns kills its own pod, not the sweep"
+step "C: activeDeadlineSeconds bounds the pod, not the Job"
 ROOT_C=runs/humaneval/stub/stub/deadline
 # $EVAL_TASK_ID is the container's, expanded by the runner's shell inside the
 # pod — the point is that the chart injected it. Single quotes on purpose.
@@ -132,7 +132,7 @@ case "$got" in
 esac
 r=$(onnode cat "$OUT/$ROOT_C/r1/1/task/result.json")
 case "$r" in
-  *'"index":"1"'*) echo "PASS C: the fast index finished while the overrunning one was killed" ;;
+  *'"index":"1"'*) echo "PASS C: index 1 completed while index 0 hit its deadline" ;;
   *) bad "C: index 1 has no result — the deadline took the sweep down with the slow task (got: ${r:-<empty>})" ;;
 esac
 kubectl delete job humaneval-stub-dl --wait=false >/dev/null 2>&1
@@ -141,12 +141,12 @@ rm -f "$C_ARGS"
 # ── D: the API server accepts the name the chart mints ───────────────────────
 # The chart sanitises a per-task id into an RFC-1123 name; only the API server
 # can say whether it got it right. --dry-run=server validates without running.
-step "D: a per-task id carrying '_' renders a name the API server accepts"
+step "D: RFC-1123 Job name for a per-task id containing _"
 D_ARGS=$(argsfile 'true')
 if render underscore "$D_ARGS" --set task=sympy__sympy-24066 --set perTask=true \
      --set outputSubPath=runs/humaneval/stub/stub/us --set runId=r1 |
    kubectl apply --dry-run=server -f - >/dev/null 2>&1; then
-  echo "PASS D: sympy__sympy-24066 → a name the API server admits"
+  echo "PASS D: sympy__sympy-24066 accepted by the API server"
 else
   bad "D: the API server rejected the Job name minted for sympy__sympy-24066"
   render underscore "$D_ARGS" --set task=sympy__sympy-24066 --set perTask=true \
@@ -159,7 +159,7 @@ rm -f "$D_ARGS"
 # The claim the runId exists for, and the one every launcher used to get wrong by
 # composing a leaf that never changed. Same benchmark, same agent, same model,
 # same prefix — twice. Both results must still be there.
-step "E: two runs of one combo keep their own results"
+step "E: runId isolates two runs of one combo"
 ROOT_E=runs/humaneval/stub/stub
 # shellcheck disable=SC2016
 E_ARGS=$(argsfile 'mkdir -p /output/task &&
@@ -182,7 +182,7 @@ for id in first second; do
   esac
 done
 if [ "$fail" -eq 0 ]; then
-  echo "PASS E: both runs of one combo kept their own results"
+  echo "PASS E: both run roots present, neither overwritten"
 fi
 rm -f "$E_ARGS"
 
@@ -191,7 +191,7 @@ rm -f "$E_ARGS"
 # because it is easy to read back. The claim branch of outputVolume has never run
 # on a cluster, so run one Job through it and read the result out of the volume
 # with a reader pod — the same way deploy/eval-reader-pod.yaml does.
-step "F: results land in a PersistentVolumeClaim"
+step "F: output on a PersistentVolumeClaim"
 kubectl apply -f - >/dev/null <<'PVC'
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -225,7 +225,7 @@ case "$got" in
     kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/pvc-reader --timeout=60s >/dev/null 2>&1
     r=$(kubectl logs pvc-reader 2>/dev/null)
     case "$r" in
-      *'"where":"pvc"'*) echo "PASS F: the run's result is in the claim after the Job is gone" ;;
+      *'"where":"pvc"'*) echo "PASS F: result readable from the claim after Job deletion" ;;
       *) bad "F: nothing readable in the claim (got: ${r:-<empty>})" ;;
     esac ;;
   *) bad "F: the claim-backed Job ended '$got'"; diagnose humaneval-stub-task-0-pvc ;;
@@ -236,7 +236,7 @@ rm -f "$F_ARGS"
 # queueName is how every launcher hands admission to something else — the
 # dashboard's admitter unsuspends within a namespace-wide budget. If the chart
 # stopped suspending, every launch would start at once and blow the budget.
-step "G: a queued Job is suspended until something admits it"
+step "G: queueName suspends until admitted"
 # shellcheck disable=SC2016
 G_ARGS=$(argsfile 'mkdir -p /output/task && printf %s "{\"admitted\":true}" > /output/task/result.json')
 render queued "$G_ARGS" --set task=0 --set outputSubPath=runs/humaneval/stub/stub \
@@ -252,7 +252,7 @@ else
   kubectl patch job humaneval-stub-task-0-q --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
   got=$(settle humaneval-stub-task-0-q 120)
   case "$got" in
-    *Complete*) echo "PASS G: suspended until admitted, then ran" ;;
+    *Complete*) echo "PASS G: suspended with 0 pods, ran on unsuspend" ;;
     *) bad "G: the Job did not run once unsuspended (ended '$got')"; diagnose humaneval-stub-task-0-q ;;
   esac
 fi

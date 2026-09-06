@@ -32,7 +32,7 @@ RUN=r1
 . "$ROOT/tests/e2e/_lib.sh"
 require_tools
 
-step "build the eval image (agents-smoke + mock)"
+step "build eval image (agents-smoke + mock)"
 build_stubs gateway otel
 docker build -q --load -t eval-e2e/mock:latest "$ROOT/containers/agents/mock" >/dev/null || exit 1
 # The combination image is what a launcher actually runs: benchmark base, the
@@ -43,10 +43,10 @@ docker build -q --load -t eval-e2e/eval:latest \
   --build-arg AGENT_IMAGE=eval-e2e/mock:latest \
   "$ROOT/containers/core" >/dev/null || { echo "combination build failed"; exit 1; }
 
-step "create the cluster"
+step "create cluster"
 start_cluster eval-e2e/eval:latest eval-e2e/gateway:stub eval-e2e/otel:stub
 
-step "run it"
+step "run the eval"
 helm template real "$CHART" \
   --set benchmark=agents-smoke --set agent=mock --set task=0 \
   --set otelImage=eval-e2e/otel:stub \
@@ -62,7 +62,7 @@ case "$(settle agents-smoke-mock-task-0 180)" in
   *) bad "the eval did not complete"; diagnose agents-smoke-mock-task-0; exit 1 ;;
 esac
 
-step "is everything it should have written there?"
+step "check the output contract"
 # The contract the dashboard reads. Each file has a distinct writer, so a missing
 # one names which part of the machinery stopped: the grader, write-result, or the
 # runner's log capture.
@@ -118,6 +118,6 @@ case "$out" in
   *"mock agent"*) bad "stderr leaked into agent/stdout.log — the two streams are not being kept apart" ;;
 esac
 
-[ "$fail" -eq 0 ] && echo "PASS: a real eval left every artifact the dashboard reads"
+[ "$fail" -eq 0 ] && echo "PASS: all output-contract artifacts present"
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
 [ "$fail" -eq 0 ]

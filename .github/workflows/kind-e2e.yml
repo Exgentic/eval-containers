@@ -43,7 +43,7 @@ concurrency:
 
 jobs:
   cluster-contract:
-    name: what only a cluster can settle
+    name: Chart contract (kind)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -57,11 +57,11 @@ jobs:
           # only to install the binaries at a pinned version.
           install_only: true
 
-      - name: what only a cluster can settle
+      - name: Chart contract
         run: bash tests/e2e/cluster-contract.sh
 
   real-eval:
-    name: a real eval leaves what it should
+    name: Real eval (agents-smoke / mock)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -72,5 +72,5 @@ jobs:
           cluster_name: eval-real
           install_only: true
 
-      - name: a real eval leaves what it should
+      - name: Real eval
         run: bash tests/e2e/real-eval.sh
