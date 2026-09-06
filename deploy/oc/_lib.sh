@@ -2,6 +2,10 @@
 # shellcheck disable=SC2034  # NS_DEFAULT/REPO_DIR are read by the scripts that source this
 # deploy/oc/_lib.sh — shared defaults + the name-flatten helper, sourced by the scripts.
 
+# The cross-platform half (model_slug): one home, so the two wrappers cannot drift.
+# shellcheck source=../_lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib.sh"
+
 NS_DEFAULT="exgentic-ns"
 # This lib lives at deploy/oc/, so the repo root is two levels up.
 REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"

@@ -3,7 +3,7 @@
 # then assert on the PVC output (result written, agent exit 0, gen_ai traces).
 # Exits non-zero on the first failed check.
 #
-#   ./oc/test.sh --benchmark aime --agent codex --model openai/azure/gpt-5.4
+#   ./oc/test.sh --benchmark aime --agent codex --model azure/gpt-5-mini
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"
@@ -28,8 +28,8 @@ fail() { echo "[test] FAIL: $*" >&2; exit 1; }
 
 # Isolated run: job <b>-<a>-task-<t><suffix>, results under runs<suffix>/.
 JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"
-# Results are keyed by the model's clean label — run.sh writes the same path.
-RESULT="/data/runs${SUFFIX}/${BENCHMARK}/${AGENT}/${MODEL##*/}/${TASK}/${JOB}"
+# Results are keyed by the model's slug — run.sh writes the same path.
+RESULT="/data/runs${SUFFIX}/${BENCHMARK}/${AGENT}/$(model_slug "$MODEL")/${TASK}/${JOB}"
 read_file() { oc exec eval-reader -n "$NAMESPACE" -- cat "$1" 2>/dev/null || true; }
 
 echo "[test] running $BENCHMARK/$AGENT/$MODEL task=$TASK (isolated $SUFFIX) …"

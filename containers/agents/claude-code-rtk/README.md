@@ -21,7 +21,7 @@ Identical UX to `claude-code`:
 
 ```bash
 eval-containers run swe-bench --agent claude-code-rtk \
-  --model openai/azure/gpt-5.4 --task-id sympy_1776_sympy-24066 --local
+  --model openai/gpt-5.4 --task-id sympy_1776_sympy-24066 --local
 ```
 
 ## Verification

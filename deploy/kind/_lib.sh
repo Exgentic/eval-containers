@@ -2,6 +2,10 @@
 # shellcheck disable=SC2034  # CLUSTER_DEFAULT/REGISTRY_DEFAULT/OUTPUT_HOSTPATH/REPO_DIR are read by the scripts that source this
 # deploy/kind/_lib.sh — shared defaults + kind image-load helpers, sourced by the scripts.
 
+# The cross-platform half (model_slug): one home, so the two wrappers cannot drift.
+# shellcheck source=../_lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib.sh"
+
 CLUSTER_DEFAULT="eval"                 # kind cluster name (kubectl context is kind-<name>)
 REGISTRY_DEFAULT="ghcr.io/exgentic"    # nested-path refs the chart composes by default (no flatImages)
 OUTPUT_HOSTPATH="/eval-output"         # node-local output dir (values.yaml: outputVolume.hostPath.path)
@@ -10,6 +14,8 @@ REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
 # The container name kind gives a single control-plane node.
 kind_node() { echo "$1-control-plane"; }   # arg: cluster name
+
+
 
 # The three Job image refs for a (benchmark, agent, gatewayImage[, task]) tuple —
 # nested ghcr paths, tag latest, matching the chart's _helpers.tpl composition

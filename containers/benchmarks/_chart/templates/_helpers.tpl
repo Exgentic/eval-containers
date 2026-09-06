@@ -27,9 +27,12 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- end -}}
 
 {{/* The runner's clean model name: the last segment of the <provider>/<model>
-     handle (openai/gpt-5.4 → gpt-5.4). The agent + k8s labels get this, not the
-     slashed handle (k8s label values forbid `/`; some agent CLIs reject a
-     provider-prefixed name). The gateway gets the full handle for routing. */}}
+     handle (openai/gpt-5.4 → gpt-5.4). The AGENT gets this — some agent CLIs
+     reject a provider-prefixed name — while the gateway gets the full handle
+     for routing, and the k8s label gets it too (label values forbid `/` and cap
+     at 63 chars, so they can't carry a handle). The RESULTS PATH is the one
+     place that needs the whole handle, and it takes it from `outputSubPath`,
+     which the caller slugs. */}}
 {{- define "eval.modelLabel" -}}{{ .model | splitList "/" | last }}{{- end -}}
 
 {{/* Shared labels: benchmark/agent/model, sweep-id + Kueue queue only when set.

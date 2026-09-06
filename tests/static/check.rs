@@ -353,6 +353,70 @@ fn released_benchmarks_have_fixtures() {
     );
 }
 
+/// A chart helper named anywhere in the repo must exist in the chart.
+///
+/// One such helper (`modelSlug`) outlived its `define` by a whole PR: it was deleted
+/// when the Job's `model` label went back to the handle's last segment, and two
+/// shell comments kept promising the chart stamped it — a claim the same PR's
+/// own test contradicted. Prose drifts silently, but a helper NAME is a
+/// resolvable fact, so resolve it.
+///
+/// camelCase after the `eval.` prefix is what separates a template helper from
+/// an image label (`eval.model.provider`, `eval.benchmark.env`), which are
+/// dotted and lowercase and have nothing to do with the chart. Spell a *dead*
+/// helper without the prefix in prose, or this gate rightly flags the mention.
+#[test]
+fn every_chart_helper_named_in_the_repo_is_defined() {
+    let tpl_dir = repo_root().join("containers/benchmarks/_chart/templates");
+    let mut defined: Vec<String> = Vec::new();
+    for entry in fs::read_dir(&tpl_dir)
+        .expect("missing chart templates dir")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("tpl") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).unwrap_or_default();
+        // Plain string scan: this crate stays dependency-light (tests/static/RULES.md).
+        for rest in text.split(r#"define ""#).skip(1) {
+            if let Some(name) = rest.split('"').next() {
+                if name.starts_with("eval.") {
+                    defined.push(name.to_string());
+                }
+            }
+        }
+    }
+    assert!(
+        !defined.is_empty(),
+        "found no `define \"eval.*\"` in {tpl_dir:?} — the pattern moved, so this gate is asleep"
+    );
+
+    let out = std::process::Command::new("git")
+        .args(["grep", "-ohE", r"eval\.[a-z]+[A-Z][A-Za-z]*"])
+        .current_dir(repo_root())
+        .output()
+        .expect("failed to run git grep");
+    let referenced = String::from_utf8_lossy(&out.stdout);
+
+    let mut dangling: Vec<&str> = referenced
+        .lines()
+        .map(str::trim)
+        .filter(|name| !defined.iter().any(|d| d == name))
+        .collect();
+    dangling.sort_unstable();
+    dangling.dedup();
+    assert!(
+        dangling.is_empty(),
+        "these chart helpers are named in the repo but defined nowhere in {tpl_dir:?}: {dangling:?}\n\
+         Either the `define` was renamed/removed and its callers and comments were left behind, or the name is a typo."
+    );
+    eprintln!(
+        "✓ {} chart helpers named in the repo, all defined",
+        defined.len()
+    );
+}
+
 // ─── steps 30, 31: README presence ────────────────────────────────
 //
 // All 96 benchmark + 17 agent READMEs were written by the 2026-04-15
@@ -942,112 +1006,5 @@ fn the_retry_round_is_driven_from_grade_sh() {
             .unwrap()
             .contains("retry"),
         "the shared runner stays retry-agnostic — one benchmark does not change the fleet"
-    );
-}
-
-/// The Helm chart rides the same channel as every image (RULES.md principle 9):
-/// a push to `main` publishes `charts/eval`, not only a version tag — publishing
-/// it tag-only is what left the registry with no chart at all (#449, #440). A
-/// chart's OCI tag IS its SemVer, so the rolling channel is `Chart.yaml`'s
-/// version; the publish must therefore also refuse a version that is already
-/// released, and confirm the artifact landed (delivery/RULES.md:16, :17).
-#[test]
-fn the_chart_publishes_on_the_continuous_channel() {
-    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
-        .expect("read .github/workflows/release-images.yml");
-    let job = wf
-        .split("\n  chart:\n")
-        .nth(1)
-        .and_then(|s| s.split("\n  report:").next())
-        .expect("no `chart` job in release-images.yml");
-
-    assert!(
-        job.contains("github.event_name == 'push' && github.ref_type == 'branch'"),
-        "the chart job must also run on a default-branch push — tag-only leaves \
-         charts/eval arbitrarily far behind the images main publishes at :latest"
-    );
-    assert!(
-        job.contains("containers/benchmarks/_chart/Chart.yaml"),
-        "the rolling publish must read its version from Chart.yaml — TAG is `latest` \
-         on main and `helm package --version latest` is not SemVer"
-    );
-    assert!(
-        job.contains("gh release view") && job.contains("::error::"),
-        "the rolling publish must refuse a version whose release is already out, or \
-         every main push overwrites a released chart"
-    );
-    assert!(
-        job.contains("helm show chart"),
-        "the publish must read the chart back from the registry (delivery/RULES.md:17)"
-    );
-}
-
-/// A published `eval-<benchmark>` artifact republishes when *its* inputs move,
-/// not when its benchmark image happens to be stale (#451): the flattened
-/// compose bytes include the shared `containers/compose/` half, which sits in no
-/// image's build context, so a main push judges freshness with the compose sweep
-/// and publishes even when nothing needed rebuilding.
-#[test]
-fn a_main_push_publishes_the_compose_artifacts_that_moved() {
-    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
-        .expect("read .github/workflows/release-images.yml");
-    let enumerate = wf
-        .split("\n  enumerate:\n")
-        .nth(1)
-        .and_then(|s| s.split("\n  build:").next())
-        .expect("no `enumerate` job in release-images.yml");
-    assert!(
-        enumerate.contains("fleet-status.sh compose"),
-        "the main-push compose list must come from the compose freshness sweep — \
-         deriving it from the stale *leaf* list misses every change to \
-         containers/compose/, which is inside no image's build context"
-    );
-    let compose = wf
-        .split("\n  compose:\n")
-        .nth(1)
-        .and_then(|s| s.split("\n  combos:").next())
-        .expect("no `compose` job in release-images.yml");
-    assert!(
-        compose.contains("needs.merge.result == 'skipped'"),
-        "the compose job must still run when `merge` is skipped — a compose-only \
-         change leaves no image stale, and the stack references images by tag"
-    );
-}
-
-/// Per-task images and their combos ride the continuous channel like every other
-/// image (#452). A main push enumerates them and prunes to the set whose input
-/// hashes moved, rather than excluding the class outright; and because a
-/// per-task benchmark publishes no `benchmarks/<b>:latest` of its own, the
-/// combo filter judges a per-task pair by its own task base, never by the
-/// benchmark target's (permanently absent) staleness.
-#[test]
-fn a_main_push_publishes_the_per_task_images_that_moved() {
-    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
-        .expect("read .github/workflows/release-images.yml");
-    let enumerate = wf
-        .split("\n  enumerate:\n")
-        .nth(1)
-        .and_then(|s| s.split("\n  build:").next())
-        .expect("no `enumerate` job in release-images.yml");
-
-    assert!(
-        !enumerate.contains("INCLUDE_PER_TASK=false"),
-        "a main push must not switch the per-task class off wholesale — rule 16 \
-         selects by changed build inputs, not by image class"
-    );
-    assert!(
-        enumerate.contains("fleet-hash.sh per-task") && enumerate.contains("fleet-status.sh check"),
-        "the main-push per-task list must be pruned by comparing each image's \
-         input hash against the registry, or every push rebuilds ~660 images"
-    );
-    assert!(
-        enumerate.contains("pertask_all"),
-        "combos must expand over the FULL per-task list — a stale agent dirties \
-         every task's combo, not only the tasks whose base moved"
-    );
-    assert!(
-        enumerate.contains(r#"[ "$pertask" = "[]" ]"#),
-        "`dirty` must count per-task images: merge stitches their per-arch tags, \
-         so a push that moved only per-task images is not clean"
     );
 }

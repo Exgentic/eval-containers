@@ -59,7 +59,7 @@ Secret in place. Flags: `--cluster <name>` (default `eval`), `--namespace <ns>`,
 ## 4. Submit an eval
 
 ```bash
-./deploy/kind/run.sh --benchmark aime --agent claude-code --model openai/azure/gpt-5.4 --task 0 --watch
+./deploy/kind/run.sh --benchmark aime --agent claude-code --model openai/gpt-5.4 --task 0 --watch
 ```
 
 `--model` is the upstream `<provider>/<model>` handle; which proxy serves it is

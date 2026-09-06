@@ -2,8 +2,8 @@
 # sweep.sh — loop run.sh over a benchmark×agent grid, each cell a dataset Indexed
 # Job tagged sweep-id=<id>. Flags: see the case block. Default grid: the *.txt.
 #
-#   ./oc/sweep.sh --model openai/azure/gpt-5.4 --benchmarks "aime gsm8k"  # each auto-sized
-#   ./oc/sweep.sh --model openai/azure/gpt-5.4 --dataset-size 50          # uniform cap
+#   ./oc/sweep.sh --model azure/gpt-5-mini --benchmarks "aime gsm8k"  # each auto-sized
+#   ./oc/sweep.sh --model azure/gpt-5-mini --dataset-size 50          # uniform cap
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"
