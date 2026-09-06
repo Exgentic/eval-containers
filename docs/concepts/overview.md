@@ -48,7 +48,7 @@ The result lands as `result.json`, with the primary metric named `reward`.
 Every image has a reproducible default and two independent version knobs:
 
 - **Container version** — *which image to pull* — set by the image **tag**
-  (`EVAL_BENCHMARK_TAG`, `EVAL_AGENT_TAG`, `EVAL_MODEL_TAG`).
+  (`EVAL_BENCHMARK_TAG`, `EVAL_AGENT_TAG`, `EVAL_GATEWAY_TAG`).
 - **Internal version** — *what runs inside* — set at runtime
   (`EVAL_BENCHMARK_VERSION`, `EVAL_AGENT_VERSION`, `EVAL_LITELLM_VERSION`).
 

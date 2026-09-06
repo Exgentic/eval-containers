@@ -197,6 +197,37 @@ fn extract_count_before(text: &str, suffix: &str) -> Option<u32> {
     None
 }
 
+/// A preset is mergeOverwrite'd ON TOP of .Values, so `--set timeout=` loses to any
+/// benchmark that pins one — the override renders as applied but the Job keeps the
+/// preset value, which silently runs an agent on the wrong budget. `timeoutOverride`
+/// is the escape hatch; this pins the three pieces that make it work so a refactor
+/// cannot quietly drop it.
+#[test]
+fn timeout_override_beats_a_preset() {
+    let read =
+        |p: &str| fs::read_to_string(repo_root().join(p)).unwrap_or_else(|_| panic!("missing {p}"));
+    let helpers = read("containers/benchmarks/_chart/templates/_helpers.tpl");
+    assert!(
+        helpers.contains("timeoutOverride"),
+        "_helpers.tpl eval.values must honour timeoutOverride — without it a preset's \
+         timeout cannot be overridden per run"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("timeoutOverride: \"\""),
+        "_chart/values.yaml must ship `timeoutOverride: \"\"` — empty default, preset applies"
+    );
+    // The comment inside eval.values must be trimmed: that define's output is parsed
+    // as YAML by its callers, so an untrimmed {{/* … */}} injects a blank line and
+    // breaks `helm lint` (observed).
+    assert!(
+        !helpers.contains("{{/* `timeout` is the one preset key"),
+        "the timeoutOverride comment must use {{- /* … */ -}}; an untrimmed comment in \
+         eval.values emits a newline into YAML the callers parse"
+    );
+
+    eprintln!("✓ timeoutOverride: helper honours it, values.yaml defaults empty, comment trimmed");
+}
+
 #[test]
 fn count_reconciliation() {
     let claims = readme_counts();
@@ -466,11 +497,11 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 
 /// The model axis supports BOTH paths, with the generic gateway as the default
 /// (models/RULES.md rule 1, #187):
-///   - **Generic** (default): `EVAL_GATEWAY_IMAGE=bifrost` routes whatever
+///   - **Generic** (default): `EVAL_GATEWAY=bifrost` routes whatever
 ///     `EVAL_MODEL=<provider>/<model>` you set — any LiteLLM model, zero build.
 ///     The generic image errors on an empty handle, so there is no compose-level
 ///     default model (no silent fallback).
-///   - **Pinned** (opt-in): a per-model image (`EVAL_GATEWAY_IMAGE=<model>`) bakes
+///   - **Pinned** (opt-in): a per-model image (`EVAL_GATEWAY=<model>`) bakes
 ///     its model + custom config — a shared, versioned artifact. Allowed, not forbidden.
 #[test]
 fn model_axis_generic_default_no_silent_model() {
@@ -479,7 +510,7 @@ fn model_axis_generic_default_no_silent_model() {
 
     // Generic gateway is the DEFAULT proxy.
     assert!(
-        svc.contains("${EVAL_GATEWAY_IMAGE:-bifrost}"),
+        svc.contains("${EVAL_GATEWAY:-bifrost}"),
         "services.yaml gateway must default to the generic `bifrost` proxy (#187)"
     );
     // No silent fallback model: the compose never bakes a default EVAL_MODEL — an
