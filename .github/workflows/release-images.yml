@@ -1082,12 +1082,14 @@ jobs:
   # (delivery/release/SKILL.md step 9).
   chart:
     needs: [release-gate]
-    # Versioned channel: the tag, after the CVE gate. Continuous channel: a push
-    # to the default branch, where release-gate does not run at all.
+    # The versioned channel only: a release chart must not publish until the CVE
+    # gate has passed, and that gate is this pipeline's. The continuous channel
+    # moved to publish-chart.yml — behind `needs: [release-gate]` a two-line
+    # chart change waited on a whole fleet build, so consumers rendering the
+    # published chart were reading one hours behind main.
     if: >-
-      always() && !inputs.dry_run &&
-      ((needs.release-gate.result == 'success' && (github.ref_type == 'tag' || inputs.tag != ''))
-      || (github.event_name == 'push' && github.ref_type == 'branch'))
+      always() && !inputs.dry_run && needs.release-gate.result == 'success' &&
+      (github.ref_type == 'tag' || inputs.tag != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -1097,13 +1099,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           ver="${TAG#v}"
-          if [ "$TAG" = latest ]; then
-            ver=$(grep -m1 '^version: ' containers/benchmarks/_chart/Chart.yaml | awk '{print $2}')
-            if [ "$(gh release view "v$ver" --json isDraft -q .isDraft 2>/dev/null)" = false ]; then
-              echo "::error::v$ver is released and immutable — bump Chart.yaml + cli/Cargo.toml to the next dev version"
-              exit 1
-            fi
-          fi
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
           helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
           helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"
