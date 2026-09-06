@@ -58,7 +58,7 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 ## References
 
 - [Process](../RULES.md) — principle 9 (the one-version policy and version knobs); principle 13 (self-contained repo).
-- [Repository, Naming & Output](../compose/RULES.md) — rule 5 (version tags).
+- [Repository, Naming & Compose](../compose/RULES.md) — rule 5 (version tags).
 - [`release` skill](release/SKILL.md) — the procedure these outcomes constrain.
 - [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/) — the format principles 10–11 constrain `CHANGELOG.md` to.
 
