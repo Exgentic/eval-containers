@@ -88,9 +88,10 @@ outputSubPath: ""
 # — a real eval names a volume.
 ephemeral: false
 
-# A unique id for THIS run, appended to outputSubPath so two runs of one
-# benchmark/agent/model never write to the same directory (see eval.outputRoot).
-# Required unless `ephemeral`. Any unique string: `$(date -u +%Y%m%d-%H%M%S)-$RANDOM`.
+# An id for THIS run, appended to outputSubPath when set, so two runs of one
+# benchmark/agent/model land in their own directories (see eval.outputRoot).
+# Optional — a caller that composes its own unique leaf needs nothing here. Any
+# unique string: `$(date -u +%Y%m%d-%H%M%S)-$RANDOM`.
 runId: ""
 
 # ── Sweep model: a dataset eval is ONE Indexed Job ───────────────────────────
