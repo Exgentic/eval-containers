@@ -1,7 +1,9 @@
 # mock
 
-A deterministic agent. It reads `$TASK`, writes a fixed answer to stdout, a line
-to stderr, and exits 0 — no model, no network, no state.
+A deterministic agent. It makes one GET at `$OPENAI_BASE_URL/v1/models` to see
+whether the endpoint it was given is reachable, reports `gateway:up|down|unprobed`
+and a fixed answer on stdout, a line on stderr, and exits 0. No model call, no
+state.
 
 It exists so a test can assert what the machinery *around* an agent produces:
 `task/result.json`, `agent/result.json` (including the exit code),

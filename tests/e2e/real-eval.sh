@@ -8,6 +8,10 @@
 # the real combination image, the real entrypoint, the real grader — and checks
 # each artifact the dashboard later reads.
 #
+# The agent makes no model call — recorded traffic and real traces are the replay
+# suite's job — but it does probe its endpoint, so this also settles that the
+# gateway sidecar is reachable from the runner on localhost:4000.
+#
 # It is affordable because both halves are the smallest of their kind:
 # benchmarks/agents-smoke (~33 MB, unconditional-pass grader) and agents/mock (a
 # deterministic agent that calls nothing). Their combination is ~35 MB. Nothing
@@ -108,6 +112,15 @@ err=$(docker exec "$NODE" cat "$OUT/$SUB/$RUN/agent/stderr.log" 2>/dev/null)
 case "$out" in
   *"OK"*) ;;
   *) bad "agent/stdout.log did not capture the agent's answer (got: ${out:-<empty>})" ;;
+esac
+# The agent reached the gateway at the address the chart handed it. That is the
+# first thing every real agent does and the first thing that breaks: a sidecar
+# the runner cannot reach on localhost:4000 fails every run for one reason and
+# reports it as the agent's fault.
+case "$out" in
+  *"gateway:up"*) ;;
+  *"gateway:unprobed"*) bad "the base image had no HTTP client, so the endpoint was never probed" ;;
+  *) bad "the agent could not reach the gateway at its OPENAI_API_BASE (got: ${out:-<empty>})" ;;
 esac
 case "$err" in
   *"mock agent"*) ;;
