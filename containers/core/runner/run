@@ -54,7 +54,7 @@ export TASK="${TASK:-}"
 if [ "${EVAL_INTERNET:-}" = "false" ]; then
   TASK="$TASK
 
-No internet connection is required for this benchmark. Do not try to access the internet in any way."
+No internet connection is required for this task. Do not try to access the internet in any way."
   export TASK
 fi
 # Defensive fallback (agent uid baked into image at build time).
