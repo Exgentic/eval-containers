@@ -21,6 +21,7 @@ LABEL eval.benchmark.description="APPS - Python coding problems across 3 difficu
 LABEL eval.benchmark.tasks="5000"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="21e74ddf8de1a21436da12e3e653065c5213e9d1"
 LABEL eval.benchmark.url="https://github.com/hendrycks/apps"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2105.09938"

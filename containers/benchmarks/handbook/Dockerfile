@@ -32,6 +32,7 @@ LABEL eval.benchmark.description="HANDBOOK.md - long-context agentic instruction
 LABEL eval.benchmark.tasks="65"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/surge-ai/handbook"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2607.25398"
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"

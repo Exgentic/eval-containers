@@ -45,6 +45,7 @@ LABEL eval.benchmark.description="Cybench - CTF cybersecurity tasks, built from 
 LABEL eval.benchmark.tasks="40"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/andyzorigin/cybench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2408.08926"
 ENV EVAL_BENCHMARK=cybench

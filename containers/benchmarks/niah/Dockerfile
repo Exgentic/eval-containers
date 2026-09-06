@@ -84,6 +84,7 @@ LABEL eval.benchmark.description="Needle in a Haystack - long-context retrieval 
 LABEL eval.benchmark.tasks="63"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="7b90d285651b68d39a94f3d3bd3672f84192c989"
 LABEL eval.benchmark.url="https://github.com/gkamradt/LLMTest_NeedleInAHaystack"
 

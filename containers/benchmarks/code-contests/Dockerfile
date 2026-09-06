@@ -31,6 +31,7 @@ LABEL eval.benchmark.description="CodeContests - DeepMind competitive programmin
 LABEL eval.benchmark.tasks="165"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="802411c3010cb00d1b05bad57ca77365a3c699d6"
 LABEL eval.benchmark.url="https://github.com/google-deepmind/code_contests"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.07814"

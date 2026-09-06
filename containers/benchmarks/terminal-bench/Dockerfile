@@ -19,6 +19,7 @@ LABEL eval.benchmark.name="terminal-bench"
 LABEL eval.benchmark.tasks="89"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="true"
+ENV EVAL_INTERNET=true
 LABEL eval.benchmark.url="https://github.com/harbor-framework/terminal-bench-2-1"
 # EVAL_TASK_ID is consumed here (the per-task marker, benchmarks/RULES.md 24a/24f).
 # TBENCH_TASK pins the real task name for solution.sh: the oracle/runner override

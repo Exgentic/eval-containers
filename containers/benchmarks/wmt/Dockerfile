@@ -52,6 +52,7 @@ LABEL eval.benchmark.description="WMT24++ - multilingual machine translation fro
 LABEL eval.benchmark.tasks="9600"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="e65f5856b1de3319c748c15e5aec0bc2336ec3b0"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/google/wmt24pp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.12404"

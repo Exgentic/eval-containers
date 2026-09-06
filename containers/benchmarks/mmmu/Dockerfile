@@ -74,6 +74,7 @@ LABEL eval.benchmark.description="MMMU - massive multi-discipline multimodal und
 LABEL eval.benchmark.tasks="900"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${MMMU_REVISION}"
 LABEL eval.benchmark.url="https://github.com/MMMU-Benchmark/MMMU"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmmu"

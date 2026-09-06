@@ -55,6 +55,7 @@ LABEL eval.benchmark.tasks="3088"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.modality="multimodal"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="c83a9b9692933aff8349157c88a413df9d02c4e5"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/lmms-lab/ai2d"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1603.07396"

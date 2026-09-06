@@ -70,6 +70,7 @@ LABEL eval.benchmark.description="LiveCodeBench - competitive programming from r
 LABEL eval.benchmark.tasks="880"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
 LABEL eval.benchmark.url="https://github.com/LiveCodeBench/LiveCodeBench"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/livecodebench"

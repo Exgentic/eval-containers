@@ -19,6 +19,7 @@ LABEL eval.benchmark.description="MedMCQA - multi-subject multi-choice medical e
 LABEL eval.benchmark.tasks="4183"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="91c6572c454088bf71b679ad90aa8dffcd0d5868"
 LABEL eval.benchmark.url="https://github.com/MedMCQA/MedMCQA"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.14371"

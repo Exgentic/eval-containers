@@ -13,12 +13,21 @@ label(key, quoted_value) := {
 	"Value": [key, quoted_value, "="],
 }
 
+# Helper: an ENV instruction object for one key/value (value NOT quoted, unlike
+# LABEL — matches buildkit's actual parse shape).
+env(key, value) := {
+	"Cmd": "env",
+	"Flags": [],
+	"Value": [key, value, "="],
+}
+
 complete_benchmark := [
 	label("eval.type", `"benchmark"`),
 	label("eval.benchmark.name", `"x"`),
 	label("eval.benchmark.env", `"shared-env"`),
 	label("eval.benchmark.tasks", `"10"`),
 	label("eval.benchmark.internet", `"false"`),
+	env("EVAL_INTERNET", "false"),
 ]
 
 complete_agent := [
@@ -60,6 +69,45 @@ test_benchmark_missing_internet_denies if {
 	count(deny) == 1 with input as missing
 }
 
+# ── internet label/ENV agreement (benchmarks/RULES.md 21c) ───────────
+
+test_internet_label_without_env_denies if {
+	missing_env := [
+		label("eval.type", `"benchmark"`),
+		label("eval.benchmark.name", `"x"`),
+		label("eval.benchmark.env", `"shared-env"`),
+		label("eval.benchmark.tasks", `"10"`),
+		label("eval.benchmark.internet", `"false"`),
+	]
+	count(deny) == 1 with input as missing_env
+}
+
+test_internet_label_env_disagreement_denies if {
+	disagreeing := [
+		label("eval.type", `"benchmark"`),
+		label("eval.benchmark.name", `"x"`),
+		label("eval.benchmark.env", `"shared-env"`),
+		label("eval.benchmark.tasks", `"10"`),
+		label("eval.benchmark.internet", `"false"`),
+		env("EVAL_INTERNET", "true"),
+	]
+	count(deny) > 0 with input as disagreeing
+}
+
+# The ARG-driven form (one ARG feeds both, so they read identically as
+# "${EVAL_INTERNET}" — no ARG resolution needed to see they agree).
+test_internet_label_env_argdriven_passes if {
+	argdriven := [
+		label("eval.type", `"benchmark"`),
+		label("eval.benchmark.name", `"x"`),
+		label("eval.benchmark.env", `"shared-env"`),
+		label("eval.benchmark.tasks", `"10"`),
+		label("eval.benchmark.internet", `"${EVAL_INTERNET}"`),
+		env("EVAL_INTERNET", "${EVAL_INTERNET}"),
+	]
+	count(deny) == 0 with input as argdriven
+}
+
 # ── agent contract ──────────────────────────────────────────────────
 
 test_complete_agent_passes if {
@@ -98,16 +146,19 @@ test_agent_version_buildarg_passes if {
 # extractor must still see both keys.
 
 test_multi_label_line_is_unpacked if {
-	multi := [{
-		"Cmd": "label",
-		"Flags": [],
-		"Value": [
-			"eval.type", `"benchmark"`, "=",
-			"eval.benchmark.name", `"x"`, "=",
-			"eval.benchmark.env", `"shared-env"`, "=",
-			"eval.benchmark.tasks", `"10"`, "=",
-			"eval.benchmark.internet", `"false"`, "=",
-		],
-	}]
+	multi := [
+		{
+			"Cmd": "label",
+			"Flags": [],
+			"Value": [
+				"eval.type", `"benchmark"`, "=",
+				"eval.benchmark.name", `"x"`, "=",
+				"eval.benchmark.env", `"shared-env"`, "=",
+				"eval.benchmark.tasks", `"10"`, "=",
+				"eval.benchmark.internet", `"false"`, "=",
+			],
+		},
+		env("EVAL_INTERNET", "false"),
+	]
 	count(deny) == 0 with input as multi
 }

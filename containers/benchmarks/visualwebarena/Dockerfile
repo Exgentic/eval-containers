@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="VisualWebArena - multimodal web agent tasks wi
 LABEL eval.benchmark.tasks="910"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/web-arena-x/visualwebarena"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2401.13649"
 

@@ -18,6 +18,7 @@ LABEL eval.benchmark.description="HumanEval+ - EvalPlus augmented HumanEval with
 LABEL eval.benchmark.tasks="164"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="d32357cf319e50e9c8d8dab5ea876c72b0fd321b"
 LABEL eval.benchmark.url="https://github.com/evalplus/evalplus"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.01210"
