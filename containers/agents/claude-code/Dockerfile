@@ -37,12 +37,15 @@ export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
 # task ids encode their upstream source, so a web fetch could leak the reference
 # fix. Unset (the default) leaves web tools enabled, so the reproducible no-env
 # run is unchanged (agents rule 12) and the flag stays a generic capability
-# toggle, not benchmark knowledge (rule 4). This is UX, not the isolation
+# toggle, not benchmark knowledge (rule 4). Neither denial is the isolation
 # boundary — benchmarks rule 9 already blocks the agent's raw internet access
-# unconditionally on every benchmark and every surface; denying these tools
-# just makes the agent's own behavior match that reality on the one channel
-# (its own LLM-provider-mediated web tools) network isolation can't reach,
-# instead of leaving the agent to hit a confusing failure.
+# unconditionally on every benchmark and every surface, WebFetch included, so
+# denying it just avoids a call bound to fail instead of a confusing failure.
+# WebSearch is different: its search runs server-side through the LLM
+# provider, not as a socket the agent opens, so it's the one channel network
+# isolation can't reach — denying it client-side is currently the only lever
+# there, and only a temporary mitigation (blocking it at the gateway is the
+# real fix, tracked separately).
 DENY_WEB=""
 if [ "${EVAL_INTERNET:-}" = "false" ]; then DENY_WEB="--disallowed-tools WebSearch,WebFetch"; fi
 # `--`: a task beginning with "--" is otherwise parsed as an option, and the

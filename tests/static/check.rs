@@ -661,8 +661,8 @@ fn reasoning_effort_wired_through_to_agents() {
 /// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
 /// run-agent forwards it and WARNS (does not fail) for an agent whose /run.sh
 /// doesn't use it — network isolation (rule 21) holds regardless of agent
-/// support, so an unsupported agent is still a valid pairing, just without the
-/// UX benefit; failing the run would break every existing fixture pairing an
+/// support, so an unsupported agent is still a valid, correctly-isolated
+/// pairing; failing the run would break every existing fixture pairing an
 /// internet=false benchmark with one of the many agents that don't support it.
 #[test]
 fn internet_policy_wired_through_to_agents() {

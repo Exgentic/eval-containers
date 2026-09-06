@@ -83,9 +83,11 @@ that ships the `ENV` carries the policy on every surface automatically.
 **The agent has no internet access by default on every benchmark**, `EVAL_INTERNET`
 notwithstanding: [benchmarks/RULES.md rule 9](../../.agents/benchmarks/RULES.md)
 blocks raw outbound access unconditionally (`internal: true` compose network /
-`iptables` on the standalone bundle / credential isolation on k8s). What
-`EVAL_INTERNET=false` adds on top, for a **supporting agent**, is two things
-that make the *agent's own behavior* match that reality instead of fighting it:
+`iptables` on the standalone bundle / credential isolation on k8s) — this
+already covers a raw-socket tool like `WebFetch`, regardless of `EVAL_INTERNET`.
+What `EVAL_INTERNET=false` adds on top, for a **supporting agent**, is two
+things that make the *agent's own behavior* match that reality instead of
+fighting it:
 
 - the runner tells the agent directly, in the task text, that no internet is
   needed and not to try — so it doesn't burn turns diagnosing or "fixing"
@@ -93,17 +95,20 @@ that make the *agent's own behavior* match that reality instead of fighting it:
 - the agent's own built-in web tools (`WebSearch`/`WebFetch` and equivalents)
   are removed from its tool list rather than left in to fail — a missing tool
   reads as "not available" where a failing one reads as "broken," which
-  invites exactly the diagnose-and-fix behavior above. (Those tools proxy
-  through the LLM provider's gateway route, not raw sockets, so removing them
-  is currently the only lever on that specific channel — network isolation
-  doesn't reach it. Blocking the LLM provider's own web-search tool at the
-  gateway is tracked as future work.)
+  invites exactly the diagnose-and-fix behavior above. For `WebFetch`, network
+  isolation already blocks the call; removing the tool just avoids the
+  confusing failure. For `WebSearch` it's more than cosmetic: that tool's
+  search runs server-side through the LLM provider, not as a socket the agent
+  opens, so network isolation cannot reach it at all — removing the tool
+  client-side is currently the only lever on that one channel, and only a
+  temporary mitigation. Blocking the provider's web-search at the gateway
+  (the real fix) is tracked as future work.
 
 Supported agents: **claude-code, claude-code-rtk**. Selecting a benchmark that
 declares `EVAL_INTERNET=false` with any other agent **warns** (the run still
 completes) rather than silently saying nothing — the pairing is still valid,
 since network isolation (rule 9) holds regardless of agent support; the agent
-just doesn't get the UX benefit of an explicit no-internet note and a pruned
-tool list. Warn, not fail, because the run is still correctly isolated, and
-most of the fleet's agents don't support this yet — most `EVAL_INTERNET=false`
-benchmarks are routinely run with unsupported agents today.
+just doesn't get the explicit no-internet note or the pruned tool list. Warn,
+not fail, because the run is still correctly isolated, and most of the fleet's
+agents don't support this yet — most `EVAL_INTERNET=false` benchmarks are
+routinely run with unsupported agents today.
