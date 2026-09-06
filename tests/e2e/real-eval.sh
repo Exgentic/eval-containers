@@ -16,6 +16,9 @@
 # benchmarks/agents-smoke (~33 MB, unconditional-pass grader) and agents/mock (a
 # deterministic agent that calls nothing). Their combination is ~35 MB. Nothing
 # here is stubbed except the gateway, which mock never talks to.
+# STUB is read by _lib.sh's build_stubs, and `fail` is set there — neither
+# crossing is visible to a shellcheck run that does not follow the source.
+# shellcheck disable=SC2034,SC2154
 set -uo pipefail
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
 CHART="$ROOT/containers/benchmarks/_chart"

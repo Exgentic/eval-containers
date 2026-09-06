@@ -31,6 +31,9 @@
 # wiring, its sidecar ordering and its naming are the real ones. That substitution
 # is what keeps this a per-PR gate; the moment a claim here needs a real agent
 # image it belongs in nightly-*.yml instead.
+# STUB is read by _lib.sh's build_stubs, and `fail` is set there — neither
+# crossing is visible to a shellcheck run that does not follow the source.
+# shellcheck disable=SC2034,SC2154
 set -uo pipefail
 ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
 CHART="$ROOT/containers/benchmarks/_chart"
@@ -44,6 +47,23 @@ OUT=/tmp/eval-e2e-output
 # shellcheck source=tests/e2e/_lib.sh
 . "$ROOT/tests/e2e/_lib.sh"
 require_tools
+
+# Render the real chart with only the images and the runner's command stubbed.
+# $1 is the release/Job name, $2 a values file for runnerArgs, rest extra --sets.
+render() {
+  local name=$1 args=$2; shift 2
+  helm template "$name" "$CHART" \
+    --set benchmark=humaneval --set agent=stub \
+    --set otelImage=eval-e2e/otel:stub \
+    --set gatewayImageRef=eval-e2e/gateway:stub \
+    --set runnerImageRef=eval-e2e/runner:stub \
+    --set outputVolume.hostPath.path="$OUT" \
+    --set outputVolume.hostPath.type=DirectoryOrCreate \
+    -f "$args" "$@"
+}
+
+# runnerArgs rides a values file: helm splits --set on commas and these write JSON.
+argsfile() { local f; f=$(mktemp); printf 'runnerArgs: >-\n  %s\n' "$1" >"$f"; echo "$f"; }
 
 step "build the stubs"
 build_stubs otel gateway runner
