@@ -157,5 +157,33 @@ case "$got" in
      fail=$((fail + 1)) ;;
 esac
 
+# 8. per-task naming is the CHART's to resolve, not the caller's: every name in
+# per-task.json must render evals/<b>-<task>--<a> from `--set benchmark/task`
+# alone, with no `--set perTask`, and a shared-env benchmark must not. This is
+# the whole point of the committed set — a caller that has to remember a flag is
+# a caller that forgets it, and the forgotten render names an image no per-task
+# family publishes (deploy/oc/run.sh never set it; job mode set it from a
+# cwd-relative read). The catalog↔labels half is a cargo test
+# (chart_per_task_set_matches_labels); this is the rendered consequence.
+img() { helm template pt-probe "$CHART" --set benchmark="$1" --set task="$2" \
+  --set ephemeral=true --set runId=r 2>/dev/null |
+  awk '/image:.*\/evals\//{print $2; exit}'; }
+
+while IFS= read -r b; do
+  got=$(img "$b" t0)
+  case "$got" in
+    */evals/"$b"-t0--*) ;;
+    *) echo "FAIL perTask: $b rendered '$got' — expected evals/$b-t0--<agent>; the chart did not resolve its own per-task.json"
+       fail=$((fail + 1)) ;;
+  esac
+done < <(sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p' "$CHART/per-task.json")
+
+got=$(img humaneval 0)
+case "$got" in
+  */evals/humaneval--*) ;;
+  *) echo "FAIL perTask: shared-env humaneval rendered '$got' — expected evals/humaneval--<agent>"
+     fail=$((fail + 1)) ;;
+esac
+
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]
