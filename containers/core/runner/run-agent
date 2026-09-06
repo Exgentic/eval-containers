@@ -26,16 +26,17 @@ if [ -n "${EVAL_AGENT_REASONING_EFFORT:-}" ] && ! grep -q EVAL_AGENT_REASONING_E
 fi
 
 # Warn (not fail) if EVAL_INTERNET=false but the agent's entrypoint doesn't
-# reference it. Unlike EVAL_AGENT_REASONING_EFFORT above, this is NOT the
-# isolation boundary: benchmarks rule 9 already blocks raw internet access
-# unconditionally, on every surface, for every benchmark, regardless of this
-# agent's support. An agent that can't deny its own LLM-provider-mediated web
-# tools just doesn't get that UX polish (rule 22) — it's still a valid,
-# correctly-isolated pairing, so this must not block the run. Most of the
-# fleet's agents don't support it yet (only claude-code/claude-code-rtk do);
-# blocking those pairings would break every existing recorded fixture that
-# pairs an internet=false benchmark with one of them. Blocking the LLM
-# provider's own web-search tool at the gateway is tracked as future work.
+# reference it (agents/RULES.md 20). Unlike EVAL_AGENT_REASONING_EFFORT above,
+# this is NOT the isolation boundary: benchmarks rule 9 already blocks raw
+# internet access unconditionally, on every surface, for every benchmark,
+# regardless of this agent's support. An agent that can't deny its own
+# LLM-provider-mediated web tools just doesn't get that UX polish (agents/
+# RULES.md 21) — it's still a valid, correctly-isolated pairing, so this must
+# not block the run. Most of the fleet's agents don't support it yet (only
+# claude-code/claude-code-rtk do); blocking those pairings would break every
+# existing recorded fixture that pairs an internet=false benchmark with one of
+# them. Blocking the LLM provider's own web-search tool at the gateway is
+# tracked as future work.
 if [ "${EVAL_INTERNET:-}" = "false" ] && ! grep -q EVAL_INTERNET /run.sh; then
   echo "run-agent: EVAL_INTERNET=false but agent '${EVAL_AGENT:-?}' does not support denying its web tools — continuing (network isolation still applies, rule 9)" >&2
 fi

@@ -109,7 +109,7 @@ deny contains msg if {
 }
 
 # eval.benchmark.internet MUST be enforced, not just declared: every benchmark
-# MUST also carry a matching `ENV EVAL_INTERNET` (agents/RULES.md 20). A label
+# MUST also carry a matching `ENV EVAL_INTERNET` (benchmarks/RULES.md 21c). A label
 # with no ENV leaves the declared policy unenforced by containers/core/runner/
 # run-agent; the two disagreeing is worse than either being absent.
 
@@ -117,7 +117,7 @@ deny contains msg if {
 	is_benchmark
 	label_keys["eval.benchmark.internet"]
 	not env_keys["EVAL_INTERNET"]
-	msg := "benchmark Dockerfile declares LABEL eval.benchmark.internet but has no ENV EVAL_INTERNET — the declared policy is unenforced (agents/RULES.md 20)"
+	msg := "benchmark Dockerfile declares LABEL eval.benchmark.internet but has no ENV EVAL_INTERNET — the declared policy is unenforced (benchmarks/RULES.md 21c)"
 }
 
 deny contains msg if {
@@ -126,7 +126,7 @@ deny contains msg if {
 	env_keys["EVAL_INTERNET"]
 	unquote(label_value("eval.benchmark.internet")) != env_value("EVAL_INTERNET")
 	msg := sprintf(
-		"benchmark Dockerfile's eval.benchmark.internet label (%s) disagrees with ENV EVAL_INTERNET (%s) (agents/RULES.md 20)",
+		"benchmark Dockerfile's eval.benchmark.internet label (%s) disagrees with ENV EVAL_INTERNET (%s) (benchmarks/RULES.md 21c)",
 		[label_value("eval.benchmark.internet"), env_value("EVAL_INTERNET")],
 	)
 }

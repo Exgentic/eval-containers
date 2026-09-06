@@ -657,10 +657,10 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
-/// `EVAL_INTERNET` (agents/RULES.md 19-21): image-baked, not operator-settable —
+/// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —
 /// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
 /// run-agent forwards it and WARNS (does not fail) for an agent whose /run.sh
-/// doesn't use it — network isolation (rule 22) holds regardless of agent
+/// doesn't use it — network isolation (rule 21) holds regardless of agent
 /// support, so an unsupported agent is still a valid pairing, just without the
 /// UX benefit; failing the run would break every existing fixture pairing an
 /// internet=false benchmark with one of the many agents that don't support it.
@@ -693,7 +693,7 @@ fn internet_policy_wired_through_to_agents() {
     assert!(
         !internet_block.contains("exit"),
         "run-agent's EVAL_INTERNET guard must WARN, not exit/fail the run — network isolation \
-         (rule 22) holds regardless of agent support, so an unsupported agent is still a valid \
+         (rule 21) holds regardless of agent support, so an unsupported agent is still a valid \
          pairing"
     );
     assert!(
@@ -711,15 +711,15 @@ fn internet_policy_wired_through_to_agents() {
 }
 
 // The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
-// (agents/RULES.md 20) is artifact-shaped Dockerfile structure, so per this
-// file's own module doc it lives in conftest, not here — see
+// (benchmarks/RULES.md 21c) is artifact-shaped Dockerfile structure, so per
+// this file's own module doc it lives in conftest, not here — see
 // tests/static/policy/dockerfile/labels.rego (env_value/env_keys + the two
 // `deny` rules right after required_benchmark_keys) and its unit tests in
 // labels_test.rego (test_internet_label_without_env_denies,
 // test_internet_label_env_disagreement_denies,
 // test_internet_label_env_argdriven_passes).
 
-/// agents/RULES.md 23: when EVAL_INTERNET=false, the runner MUST tell the agent
+/// agents/RULES.md 22: when EVAL_INTERNET=false, the runner MUST tell the agent
 /// in the task text itself that no internet is needed, so it doesn't burn turns
 /// diagnosing/working around a perceived connectivity failure.
 #[test]
@@ -727,15 +727,15 @@ fn run_injects_no_internet_note_into_task() {
     let run = fs::read_to_string(repo_root().join("containers/core/runner/run")).expect("read run");
     assert!(
         run.contains(r#"[ "${EVAL_INTERNET:-}" = "false" ]"#),
-        "core/runner/run must branch on EVAL_INTERNET=false to modify TASK (agents/RULES.md 23)"
+        "core/runner/run must branch on EVAL_INTERNET=false to modify TASK (agents/RULES.md 22)"
     );
     assert!(
         run.to_lowercase().contains("no internet"),
         "core/runner/run must append a plain-language no-internet-needed note to TASK when \
-         EVAL_INTERNET=false (agents/RULES.md 23)"
+         EVAL_INTERNET=false (agents/RULES.md 22)"
     );
     eprintln!(
-        "✓ core/runner/run appends a no-internet-needed note to TASK when EVAL_INTERNET=false (agents/RULES.md 23)"
+        "✓ core/runner/run appends a no-internet-needed note to TASK when EVAL_INTERNET=false (agents/RULES.md 22)"
     );
 }
 

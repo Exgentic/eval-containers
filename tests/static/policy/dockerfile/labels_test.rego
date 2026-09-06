@@ -69,7 +69,7 @@ test_benchmark_missing_internet_denies if {
 	count(deny) == 1 with input as missing
 }
 
-# ── internet label/ENV agreement (agents/RULES.md 20) ────────────────
+# ── internet label/ENV agreement (benchmarks/RULES.md 21c) ───────────
 
 test_internet_label_without_env_denies if {
 	missing_env := [
