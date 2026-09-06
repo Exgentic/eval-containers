@@ -25,6 +25,24 @@ if [ -n "${EVAL_AGENT_REASONING_EFFORT:-}" ] && ! grep -q EVAL_AGENT_REASONING_E
   exit 2
 fi
 
+# Warn (not fail) if EVAL_INTERNET=false but the agent's entrypoint doesn't
+# reference it (agents/RULES.md 20). Unlike EVAL_AGENT_REASONING_EFFORT above,
+# this is NOT the isolation boundary: benchmarks rule 9 already blocks raw
+# internet access (WebFetch-style calls included) unconditionally, on every
+# surface, for every benchmark, regardless of this agent's support. An agent
+# that doesn't deny its own web tools just risks a call bound to fail (rule 19)
+# and, for the LLM provider's own server-side web-search specifically, misses
+# the one client-side mitigation for the channel network isolation can't
+# reach (agents/RULES.md 21) — either way it's still a valid, correctly-
+# isolated pairing, so this must not block the run. Most of the fleet's agents
+# don't support it yet (only claude-code/claude-code-rtk do); blocking those
+# pairings would break every existing recorded fixture that pairs an
+# internet=false benchmark with one of them. Blocking the LLM provider's own
+# web-search tool at the gateway is tracked as future work.
+if [ "${EVAL_INTERNET:-}" = "false" ] && ! grep -q EVAL_INTERNET /run.sh; then
+  echo "run-agent: EVAL_INTERNET=false but agent '${EVAL_AGENT:-?}' does not support denying its web tools — continuing (network isolation still applies, rule 9)" >&2
+fi
+
 # stdout/stderr go straight to /output/agent/{stdout,stderr}.log (raw, not via
 # process-compose's JSON log envelope, which breaks verifiers reading stdout).
 # Every value is read from the inherited environment — exported by
@@ -37,6 +55,7 @@ timeout -k 30 "${TIMEOUT:-300}" gosu agent env -i \
   HOME=/home/agent USER=agent LANG=C.UTF-8 \
   TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
   EVAL_AGENT_REASONING_EFFORT="${EVAL_AGENT_REASONING_EFFORT:-}" \
+  EVAL_INTERNET="${EVAL_INTERNET:-}" \
   OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" OPENAI_API_KEY=sk-proxy \
   ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}" ANTHROPIC_API_KEY=sk-proxy \
   GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \

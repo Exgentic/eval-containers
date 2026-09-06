@@ -25,7 +25,7 @@ name: Release the fleet
 #                         each pushing :TAG-<arch>; the `merge` job then stitches the
 #                         :TAG manifest list. Shared combos build multi-arch directly
 #                         (buildx --platform — thin overlays are QEMU-safe); per-task
-#                         combos (swe-bench/terminal-bench/skills-bench — heavy
+#                         combos (swe-bench/terminal-bench/skills-bench/deepswe — heavy
 #                         testbed bases QEMU can't cross-build reliably) get the same
 #                         native-per-arch + merge treatment as bases/per-task, via
 #                         `combos-pertask` + `merge-pertask-combos`. The
@@ -67,7 +67,7 @@ on:
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack opencode pi"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench, swe-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -215,12 +215,20 @@ jobs:
       leaves: ${{ steps.l.outputs.leaves }}        # bake targets: benchmarks(shared)+agents+models
       benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
       combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256 (shared combos only, task=="")
-      pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
+      pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench/deepswe), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
       has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a main push with no stale leaf
       dirty: ${{ steps.l.outputs.dirty }}           # main push: anything at all to publish?
     steps:
       - uses: actions/checkout@v7.0.1
+      # The staleness sweeps below read the registry (images + compose artifacts);
+      # an anonymous read hits the rate limit and reports `unreadable`, which
+      # rule 14 then turns into a needless rebuild.
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - id: l
         env:
           GH_TOKEN: ${{ github.token }}
@@ -234,12 +242,12 @@ jobs:
           # INCLUDE_PER_TASK arrive empty and combos + per-task would be skipped. On
           # any non-dispatch trigger (the vX.Y.Z release tag) force the full published
           # lineup; a manual dispatch keeps its inputs (blank combo_agents = skip).
-          # A main push keeps the combo lineup (pruned to stale parents below) but
-          # never builds per-task (~600 heavy images stay tag/dispatch-only).
+          # A main push keeps the combo lineup and the per-task lineup; both are
+          # pruned below to what actually moved (#452), so the ~660 heavy per-task
+          # images cost nothing on a push that did not touch them.
           if [ "$IS_DISPATCH" != "true" ]; then
             COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi"
             INCLUDE_PER_TASK=true
-            [ "$IS_MAIN_PUSH" != "true" ] || INCLUDE_PER_TASK=false
           fi
           # The :latest channel (delivery/RULES.md:16): a main push publishes only
           # images whose inputs changed. Compute the stale set once; every matrix
@@ -288,12 +296,29 @@ jobs:
           if [ "$n" -le 0 ] && [ "$IS_MAIN_PUSH" != "true" ]; then echo "::error::leaf count 0 — releases and dispatches must name at least one leaf"; exit 1; fi
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
-          # --only mode and main pushes derive the compose list from the restricted
-          # leaves; else all shared benchmarks.
+          # --only mode derives the compose list from the restricted leaves, a
+          # main push from the artifacts that moved (below); else all shared.
           bench_all=$(comm -23 \
             <(find containers/benchmarks -mindepth 1 -maxdepth 1 -type d | sed -E 's#.*/##' | sort -u) \
             <(printf '%s\n' "$pertaskdirs" | sed 's/^benchmark-//' | sort -u))
-          if [ -n "${ONLY:-}" ] || [ "$IS_MAIN_PUSH" = "true" ]; then
+          # A main push publishes the artifacts that actually moved. An eval-<b>
+          # artifact is the flattened compose bytes, whose inputs include the
+          # shared containers/compose/ half that sits in no image's build context
+          # — so its freshness is judged against the published layer digest, not
+          # against the benchmark image's staleness (#451).
+          if [ "$IS_MAIN_PUSH" = "true" ]; then
+            # Into a file, not a process substitution: a sweep that dies would
+            # otherwise read as "nothing moved" and publish nothing, the
+            # fail-clean rule 14 forbids.
+            cs=$(mktemp)
+            bash containers/scripts/fleet-status.sh compose latest > "$cs" \
+              || { echo "::error::compose freshness sweep failed"; exit 1; }
+            bench_src=$(comm -12 \
+              <(awk -F'\t' '$2!="fresh" && $2!="declined"{print $1}' "$cs" \
+                  | sed -E "s#^${REGISTRY}/eval-##; s#:latest\$##" | sort -u) \
+              <(printf '%s\n' "$bench_all" | sort -u))
+            echo "main push -> $(printf '%s\n' "$bench_src" | grep -c .) compose artifact(s) to publish"
+          elif [ -n "${ONLY:-}" ]; then
             bench_src=$(printf '%s\n' "$leaf_list" | sed -n 's/^benchmark-//p')
           else
             bench_src="$bench_all"
@@ -313,7 +338,7 @@ jobs:
           pertask='[]'
           if [ "$INCLUDE_PER_TASK" = "true" ]; then
             acc='[]'
-            for B in terminal-bench skills-bench; do
+            for B in terminal-bench skills-bench deepswe; do
               bs="containers/benchmarks/$B/build.sh"; [ -f "$bs" ] || continue
               repo=$(grep -oE 'github\.com/[A-Za-z0-9_./-]+' "$bs" | head -1 | sed -E 's#github\.com/##; s#\.git$##')
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
@@ -330,6 +355,47 @@ jobs:
             # --only mode: one task per benchmark as a smoke, not all ~600.
             [ -n "${ONLY:-}" ] && pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
           fi
+          # Combos expand over the FULL list (a stale agent dirties every task's
+          # combo, not only the tasks whose base moved); the base matrix below is
+          # pruned to what moved.
+          pertask_all="$pertask"
+          # Main push: keep only the per-task images whose inputs moved (#452).
+          # One fleet-hash pass per benchmark yields every task's hash (they share
+          # the benchmark's closure), then one read of the merged :latest per image
+          # — passing the expected platform set so that same read also catches an
+          # image that is missing an arch, which is changed too (rule 14).
+          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$pertask" != "[]" ]; then
+            T=$(mktemp -d); : > "$T/pairs"; : > "$T/map"
+            for B in $(jq -r '[.[].b] | unique | .[]' <<< "$pertask"); do
+              plat=$(sed -nE 's/.*eval\.platforms="([^"]*)".*/\1/p' "containers/benchmarks/$B/Dockerfile" | head -1)
+              [ -n "$plat" ] || plat="linux/amd64,linux/arm64"
+              jq -r --arg b "$B" '.[] | select(.b==$b) | .task' <<< "$pertask" \
+                | bash containers/scripts/fleet-hash.sh per-task "$B" \
+                | while IFS=$'\t' read -r name h _; do
+                    task=${name##*/}; tid=$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')
+                    ref="${REGISTRY}/benchmarks/${B}-${tid}:latest"
+                    printf '%s %s %s\n' "$ref" "$h" "$plat" >> "$T/pairs"
+                    printf '%s\t%s\t%s\n' "$ref" "$B" "$task" >> "$T/map"
+                  done
+            done
+            # `check` exits non-zero per non-fresh ref, so xargs ends 123 — the
+            # verdict rows on stdout are the answer, not the exit code. A sweep
+            # that answered fewer refs than it was asked is NOT "nothing moved":
+            # publishing nothing on a broken read is the fail-clean rule 14
+            # forbids, so the row count is the post-condition.
+            xargs -P "${STATUS_JOBS:-16}" -n3 bash containers/scripts/fleet-status.sh check \
+              < "$T/pairs" > "$T/verdicts" || true
+            asked=$(wc -l < "$T/pairs"); answered=$(wc -l < "$T/verdicts")
+            [ "$answered" -eq "$asked" ] \
+              || { echo "::error::per-task freshness sweep answered $answered of $asked refs"; exit 1; }
+            awk -F'\t' 'NR==FNR{ if ($2!="fresh") m[$1]; next } $1 in m { print $2 "\t" $3 }' \
+              "$T/verdicts" "$T/map" | LC_ALL=C sort -u > "$T/keep"
+            pertask=$(jq -c --rawfile keep "$T/keep" '
+              ($keep | split("\n") | map(select(length>0)) | INDEX(.)) as $k
+              | map(select($k[.b + "\t" + .task] != null))' <<< "$pertask")
+            PT_KEEP="$T/keep"
+            echo "main push -> $(jq length <<< "$pertask") of $(jq length <<< "$pertask_all") per-task image(s) moved"
+          fi
 
           # ── combos: shared (task="") + per-task, all as {b,a,task,kind} ──
           # Both build via one downstream bake-eval call (per-task just points at the
@@ -343,7 +409,7 @@ jobs:
             # Only the small agents list rides argv.
             shared=$(printf '%s' "$combo_bench" | jq -c --argjson as "$agents" \
               '[.[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
-            ptc=$(printf '%s' "$pertask" | jq -c --argjson as "$agents" \
+            ptc=$(printf '%s' "$pertask_all" | jq -c --argjson as "$agents" \
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
           fi
@@ -353,12 +419,20 @@ jobs:
           if [ "$IS_MAIN_PUSH" = "true" ] && [ "$CANARY_DIRTY" != "true" ]; then
             sb=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^benchmark-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
             sa=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^agent-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
+            # A per-task pair's benchmark side is its own task base, not `sb`: a
+            # per-task benchmark publishes no `benchmarks/<b>:latest` of its own,
+            # so it reads absent → stale forever and would keep every pair. Use
+            # the moved set computed above; the agent side is shared (#452).
             combos=$(printf '%s' "$combos" | jq -c --argjson sb "$sb" --argjson sa "$sa" \
-              '[.[] | select((.b as $b | $sb | index($b) != null) or (.a as $a | $sa | index($a) != null))]')
+              --rawfile moved "${PT_KEEP:-/dev/null}" '
+              ($moved | split("\n") | map(select(length>0)) | INDEX(.)) as $mv
+              | [ .[] | . as $p | select(($sa | index($p.a)) != null
+                    or (if $p.task == "" then ($sb | index($p.b)) != null
+                        else $mv[$p.b + "\t" + $p.task] != null end)) ]')
             echo "main push -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
           fi
 
-          # Every per-task combo (swe-bench, terminal-bench, skills-bench) is the
+          # Every per-task combo (swe-bench, terminal-bench, skills-bench, deepswe) is the
           # one class QEMU can't reliably cross-build (heavy testbed bases —
           # swe-bench alone hung 90min/shard in #226). Split ALL of them out: they
           # build natively per-arch via combos-pertask + merge-pertask-combos
@@ -371,10 +445,16 @@ jobs:
           # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
           # GitHub caps a matrix at 256 jobs; each shard job loops its items. Chunk
           # combos by 25 (thin overlays) and per-task bases by 10 (heavier builds).
+          # The per-task lists fan out per shard × 2 arches, so a full fleet (every
+          # task × 7 agents) would need >128 shards at chunk 10 and the guard below
+          # would fail the run outright. Double the chunk until it fits: a longer
+          # shard is a slower release, a failed enumerate is no release (#452).
           shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
+          chunk() { local n k; n=$(jq length <<< "$1"); k=$2
+                    while [ "$(( (n + k - 1) / k ))" -gt 128 ]; do k=$((k * 2)); done; echo "$k"; }
           combo_shards=$(shard "$combos" 25)
-          pertask_combo_shards=$(shard "$pertask_combo_items" 10)
-          pertask_shards=$(shard "$pertask" 10)
+          pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 10)")
+          pertask_shards=$(shard "$pertask" "$(chunk "$pertask" 10)")
           # combos build per shard via buildx --platform (one job/shard) → ≤256;
           # per-task and pertask-combo fan out per shard × 2 arches → matrix must fit 256.
           cn=$(printf '%s' "$combo_shards" | jq length); ptn=$(printf '%s' "$pertask_shards" | jq length)
@@ -385,7 +465,10 @@ jobs:
 
           has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
           dirty=true
-          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$n" -eq 0 ] && [ "$combos" = "[]" ] && [ "$BASES_DIRTY" != "true" ]; then dirty=false; fi
+          # `merge` stitches the per-arch tags of leaves AND per-task images, so a
+          # push that moved only per-task images is still dirty (#452).
+          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$n" -eq 0 ] && [ "$combos" = "[]" ] \
+             && [ "$pertask" = "[]" ] && [ "$BASES_DIRTY" != "true" ]; then dirty=false; fi
           {
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
@@ -677,7 +760,10 @@ jobs:
   # every benchmark's bundle.
   compose:
     needs: [cli, merge, enumerate]
-    if: always() && (needs.merge.result == 'success' || inputs.dry_run) && needs.cli.result == 'success' && needs.enumerate.result == 'success' && needs.enumerate.outputs.benchmarks != '[]'
+    # `merge` is skipped when no image was stale — a compose-only change (the
+    # shared containers/compose/) still has an artifact to publish, and the stack
+    # references its images by tag, so no rebuild is implied (#451).
+    if: always() && (needs.merge.result == 'success' || needs.merge.result == 'skipped' || inputs.dry_run) && needs.cli.result == 'success' && needs.enumerate.result == 'success' && needs.enumerate.outputs.benchmarks != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -987,20 +1073,42 @@ jobs:
             done
           done
 
-  # ── Helm chart at the tag (versioned releases only) ───────────────────────
+  # ── Helm chart — the same channel as every image (RULES.md principle 9) ───
+  # A chart's OCI tag IS its SemVer, so `charts/eval` has no literal `:latest`:
+  # its continuous channel (delivery/RULES.md:16) is Chart.yaml's version,
+  # republished on every main push and frozen by the tag at a release. A
+  # released version is immutable, so the rolling publish refuses one whose
+  # GitHub Release is already out — the signal to open the next dev version
+  # (delivery/release/SKILL.md step 9).
   chart:
     needs: [release-gate]
-    if: github.ref_type == 'tag' || inputs.tag != ''
+    # Versioned channel: the tag, after the CVE gate. Continuous channel: a push
+    # to the default branch, where release-gate does not run at all.
+    if: >-
+      always() && !inputs.dry_run &&
+      ((needs.release-gate.result == 'success' && (github.ref_type == 'tag' || inputs.tag != ''))
+      || (github.event_name == 'push' && github.ref_type == 'branch'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: azure/setup-helm@v5
-      - name: Publish charts/eval at the tag
+      - name: Publish charts/eval at ${{ env.TAG }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           ver="${TAG#v}"
+          if [ "$TAG" = latest ]; then
+            ver=$(grep -m1 '^version: ' containers/benchmarks/_chart/Chart.yaml | awk '{print $2}')
+            if [ "$(gh release view "v$ver" --json isDraft -q .isDraft 2>/dev/null)" = false ]; then
+              echo "::error::v$ver is released and immutable — bump Chart.yaml + cli/Cargo.toml to the next dev version"
+              exit 1
+            fi
+          fi
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
           helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
           helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"
+          # delivery/RULES.md:17 — a zero exit is not evidence; read the artifact back.
+          helm show chart "oci://${REGISTRY}/charts/eval" --version "$ver" >/dev/null
 
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:

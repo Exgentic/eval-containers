@@ -36,6 +36,7 @@ LABEL eval.benchmark.description="MLE-bench - Kaggle-style ML engineering tasks 
 LABEL eval.benchmark.tasks="75"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="true"
+ENV EVAL_INTERNET=true
 LABEL eval.benchmark.url="https://github.com/openai/mle-bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.07095"
 LABEL eval.benchmark.requires="Kaggle API credentials + per-competition rules acceptance"

@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="ARC-AGI-2 - Abstract grid reasoning tasks"
 LABEL eval.benchmark.tasks="120"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="f3283f727488ad98fe575ea6a5ac981e4a188e49"
 LABEL eval.benchmark.url="https://github.com/arcprize/ARC-AGI-2"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/arc_agi_2"

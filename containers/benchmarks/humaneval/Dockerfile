@@ -19,6 +19,7 @@ LABEL eval.benchmark.description="HumanEval - Python code generation"
 LABEL eval.benchmark.tasks="164"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="7dce6050a7d6d172f3cc5c32aa97f52fa1a2e544"
 LABEL eval.benchmark.url="https://github.com/openai/human-eval"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/humaneval"

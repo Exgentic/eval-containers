@@ -53,7 +53,12 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export OPENCODE_DISABLE_AUTOUPDATE=1
 export OPENCODE_DISABLE_MODELS_FETCH=1
-exec opencode run --model "eval-containers/${MODEL:-default}" "$TASK"
+# `--`: end-of-options. A task whose text begins with "-" is otherwise parsed as
+# a flag — `opencode run` then prints its usage and exits 1 WITHOUT running, which
+# scores as reward 0 and is indistinguishable from a wrong answer (observed on
+# DeepSWE's ink-grid-box-layout, whose instruction.md opens with "- Update the
+# `display` style property..."). Same class as the claude-code fix in 07b03181.
+exec opencode run --model "eval-containers/${MODEL:-default}" -- "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

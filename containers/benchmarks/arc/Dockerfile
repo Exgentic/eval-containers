@@ -21,6 +21,7 @@ LABEL eval.benchmark.description="ARC Challenge - grade-school science multiple 
 LABEL eval.benchmark.tasks="1172"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="210d026faf9955653af8916fad021475a3f00453"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/allenai/ai2_arc"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1803.05457"

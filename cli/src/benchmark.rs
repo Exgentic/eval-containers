@@ -14,7 +14,15 @@ pub fn is_per_task(dockerfile: &str) -> bool {
 }
 
 /// [`is_per_task`] for a benchmark by name — reads `containers/benchmarks/<name>/Dockerfile`
-/// (a missing file reads as shared-env, `false`).
+/// **relative to the current directory**, so it answers only inside a checkout of
+/// the fleet; anywhere else every benchmark reads as shared-env (`false`).
+///
+/// That is fine for `build`/`oracle`, which build from the catalog and cannot run
+/// without it. It is NOT fine for a surface that is meant to work from a published
+/// artifact alone: `run --mode job` used to call this and silently rendered
+/// `evals/<b>--<a>` for a per-task benchmark whenever it ran outside the repo. The
+/// chart now resolves that itself from its committed `per-task.json` (rule 24h),
+/// derived from these same labels and CI-checked against them.
 pub fn is_per_task_by_name(name: &str) -> bool {
     std::fs::read_to_string(format!("containers/benchmarks/{name}/Dockerfile"))
         .as_deref()

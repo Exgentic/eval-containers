@@ -52,6 +52,7 @@ LABEL eval.benchmark.description="XNLI - cross-lingual natural language inferenc
 LABEL eval.benchmark.tasks="75150"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="b8dd5d7af51114dbda02c0e3f6133f332186418e"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/facebook/xnli"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1809.05053"

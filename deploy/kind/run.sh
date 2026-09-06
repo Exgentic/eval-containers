@@ -11,8 +11,8 @@
 # The cluster + the eval-secrets Secret are provisioned once by create.sh; this
 # script errors if the cluster is absent rather than creating it.
 #
-#   ./deploy/kind/run.sh --benchmark aime --agent codex --model bifrost --task 0 --watch
-#   ./deploy/kind/run.sh --benchmark aime --agent codex --model bifrost --dataset --watch
+#   ./deploy/kind/run.sh --benchmark aime --agent codex --model openai/gpt-5.4 --task 0 --watch
+#   ./deploy/kind/run.sh --benchmark aime --agent codex --model openai/gpt-5.4 --dataset --watch
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
@@ -28,15 +28,15 @@ Usage:
 Required:
   --benchmark <b>       benchmark image (e.g. aime)
   --agent <a>           agent image (e.g. codex)
-  --model <m>           gateway image to build/load/run (e.g. bifrost)
+  --model <m>           upstream <provider>/<model> handle (e.g. openai/gpt-5.4)
 
 Selection:
+  --gateway <g>         proxy image that serves the model (default: bifrost)
   --task <id>           single-task run (default: 0)
   --dataset             run the whole dataset as an Indexed Job
   --dataset-size <n>    run the first n examples as an Indexed Job
   --parallelism <n>     concurrent indices for a dataset run (default: 2)
   --retry <n>           backoffLimitPerIndex for a dataset run
-  --eval-model <h>      upstream <provider>/<model> handle (default: derived from --model)
 
 Cluster / output:
   --namespace <ns>      target namespace
@@ -56,27 +56,36 @@ Build / run control:
 EOF
 }
 
-BENCHMARK="" AGENT="" MODEL="" TASK="0" DATASET="" PARALLELISM="" RETRY=""
-EVAL_MODEL="" NAMESPACE="" REGISTRY="$REGISTRY_DEFAULT" CLUSTER="$CLUSTER_DEFAULT"
+BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY=""
+NAMESPACE="" REGISTRY="$REGISTRY_DEFAULT" CLUSTER="$CLUSTER_DEFAULT"
 OUTPUT_PATH="$OUTPUT_HOSTPATH"
 DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false RERUN=false
 WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
-  --model) MODEL="$2"; shift 2;; --task) TASK="$2"; shift 2;;
+  --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; shift 2;;
+  --task) TASK="$2"; shift 2;;
   --dataset) DATASET_MODE=true; shift;; --dataset-size) DATASET="$2"; DATASET_MODE=true; shift 2;;
   --parallelism) PARALLELISM="$2"; shift 2;; --retry) RETRY="$2"; shift 2;;
-  --eval-model) EVAL_MODEL="$2"; shift 2;; --namespace) NAMESPACE="$2"; shift 2;;
+  --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --cluster) CLUSTER="$2"; shift 2;;
   --output-path) OUTPUT_PATH="$2"; shift 2;; --repo-dir) REPO_DIR="$2"; shift 2;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --rerun) RERUN=true; shift;;
   --watch) WATCH=true; shift;; --dry-run) DRY_RUN=true; shift;;
   --help|-h) usage; exit 0;;
+  # Renamed, not aliased: --eval-model named the handle when --model meant the
+  # gateway image (gateways/RULES.md rule 2c). Say so instead of accepting both.
+  --eval-model) echo "error: --eval-model was renamed --model (the proxy image is --gateway)" >&2; exit 1;;
   *) echo "Unknown argument: $1" >&2; usage >&2; exit 1;;
 esac; done
 [[ -z "$BENCHMARK" || -z "$AGENT" || -z "$MODEL" ]] && {
   echo "error: --benchmark, --agent and --model are required" >&2; exit 1; }
+# --model is the upstream handle, never a proxy image: a bare name (`bifrost`)
+# used to mean the gateway here and would now be forwarded as EVAL_MODEL. Fail
+# loud rather than routing to a nonexistent model (gateways/RULES.md rule 2).
+[[ "$MODEL" != */* ]] && {
+  echo "error: --model takes the upstream <provider>/<model> handle (e.g. openai/gpt-5.4); the proxy image is --gateway" >&2; exit 1; }
 log() { echo "[run] $*"; }
 
 KCTX="kind-$CLUSTER"   # kind's kubectl context naming convention
@@ -112,11 +121,11 @@ fi
 # on arm64, harmless on amd64). otel has no `eval-containers build` subcommand, so
 # it is baked directly. Skip-check is on the local image (docker image inspect).
 if ! $NO_BUILD; then
-  log "=== build ($BENCHMARK / $AGENT / $MODEL) on host ==="
+  log "=== build ($BENCHMARK / $AGENT / $GATEWAY) on host ==="
   # --task-id only for per-task benchmarks in single-task mode; a dataset run
   # uses the one shared image across all indices, so never per-task there.
   TASKARG=(); $PER_TASK && ! $DATASET_MODE && TASKARG=(--task-id "$TASK")
-  read -r RUNNER GATEWAY OTEL < <(job_refs "$REGISTRY" "$BENCHMARK" "$AGENT" "$MODEL" \
+  read -r RUNNER GATEWAY_REF OTEL < <(job_refs "$REGISTRY" "$BENCHMARK" "$AGENT" "$GATEWAY" \
                                     "$($DATASET_MODE && echo "" || echo "$REF_TASK")")
   have() { docker image inspect "$1" >/dev/null 2>&1; }
   ec() {  # print-or-run an `eval-containers build …`
@@ -127,10 +136,10 @@ if ! $NO_BUILD; then
     else
       ec bench "$BENCHMARK" ${TASKARG[@]+"${TASKARG[@]}"}
       ec agent "$AGENT"
-      ec eval "$BENCHMARK" --agent "$AGENT" --model "$MODEL" --no-pull ${TASKARG[@]+"${TASKARG[@]}"}
+      ec eval "$BENCHMARK" --agent "$AGENT" --gateway "$GATEWAY" --no-pull ${TASKARG[@]+"${TASKARG[@]}"}
     fi
-    if ! $REBUILD && have "$GATEWAY"; then log "skip gateway (exists: $GATEWAY)"
-    else ec model "$MODEL"; fi
+    if ! $REBUILD && have "$GATEWAY_REF"; then log "skip gateway (exists: $GATEWAY_REF)"
+    else ec model "$GATEWAY"; fi
     if ! $REBUILD && have "$OTEL"; then log "skip otel (exists: $OTEL)"
     elif $DRY_RUN; then echo "[dry-run] REGISTRY=$REGISTRY docker buildx bake -f containers/docker-bake.hcl -f containers/core/otel/docker-bake.hcl otel --load"
     else log "build otel (bake)"; REGISTRY="$REGISTRY" docker buildx bake -f containers/docker-bake.hcl -f containers/core/otel/docker-bake.hcl otel --load; fi )
@@ -141,11 +150,11 @@ $NO_RUN && { log "--no-run: built only, not loaded/submitted."; exit 0; }
 # No oc analog: there the build lands straight in the cluster registry. Here the
 # host image must be moved into the node's containerd, defeating the IfNotPresent
 # stale-:latest trap. Recompute the refs (build may have been skipped).
-read -r RUNNER GATEWAY OTEL < <(job_refs "$REGISTRY" "$BENCHMARK" "$AGENT" "$MODEL" \
+read -r RUNNER GATEWAY_REF OTEL < <(job_refs "$REGISTRY" "$BENCHMARK" "$AGENT" "$GATEWAY" \
                                   "$($DATASET_MODE && echo "" || echo "$REF_TASK")")
 FORCE=""; $REBUILD && FORCE="force"
 log "=== load images into kind ($CLUSTER) ==="
-for ref in "$RUNNER" "$GATEWAY" "$OTEL"; do
+for ref in "$RUNNER" "$GATEWAY_REF" "$OTEL"; do
   if $DRY_RUN; then echo "[dry-run] kind_reload $CLUSTER $ref ${FORCE:-}"
   else kind_reload "$CLUSTER" "$ref" "$FORCE"; fi
 done
@@ -155,7 +164,7 @@ done
 PRESET="$REPO_DIR/containers/benchmarks/_chart/presets/${BENCHMARK}.yaml"
 if [[ -f "$PRESET" ]]; then
   while read -r ref; do
-    [[ "$ref" == "$RUNNER" || "$ref" == "$GATEWAY" || "$ref" == "$OTEL" ]] && continue
+    [[ "$ref" == "$RUNNER" || "$ref" == "$GATEWAY_REF" || "$ref" == "$OTEL" ]] && continue
     if [[ "$ref" == "$REGISTRY/"* ]]; then
       if $DRY_RUN; then echo "[dry-run] kind_reload $CLUSTER $ref (preset repo image)"
       else kind_reload "$CLUSTER" "$ref" "$FORCE"; fi
@@ -182,8 +191,18 @@ if $DATASET_MODE && [[ -z "$PARALLELISM" ]]; then
   PARALLELISM=2; log "no --parallelism given; defaulting to $PARALLELISM for a local cluster"
 fi
 
-if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}"; SUB="${BENCHMARK}/${AGENT}/${MODEL}";
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; SUB="${BENCHMARK}/${AGENT}/${MODEL}/${TASK}"; fi
+# The model's SLUG keys the prefix — the whole handle with `/` → `--`, the shape
+# the dashboard writes and reads back. The `model` Job label stays the handle's
+# last segment (label values forbid `/` and cap at 63 chars), so the path is the
+# only place that can name a provider-prefixed model, and two models behind one
+# gateway cannot share a directory. The leaf is the chart's: it appends this
+# run's id, then the index or the task — composing one here meant a re-run
+# overwrote the run before it.
+MODEL_SLUG="$(model_slug "$MODEL")"
+SUB="${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
+RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$RANDOM}"
+if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}"
+else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; fi
 # DNS-1123 sanitize, mirroring naming.rs release_name: lowercase, every run of
 # non-alnum → a single '-'. `tr -s` (squeeze) is portable across GNU/BSD, unlike
 # sed's \+ (BSD sed treats \+ literally). A per-task id like sympy__sympy-24066
@@ -208,24 +227,18 @@ if [[ ${#JOB} -gt 53 ]]; then
   log "release name too long for Helm; shortened to '$JOB'"
 fi
 
-# --model names the gateway IMAGE to build/load/run (bifrost, litellm, a pinned
-# gpt-5.4, …) — it drives the build, the image refs, the output subpath and the
-# Job name (all $MODEL below). The gateway's runtime upstream is a SEPARATE axis:
-# the chart's `model` value becomes $EVAL_MODEL, the <provider>/<model> handle a
-# generic gateway routes to (chart values.yaml `model`; cli/src/run.rs sets the
-# same). Default it from --model by stripping any --bifrost/--litellm/--portkey
-# gateway suffix; override with --eval-model (e.g. openai/azure/gpt-5.5).
-[[ -z "$EVAL_MODEL" ]] && EVAL_MODEL="openai/azure/$(echo "$MODEL" | sed 's/--bifrost//;s/--litellm//;s/--portkey//')"
 # No flatImages (kind serves the nested ghcr refs from the node's containerd);
 # hostPath output instead of a PVC; chart defaults (empty SA, IfNotPresent) suit
 # kind, so no -f values-openshift.yaml overlay (its imagePullPolicy: Always would
 # make the node try to pull the nonexistent registry manifest and fail).
-# `model` = the runtime upstream ($EVAL_MODEL) → the gateway's EVAL_MODEL env;
-# `gatewayImage` = which proxy image to run ($MODEL).
+# Two independent axes (gateways/RULES.md): `model` = the upstream handle
+# ($MODEL) → the gateway's EVAL_MODEL env; `gatewayImage` = which proxy image
+# runs it ($GATEWAY, built/loaded above).
 SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
-     --set "model=$EVAL_MODEL" --set "gatewayImage=$MODEL"
+     --set "model=$MODEL" --set "gatewayImage=$GATEWAY"
      --set "registry=$REGISTRY"
-     --set "outputVolume.hostPath.path=$OUTPUT_PATH" --set "outputSubPath=$SUB")
+     --set "outputVolume.hostPath.path=$OUTPUT_PATH" --set "outputSubPath=$SUB"
+     --set "runId=$RUN_ID")
 # Per-task benchmarks render the task-aware runner (evals/<b>-<task>--<a>) — the
 # chart needs perTask=true to match the image built + loaded above.
 $PER_TASK && SET+=(--set "perTask=true")
@@ -296,11 +309,26 @@ printf '%s\n' "$RENDER" | kube apply -f -
 
 # ── 3. Watch (opt-in) ─────────────────────────────────────────────────────────
 $WATCH || { log "submitted. status: kubectl --context $KCTX get job $JOB"; exit 0; }
-# Poll for a terminal condition. `kubectl wait` can't OR two conditions — passing
-# both --for=complete --for=failed waits for *failed* and hangs on a successful job.
-for _ in $(seq 1 1800); do
-  st=$(kube get job "$JOB" -o jsonpath='{.status.conditions[*].type}' 2>/dev/null || true)
-  [[ "$st" == *Complete* || "$st" == *Failed* ]] && break
+# Poll until the Job reaches a terminal condition — no deadline: --watch means
+# "block until this job is done", however long that takes (a 90-example dataset at
+# parallelism=2 runs far past any fixed bound). Ctrl-C is the way out; the Job is
+# server-side and keeps running regardless.
+# `kubectl wait` can't OR two conditions — passing both --for=complete --for=failed
+# waits for *failed* and hangs on a successful job, and prints nothing meanwhile.
+# Re-GETting each tick also rides out API-server disconnects, which a `wait`/`-w`
+# stream would not, and yields the progress counters from the same call.
+# succeeded/failed are absent until non-zero, so early ticks read `/90/`.
+# Split on an explicit `|`, not whitespace: the condition field is empty for the
+# whole run until the Job finishes, and `read` would collapse the leading space and
+# shift the counters into $st.
+st="" last=""
+while [[ "$st" != *Complete* && "$st" != *Failed* ]]; do
   sleep 2
+  raw=$(kube get job "$JOB" -o \
+    jsonpath='{.status.conditions[*].type}|{.status.succeeded}/{.spec.completions}/{.status.failed}' \
+    2>/dev/null || echo "|")
+  st="${raw%%|*}" now="${raw#*|}"
+  [[ -n "$now" && "$now" != "$last" ]] && { log "progress: $now"; last="$now"; }
 done
 kube get job "$JOB" -o jsonpath='Job {.metadata.name}: succeeded={.status.succeeded}/{.spec.completions} failed={.status.failed}{"\n"}'
+[[ "$st" == *Failed* ]] && exit 1 || exit 0

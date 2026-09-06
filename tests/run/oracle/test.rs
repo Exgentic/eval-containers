@@ -67,6 +67,17 @@ const SPECIAL: &[(&str, &str)] = &[
     // Byte-sensitive answer graders — solution.sh emits the raw gold file.
     ("mrcr", "0"),      // SequenceMatcher on the raw bytes
     ("longbench", "0"), // gold is a member of answers_json; emit it verbatim
+    // One per source project: hwe-bench is five HW repos and three sim
+    // toolchains behind one name; the grader runs each case's self-contained
+    // tb_script through that repo's own flow. Every id below oracle-proven
+    // locally (gold fix_patch = 1.0, no-op = 0) on linux/amd64. Task ids are
+    // lowercase (Docker-safe for compose's raw ${EVAL_TASK_ID}); build.sh maps
+    // the two mixed-case orgs back to their HF filename (lowRISC, OpenXiangShan).
+    ("hwe-bench", "lowrisc__ibex-2232"), // SystemVerilog / Verilator
+    ("hwe-bench", "openhwgroup__cva6-1482"), // SystemVerilog / Spike (ISA)
+    ("hwe-bench", "chipsalliance__caliptra-rtl-963"), // SystemVerilog / Verilator
+    ("hwe-bench", "chipsalliance__rocket-chip-3526"), // Chisel -> Verilog / Mill + Verilator
+    ("hwe-bench", "openxiangshan__xiangshan-39"), // Chisel -> Verilog / Mill + Verilator
 ];
 
 fn oracle(args: &[&str]) -> bool {

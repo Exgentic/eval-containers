@@ -38,7 +38,10 @@ export CHART OUT
 # (collected as a render failure) with the error captured beside it.
 render_one() {
   local name=$1
-  if ! helm template "$name" "$CHART" --set "benchmark=$name" >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
+  # ephemeral=true: these renders exist to be inspected, never applied, so they
+  # name no output volume — which the chart otherwise refuses (eval.outputVolume).
+  if ! helm template "$name" "$CHART" --set "benchmark=$name" --set ephemeral=true \
+    >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
     echo "$name"
   fi
 }
@@ -86,12 +89,101 @@ fi
 # 5. the pod backstop must track --timeout, not a fixed constant: a larger
 # --timeout must not be killed early by a stale activeDeadlineSeconds (the
 # derivation regression — see containers/benchmarks/_chart/values.yaml).
-dl=$(helm template deadline-probe "$CHART" --set benchmark=humaneval --set timeout=3000 2>/dev/null |
+dl=$(helm template deadline-probe "$CHART" --set benchmark=humaneval --set timeout=3000 \
+  --set ephemeral=true 2>/dev/null |
   awk '/activeDeadlineSeconds:/{print $2; exit}')
 if [ "${dl:-0}" -le 3000 ]; then
   echo "FAIL deadline: --timeout 3000 rendered activeDeadlineSeconds=${dl:-<none>} (<=3000) — backstop would kill the run before its own timeout"
   fail=$((fail + 1))
 fi
+
+# 6. results outlive the pod, or the render refuses. Every other check here
+# asserts on a manifest; this one asserts that a manifest is NOT produced, which
+# is the only way to test a guard whose whole job is to stop one existing. The
+# emptyDir default it replaced discarded a whole run and still exited 0 (#428).
+probe() { helm template vol-probe "$CHART" --set benchmark=humaneval "$@" 2>&1; }
+
+# runId first, so this probe reaches the volume guard rather than tripping the
+# uniqueness one — the two are separate refusals and each is checked on its own.
+if out=$(probe --set runId=probe) && [ -n "$out" ]; then
+  echo "FAIL outputVolume: a run with no volume rendered instead of being refused — its results would go to an emptyDir the kubelet deletes with the pod"
+  fail=$((fail + 1))
+else
+  # A refusal is only useful if it says what to do instead, and there are two
+  # answers — name a volume, or declare the run disposable. Assert both, or the
+  # message can quietly lose half its value.
+  # Both tokens are the *actionable* form — a bare "outputVolume" would be
+  # satisfied by the error's own opening words rather than by any guidance.
+  for way in "--set outputVolume." "--set ephemeral=true"; do
+    printf '%s' "$out" | grep -qF -- "$way" || {
+      echo "FAIL outputVolume: the refusal never mentions '$way'; got: $out"
+      fail=$((fail + 1)); }
+  done
+fi
+
+# …and each way forward really does render the volume it names.
+for probe_args in \
+  "--set ephemeral=true|emptyDir" \
+  "--set runId=probe --set outputVolume.persistentVolumeClaim.claimName=probe-claim|claimName: probe-claim" \
+  "--set runId=probe --set outputVolume.hostPath.path=/probe/out|path: /probe/out"; do
+  args=${probe_args%%|*}; want=${probe_args#*|}
+  # $args is a controlled, space-separated flag list, so it must word-split.
+  # shellcheck disable=SC2086
+  got=$(probe $args | awk '/^ *- name: output$/{f=1;next} /^ *- /{f=0} f')
+  case "$got" in
+    *"$want"*) ;;
+    *) echo "FAIL outputVolume: '$args' did not render '$want' on the output volume; got:$got"
+       fail=$((fail + 1)) ;;
+  esac
+done
+
+# 7. runId is offered, not demanded: the chart sees one render and cannot tell a
+# fresh id from a constant, so it composes and the caller stays responsible. A
+# render without one must therefore still work — the dashboard composes its own
+# leaf and passes none.
+probe --set outputVolume.hostPath.path=/probe/out >/dev/null || {
+  echo "FAIL runId: a render without one was refused, but composing the leaf is a caller's right"
+  fail=$((fail + 1)); }
+
+# What the chart does owe: when an id IS given it lands below the caller's prefix
+# and above the index. That ordering is what makes the directory per-run.
+got=$(probe --set ephemeral=true --set outputSubPath=pre/fix --set runId=rid --set datasetSize=2 |
+  awk '/subPathExpr:/{print $2; exit}')
+# $(JOB_COMPLETION_INDEX) is the kubelet's to expand, not this shell's.
+# shellcheck disable=SC2016
+case "$got" in
+  'pre/fix/rid/$(JOB_COMPLETION_INDEX)') ;;
+  *) echo "FAIL runId: an Indexed run mounted '$got', not <prefix>/<runId>/<index>"
+     fail=$((fail + 1)) ;;
+esac
+
+# 8. per-task naming is the CHART's to resolve, not the caller's: every name in
+# per-task.json must render evals/<b>-<task>--<a> from `--set benchmark/task`
+# alone, with no `--set perTask`, and a shared-env benchmark must not. This is
+# the whole point of the committed set — a caller that has to remember a flag is
+# a caller that forgets it, and the forgotten render names an image no per-task
+# family publishes (deploy/oc/run.sh never set it; job mode set it from a
+# cwd-relative read). The catalog↔labels half is a cargo test
+# (chart_per_task_set_matches_labels); this is the rendered consequence.
+img() { helm template pt-probe "$CHART" --set benchmark="$1" --set task="$2" \
+  --set ephemeral=true --set runId=r 2>/dev/null |
+  awk '/image:.*\/evals\//{print $2; exit}'; }
+
+while IFS= read -r b; do
+  got=$(img "$b" t0)
+  case "$got" in
+    */evals/"$b"-t0--*) ;;
+    *) echo "FAIL perTask: $b rendered '$got' — expected evals/$b-t0--<agent>; the chart did not resolve its own per-task.json"
+       fail=$((fail + 1)) ;;
+  esac
+done < <(sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p' "$CHART/per-task.json")
+
+got=$(img humaneval 0)
+case "$got" in
+  */evals/humaneval--*) ;;
+  *) echo "FAIL perTask: shared-env humaneval rendered '$got' — expected evals/humaneval--<agent>"
+     fail=$((fail + 1)) ;;
+esac
 
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]

@@ -54,6 +54,7 @@ LABEL eval.benchmark.description="TruthfulQA - measures whether a model gives tr
 LABEL eval.benchmark.tasks="817"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="741b8276f2d1982aa3d5b832d3ee81ed3b896490"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/truthfulqa/truthful_qa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2109.07958"

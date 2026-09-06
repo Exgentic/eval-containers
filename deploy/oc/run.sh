@@ -2,38 +2,65 @@
 # run.sh — build + run one eval on OpenShift: a single --task, or --dataset
 # (whole dataset → an Indexed Job). Model + flags: oc/README.md and the case below.
 #
-#   ./oc/run.sh --benchmark aime --agent codex --model bifrost --dataset
-#   ./oc/run.sh --benchmark aime --agent codex --model bifrost --task 0   # single, debug
+#   ./oc/run.sh --benchmark aime --agent codex --model azure/gpt-5-mini --dataset
+#   ./oc/run.sh --benchmark aime --agent codex --model azure/gpt-5-mini --task 0   # single, debug
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
-BENCHMARK="" AGENT="" MODEL="" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
-EVAL_MODEL="" NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX=""
+BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
+NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX=""
 DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
-  --model) MODEL="$2"; shift 2;; --task) TASK="$2"; shift 2;;
+  --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; shift 2;;
+  --task) TASK="$2"; shift 2;;
   --dataset) DATASET_MODE=true; shift;; --dataset-size) DATASET="$2"; DATASET_MODE=true; shift 2;;
   --parallelism) PARALLELISM="$2"; shift 2;; --retry) RETRY="$2"; shift 2;;
   --queue) QUEUE="$2"; shift 2;;
-  --eval-model) EVAL_MODEL="$2"; shift 2;; --namespace) NAMESPACE="$2"; shift 2;;
+  --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --pvc) PVC="$2"; shift 2;;
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
+  --run-id) RUN_ID="$2"; shift 2;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --test) TEST=true; shift;;
   --test-suffix) TEST=true; SUFFIX="$2"; shift 2;;
   --rerun) RERUN=true; shift;; --watch) WATCH=true; shift;; --dry-run) DRY_RUN=true; shift;;
+  # Renamed, not aliased: --eval-model named the handle when --model meant the
+  # gateway image (gateways/RULES.md rule 2c). Say so instead of accepting both.
+  --eval-model) echo "error: --eval-model was renamed --model (the proxy image is --gateway)" >&2; exit 1;;
   *) echo "Unknown argument: $1" >&2; exit 1;;
 esac; done
 [[ -z "$BENCHMARK" || -z "$AGENT" || -z "$MODEL" ]] && {
   echo "error: --benchmark, --agent and --model are required" >&2; exit 1; }
+# --model is the upstream handle, never a proxy image: a bare name (`bifrost`)
+# used to mean the gateway here and would now be forwarded as EVAL_MODEL. Fail
+# loud rather than routing to a nonexistent model (gateways/RULES.md rule 2).
+[[ "$MODEL" != */* ]] && {
+  echo "error: --model takes the upstream <provider>/<model> handle (e.g. azure/gpt-5-mini); the proxy image is --gateway" >&2; exit 1; }
 log() { echo "[run] $*"; }
+
+# Per-task benchmarks bake one eval image per task (evals/<b>-<task>--<a>), and
+# this script is the internal-registry path: `build --builder oc` refuses
+# --task-id outright, and a flat ImageStream name cannot even hold a task id like
+# `sympy__sympy-24066` (`_` is not RFC-1123). Say so here rather than failing
+# three steps later on a build that could never have produced the right image.
+# The published GHCR fleet has these images already — launch them from there (the
+# dashboard does); the chart renders the task-aware ref on its own.
+if per_task "$BENCHMARK"; then
+  echo "error: $BENCHMARK is a per-task benchmark — one eval image per task, which" >&2
+  echo "       the internal registry cannot build (build --builder oc has no --task-id)." >&2
+  echo "       Launch it from the published fleet instead of building it here." >&2
+  exit 1
+fi
 
 [[ -z "$REGISTRY" ]] && REGISTRY="$(oc_registry "$NAMESPACE")"
 [[ -x "$REPO_DIR/target/release/eval-containers" ]] && PATH="$REPO_DIR/target/release:$PATH"
 # --test / --test-suffix: isolate behind a suffix so production is untouched.
 if $TEST && [[ -z "$SUFFIX" ]]; then SUFFIX="-test"; fi
 RESULT_PREFIX="runs${SUFFIX}"
+# This run's own directory under the prefix. Sortable, and unique enough that two
+# runs started in the same second still separate (--run-id pins it for a rerun).
+RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$RANDOM}"
 [[ -n "$SUFFIX" ]] && log "TEST MODE (${SUFFIX} imagestreams → ${RESULT_PREFIX}/)" || true
 
 # ── 1. Build (CLI; skip if imagestream exists, unless --rebuild) ──────────────
@@ -41,7 +68,7 @@ RESULT_PREFIX="runs${SUFFIX}"
 # successfulBuildsHistoryLimit on it so the controller GCs old build pods (and
 # their ConfigMaps) natively; no shell housekeeping needed here.
 if ! $NO_BUILD; then
-  log "=== build ($BENCHMARK / $AGENT / $MODEL) ==="
+  log "=== build ($BENCHMARK / $AGENT / $GATEWAY) ==="
   ISFLAG=(); [[ -n "$SUFFIX" ]] && ISFLAG=(--imagestream-suffix="$SUFFIX")
   build() { local label="$1" is="$2"; shift 2
     $DRY_RUN && { echo "[dry-run] eval-containers build $* --builder oc ${ISFLAG[*]:-}"; return; }
@@ -50,8 +77,8 @@ if ! $NO_BUILD; then
   ( cd "$REPO_DIR"
     build "bench" "$(flat "$BENCHMARK")$SUFFIX"        bench "$BENCHMARK"
     build "agent" "$(flat "$AGENT")$SUFFIX"            agent "$AGENT"
-    build "model" "$(flat "$MODEL")$SUFFIX"            model "$MODEL"
-    build "eval"  "$(flat "$BENCHMARK-$AGENT")$SUFFIX" eval "$BENCHMARK" --agent "$AGENT" --model "$MODEL" )
+    build "gateway" "$(flat "$GATEWAY")$SUFFIX"        model "$GATEWAY"
+    build "eval"  "$(flat "$BENCHMARK-$AGENT")$SUFFIX" eval "$BENCHMARK" --agent "$AGENT" --gateway "$GATEWAY" )
 fi
 $NO_RUN && { log "--no-run: built only, not submitting."; exit 0; }
 
@@ -67,15 +94,28 @@ if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
   log "dataset size for $BENCHMARK (from image label): $DATASET"
 fi
 
-if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}";
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL}/${TASK}/${JOB}"; fi
+# Two things decide where results land, and both matter. The model's SLUG — the
+# whole handle with `/` → `--`, the shape the dashboard writes and reads back —
+# keys the prefix, so two models behind one gateway cannot share a directory.
+# (The `model` Job label stays the handle's last segment: label values forbid
+# `/` and cap at 63 chars, so the path is the only place that can carry a whole
+# handle, and fetch.sh reads the Job's own subPath rather than rebuilding one.)
+# The leaf is the chart's: it appends this run's id, then the completion index or
+# the task — composing one here is what let a re-run land on the previous run's
+# results, and a sweep re-run on the whole previous sweep.
+MODEL_SLUG="$(model_slug "$MODEL")"
+SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
+if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"
+else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; fi
 
-[[ -z "$EVAL_MODEL" ]] && EVAL_MODEL="openai/azure/$(echo "$MODEL" | sed 's/--bifrost//;s/--litellm//;s/--portkey//')"
 # flatImages=true → the chart composes flat ImageStream refs for the OC registry.
+# Two independent axes (gateways/RULES.md): `model` = the upstream handle → the
+# gateway's EVAL_MODEL; `gatewayImage` = which proxy image serves it.
 SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
-     --set "model=$MODEL" --set "gatewayImage=$MODEL" --set "evalModel=$EVAL_MODEL"
+     --set "model=$MODEL" --set "gatewayImage=$GATEWAY"
      --set "registry=$REGISTRY" --set "flatImages=true"
-     --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB")
+     --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB"
+     --set "runId=$RUN_ID")
 [[ -n "$SUFFIX"      ]] && SET+=(--set "imageSuffix=$SUFFIX" --set "nameSuffix=$SUFFIX")
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")

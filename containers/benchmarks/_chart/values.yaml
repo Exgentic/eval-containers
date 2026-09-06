@@ -8,21 +8,28 @@
 agent: claude-code
 task: "0"
 # perTask: this benchmark bakes one eval image per task, so the runner image is
-# evals/<benchmark>-<task>--<agent> (not evals/<benchmark>--<agent>). The CLI sets
-# it from the benchmark's `eval.benchmark.env=per-task` label. Per-task benchmarks
-# run one Job per task and CANNOT use a dataset (Indexed) Job — datasetSize is
-# rejected when perTask is true. (benchmarks/RULES.md — eval-image naming.)
+# evals/<benchmark>-<task>--<agent> (not evals/<benchmark>--<agent>). You do not
+# set this: the chart resolves it from its own `per-task.json` (derived from the
+# benchmarks' `eval.benchmark.env="per-task"` labels), so `--set benchmark=<x>` is
+# all any caller needs — helm, the CLI, deploy/oc/run.sh and the dashboard all get
+# the same answer. Setting it true here still forces per-task naming for a
+# benchmark outside that set; you cannot force one inside it back to shared-env.
+# Per-task benchmarks run one Job per task and CANNOT use a dataset (Indexed) Job —
+# datasetSize is rejected when perTask is true. (benchmarks/RULES.md — eval-image
+# naming.)
 perTask: false
 registry: ghcr.io/exgentic
-# `gatewayImage` picks the proxy: a generic gateway (bifrost/litellm/portkey)
-# routes `model`=<provider>/<model> at runtime; a pinned image bakes its own.
-# REQUIRED, no default — the gateway errors on an empty handle. The runner's clean
-# label is derived from it (last path segment).
+# Two independent axes (gateways/RULES.md): `gatewayImage` (CLI --gateway) picks
+# the proxy — a generic gateway (bifrost/litellm/portkey) routes `model` at
+# runtime, a pinned per-model image bakes its own; `model` (CLI --model) is the
+# <provider>/<model> handle it routes to. `model` is REQUIRED, no default — the
+# gateway errors on an empty handle. The runner's clean label is derived from it
+# (last path segment).
 gatewayImage: bifrost
 model: ""
 # Agent-side reasoning effort (e.g. high); empty → the agent's default.
 reasoningEffort: ""
-# Image tags (CLI --model-tag → gatewayTag; --agent-tag/--benchmark-tag → runnerTag)
+# Image tags (CLI --gateway-tag → gatewayTag; --agent-tag/--benchmark-tag → runnerTag)
 gatewayTag: latest
 runnerTag: latest
 # imagePullPolicy for all eval images. IfNotPresent suits kind (images are
@@ -55,6 +62,12 @@ maxBudget: ""
 
 # ── Knobs a benchmark MAY override in its values.yaml ────────────────────────
 timeout: "300"
+# Overrides a preset's `timeout` for this run (`--set timeoutOverride=28800`). Plain
+# `--set timeout=` cannot win: a preset is mergeOverwrite'd on top of .Values, so a
+# benchmark that pins a timeout would ignore it. The right budget is a property of
+# the MODEL, not the benchmark — see presets/deepswe.yaml for measured per-model
+# recommendations. Empty -> the preset (or this default) applies.
+timeoutOverride: ""
 # Per-task wall clock, set on the pod. Unset -> timeout + deadlineGrace; grace
 # must cover grading (scicode's is 600s).
 deadlineGrace: 600
@@ -73,6 +86,18 @@ outputVolume: {}
 # The oc/ sweep tooling sets this to a per-run path so many runs share one PVC.
 # In Indexed mode it's the run root; each example lands in <outputSubPath>/<index>.
 outputSubPath: ""
+
+# Say that this run's results are meant to be thrown away. Without it, a run with
+# no `outputVolume` is refused rather than quietly writing to an emptyDir the
+# kubelet deletes with the pod (see eval.outputVolume). True only for smoke tests
+# — a real eval names a volume.
+ephemeral: false
+
+# An id for THIS run, appended to outputSubPath when set, so two runs of one
+# benchmark/agent/model land in their own directories (see eval.outputRoot).
+# Optional — a caller that composes its own unique leaf needs nothing here. Any
+# unique string: `$(date -u +%Y%m%d-%H%M%S)-$RANDOM`.
+runId: ""
 
 # ── Sweep model: a dataset eval is ONE Indexed Job ───────────────────────────
 # datasetSize empty → a single-task Job (debug: runs exactly `task`). Set it and

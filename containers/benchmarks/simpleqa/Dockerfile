@@ -18,6 +18,7 @@ LABEL eval.benchmark.description="SimpleQA - factual question answering"
 LABEL eval.benchmark.tasks="4326"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="e319282ab125c3dbd0c7fd00be2e4dd54e7e8f94"
 LABEL eval.benchmark.url="https://github.com/openai/simple-evals"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/simpleqa"

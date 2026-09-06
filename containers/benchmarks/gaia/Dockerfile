@@ -13,6 +13,7 @@ LABEL eval.benchmark.description="GAIA - General AI Assistants"
 LABEL eval.benchmark.tasks="165"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="true"
+ENV EVAL_INTERNET=true
 LABEL eval.benchmark.data_revision="682dd723ee1e1697e00360edccf2366dc8418dd9"
 LABEL eval.benchmark.url="https://github.com/gaia-benchmark/GAIA"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/gaia"

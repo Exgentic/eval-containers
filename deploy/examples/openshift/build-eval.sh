@@ -12,12 +12,12 @@
 #   - the CORE base images already exist in the internal registry
 #     (one-time bootstrap — see "Bootstrapping core bases" in README.md)
 #
-# Usage:  ./build-eval.sh <benchmark> <agent> [model]
+# Usage:  ./build-eval.sh <benchmark> <agent> [gateway]
 set -euo pipefail
 
-BENCHMARK=${1:?usage: build-eval.sh <benchmark> <agent> [model]}
-AGENT=${2:?usage: build-eval.sh <benchmark> <agent> [model]}
-MODEL=${3:-bifrost}
+BENCHMARK=${1:?usage: build-eval.sh <benchmark> <agent> [gateway]}
+AGENT=${2:?usage: build-eval.sh <benchmark> <agent> [gateway]}
+GATEWAY=${3:-bifrost}
 
 cd "$(dirname "$0")/../../.."   # repo root (contexts are relative to it)
 
@@ -26,7 +26,7 @@ cd "$(dirname "$0")/../../.."   # repo root (contexts are relative to it)
 # context, and build-arg; this loop only encodes the ordering.
 eval-containers build bench "$BENCHMARK"                          --builder oc
 eval-containers build agent "$AGENT"                             --builder oc
-eval-containers build model "$MODEL"                             --builder oc
-eval-containers build eval  "$BENCHMARK" --agent "$AGENT" --model "$MODEL" --builder oc
+eval-containers build model "$GATEWAY"                           --builder oc
+eval-containers build eval  "$BENCHMARK" --agent "$AGENT" --gateway "$GATEWAY" --builder oc
 
 echo "✓ built ${BENCHMARK}-${AGENT} on the cluster (internal registry)"

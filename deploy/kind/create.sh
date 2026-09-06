@@ -518,4 +518,4 @@ if [[ "$probe_status" -ne 0 ]]; then
   exit "$UPSTREAM_UNUSABLE"
 fi
 
-log "ready. submit an eval with: ./deploy/kind/run.sh --benchmark <b> --agent <a> --model <m> --task 0 --watch"
+log "ready. submit an eval with: ./deploy/kind/run.sh --benchmark <b> --agent <a> --model <provider>/<model> --task 0 --watch"

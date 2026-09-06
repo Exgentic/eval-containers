@@ -21,6 +21,7 @@ LABEL eval.benchmark.description="USACO - competitive programming"
 LABEL eval.benchmark.tasks="307"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://huggingface.co/datasets/dapumptu/usaco_benchmark"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/usaco"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/usaco"

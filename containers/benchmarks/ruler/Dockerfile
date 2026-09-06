@@ -151,6 +151,7 @@ LABEL eval.benchmark.description="RULER - synthetic long-context benchmark (NIAH
 LABEL eval.benchmark.tasks="200"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="ab17b7853df4e0a30b78cd5d2b463ac7dff6ee13"
 LABEL eval.benchmark.url="https://github.com/hsiehjackson/RULER"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2404.06654"

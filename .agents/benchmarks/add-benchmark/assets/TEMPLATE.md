@@ -166,9 +166,8 @@ services:
 helm template {name} benchmarks/_chart \
   --set benchmark={name} \
   --set agent=<other-agent> \          # → runner image evals/{name}--<other-agent>
-  --set gatewayImage=<other-combo> \   # → gateway image models/<other-combo>
-  --set evalModel=<other-provider/other-model> \
-  --set model=<friendly-label>
+  --set gatewayImage=<other-gateway> \ # → gateway image models/<other-gateway>
+  --set model=<other-provider/other-model>   # → the gateway's EVAL_MODEL
 ```
 
 ## Gotchas

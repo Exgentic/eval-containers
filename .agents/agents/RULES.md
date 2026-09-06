@@ -69,6 +69,16 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 18. **Smoke test.** Every agent MUST pass `tests/run/agents/test.rs` — boot from the `evals/agents-smoke--<name>` carrier and make at least one LLM call to the protocol-namespaced gateway endpoint within `FIRST_CALL_TIMEOUT` seconds. The smoke test runs with a `models/replay` mock LLM, so no upstream credentials are needed. An agent that cannot satisfy this contract (because its design hardcodes a vendor backend, requires interactive setup, or runs a self-hosted multi-process stack) MUST be listed in `tests/run/agents/broken.md` with the root cause + smallest viable fix. Removing an agent from `broken.md` is the success condition.
 
+### Internet policy
+
+19. **Internet policy is a capability toggle, not benchmark knowledge.** A supporting agent MUST read only the `EVAL_INTERNET` env var — never a benchmark name — to decide whether to disable its own internet-accessing capabilities and tools, so it does not attempt access that is bound to fail.
+
+20. **Unsupported means warn, not silently ignored.** The runner MUST warn (not reject) a run where `EVAL_INTERNET=false` but the selected agent's `/run.sh` does not reference `EVAL_INTERNET`, since network isolation (rule 21) still holds regardless of agent support — the pairing is valid, just without the agent avoiding calls that are bound to fail.
+
+21. **Tool removal is not the isolation boundary.** `EVAL_INTERNET=false` MUST NOT be documented or relied on as network isolation — that is [benchmarks/RULES.md rule 9](../benchmarks/RULES.md), unconditional on every benchmark, and it already blocks a raw-socket tool like `WebFetch` (removing it just avoids a call bound to fail, per rule 19). The one channel rule 9 cannot reach is the LLM provider's own server-side web-search tool (e.g. `WebSearch`): it is provider-mediated, not a socket the agent opens, so no network policy touches it. Denying it client-side is a temporary mitigation for that specific gap, not a fix — blocking the provider's web-search at the gateway is the real fix and remains future work.
+
+22. **The task text MUST tell the agent when no internet is needed.** When `EVAL_INTERNET=false`, the runner MUST append a plain-language note to `TASK` stating that no internet connection is required and the agent should not attempt to access it, so the agent does not spend turns diagnosing or working around a perceived connectivity failure.
+
 ## References
 
 - [Process](../RULES.md)
@@ -82,3 +92,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-14 | Split rule 12 into rule 12 (reproducible by default via pinned `ARG <NAME>_VERSION`) and new rule 13 (runtime override via `EVAL_AGENT_VERSION`, writes resolved version to `/output/agent/version.json`). Added `eval.agent.version` to required labels (rule 14). Renumbered rules 14–17. |
 | 2026-05-21 | Added rule 18 (smoke test) — agents must pass `tests/run/agents/test.rs` or be documented in `tests/run/agents/broken.md`. |
 | 2026-08-10 | Rule 8: replaced the hardcoded `/app/` with "its task working directory (wherever the benchmark's entrypoint places it)" — only 39 of 102 benchmarks actually use `/app`; swe-bench stages at `/testbed`. The old wording had already misled one agent image into hardcoding `/app` (#308). |
+| 2026-09-06 | Added rules 19–22 (Internet policy): `EVAL_INTERNET` is a capability toggle read verbatim (19); the runner warns, not rejects (20 — corrected from an initial fail-loud draft, since network isolation, rule 21, holds regardless of agent support, and most of the fleet's agents don't yet support denying their own web tools, so failing would have broken existing valid pairings); denying the agent's web tools is not the isolation boundary (rule 9 already covers raw-socket tools like `WebFetch` unconditionally) but is a temporary client-side mitigation for the one channel that boundary can't reach — the LLM provider's own server-side web-search (21); the runner appends a plain-language no-internet-needed note to `TASK` (22). The label/ENV agreement requirement moved to [benchmarks/RULES.md rule 21c](../benchmarks/RULES.md) (#423); rules 21–23 renumbered to 20–22. |

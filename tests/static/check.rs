@@ -197,6 +197,37 @@ fn extract_count_before(text: &str, suffix: &str) -> Option<u32> {
     None
 }
 
+/// A preset is mergeOverwrite'd ON TOP of .Values, so `--set timeout=` loses to any
+/// benchmark that pins one — the override renders as applied but the Job keeps the
+/// preset value, which silently runs an agent on the wrong budget. `timeoutOverride`
+/// is the escape hatch; this pins the three pieces that make it work so a refactor
+/// cannot quietly drop it.
+#[test]
+fn timeout_override_beats_a_preset() {
+    let read =
+        |p: &str| fs::read_to_string(repo_root().join(p)).unwrap_or_else(|_| panic!("missing {p}"));
+    let helpers = read("containers/benchmarks/_chart/templates/_helpers.tpl");
+    assert!(
+        helpers.contains("timeoutOverride"),
+        "_helpers.tpl eval.values must honour timeoutOverride — without it a preset's \
+         timeout cannot be overridden per run"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("timeoutOverride: \"\""),
+        "_chart/values.yaml must ship `timeoutOverride: \"\"` — empty default, preset applies"
+    );
+    // The comment inside eval.values must be trimmed: that define's output is parsed
+    // as YAML by its callers, so an untrimmed {{/* … */}} injects a blank line and
+    // breaks `helm lint` (observed).
+    assert!(
+        !helpers.contains("{{/* `timeout` is the one preset key"),
+        "the timeoutOverride comment must use {{- /* … */ -}}; an untrimmed comment in \
+         eval.values emits a newline into YAML the callers parse"
+    );
+
+    eprintln!("✓ timeoutOverride: helper honours it, values.yaml defaults empty, comment trimmed");
+}
+
 #[test]
 fn count_reconciliation() {
     let claims = readme_counts();
@@ -319,6 +350,70 @@ fn released_benchmarks_have_fixtures() {
     eprintln!(
         "✓ fixture coverage: {} released benchmarks, all have ≥1 fixture",
         released.len()
+    );
+}
+
+/// A chart helper named anywhere in the repo must exist in the chart.
+///
+/// One such helper (`modelSlug`) outlived its `define` by a whole PR: it was deleted
+/// when the Job's `model` label went back to the handle's last segment, and two
+/// shell comments kept promising the chart stamped it — a claim the same PR's
+/// own test contradicted. Prose drifts silently, but a helper NAME is a
+/// resolvable fact, so resolve it.
+///
+/// camelCase after the `eval.` prefix is what separates a template helper from
+/// an image label (`eval.model.provider`, `eval.benchmark.env`), which are
+/// dotted and lowercase and have nothing to do with the chart. Spell a *dead*
+/// helper without the prefix in prose, or this gate rightly flags the mention.
+#[test]
+fn every_chart_helper_named_in_the_repo_is_defined() {
+    let tpl_dir = repo_root().join("containers/benchmarks/_chart/templates");
+    let mut defined: Vec<String> = Vec::new();
+    for entry in fs::read_dir(&tpl_dir)
+        .expect("missing chart templates dir")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("tpl") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).unwrap_or_default();
+        // Plain string scan: this crate stays dependency-light (tests/static/RULES.md).
+        for rest in text.split(r#"define ""#).skip(1) {
+            if let Some(name) = rest.split('"').next() {
+                if name.starts_with("eval.") {
+                    defined.push(name.to_string());
+                }
+            }
+        }
+    }
+    assert!(
+        !defined.is_empty(),
+        "found no `define \"eval.*\"` in {tpl_dir:?} — the pattern moved, so this gate is asleep"
+    );
+
+    let out = std::process::Command::new("git")
+        .args(["grep", "-ohE", r"eval\.[a-z]+[A-Z][A-Za-z]*"])
+        .current_dir(repo_root())
+        .output()
+        .expect("failed to run git grep");
+    let referenced = String::from_utf8_lossy(&out.stdout);
+
+    let mut dangling: Vec<&str> = referenced
+        .lines()
+        .map(str::trim)
+        .filter(|name| !defined.iter().any(|d| d == name))
+        .collect();
+    dangling.sort_unstable();
+    dangling.dedup();
+    assert!(
+        dangling.is_empty(),
+        "these chart helpers are named in the repo but defined nowhere in {tpl_dir:?}: {dangling:?}\n\
+         Either the `define` was renamed/removed and its callers and comments were left behind, or the name is a typo."
+    );
+    eprintln!(
+        "✓ {} chart helpers named in the repo, all defined",
+        defined.len()
     );
 }
 
@@ -466,11 +561,11 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 
 /// The model axis supports BOTH paths, with the generic gateway as the default
 /// (models/RULES.md rule 1, #187):
-///   - **Generic** (default): `EVAL_GATEWAY_IMAGE=bifrost` routes whatever
+///   - **Generic** (default): `EVAL_GATEWAY=bifrost` routes whatever
 ///     `EVAL_MODEL=<provider>/<model>` you set — any LiteLLM model, zero build.
 ///     The generic image errors on an empty handle, so there is no compose-level
 ///     default model (no silent fallback).
-///   - **Pinned** (opt-in): a per-model image (`EVAL_GATEWAY_IMAGE=<model>`) bakes
+///   - **Pinned** (opt-in): a per-model image (`EVAL_GATEWAY=<model>`) bakes
 ///     its model + custom config — a shared, versioned artifact. Allowed, not forbidden.
 #[test]
 fn model_axis_generic_default_no_silent_model() {
@@ -479,7 +574,7 @@ fn model_axis_generic_default_no_silent_model() {
 
     // Generic gateway is the DEFAULT proxy.
     assert!(
-        svc.contains("${EVAL_GATEWAY_IMAGE:-bifrost}"),
+        svc.contains("${EVAL_GATEWAY:-bifrost}"),
         "services.yaml gateway must default to the generic `bifrost` proxy (#187)"
     );
     // No silent fallback model: the compose never bakes a default EVAL_MODEL — an
@@ -623,6 +718,88 @@ fn reasoning_effort_wired_through_to_agents() {
 
     eprintln!(
         "✓ EVAL_AGENT_REASONING_EFFORT: agent-side `${{VAR:+…}}` + run-agent grep-based loud-reject + compose/chart"
+    );
+}
+
+/// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —
+/// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
+/// run-agent forwards it and WARNS (does not fail) for an agent whose /run.sh
+/// doesn't use it — network isolation (rule 21) holds regardless of agent
+/// support, so an unsupported agent is still a valid, correctly-isolated
+/// pairing; failing the run would break every existing fixture pairing an
+/// internet=false benchmark with one of the many agents that don't support it.
+#[test]
+fn internet_policy_wired_through_to_agents() {
+    let root = repo_root();
+    let read =
+        |p: &str| fs::read_to_string(root.join(p)).unwrap_or_else(|e| panic!("read {p}: {e}"));
+    let run_agent = read("containers/core/runner/run-agent");
+
+    assert!(
+        run_agent.contains("EVAL_INTERNET="),
+        "run-agent's `env -i` allow-list must pass EVAL_INTERNET or the agent can't read it"
+    );
+    assert!(
+        run_agent.contains("grep -q EVAL_INTERNET /run.sh"),
+        "run-agent must check whether the agent's /run.sh references EVAL_INTERNET"
+    );
+    // The check must warn, not fail: find its `if` block and confirm it echoes
+    // to stderr but never exits. (EVAL_AGENT_REASONING_EFFORT's block, just
+    // above, DOES exit 2 — scope the search to the EVAL_INTERNET block only.)
+    let internet_block_start = run_agent
+        .find("grep -q EVAL_INTERNET /run.sh")
+        .expect("checked above");
+    let internet_block_end = run_agent[internet_block_start..]
+        .find("\nfi")
+        .map(|i| internet_block_start + i)
+        .expect("run-agent's EVAL_INTERNET guard must close with `fi`");
+    let internet_block = &run_agent[internet_block_start..internet_block_end];
+    assert!(
+        !internet_block.contains("exit"),
+        "run-agent's EVAL_INTERNET guard must WARN, not exit/fail the run — network isolation \
+         (rule 21) holds regardless of agent support, so an unsupported agent is still a valid \
+         pairing"
+    );
+    assert!(
+        internet_block.contains(">&2"),
+        "run-agent's EVAL_INTERNET guard must still print a warning to stderr"
+    );
+    for a in ["claude-code", "claude-code-rtk"] {
+        assert!(
+            read(&format!("containers/agents/{a}/Dockerfile")).contains("EVAL_INTERNET"),
+            "{a} /run.sh must reference EVAL_INTERNET to deny its web tools when set to false"
+        );
+    }
+
+    eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based warn-not-fail");
+}
+
+// The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
+// (benchmarks/RULES.md 21c) is artifact-shaped Dockerfile structure, so per
+// this file's own module doc it lives in conftest, not here — see
+// tests/static/policy/dockerfile/labels.rego (env_value/env_keys + the two
+// `deny` rules right after required_benchmark_keys) and its unit tests in
+// labels_test.rego (test_internet_label_without_env_denies,
+// test_internet_label_env_disagreement_denies,
+// test_internet_label_env_argdriven_passes).
+
+/// agents/RULES.md 22: when EVAL_INTERNET=false, the runner MUST tell the agent
+/// in the task text itself that no internet is needed, so it doesn't burn turns
+/// diagnosing/working around a perceived connectivity failure.
+#[test]
+fn run_injects_no_internet_note_into_task() {
+    let run = fs::read_to_string(repo_root().join("containers/core/runner/run")).expect("read run");
+    assert!(
+        run.contains(r#"[ "${EVAL_INTERNET:-}" = "false" ]"#),
+        "core/runner/run must branch on EVAL_INTERNET=false to modify TASK (agents/RULES.md 22)"
+    );
+    assert!(
+        run.to_lowercase().contains("no internet"),
+        "core/runner/run must append a plain-language no-internet-needed note to TASK when \
+         EVAL_INTERNET=false (agents/RULES.md 22)"
+    );
+    eprintln!(
+        "✓ core/runner/run appends a no-internet-needed note to TASK when EVAL_INTERNET=false (agents/RULES.md 22)"
     );
 }
 
@@ -911,5 +1088,112 @@ fn the_retry_round_is_driven_from_grade_sh() {
             .unwrap()
             .contains("retry"),
         "the shared runner stays retry-agnostic — one benchmark does not change the fleet"
+    );
+}
+
+/// A published `eval-<benchmark>` artifact republishes when *its* inputs move,
+/// not when its benchmark image happens to be stale (#451): the flattened
+/// compose bytes include the shared `containers/compose/` half, which sits in no
+/// image's build context, so a main push judges freshness with the compose sweep
+/// and publishes even when nothing needed rebuilding.
+#[test]
+fn a_main_push_publishes_the_compose_artifacts_that_moved() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+    assert!(
+        enumerate.contains("fleet-status.sh compose"),
+        "the main-push compose list must come from the compose freshness sweep — \
+         deriving it from the stale *leaf* list misses every change to \
+         containers/compose/, which is inside no image's build context"
+    );
+    let compose = wf
+        .split("\n  compose:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  combos:").next())
+        .expect("no `compose` job in release-images.yml");
+    assert!(
+        compose.contains("needs.merge.result == 'skipped'"),
+        "the compose job must still run when `merge` is skipped — a compose-only \
+         change leaves no image stale, and the stack references images by tag"
+    );
+}
+
+/// Per-task images and their combos ride the continuous channel like every other
+/// image (#452). A main push enumerates them and prunes to the set whose input
+/// hashes moved, rather than excluding the class outright; and because a
+/// per-task benchmark publishes no `benchmarks/<b>:latest` of its own, the
+/// combo filter judges a per-task pair by its own task base, never by the
+/// benchmark target's (permanently absent) staleness.
+#[test]
+fn a_main_push_publishes_the_per_task_images_that_moved() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+
+    assert!(
+        !enumerate.contains("INCLUDE_PER_TASK=false"),
+        "a main push must not switch the per-task class off wholesale — rule 16 \
+         selects by changed build inputs, not by image class"
+    );
+    assert!(
+        enumerate.contains("fleet-hash.sh per-task") && enumerate.contains("fleet-status.sh check"),
+        "the main-push per-task list must be pruned by comparing each image's \
+         input hash against the registry, or every push rebuilds ~660 images"
+    );
+    assert!(
+        enumerate.contains("pertask_all"),
+        "combos must expand over the FULL per-task list — a stale agent dirties \
+         every task's combo, not only the tasks whose base moved"
+    );
+    assert!(
+        enumerate.contains(r#"[ "$pertask" = "[]" ]"#),
+        "`dirty` must count per-task images: merge stitches their per-arch tags, \
+         so a push that moved only per-task images is not clean"
+    );
+}
+
+/// The Helm chart rides the same channel as every image (RULES.md principle 9):
+/// a push to `main` publishes `charts/eval`, not only a version tag — publishing
+/// it tag-only is what left the registry with no chart at all (#449, #440). A
+/// chart's OCI tag IS its SemVer, so the rolling channel is `Chart.yaml`'s
+/// version; the publish must therefore also refuse a version that is already
+/// released, and confirm the artifact landed (delivery/RULES.md:16, :17).
+#[test]
+fn the_chart_publishes_on_the_continuous_channel() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  chart:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  report:").next())
+        .expect("no `chart` job in release-images.yml");
+
+    assert!(
+        job.contains("github.event_name == 'push' && github.ref_type == 'branch'"),
+        "the chart job must also run on a default-branch push — tag-only leaves \
+         charts/eval arbitrarily far behind the images main publishes at :latest"
+    );
+    assert!(
+        job.contains("containers/benchmarks/_chart/Chart.yaml"),
+        "the rolling publish must read its version from Chart.yaml — TAG is `latest` \
+         on main and `helm package --version latest` is not SemVer"
+    );
+    assert!(
+        job.contains("gh release view") && job.contains("::error::"),
+        "the rolling publish must refuse a version whose release is already out, or \
+         every main push overwrites a released chart"
+    );
+    assert!(
+        job.contains("helm show chart"),
+        "the publish must read the chart back from the registry (delivery/RULES.md:17)"
     );
 }

@@ -42,13 +42,14 @@ overrides the env var.
 |---|---|---|
 | `--benchmark <name>` | `EVAL_BENCHMARK` | or positional |
 | `--agent <name>` | `EVAL_AGENT` | |
-| `--model <name>` | `EVAL_MODEL` | sets the gateway upstream |
+| `--model <handle>` | `EVAL_MODEL` | the `<provider>/<model>` upstream the gateway routes to |
+| `--gateway <name>` | `EVAL_GATEWAY` | which proxy serves it (`bifrost` / `litellm` / `portkey`, or a pinned per-model image); default `bifrost` |
 | `--agent-reasoning-effort <level>` | `EVAL_AGENT_REASONING_EFFORT` | the agent applies it; e.g. `high` |
 | `--task-id <id>` | `EVAL_TASK_ID` | default `0` |
 | `--mode <compose\|container\|job>` | — | default `compose` |
 | `--benchmark-tag <tag>` | `EVAL_BENCHMARK_TAG` | image tag |
 | `--agent-tag <tag>` | `EVAL_AGENT_TAG` | image tag |
-| `--model-tag <tag>` | `EVAL_MODEL_TAG` | image tag |
+| `--gateway-tag <tag>` | `EVAL_GATEWAY_TAG` | image tag (renamed from `--model-tag`, which now errors) |
 | `--benchmark-version <v>` | `EVAL_BENCHMARK_VERSION` | dataset revision inside the image |
 | `--agent-version <v>` | `EVAL_AGENT_VERSION` | upstream CLI version inside the image |
 | `--litellm-version <v>` | `EVAL_LITELLM_VERSION` | LiteLLM version inside the image |

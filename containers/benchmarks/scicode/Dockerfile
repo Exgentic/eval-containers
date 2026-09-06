@@ -23,6 +23,7 @@ LABEL eval.benchmark.description="SciCode - scientific research coding across 16
 LABEL eval.benchmark.tasks="65"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="4510f6a6aa27c43fad7b43da2c59602a86e88480"
 LABEL eval.benchmark.url="https://github.com/scicode-bench/SciCode"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2407.13168"
