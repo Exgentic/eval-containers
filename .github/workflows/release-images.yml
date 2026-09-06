@@ -221,6 +221,14 @@ jobs:
       dirty: ${{ steps.l.outputs.dirty }}           # main push: anything at all to publish?
     steps:
       - uses: actions/checkout@v7.0.1
+      # The staleness sweeps below read the registry (images + compose artifacts);
+      # an anonymous read hits the rate limit and reports `unreadable`, which
+      # rule 14 then turns into a needless rebuild.
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - id: l
         env:
           GH_TOKEN: ${{ github.token }}
@@ -288,12 +296,29 @@ jobs:
           if [ "$n" -le 0 ] && [ "$IS_MAIN_PUSH" != "true" ]; then echo "::error::leaf count 0 — releases and dispatches must name at least one leaf"; exit 1; fi
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
-          # --only mode and main pushes derive the compose list from the restricted
-          # leaves; else all shared benchmarks.
+          # --only mode derives the compose list from the restricted leaves, a
+          # main push from the artifacts that moved (below); else all shared.
           bench_all=$(comm -23 \
             <(find containers/benchmarks -mindepth 1 -maxdepth 1 -type d | sed -E 's#.*/##' | sort -u) \
             <(printf '%s\n' "$pertaskdirs" | sed 's/^benchmark-//' | sort -u))
-          if [ -n "${ONLY:-}" ] || [ "$IS_MAIN_PUSH" = "true" ]; then
+          # A main push publishes the artifacts that actually moved. An eval-<b>
+          # artifact is the flattened compose bytes, whose inputs include the
+          # shared containers/compose/ half that sits in no image's build context
+          # — so its freshness is judged against the published layer digest, not
+          # against the benchmark image's staleness (#451).
+          if [ "$IS_MAIN_PUSH" = "true" ]; then
+            # Into a file, not a process substitution: a sweep that dies would
+            # otherwise read as "nothing moved" and publish nothing, the
+            # fail-clean rule 14 forbids.
+            cs=$(mktemp)
+            bash containers/scripts/fleet-status.sh compose latest > "$cs" \
+              || { echo "::error::compose freshness sweep failed"; exit 1; }
+            bench_src=$(comm -12 \
+              <(awk -F'\t' '$2!="fresh" && $2!="declined"{print $1}' "$cs" \
+                  | sed -E "s#^${REGISTRY}/eval-##; s#:latest\$##" | sort -u) \
+              <(printf '%s\n' "$bench_all" | sort -u))
+            echo "main push -> $(printf '%s\n' "$bench_src" | grep -c .) compose artifact(s) to publish"
+          elif [ -n "${ONLY:-}" ]; then
             bench_src=$(printf '%s\n' "$leaf_list" | sed -n 's/^benchmark-//p')
           else
             bench_src="$bench_all"
@@ -677,7 +702,10 @@ jobs:
   # every benchmark's bundle.
   compose:
     needs: [cli, merge, enumerate]
-    if: always() && (needs.merge.result == 'success' || inputs.dry_run) && needs.cli.result == 'success' && needs.enumerate.result == 'success' && needs.enumerate.outputs.benchmarks != '[]'
+    # `merge` is skipped when no image was stale — a compose-only change (the
+    # shared containers/compose/) still has an artifact to publish, and the stack
+    # references its images by tag, so no rebuild is implied (#451).
+    if: always() && (needs.merge.result == 'success' || needs.merge.result == 'skipped' || inputs.dry_run) && needs.cli.result == 'success' && needs.enumerate.result == 'success' && needs.enumerate.outputs.benchmarks != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

@@ -29,9 +29,18 @@
 #   fleet-status.sh [tag]                 # full-fleet report (default: latest)
 #   fleet-status.sh check <ref> <hash>    # one ref: prints the verdict;
 #                                         # exit 0 = fresh, 1 = not fresh
+#   fleet-status.sh compose [tag]         # per-benchmark eval-<b> artifacts:
+#                                         # published layer digest vs the local
+#                                         # flatten (+ `declined` for a stack
+#                                         # that opts out of publishing).
+#                                         # The comparison is against `docker
+#                                         # compose config` output, so a compose
+#                                         # upgrade that reserializes republishes
+#                                         # the set once — correct, not a bug.
 # The `check` form is the release workflow's retag decision (rule 13) — the
 # read logic lives only here.
 # Output (TSV): ref  verdict  computed-hash  recorded-hash  platforms
+#               (the compose form has no platforms column)
 # Env: REGISTRY (default ghcr.io/exgentic), REF (default HEAD),
 #      STATUS_JOBS (parallel inspects, default 8)
 # Exit (report form): 0 when the sweep completes — a report, not a gate.
@@ -42,27 +51,43 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 
 command -v jq >/dev/null || { echo "fleet-status: jq not found" >&2; exit 2; }
 
-check_one() {
-  local ref=$1 want=$2 expect=${3:-} img got have missing p err n=0
-  # One inspect serves both reads: .Image carries the labels, .Manifest the
-  # published platform set. A failed read is NOT automatically "absent": ghcr
-  # drops connections often enough that a plain failure conflated a missing
-  # image with a network blip, which rule 14 then turned into a needless
-  # rebuild (two sweeps minutes apart disagreed by six images). Retry while the
-  # error looks transient; report `unreadable` if it never clears — still
-  # "changed" under rule 14, but distinguishable from genuinely missing.
+sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum; else shasum -a 256; fi; }  # stdin
+export -f sha
+
+# One `imagetools inspect`, retried while the failure looks transient. Prints
+# the output; exits 1 when the registry says the ref is genuinely missing and 2
+# when reads never cleared. A failed read is NOT automatically "absent": ghcr
+# drops connections often enough that a plain failure conflated a missing image
+# with a network blip, which rule 14 then turned into a needless rebuild (two
+# sweeps minutes apart disagreed by six images). Both callers below — the image
+# label read and the compose-artifact digest read — share this one discipline.
+inspect_retry() {  # $1=ref  $2…=inspect args
+  local ref=$1 err out n=0
+  shift
   err=$(mktemp)
-  until img=$(docker buildx imagetools inspect "$ref" \
-      --format '{"image":{{json .Image}},"manifest":{{json .Manifest}}}' 2>"$err"); do
+  until out=$(docker buildx imagetools inspect "$ref" "$@" 2>"$err"); do
     grep -qiE 'dial tcp|timeout|timed out|connection reset|unexpected EOF|TLS handshake|500 |502 |503 |504 |too many requests' "$err" \
-      || { rm -f "$err"; printf '%s\tabsent\t%s\t-\t-\n' "$ref" "$want"; return; }
+      || { rm -f "$err"; return 1; }
     n=$((n + 1))
-    [ "$n" -lt "${STATUS_RETRIES:-3}" ] || {
-      rm -f "$err"; printf '%s\tunreadable\t%s\t-\t-\n' "$ref" "$want"; return
-    }
+    [ "$n" -lt "${STATUS_RETRIES:-3}" ] || { rm -f "$err"; return 2; }
     sleep "$n"
   done
   rm -f "$err"
+  printf '%s' "$out"
+}
+export -f inspect_retry
+
+check_one() {
+  local ref=$1 want=$2 expect=${3:-} img got have missing p rc
+  # One inspect serves both reads: .Image carries the labels, .Manifest the
+  # published platform set.
+  img=$(inspect_retry "$ref" \
+    --format '{"image":{{json .Image}},"manifest":{{json .Manifest}}}') || {
+    rc=$?
+    if [ "$rc" -eq 1 ]; then printf '%s\tabsent\t%s\t-\t-\n' "$ref" "$want"
+    else printf '%s\tunreadable\t%s\t-\t-\n' "$ref" "$want"; fi
+    return
+  }
   # A manifest list yields a platform-keyed map (attestation entries live at
   # unknown/unknown); a single-arch image yields the config object directly.
   got=$(jq -r '(.image | if has("linux/amd64") or has("linux/arm64")
@@ -100,6 +125,56 @@ if [ "${1:-}" = "check" ]; then
   out=$(check_one "$2" "$3")
   printf '%s\n' "$out"
   [ "$(cut -f2 <<< "$out")" = "fresh" ]
+  exit
+fi
+
+# ── compose artifacts: eval-<benchmark> ────────────────────────────────────
+# The published artifact's single layer IS `docker compose config
+# --no-interpolate` verbatim (cli/src/build.rs publishes exactly that file), so
+# its layer digest already IS the content hash — there is no label to record and
+# none to trust. That also makes the shared containers/compose/ half an input by
+# construction: it is inside the flattened bytes, though inside no image's build
+# context. Same fail-dirty verdicts as an image, plus `declined` for a stack
+# that says `x-eval-publish: false` and so has no artifact to compare.
+compose_one() {
+  local f=$1 b ref want got rc flat
+  b=$(basename "$(dirname "$f")")
+  ref="${REGISTRY}/eval-${b}:${TAG}"
+  # Matches cli/src/build.rs::declines_publish — a top-level line, trailing
+  # whitespace tolerated; the stack declares it, we never infer it.
+  if grep -qE '^x-eval-publish: false[[:space:]]*$' "$f"; then
+    printf '%s\tdeclined\t-\t-\n' "$ref"; return
+  fi
+  # --no-interpolate keeps the ${VAR}s, so no publish-time env is needed here.
+  # Via a file, not a pipeline: xargs spawns this in a bash that inherited
+  # neither `set -e` nor pipefail, so a failed flatten would otherwise be hashed
+  # as the empty string and read `stale` instead of saying it could not flatten.
+  flat=$(mktemp)
+  if ! docker compose -f "$f" config --no-interpolate > "$flat" 2>/dev/null; then
+    rm -f "$flat"; printf '%s\tunflattenable\t-\t-\n' "$ref"; return
+  fi
+  want=$(sha < "$flat" | cut -d' ' -f1)
+  rm -f "$flat"
+  got=$(inspect_retry "$ref" --raw) || {
+    rc=$?
+    if [ "$rc" -eq 1 ]; then printf '%s\tabsent\t%s\t-\n' "$ref" "$want"
+    else printf '%s\tunreadable\t%s\t-\n' "$ref" "$want"; fi
+    return
+  }
+  got=$(jq -r '.layers[0].digest // ""' <<< "$got" | sed 's/^sha256://')
+  if [ "$got" = "$want" ]; then printf '%s\tfresh\t%s\t%s\n' "$ref" "$want" "$got"
+  else printf '%s\tstale\t%s\t%s\n' "$ref" "$want" "${got:--}"; fi
+}
+export -f compose_one
+
+if [ "${1:-}" = "compose" ]; then
+  TAG="${2:-latest}"
+  export REGISTRY TAG
+  command -v docker >/dev/null || { echo "fleet-status: docker not found" >&2; exit 2; }
+  # shellcheck disable=SC2016  # $1 belongs to the xargs-spawned bash, not this shell
+  find "$HERE/../benchmarks" -mindepth 2 -maxdepth 2 -name compose.yaml -print0 \
+    | xargs -0 -P "${STATUS_JOBS:-8}" -n1 bash -c 'compose_one "$1"' _ \
+    | LC_ALL=C sort
   exit
 fi
 
