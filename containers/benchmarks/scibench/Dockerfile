@@ -18,6 +18,7 @@ LABEL eval.benchmark.description="SciBench - college-level scientific problems i
 LABEL eval.benchmark.tasks="692"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="93931252bc1b71d495e67390235940643d926958"
 LABEL eval.benchmark.url="https://github.com/mandyyyyii/scibench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2307.10635"

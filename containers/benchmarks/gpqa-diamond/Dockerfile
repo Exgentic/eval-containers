@@ -17,6 +17,7 @@ LABEL eval.benchmark.description="GPQA Diamond - graduate-level science"
 LABEL eval.benchmark.tasks="198"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="68be7564497676e07a77a042fdb587deb88c51c3"
 LABEL eval.benchmark.url="https://github.com/idavidrein/gpqa"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/gpqa-diamond"

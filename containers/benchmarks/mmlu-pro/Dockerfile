@@ -22,6 +22,7 @@ LABEL eval.benchmark.description="MMLU-Pro - graduate-level knowledge, multiple 
 LABEL eval.benchmark.tasks="12032"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="54611cde22c74cca43dd78732198de6abe971398"
 LABEL eval.benchmark.url="https://github.com/TIGER-AI-Lab/MMLU-Pro"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mmlu_pro"

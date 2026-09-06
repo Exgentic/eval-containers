@@ -721,6 +721,88 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
+/// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —
+/// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
+/// run-agent forwards it and WARNS (does not fail) for an agent whose /run.sh
+/// doesn't use it — network isolation (rule 21) holds regardless of agent
+/// support, so an unsupported agent is still a valid, correctly-isolated
+/// pairing; failing the run would break every existing fixture pairing an
+/// internet=false benchmark with one of the many agents that don't support it.
+#[test]
+fn internet_policy_wired_through_to_agents() {
+    let root = repo_root();
+    let read =
+        |p: &str| fs::read_to_string(root.join(p)).unwrap_or_else(|e| panic!("read {p}: {e}"));
+    let run_agent = read("containers/core/runner/run-agent");
+
+    assert!(
+        run_agent.contains("EVAL_INTERNET="),
+        "run-agent's `env -i` allow-list must pass EVAL_INTERNET or the agent can't read it"
+    );
+    assert!(
+        run_agent.contains("grep -q EVAL_INTERNET /run.sh"),
+        "run-agent must check whether the agent's /run.sh references EVAL_INTERNET"
+    );
+    // The check must warn, not fail: find its `if` block and confirm it echoes
+    // to stderr but never exits. (EVAL_AGENT_REASONING_EFFORT's block, just
+    // above, DOES exit 2 — scope the search to the EVAL_INTERNET block only.)
+    let internet_block_start = run_agent
+        .find("grep -q EVAL_INTERNET /run.sh")
+        .expect("checked above");
+    let internet_block_end = run_agent[internet_block_start..]
+        .find("\nfi")
+        .map(|i| internet_block_start + i)
+        .expect("run-agent's EVAL_INTERNET guard must close with `fi`");
+    let internet_block = &run_agent[internet_block_start..internet_block_end];
+    assert!(
+        !internet_block.contains("exit"),
+        "run-agent's EVAL_INTERNET guard must WARN, not exit/fail the run — network isolation \
+         (rule 21) holds regardless of agent support, so an unsupported agent is still a valid \
+         pairing"
+    );
+    assert!(
+        internet_block.contains(">&2"),
+        "run-agent's EVAL_INTERNET guard must still print a warning to stderr"
+    );
+    for a in ["claude-code", "claude-code-rtk"] {
+        assert!(
+            read(&format!("containers/agents/{a}/Dockerfile")).contains("EVAL_INTERNET"),
+            "{a} /run.sh must reference EVAL_INTERNET to deny its web tools when set to false"
+        );
+    }
+
+    eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based warn-not-fail");
+}
+
+// The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
+// (benchmarks/RULES.md 21c) is artifact-shaped Dockerfile structure, so per
+// this file's own module doc it lives in conftest, not here — see
+// tests/static/policy/dockerfile/labels.rego (env_value/env_keys + the two
+// `deny` rules right after required_benchmark_keys) and its unit tests in
+// labels_test.rego (test_internet_label_without_env_denies,
+// test_internet_label_env_disagreement_denies,
+// test_internet_label_env_argdriven_passes).
+
+/// agents/RULES.md 22: when EVAL_INTERNET=false, the runner MUST tell the agent
+/// in the task text itself that no internet is needed, so it doesn't burn turns
+/// diagnosing/working around a perceived connectivity failure.
+#[test]
+fn run_injects_no_internet_note_into_task() {
+    let run = fs::read_to_string(repo_root().join("containers/core/runner/run")).expect("read run");
+    assert!(
+        run.contains(r#"[ "${EVAL_INTERNET:-}" = "false" ]"#),
+        "core/runner/run must branch on EVAL_INTERNET=false to modify TASK (agents/RULES.md 22)"
+    );
+    assert!(
+        run.to_lowercase().contains("no internet"),
+        "core/runner/run must append a plain-language no-internet-needed note to TASK when \
+         EVAL_INTERNET=false (agents/RULES.md 22)"
+    );
+    eprintln!(
+        "✓ core/runner/run appends a no-internet-needed note to TASK when EVAL_INTERNET=false (agents/RULES.md 22)"
+    );
+}
+
 /// The lean/standalone split (benchmarks/RULES.md 24a/24f). The lean base
 /// (combination.Dockerfile → evals/<b>--<a>) is glue-free: no in-process gateway,
 /// otelcol, or process-compose — that is what compose/job/k8s run, with those as

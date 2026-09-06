@@ -51,6 +51,7 @@ LABEL eval.benchmark.tasks="5349"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.modality="multimodal"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="539088ef8a8ada01ac8e2e6d4e372586748a265e"
 LABEL eval.benchmark.url="https://www.docvqa.org"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2007.00398"

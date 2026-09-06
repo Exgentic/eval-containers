@@ -15,6 +15,7 @@ LABEL eval.benchmark.description="AssetOpsBench - industrial asset operations 6-
 LABEL eval.benchmark.tasks="152"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="c4a2ebd52436580723bf2c52b3aff87aa53bf999"
 LABEL eval.benchmark.url="https://github.com/IBM/AssetOpsBench"
 LABEL eval.benchmark.paper="https://huggingface.co/blog/ibm-research/assetopsbench-playground-on-hugging-face"

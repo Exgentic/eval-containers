@@ -39,6 +39,24 @@ export MODEL="${MODEL:-${EVAL_MODEL:-}}"
 export BENCHMARK="${BENCHMARK:-${EVAL_BENCHMARK:-unknown}}"
 export AGENT="${AGENT:-${EVAL_AGENT:-unknown}}"
 export TASK="${TASK:-}"
+# When the benchmark declares internet=false, tell the agent explicitly rather
+# than letting it infer network trouble from failed/absent tool calls — without
+# this an agent that hits no internet can spend turns diagnosing or "fixing"
+# connectivity instead of just solving the task (agents/RULES.md 22). This note
+# is not the isolation boundary: benchmarks/RULES.md rule 9's network isolation
+# blocks raw internet access (including WebFetch-style calls) for every
+# benchmark unconditionally. EVAL_INTERNET additionally removes the agent's
+# own web-search/fetch tools, for agents that support it (run-agent warns,
+# doesn't fail, for the rest — agents/RULES.md 20): for WebFetch this just
+# avoids a call bound to fail; for the LLM provider's own server-side
+# web-search, which no network policy can reach, it's the one real (if
+# temporary) mitigation this mechanism provides — agents/RULES.md 21.
+if [ "${EVAL_INTERNET:-}" = "false" ]; then
+  TASK="$TASK
+
+No internet connection is required for this task. Do not try to access the internet in any way."
+  export TASK
+fi
 # Defensive fallback (agent uid baked into image at build time).
 id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
 

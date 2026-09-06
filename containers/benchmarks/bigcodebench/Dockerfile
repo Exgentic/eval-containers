@@ -18,6 +18,7 @@ LABEL eval.benchmark.description="BigCodeBench - practical Python function gener
 LABEL eval.benchmark.tasks="1140"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="b74c0d0bf70d2c0bc459be537895cca163007f1a"
 LABEL eval.benchmark.url="https://github.com/bigcode-project/bigcodebench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.15877"

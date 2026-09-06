@@ -72,6 +72,7 @@ LABEL eval.benchmark.description="MRCR v2 - Multi-Round Coreference Resolution (
 LABEL eval.benchmark.tasks="2400"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="f4c69fae7cf81f7ca26b9fee34b392a50f6b8a1d"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/mrcr"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2505.14993"

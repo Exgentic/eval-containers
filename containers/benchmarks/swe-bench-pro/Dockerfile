@@ -26,6 +26,7 @@ LABEL eval.benchmark.description="SWE-bench Pro - harder, professional-grade sof
 LABEL eval.benchmark.tasks="1865"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/scaleapi/SWE-bench_Pro-os"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2509.16941"
 ENV EVAL_BENCHMARK=swe-bench-pro

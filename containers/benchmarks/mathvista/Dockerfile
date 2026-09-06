@@ -46,6 +46,7 @@ LABEL eval.benchmark.tasks="1000"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.modality="multimodal"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="2b6ad69445fbb5695c9b165475e8decdbeb97747"
 LABEL eval.benchmark.url="https://mathvista.github.io"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2310.02255"

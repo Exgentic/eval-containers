@@ -50,6 +50,7 @@ LABEL eval.benchmark.description="SocialIQA - social interaction reasoning (3-wa
 LABEL eval.benchmark.tasks="1954"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="8835ceb9141d7896d9d968634a9b21ae440e3ec5"
 LABEL eval.benchmark.url="https://leaderboard.allenai.org/socialiqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1904.09728"
