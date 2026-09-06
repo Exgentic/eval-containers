@@ -67,7 +67,11 @@ if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
   # upstream everywhere else, and exporting it here would repoint whatever else
   # reads it.
   edge_upstream="${OPENAI_API_BASE:-$(printf '%s' "$ANTHROPIC_BASE_URL" | sed 's#/anthropic$##')}"
+  # .zst: the edge holds one encoder open for the run, so it sees that each
+  # request repeats the previous conversation — ~138x on a real trajectory,
+  # against ~7x for anything that compresses each record alone.
   OPENAI_API_BASE="$edge_upstream" EDGE_UPSTREAM=gateway \
+    OUT=/output/model/calls.jsonl.zst \
     /opt/edge/start >> /output/model/edge.log 2>&1 &
   edge_ready=0
   for _ in $(seq 1 60); do

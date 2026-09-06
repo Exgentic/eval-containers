@@ -31,16 +31,25 @@ RUN=r1
 # shellcheck source=tests/e2e/_lib.sh
 . "$ROOT/tests/e2e/_lib.sh"
 require_tools
+# zstd decodes the edge's record below; a silent skip would quietly ungate it.
+command -v zstd >/dev/null || { echo "zstd not found"; exit 1; }
 
 step "build eval image (agents-smoke + mock)"
 build_stubs gateway otel
 docker build -q --load -t eval-e2e/mock:latest "$ROOT/containers/agents/mock" >/dev/null || exit 1
+# From source, not ghcr: the combination image defaults EDGE_IMAGE to the
+# PUBLISHED edge, so without this the run exercises whatever was last released
+# and no change under containers/core/edge is testable here at all. Its own
+# Dockerfile runs go vet and go test, so this builds and checks it in one step.
+docker build -q --load -t eval-e2e/edge:latest "$ROOT/containers/core/edge" >/dev/null ||
+  { echo "edge build failed"; exit 1; }
 # The combination image is what a launcher actually runs: benchmark base, the
 # agent's /run.sh installed onto it, the runner and grading scripts.
 docker build -q --load -t eval-e2e/eval:latest \
   -f "$ROOT/containers/core/combination.Dockerfile" \
   --build-arg BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/agents-smoke:latest \
   --build-arg AGENT_IMAGE=eval-e2e/mock:latest \
+  --build-arg EDGE_IMAGE=eval-e2e/edge:latest \
   "$ROOT/containers/core" >/dev/null || { echo "combination build failed"; exit 1; }
 
 step "create cluster"
@@ -129,6 +138,32 @@ esac
 case "$out" in
   *"mock agent"*) bad "stderr leaked into agent/stdout.log — the two streams are not being kept apart" ;;
 esac
+
+# The edge's record. The agent's probe above went through the edge (the runner
+# points it at :4100, not the gateway directly), so a run that reached the
+# gateway must also have recorded reaching it. The file is compressed — one
+# stream held open for the run — and it is never closed, because the pod SIGKILLs
+# the edge; so the thing worth asserting is that it decodes anyway.
+rec="$OUT/$SUB/$RUN/model/calls.jsonl.zst"
+if ! onnode test -s "$rec"; then
+  bad "model/calls.jsonl.zst is missing or empty — the edge recorded nothing"
+  onnode cat "$OUT/$SUB/$RUN/model/edge.log" 2>/dev/null | tail -5
+else
+  # Decoded here rather than on the node, which is a minimal image with no zstd.
+  # The stream is never closed — the pod SIGKILLs the edge — so this asserts the
+  # property actually at risk: an unterminated frame still yields its records.
+  raw=$(mktemp); onnode cat "$rec" > "$raw"
+  dec=$(zstd -dc "$raw" 2>/dev/null || true)
+  case "$dec" in
+    *'"path"'*) echo "  model/calls.jsonl.zst: $(printf '%s\n' "$dec" | grep -c '"path"') record(s) from $(wc -c < "$raw" | tr -d ' ') bytes" ;;
+    # The first bytes name the failure: 28b52ffd is a zstd frame that did not
+    # decode, anything else is the edge writing something other than a stream
+    # under a .zst name — which is what a missing rebuild looks like.
+    *) bad "model/calls.jsonl.zst holds no call record (first bytes:$(od -An -tx1 -N4 < "$raw"))"
+       onnode cat "$OUT/$SUB/$RUN/model/edge.log" 2>/dev/null | tail -5 ;;
+  esac
+  rm -f "$raw"
+fi
 
 # ── the launcher people actually use ────────────────────────────────────────
 # Everything above renders the chart the way this test wants it. deploy/kind/run.sh
