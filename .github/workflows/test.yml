@@ -103,6 +103,8 @@ jobs:
   #   compose          → docker compose config              (compose.config.sweep.sh)
   #   single-container → conftest over process-compose.yaml (standalone.sweep.sh)
   #   k8s              → helm template + kubeconform + conftest (helm.sweep.sh)
+  # Two narrower renders ride along here for the same reason (helm/compose only,
+  # no cluster): the model-vs-gateway axis wiring (model-paths, deploy-scripts).
   static-composition:
     name: Static composition
     runs-on: ubuntu-latest
@@ -147,6 +149,10 @@ jobs:
       - name: model paths — generic gateway + pinned per-model image
         if: ${{ !cancelled() }}
         run: tests/static/model-paths.sweep.sh
+
+      - name: deploy wrappers — model and gateway axes stay separate
+        if: ${{ !cancelled() }}
+        run: tests/static/deploy-scripts.sweep.sh
 
       - name: fleet-hash graph == bake --print (both directions)
         if: ${{ !cancelled() }}

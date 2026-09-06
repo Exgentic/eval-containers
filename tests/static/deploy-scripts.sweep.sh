@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# tests/static/deploy-scripts.sweep.sh — the deploy wrappers must keep the two
+# upstream axes apart (gateways/RULES.md rule 2c): `--model` is the
+# <provider>/<model> handle, `--gateway` the proxy image serving it. Neither may
+# stand in for the other.
+#
+# This is the gate the pre-2c bug needed: oc/run.sh rendered `--set model=$MODEL`
+# with the GATEWAY image, so the gateway ran with EVAL_MODEL=bifrost while the
+# real handle went to `--set evalModel=` — a value the chart doesn't define, so
+# Helm accepted it silently. A rendered-manifest assertion catches exactly that
+# class; nothing else in the static stage renders these wrappers.
+#
+# Cheap by construction: `run.sh --dry-run --no-build` stops at `helm template`
+# against the in-repo chart, so this needs helm and nothing else — no cluster, no
+# oc, no daemon, no network. The kind wrapper can't render without a live kind
+# cluster, so only its argument guard is exercised here.
+set -uo pipefail
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
+OC="$ROOT/deploy/oc/run.sh"
+KIND="$ROOT/deploy/kind/run.sh"
+REG="reg.test/ns"
+HANDLE="openai/azure/gpt-5.4"
+GATEWAY="litellm"
+
+command -v helm >/dev/null || { echo "helm not found — required for the deploy-scripts gate"; exit 1; }
+fail=0
+bad() { echo "FAIL $*"; fail=$((fail + 1)); }
+
+# ── 1. oc render: each axis lands where it belongs ──────────────────────────
+if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+           --registry "$REG" --task 0 --no-build --dry-run 2>&1); then
+  # The gateway sidecar runs the image --gateway named …
+  grep -qE "image: $REG/$GATEWAY:" <<<"$out" \
+    || bad "oc: gateway image is not the one --gateway named ($GATEWAY)"
+  # … and receives the handle --model named, verbatim, as its EVAL_MODEL.
+  grep -qE "EVAL_MODEL.*\"$HANDLE\"" <<<"$out" \
+    || bad "oc: EVAL_MODEL is not the --model handle ($HANDLE)"
+  # The pre-2c bug: the gateway image forwarded as the model.
+  grep -qE "EVAL_MODEL.*\"$GATEWAY\"" <<<"$out" \
+    && bad "oc: the gateway image reached the gateway as EVAL_MODEL"
+  # Results are keyed by the model, so two models behind one gateway can't
+  # share a directory (the chart's `model` Job label is the same last segment).
+  grep -qE "subPath: runs/aime/codex/gpt-5\.4/" <<<"$out" \
+    || bad "oc: the output subPath is not keyed by the model label"
+  grep -qE "subPath: runs/aime/codex/$GATEWAY/" <<<"$out" \
+    && bad "oc: the output subPath is keyed by the gateway image"
+else
+  echo "FAIL oc: --dry-run render failed:"; printf '%s\n' "$out" | sed 's/^/  /'; fail=$((fail + 1))
+fi
+
+# ── 2. both wrappers reject the pre-2c `--model <gateway flavor>` form ───────
+# A bare name would otherwise be forwarded as EVAL_MODEL and routed to a model
+# that doesn't exist. It must fail loud, and the error must name --gateway.
+for w in "$OC" "$KIND"; do
+  n=$(basename "$(dirname "$w")")/$(basename "$w")
+  out=$(bash "$w" --benchmark aime --agent codex --model "$GATEWAY" \
+          --registry "$REG" --task 0 --no-build --dry-run 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || bad "$n: --model $GATEWAY (a gateway image) was accepted as a model handle"
+  grep -q -- "--gateway" <<<"$out" \
+    || bad "$n: the rejection doesn't name --gateway as the flag to use"
+done
+
+# ── 3. the pre-2c `--eval-model` is rejected BY NAME, not aliased ───────────
+# One live spelling per axis (rule 2c): a rename tells you what to use; only
+# artifact renames get a compatibility link, and that lives in the registry.
+out=$(bash "$OC" --benchmark aime --agent codex --eval-model "$HANDLE" \
+        --registry "$REG" --task 0 --no-build --dry-run 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] || bad "oc: --eval-model was accepted; it was renamed --model"
+grep -q -- "--model" <<<"$out" \
+  || bad "oc: the --eval-model rejection doesn't name --model as the replacement"
+
+echo "deploy scripts: one spelling per axis (oc render + guards + rename errors) — $fail failed"
+[ "$fail" -eq 0 ]

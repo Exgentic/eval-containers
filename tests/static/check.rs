@@ -497,11 +497,11 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 
 /// The model axis supports BOTH paths, with the generic gateway as the default
 /// (models/RULES.md rule 1, #187):
-///   - **Generic** (default): `EVAL_GATEWAY_IMAGE=bifrost` routes whatever
+///   - **Generic** (default): `EVAL_GATEWAY=bifrost` routes whatever
 ///     `EVAL_MODEL=<provider>/<model>` you set — any LiteLLM model, zero build.
 ///     The generic image errors on an empty handle, so there is no compose-level
 ///     default model (no silent fallback).
-///   - **Pinned** (opt-in): a per-model image (`EVAL_GATEWAY_IMAGE=<model>`) bakes
+///   - **Pinned** (opt-in): a per-model image (`EVAL_GATEWAY=<model>`) bakes
 ///     its model + custom config — a shared, versioned artifact. Allowed, not forbidden.
 #[test]
 fn model_axis_generic_default_no_silent_model() {
@@ -510,7 +510,7 @@ fn model_axis_generic_default_no_silent_model() {
 
     // Generic gateway is the DEFAULT proxy.
     assert!(
-        svc.contains("${EVAL_GATEWAY_IMAGE:-bifrost}"),
+        svc.contains("${EVAL_GATEWAY:-bifrost}"),
         "services.yaml gateway must default to the generic `bifrost` proxy (#187)"
     );
     // No silent fallback model: the compose never bakes a default EVAL_MODEL — an

@@ -56,15 +56,31 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
      fails, which reads like a cluster problem rather than a naming one. Long
      names are truncated and suffixed with an 8-char sha1 of the full name, so the
      mapping stays deterministic and collision-safe. `trimAll "-."` keeps the
-     truncation from ending on a separator, which DNS-1123 also forbids. */}}
+     truncation from ending on a separator, which DNS-1123 also forbids.
+
+     Call this; never restate it. The name is an interface — a launcher finds
+     the Job it just applied by name (the dashboard does, to own the run's
+     API-token Secret) — so a second copy of the rule is a copy that can stop
+     agreeing with the mirrors outside this chart. tests/static/policy/helm/
+     jobname.rego gates the rendered name for exactly that. */}}
 {{- define "eval.jobName" -}}
-{{- $base := printf "%s-%s" .benchmark .agent -}}
-{{- $n := ternary $base (printf "%s-task-%s" $base (toString .task)) (not (not .datasetSize)) -}}
-{{- $n = printf "%s%s" $n (.nameSuffix | default "") -}}
-{{- if gt (len $n) 63 -}}
-{{- printf "%s-%s" (trimAll "-." (trunc 54 $n)) (sha1sum $n | trunc 8) -}}
+{{- /* toString on every axis: an un-set value is nil, and printf renders that as
+       the literal `%!s(<nil>)` — a `%` cannot start a YAML token, so the Job
+       would not parse at all rather than come out mis-named. */ -}}
+{{- $raw := printf "%s-%s%s" (toString .benchmark) (toString .agent) (.nameSuffix | default "") -}}
+{{- if not .datasetSize -}}
+{{- $raw = printf "%s-%s-task-%s%s" (toString .benchmark) (toString .agent) (toString .task) (.nameSuffix | default "") -}}
+{{- end -}}
+{{- /* Sanitise, then bound. A per-task id carries whatever upstream called it —
+       SWE-bench's `sympy__sympy-24066` has `_`, which RFC 1123 forbids — so the
+       name is lowercased and every illegal run collapsed to `-` before length is
+       considered. The hash is of $raw, not the sanitised form, so two ids that
+       sanitise alike still get distinct names. */ -}}
+{{- $s := trimAll "-." (regexReplaceAll "[^a-z0-9.-]+" (lower $raw) "-") -}}
+{{- if gt (len $s) 63 -}}
+{{- printf "%s-%s" (trimAll "-." (trunc 54 $s)) (sha1sum $raw | trunc 8) -}}
 {{- else -}}
-{{- $n -}}
+{{- $s -}}
 {{- end -}}
 {{- end -}}
 
