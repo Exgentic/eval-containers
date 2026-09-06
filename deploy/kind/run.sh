@@ -11,8 +11,8 @@
 # The cluster + the eval-secrets Secret are provisioned once by create.sh; this
 # script errors if the cluster is absent rather than creating it.
 #
-#   ./deploy/kind/run.sh --benchmark aime --agent codex --model openai/azure/gpt-5.4 --task 0 --watch
-#   ./deploy/kind/run.sh --benchmark aime --agent codex --model openai/azure/gpt-5.4 --dataset --watch
+#   ./deploy/kind/run.sh --benchmark aime --agent codex --model openai/gpt-5.4 --task 0 --watch
+#   ./deploy/kind/run.sh --benchmark aime --agent codex --model openai/gpt-5.4 --dataset --watch
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
@@ -28,7 +28,7 @@ Usage:
 Required:
   --benchmark <b>       benchmark image (e.g. aime)
   --agent <a>           agent image (e.g. codex)
-  --model <m>           upstream <provider>/<model> handle (e.g. openai/azure/gpt-5.4)
+  --model <m>           upstream <provider>/<model> handle (e.g. openai/gpt-5.4)
 
 Selection:
   --gateway <g>         proxy image that serves the model (default: bifrost)
@@ -85,7 +85,7 @@ esac; done
 # used to mean the gateway here and would now be forwarded as EVAL_MODEL. Fail
 # loud rather than routing to a nonexistent model (gateways/RULES.md rule 2).
 [[ "$MODEL" != */* ]] && {
-  echo "error: --model takes the upstream <provider>/<model> handle (e.g. openai/azure/gpt-5.4); the proxy image is --gateway" >&2; exit 1; }
+  echo "error: --model takes the upstream <provider>/<model> handle (e.g. openai/gpt-5.4); the proxy image is --gateway" >&2; exit 1; }
 log() { echo "[run] $*"; }
 
 KCTX="kind-$CLUSTER"   # kind's kubectl context naming convention
@@ -191,12 +191,15 @@ if $DATASET_MODE && [[ -z "$PARALLELISM" ]]; then
   PARALLELISM=2; log "no --parallelism given; defaulting to $PARALLELISM for a local cluster"
 fi
 
-# The model's clean label keys the prefix (the chart's `model` Job label: the
-# handle's last segment), so two models behind one gateway cannot share a
-# directory. The leaf is the chart's: it appends this run's id, then the index or
-# the task — composing one here meant a re-run overwrote the run before it.
-MODEL_LABEL="${MODEL##*/}"
-SUB="${BENCHMARK}/${AGENT}/${MODEL_LABEL}"
+# The model's SLUG keys the prefix — the whole handle with `/` → `--`, the shape
+# the dashboard writes and reads back. The `model` Job label stays the handle's
+# last segment (label values forbid `/` and cap at 63 chars), so the path is the
+# only place that can name a provider-prefixed model, and two models behind one
+# gateway cannot share a directory. The leaf is the chart's: it appends this
+# run's id, then the index or the task — composing one here meant a re-run
+# overwrote the run before it.
+MODEL_SLUG="$(model_slug "$MODEL")"
+SUB="${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$RANDOM}"
 if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}"
 else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; fi

@@ -167,15 +167,6 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
    (`tests/run/fleet/RULES.md:8`). Why: a release that ships
    without its certifying report cannot be audited after the fact.
 
-9. **Open the next dev version right after the tag.** Once the release
-   is announced, bump `Cargo.toml`, `benchmarks/_chart/Chart.yaml`, and
-   `cli/src/run.rs`'s `CHART_VERSION` to the next version on `main`.
-   Why: `charts/eval` has no literal `:latest` — a chart's OCI tag is its
-   SemVer — so `main` publishes the chart at `Chart.yaml`'s version
-   (`.agents/RULES.md:9`). Leaving the released version there would have
-   every push overwrite a released artifact, so the fleet workflow
-   refuses it and `main` stays red until the bump.
-
 ## Releasing the CLI alongside the fleet
 
 The CLI half is automatic on the tag — no bake, no fleet gate. Once

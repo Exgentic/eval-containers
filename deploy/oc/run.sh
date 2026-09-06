@@ -2,8 +2,8 @@
 # run.sh — build + run one eval on OpenShift: a single --task, or --dataset
 # (whole dataset → an Indexed Job). Model + flags: oc/README.md and the case below.
 #
-#   ./oc/run.sh --benchmark aime --agent codex --model openai/azure/gpt-5.4 --dataset
-#   ./oc/run.sh --benchmark aime --agent codex --model openai/azure/gpt-5.4 --task 0   # single, debug
+#   ./oc/run.sh --benchmark aime --agent codex --model azure/gpt-5-mini --dataset
+#   ./oc/run.sh --benchmark aime --agent codex --model azure/gpt-5-mini --task 0   # single, debug
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
@@ -36,7 +36,7 @@ esac; done
 # used to mean the gateway here and would now be forwarded as EVAL_MODEL. Fail
 # loud rather than routing to a nonexistent model (gateways/RULES.md rule 2).
 [[ "$MODEL" != */* ]] && {
-  echo "error: --model takes the upstream <provider>/<model> handle (e.g. openai/azure/gpt-5.4); the proxy image is --gateway" >&2; exit 1; }
+  echo "error: --model takes the upstream <provider>/<model> handle (e.g. azure/gpt-5-mini); the proxy image is --gateway" >&2; exit 1; }
 log() { echo "[run] $*"; }
 
 [[ -z "$REGISTRY" ]] && REGISTRY="$(oc_registry "$NAMESPACE")"
@@ -80,14 +80,17 @@ if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
   log "dataset size for $BENCHMARK (from image label): $DATASET"
 fi
 
-# Two things decide where results land, and both matter. The model's clean label
-# (the chart's `model` Job label: the handle's last segment, what fetch.sh reads
-# back) keys the prefix, so two models behind one gateway cannot share a
-# directory. The leaf is the chart's: it appends this run's id, then the
-# completion index or the task — composing one here is what let a re-run land on
-# the previous run's results, and a sweep re-run on the whole previous sweep.
-MODEL_LABEL="${MODEL##*/}"
-SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_LABEL}"
+# Two things decide where results land, and both matter. The model's SLUG — the
+# whole handle with `/` → `--`, the shape the dashboard writes and reads back —
+# keys the prefix, so two models behind one gateway cannot share a directory.
+# (The `model` Job label stays the handle's last segment: label values forbid
+# `/` and cap at 63 chars, so the path is the only place that can carry a whole
+# handle, and fetch.sh reads the Job's own subPath rather than rebuilding one.)
+# The leaf is the chart's: it appends this run's id, then the completion index or
+# the task — composing one here is what let a re-run land on the previous run's
+# results, and a sweep re-run on the whole previous sweep.
+MODEL_SLUG="$(model_slug "$MODEL")"
+SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
 if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"
 else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; fi
 

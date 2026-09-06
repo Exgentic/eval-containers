@@ -19,7 +19,8 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
 OC="$ROOT/deploy/oc/run.sh"
 KIND="$ROOT/deploy/kind/run.sh"
 REG="reg.test/ns"
-HANDLE="openai/azure/gpt-5.4"
+HANDLE="azure/gpt-5-mini"
+SLUG="azure--gpt-5-mini"     # what the dashboard reads back out of the path
 GATEWAY="litellm"
 
 command -v helm >/dev/null || { echo "helm not found — required for the deploy-scripts gate"; exit 1; }
@@ -38,10 +39,15 @@ if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "
   # The pre-2c bug: the gateway image forwarded as the model.
   grep -qE "EVAL_MODEL.*\"$GATEWAY\"" <<<"$out" \
     && bad "oc: the gateway image reached the gateway as EVAL_MODEL"
-  # Results are keyed by the model, so two models behind one gateway can't
-  # share a directory (the chart's `model` Job label is the same last segment).
-  grep -qE "subPath: runs/aime/codex/gpt-5\.4/" <<<"$out" \
-    || bad "oc: the output subPath is not keyed by the model label"
+  # Results are keyed by the model's slug — the shape the dashboard writes and
+  # reads back (app/launch.py `_slug`). The `model` LABEL stays the short name
+  # on purpose: label values forbid `/` and cap at 63 chars, so the path is the
+  # only place that can carry a whole handle, and fetch.sh reads the Job's own
+  # subPath rather than rebuilding one from the label.
+  grep -qE "subPath: runs/aime/codex/$SLUG/" <<<"$out" \
+    || bad "oc: the output subPath is not keyed by the model slug"
+  grep -qE "^ *model: \"gpt-5-mini\"" <<<"$out" \
+    || bad "oc: the Job's model label is no longer the agent-facing short name"
   grep -qE "subPath: runs/aime/codex/$GATEWAY/" <<<"$out" \
     && bad "oc: the output subPath is keyed by the gateway image"
 else
