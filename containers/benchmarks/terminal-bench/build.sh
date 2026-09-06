@@ -12,9 +12,23 @@
 # Run by `eval-containers build`/`oracle`/`run` for per-task TB builds (src/build.rs
 # invokes benchmarks/<name>/build.sh when present). Args:
 #   $1 = image ref to produce        $2 = task id (a tasks/<task> name)
+# Optional env:
+#   EVAL_LAYOUT_OUT=<dir>  export the final image to that OCI layout directory
+#                          (--output type=oci) instead of --load'ing it into the
+#                          local image store. The per-task eval build (src/build.rs,
+#                          `build eval --task-id --no-pull`) sets this and wires the
+#                          layout as a named build context, so the eval overlay uses
+#                          THIS freshly-built, platform-correct base instead of
+#                          pulling a (possibly stale / wrong-arch) copy from the
+#                          registry — the container driver can't see local images.
 #
-# Uses `docker build` directly so the two builds chain through the local image
-# store (docker buildx's container driver keeps results only in the build cache).
+# The two builds chain through an on-disk OCI layout, not the local image store:
+# step 1 exports the task env to a layout directory (--output type=oci), step 2
+# binds it as a named build context (oci-layout://) that FROM resolves. This works
+# under buildx's docker-container driver — the default on Docker Desktop and in CI
+# — where a plain `docker build -t` keeps the result only in the build cache (no
+# local image to FROM) and a bare `FROM localhost/...` has no registry to resolve
+# against (dial localhost:80). The layout is a scratch dir, removed on exit.
 # No --platform pin: the per-task job runs this on a native amd64 OR arm64 runner,
 # so pinning a platform would force one arch and break the multi-arch per-task build.
 set -euo pipefail
@@ -27,18 +41,59 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # propagated to the image (ENV TBENCH_REF) so solution.sh fetches the matching gold.
 REF=c5ee500c185224c97cd6caff7866a990a0057f41
 REPO="https://github.com/harbor-framework/terminal-bench-2-1.git"
-ENVIMG="localhost/tbench-env:${TASK}"
+
+# Scratch OCI layout the task env is exported to, then consumed from by step 2.
+# (Cleanup trap is installed below, once TOMLDIR also exists.)
+ENVDIR="$(mktemp -d)"
+ENVTAG="tbench-env:${TASK}"
+
+# Per-task agent wall clock: upstream's tasks/<task>/task.toml carries an
+# [agent] timeout_sec that varies 600s–12000s across the 89 tasks (the chart
+# default of 300s starves nearly all of them — benchmarks/RULES.md rule 14 binds
+# agent execution to EVAL_TIMEOUT). Fetch just that file at the pinned REF and
+# extract the value, so the image bakes the exact wall clock upstream intends
+# (LABEL eval.benchmark.timeout, read by the deploy runner). GitHub rejects
+# `git archive --remote`, so use a blobless shallow fetch of the single path
+# into a scratch repo. Best-effort: on any failure leave it empty and the chart
+# default applies.
+echo "[terminal-bench] resolving [agent] timeout_sec from task.toml"
+TOMLDIR="$(mktemp -d)"; trap 'rm -rf "${ENVDIR}" "${TOMLDIR}"' EXIT
+AGENT_TIMEOUT="$(
+  git -C "${TOMLDIR}" init -q 2>/dev/null \
+  && git -C "${TOMLDIR}" fetch -q --depth 1 --filter=blob:none "${REPO}" "${REF}" 2>/dev/null \
+  && git -C "${TOMLDIR}" show "${REF}:tasks/${TASK}/task.toml" 2>/dev/null \
+  | awk '
+      /^\[/ { in_agent = ($0 ~ /^\[agent\]/) }
+      in_agent && /^[[:space:]]*timeout_sec[[:space:]]*=/ {
+        gsub(/[^0-9.]/, "", $0); printf "%d", $0 + 0; exit }' || true)"
+rm -rf "${TOMLDIR}"
+if [ -n "${AGENT_TIMEOUT}" ]; then
+  echo "[terminal-bench] agent timeout_sec = ${AGENT_TIMEOUT}"
+else
+  echo "[terminal-bench] WARN: could not resolve timeout_sec; chart default applies"
+fi
 
 echo "[terminal-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
-docker build -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
+docker build --output "type=oci,tar=false,dest=${ENVDIR},name=${ENVTAG}" \
+  "${REPO}#${REF}:tasks/${TASK}/environment"
 
 echo "[terminal-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
+# Output: --load into the local store by default, OR export an OCI layout when
+# EVAL_LAYOUT_OUT is set (so the per-task eval build can consume it as a context).
+if [ -n "${EVAL_LAYOUT_OUT:-}" ]; then
+  OUTPUT=(--output "type=oci,tar=false,dest=${EVAL_LAYOUT_OUT},name=${IMAGE}")
+else
+  OUTPUT=(--load -t "${IMAGE}")
+fi
+# TASK_BASE is the name of the layout build context, which FROM resolves.
 # EVAL_INPUT_HASH (optional): the release stamps the build-input hash here
 # (delivery/RULES.md rule 12) — this path has no bake invocation to --set it on.
 # shellcheck disable=SC2086  # the hash is hex; empty expands to no arg
-docker build -t "${IMAGE}" \
+docker build "${OUTPUT[@]}" \
   ${EVAL_INPUT_HASH:+--label=eval.input-hash=${EVAL_INPUT_HASH}} \
-  --build-arg "TASK_BASE=${ENVIMG}" \
+  --build-arg "TASK_BASE=task-env" \
+  --build-context "task-env=oci-layout://${ENVDIR}:${ENVTAG#*:}" \
   --build-arg "EVAL_TASK_ID=${TASK}" \
   --build-arg "TBENCH_REF=${REF}" \
+  ${AGENT_TIMEOUT:+--build-arg "EVAL_AGENT_TIMEOUT=${AGENT_TIMEOUT}"} \
   -f "${HERE}/Dockerfile" "${REPO}#${REF}:tasks/${TASK}"

@@ -32,6 +32,16 @@ ENV EVAL_BENCHMARK=tbench \
     TBENCH_TASK=${EVAL_TASK_ID} \
     TBENCH_REF=${TBENCH_REF}
 
+# Per-task agent wall clock, sourced from upstream tasks/<task>/task.toml's
+# [agent] timeout_sec by build.sh (600s–12000s across the 89 tasks; the chart
+# default of 300s starves nearly all of them — benchmarks/RULES.md rule 14).
+# Baked as a label so the deploy runner can read it off the image and set
+# EVAL_TIMEOUT for this exact task (mirrors how eval.benchmark.tasks is read).
+# Empty when build.sh could not resolve it → the label is omitted and the
+# chart default applies.
+ARG EVAL_AGENT_TIMEOUT
+LABEL eval.benchmark.timeout="${EVAL_AGENT_TIMEOUT}"
+
 # Give the agent its workspace. terminal-bench tasks are authored for agent=root
 # (daytona) and ship /app root-owned, but the eval pipeline runs the agent
 # non-root (uid 1002, rule 13) and /app is the agent's own area (rule 17). The
@@ -39,7 +49,17 @@ ENV EVAL_BENCHMARK=tbench \
 # without this the agent cannot write its workspace and every build/write task
 # loops on EACCES until timeout. Numeric 1002:0 — the named user is added later
 # in the eval merge. Tests stay root-only 700 (below), so grading is unaffected.
-RUN chown -R 1002:0 /app && chmod -R g+w /app
+# `/app` is the workdir for 86 of the 89 tasks, but not all: prove-plus-comm uses
+# `WORKDIR /workspace`, and a hardcoded `chown /app` fails the build outright
+# ("chown: cannot access '/app'"). Grant the agent its workspace wherever the
+# task env actually put it -- the image's own WORKDIR -- and fall back to /app.
+# Guarded so a task whose workdir is / or missing cannot fail the build.
+RUN set -eu; \
+    d="$(pwd)"; \
+    case "$d" in /|"") d=/app ;; esac; \
+    [ -d "$d" ] || d=/app; \
+    if [ -d "$d" ]; then chown -R 1002:0 "$d" && chmod -R g+w "$d"; fi; \
+    printf '%s' "$d" > /.eval-workdir
 
 # Same rule-13/17 tension as /app, one layer up. Some tasks (e.g. build-cython-ext)
 # instruct the agent to install into the *system global* Python environment, which
@@ -63,10 +83,14 @@ COPY tests /tests
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 # Grader: run the upstream tests/test.sh, which writes /logs/verifier/reward.txt.
+# /.eval-workdir holds the task env's own WORKDIR, resolved above (86/89 use /app;
+# prove-plus-comm uses /workspace). A hardcoded `cd /app` silently no-ops for the
+# others, running the tests from / instead of the task dir, so a correct solution
+# could still score 0.
 RUN printf '%s\n' \
   '#!/bin/bash' \
   'mkdir -p /logs/verifier' \
-  'cd /app 2>/dev/null || true' \
+  'cd "$(cat /.eval-workdir 2>/dev/null || echo /app)" 2>/dev/null || cd /app 2>/dev/null || true' \
   'bash /tests/test.sh > /logs/verifier/test.log 2>&1 || true' \
   '[ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt' \
   > /grade.sh && chmod +x /grade.sh
