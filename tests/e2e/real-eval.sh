@@ -62,6 +62,18 @@ case "$(settle agents-smoke-mock-task-0 180)" in
   *) bad "the eval did not complete"; diagnose agents-smoke-mock-task-0; exit 1 ;;
 esac
 
+step "check the Job can be asked where it wrote"
+# fetch.sh copies results off a cluster by reading each Job's own `output`
+# subPath rather than rebuilding a path from labels — the `model` label is the
+# handle's last segment (label values forbid `/`), so a label-built path misses
+# every run whose handle carried a provider. That only holds if the Job really
+# reports the path it was given, which no render can prove: assert it here,
+# against the API server, with the same query fetch.sh runs.
+got=$(kubectl get job agents-smoke-mock-task-0 \
+  -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.name=="output")].subPath}' 2>/dev/null)
+[ "$got" = "$SUB/$RUN" ] \
+  || bad "the Job reports subPath '${got:-<empty>}', not the '$SUB/$RUN' it writes to — fetch.sh would copy the wrong directory"
+
 step "check the output contract"
 # The contract the dashboard reads. Each file has a distinct writer, so a missing
 # one names which part of the machinery stopped: the grader, write-result, or the
