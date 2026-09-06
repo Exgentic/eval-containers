@@ -1,0 +1,62 @@
+name: Publish chart
+
+# The continuous channel for `charts/eval`, split out of release-images.yml.
+#
+# It lived there as a job behind `needs: [release-gate]`, so `helm package` +
+# `helm push` — seconds of work, no images involved — waited on a full fleet
+# build. Consumers that render the published chart (the CLI's `--mode job`, the
+# dashboard) were reading a chart hours behind main, which is the opposite of
+# what a continuous channel is for.
+#
+# The versioned channel stays in release-images.yml: a release chart must not
+# publish until the CVE gate has passed, and that gate is that pipeline's.
+#
+# A chart's OCI tag IS its SemVer (delivery/RULES.md:16), so there is no literal
+# `:latest` — the continuous channel is Chart.yaml's version, republished on
+# every push that changes the chart. A released version is immutable, so this
+# refuses one whose GitHub Release is already out.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - containers/benchmarks/_chart/**
+      - .github/workflows/publish-chart.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  # Not cancel-in-progress: each push publishes the chart at its own commit, and
+  # cancelling the one in flight to start a newer one only widens the window
+  # where the registry holds neither.
+  group: publish-chart
+
+jobs:
+  publish:
+    name: charts/eval on the continuous channel
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: azure/setup-helm@v5
+
+      - name: Publish charts/eval
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGISTRY: ghcr.io/${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          ver=$(grep -m1 '^version: ' containers/benchmarks/_chart/Chart.yaml | awk '{print $2}')
+          if [ "$(gh release view "v$ver" --json isDraft -q .isDraft 2>/dev/null)" = false ]; then
+            echo "::error::v$ver is released and immutable — bump Chart.yaml + cli/Cargo.toml to the next dev version"
+            exit 1
+          fi
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
+          helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"
+          # delivery/RULES.md:17 — a zero exit is not evidence; read the artifact back.
+          helm show chart "oci://${REGISTRY}/charts/eval" --version "$ver" >/dev/null
+          echo "published charts/eval:$ver"
