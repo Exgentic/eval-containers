@@ -25,7 +25,7 @@ active rule must not merge.
 - [`.agents/RULES.md`](.agents/RULES.md) — project principles
 - [`.agents/contributing/RULES.md`](.agents/contributing/RULES.md) — what an issue or pull request must satisfy: contribution shape, PR scope, declared rules.
 - [`.agents/benchmarks/RULES.md`](.agents/benchmarks/RULES.md) · [`.agents/agents/RULES.md`](.agents/agents/RULES.md) · [`.agents/models/RULES.md`](.agents/models/RULES.md)
-- [`.agents/compose/RULES.md`](.agents/compose/RULES.md) · [`.agents/edge/RULES.md`](.agents/edge/RULES.md) · [`.agents/gateways/RULES.md`](.agents/gateways/RULES.md) · [`.agents/src/RULES.md`](.agents/src/RULES.md)
+- [`.agents/compose/RULES.md`](.agents/compose/RULES.md) · [`.agents/edge/RULES.md`](.agents/edge/RULES.md) · [`.agents/gateways/RULES.md`](.agents/gateways/RULES.md) · [`.agents/output/RULES.md`](.agents/output/RULES.md) · [`.agents/src/RULES.md`](.agents/src/RULES.md)
 - [`.agents/verification/RULES.md`](.agents/verification/RULES.md) — testing strategy; per-category rules live beside their tests in `tests/<category>/RULES.md` (paired with the enforcing Rust) and are indexed from the strategy.
 - [`.agents/verification/audit/RULES.md`](.agents/verification/audit/RULES.md) — the `AUDIT.md` reports (per-benchmark + a generated project-level rollup) across validity / safety / size / speed / cost, with honest statuses.
 - [`.agents/docs/RULES.md`](.agents/docs/RULES.md) — the human-facing `docs/` site: doctrine governs, docs explain.

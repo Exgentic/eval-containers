@@ -10,6 +10,7 @@
 # Evaluation output
 /output
 **/output/
+!.agents/output/
 /eval-output
 
 # Editor
