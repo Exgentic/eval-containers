@@ -32,6 +32,16 @@ ENV EVAL_BENCHMARK=tbench \
     TBENCH_TASK=${EVAL_TASK_ID} \
     TBENCH_REF=${TBENCH_REF}
 
+# Per-task agent wall clock, sourced from upstream tasks/<task>/task.toml's
+# [agent] timeout_sec by build.sh (600s–12000s across the 89 tasks; the chart
+# default of 300s starves nearly all of them — benchmarks/RULES.md rule 14).
+# Baked as a label so the deploy runner can read it off the image and set
+# EVAL_TIMEOUT for this exact task (mirrors how eval.benchmark.tasks is read).
+# Empty when build.sh could not resolve it → the label is omitted and the
+# chart default applies.
+ARG EVAL_AGENT_TIMEOUT
+LABEL eval.benchmark.timeout="${EVAL_AGENT_TIMEOUT}"
+
 # Give the agent its workspace. terminal-bench tasks are authored for agent=root
 # (daytona) and ship /app root-owned, but the eval pipeline runs the agent
 # non-root (uid 1002, rule 13) and /app is the agent's own area (rule 17). The
