@@ -333,8 +333,10 @@ jobs:
 
           # ── per-task bases: {b,task,kind} for every per-task benchmark ──
           # kind=script -> build.sh (podman two-step upstream build; tasks from the
-          # pinned GitHub tree). kind=bake -> docker buildx bake (swe-bench: FROM
-          # the Epoch per-task base + EVAL_TASK_ID; tasks from the in-repo tasks.txt).
+          # pinned GitHub tree, except hwe-bench: a per-PR pull with no upstream
+          # tree, so its tasks come from its own committed tasks.txt instead).
+          # kind=bake -> docker buildx bake (swe-bench: FROM the Epoch per-task
+          # base + EVAL_TASK_ID; tasks from the in-repo tasks.txt).
           pertask='[]'
           if [ "$INCLUDE_PER_TASK" = "true" ]; then
             acc='[]'
@@ -344,6 +346,18 @@ jobs:
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
               tks=$(gh api "repos/$repo/contents/tasks?ref=$ref" --paginate \
                 --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
+              acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
+            done
+            # hwe-bench builds via its own build.sh like the script-kind benchmarks
+            # above (pulls a pre-built per-PR image; no upstream `tasks/` tree to
+            # list), but its task ids are a committed tasks.txt like swe-bench below
+            # — grouped under `# <org>/<repo> (<count>)` comment headers, so those
+            # get filtered out rather than read as task ids.
+            for B in hwe-bench; do
+              tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
+              tks=$(jq -Rn --arg B "$B" \
+                '[inputs | select(length>0 and (startswith("#")|not)) | {b:$B, task:., kind:"script"}]' \
+                < "$tf")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             for B in swe-bench; do
