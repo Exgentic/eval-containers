@@ -10,7 +10,13 @@ name: Kind E2E
 # (#18/#21), the deadline bounds one pod rather than the whole sweep, and the API
 # server accepts the Job name minted for a per-task id carrying `_` (#372/#426).
 #
-# It is fast because it does not use the fleet's images: the agent, benchmark and
+# Two jobs, in parallel so neither pays for the other. `cluster-contract` stubs
+# the runner and settles the chart's wiring; `real-eval` runs the genuine
+# machinery — the real combination image, entrypoint and grader — over the two
+# smallest artifacts in the fleet (benchmarks/agents-smoke + agents/mock) and
+# checks that every file the dashboard later reads was actually written.
+#
+# cluster-contract is fast because it does not use the fleet's images: the agent, benchmark and
 # gateway are megabytes-to-gigabytes of things this does not exercise, so the
 # three containers are stood in for by ~4 MB busybox stubs satisfying exactly what
 # the chart gates on. The chart itself, its volume wiring and its sidecar ordering
@@ -53,3 +59,18 @@ jobs:
 
       - name: what only a cluster can settle
         run: bash tests/e2e/cluster-contract.sh
+
+  real-eval:
+    name: a real eval leaves what it should
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: helm/kind-action@v1.12.0
+        with:
+          cluster_name: eval-real
+          install_only: true
+
+      - name: a real eval leaves what it should
+        run: bash tests/e2e/real-eval.sh
