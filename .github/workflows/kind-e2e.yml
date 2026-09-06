@@ -30,6 +30,11 @@ on:
     branches: [main]
     paths:
       - containers/benchmarks/_chart/**
+      # real-eval runs the genuine combination image, so the runner's entrypoint
+      # and the edge inside it are part of what this gates — a change there is
+      # exactly the kind a render cannot check.
+      - containers/core/runner/**
+      - containers/core/edge/**
       - tests/e2e/**
       - .github/workflows/kind-e2e.yml
   workflow_dispatch:
