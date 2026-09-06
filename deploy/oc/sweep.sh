@@ -46,12 +46,21 @@ if [[ -n "$DATASET" ]]; then PASS+=(--dataset-size "$DATASET"); else PASS+=(--da
 $NO_BUILD && PASS+=(--no-build)
 $DRY_RUN  && PASS+=(--dry-run)
 
-for b in "${BENCHMARKS[@]}"; do for a in "${AGENTS[@]}"; do
-  log "→ $b × $a"
-  bash "$RUN" --benchmark "$b" --agent "$a" "${PASS[@]}"
-done; done
+# Per-task benchmarks run one Job per task, so they are not a dataset sweep at all
+# (the chart rejects datasetSize for them) and the internal registry cannot build
+# their per-task images. benchmarks.txt is the fleet, so skip them here — named,
+# one line each — instead of aborting the whole grid at the first one.
+SUBMITTED=0
+for b in "${BENCHMARKS[@]}"; do
+  if per_task "$b"; then log "skip $b (per-task: one Job per task, not a dataset sweep)"; continue; fi
+  for a in "${AGENTS[@]}"; do
+    log "→ $b × $a"
+    bash "$RUN" --benchmark "$b" --agent "$a" "${PASS[@]}"
+    SUBMITTED=$((SUBMITTED + 1))
+  done
+done
 
-log "=== submitted ${#BENCHMARKS[@]}×${#AGENTS[@]} jobs ==="
+log "=== submitted $SUBMITTED jobs ==="
 log "status: ./oc/status.sh --sweep-id $SWEEP_ID"
 log "fetch : ./oc/fetch.sh  --sweep-id $SWEEP_ID"
 log "clean : oc delete jobs -n $NAMESPACE -l sweep-id=$SWEEP_ID"

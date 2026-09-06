@@ -39,6 +39,20 @@ esac; done
   echo "error: --model takes the upstream <provider>/<model> handle (e.g. azure/gpt-5-mini); the proxy image is --gateway" >&2; exit 1; }
 log() { echo "[run] $*"; }
 
+# Per-task benchmarks bake one eval image per task (evals/<b>-<task>--<a>), and
+# this script is the internal-registry path: `build --builder oc` refuses
+# --task-id outright, and a flat ImageStream name cannot even hold a task id like
+# `sympy__sympy-24066` (`_` is not RFC-1123). Say so here rather than failing
+# three steps later on a build that could never have produced the right image.
+# The published GHCR fleet has these images already — launch them from there (the
+# dashboard does); the chart renders the task-aware ref on its own.
+if per_task "$BENCHMARK"; then
+  echo "error: $BENCHMARK is a per-task benchmark — one eval image per task, which" >&2
+  echo "       the internal registry cannot build (build --builder oc has no --task-id)." >&2
+  echo "       Launch it from the published fleet instead of building it here." >&2
+  exit 1
+fi
+
 [[ -z "$REGISTRY" ]] && REGISTRY="$(oc_registry "$NAMESPACE")"
 [[ -x "$REPO_DIR/target/release/eval-containers" ]] && PATH="$REPO_DIR/target/release:$PATH"
 # --test / --test-suffix: isolate behind a suffix so production is untouched.
