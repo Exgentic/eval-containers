@@ -183,7 +183,7 @@ esac
         arc_json = r#"{"image":{"linux/amd64":{"config":{"Labels":{"other":"x"}}}},"manifest":{"manifests":[{"platform":{"os":"linux","architecture":"amd64"}}]}}"#,
     ));
     let rows = fleet_status(&stub);
-    assert_eq!(rows.len(), 158, "one row per static bake target");
+    assert_eq!(rows.len(), 159, "one row per static bake target");
 
     let (v, want, got, plats) = &rows["ghcr.io/exgentic/benchmarks/aime:latest"];
     assert_eq!((v.as_str(), got), ("fresh", want));
@@ -273,4 +273,95 @@ echo '{{"image":{{"linux/amd64":{{"config":{{"Labels":{{"eval.input-hash":"{hash
         "absent",
         "a genuine not-found is still absent"
     );
+}
+
+/// ref -> (verdict, computed, recorded) for the `compose` form.
+fn compose_status(stub: &Stub) -> HashMap<String, (String, String, String)> {
+    let out = Command::new("bash")
+        .arg(repo_root().join("containers/scripts/fleet-status.sh"))
+        .args(["compose", "latest"])
+        .env(
+            "PATH",
+            format!(
+                "{}:{}",
+                stub.0.display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
+        )
+        .env("REGISTRY", "ghcr.io/exgentic")
+        .output()
+        .expect("run fleet-status.sh compose");
+    assert!(
+        out.status.success(),
+        "compose sweep failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    String::from_utf8(out.stdout)
+        .expect("utf8")
+        .lines()
+        .map(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            assert_eq!(f.len(), 4, "malformed row: {l}");
+            (f[0].into(), (f[1].into(), f[2].into(), f[3].into()))
+        })
+        .collect()
+}
+
+/// An `eval-<benchmark>` artifact is the flattened compose bytes verbatim, so
+/// its published layer digest IS its content hash — that is what makes the
+/// shared `containers/compose/` half an input, though it sits in no image's
+/// build context (#451). Same fail-dirty verdicts as an image, plus `declined`
+/// for a stack that opts out of publishing.
+#[test]
+fn compose_artifacts_compare_the_flatten_against_the_published_layer() {
+    // sha256 of the stub's `docker compose config` output ("FLAT\n").
+    const FLAT: &str = "e5c6520d56a2b2b69b9bafeae345e01527ebdf79cfbfadb0a9718ba16a8b052f";
+    let stub = write_stub(&format!(
+        r#"if [ "$1" = compose ]; then                 # docker compose -f <file> config …
+  case "$3" in *arc-agi/*) exit 1 ;; esac    # a stack that will not flatten
+  printf 'FLAT\n'; exit 0
+fi
+case "$4" in                       # docker buildx imagetools inspect <ref> --raw
+  *eval-aime:*) echo '{{"layers":[{{"digest":"sha256:{FLAT}"}}]}}' ;;
+  *eval-mmmu:*) echo '{{"layers":[{{"digest":"sha256:beef"}}]}}' ;;
+  *) echo 'ERROR: ghcr.io/x/y:latest: not found' >&2; exit 1 ;;
+esac
+"#
+    ));
+    let rows = compose_status(&stub);
+    let verdict = |b: &str| {
+        rows.get(&format!("ghcr.io/exgentic/eval-{b}:latest"))
+            .unwrap_or_else(|| panic!("no row for eval-{b}"))
+            .clone()
+    };
+
+    assert_eq!(
+        verdict("aime"),
+        ("fresh".into(), FLAT.into(), FLAT.into()),
+        "published layer == the local flatten is the only way to read fresh"
+    );
+    assert_eq!(
+        verdict("mmmu").0,
+        "stale",
+        "a different layer digest is stale"
+    );
+    assert_eq!(
+        verdict("gsm8k").0,
+        "absent",
+        "an artifact that was never published fails dirty, not fresh"
+    );
+    assert_eq!(
+        verdict("arc-agi").0,
+        "unflattenable",
+        "a stack whose flatten fails must not read fresh either"
+    );
+    // osworld / tau-bench declare `x-eval-publish: false` — they have no
+    // artifact, so they must not be scheduled for publishing on every push.
+    for b in ["osworld", "tau-bench"] {
+        assert_eq!(
+            verdict(b).0,
+            "declined",
+            "{b} declares x-eval-publish: false"
+        );
+    }
 }

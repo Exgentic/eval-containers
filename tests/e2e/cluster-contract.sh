@@ -1,0 +1,262 @@
+#!/usr/bin/env bash
+# tests/e2e/cluster-contract.sh — the claims about the eval Job that only a real
+# API server and a real kubelet can settle.
+#
+# Everything else about the chart is checked by rendering it (pre-commit's `helm
+# lint`, tests/static/helm.sweep.sh), which can prove a manifest SAYS the right
+# thing and never that a cluster DOES the right thing with it. Four things fall in
+# that gap, and each has already been wrong in production:
+#
+#   A. results outlive the pod that wrote them            (#428)
+#   B. an Indexed run fans out into <run-root>/<index>/, and the runner really is
+#      held until its sidecars are healthy                (#18/#21, the layout the
+#                                                          dashboard reads)
+#   C. the deadline bounds one pod, not the whole sweep   (the activeDeadlineSeconds
+#                                                          move onto the pod spec)
+#   D. the API server accepts the Job name the chart mints for a per-task id
+#      carrying `_`                                       (#372/#426)
+#   F. results land in a PersistentVolumeClaim — the branch production uses,
+#      where every other check here uses a hostPath because it reads back easily
+#   G. a Job with a queueName starts suspended and runs only once admitted — the
+#      namespace-wide budget every launcher hands admission to
+#   E. two runs of one benchmark/agent/model keep their own results — the
+#      uniqueness the chart's runId exists to guarantee, which both shell
+#      launchers used to break by composing a leaf that never changed
+#
+# The fleet's own images are deliberately NOT used: the agent, benchmark and
+# gateway are megabytes-to-gigabytes of things none of these claims exercise. The
+# three containers are stood in for by ~4 MB busybox stubs satisfying exactly what
+# the chart gates on — the collector answering :13133, the gateway's
+# /opt/gateway/health, and `/bin/bash -c` for the runner. The chart, its volume
+# wiring, its sidecar ordering and its naming are the real ones. That substitution
+# is what keeps this a per-PR gate; the moment a claim here needs a real agent
+# image it belongs in nightly-*.yml instead.
+# STUB is read by _lib.sh's build_stubs, and `fail` is set there — neither
+# crossing is visible to a shellcheck run that does not follow the source.
+# shellcheck disable=SC2034,SC2154
+set -uo pipefail
+ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
+CHART="$ROOT/containers/benchmarks/_chart"
+CLUSTER=${CLUSTER:-eval-e2e}
+STUB="$ROOT/tests/e2e/stub"
+# hostPath on the kind node: the results have to land somewhere the pod cannot
+# take with it. DirectoryOrCreate is required — an untyped hostPath is not
+# created, and the kubelet stats the base before applying a subPath.
+OUT=/tmp/eval-e2e-output
+
+# shellcheck source=tests/e2e/_lib.sh
+. "$ROOT/tests/e2e/_lib.sh"
+require_tools
+
+# Render the real chart with only the images and the runner's command stubbed.
+# $1 is the release/Job name, $2 a values file for runnerArgs, rest extra --sets.
+render() {
+  local name=$1 args=$2; shift 2
+  helm template "$name" "$CHART" \
+    --set benchmark=humaneval --set agent=stub \
+    --set otelImage=eval-e2e/otel:stub \
+    --set gatewayImageRef=eval-e2e/gateway:stub \
+    --set runnerImageRef=eval-e2e/runner:stub \
+    --set outputVolume.hostPath.path="$OUT" \
+    --set outputVolume.hostPath.type=DirectoryOrCreate \
+    -f "$args" "$@"
+}
+
+# runnerArgs rides a values file: helm splits --set on commas and these write JSON.
+argsfile() { local f; f=$(mktemp); printf 'runnerArgs: >-\n  %s\n' "$1" >"$f"; echo "$f"; }
+
+step "build stubs"
+build_stubs otel gateway runner
+
+step "create cluster"
+start_cluster eval-e2e/otel:stub eval-e2e/gateway:stub eval-e2e/runner:stub
+
+# ── A + B: one Indexed run settles both ──────────────────────────────────────
+# datasetSize=2 makes this the shape a real dataset eval has, so the same Job
+# proves the results survive AND that each index landed in its own subdir. The
+# runner also probes the collector's health port: it can only answer if the
+# sidecar was up before the runner started, which is the gating the chart claims.
+step "A+B: indexed output persists per index, gated on sidecar readiness"
+ROOT_B=runs/humaneval/stub/stub/indexed
+# $EVAL_TASK_ID is the container's, expanded by the runner's shell inside the
+# pod — the point is that the chart injected it. Single quotes on purpose.
+# shellcheck disable=SC2016
+A_ARGS=$(argsfile 'mkdir -p /output/task &&
+  wget -q -O- http://localhost:13133/ >/dev/null && otel=up || otel=down &&
+  printf %s "{\"index\":\"$EVAL_TASK_ID\",\"otel\":\"$otel\",\"passed\":true}" > /output/task/result.json')
+render indexed "$A_ARGS" --set task=0 --set datasetSize=2 --set outputSubPath="$ROOT_B" --set runId=r1 |
+  kubectl apply -f - >/dev/null || bad "B: the Indexed render did not apply"
+# A Job reports every true condition, so a completed one reads
+# "SuccessCriteriaMet Complete" — match, don't compare.
+got=$(settle humaneval-stub 120)
+case "$got" in
+  *Complete*) ;;
+  *) bad "B: the Indexed Job ended '$got', not Complete"; diagnose humaneval-stub ;;
+esac
+if [ "$fail" -ne 0 ]; then :; else
+  kubectl delete job humaneval-stub --wait=true >/dev/null 2>&1
+  for i in 0 1; do
+    r=$(onnode cat "$OUT/$ROOT_B/r1/$i/task/result.json")
+    case "$r" in
+      *"\"index\":\"$i\""*) ;;
+      *) bad "B: index $i wrote nothing to <prefix>/r1/$i/task/result.json (got: ${r:-<empty>})" ;;
+    esac
+    case "$r" in
+      *'"otel":"up"'*) ;;
+      *) bad "B: index $i ran before its collector was serving — the sidecar gate did not hold" ;;
+    esac
+  done
+  [ "$fail" -eq 0 ] && echo "PASS A+B: both indices persisted under <run-root>/<index>, collector healthy first"
+fi
+rm -f "$A_ARGS"
+
+# ── C: the deadline is the pod's, not the sweep's ────────────────────────────
+# On the Job, activeDeadlineSeconds bounded every index at once, so one slow task
+# killed its siblings mid-run. Index 0 sleeps past the deadline; index 1 must
+# still have written its result.
+step "C: activeDeadlineSeconds bounds the pod, not the Job"
+ROOT_C=runs/humaneval/stub/stub/deadline
+# $EVAL_TASK_ID is the container's, expanded by the runner's shell inside the
+# pod — the point is that the chart injected it. Single quotes on purpose.
+# shellcheck disable=SC2016
+C_ARGS=$(argsfile 'mkdir -p /output/task &&
+  if [ "$EVAL_TASK_ID" = "0" ]; then sleep 300; fi &&
+  printf %s "{\"index\":\"$EVAL_TASK_ID\",\"passed\":true}" > /output/task/result.json')
+render deadline "$C_ARGS" --set task=0 --set datasetSize=2 --set outputSubPath="$ROOT_C" --set runId=r1 \
+  --set timeout=5 --set deadlineGrace=5 --set nameSuffix=-dl |
+  kubectl apply -f - >/dev/null || bad "C: the deadline render did not apply"
+got=$(settle humaneval-stub-dl 120)
+case "$got" in
+  *Failed*|*Complete*) ;;
+  *) bad "C: the Job never settled (got '$got')"; diagnose humaneval-stub-dl ;;
+esac
+r=$(onnode cat "$OUT/$ROOT_C/r1/1/task/result.json")
+case "$r" in
+  *'"index":"1"'*) echo "PASS C: index 1 completed while index 0 hit its deadline" ;;
+  *) bad "C: index 1 has no result — the deadline took the sweep down with the slow task (got: ${r:-<empty>})" ;;
+esac
+kubectl delete job humaneval-stub-dl --wait=false >/dev/null 2>&1
+rm -f "$C_ARGS"
+
+# ── D: the API server accepts the name the chart mints ───────────────────────
+# The chart sanitises a per-task id into an RFC-1123 name; only the API server
+# can say whether it got it right. --dry-run=server validates without running.
+step "D: RFC-1123 Job name for a per-task id containing _"
+D_ARGS=$(argsfile 'true')
+if render underscore "$D_ARGS" --set task=sympy__sympy-24066 --set perTask=true \
+     --set outputSubPath=runs/humaneval/stub/stub/us --set runId=r1 |
+   kubectl apply --dry-run=server -f - >/dev/null 2>&1; then
+  echo "PASS D: sympy__sympy-24066 accepted by the API server"
+else
+  bad "D: the API server rejected the Job name minted for sympy__sympy-24066"
+  render underscore "$D_ARGS" --set task=sympy__sympy-24066 --set perTask=true \
+    --set outputSubPath=runs/humaneval/stub/stub/us --set runId=r1 |
+    kubectl apply --dry-run=server -f - 2>&1 | head -5
+fi
+rm -f "$D_ARGS"
+
+# ── E: a second run of one combo does not land on the first ─────────────────
+# The claim the runId exists for, and the one every launcher used to get wrong by
+# composing a leaf that never changed. Same benchmark, same agent, same model,
+# same prefix — twice. Both results must still be there.
+step "E: runId isolates two runs of one combo"
+ROOT_E=runs/humaneval/stub/stub
+# shellcheck disable=SC2016
+E_ARGS=$(argsfile 'mkdir -p /output/task &&
+  printf %s "{\"run\":\"$EVAL_RUN_MARK\",\"passed\":true}" > /output/task/result.json')
+for id in first second; do
+  render "rerun-$id" "$E_ARGS" --set task=0 --set outputSubPath="$ROOT_E" \
+    --set runId="$id" --set nameSuffix="-$id" \
+    --set-json runnerExtraEnv="[{\"name\":\"EVAL_RUN_MARK\",\"value\":\"$id\"}]" |
+    kubectl apply -f - >/dev/null || bad "E: the $id run did not apply"
+done
+for id in first second; do
+  got=$(settle "humaneval-stub-task-0-$id" 120)
+  case "$got" in *Complete*) ;; *) bad "E: the $id run ended '$got'"; diagnose "humaneval-stub-task-0-$id" ;; esac
+done
+for id in first second; do
+  r=$(onnode cat "$OUT/$ROOT_E/$id/task/result.json")
+  case "$r" in
+    *"\"run\":\"$id\""*) ;;
+    *) bad "E: the $id run's result is missing or was overwritten (got: ${r:-<empty>})" ;;
+  esac
+done
+if [ "$fail" -eq 0 ]; then
+  echo "PASS E: both run roots present, neither overwritten"
+fi
+rm -f "$E_ARGS"
+
+# ── F: the claim path, not just a hostPath ──────────────────────────────────
+# Production mounts a PersistentVolumeClaim; every check above used a hostPath
+# because it is easy to read back. The claim branch of outputVolume has never run
+# on a cluster, so run one Job through it and read the result out of the volume
+# with a reader pod — the same way deploy/eval-reader-pod.yaml does.
+step "F: output on a PersistentVolumeClaim"
+kubectl apply -f - >/dev/null <<'PVC'
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: eval-e2e-output
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+PVC
+ROOT_F=runs/humaneval/stub/stub
+# shellcheck disable=SC2016
+F_ARGS=$(argsfile 'mkdir -p /output/task &&
+  printf %s "{\"where\":\"pvc\",\"passed\":true}" > /output/task/result.json')
+helm template pvc "$CHART" \
+  --set benchmark=humaneval --set agent=stub --set task=0 \
+  --set otelImage=eval-e2e/otel:stub \
+  --set gatewayImageRef=eval-e2e/gateway:stub \
+  --set runnerImageRef=eval-e2e/runner:stub \
+  --set outputVolume.persistentVolumeClaim.claimName=eval-e2e-output \
+  --set outputSubPath="$ROOT_F" --set runId=onpvc --set nameSuffix=-pvc \
+  -f "$F_ARGS" | kubectl apply -f - >/dev/null || bad "F: the claim render did not apply"
+got=$(settle humaneval-stub-task-0-pvc 120)
+case "$got" in
+  *Complete*)
+    # A reader pod is the only way into an RWO claim once the writer is gone.
+    kubectl run pvc-reader --image=eval-e2e/runner:stub --restart=Never \
+      --overrides='{"spec":{"containers":[{"name":"pvc-reader","image":"eval-e2e/runner:stub","command":["cat","/out/'"$ROOT_F"'/onpvc/task/result.json"],"volumeMounts":[{"name":"out","mountPath":"/out"}]}],"volumes":[{"name":"out","persistentVolumeClaim":{"claimName":"eval-e2e-output"}}]}}' \
+      >/dev/null 2>&1
+    kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/pvc-reader --timeout=60s >/dev/null 2>&1
+    r=$(kubectl logs pvc-reader 2>/dev/null)
+    case "$r" in
+      *'"where":"pvc"'*) echo "PASS F: result readable from the claim after Job deletion" ;;
+      *) bad "F: nothing readable in the claim (got: ${r:-<empty>})" ;;
+    esac ;;
+  *) bad "F: the claim-backed Job ended '$got'"; diagnose humaneval-stub-task-0-pvc ;;
+esac
+rm -f "$F_ARGS"
+
+# ── G: a queued Job starts suspended and waits ──────────────────────────────
+# queueName is how every launcher hands admission to something else — the
+# dashboard's admitter unsuspends within a namespace-wide budget. If the chart
+# stopped suspending, every launch would start at once and blow the budget.
+step "G: queueName suspends until admitted"
+# shellcheck disable=SC2016
+G_ARGS=$(argsfile 'mkdir -p /output/task && printf %s "{\"admitted\":true}" > /output/task/result.json')
+render queued "$G_ARGS" --set task=0 --set outputSubPath=runs/humaneval/stub/stub \
+  --set runId=queued --set nameSuffix=-q --set queueName=e2e |
+  kubectl apply -f - >/dev/null || bad "G: the queued render did not apply"
+sleep 5
+susp=$(kubectl get job humaneval-stub-task-0-q -o jsonpath='{.spec.suspend}' 2>/dev/null)
+pods=$(kubectl get pods -l job-name=humaneval-stub-task-0-q --no-headers 2>/dev/null | wc -l | tr -d ' ')
+if [ "$susp" != "true" ] || [ "$pods" != "0" ]; then
+  bad "G: a queued Job should start suspended with no pods (suspend=$susp, pods=$pods)"
+else
+  # …and run the moment it is admitted, which is all the admitter does.
+  kubectl patch job humaneval-stub-task-0-q --type=merge -p '{"spec":{"suspend":false}}' >/dev/null
+  got=$(settle humaneval-stub-task-0-q 120)
+  case "$got" in
+    *Complete*) echo "PASS G: suspended with 0 pods, ran on unsuspend" ;;
+    *) bad "G: the Job did not run once unsuspended (ended '$got')"; diagnose humaneval-stub-task-0-q ;;
+  esac
+fi
+rm -f "$G_ARGS"
+
+printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
+[ "$fail" -eq 0 ]

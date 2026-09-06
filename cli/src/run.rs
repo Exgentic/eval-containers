@@ -152,6 +152,15 @@ pub struct RunArgs {
     /// the anyuid SCC service account. Passed to helm as an extra `-f`.
     #[arg(long)]
     overlay: Option<String>,
+
+    /// (`--mode job`) This run's results are meant to be thrown away.
+    ///
+    /// Renders as `--set ephemeral=true`. Without a volume the chart refuses to
+    /// run rather than write to an emptyDir the kubelet deletes with the pod, so
+    /// a smoke test says so with this and a real eval names a volume through
+    /// `--overlay`.
+    #[arg(long)]
+    ephemeral: bool,
 }
 
 /// The pre-2c `EVAL_*` spellings, and what replaced each. Both addressed the
@@ -562,6 +571,9 @@ fn run_job(
     // the task-aware runner image (evals/<b>-<task>--<a>). Each runs as one Job
     // per task — they can't use the Indexed dataset Job (one image × N indices);
     // the chart enforces that with a perTask+datasetSize guard. (benchmarks/RULES.md.)
+    if args.ephemeral {
+        sets.push("ephemeral=true".into());
+    }
     if eval_containers::benchmark::is_per_task_by_name(benchmark) {
         sets.push("perTask=true".into());
     }
