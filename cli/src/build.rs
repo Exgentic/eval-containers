@@ -947,12 +947,94 @@ fn oc_build(
     if !status.success() {
         return Err(format!("oc start-build failed with {status}"));
     }
-    Ok(())
+    // `--follow` exits 0 for a FAILED build — it reports whether the log stream
+    // ended, not whether the image was produced. A zero exit is not evidence
+    // (delivery/RULES.md rule 17), so ask the cluster what it actually has: the
+    // build's terminal phase, then the output tag. Without this a failed build
+    // reads as success and the caller deploys against an image that was never
+    // pushed (deploy/oc/run.sh applied a Job that sat in ImagePullBackOff).
+    confirm_oc_build(imagestream)
+}
+
+/// Confirm the artifact `oc start-build` claimed to produce: the BuildConfig's
+/// latest build reached `Complete`, and `<imagestream>:latest` exists.
+fn confirm_oc_build(imagestream: &str) -> Result<(), String> {
+    let bc = format!("{imagestream}-bc");
+    let version = oc_query(&["get", "bc", &bc, "-o", "jsonpath={.status.lastVersion}"])
+        .ok_or_else(|| format!("build finished but `oc get bc {bc}` reported no build"))?;
+    let build = format!("{bc}-{version}");
+    let phase = oc_query(&["get", "build", &build, "-o", "jsonpath={.status.phase}"])
+        .unwrap_or_else(|| "<unknown>".to_string());
+    build_verdict(&phase, &build)?;
+    // The push lands before the tag is observable — the image import that
+    // updates the ImageStream trails the build by a moment — so one miss here
+    // would fail a good build. Poll briefly; a genuinely absent tag still
+    // fails, just seconds later.
+    let tag = format!("{imagestream}:latest");
+    for attempt in 0..15 {
+        if oc_query(&["get", "istag", &tag, "-o", "name"]).is_some() {
+            return Ok(());
+        }
+        if attempt == 0 {
+            eprintln!("(build {build} is {phase}; waiting for {tag} to land in the ImageStream…)");
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+    Err(format!(
+        "build {build} reported {phase} but produced no {tag} imagestream tag \
+         — inspect it with `oc logs build/{build}`"
+    ))
+}
+
+/// One trimmed line of `oc …` stdout, or None when the command failed or said
+/// nothing (a missing object exits non-zero, which is the answer we want).
+fn oc_query(args: &[&str]) -> Option<String> {
+    let out = Command::new("oc").args(args).output().ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    (!s.is_empty()).then_some(s)
+}
+
+/// A build's terminal phase, judged. Only `Complete` produced an image; every
+/// other phase — including one we could not read — names the build so the log
+/// is one command away.
+fn build_verdict(phase: &str, build: &str) -> Result<(), String> {
+    if phase == "Complete" {
+        return Ok(());
+    }
+    Err(format!(
+        "build {build} ended {phase}, not Complete — `oc start-build --follow` exits 0 on a \
+         failed build, so this is checked directly. Inspect it with `oc logs build/{build}`"
+    ))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{declines_publish, dockerfile_label};
+    use super::{build_verdict, declines_publish, dockerfile_label};
+
+    /// `oc start-build --follow` exits 0 on a failed build, so the phase is the
+    /// evidence (delivery/RULES.md rule 17). Both directions matter: a verdict
+    /// that never fails would pass the fleet and strand exactly the broken build
+    /// it exists to catch, and the failure must name the build so `oc logs` is
+    /// one command away.
+    #[test]
+    fn only_a_complete_build_counts_as_published() {
+        assert!(build_verdict("Complete", "bifrost-bc-1").is_ok());
+        for phase in [
+            "Failed",
+            "Cancelled",
+            "Error",
+            "Pending",
+            "Running",
+            "<unknown>",
+        ] {
+            let err = build_verdict(phase, "bifrost-bc-1")
+                .expect_err("a non-Complete phase must not read as published");
+            assert!(err.contains(phase) && err.contains("bifrost-bc-1"), "{err}");
+        }
+    }
 
     /// The label is the contract an image uses to ask for more build storage,
     /// and its ABSENCE is the backward-compatibility guarantee — both directions

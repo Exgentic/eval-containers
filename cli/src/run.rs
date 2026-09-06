@@ -567,16 +567,16 @@ fn run_job(
         format!("agent={agent}"),
         format!("task={task}"),
     ];
-    // Per-task benchmarks bake one eval image per task, so the chart must render
-    // the task-aware runner image (evals/<b>-<task>--<a>). Each runs as one Job
-    // per task — they can't use the Indexed dataset Job (one image × N indices);
-    // the chart enforces that with a perTask+datasetSize guard. (benchmarks/RULES.md.)
     if args.ephemeral {
         sets.push("ephemeral=true".into());
     }
-    if eval_containers::benchmark::is_per_task_by_name(benchmark) {
-        sets.push("perTask=true".into());
-    }
+    // No `perTask` here on purpose. The chart resolves it from its own committed
+    // per-task.json (rule 24h): this path renders the PUBLISHED chart with no repo
+    // checkout, and the detection that used to live here read
+    // `containers/benchmarks/<b>/Dockerfile` at a path relative to the cwd — outside
+    // the repo it read as shared-env and silently rendered `evals/<b>--<a>` for a
+    // per-task benchmark, an image that does not exist. One resolver, in the chart,
+    // serves every surface (rule 24f).
     if let Some(m) = &args.model {
         sets.push(format!("model={m}"));
     }

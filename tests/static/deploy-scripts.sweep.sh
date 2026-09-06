@@ -19,12 +19,31 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
 OC="$ROOT/deploy/oc/run.sh"
 KIND="$ROOT/deploy/kind/run.sh"
 REG="reg.test/ns"
-HANDLE="openai/azure/gpt-5.4"
+HANDLE="azure/gpt-5-mini"
+SLUG="azure--gpt-5-mini"     # what the dashboard reads back out of the path
 GATEWAY="litellm"
 
 command -v helm >/dev/null || { echo "helm not found — required for the deploy-scripts gate"; exit 1; }
 fail=0
 bad() { echo "FAIL $*"; fail=$((fail + 1)); }
+
+# The chart appends a runId when it is given one, but cannot check that the id
+# changes: it sees a single render, and a constant would satisfy any test it
+# could make. Uniqueness is the launcher's to hold, so it is checked here, where
+# two renders can be compared — the leaf must differ between them, or a re-run of
+# a combo lands on the previous run's results (#428). Both wrappers once composed
+# a leaf that never changed, and every re-run overwrote the one before it.
+subpath_of() { grep -oE "subPath(Expr)?: [^ ]+" <<<"$1" | head -1; }
+
+varies() {   # $1 = label, rest = the launcher invocation
+  local what=$1; shift
+  local a b
+  a=$(subpath_of "$("$@" 2>&1)")
+  b=$(subpath_of "$("$@" 2>&1)")
+  [ -n "$a" ] || { bad "$what: no output subPath in the render"; return; }
+  [ "$a" != "$b" ] \
+    || bad "$what: two runs of one combo render the same path ($a) — the second would overwrite the first"
+}
 
 # ── 1. oc render: each axis lands where it belongs ──────────────────────────
 if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
@@ -38,10 +57,15 @@ if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "
   # The pre-2c bug: the gateway image forwarded as the model.
   grep -qE "EVAL_MODEL.*\"$GATEWAY\"" <<<"$out" \
     && bad "oc: the gateway image reached the gateway as EVAL_MODEL"
-  # Results are keyed by the model, so two models behind one gateway can't
-  # share a directory (the chart's `model` Job label is the same last segment).
-  grep -qE "subPath: runs/aime/codex/gpt-5\.4/" <<<"$out" \
-    || bad "oc: the output subPath is not keyed by the model label"
+  # Results are keyed by the model's slug — the shape the dashboard writes and
+  # reads back (app/launch.py `_slug`). The `model` LABEL stays the short name
+  # on purpose: label values forbid `/` and cap at 63 chars, so the path is the
+  # only place that can carry a whole handle, and fetch.sh reads the Job's own
+  # subPath rather than rebuilding one from the label.
+  grep -qE "subPath: runs/aime/codex/$SLUG/" <<<"$out" \
+    || bad "oc: the output subPath is not keyed by the model slug"
+  grep -qE "^ *model: \"gpt-5-mini\"" <<<"$out" \
+    || bad "oc: the Job's model label is no longer the agent-facing short name"
   grep -qE "subPath: runs/aime/codex/$GATEWAY/" <<<"$out" \
     && bad "oc: the output subPath is keyed by the gateway image"
 else
@@ -70,6 +94,14 @@ rc=$?
 [ "$rc" -ne 0 ] || bad "oc: --eval-model was accepted; it was renamed --model"
 grep -q -- "--model" <<<"$out" \
   || bad "oc: the --eval-model rejection doesn't name --model as the replacement"
+
+# ── each launcher's path must differ between two runs of one combo ──────────
+varies "oc" bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
+  --gateway "$GATEWAY" --registry "$REG" --task 0 --no-build --dry-run
+# deploy/kind/run.sh is not checked here: it refuses to render without a live
+# cluster ("kind cluster not found — provision it first"), so its leaf can only
+# be compared where a cluster exists. It composes the path the same way, from the
+# same helper.
 
 echo "deploy scripts: one spelling per axis (oc render + guards + rename errors) — $fail failed"
 [ "$fail" -eq 0 ]

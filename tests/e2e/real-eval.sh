@@ -62,6 +62,18 @@ case "$(settle agents-smoke-mock-task-0 180)" in
   *) bad "the eval did not complete"; diagnose agents-smoke-mock-task-0; exit 1 ;;
 esac
 
+step "check the Job can be asked where it wrote"
+# fetch.sh copies results off a cluster by reading each Job's own `output`
+# subPath rather than rebuilding a path from labels — the `model` label is the
+# handle's last segment (label values forbid `/`), so a label-built path misses
+# every run whose handle carried a provider. That only holds if the Job really
+# reports the path it was given, which no render can prove: assert it here,
+# against the API server, with the same query fetch.sh runs.
+got=$(kubectl get job agents-smoke-mock-task-0 \
+  -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.name=="output")].subPath}' 2>/dev/null)
+[ "$got" = "$SUB/$RUN" ] \
+  || bad "the Job reports subPath '${got:-<empty>}', not the '$SUB/$RUN' it writes to — fetch.sh would copy the wrong directory"
+
 step "check the output contract"
 # The contract the dashboard reads. Each file has a distinct writer, so a missing
 # one names which part of the machinery stopped: the grader, write-result, or the
@@ -118,6 +130,40 @@ case "$out" in
   *"mock agent"*) bad "stderr leaked into agent/stdout.log — the two streams are not being kept apart" ;;
 esac
 
-[ "$fail" -eq 0 ] && echo "PASS: all output-contract artifacts present"
+# ── the launcher people actually use ────────────────────────────────────────
+# Everything above renders the chart the way this test wants it. deploy/kind/run.sh
+# is what a person runs, and nothing has ever executed it: it resolves the image
+# refs, loads them into the node, reads the dataset size off an image label and
+# composes the output path — several hundred lines that only a cluster can
+# exercise. Give it the images it will look for and let it drive.
+step "drive deploy/kind/run.sh"
+kubectl delete job agents-smoke-mock-task-0 --wait=true >/dev/null 2>&1
+docker tag eval-e2e/eval:latest  local/evals/agents-smoke--mock:latest
+docker tag eval-e2e/gateway:stub local/models/stubgw:latest
+docker tag eval-e2e/otel:stub    local/core/otel:latest
+
+if bash "$ROOT/deploy/kind/run.sh" \
+     --benchmark agents-smoke --agent mock --model azure/gpt-5-mini \
+     --gateway stubgw --registry local --cluster "$CLUSTER" \
+     --output-path "$OUT" --task 0 --no-build >/dev/null 2>&1; then
+  case "$(settle agents-smoke-mock-task-0 180)" in
+    *Complete*)
+      # Where it put things is its own business — the model segment is in flux
+      # (#443) and the run id is generated — so assert the shape, not the string:
+      # one run directory under <benchmark>/<agent>/<model>, holding a result.
+      found=$(onnode sh -c "ls $OUT/agents-smoke/mock/*/*/task/result.json 2>/dev/null | head -1")
+      [ -n "$found" ] \
+        || bad "the launcher's Job completed but left no result under $OUT/agents-smoke/mock/*/*/" ;;
+    *) bad "the Job deploy/kind/run.sh applied did not complete"
+       diagnose agents-smoke-mock-task-0 ;;
+  esac
+else
+  bad "deploy/kind/run.sh failed to apply a Job"
+  bash "$ROOT/deploy/kind/run.sh" --benchmark agents-smoke --agent mock \
+    --model azure/gpt-5-mini --gateway stubgw --registry local \
+    --cluster "$CLUSTER" --output-path "$OUT" --task 0 --no-build 2>&1 | tail -15
+fi
+
+[ "$fail" -eq 0 ] && echo "PASS: all output-contract artifacts present, and deploy/kind/run.sh drives a run end to end"
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
 [ "$fail" -eq 0 ]

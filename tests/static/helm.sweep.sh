@@ -137,20 +137,16 @@ for probe_args in \
   esac
 done
 
-# 7. …and a run that would land on another run's results is refused too. The
-# leaf was the caller's to compose, and both shell launchers composed one that
-# never changed, so every re-run of a combo overwrote the one before it.
-out=$(probe --set outputVolume.hostPath.path=/probe/out)
-if [ -z "$out" ]; then
-  echo "FAIL runId: a run with a volume and no runId rendered — it would overwrite the previous run of this combo"
-  fail=$((fail + 1))
-elif ! printf '%s' "$out" | grep -qF -- "--set runId="; then
-  echo "FAIL runId: the refusal must name the way forward; got: $out"
-  fail=$((fail + 1))
-fi
+# 7. runId is offered, not demanded: the chart sees one render and cannot tell a
+# fresh id from a constant, so it composes and the caller stays responsible. A
+# render without one must therefore still work — the dashboard composes its own
+# leaf and passes none.
+probe --set outputVolume.hostPath.path=/probe/out >/dev/null || {
+  echo "FAIL runId: a render without one was refused, but composing the leaf is a caller's right"
+  fail=$((fail + 1)); }
 
-# The id has to actually reach the path, below the caller's prefix and above the
-# index — that ordering is the whole guarantee.
+# What the chart does owe: when an id IS given it lands below the caller's prefix
+# and above the index. That ordering is what makes the directory per-run.
 got=$(probe --set ephemeral=true --set outputSubPath=pre/fix --set runId=rid --set datasetSize=2 |
   awk '/subPathExpr:/{print $2; exit}')
 # $(JOB_COMPLETION_INDEX) is the kubelet's to expand, not this shell's.
@@ -158,6 +154,34 @@ got=$(probe --set ephemeral=true --set outputSubPath=pre/fix --set runId=rid --s
 case "$got" in
   'pre/fix/rid/$(JOB_COMPLETION_INDEX)') ;;
   *) echo "FAIL runId: an Indexed run mounted '$got', not <prefix>/<runId>/<index>"
+     fail=$((fail + 1)) ;;
+esac
+
+# 8. per-task naming is the CHART's to resolve, not the caller's: every name in
+# per-task.json must render evals/<b>-<task>--<a> from `--set benchmark/task`
+# alone, with no `--set perTask`, and a shared-env benchmark must not. This is
+# the whole point of the committed set — a caller that has to remember a flag is
+# a caller that forgets it, and the forgotten render names an image no per-task
+# family publishes (deploy/oc/run.sh never set it; job mode set it from a
+# cwd-relative read). The catalog↔labels half is a cargo test
+# (chart_per_task_set_matches_labels); this is the rendered consequence.
+img() { helm template pt-probe "$CHART" --set benchmark="$1" --set task="$2" \
+  --set ephemeral=true --set runId=r 2>/dev/null |
+  awk '/image:.*\/evals\//{print $2; exit}'; }
+
+while IFS= read -r b; do
+  got=$(img "$b" t0)
+  case "$got" in
+    */evals/"$b"-t0--*) ;;
+    *) echo "FAIL perTask: $b rendered '$got' — expected evals/$b-t0--<agent>; the chart did not resolve its own per-task.json"
+       fail=$((fail + 1)) ;;
+  esac
+done < <(sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p' "$CHART/per-task.json")
+
+got=$(img humaneval 0)
+case "$got" in
+  */evals/humaneval--*) ;;
+  *) echo "FAIL perTask: shared-env humaneval rendered '$got' — expected evals/humaneval--<agent>"
      fail=$((fail + 1)) ;;
 esac
 

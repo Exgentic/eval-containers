@@ -2,8 +2,8 @@
 # run.sh — build + run one eval on OpenShift: a single --task, or --dataset
 # (whole dataset → an Indexed Job). Model + flags: oc/README.md and the case below.
 #
-#   ./oc/run.sh --benchmark aime --agent codex --model openai/azure/gpt-5.4 --dataset
-#   ./oc/run.sh --benchmark aime --agent codex --model openai/azure/gpt-5.4 --task 0   # single, debug
+#   ./oc/run.sh --benchmark aime --agent codex --model azure/gpt-5-mini --dataset
+#   ./oc/run.sh --benchmark aime --agent codex --model azure/gpt-5-mini --task 0   # single, debug
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
@@ -36,8 +36,22 @@ esac; done
 # used to mean the gateway here and would now be forwarded as EVAL_MODEL. Fail
 # loud rather than routing to a nonexistent model (gateways/RULES.md rule 2).
 [[ "$MODEL" != */* ]] && {
-  echo "error: --model takes the upstream <provider>/<model> handle (e.g. openai/azure/gpt-5.4); the proxy image is --gateway" >&2; exit 1; }
+  echo "error: --model takes the upstream <provider>/<model> handle (e.g. azure/gpt-5-mini); the proxy image is --gateway" >&2; exit 1; }
 log() { echo "[run] $*"; }
+
+# Per-task benchmarks bake one eval image per task (evals/<b>-<task>--<a>), and
+# this script is the internal-registry path: `build --builder oc` refuses
+# --task-id outright, and a flat ImageStream name cannot even hold a task id like
+# `sympy__sympy-24066` (`_` is not RFC-1123). Say so here rather than failing
+# three steps later on a build that could never have produced the right image.
+# The published GHCR fleet has these images already — launch them from there (the
+# dashboard does); the chart renders the task-aware ref on its own.
+if per_task "$BENCHMARK"; then
+  echo "error: $BENCHMARK is a per-task benchmark — one eval image per task, which" >&2
+  echo "       the internal registry cannot build (build --builder oc has no --task-id)." >&2
+  echo "       Launch it from the published fleet instead of building it here." >&2
+  exit 1
+fi
 
 [[ -z "$REGISTRY" ]] && REGISTRY="$(oc_registry "$NAMESPACE")"
 [[ -x "$REPO_DIR/target/release/eval-containers" ]] && PATH="$REPO_DIR/target/release:$PATH"
@@ -80,14 +94,17 @@ if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
   log "dataset size for $BENCHMARK (from image label): $DATASET"
 fi
 
-# Two things decide where results land, and both matter. The model's clean label
-# (the chart's `model` Job label: the handle's last segment, what fetch.sh reads
-# back) keys the prefix, so two models behind one gateway cannot share a
-# directory. The leaf is the chart's: it appends this run's id, then the
-# completion index or the task — composing one here is what let a re-run land on
-# the previous run's results, and a sweep re-run on the whole previous sweep.
-MODEL_LABEL="${MODEL##*/}"
-SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_LABEL}"
+# Two things decide where results land, and both matter. The model's SLUG — the
+# whole handle with `/` → `--`, the shape the dashboard writes and reads back —
+# keys the prefix, so two models behind one gateway cannot share a directory.
+# (The `model` Job label stays the handle's last segment: label values forbid
+# `/` and cap at 63 chars, so the path is the only place that can carry a whole
+# handle, and fetch.sh reads the Job's own subPath rather than rebuilding one.)
+# The leaf is the chart's: it appends this run's id, then the completion index or
+# the task — composing one here is what let a re-run land on the previous run's
+# results, and a sweep re-run on the whole previous sweep.
+MODEL_SLUG="$(model_slug "$MODEL")"
+SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
 if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"
 else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; fi
 

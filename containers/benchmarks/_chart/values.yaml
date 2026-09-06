@@ -8,10 +8,15 @@
 agent: claude-code
 task: "0"
 # perTask: this benchmark bakes one eval image per task, so the runner image is
-# evals/<benchmark>-<task>--<agent> (not evals/<benchmark>--<agent>). The CLI sets
-# it from the benchmark's `eval.benchmark.env=per-task` label. Per-task benchmarks
-# run one Job per task and CANNOT use a dataset (Indexed) Job — datasetSize is
-# rejected when perTask is true. (benchmarks/RULES.md — eval-image naming.)
+# evals/<benchmark>-<task>--<agent> (not evals/<benchmark>--<agent>). You do not
+# set this: the chart resolves it from its own `per-task.json` (derived from the
+# benchmarks' `eval.benchmark.env="per-task"` labels), so `--set benchmark=<x>` is
+# all any caller needs — helm, the CLI, deploy/oc/run.sh and the dashboard all get
+# the same answer. Setting it true here still forces per-task naming for a
+# benchmark outside that set; you cannot force one inside it back to shared-env.
+# Per-task benchmarks run one Job per task and CANNOT use a dataset (Indexed) Job —
+# datasetSize is rejected when perTask is true. (benchmarks/RULES.md — eval-image
+# naming.)
 perTask: false
 registry: ghcr.io/exgentic
 # Two independent axes (gateways/RULES.md): `gatewayImage` (CLI --gateway) picks
@@ -88,9 +93,10 @@ outputSubPath: ""
 # — a real eval names a volume.
 ephemeral: false
 
-# A unique id for THIS run, appended to outputSubPath so two runs of one
-# benchmark/agent/model never write to the same directory (see eval.outputRoot).
-# Required unless `ephemeral`. Any unique string: `$(date -u +%Y%m%d-%H%M%S)-$RANDOM`.
+# An id for THIS run, appended to outputSubPath when set, so two runs of one
+# benchmark/agent/model land in their own directories (see eval.outputRoot).
+# Optional — a caller that composes its own unique leaf needs nothing here. Any
+# unique string: `$(date -u +%Y%m%d-%H%M%S)-$RANDOM`.
 runId: ""
 
 # ── Sweep model: a dataset eval is ONE Indexed Job ───────────────────────────

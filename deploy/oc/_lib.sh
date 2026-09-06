@@ -2,6 +2,10 @@
 # shellcheck disable=SC2034  # NS_DEFAULT/REPO_DIR are read by the scripts that source this
 # deploy/oc/_lib.sh — shared defaults + the name-flatten helper, sourced by the scripts.
 
+# The cross-platform half (model_slug): one home, so the two wrappers cannot drift.
+# shellcheck source=../_lib.sh
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/_lib.sh"
+
 NS_DEFAULT="exgentic-ns"
 # This lib lives at deploy/oc/, so the repo root is two levels up.
 REPO_DIR="${REPO_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
@@ -12,3 +16,11 @@ oc_registry() { echo "image-registry.openshift-image-registry.svc:5000/$1"; }
 # Artifact name → flat ImageStream name (lowercase, dots→dash, `--`→`-`). Used
 # for the build skip-check; the chart owns image-ref composition (flatImages).
 flat() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr '.' '-' | sed 's/--/-/g'; }
+
+# Is this benchmark per-task (one eval image baked per task)? Reads the chart's
+# committed per-task.json — the same set `helm template` itself resolves from, so
+# shell and chart can never disagree. The file is one quoted name per line (see
+# the regeneration one-liner in cli/tests/cli_conformance.rs).
+per_task() {
+  grep -qE "^[[:space:]]*\"$1\",?$" "$REPO_DIR/containers/benchmarks/_chart/per-task.json"
+}

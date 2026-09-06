@@ -11,6 +11,19 @@ from --set and are never in a preset, so preset-wins is safe.
 {{- define "eval.values" -}}
 {{- $name := required "benchmark is required (--set benchmark=<x>)" .Values.benchmark -}}
 {{- $preset := .Files.Get (printf "presets/%s.yaml" $name) | fromYaml | default dict -}}
+{{- /* Per-task environment (rule 24f): the benchmark bakes one eval image per
+       task, so its runner is evals/<b>-<task>--<a>. Resolved HERE from the chart's
+       own committed set, not from a `--set perTask=` every caller has to remember:
+       rules 1 and 24h mean `helm template --set benchmark=<x> --set task=<id>` must
+       be right on its own, from the packaged chart, with no eval-containers checkout
+       in sight. Callers that forgot it silently rendered the shared-env image name
+       for a per-task benchmark and got an ImagePullBackOff with nothing to read.
+       per-task.json is derived from the benchmarks' `eval.benchmark.env="per-task"`
+       labels; cli/tests/cli_conformance.rs asserts the two agree. It merges after
+       the preset because that label is the truth — nothing may declare a per-task
+       benchmark shared-env. */ -}}
+{{- $perTask := .Files.Get "per-task.json" | default "[]" | fromJsonArray -}}
+{{- $env := has $name $perTask | ternary (dict "perTask" true) dict -}}
 {{- /* `timeout` is the one preset key an operator MUST be able to override per run:
        the right agent budget is a property of the model, not the benchmark (deepswe
        wants 90 min for gpt-5.5 and 8h for GLM-5.2 / claude-sonnet-5). Every other
@@ -23,13 +36,16 @@ from --set and are never in a preset, so preset-wins is safe.
        parse as YAML — an intermediate variable changed how empty string values
        survived the round-trip and broke `helm lint`. */ -}}
 {{- $over := empty .Values.timeoutOverride | ternary dict (dict "timeout" (.Values.timeoutOverride | toString)) -}}
-{{- mergeOverwrite (deepCopy .Values) $preset $over | toYaml -}}
+{{- mergeOverwrite (deepCopy .Values) $preset $env $over | toYaml -}}
 {{- end -}}
 
 {{/* The runner's clean model name: the last segment of the <provider>/<model>
-     handle (openai/gpt-5.4 → gpt-5.4). The agent + k8s labels get this, not the
-     slashed handle (k8s label values forbid `/`; some agent CLIs reject a
-     provider-prefixed name). The gateway gets the full handle for routing. */}}
+     handle (openai/gpt-5.4 → gpt-5.4). The AGENT gets this — some agent CLIs
+     reject a provider-prefixed name — while the gateway gets the full handle
+     for routing, and the k8s label gets it too (label values forbid `/` and cap
+     at 63 chars, so they can't carry a handle). The RESULTS PATH is the one
+     place that needs the whole handle, and it takes it from `outputSubPath`,
+     which the caller slugs. */}}
 {{- define "eval.modelLabel" -}}{{ .model | splitList "/" | last }}{{- end -}}
 
 {{/* Shared labels: benchmark/agent/model, sweep-id + Kueue queue only when set.
@@ -127,25 +143,22 @@ emptyDir: {}
 {{/* The /output mount. In Indexed mode each example gets its own per-index dir
      via subPathExpr + the k8s-injected $(JOB_COMPLETION_INDEX); otherwise a fixed
      subPath (or the volume root). Called with the merged values ($v). */}}
-{{/* eval.outputRoot — where this run writes, and the one guarantee the chart
-     makes about it: a run never lands on top of another run's results.
+{{/* eval.outputRoot — where this run writes.
 
      The prefix is the caller's. runs/<benchmark>/<agent>/<model> is the shape the
      dashboard reads, deploy/kind uses its own, a bare `helm template` may pass
      none — the chart imposes no layout, because a layout is a reader's model and
-     readers differ. What it does impose is the leaf: every run appends its own
-     runId, so two runs of one combo cannot collide however the caller names the
-     rest. Without it they did: `deploy/oc/run.sh --dataset` and
-     deploy/kind/run.sh both composed <benchmark>/<agent>/<model> and nothing
-     more, so every re-run of a combo overwrote the one before it, and a sweep
-     re-run overwrote the whole sweep.
+     readers differ. What it offers is the leaf: pass `runId` and it is appended,
+     so a caller gets a per-run directory without composing one.
 
-     runId is required exactly when the results are meant to survive — an
-     ephemeral run has nothing to collide with. */}}
+     Offered, not required, because the chart cannot check the thing that matters.
+     It sees one render; it cannot see whether this id differs from the last run's,
+     and a `--set runId=fixed` would satisfy any check it could make while
+     colliding every time. Uniqueness is the caller's to hold, and it is proven
+     where it is decidable: tests/e2e/cluster-contract.sh runs one combo twice and
+     asserts both results survive, and tests/static/deploy-scripts.sweep.sh asserts
+     each launcher's rendered path differs between two invocations. */}}
 {{- define "eval.outputRoot" -}}
-{{- if and (not .runId) (not .ephemeral) -}}
-{{- fail "no runId: two runs of this benchmark/agent/model would write to the same directory and the second would overwrite the first. Pass a unique id per run — `--set runId=$(date -u +%Y%m%d-%H%M%S)-$RANDOM` is enough — or say the results do not matter with --set ephemeral=true." -}}
-{{- end -}}
 {{- $parts := list -}}
 {{- with .outputSubPath }}{{- $parts = append $parts . -}}{{- end -}}
 {{- with .runId }}{{- $parts = append $parts (toString .) -}}{{- end -}}
