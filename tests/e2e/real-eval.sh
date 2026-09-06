@@ -120,7 +120,9 @@ esac
 case "$out" in
   *"gateway:up"*) ;;
   *"gateway:unprobed"*) bad "the base image had no HTTP client, so the endpoint was never probed" ;;
-  *) bad "the agent could not reach the gateway at its OPENAI_API_BASE (got: ${out:-<empty>})" ;;
+  *) bad "the agent could not reach the gateway at its OPENAI_API_BASE"
+     echo "    stdout: ${out:-<empty>}"
+     echo "    stderr: ${err:-<empty>}" ;;
 esac
 case "$err" in
   *"mock agent"*) ;;
