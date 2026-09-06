@@ -657,6 +657,90 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
+/// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —
+/// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
+/// run-agent forwards it and rejects it loudly for an agent whose /run.sh
+/// doesn't use it (an agent that can't deny its web tools is an invalid pairing
+/// for a benchmark that declared internet=false, not a degraded one).
+#[test]
+fn internet_policy_wired_through_to_agents() {
+    let root = repo_root();
+    let read =
+        |p: &str| fs::read_to_string(root.join(p)).unwrap_or_else(|e| panic!("read {p}: {e}"));
+    let run_agent = read("containers/core/runner/run-agent");
+
+    assert!(
+        run_agent.contains("EVAL_INTERNET="),
+        "run-agent's `env -i` allow-list must pass EVAL_INTERNET or the agent can't read it"
+    );
+    assert!(
+        run_agent.contains("grep -q EVAL_INTERNET /run.sh") && run_agent.contains("exit 2"),
+        "run-agent must reject EVAL_INTERNET=false loudly when the agent's /run.sh doesn't use it"
+    );
+    for a in ["claude-code", "claude-code-rtk"] {
+        assert!(
+            read(&format!("containers/agents/{a}/Dockerfile")).contains("EVAL_INTERNET"),
+            "{a} /run.sh must reference EVAL_INTERNET to deny its web tools when set to false"
+        );
+    }
+
+    eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based loud-reject");
+}
+
+/// A benchmark that sets `ENV EVAL_INTERNET` MUST also carry the
+/// `eval.benchmark.internet` label — the design (agents/RULES.md 19) rests on
+/// the declarative label and the enforcement ENV never disagreeing, and the
+/// label is the source of truth. This is the direction that catches an actual
+/// score-validity bug (an ENV that contradicts, or is unmoored from, the
+/// declared policy); the converse — ~100 benchmarks that declare the label
+/// without yet wiring the ENV — is a defensible incremental rollout (agents/
+/// RULES.md 19 note), not asserted here.
+#[test]
+fn benchmark_internet_env_implies_label() {
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let dockerfile = dir.join("Dockerfile");
+        if !dockerfile.exists() {
+            continue;
+        }
+        let text = fs::read_to_string(&dockerfile).unwrap_or_else(|e| panic!("read {name}: {e}"));
+
+        let has_label = text.contains("eval.benchmark.internet=");
+        let has_env = text
+            .lines()
+            .any(|l| l.trim_start().starts_with("ENV") && l.contains("EVAL_INTERNET"));
+
+        assert!(
+            !(has_env && !has_label),
+            "{name}: sets ENV EVAL_INTERNET but has no eval.benchmark.internet label — the \
+             label is the declarative source of truth (agents/RULES.md 19)"
+        );
+    }
+
+    eprintln!(
+        "✓ every benchmark setting ENV EVAL_INTERNET also carries the eval.benchmark.internet label (agents/RULES.md 19)"
+    );
+}
+
+/// agents/RULES.md 23: when EVAL_INTERNET=false, the runner MUST tell the agent
+/// in the task text itself that no internet is needed, so it doesn't burn turns
+/// diagnosing/working around a perceived connectivity failure.
+#[test]
+fn run_injects_no_internet_note_into_task() {
+    let run = fs::read_to_string(repo_root().join("containers/core/runner/run")).expect("read run");
+    assert!(
+        run.contains(r#"[ "${EVAL_INTERNET:-}" = "false" ]"#),
+        "core/runner/run must branch on EVAL_INTERNET=false to modify TASK (agents/RULES.md 23)"
+    );
+    assert!(
+        run.to_lowercase().contains("no internet"),
+        "core/runner/run must append a plain-language no-internet-needed note to TASK when \
+         EVAL_INTERNET=false (agents/RULES.md 23)"
+    );
+    eprintln!(
+        "✓ core/runner/run appends a no-internet-needed note to TASK when EVAL_INTERNET=false (agents/RULES.md 23)"
+    );
+}
+
 /// The lean/standalone split (benchmarks/RULES.md 24a/24f). The lean base
 /// (combination.Dockerfile → evals/<b>--<a>) is glue-free: no in-process gateway,
 /// otelcol, or process-compose — that is what compose/job/k8s run, with those as

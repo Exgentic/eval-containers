@@ -67,3 +67,38 @@ The two version axes are orthogonal: the **tag** controls which container to
 pull (Docker-native), the **version** is a runtime override the entrypoint
 installs at container start. Every image ships a reproducible default, so casual
 users never set these — see [Overview → Two version axes](../concepts/overview.md).
+
+## Internet policy — *image-baked, not operator-settable*
+
+| Variable | Meaning | Default |
+|---|---|---|
+| `EVAL_INTERNET` | Set to `"false"` when this benchmark's task does not need internet access | unset (web tools stay enabled) |
+
+`EVAL_INTERNET` is **not a runtime knob** — it is baked into a benchmark's image
+via `ENV`, mirroring that benchmark's `eval.benchmark.internet` label, because
+internet policy is a fixed property of the benchmark, not a per-run axis (same
+reasoning as `EVAL_BENCHMARK`). Setting it on the CLI has no effect; a benchmark
+that ships the `ENV` carries the policy on every surface automatically.
+
+**The agent has no internet access by default on every benchmark**, `EVAL_INTERNET`
+notwithstanding: [benchmarks/RULES.md rule 9](../../.agents/benchmarks/RULES.md)
+blocks raw outbound access unconditionally (`internal: true` compose network /
+`iptables` on the standalone bundle / credential isolation on k8s). What
+`EVAL_INTERNET=false` adds on top, for a **supporting agent**, is two things
+that make the *agent's own behavior* match that reality instead of fighting it:
+
+- the runner tells the agent directly, in the task text, that no internet is
+  needed and not to try — so it doesn't burn turns diagnosing or "fixing"
+  perceived connectivity instead of solving the task;
+- the agent's own built-in web tools (`WebSearch`/`WebFetch` and equivalents)
+  are removed from its tool list rather than left in to fail — a missing tool
+  reads as "not available" where a failing one reads as "broken," which
+  invites exactly the diagnose-and-fix behavior above. (Those tools proxy
+  through the LLM provider's gateway route, not raw sockets, so removing them
+  is currently the only lever on that specific channel — network isolation
+  doesn't reach it. Blocking the LLM provider's own web-search tool at the
+  gateway is tracked as future work.)
+
+Supported agents: **claude-code, claude-code-rtk**. Selecting a benchmark that
+declares `EVAL_INTERNET=false` with any other agent **fails loud** (the run
+exits non-zero) rather than silently leaving its web tools enabled.

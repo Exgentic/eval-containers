@@ -25,6 +25,19 @@ if [ -n "${EVAL_AGENT_REASONING_EFFORT:-}" ] && ! grep -q EVAL_AGENT_REASONING_E
   exit 2
 fi
 
+# Fail loud if EVAL_INTERNET=false (the benchmark's declared policy) but the
+# agent's entrypoint doesn't reference it — an agent that cannot deny its own
+# web tools is an invalid pairing for that benchmark, not a degraded one. This
+# is not the isolation boundary (benchmarks rule 9 already blocks raw internet
+# access unconditionally, on every surface, for every benchmark); it's about
+# not silently leaving the agent's own LLM-provider-mediated web tools enabled
+# — the one channel network isolation can't reach — on a benchmark that
+# declared it doesn't want them.
+if [ "${EVAL_INTERNET:-}" = "false" ] && ! grep -q EVAL_INTERNET /run.sh; then
+  echo "run-agent: EVAL_INTERNET=false but agent '${EVAL_AGENT:-?}' cannot enforce it" >&2
+  exit 2
+fi
+
 # stdout/stderr go straight to /output/agent/{stdout,stderr}.log (raw, not via
 # process-compose's JSON log envelope, which breaks verifiers reading stdout).
 # Every value is read from the inherited environment — exported by

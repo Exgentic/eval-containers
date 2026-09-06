@@ -69,6 +69,18 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 18. **Smoke test.** Every agent MUST pass `tests/run/agents/test.rs` — boot from the `evals/agents-smoke--<name>` carrier and make at least one LLM call to the protocol-namespaced gateway endpoint within `FIRST_CALL_TIMEOUT` seconds. The smoke test runs with a `models/replay` mock LLM, so no upstream credentials are needed. An agent that cannot satisfy this contract (because its design hardcodes a vendor backend, requires interactive setup, or runs a self-hosted multi-process stack) MUST be listed in `tests/run/agents/broken.md` with the root cause + smallest viable fix. Removing an agent from `broken.md` is the success condition.
 
+### Internet policy
+
+19. **Internet policy is a capability toggle, not benchmark knowledge.** A supporting agent MUST read only the `EVAL_INTERNET` env var to decide whether to deny its own web tools, and MUST NOT special-case a benchmark name.
+
+20. **Label and ENV MUST agree when both are set.** A benchmark that sets `ENV EVAL_INTERNET` MUST also carry the `eval.benchmark.internet` label with the same value; a benchmark MAY carry the label alone while enforcement is not yet wired for it.
+
+21. **Unsupported means fail loud, not silently ignored.** The runner MUST reject a run where `EVAL_INTERNET=false` but the selected agent's `/run.sh` does not reference `EVAL_INTERNET`, since an agent that cannot deny its web tools is an invalid pairing for that benchmark, not a degraded one.
+
+22. **Tool removal is UX, not the isolation boundary.** `EVAL_INTERNET=false` MUST NOT be documented or relied on as network isolation — that is [benchmarks/RULES.md rule 9](../benchmarks/RULES.md), unconditional on every benchmark; denying the agent's own web tools only makes the agent's behavior match a boundary that already exists, on the one channel (LLM-provider-mediated web tools) that rule 9's network isolation cannot reach.
+
+23. **The task text MUST tell the agent when no internet is needed.** When `EVAL_INTERNET=false`, the runner MUST append a plain-language note to `TASK` stating that no internet connection is required and the agent should not attempt to access it, so the agent does not spend turns diagnosing or working around a perceived connectivity failure.
+
 ## References
 
 - [Process](../RULES.md)
@@ -82,3 +94,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-04-14 | Split rule 12 into rule 12 (reproducible by default via pinned `ARG <NAME>_VERSION`) and new rule 13 (runtime override via `EVAL_AGENT_VERSION`, writes resolved version to `/output/agent/version.json`). Added `eval.agent.version` to required labels (rule 14). Renumbered rules 14–17. |
 | 2026-05-21 | Added rule 18 (smoke test) — agents must pass `tests/run/agents/test.rs` or be documented in `tests/run/agents/broken.md`. |
 | 2026-08-10 | Rule 8: replaced the hardcoded `/app/` with "its task working directory (wherever the benchmark's entrypoint places it)" — only 39 of 102 benchmarks actually use `/app`; swe-bench stages at `/testbed`. The old wording had already misled one agent image into hardcoding `/app` (#308). |
+| 2026-09-06 | Added rules 19–23 (Internet policy): `EVAL_INTERNET` is a capability toggle read verbatim; its label and ENV must agree when both are set (a benchmark may declare the label alone during incremental rollout); the runner fails loud when the selected agent can't honour a benchmark's declared `internet=false`; denying the agent's web tools is UX matching the existing rule-9 isolation boundary, not the boundary itself; the runner appends a plain-language no-internet-needed note to `TASK` (#423). |
