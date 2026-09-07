@@ -63,7 +63,8 @@ helm template real "$CHART" \
   --set runnerImageRef=eval-e2e/eval:latest \
   --set outputVolume.hostPath.path="$OUT" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
-  --set outputSubPath="$SUB" --set runId="$RUN" |
+  --set outputSubPath="$SUB" --set runId="$RUN" \
+  --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' |
   kubectl apply -f - >/dev/null || { echo "apply failed"; exit 1; }
 
 case "$(settle agents-smoke-mock-task-0 180)" in
@@ -87,7 +88,7 @@ step "check the output contract"
 # The contract the dashboard reads. Each file has a distinct writer, so a missing
 # one names which part of the machinery stopped: the grader, write-result, or the
 # runner's log capture.
-for f in task/result.json agent/result.json model/result.json; do
+for f in task/result.json agent/result.json model/result.json agent/launch.json; do
   r=$(onnode cat "$OUT/$SUB/$RUN/$f" 2>/dev/null)
   [ -n "$r" ] || { bad "$f is missing"; continue; }
   echo "  $f: $r"
@@ -108,6 +109,14 @@ a=$(onnode cat "$OUT/$SUB/$RUN/agent/result.json" 2>/dev/null)
 case "$a" in
   *'"exit_code":0'*|*'"exit_code": 0'*) ;;
   *) bad "agent/result.json has no exit_code — a crashed run would be indistinguishable from a clean one (got: ${a:-<empty>})" ;;
+esac
+
+# What the run was launched with. The Job that knew is collected within the hour,
+# so a rerun can only replay a custom prompt if the run recorded it itself.
+r=$(onnode cat "$OUT/$SUB/$RUN/agent/launch.json" 2>/dev/null)
+case "$r" in
+  *'"EVAL_MARK"'*) ;;
+  *) bad "agent/launch.json does not carry what the run was given (got: ${r:-<empty>})" ;;
 esac
 
 # The agent's own streams. The run page falls back to these whenever a trace is
