@@ -1,10 +1,8 @@
 name: Publish charts/eval
 description: >-
-  Package the eval chart and push it to the registry, then read it back. One
-  definition for both channels — the continuous one on a main push
-  (publish-chart.yml) and the versioned one at a release (release-images.yml) —
-  because they differ only in which version they publish, and two copies of four
-  helm commands is two copies that can drift.
+  Package the eval chart, push it to the registry, and read it back. Called by
+  both channels: publish-chart.yml on a main push, release-images.yml at a
+  release. They differ only in which version they publish.
 
 inputs:
   version:

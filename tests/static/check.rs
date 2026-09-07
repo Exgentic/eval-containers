@@ -1181,15 +1181,14 @@ fn the_chart_publishes_on_the_continuous_channel() {
 
     assert!(
         wf.contains("branches: [main]"),
-        "the chart must publish on a default-branch push — otherwise charts/eval \
-         sits arbitrarily far behind the images main publishes at :latest"
+        "the chart must publish on a default-branch push, or the channel is not \
+         continuous"
     );
     // The key at job indentation, not the word: the header explains the coupling
     // this replaced, and a substring check matched its own prose.
     assert!(
         !wf.contains("\n    needs:"),
-        "the publish must not wait on another job: it is package + push, and \
-         coupling it to the image build is what left the channel hours stale"
+        "the publish must not wait on another job — it is package + push"
     );
     assert!(
         act.contains("containers/benchmarks/_chart/Chart.yaml"),
