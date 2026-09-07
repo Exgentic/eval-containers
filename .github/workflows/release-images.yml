@@ -213,6 +213,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       leaves: ${{ steps.l.outputs.leaves }}        # bake targets: benchmarks(shared)+agents+models
+      leaf_shards: ${{ steps.l.outputs.leaf_shards }} # [{idx}] — leaves chunked ≤128 shards × 2 arches
       benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
       combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256 (shared combos only, task=="")
       pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench/deepswe), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
@@ -292,7 +293,10 @@ jobs:
           fi
           leaves=$(printf '%s\n' "$leaf_list" | jq -Rsc 'split("\n")|map(select(length>0))')
           n=$(printf '%s' "$leaves" | jq 'length')
-          if [ "$n" -gt 128 ]; then echo "::error::leaf count $n > 128 (build fans out × 2 arches → must fit GitHub's 256-job matrix cap)"; exit 1; fi
+          # Leaves used to be one matrix job each, × 2 arches, so the fleet could
+          # not exceed 128 of them — and at 129 it stopped being able to release
+          # at all on a tag or dispatch. They are sharded with every other
+          # oversize list below instead.
           if [ "$n" -le 0 ] && [ "$IS_MAIN_PUSH" != "true" ]; then echo "::error::leaf count 0 — releases and dispatches must name at least one leaf"; exit 1; fi
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
@@ -452,6 +456,10 @@ jobs:
           shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
           chunk() { local n k; n=$(jq length <<< "$1"); k=$2
                     while [ "$(( (n + k - 1) / k ))" -gt 128 ]; do k=$((k * 2)); done; echo "$k"; }
+          # Leaves shard at 1: below the cap every shard holds exactly one leaf,
+          # so the fan-out is what it has always been, and only a fleet past 128
+          # starts pairing them up.
+          leaf_shards=$(shard "$leaves" "$(chunk "$leaves" 1)")
           combo_shards=$(shard "$combos" 25)
           pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 10)")
           pertask_shards=$(shard "$pertask" "$(chunk "$pertask" 10)")
@@ -466,11 +474,13 @@ jobs:
           # as arguments exceeds ARG_MAX — jq never starts and the step exits 126
           # ("Argument list too long"). printf is a shell builtin, so nothing is
           # exec'd and there is no limit. Each value is already compact JSON.
-          printf '{"combo":%s,"pertask_combo":%s,"pertask":%s}' \
-            "$combo_shards" "$pertask_combo_shards" "$pertask_shards" > shards.json
+          printf '{"leaf":%s,"combo":%s,"pertask_combo":%s,"pertask":%s}' \
+            "$leaf_shards" "$combo_shards" "$pertask_combo_shards" "$pertask_shards" > shards.json
           idx() { jq -c '[.[] | {idx}]' <<< "$1"; }
           # combos build per shard via buildx --platform (one job/shard) → ≤256;
           # per-task and pertask-combo fan out per shard × 2 arches → matrix must fit 256.
+          ln=$(printf '%s' "$leaf_shards" | jq length)
+          [ "$((ln * 2))" -le 256 ] || { echo "::error::leaf_shards = $ln × 2 arch = $((ln * 2)) > 256"; exit 1; }
           cn=$(printf '%s' "$combo_shards" | jq length); ptn=$(printf '%s' "$pertask_shards" | jq length)
           pcn=$(printf '%s' "$pertask_combo_shards" | jq length)
           [ "$cn" -le 256 ] || { echo "::error::combo_shards = $cn > 256 — raise the combo chunk size in enumerate"; exit 1; }
@@ -486,6 +496,7 @@ jobs:
           {
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
+            echo "leaf_shards=$(idx "$leaf_shards")"
             echo "combo_shards=$(idx "$combo_shards")"
             echo "pertask_combo_shards=$(idx "$pertask_combo_shards")"
             echo "pertask_shards=$(idx "$pertask_shards")"
@@ -502,7 +513,7 @@ jobs:
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
   build:
-    name: leaf ${{ matrix.target }} (${{ matrix.arch }})
+    name: leaf shard ${{ matrix.shard.idx }} (${{ matrix.arch }})
     needs: [bases, enumerate]
     # A main push with zero stale leaves skips the whole matrix (an empty
     # matrix list is a workflow error, not zero jobs).
@@ -513,7 +524,7 @@ jobs:
       fail-fast: false
       max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
       matrix:
-        target: ${{ fromJson(needs.enumerate.outputs.leaves) }}
+        shard: ${{ fromJson(needs.enumerate.outputs.leaf_shards) }}
         arch: [amd64, arm64]
         include:
           - arch: amd64
@@ -528,30 +539,36 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Bake ${{ matrix.target }} (${{ matrix.arch }}; registry bases, per-leaf cache)
-        # Cap a stalled leaf (a hung download blocked the matrix ~40m). Big-dataset
-        # leaves legitimately outrun it on a cold cache, so they get headroom.
-        timeout-minutes: ${{ contains(fromJSON('["benchmark-livecodebench"]'), matrix.target) && 60 || 25 }}
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
+      - name: Bake leaf shard ${{ matrix.shard.idx }} (${{ matrix.arch }}; registry bases, per-leaf cache)
         env:
-          T: ${{ matrix.target }}
+          IDX: ${{ matrix.shard.idx }}
           ARCH: ${{ matrix.arch }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
           export TAG="${TAG}-${ARCH}"   # per-arch tag; merge builds the :TAG manifest list
+          # The shard list is an artifact, not a job output (1 MB cap). Below the
+          # fleet cap a shard holds one leaf, so this loop runs once.
+          fails=0
+          for T in $(jq -r --argjson i "$IDX" '.leaf[] | select(.idx==$i).items[]' shards.json); do
+          # Cap a stalled leaf (a hung download blocked the matrix ~40m). Big-dataset
+          # leaves legitimately outrun it on a cold cache, so they get headroom.
+          CAP=25m; [ "$T" = "benchmark-livecodebench" ] && CAP=60m
           # Stamp + carry forward (delivery/RULES.md rules 12–13): the hash is
           # the repo-computed inputs at this commit; the ref comes from the
           # graph's context column (dot-safe — target names mangle gpt-5.4).
           # Unchanged inputs vs the prior release (:latest-<arch>) ⇒ retag its
           # digest instead of rebuilding; force_rebuild overrides (CVE refresh).
           H=$(bash containers/scripts/fleet-hash.sh | awk -F'\t' -v t="$T" '$1==t{print $2}')
-          [ -n "$H" ] || { echo "::error::no input-hash for $T"; exit 1; }
+          [ -n "$H" ] || { echo "::error::no input-hash for $T"; fails=$((fails+1)); continue; }
           ctx=$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}')
           ref="${REGISTRY}/${ctx#containers/}"
           # An arch the image does not declare cannot build (its base lacks it) —
           # skip, leaving it legitimately single-arch.
           PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "$ctx/Dockerfile" | tail -1)
           if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
-            echo "skipping $T on $ARCH — declared platforms: $PLATS"; exit 0
+            echo "skipping $T on $ARCH — declared platforms: $PLATS"; continue
           fi
           if [ "${{ inputs.force_rebuild }}" != "true" ] && [ "${{ inputs.dry_run }}" != "true" ] && \
              bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$H" >/dev/null; then
@@ -560,7 +577,7 @@ jobs:
               docker buildx imagetools create --tag "${ref}:${TAG}" "${ref}:latest-${ARCH}"
               echo "carried forward: ${ref}:${TAG} <- :latest-${ARCH}"
             fi
-            exit 0
+            continue
           fi
           mapfile -t FILES < <(find containers -name docker-bake.hcl -not -name 'combination*')
           FARGS=(); for f in "${FILES[@]}"; do FARGS+=(-f "$f"); done
@@ -585,14 +602,19 @@ jobs:
           # dry_run validates config only (bake --print); else build + attest + push.
           ACT=(--provenance=mode=max --sbom=true "$T" --push)
           [ "${{ inputs.dry_run }}" = "true" ] && ACT=("$T" --print)
-          retry docker buildx bake "${FARGS[@]}" "${OV[@]}" \
+          # `timeout` per leaf, where the step's timeout-minutes used to sit: a
+          # shard may hold more than one leaf, so one stalled build must not eat
+          # the whole shard's budget. Inside `retry`, so each attempt is capped.
+          retry timeout "$CAP" docker buildx bake "${FARGS[@]}" "${OV[@]}" \
             --set "${T}.labels.eval.input-hash=${H}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
             --set "*.labels.org.opencontainers.image.source=https://github.com/Exgentic/eval-containers" \
             --set "*.secrets=id=HF_TOKEN,env=HF_TOKEN" \
             --set "*.cache-to=type=registry,ref=${REGISTRY}/buildcache/${T}-${ARCH},mode=max" \
             --set "*.cache-from=type=registry,ref=${REGISTRY}/buildcache/${T}-${ARCH}" \
-            "${ACT[@]}"
+            "${ACT[@]}" || fails=$((fails+1))
+          done
+          [ "$fails" -eq 0 ] || { echo "::error::$fails leaf(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
 
   # ── per-task base images — sharded; each job builds a chunk of (b,task) ───
   # Two mechanics in one job: kind=script (build.sh via podman, chained through
