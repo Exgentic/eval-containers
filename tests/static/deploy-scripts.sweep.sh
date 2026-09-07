@@ -108,6 +108,41 @@ out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GA
 got=$(awk '/^  completions:/{print $2; exit}' <<<"$out")
 [ "$got" = "$want" ] \
   || bad "oc: --dataset rendered completions=${got:-<none>}, but aime's Dockerfile says $want"
+
+# ── 5. an upstream task id must not break the launch ────────────────────────
+# The Job's name is the chart's (eval.jobName), which lowercases and collapses
+# every RFC-1123-illegal run to `-`. The wrapper used to compose a second copy
+# and pass it to helm as the RELEASE name, which helm validates as a DNS-1123
+# label before the chart renders — so `--task sympy__sympy-24066` (SWE-bench ids
+# carry `_`) died on helm's own check, and a name long enough to need the chart's
+# hash could not have been reproduced in bash anyway. It reads the name out of
+# the render now; the release name no longer carries the task at all.
+#
+# tau-bench on purpose: its preset ships a harness Job, so the render the wrapper
+# parses contains two, and the reader has to pick the eval one. The selector is
+# spelled out again here rather than sourced from deploy/_lib.sh — a test that
+# reuses the implementation it is checking would agree with any answer.
+for shape in "--task sympy__sympy-24066" "--task 0" "--dataset"; do
+  # shellcheck disable=SC2086  # $shape is a deliberate two-word argument
+  out=$(bash "$OC" --benchmark tau-bench --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+          --registry "$REG" $shape --no-build --dry-run 2>&1)
+  said=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$out" | head -1)
+  rendered=$(awk '
+    /^# Source:/          { name=""; agent=0 }
+    /^  name: /           { if (!name) name=$2 }
+    /^    agent: /        { agent=1 }
+    /^spec:/              { if (agent && name) { print name; exit } }
+  ' <<<"$out")
+  if [ -z "$rendered" ]; then
+    bad "oc $shape: no eval Job rendered — $(grep -m1 -i 'error' <<<"$out")"
+  elif [ "$said" != "$rendered" ]; then
+    bad "oc $shape: the wrapper addresses Job '$said' but the chart named it '$rendered'"
+  elif [ "$said" = "tau-bench-harness" ]; then
+    # Both readers agreeing on the WRONG Job would satisfy the check above.
+    bad "oc $shape: the wrapper picked the preset's harness Job, not the eval Job"
+  fi
+done
+
 # ── each launcher's path must differ between two runs of one combo ──────────
 varies "oc" bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
   --gateway "$GATEWAY" --registry "$REG" --task 0 --no-build --dry-run

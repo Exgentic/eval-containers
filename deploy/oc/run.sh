@@ -94,8 +94,6 @@ $NO_RUN && { log "--no-run: built only, not submitting."; exit 0; }
 # results, and a sweep re-run on the whole previous sweep.
 MODEL_SLUG="$(model_slug "$MODEL")"
 SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
-if $DATASET_MODE; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; fi
 
 # flatImages=true → the chart composes flat ImageStream refs for the OC registry.
 # Two independent axes (gateways/RULES.md): `model` = the upstream handle → the
@@ -116,8 +114,17 @@ $DATASET_MODE && SET+=(--set "dataset=true")
 [[ -n "$QUEUE"       ]] && SET+=(--set "queueName=$QUEUE")
 [[ -n "$SWEEP_ID"    ]] && SET+=(--set "sweepId=$SWEEP_ID")
 
-RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
-if $DRY_RUN; then echo "$RENDER"; exit 0; fi
+# The release name is not the Job name: helm validates it as a DNS-1123 label
+# capped at 53 chars BEFORE the chart renders, and the chart never reads
+# .Release.Name. Passing the task id here is what made `--task sympy__sympy-24066`
+# die on helm's own check — an upstream id carries whatever upstream called it.
+# Benchmark, agent and suffix are already safe and short, so the task stays out.
+RENDER=$(helm template "$BENCHMARK-$AGENT$SUFFIX" "$REPO_DIR/containers/benchmarks/_chart" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
+JOB=$(job_name_from_render "$RENDER")
+[[ -n "$JOB" ]] || { echo "error: no eval Job in the rendered manifest" >&2; exit 1; }
+# Say which Job this is before exiting, so a dry run shows what --rerun, --watch
+# and the status line would address.
+if $DRY_RUN; then log "job: $JOB"; echo "$RENDER"; exit 0; fi
 $RERUN && command oc delete job "$JOB" -n "$NAMESPACE" --ignore-not-found >/dev/null
 # --dataset with no size: the chart supplies it, so say so rather than a number.
 DESC=""; $DATASET_MODE && DESC=" (Indexed, ${DATASET:-chart-sized} examples${QUEUE:+, queue=$QUEUE})"
