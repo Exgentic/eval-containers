@@ -462,9 +462,12 @@ jobs:
           # died here with "Job outputs exceed 1,048,576 bytes", after enumerate
           # had done all its work. The matrices below carry only `idx`, which is
           # all a matrix needs; each shard job reads its own items from the file.
-          jq -nc --argjson c "$combo_shards" --argjson pc "$pertask_combo_shards" \
-                 --argjson pt "$pertask_shards" \
-                 '{combo:$c, pertask_combo:$pc, pertask:$pt}' > shards.json
+          # printf, not `jq --argjson`: these lists are megabytes, and passing them
+          # as arguments exceeds ARG_MAX — jq never starts and the step exits 126
+          # ("Argument list too long"). printf is a shell builtin, so nothing is
+          # exec'd and there is no limit. Each value is already compact JSON.
+          printf '{"combo":%s,"pertask_combo":%s,"pertask":%s}' \
+            "$combo_shards" "$pertask_combo_shards" "$pertask_shards" > shards.json
           idx() { jq -c '[.[] | {idx}]' <<< "$1"; }
           # combos build per shard via buildx --platform (one job/shard) → ≤256;
           # per-task and pertask-combo fan out per shard × 2 arches → matrix must fit 256.
