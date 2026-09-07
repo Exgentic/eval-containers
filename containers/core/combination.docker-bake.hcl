@@ -47,6 +47,32 @@ target "eval-local" {
   }
 }
 
+# Per-task in-graph variant (`build eval --task-id <t> --no-pull`). Same purpose as
+# eval-local — bind the base FROMs to build-graph nodes so nothing is pulled from
+# the registry (avoids the docker-container driver's stale/wrong-arch pull; see
+# eval-local above and src/build.rs). The difference: a per-task benchmark has NO
+# bake target (it is built by benchmarks/<name>/build.sh, a two-step upstream
+# git-fetch + overlay the static graph can't express — benchmarks/RULES.md 24g),
+# so its FROM cannot bind to a `target:`. Instead the CLI builds that benchmark to
+# an OCI layout (build.sh EVAL_LAYOUT_OUT) and injects the benchmark context here
+# via `--set eval-local-task.contexts.<BENCHMARK_IMAGE>=oci-layout://<dir>` — a
+# platform-carrying layout, so the eval image is single-arch native. Agent, gosu,
+# and edge stay real bake targets, exactly as in eval-local. BENCHMARK_IMAGE and
+# AGENT_IMAGE are both bare context names (not registry refs): BuildKit pre-resolves
+# a registry-ref FROM to a digest before consulting contexts, so a bare name is what
+# makes the override bind (mirrors build.sh's own `TASK_BASE=task-env` context). The
+# CLI supplies those bare names for `--no-pull` builds (src/build.rs bench_from /
+# agent_from); with a registry ref the `target:` override is silently ignored and a
+# PUBLISHED base is baked in instead of the freshly built local one.
+target "eval-local-task" {
+  inherits = ["eval"]
+  contexts = {
+    "${AGENT_IMAGE}"        = "target:agent-${EVAL_AGENT}"
+    "${REGISTRY}/core/gosu" = "target:gosu"
+    "${REGISTRY}/core/edge" = "target:edge"
+  }
+}
+
 # Single-container standalone bundle (evals/<b>--<a>-standalone:<version>): the
 # lean base + the in-process gateway, otelcol, process-compose, and the full
 # pipeline. The laptop / `--mode container` artifact. The variant is a NAME

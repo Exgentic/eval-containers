@@ -10,7 +10,7 @@
 # Evaluation output
 /output
 **/output/
-/eval-output
+/eval-output*
 
 # Editor
 *.swp

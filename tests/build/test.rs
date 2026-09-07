@@ -943,12 +943,27 @@ fn dockerfile_bake_alignment() {
 /// Run `docker buildx bake -f <files> --print <targets>` with the given env;
 /// Ok(()) on resolve, Err(stderr) otherwise.
 fn bake_print(files: &[&str], targets: &[&str], env: &[(&str, &str)]) -> Result<(), String> {
+    bake_print_with(files, targets, &[], env)
+}
+
+/// Like [`bake_print`] but also passes `--set` overrides — for targets (e.g.
+/// `eval-local-task`) whose contexts the CLI injects at build time.
+fn bake_print_with(
+    files: &[&str],
+    targets: &[&str],
+    overrides: &[&str],
+    env: &[(&str, &str)],
+) -> Result<(), String> {
     let mut args = vec!["buildx".to_string(), "bake".to_string()];
     for f in files {
         args.push("-f".into());
         args.push((*f).into());
     }
     args.push("--print".into());
+    for o in overrides {
+        args.push("--set".into());
+        args.push((*o).into());
+    }
     args.extend(targets.iter().map(|t| t.to_string()));
     let out = Command::new("docker")
         .current_dir(test_support::repo_root())
@@ -1036,6 +1051,35 @@ fn eval_local_resolves_from_full_graph() {
         panic!(
             "eval-local does not resolve from the full graph — its in-graph contexts \
              (gosu / benchmark-aime / agent-codex) must each be a real target.\n{stderr}"
+        );
+    }
+}
+
+/// Per-task local shape (`build eval --task-id X --no-pull` → `eval-local-task`):
+/// agent/gosu/edge are in-file targets that must resolve from the full graph, and
+/// the benchmark FROM binds to a bare-name context the CLI injects via `--set`
+/// (a per-task benchmark has no bake target). Guards the wiring the node-arch fix
+/// depends on (see combination.docker-bake.hcl `eval-local-task`, src/build.rs).
+#[test]
+#[ignore = "needs the docker buildx CLI; runs in the build lane like the other bake checks"]
+fn eval_local_task_resolves_from_full_graph() {
+    let files = all_bake_files();
+    let refs: Vec<&str> = files.iter().map(String::as_str).collect();
+    // Mirrors the CLI's per-task local invocation: BENCHMARK_IMAGE is a bare
+    // context name, bound to an OCI layout via --set.
+    let env = [
+        ("EVAL_BENCHMARK", "terminal-bench"),
+        ("EVAL_AGENT", "codex"),
+        ("BENCHMARK_IMAGE", "eval-benchmark-base"),
+        ("AGENT_IMAGE", "ghcr.io/exgentic/agents/codex:latest"),
+    ];
+    let overrides =
+        ["eval-local-task.contexts.eval-benchmark-base=oci-layout:///tmp/eval-bench-layout"];
+    if let Err(stderr) = bake_print_with(&refs, &["eval-local-task"], &overrides, &env) {
+        panic!(
+            "eval-local-task does not resolve from the full graph — its in-graph contexts \
+             (gosu / edge / agent-codex) must each be a real target, and the benchmark \
+             context must accept the CLI's --set injection.\n{stderr}"
         );
     }
 }

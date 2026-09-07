@@ -53,6 +53,11 @@ Upstream probe:
   it leaves no lasting state on the cluster.
 
 Environment (optional):
+  PROBE_IMAGE       image for the throwaway in-cluster probe pod. Defaults to
+                    mirror.gcr.io/curlimages/curl:8.11.1 — Google's pull-through
+                    cache of Docker Hub, which (unlike docker.io) does not
+                    rate-limit anonymous pulls. Point this at an internal mirror
+                    if your node cannot reach mirror.gcr.io.
   EVAL_UPSTREAM_CA  path to a PEM of CA cert(s) to trust, for an upstream served
                     behind a private CA. Stored as the eval-upstream-ca ConfigMap;
                     run.sh mounts it into the gateway, whose start script appends
@@ -124,7 +129,17 @@ store_upstream_ca() {  # arg: <pem-file>
 # released fleet image — the fleet's digest-pin rule governs containers/, not
 # this). A probe pull uses the same cluster egress the probe tests, so a pull
 # failure degrades to "skip", never a hang.
-PROBE_IMAGE="curlimages/curl:8.11.1"
+#
+# Pulled from mirror.gcr.io, Google's pull-through cache of Docker Hub, NOT from
+# docker.io directly: Docker Hub rate-limits anonymous pulls per source IP, and a
+# shared/NAT'd office or VPN address exhausts that budget for everyone behind it.
+# The node then fails the pull with `429 Too Many Requests` and the probe reports
+# a cluster-egress fault that does not exist. The mirror serves the identical
+# manifest (same sha256:c1fe167… digest as docker.io/curlimages/curl:8.11.1) with
+# no anonymous pull limit; every other image this deployment uses lives on
+# ghcr.io, which has no such limit, so this was the fleet's one exposure to it.
+# Override PROBE_IMAGE to pull from somewhere else (e.g. an internal mirror).
+PROBE_IMAGE="${PROBE_IMAGE:-mirror.gcr.io/curlimages/curl:8.11.1}"
 
 # GET {base}/v1/models from a throwaway pod — through the same egress AND trust store
 # the gateway pod will have: when the eval-upstream-ca ConfigMap exists it is
@@ -197,10 +212,24 @@ $vol
         - { name: URL, valueFrom: { secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE } } }
 $mnt
 YAML
-  # Wait for it to finish (bounded), then hand back its logs. Any failure to
-  # schedule/pull surfaces as empty logs → the caller reads that as unreachable.
+  # Wait for it to finish (bounded), then hand back its logs.
   kube wait --for=jsonpath='{.status.phase}'=Succeeded pod/"$name" --timeout=40s >/dev/null 2>&1 \
     || kube wait --for=jsonpath='{.status.phase}'=Failed pod/"$name" --timeout=5s >/dev/null 2>&1 || true
+  # A pod that never ran curl produces NO trailer, and an absent trailer is
+  # indistinguishable from "connected but the exchange never completed" — so the
+  # caller used to blame cluster egress/private-CA for what was really a failure to
+  # obtain the probe image (a Docker Hub 429, a typo'd PROBE_IMAGE, an air-gapped
+  # node). Detect that here and emit a distinct __probe__ status so the caller can
+  # name the real cause. waiting=ImagePullBackOff/ErrImagePull is the kubelet's own
+  # verdict on the pull, so this reports the tool's problem, never the upstream's.
+  local pull_err
+  pull_err="$(kube get pod "$name" \
+    -o jsonpath='{range .status.containerStatuses[*]}{.state.waiting.reason}:{.state.waiting.message}{end}' \
+    2>/dev/null || true)"
+  if [[ "$pull_err" == ImagePull* || "$pull_err" == ErrImagePull* ]]; then
+    printf '%s\n__probe__=image-pull-failed 000\n' "${pull_err#*:}"
+    return 0
+  fi
   kube logs "$name" 2>/dev/null
   # The RETURN trap deletes the pod (covers the interrupt case too).
 }
@@ -284,35 +313,61 @@ probe_and_report() {
   # CA/auth/network fault reproduces on every attempt, so retrying costs nothing
   # but absorbs the cold-cluster warmup window.
   log "checking the same endpoint from the cluster …"
-  local curl_rc cluster_http attempt
+  # resp is declared here, not inside the loop: the pull-failure report below reads the
+  # last probe's output to name the registry's reason (e.g. a 429).
+  local curl_rc cluster_http attempt resp=""
   for attempt in 1 2 3; do
     # probe_models_from_cluster's own exit status is its final `kube delete pod`,
     # NOT curl's — so read the outcome only from the __probe__=<rc> <http> trailer
-    # the probe pod prints. No trailer means the pod never ran curl (failed to
-    # schedule/pull, or empty logs); that is an inconclusive "no response", so
-    # default to rc=0/http=000 and let the retry/again-warming-up path handle it,
-    # rather than mistaking kube's exit code for a curl network error.
-    local resp
+    # the probe pod prints. A failed image pull arrives as the explicit
+    # image-pull-failed sentinel (reported as a tooling fault below); any other
+    # missing trailer is an inconclusive "no response", so default to rc=0/http=000
+    # and let the retry/warming-up path handle it, rather than mistaking kube's exit
+    # code for a curl network error.
     resp="$(probe_models_from_cluster || true)"
     curl_rc=0 cluster_http=000
     if [[ "$resp" == *"__probe__="* ]]; then
       local trailer="${resp##*__probe__=}"
       read -r curl_rc cluster_http <<<"$trailer"
-      [[ "$curl_rc" =~ ^[0-9]+$ ]] || curl_rc=1
+      # image-pull-failed is the probe's own sentinel for "the pod never ran curl",
+      # not a curl exit code — keep it verbatim so the terminal report below can name
+      # the tooling fault. Coercing it to a number here would relabel a missing probe
+      # image as a cluster egress failure.
+      [[ "$curl_rc" == image-pull-failed || "$curl_rc" =~ ^[0-9]+$ ]] || curl_rc=1
       [[ "$cluster_http"   =~ ^[0-9]+$ ]] || cluster_http=000
     fi
     # Only a bare connect failure is worth retrying; any other outcome is terminal.
-    [[ "$curl_rc" -eq 0 && "$cluster_http" == 000 && "$attempt" -lt 3 ]] || break
+    # A pull failure is NOT worth retrying: the image will not appear on its own, and
+    # retrying a rate-limited registry only deepens the throttle.
+    [[ "$curl_rc" == 0 && "$cluster_http" == 000 && "$attempt" -lt 3 ]] || break
     log "no response yet (cluster may still be warming up) — retry $attempt/2 …"
     sleep 5
   done
+
+  # Handle the non-numeric sentinel BEFORE any arithmetic test: bash's `-eq` evaluates
+  # its operands as arithmetic expressions, so comparing a string rc with `-eq` would
+  # try to resolve it as a variable name and abort under `set -u`.
+  if [[ "$curl_rc" == image-pull-failed ]]; then
+    log "could not check from the cluster: the node failed to pull the probe image"
+    log "($PROBE_IMAGE). This is a probe-tooling problem, NOT a verdict on your upstream —"
+    log "the host leg above already succeeded."
+    case "$resp" in
+      *"429"*|*"toomanyrequests"*|*"Too Many Requests"*)
+        log "The registry returned 429 (rate limit). Docker Hub throttles anonymous pulls per"
+        log "source IP; a shared office/VPN address exhausts it for everyone behind it. Either"
+        log "wait for the window to reset, or point the probe at a mirror you can pull from:"
+        log "  PROBE_IMAGE=<your-mirror>/curlimages/curl:8.11.1 $0 --cluster $CLUSTER";;
+      *) log "Set PROBE_IMAGE to an image the node can pull, then re-run.";;
+    esac
+    return 1
+  fi
 
   # The cluster reached the endpoint (curl exit 0, an HTTP status came back). Judge
   # that status the SAME way the host leg does — reachability alone is not readiness.
   # A 401/403 (egress proxy or a route to a different backend), a 404 (wrong
   # in-cluster route), or a 5xx all mean an eval can't run, so they MUST withhold the
   # "ready" verdict, not pass on "status != 000". Only 2xx is ready.
-  if [[ "$curl_rc" -eq 0 && "$cluster_http" != 000 ]]; then
+  if [[ "$curl_rc" == 0 && "$cluster_http" != 000 ]]; then
     case "$cluster_http" in
       2*)
         log "OK — the cluster reaches it too (HTTP $cluster_http). Ready to run evals."
