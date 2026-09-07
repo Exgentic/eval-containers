@@ -29,6 +29,7 @@ LABEL eval.benchmark.description="Global-MMLU - multilingual knowledge and reaso
 LABEL eval.benchmark.tasks="589764"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="0e619dbeb34206cd48705a1a0ea7fb21cae09993"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/CohereLabs/Global-MMLU"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.03304"

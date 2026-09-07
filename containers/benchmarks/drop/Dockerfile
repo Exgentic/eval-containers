@@ -21,6 +21,7 @@ LABEL eval.benchmark.description="DROP - reading comprehension requiring discret
 LABEL eval.benchmark.tasks="9535"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="95cda593fae71b60b5b19f82de3fcf3298c1239c"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/ucinlp/drop"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1903.00161"

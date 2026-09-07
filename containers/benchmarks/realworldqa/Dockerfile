@@ -72,6 +72,7 @@ LABEL eval.benchmark.tasks="765"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.modality="multimodal"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="17e7f75e092e47169732462ea3cdfebe911105dd"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/xai-org/RealworldQA"
 LABEL eval.benchmark.paper="https://x.ai/blog/grok-1.5v"

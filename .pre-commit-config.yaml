@@ -208,9 +208,11 @@ repos:
   #                 pin still flags it; newer releases dropped several such entries)
   #   crate       — Rust's compilation unit, everywhere in cli/ and tests/
   #   te          — ISO 639 language code (Telugu), in mgsm's ORDER BY language CASE
+  #   synopsys     — Synopsys Inc., the EDA vendor whose VCS simulator HWE-Bench's
+  #                 OpenTitan set requires; the company name, not a typo for "synopsis"
   - repo: https://github.com/codespell-project/codespell
     rev: v2.3.0
     hooks:
       - id: codespell
-        args: [-L, "ans,froms,copys,fo,auxillary,xdescribe,rouge,re-declare,re-declared,re-declaring,crate,te"]
+        args: [-L, "ans,froms,copys,fo,auxillary,xdescribe,rouge,re-declare,re-declared,re-declaring,crate,te,synopsys"]
         exclude: '\.(jsonl|lock)$'

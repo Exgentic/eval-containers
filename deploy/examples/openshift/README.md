@@ -61,9 +61,14 @@ The built `evals/<bench>--<agent>` image is referenced by the Helm chart:
 ```bash
 helm template benchmarks/_chart \
   --set benchmark=aime --set agent=codex --set task=0 \
+  --set outputVolume.persistentVolumeClaim.claimName=eval-output-pvc \
   -f deploy/values-openshift.yaml \
   | oc apply -f -
 ```
+
+The claim is required: with no volume the chart refuses to run rather than write
+the results to an emptyDir the kubelet deletes with the pod. For a throwaway
+smoke test, say so with `--set ephemeral=true` instead.
 
 ## Build pod ran out of disk (`BuildPodEvicted`)
 

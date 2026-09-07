@@ -13,6 +13,7 @@ LABEL eval.benchmark.description="HarmBench - standardized evaluation of automat
 LABEL eval.benchmark.tasks="400"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="8e1604d1171fe8a48d8febecd22f600e462bdcdd"
 LABEL eval.benchmark.url="https://github.com/centerforaisafety/HarmBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2402.04249"

@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="MT-Bench - multi-turn chat evaluation with LLM
 LABEL eval.benchmark.tasks="160"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="f7d2896d2cc5d80f8b55c2bbc722613555233c25"
 LABEL eval.benchmark.url="https://github.com/lm-sys/FastChat/tree/main/fastchat/llm_judge/data/mt_bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2306.05685"

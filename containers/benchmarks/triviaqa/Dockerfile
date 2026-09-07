@@ -21,6 +21,7 @@ LABEL eval.benchmark.description="TriviaQA - trivia question answering"
 LABEL eval.benchmark.tasks="17944"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="0f7faf33a3908546c6fd5b73a660e0f8ff173c2f"
 LABEL eval.benchmark.url="https://nlp.cs.washington.edu/triviaqa/"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1705.03551"

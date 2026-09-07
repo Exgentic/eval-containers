@@ -58,6 +58,7 @@ LABEL eval.benchmark.description="MATH - competition mathematics problems across
 LABEL eval.benchmark.tasks="5000"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="21a5633873b6a120296cce3e2df9d5550074f4a3"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/EleutherAI/hendrycks_math"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2103.03874"

@@ -22,6 +22,7 @@ LABEL eval.benchmark.description="CompileBench - compile open source projects"
 LABEL eval.benchmark.tasks="15"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="66e27468505706643088b79f8efad6260c274dc5"
 LABEL eval.benchmark.url="https://github.com/QuesmaOrg/CompileBench"
 

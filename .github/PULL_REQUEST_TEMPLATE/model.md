@@ -5,7 +5,7 @@ provider key in .env — no image, no build. See docs/guides/add-a-model.md.
 
 Open THIS PR to author a MODEL IMAGE under containers/models/<name>/ — either:
   - a PINNED per-model artifact (bakes one model + its config; a shared,
-    versioned reference teams run against via EVAL_GATEWAY_IMAGE=<name>), or
+    versioned reference teams run against via --gateway <name>), or
   - a new GENERIC backend (routes EVAL_MODEL at runtime, beside bifrost/litellm/portkey).
 Fill every checkbox; reviewers reject on an empty evidence section.
 -->
@@ -31,10 +31,10 @@ the generic backends can't reach. -->
 ### Evidence: a real run
 
 ```bash
-# generic backend: EVAL_GATEWAY_IMAGE=<name> + --model <provider>/<model>
-# pinned per-model: EVAL_GATEWAY_IMAGE=<name>   (model is baked; no --model)
-EVAL_GATEWAY_IMAGE=<name> \
-  eval-containers run aime --agent claude-code --task-id 0 --local --max-budget 1
+# generic backend: --gateway <name> + --model <provider>/<model>
+# pinned per-model: --gateway <name>   (model is baked; no --model)
+eval-containers run aime --agent claude-code --task-id 0 --gateway <name> \
+  --local --max-budget 1
 ```
 
 - [ ] `output/aime/0/model/trajectory.jsonl` non-empty; `result.json` `cost_usd > 0`

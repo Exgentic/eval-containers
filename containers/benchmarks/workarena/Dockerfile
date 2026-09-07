@@ -17,6 +17,7 @@ LABEL eval.benchmark.description="WorkArena - enterprise web workflows on Servic
 LABEL eval.benchmark.tasks="682"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/ServiceNow/WorkArena"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2403.07718"
 

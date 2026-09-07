@@ -148,6 +148,7 @@ LABEL eval.benchmark.description="LegalBench - legal reasoning classification ta
 LABEL eval.benchmark.tasks="19000"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="daec8237410aa23e3faf4bc41ad8b3a7e1696826"
 LABEL eval.benchmark.url="https://github.com/HazyResearch/legalbench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.11462"

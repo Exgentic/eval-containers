@@ -17,6 +17,7 @@ LABEL eval.benchmark.description="TheoremQA - STEM problems requiring the applic
 LABEL eval.benchmark.tasks="800"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="a340b1782960a712843aae3ed25f1e013cc008a5"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/TIGER-Lab/TheoremQA"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.12524"

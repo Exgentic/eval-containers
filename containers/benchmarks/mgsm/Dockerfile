@@ -36,6 +36,7 @@ LABEL eval.benchmark.description="MGSM - multilingual grade school math reasonin
 LABEL eval.benchmark.tasks="2750"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="8b764d53dba2de1f684b836bb45c7ce389900fde"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/juletxara/mgsm"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/mgsm"

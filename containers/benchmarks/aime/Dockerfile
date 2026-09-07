@@ -17,6 +17,7 @@ LABEL eval.benchmark.description="American Invitational Mathematics Examination"
 LABEL eval.benchmark.tasks="90"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="13f9e12f613e720c2a2b2f345dd04b998a29494d"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/AI-MO/aimo-validation-aime"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aime"

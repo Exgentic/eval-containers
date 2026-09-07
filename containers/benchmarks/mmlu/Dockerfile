@@ -23,6 +23,7 @@ LABEL eval.benchmark.description="MMLU - massive multitask multiple choice acros
 LABEL eval.benchmark.tasks="14042"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="c30699e8356da336a370243923dbaf21066bb9fe"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/cais/mmlu"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2009.03300"

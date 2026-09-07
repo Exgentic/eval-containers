@@ -48,6 +48,7 @@ LABEL eval.benchmark.tasks="2500"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.modality="multimodal"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="b605b6e08b57faf4359aeb2fe6a3ca595f99b6c5"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/HuggingFaceM4/ChartQA"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2203.10244"

@@ -1,0 +1,16 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/hwe-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: hwe-bench

@@ -12,8 +12,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   # A dataset eval (datasetSize set) is named <benchmark>-<agent>; a single-task
-  # debug run keeps the task in the name so several can coexist.
-  name: {{ if $v.datasetSize }}{{ $v.benchmark }}-{{ $v.agent }}{{ else }}{{ $v.benchmark }}-{{ $v.agent }}-task-{{ $v.task }}{{ end }}{{ $v.nameSuffix }}
+  # debug run keeps the task in the name so several can coexist. The rule itself
+  # is eval.jobName's, and is called from there rather than restated (#426).
+  name: {{ include "eval.jobName" $v }}
   labels:
     {{- include "eval.labels" . | nindent 4 }}
 spec:
@@ -183,7 +184,7 @@ spec:
 
       volumes:
         - name: output
-          {{- $v.outputVolume | default (dict "emptyDir" dict) | toYaml | nindent 10 }}
+          {{- include "eval.outputVolume" $v | nindent 10 }}
         - { name: tmp,    emptyDir: { medium: Memory, sizeLimit: 1Gi } }
         - { name: logs,   emptyDir: { medium: Memory, sizeLimit: 100Mi } }
         {{- with $v.extraVolumes }}

@@ -18,6 +18,7 @@ LABEL eval.benchmark.description="MATH-500 - competition-level math problems"
 LABEL eval.benchmark.tasks="500"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be"
 LABEL eval.benchmark.url="https://github.com/hendrycks/math"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/math"

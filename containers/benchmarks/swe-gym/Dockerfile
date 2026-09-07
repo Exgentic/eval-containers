@@ -19,6 +19,7 @@ LABEL eval.benchmark.description="SWE-Gym - 2438 Python SWE tasks for agent trai
 LABEL eval.benchmark.tasks="2438"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="bb94ed9e39bbeb96a7fcbfb533b80f25a7fd59cb"
 LABEL eval.benchmark.url="https://github.com/SWE-Gym/SWE-Gym"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.21139"

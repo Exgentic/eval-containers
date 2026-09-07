@@ -30,6 +30,7 @@ LABEL eval.benchmark.description="EnterpriseOps-Gym - stateful enterprise agent 
 LABEL eval.benchmark.tasks="649"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/ServiceNow/EnterpriseOps-Gym"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2603.13594"
 LABEL eval.benchmark.dataset="https://huggingface.co/datasets/ServiceNow-AI/EnterpriseOps-Gym"

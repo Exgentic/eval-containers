@@ -28,6 +28,7 @@ LABEL eval.benchmark.description="XCOPA - cross-lingual causal commonsense reaso
 LABEL eval.benchmark.tasks="5500"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="042f78955ba48e6404616762fa6e05e839c3907a"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/cambridgeltl/xcopa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2005.00333"

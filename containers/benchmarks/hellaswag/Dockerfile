@@ -26,6 +26,7 @@ LABEL eval.benchmark.description="HellaSwag - commonsense sentence completion: p
 LABEL eval.benchmark.tasks="10042"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="218ec52e09a7e7462a5400043bb9a69a41d06b76"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/Rowan/hellaswag"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1905.07830"

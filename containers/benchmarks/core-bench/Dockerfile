@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="CORE-Bench - reproducing scientific research c
 LABEL eval.benchmark.tasks="45"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="e32a2980e72fe6eb04ee04eb749458f570625663"
 LABEL eval.benchmark.url="https://github.com/siegelz/core-bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2409.11363"

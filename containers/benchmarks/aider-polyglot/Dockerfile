@@ -16,6 +16,7 @@ LABEL eval.benchmark.description="Aider Polyglot - multi-language code editing (
 LABEL eval.benchmark.tasks="225"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="7e0611e77b54e2dea774cdc0aa00cf9f7ed6144f"
 LABEL eval.benchmark.url="https://github.com/Aider-AI/polyglot-benchmark"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/aider_polyglot"

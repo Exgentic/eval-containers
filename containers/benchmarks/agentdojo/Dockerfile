@@ -16,6 +16,7 @@ LABEL eval.benchmark.description="AgentDojo - indirect prompt injection resistan
 LABEL eval.benchmark.tasks="86"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="18b501a630db736e1d0496a496d8d7aa947c596d"
 LABEL eval.benchmark.url="https://github.com/ethz-spylab/agentdojo"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.13352"

@@ -14,3 +14,13 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/terminal-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: terminal-bench
+    # terminal-bench tasks legitimately require agent internet (e.g.
+    # build-cython-ext clones github.com/SPOCKnots/pyknotid at solve time), so
+    # this benchmark declares eval.benchmark.internet="true" (Dockerfile) and
+    # removes the isolation primitive per rule 24d. The shared runner.yaml keeps
+    # the runner on `internal` only; here — and ONLY here — we add `upstream` so
+    # the agent gets egress, mirroring the gateway. Credentials still live only
+    # on the gateway (runner holds sk-proxy, rule 8), so egress leaks no key.
+    networks:
+      - internal
+      - upstream

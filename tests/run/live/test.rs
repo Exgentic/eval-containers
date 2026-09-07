@@ -176,6 +176,10 @@ fn per_task_representative(name: &str) -> Option<&'static str> {
         }
         "swe-lancer" => Some("16912_4"),
         "terminal-bench" => Some("hello-world"),
+        // ibex is the lightest hwe-bench base (SystemVerilog/Verilator, no
+        // RISC-V toolchain or Mill/Scala), so it's the cheapest to build for
+        // the sweep. Oracle-proven; other projects proven via oracle SPECIAL.
+        "hwe-bench" => Some("lowrisc__ibex-2232"),
         _ => None,
     }
 }

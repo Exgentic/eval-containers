@@ -31,6 +31,7 @@ LABEL eval.benchmark.description="XStoryCloze - cross-lingual commonsense story 
 LABEL eval.benchmark.tasks="16621"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="c4c2d88a1ec8b37fe22166d2a610f272726724b6"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/juletxara/xstory_cloze"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2112.10668"

@@ -257,6 +257,11 @@ async fn bootstrap_core_bases() {
                 "test-exact-match",
                 "otel",
                 "gosu",
+                // Every eval combination COPYs /opt/edge from it
+                // (core/combination.Dockerfile), so it is needed in BOTH replay
+                // modes — not just full-stack. Omitting it made the suite pass
+                // only where a stale image happened to sit in the local store.
+                "edge",
                 "agent-base-node",
                 "agent-base-python",
                 "agent-base-rust",

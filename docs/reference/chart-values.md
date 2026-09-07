@@ -22,8 +22,8 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
 | `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
-| `gatewayImage` | `bifrost` | the proxy backend (`bifrost` / `litellm` / `portkey`) |
-| `gatewayTag` | `latest` | `--model-tag` |
+| `gatewayImage` | `bifrost` | `--gateway` — the proxy backend (`bifrost` / `litellm` / `portkey`, or a pinned per-model image) |
+| `gatewayTag` | `latest` | `--gateway-tag` |
 | `runnerTag` | `latest` | `--agent-tag` / `--benchmark-tag` |
 | `benchmarkVersion` | `""` | `--benchmark-version` |
 | `agentVersion` | `""` | `--agent-version` |

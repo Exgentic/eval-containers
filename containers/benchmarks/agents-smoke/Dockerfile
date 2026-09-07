@@ -24,6 +24,7 @@ LABEL eval.benchmark.description="Test-only carrier benchmark for tests/agents/.
 LABEL eval.benchmark.tasks="1"
 LABEL eval.benchmark.env="test"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 
 # Runtime deps:
 #   - mawk: reward awk in /grade.sh

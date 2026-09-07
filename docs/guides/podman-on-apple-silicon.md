@@ -218,7 +218,7 @@ docker buildx bake -f containers/docker-bake.hcl \
   -f containers/benchmarks/<name>/docker-bake.hcl <name> --load
 
 # 3. Run one task — needs OPENAI_API_KEY + OPENAI_API_BASE in .env
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/azure/gpt-5.4 \
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f containers/benchmarks/<name>/compose.yaml up --abort-on-container-exit
 
 # 4. Extract the trajectory from the named volume (NOT a host path)

@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="HLE - Humanity's Last Exam, hardest standardiz
 LABEL eval.benchmark.tasks="2500"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="5a81a4c7271a2a2a312b9a690f0c2fde837e4c29"
 LABEL eval.benchmark.url="https://github.com/centerforaisafety/hle"
 LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-datasets/tree/main/datasets/hle"

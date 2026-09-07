@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="TAU-bench - Tool-Agent-User interaction (retai
 LABEL eval.benchmark.tasks="165"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="59a200c6d575d595120f1cb70fea53cef0632f6b"
 LABEL eval.benchmark.url="https://github.com/sierra-research/tau-bench"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/tau2"

@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="GDPval - professional knowledge work"
 LABEL eval.benchmark.tasks="220"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="true"
+ENV EVAL_INTERNET=true
 LABEL eval.benchmark.url="https://huggingface.co/datasets/openai/gdpval"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/gdpval"
 # FUTURE: pin to a specific parquet conversion commit once upstream

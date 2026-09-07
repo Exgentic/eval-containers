@@ -51,6 +51,7 @@ LABEL eval.benchmark.description="BrowseComp - web browsing QA"
 LABEL eval.benchmark.tasks="1266"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="true"
+ENV EVAL_INTERNET=true
 LABEL eval.benchmark.url="https://github.com/openai/simple-evals"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/browse_comp"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2504.16186"

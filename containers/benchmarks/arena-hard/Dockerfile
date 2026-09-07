@@ -65,6 +65,7 @@ LABEL eval.benchmark.description="Arena-Hard - pairwise chat eval vs gpt-4-0314 
 LABEL eval.benchmark.tasks="500"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="196f6b826783b3da7310e361a805fa36f0be83f3"
 LABEL eval.benchmark.url="https://github.com/lmarena/arena-hard-auto"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2406.11939"

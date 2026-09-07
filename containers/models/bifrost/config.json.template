@@ -3,15 +3,15 @@
   "providers": {
     "anthropic": {
       "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
-      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true }
+      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true, "default_request_timeout_in_seconds": ${EVAL_LLM_TIMEOUT_SECONDS} }
     },
     "openai": {
       "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
-      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true }
+      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true, "default_request_timeout_in_seconds": ${EVAL_LLM_TIMEOUT_SECONDS} }
     },
     "gemini": {
       "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
-      "network_config": { "base_url": "${OPENAI_API_BASE}/v1beta", "allow_private_network": true }
+      "network_config": { "base_url": "${OPENAI_API_BASE}/v1beta", "allow_private_network": true, "default_request_timeout_in_seconds": ${EVAL_LLM_TIMEOUT_SECONDS} }
     }
   },
   ${GOVERNANCE}

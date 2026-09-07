@@ -16,6 +16,7 @@ LABEL eval.benchmark.description="AgentBench (DBBench subset) - LLM-as-agent eva
 LABEL eval.benchmark.tasks="300"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="d1e4a10db08c87075c78972e48ecc182be03e2d5"
 LABEL eval.benchmark.url="https://github.com/THUDM/AgentBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2308.03688"

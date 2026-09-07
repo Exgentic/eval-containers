@@ -15,6 +15,7 @@ LABEL eval.benchmark.description="SWE-Lancer - real-world freelance SWE tasks (O
 LABEL eval.benchmark.tasks="198"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.url="https://github.com/openai/preparedness"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.12115"
 ENV EVAL_BENCHMARK=swe-lancer

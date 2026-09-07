@@ -2,21 +2,25 @@
 # sweep.sh — loop run.sh over a benchmark×agent grid, each cell a dataset Indexed
 # Job tagged sweep-id=<id>. Flags: see the case block. Default grid: the *.txt.
 #
-#   ./oc/sweep.sh --model bifrost --benchmarks "aime gsm8k"   # each auto-sized
-#   ./oc/sweep.sh --model bifrost --dataset-size 50           # uniform cap
+#   ./oc/sweep.sh --model azure/gpt-5-mini --benchmarks "aime gsm8k"  # each auto-sized
+#   ./oc/sweep.sh --model azure/gpt-5-mini --dataset-size 50          # uniform cap
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"
 
-MODEL="" DATASET="" PARALLELISM="" RETRY="" QUEUE="" BSET="" ASET=""
-EVAL_MODEL="" NAMESPACE="$NS_DEFAULT" PVC="eval-output-pvc" NO_BUILD=false DRY_RUN=false
+MODEL="" GATEWAY="" DATASET="" PARALLELISM="" RETRY="" QUEUE="" BSET="" ASET=""
+NAMESPACE="$NS_DEFAULT" PVC="eval-output-pvc" NO_BUILD=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
-  --model) MODEL="$2"; shift 2;; --dataset-size) DATASET="$2"; shift 2;;
+  --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; shift 2;;
+  --dataset-size) DATASET="$2"; shift 2;;
   --parallelism) PARALLELISM="$2"; shift 2;; --retry) RETRY="$2"; shift 2;;
   --queue) QUEUE="$2"; shift 2;; --benchmarks) BSET="$2"; shift 2;; --agents) ASET="$2"; shift 2;;
-  --eval-model) EVAL_MODEL="$2"; shift 2;; --namespace) NAMESPACE="$2"; shift 2;;
+  --namespace) NAMESPACE="$2"; shift 2;;
   --pvc) PVC="$2"; shift 2;; --repo-dir) REPO_DIR="$2"; shift 2;;
   --no-build) NO_BUILD=true; shift;; --dry-run) DRY_RUN=true; shift;;
+  # Renamed, not aliased: --eval-model named the handle when --model meant the
+  # gateway image (gateways/RULES.md rule 2c). Say so instead of accepting both.
+  --eval-model) echo "error: --eval-model was renamed --model (the proxy image is --gateway)" >&2; exit 1;;
   *) echo "Unknown argument: $1" >&2; exit 1;;
 esac; done
 [[ -z "$MODEL" ]] && { echo "error: --model is required" >&2; exit 1; }
@@ -28,26 +32,35 @@ else BENCHMARKS=(); while IFS= read -r l; do BENCHMARKS+=("$l"); done < <(read_l
 if [[ -n "$ASET" ]]; then read -ra AGENTS <<<"$ASET"
 else AGENTS=(); while IFS= read -r l; do AGENTS+=("$l"); done < <(read_list "$REPO_DIR/deploy/oc/agents.txt"); fi
 
-SWEEP_ID="$(date -u +%Y%m%dT%H%M%S)--$(flat "$MODEL")"
+SWEEP_ID="$(date -u +%Y%m%dT%H%M%S)--$(flat "${MODEL##*/}")"
 log "sweep-id: $SWEEP_ID   grid: ${#BENCHMARKS[@]} benchmarks × ${#AGENTS[@]} agents${QUEUE:+   queue: $QUEUE}"
 
 PASS=(--model "$MODEL" --namespace "$NAMESPACE" --pvc "$PVC" --repo-dir "$REPO_DIR" --sweep-id "$SWEEP_ID")
+[[ -n "$GATEWAY"     ]] && PASS+=(--gateway "$GATEWAY")
 # No --dataset-size → each benchmark auto-sizes from its eval.benchmark.tasks
 # label (run.sh --dataset); a uniform --dataset-size overrides it for every cell.
 if [[ -n "$DATASET" ]]; then PASS+=(--dataset-size "$DATASET"); else PASS+=(--dataset); fi
 [[ -n "$PARALLELISM" ]] && PASS+=(--parallelism "$PARALLELISM")
 [[ -n "$RETRY"       ]] && PASS+=(--retry "$RETRY")
 [[ -n "$QUEUE"       ]] && PASS+=(--queue "$QUEUE")
-[[ -n "$EVAL_MODEL"  ]] && PASS+=(--eval-model "$EVAL_MODEL")
 $NO_BUILD && PASS+=(--no-build)
 $DRY_RUN  && PASS+=(--dry-run)
 
-for b in "${BENCHMARKS[@]}"; do for a in "${AGENTS[@]}"; do
-  log "→ $b × $a"
-  bash "$RUN" --benchmark "$b" --agent "$a" "${PASS[@]}"
-done; done
+# Per-task benchmarks run one Job per task, so they are not a dataset sweep at all
+# (the chart rejects datasetSize for them) and the internal registry cannot build
+# their per-task images. benchmarks.txt is the fleet, so skip them here — named,
+# one line each — instead of aborting the whole grid at the first one.
+SUBMITTED=0
+for b in "${BENCHMARKS[@]}"; do
+  if per_task "$b"; then log "skip $b (per-task: one Job per task, not a dataset sweep)"; continue; fi
+  for a in "${AGENTS[@]}"; do
+    log "→ $b × $a"
+    bash "$RUN" --benchmark "$b" --agent "$a" "${PASS[@]}"
+    SUBMITTED=$((SUBMITTED + 1))
+  done
+done
 
-log "=== submitted ${#BENCHMARKS[@]}×${#AGENTS[@]} jobs ==="
+log "=== submitted $SUBMITTED jobs ==="
 log "status: ./oc/status.sh --sweep-id $SWEEP_ID"
 log "fetch : ./oc/fetch.sh  --sweep-id $SWEEP_ID"
 log "clean : oc delete jobs -n $NAMESPACE -l sweep-id=$SWEEP_ID"

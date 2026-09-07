@@ -17,7 +17,8 @@
 #   fleet-hash.sh                          # every static bake target
 #   fleet-hash.sh combo <bench> <agent> [task]  # eval + eval-standalone rows
 #                                          # (task ⇒ the per-task combo variant)
-#   fleet-hash.sh per-task <bench> <task>  # one per-task image row
+#   fleet-hash.sh per-task <bench> <task>… # per-task image rows (ids may
+#                                          # also arrive on stdin, one per line)
 #   fleet-hash.sh graph                    # target|context|deps — the context
 #                                          # column is also the registry ref
 #                                          # path (minus containers/); gated
@@ -226,13 +227,26 @@ combo)
     "$(hash_of "$M/sa.ctx")" "$(hash_of "$M/sa.bases")" "-"
   ;;
 per-task)
-  { [ $# -eq 3 ] && [ -n "$2" ] && [ -n "$3" ]; } || die "usage: fleet-hash.sh per-task <benchmark> <task-id>"
-  case "$3" in *[[:space:]]*) die "task id must not contain whitespace" ;; esac
+  { [ $# -ge 2 ] && [ -n "$2" ]; } || die "usage: fleet-hash.sh per-task <benchmark> <task-id>… (or ids on stdin)"
   [ -z "${SKILLS_BENCH_REF:-}" ] || die "SKILLS_BENCH_REF is set — an out-of-tree ref override defeats input hashing; pin the ref in the benchmark dir"
   t=$(target_for_dir "containers/benchmarks/$2")
-  h=$(col "$t" 2)
-  row "per-task/$2/$3" "$(printf '%s %s' "$h" "$3" | sha | cut -d' ' -f1)" \
-    "$(col "$t" 3)" "$(col "$t" 4)" "$(col "$t" 5)"
+  # Every task of a benchmark shares that benchmark's closure and differs only
+  # by the id mixed in, so a whole task list costs one pass, not one per task.
+  h=$(col "$t" 2); ctxh=$(col "$t" 3); basesh=$(col "$t" 4); exts=$(col "$t" 5)
+  b="$2"; shift 2
+  emit() {
+    # An explicitly empty argument is misuse; a blank line in a piped list is
+    # noise and is skipped below.
+    [ -n "$1" ] || die "usage: fleet-hash.sh per-task <benchmark> <task-id>… (or ids on stdin)"
+    case "$1" in *[[:space:]]*) die "task id must not contain whitespace" ;; esac
+    row "per-task/$b/$1" "$(printf '%s %s' "$h" "$1" | sha | cut -d' ' -f1)" \
+      "$ctxh" "$basesh" "$exts"
+  }
+  if [ $# -gt 0 ]; then
+    for tk in "$@"; do emit "$tk"; done
+  else
+    while read -r tk; do [ -n "$tk" ] || continue; emit "$tk"; done
+  fi
   ;;
 *)
   die "unknown command $1 (expected: all | combo | per-task | graph)"

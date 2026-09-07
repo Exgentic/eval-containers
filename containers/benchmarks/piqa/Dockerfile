@@ -42,6 +42,7 @@ LABEL eval.benchmark.description="PIQA - physical commonsense reasoning (2-way m
 LABEL eval.benchmark.tasks="1838"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="2e8ac2dffd59bac8c3c6714948f4c551a0848bb0"
 LABEL eval.benchmark.url="https://yonatanbisk.com/piqa"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1911.11641"

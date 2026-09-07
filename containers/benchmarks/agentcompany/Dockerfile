@@ -17,6 +17,7 @@ LABEL eval.benchmark.description="TheAgentCompany - long-horizon professional wo
 LABEL eval.benchmark.tasks="175"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="98b68ef82a47690c316f42fddb05baafaab56851"
 LABEL eval.benchmark.url="https://github.com/TheAgentCompany/TheAgentCompany"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.14161"

@@ -17,6 +17,10 @@
 #                   catalog doesn't know (e.g. a proxy's custom handles).
 #   OPENAI_API_BASE upstream root; each provider appends its native path.
 #   LOG_LEVEL       bifrost log level (default info).
+#   EVAL_LLM_TIMEOUT_SECONDS
+#                   OPTIONAL per-provider upstream request timeout in seconds
+#                   (default 300; bifrost's own default is 30s, too short for
+#                   slow LLM calls).
 # Upstream auth is the provider-native env var (OPENAI_API_KEY etc.) — no
 # umbrella alias (gateways/RULES.md rule 3).
 
@@ -96,9 +100,15 @@ if [ -f "$TEMPLATE" ]; then
   : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
 
+  : "${EVAL_LLM_TIMEOUT_SECONDS:=300}"
+  case "${EVAL_LLM_TIMEOUT_SECONDS}" in
+    *[!0-9]*|"") echo "EVAL_LLM_TIMEOUT_SECONDS must be a positive integer (got: $EVAL_LLM_TIMEOUT_SECONDS)" >&2; exit 2 ;;
+  esac
+
   sed -e "s|\${GOVERNANCE}|${GOVERNANCE}|g" \
       -e "s|\${OPENAI_API_BASE}|${OPENAI_API_BASE-}|g" \
       -e "s|\${OTEL_COLLECTOR_URL}|${OTEL_COLLECTOR_URL}|g" \
+      -e "s|\${EVAL_LLM_TIMEOUT_SECONDS}|${EVAL_LLM_TIMEOUT_SECONDS}|g" \
       < "$TEMPLATE" > "$CONFIG"
 fi
 

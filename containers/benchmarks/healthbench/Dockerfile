@@ -55,6 +55,7 @@ LABEL eval.benchmark.description="HealthBench - medical/health AI evaluation wit
 LABEL eval.benchmark.tasks="5000"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="40ee1968852fc57f625934251ac22be47077a8fb"
 LABEL eval.benchmark.url="https://github.com/openai/healthbench"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/healthbench"

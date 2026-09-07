@@ -16,6 +16,7 @@ LABEL eval.benchmark.description="Mind2Web - generalist web agent instruction fo
 LABEL eval.benchmark.tasks="1009"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="17ece8eb89862368edc0cc806acee6fca5163474"
 LABEL eval.benchmark.url="https://github.com/OSU-NLP-Group/Mind2Web"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2306.06070"

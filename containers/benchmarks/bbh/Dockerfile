@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="BIG-Bench Hard - 27 challenging BIG-Bench subt
 LABEL eval.benchmark.tasks="6511"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="9ee07bd481feebf959a6b59d61ea57bdcf30964d"
 LABEL eval.benchmark.url="https://github.com/suzgunmirac/BIG-Bench-Hard"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2210.09261"

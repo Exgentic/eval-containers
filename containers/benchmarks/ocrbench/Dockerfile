@@ -48,6 +48,7 @@ LABEL eval.benchmark.tasks="1000"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.modality="multimodal"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="92a54bd1384387c178d5a07140a2d85e0a3d12e1"
 LABEL eval.benchmark.url="https://github.com/Yuliang-Liu/MultimodalOCR"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2305.07895"

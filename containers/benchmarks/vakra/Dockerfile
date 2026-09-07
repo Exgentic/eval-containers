@@ -14,6 +14,7 @@ LABEL eval.benchmark.description="VAKRA - multi-hop multi-source tool-calling be
 LABEL eval.benchmark.tasks="28"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="1511b3a6ce0bb8df8aca2ae1b578510e150b6b7e"
 LABEL eval.benchmark.url="https://github.com/IBM/vakra"
 LABEL eval.benchmark.paper="https://huggingface.co/datasets/ibm-research/VAKRA"

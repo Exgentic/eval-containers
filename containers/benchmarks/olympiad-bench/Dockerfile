@@ -23,6 +23,7 @@ LABEL eval.benchmark.description="OlympiadBench - olympiad-level math and physic
 LABEL eval.benchmark.tasks="910"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="91184b52131e7fc9455fef848035173aea8cc01a"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/Hothan/OlympiadBench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2402.14008"

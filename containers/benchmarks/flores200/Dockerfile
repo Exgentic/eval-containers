@@ -70,6 +70,7 @@ LABEL eval.benchmark.description="FLORES-200 - multilingual machine translation 
 LABEL eval.benchmark.tasks="10120"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="flores_plus-v2.0"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/openlanguagedata/flores_plus"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2207.04672"

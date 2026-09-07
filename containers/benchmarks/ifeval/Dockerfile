@@ -62,6 +62,7 @@ LABEL eval.benchmark.description="IFEval - instruction following with verifiable
 LABEL eval.benchmark.tasks="541"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="966cd89545d6b6acfd7638bc708b98261ca58e84"
 LABEL eval.benchmark.url="https://github.com/google-research/google-research/tree/master/instruction_following_eval"
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/ifeval"
