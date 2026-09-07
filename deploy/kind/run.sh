@@ -192,15 +192,6 @@ fi
 MODEL_SLUG="$(model_slug "$MODEL")"
 SUB="${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$RANDOM}"
-if $DATASET_MODE; then JOB="${BENCHMARK}-${AGENT}"
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; fi
-# DNS-1123 sanitize, mirroring naming.rs release_name: lowercase, every run of
-# non-alnum → a single '-'. `tr -s` (squeeze) is portable across GNU/BSD, unlike
-# sed's \+ (BSD sed treats \+ literally). A per-task id like sympy__sympy-24066
-# collapses cleanly. Also trim leading/trailing '-'.
-JOB=$(printf '%s' "$JOB" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9' '-' | tr -s '-')
-JOB="${JOB#-}"; JOB="${JOB%-}"
-
 # No flatImages (kind serves the nested ghcr refs from the node's containerd);
 # hostPath output instead of a PVC; chart defaults (empty SA, IfNotPresent) suit
 # kind, so no -f values-openshift.yaml overlay (its imagePullPolicy: Always would
@@ -268,7 +259,16 @@ EOF
   SET+=(-f "$CA_OVERLAY")
 fi
 
-RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" "${SET[@]}")
+# The release name is not the Job name — see deploy/oc/run.sh. Helm validates it
+# as a DNS-1123 label capped at 53 chars before the chart renders, and the chart
+# never reads .Release.Name, so the task id (which carries whatever upstream
+# called it) stays out of it and the Job's own name is read back from the render.
+RENDER=$(helm template "$BENCHMARK-$AGENT" "$REPO_DIR/containers/benchmarks/_chart" "${SET[@]}")
+JOB=$(job_name_from_render "$RENDER")
+[[ -n "$JOB" ]] || { echo "error: no eval Job in the rendered manifest" >&2; exit 1; }
+# Say which Job this is, so a caller (and tests/e2e/real-eval.sh) can address the
+# object the chart actually named rather than recomposing one.
+log "job: $JOB"
 if $DRY_RUN; then echo "$RENDER"; exit 0; fi
 $RERUN && kube delete job "$JOB" --ignore-not-found >/dev/null   # a completed Job is immutable
 DESC=""; $DATASET_MODE && DESC=" (Indexed, ${DATASET:-chart-sized} examples, parallelism=$PARALLELISM)"

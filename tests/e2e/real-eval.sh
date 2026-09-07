@@ -208,6 +208,38 @@ else
     --cluster "$CLUSTER" --output-path "$OUT" --task 0 --no-build 2>&1 | tail -15
 fi
 
+# ── an upstream task id the launcher must not have to sanitize ──────────────
+# SWE-bench ids carry `_` (sympy__sympy-24066) and run past Helm's 53-char
+# release-name cap. The launcher used to pass its own composed name to helm as
+# the RELEASE name, so such an id died on helm's check before the chart rendered;
+# worse, any wrapper-side truncation would have addressed a Job the chart never
+# created, and `kubectl get job` on a missing name is silent, not an error.
+#
+# This id is chosen to reach BOTH chart branches: `_` and uppercase to sanitize,
+# and long enough that the name is truncated and given a sha1 suffix — the branch
+# no bash reimplementation was going to match. The launcher reports the name the
+# chart gave the Job, so this asks the CLUSTER whether that object exists, which
+# is the only answer that is not a restatement of the launcher's own arithmetic.
+step "an RFC-1123-hostile task id still launches and is addressable"
+HOSTILE='Sympy__Sympy-24066-with-a-long-tail-to-pass-fifty-three-chars'
+launch=$(bash "$ROOT/deploy/kind/run.sh" \
+           --benchmark agents-smoke --agent mock --model azure/gpt-5-mini \
+           --gateway stubgw --registry local --cluster "$CLUSTER" \
+           --output-path "$OUT" --task "$HOSTILE" --no-build 2>&1) && rc=0 || rc=1
+named=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$launch" | head -1)
+if [ "$rc" -ne 0 ]; then
+  bad "the launcher refused an upstream task id: $(grep -m1 -iE 'error|invalid' <<<"$launch")"
+elif [ -z "$named" ]; then
+  bad "the launcher did not report which Job it applied"
+elif ! kubectl get job "$named" >/dev/null 2>&1; then
+  bad "the launcher says it applied Job '$named', but no such Job exists — it addressed a name the chart never used"
+fi
+# Whether this Job then RUNS is not the claim: the mock bakes only /tasks/0, so a
+# made-up id has no task to load. The run above is what proves a Job completes;
+# this one proves the launcher can apply and address one at all. Clean it up so a
+# doomed pod is not left retrying.
+[ -n "$named" ] && kubectl delete job "$named" --wait=false >/dev/null 2>&1
+
 [ "$fail" -eq 0 ] && echo "PASS: all output-contract artifacts present, and deploy/kind/run.sh drives a run end to end"
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
 [ "$fail" -eq 0 ]
