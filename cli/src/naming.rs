@@ -167,10 +167,44 @@ pub fn release_name(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+/// Model handle → results-path segment: `/` → `--`, any other run of characters
+/// outside `[A-Za-z0-9._-]` → one `-`. Mirrors `model_slug` in deploy/_lib.sh and
+/// `_slug` in the dashboard, which key the same directory. The Job's `model`
+/// LABEL stays the handle's last segment (labels forbid `/`), so only the path
+/// can carry a whole handle.
+pub fn model_slug(handle: &str) -> String {
+    let keep = |c: char| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-');
+    let mut out = String::with_capacity(handle.len());
+    let mut dash = false;
+    for c in handle.chars() {
+        if c == '/' {
+            out.push_str("--");
+            dash = false;
+        } else if keep(c) {
+            out.push(c);
+            dash = false;
+        } else if !dash {
+            out.push('-');
+            dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     const REG: &str = "ghcr.io/exgentic";
+
+    #[test]
+    fn model_slug_matches_the_shell_wrappers() {
+        assert_eq!(model_slug("azure/gpt-5-mini"), "azure--gpt-5-mini");
+        assert_eq!(
+            model_slug("together/meta/Llama-3.3"),
+            "together--meta--Llama-3.3"
+        );
+        assert_eq!(model_slug("vendor/a  b"), "vendor--a-b");
+    }
 
     #[test]
     fn eval_image_uses_double_dash_separator() {
