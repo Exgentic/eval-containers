@@ -13,6 +13,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 // Stands in for the upstream credential the edge injects. Named rather than
@@ -637,5 +639,61 @@ func TestRequestAtTheLimitStillGoesThrough(t *testing.T) {
 	}
 	if len(*bodsReqs) != 1 {
 		t.Errorf("upstream saw %d requests, want 1", len(*bodsReqs))
+	}
+}
+
+// An OUT ending .zst is written through one encoder held open for the run, so
+// the compressor sees across records — each request repeats the whole
+// conversation, which is where the ratio comes from. The stream is never closed
+// (the pod SIGKILLs this process), so what matters is that a reader gets every
+// record flushed so far.
+func TestZstdRecordIsReadableWhileStillBeingWritten(t *testing.T) {
+	dir := t.TempDir()
+	out = filepath.Join(dir, "calls.jsonl.zst")
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if recZstd != nil {
+			recZstd.Close()
+			recZstd = nil
+		}
+		if recFile != nil {
+			recFile.Close()
+			recFile = nil
+		}
+		recPath = ""
+	})
+
+	for i := range 3 {
+		record(call{Path: "/v1/messages", Wire: "anthropic", Status: 200 + i})
+	}
+
+	// Deliberately NOT closed: this is what a reader of a live run sees.
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	d, err := zstd.NewReader(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	got, _ := d.DecodeAll(raw, nil) // an unterminated frame decodes as far as it goes
+	var n int
+	for _, ln := range strings.Split(strings.TrimSpace(string(got)), "\n") {
+		if ln == "" {
+			continue
+		}
+		var c call
+		if err := json.Unmarshal([]byte(ln), &c); err != nil {
+			t.Fatalf("record %d not JSON: %v", n, err)
+		}
+		if c.Status != 200+n {
+			t.Fatalf("record %d: status %d", n, c.Status)
+		}
+		n++
+	}
+	if n != 3 {
+		t.Fatalf("recovered %d of 3 records from an unterminated stream", n)
 	}
 }
