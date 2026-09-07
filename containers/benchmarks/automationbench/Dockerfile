@@ -34,6 +34,7 @@ LABEL eval.benchmark.description="AutomationBench (Zapier) - business-workflow a
 LABEL eval.benchmark.tasks="600"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
+ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
 LABEL eval.benchmark.url="https://github.com/zapier/AutomationBench"
 
