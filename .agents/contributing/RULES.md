@@ -6,11 +6,12 @@
 ## Abstract
 
 Eval Containers grows through contributions, each an issue or a pull request
-that resolves one. This document fixes the shape a contribution takes and two
+that resolves one. This document fixes the shape a contribution takes and three
 properties every pull request must have: it changes either rules or code but not
-both, and it declares which rules it was checked against. Compliance itself, and
-how rules change, are governed by the meta; the gates a contribution passes are
-in [`verification/RULES.md`](../verification/RULES.md).
+both, it declares which rules it was checked against, and it credits only the
+people who made it. Compliance itself, and how rules change, are governed by the
+meta; the gates a contribution passes are in
+[`verification/RULES.md`](../verification/RULES.md).
 
 ## Terminology
 
@@ -28,6 +29,9 @@ an issue or a pull request. A *contributor* is anyone who opens one.
 
 3. **Declared rules.** A pull request description MUST state which rules it was
    checked against.
+
+4. **Human credit.** A contribution MUST NOT attribute authorship to a tool,
+   bot, or automation.
 
 ## References
 
@@ -47,3 +51,4 @@ an issue or a pull request. A *contributor* is anyone who opens one.
 | Date | Change |
 |------|--------|
 | 2026-06-14 | Initial version. Lifts the meta-compliant core of the root `CONTRIBUTING.md` into doctrine: contribution shape (1), rules-or-code scoping (2), and declared rules checked (3) — each an inspectable property of a finished contribution (meta:2). Compliance stays at `meta/rules/RULES.md` (1) and rule-change governance at its no-silent-drift principle (10); the procedural guidance — reporting violations, the verify/build walk, and proposing a rule change — stays in the human-facing `CONTRIBUTING.md`. The issue taxonomy stays in `RULES.md`. |
+| 2026-09-07 | Added principle 4 (human credit): nothing forbade a contribution from crediting a tool, bot, or automation as an author, so an assistant's default commit-trailer/PR-footer attribution went unchecked (#475, noticed while #474 was open). A contribution's authorship is a property of the finished artifact (meta:2), so it belongs here beside the other three. |
