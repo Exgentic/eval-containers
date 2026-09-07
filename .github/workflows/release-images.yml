@@ -455,6 +455,17 @@ jobs:
           combo_shards=$(shard "$combos" 25)
           pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 10)")
           pertask_shards=$(shard "$pertask" "$(chunk "$pertask" 10)")
+          # The shard CONTENTS travel as an artifact, not as job outputs: a job's
+          # outputs are capped at 1 MB in total, and once #461 put per-task on the
+          # main-push channel these three lists (5.5k per-task combos, 789
+          # per-task, 665 combos) went past it — every release since 2026-09-06
+          # died here with "Job outputs exceed 1,048,576 bytes", after enumerate
+          # had done all its work. The matrices below carry only `idx`, which is
+          # all a matrix needs; each shard job reads its own items from the file.
+          jq -nc --argjson c "$combo_shards" --argjson pc "$pertask_combo_shards" \
+                 --argjson pt "$pertask_shards" \
+                 '{combo:$c, pertask_combo:$pc, pertask:$pt}' > shards.json
+          idx() { jq -c '[.[] | {idx}]' <<< "$1"; }
           # combos build per shard via buildx --platform (one job/shard) → ≤256;
           # per-task and pertask-combo fan out per shard × 2 arches → matrix must fit 256.
           cn=$(printf '%s' "$combo_shards" | jq length); ptn=$(printf '%s' "$pertask_shards" | jq length)
@@ -472,13 +483,19 @@ jobs:
           {
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
-            echo "combo_shards=$combo_shards"
-            echo "pertask_combo_shards=$pertask_combo_shards"
-            echo "pertask_shards=$pertask_shards"
+            echo "combo_shards=$(idx "$combo_shards")"
+            echo "pertask_combo_shards=$(idx "$pertask_combo_shards")"
+            echo "pertask_shards=$(idx "$pertask_shards")"
             echo "has_leaves=$has_leaves"
             echo "dirty=$dirty"
           } >> "$GITHUB_OUTPUT"
           echo "leaves=$n  combos=$(printf '%s' "$combos" | jq length) in $(printf '%s' "$combo_shards" | jq length) shards  pertask-combos=$(printf '%s' "$pertask_combo_items" | jq length) in $(printf '%s' "$pertask_combo_shards" | jq length) shards  pertask=$(printf '%s' "$pertask" | jq length) in $(printf '%s' "$pertask_shards" | jq length) shards  dirty=$dirty"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: shards
+          path: shards.json
+          retention-days: 1
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
   build:
@@ -606,13 +623,17 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Log in to GHCR (podman)
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
       - name: Build + push per-task shard ${{ matrix.shard.idx }} (${{ matrix.arch }})
         env:
-          ITEMS: ${{ toJson(matrix.shard.items) }}
+          IDX: ${{ matrix.shard.idx }}
           DRY: ${{ inputs.dry_run }}
           ARCH: ${{ matrix.arch }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }} # pragma: allowlist secret
         run: |
+          # The shard list is an artifact, not a job output (1 MB cap).
+          ITEMS=$(jq -c --argjson i "$IDX" '.pertask[] | select(.idx==$i).items' shards.json)
           export TAG="${TAG}-${ARCH}"   # per-arch tag; merge builds the :TAG manifest list
           # Epoch's swe-bench bases are named x86_64 / arm64 (kind=bake FROMs this).
           EPOCH_ARCH=x86_64; [ "$ARCH" = "arm64" ] && EPOCH_ARCH=arm64
@@ -820,12 +841,16 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
       - name: Bake eval combo shard ${{ matrix.shard.idx }}
         env:
-          ITEMS: ${{ toJson(matrix.shard.items) }}
+          IDX: ${{ matrix.shard.idx }}
           DRY: ${{ inputs.dry_run }}
           STANDALONE: ${{ inputs.include_standalone }}
         run: |
+          # The shard list is an artifact, not a job output (1 MB cap).
+          ITEMS=$(jq -c --argjson i "$IDX" '.combo[] | select(.idx==$i).items' shards.json)
           # retry rides out transient registry pull/push blips; jittered backoff.
           retry() {
             local n=0 max="${BUILD_RETRIES:-4}"
@@ -921,13 +946,17 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
       - name: Bake per-task combo shard ${{ matrix.shard.idx }} (${{ matrix.arch }})
         env:
-          ITEMS: ${{ toJson(matrix.shard.items) }}
+          IDX: ${{ matrix.shard.idx }}
           DRY: ${{ inputs.dry_run }}
           STANDALONE: ${{ inputs.include_standalone }}
           ARCH: ${{ matrix.arch }}
         run: |
+          # The shard list is an artifact, not a job output (1 MB cap).
+          ITEMS=$(jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json)
           ORIG_TAG="$TAG"             # benchmark/agent image refs stay on the merged multi-arch :TAG
           export TAG="${TAG}-${ARCH}" # this combo's own OUTPUT tag; merge-pertask-combos builds the final :TAG
           retry() {
