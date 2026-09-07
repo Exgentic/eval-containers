@@ -153,6 +153,11 @@ pub struct RunArgs {
     #[arg(long)]
     overlay: Option<String>,
 
+    /// (`--mode job`) Directory this run's results go in, under
+    /// `runs/<benchmark>/<agent>/<model>/`. Default: a fresh id each invocation.
+    #[arg(long)]
+    run_id: Option<String>,
+
     /// (`--mode job`) This run's results are meant to be thrown away.
     ///
     /// Renders as `--set ephemeral=true`. Without a volume the chart refuses to
@@ -500,6 +505,18 @@ fn is_registry_denied(stderr: &str) -> bool {
     s.contains("403") || s.contains("denied") || s.contains("unauthorized")
 }
 
+/// `--run-id`, or a fresh one. A default that repeated would defeat the point:
+/// the chart appends the id but sees one render, so it cannot tell a fresh id
+/// from a constant — uniqueness is the launcher's to hold.
+fn run_id(explicit: Option<&str>) -> String {
+    explicit.map(str::to_string).unwrap_or_else(|| {
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default();
+        format!("{}-{:09}", t.as_secs(), t.subsec_nanos())
+    })
+}
+
 /// Cluster `eval-secrets` Secret still provides upstream credentials.
 fn run_job(
     registry: &str,
@@ -567,8 +584,20 @@ fn run_job(
         format!("agent={agent}"),
         format!("task={task}"),
     ];
+    // Where results land. `--mode job` used to pass no path, so every run wrote
+    // to the volume root and a re-run of one combination overwrote the last —
+    // the #428 bug, fixed in the shell wrappers, still open here. Same shape they
+    // compose; the chart appends the runId. Ephemeral runs keep the chart's
+    // pathless emptyDir mount: nothing to keep apart.
     if args.ephemeral {
         sets.push("ephemeral=true".into());
+    } else {
+        let mut sub = format!("runs/{benchmark}/{agent}");
+        if let Some(m) = &args.model {
+            sub += &format!("/{}", eval_containers::naming::model_slug(m));
+        }
+        sets.push(format!("outputSubPath={sub}"));
+        sets.push(format!("runId={}", run_id(args.run_id.as_deref())));
     }
     // No `perTask` here on purpose. The chart resolves it from its own committed
     // per-task.json (rule 24h): this path renders the PUBLISHED chart with no repo
@@ -684,6 +713,12 @@ fn run_job(
 #[cfg(test)]
 mod tests {
     use super::{CHART_NAME, CHART_VERSION, is_registry_denied};
+
+    #[test]
+    fn the_default_run_id_differs_per_invocation() {
+        assert_ne!(super::run_id(None), super::run_id(None));
+        assert_eq!(super::run_id(Some("pinned")), "pinned");
+    }
 
     // A denied OCI chart pull must be recognized so `run --mode job` can print
     // the auth / `--local` hint instead of a raw "helm template failed".
