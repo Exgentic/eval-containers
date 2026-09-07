@@ -1174,6 +1174,10 @@ fn the_chart_publishes_on_the_continuous_channel() {
     // must still guarantee is unchanged, so assert it wherever it now lives.
     let wf = fs::read_to_string(repo_root().join(".github/workflows/publish-chart.yml"))
         .expect("read .github/workflows/publish-chart.yml");
+    // Both channels run the same composite action, so what the publish *does* is
+    // asserted there and what each workflow does is asserted on the workflow.
+    let act = fs::read_to_string(repo_root().join(".github/actions/publish-chart/action.yml"))
+        .expect("read .github/actions/publish-chart/action.yml");
 
     assert!(
         wf.contains("branches: [main]"),
@@ -1188,18 +1192,24 @@ fn the_chart_publishes_on_the_continuous_channel() {
          coupling it to the image build is what left the channel hours stale"
     );
     assert!(
-        wf.contains("containers/benchmarks/_chart/Chart.yaml"),
+        act.contains("containers/benchmarks/_chart/Chart.yaml"),
         "the publish must read its version from Chart.yaml — a chart's OCI tag is \
          its SemVer, so there is no literal `latest` to package"
     );
     assert!(
-        wf.contains("gh release view") && wf.contains("::error::"),
+        act.contains("gh release view") && act.contains("::error::"),
         "the publish must refuse a version whose release is already out, or every \
          main push overwrites a released chart"
     );
     assert!(
-        wf.contains("helm show chart"),
+        act.contains("helm show chart"),
         "the publish must read the chart back from the registry (delivery/RULES.md:17)"
+    );
+
+    assert!(
+        wf.contains("./.github/actions/publish-chart"),
+        "the continuous channel must run the shared action, not its own copy of \
+         the publish"
     );
 
     // …and the versioned channel stays where its CVE gate is.
@@ -1213,5 +1223,10 @@ fn the_chart_publishes_on_the_continuous_channel() {
     assert!(
         job.contains("release-gate.result == 'success'"),
         "a released chart must not publish before the CVE gate has passed"
+    );
+    assert!(
+        job.contains("./.github/actions/publish-chart"),
+        "the versioned channel must run the same action as the continuous one, or \
+         the two publishes drift"
     );
 }

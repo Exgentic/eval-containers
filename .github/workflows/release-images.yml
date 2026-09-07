@@ -1094,16 +1094,12 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: azure/setup-helm@v5
-      - name: Publish charts/eval at ${{ env.TAG }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          ver="${TAG#v}"
-          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
-          helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
-          helm push "/tmp/chart/eval-${ver}.tgz" "oci://${REGISTRY}/charts"
-          # delivery/RULES.md:17 — a zero exit is not evidence; read the artifact back.
-          helm show chart "oci://${REGISTRY}/charts/eval" --version "$ver" >/dev/null
+      - uses: ./.github/actions/publish-chart
+        with:
+          version: ${{ env.TAG }}
+          registry: ${{ env.REGISTRY }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          actor: ${{ github.actor }}
 
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:

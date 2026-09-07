@@ -1,0 +1,51 @@
+name: Publish charts/eval
+description: >-
+  Package the eval chart and push it to the registry, then read it back. One
+  definition for both channels — the continuous one on a main push
+  (publish-chart.yml) and the versioned one at a release (release-images.yml) —
+  because they differ only in which version they publish, and two copies of four
+  helm commands is two copies that can drift.
+
+inputs:
+  version:
+    description: >-
+      The SemVer to publish, with or without a leading `v` (a release passes its
+      git tag). Empty means the continuous channel: take it from
+      Chart.yaml, and refuse if that version's GitHub Release is already out,
+      since a released chart is immutable.
+    required: false
+    default: ""
+  registry:
+    description: The OCI registry namespace, e.g. ghcr.io/exgentic.
+    required: true
+  token:
+    description: A token with packages:write, used to log in to the registry.
+    required: true
+  actor:
+    description: The registry username to log in as.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Package, push and read back
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+      run: |
+        set -euo pipefail
+        # A release passes its git tag, which carries the `v` a SemVer does not.
+        ver="${{ inputs.version }}"; ver="${ver#v}"
+        if [ -z "$ver" ]; then
+          ver=$(grep -m1 '^version: ' containers/benchmarks/_chart/Chart.yaml | awk '{print $2}')
+          if [ "$(gh release view "v$ver" --json isDraft -q .isDraft 2>/dev/null)" = false ]; then
+            echo "::error::v$ver is released and immutable — bump Chart.yaml + cli/Cargo.toml to the next dev version"
+            exit 1
+          fi
+        fi
+        echo "${{ inputs.token }}" | helm registry login ghcr.io -u "${{ inputs.actor }}" --password-stdin
+        helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
+        helm push "/tmp/chart/eval-${ver}.tgz" "oci://${{ inputs.registry }}/charts"
+        # delivery/RULES.md:17 — a zero exit is not evidence; read the artifact back.
+        helm show chart "oci://${{ inputs.registry }}/charts/eval" --version "$ver" >/dev/null
+        echo "published charts/eval:$ver"
