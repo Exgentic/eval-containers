@@ -270,6 +270,51 @@ fn build_script_benchmarks_overlay_a_task_env() {
     }
 }
 
+/// The chart sizes a `--set dataset=true` run from its own committed
+/// `dataset-sizes.json`, so `helm template --set benchmark=<x> --set dataset=true`
+/// is right with no checkout and no image to inspect. That map is DERIVED from the
+/// benchmarks' `LABEL eval.benchmark.tasks`, so it MUST equal them: a stale entry
+/// runs the wrong number of examples and the Job goes green having skipped some.
+///
+/// Regenerate (this is the whole derivation):
+///
+///   for f in containers/benchmarks/*/Dockerfile; do
+///     n=$(sed -nE 's/^[[:space:]]*LABEL eval\.benchmark\.tasks="?([0-9]+)"?.*/\1/p' "$f" | head -1)
+///     [ -n "$n" ] && printf '%s\t%s\n' "$(basename "$(dirname "$f")")" "$n"
+///   done | jq -Rn '[inputs|split("\t")|{(.[0]): (.[1]|tonumber)}]|add' \
+///     > containers/benchmarks/_chart/dataset-sizes.json
+#[test]
+fn chart_dataset_sizes_match_labels() {
+    enter_repo_root();
+    let path = Path::new("containers/benchmarks/_chart/dataset-sizes.json");
+    let listed: std::collections::BTreeMap<String, u32> = serde_json::from_str(&read(path))
+        .unwrap_or_else(|e| panic!("{}: not a JSON object of name → size: {e}", path.display()));
+    let labelled: std::collections::BTreeMap<String, u32> = catalog_dirs("benchmarks")
+        .into_iter()
+        .filter_map(|(name, dir)| tasks_label(&read(&dir.join("Dockerfile"))).map(|n| (name, n)))
+        .collect();
+    assert_eq!(
+        listed,
+        labelled,
+        "{} is stale — it must map every benchmark to its `LABEL eval.benchmark.tasks`, \
+         and nothing else (see this test's doc comment for the derivation)",
+        path.display()
+    );
+}
+
+/// `LABEL eval.benchmark.tasks="<n>"` — the number of examples in the dataset.
+fn tasks_label(dockerfile: &str) -> Option<u32> {
+    dockerfile.lines().find_map(|l| {
+        l.trim_start()
+            .strip_prefix("LABEL eval.benchmark.tasks=")?
+            .trim_matches('"')
+            .split('"')
+            .next()?
+            .parse()
+            .ok()
+    })
+}
+
 /// The chart resolves `perTask` from its own committed `per-task.json` so that
 /// `helm template --set benchmark=<x> --set task=<id>` is correct with no CLI and
 /// no checkout (rules 1, 24f, 24h). That set is DERIVED from the per-task labels,

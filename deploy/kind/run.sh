@@ -174,16 +174,7 @@ if [[ -f "$PRESET" ]]; then
   done < <(grep -hoE 'image:[[:space:]]*[^[:space:]]+' "$PRESET" | awk '{print $2}' | sort -u)
 fi
 
-# ── 2. Resolve dataset size, then render + apply ──────────────────────────────
-# --dataset with no explicit --dataset-size → read the count from the benchmark
-# image's eval.benchmark.tasks label (set at build time), read from the LOCAL
-# image (kind builds on the host, so there is no imagestream to query).
-if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
-  DATASET=$(docker image inspect "$REGISTRY/benchmarks/$BENCHMARK:latest" \
-    --format '{{ index .Config.Labels "eval.benchmark.tasks" }}' 2>/dev/null || true)
-  [[ -z "$DATASET" ]] && { echo "error: could not read eval.benchmark.tasks label for $BENCHMARK; pass --dataset-size" >&2; exit 1; }
-  log "dataset size for $BENCHMARK (from image label): $DATASET"
-fi
+# ── 2. Render + apply ─────────────────────────────────────────────────────────
 # Laptop guard: kind has no queue and no autoscaler, and the chart defaults
 # parallelism → datasetSize (unbounded). Cap an unset dataset run at 2 so it
 # can't launch N pods that mostly sit Pending.
@@ -201,7 +192,7 @@ fi
 MODEL_SLUG="$(model_slug "$MODEL")"
 SUB="${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$RANDOM}"
-if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}"
+if $DATASET_MODE; then JOB="${BENCHMARK}-${AGENT}"
 else JOB="${BENCHMARK}-${AGENT}-task-${TASK}"; fi
 # DNS-1123 sanitize, mirroring naming.rs release_name: lowercase, every run of
 # non-alnum → a single '-'. `tr -s` (squeeze) is portable across GNU/BSD, unlike
@@ -239,6 +230,8 @@ if $PER_TASK && ! $DRY_RUN; then
     SET+=(--set "timeout=$TB_TIMEOUT")
   fi
 fi
+# See deploy/oc/run.sh: the chart holds each benchmark's size.
+$DATASET_MODE && SET+=(--set "dataset=true")
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
@@ -278,7 +271,8 @@ fi
 RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" "${SET[@]}")
 if $DRY_RUN; then echo "$RENDER"; exit 0; fi
 $RERUN && kube delete job "$JOB" --ignore-not-found >/dev/null   # a completed Job is immutable
-log "=== apply $JOB${DATASET:+ (Indexed, $DATASET examples, parallelism=$PARALLELISM)} ==="
+DESC=""; $DATASET_MODE && DESC=" (Indexed, ${DATASET:-chart-sized} examples, parallelism=$PARALLELISM)"
+log "=== apply $JOB$DESC ==="
 printf '%s\n' "$RENDER" | kube apply -f -
 
 # ── 3. Watch (opt-in) ─────────────────────────────────────────────────────────

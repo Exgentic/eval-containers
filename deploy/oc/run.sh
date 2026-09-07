@@ -82,18 +82,7 @@ if ! $NO_BUILD; then
 fi
 $NO_RUN && { log "--no-run: built only, not submitting."; exit 0; }
 
-# ── 2. Resolve dataset size, then render + apply ─────────────────────────────
-# --dataset (whole dataset) with no explicit --dataset-size → read the count from
-# the benchmark image's eval.benchmark.tasks label (set at build time). The image
-# exists by now (built above), so this is the authoritative per-benchmark size —
-# a grid of differently-sized benchmarks self-sizes without a flag.
-if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
-  DATASET=$(command oc get istag "$(flat "$BENCHMARK")$SUFFIX:latest" -n "$NAMESPACE" \
-    -o jsonpath='{.image.dockerImageMetadata.Config.Labels.eval\.benchmark\.tasks}' 2>/dev/null || true)
-  [[ -z "$DATASET" ]] && { echo "error: could not read eval.benchmark.tasks label for $BENCHMARK; pass --dataset-size" >&2; exit 1; }
-  log "dataset size for $BENCHMARK (from image label): $DATASET"
-fi
-
+# ── 2. Render + apply ────────────────────────────────────────────────────────
 # Two things decide where results land, and both matter. The model's SLUG — the
 # whole handle with `/` → `--`, the shape the dashboard writes and reads back —
 # keys the prefix, so two models behind one gateway cannot share a directory.
@@ -105,7 +94,7 @@ fi
 # results, and a sweep re-run on the whole previous sweep.
 MODEL_SLUG="$(model_slug "$MODEL")"
 SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
-if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"
+if $DATASET_MODE; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"
 else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; fi
 
 # flatImages=true → the chart composes flat ImageStream refs for the OC registry.
@@ -117,6 +106,10 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB"
      --set "runId=$RUN_ID")
 [[ -n "$SUFFIX"      ]] && SET+=(--set "imageSuffix=$SUFFIX" --set "nameSuffix=$SUFFIX")
+# --dataset with no --dataset-size: the chart sizes it from its own
+# dataset-sizes.json, so a dry run renders the real Indexed Job and a grid of
+# differently-sized benchmarks self-sizes without a flag.
+$DATASET_MODE && SET+=(--set "dataset=true")
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
@@ -126,7 +119,9 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
 RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
 if $DRY_RUN; then echo "$RENDER"; exit 0; fi
 $RERUN && command oc delete job "$JOB" -n "$NAMESPACE" --ignore-not-found >/dev/null
-log "=== apply $JOB${DATASET:+ (Indexed, $DATASET examples${QUEUE:+, queue=$QUEUE})} ==="
+# --dataset with no size: the chart supplies it, so say so rather than a number.
+DESC=""; $DATASET_MODE && DESC=" (Indexed, ${DATASET:-chart-sized} examples${QUEUE:+, queue=$QUEUE})"
+log "=== apply $JOB$DESC ==="
 printf '%s\n' "$RENDER" | command oc apply -n "$NAMESPACE" -f -
 
 # ── 3. Watch (opt-in; with Kueue the Job may sit Suspended until admitted) ───
