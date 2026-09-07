@@ -153,6 +153,13 @@ pub struct RunArgs {
     #[arg(long)]
     overlay: Option<String>,
 
+    /// (`--mode job`) Run the whole dataset as one Indexed Job, one completion
+    /// per example, instead of the single `--task-id`. The chart supplies the
+    /// benchmark's size, so this needs no number and no image to inspect.
+    /// Per-task benchmarks bake one image per task and cannot use it.
+    #[arg(long)]
+    dataset: bool,
+
     /// (`--mode job`) Directory this run's results go in, under
     /// `runs/<benchmark>/<agent>/<model>/`. Default: a fresh id each invocation.
     #[arg(long)]
@@ -262,8 +269,17 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
         envs.push(("EVAL_MODEL_MAX_BUDGET", budget.to_string()));
     }
 
-    if args.overlay.is_some() && !matches!(args.mode, Mode::Job) {
-        return Err("--overlay applies only to `--mode job`".into());
+    // Job-mode-only flags. Silently ignoring one is worse than refusing it: a
+    // `--dataset` that did nothing would run a single task and look like a
+    // dataset run in every log line.
+    for (set, flag) in [
+        (args.overlay.is_some(), "--overlay"),
+        (args.dataset, "--dataset"),
+        (args.run_id.is_some(), "--run-id"),
+    ] {
+        if set && !matches!(args.mode, Mode::Job) {
+            return Err(format!("{flag} applies only to `--mode job`"));
+        }
     }
     // The standalone bundle bakes its gateway (it runs in-process), so the
     // gateway axis is a BUILD-time choice there. Fail loud rather than accept a
@@ -589,6 +605,9 @@ fn run_job(
     // the #428 bug, fixed in the shell wrappers, still open here. Same shape they
     // compose; the chart appends the runId. Ephemeral runs keep the chart's
     // pathless emptyDir mount: nothing to keep apart.
+    if args.dataset {
+        sets.push("dataset=true".into());
+    }
     if args.ephemeral {
         sets.push("ephemeral=true".into());
     } else {
