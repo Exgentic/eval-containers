@@ -108,6 +108,33 @@ out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GA
 got=$(awk '/^  completions:/{print $2; exit}' <<<"$out")
 [ "$got" = "$want" ] \
   || bad "oc: --dataset rendered completions=${got:-<none>}, but aime's Dockerfile says $want"
+# ── 5. the wrapper's Job name must equal the chart's ────────────────────────
+# The Job's name is the chart's (eval.jobName); the wrapper composes its own copy
+# to address the Job afterwards with --rerun, --watch and the status line. Those
+# are two implementations of one rule, and when they disagree nothing errors: the
+# Job applies under the chart's name while every follow-up command addresses one
+# that does not exist and quietly does nothing. #490 came within a commit of
+# exactly that — the wrapper's branch keyed off a variable that stopped being set
+# once the chart resolved the dataset size.
+#
+# The eval Job is the one carrying the `agent` label: a preset may ship Jobs of
+# its own (tau-bench has a harness), and those carry only `benchmark`.
+for shape in "--task 0" "--dataset"; do
+  # shellcheck disable=SC2086  # $shape is a deliberate two-word argument
+  out=$(bash "$OC" --benchmark tau-bench --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+          --registry "$REG" $shape --no-build --dry-run 2>&1)
+  said=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$out" | head -1)
+  rendered=$(awk '
+    /^# Source:/          { name=""; agent=0 }
+    /^  name: /           { if (!name) name=$2 }
+    /^    agent: /        { agent=1 }
+    /^spec:/              { if (agent && name) { print name; exit } }
+  ' <<<"$out")
+  [ -n "$rendered" ] || { bad "oc $shape: no eval Job in the render to compare against"; continue; }
+  [ "$said" = "$rendered" ] \
+    || bad "oc $shape: the wrapper addresses Job '$said' but the chart named it '$rendered'"
+done
+
 # ── each launcher's path must differ between two runs of one combo ──────────
 varies "oc" bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
   --gateway "$GATEWAY" --registry "$REG" --task 0 --no-build --dry-run

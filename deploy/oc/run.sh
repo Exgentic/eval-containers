@@ -117,7 +117,9 @@ $DATASET_MODE && SET+=(--set "dataset=true")
 [[ -n "$SWEEP_ID"    ]] && SET+=(--set "sweepId=$SWEEP_ID")
 
 RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
-if $DRY_RUN; then echo "$RENDER"; exit 0; fi
+# Say which Job this is before exiting, so the equality the sweep checks — this
+# name against the one the chart rendered — is observable without a cluster.
+if $DRY_RUN; then log "job: $JOB"; echo "$RENDER"; exit 0; fi
 $RERUN && command oc delete job "$JOB" -n "$NAMESPACE" --ignore-not-found >/dev/null
 # --dataset with no size: the chart supplies it, so say so rather than a number.
 DESC=""; $DATASET_MODE && DESC=" (Indexed, ${DATASET:-chart-sized} examples${QUEUE:+, queue=$QUEUE})"
