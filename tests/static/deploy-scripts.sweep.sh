@@ -95,6 +95,19 @@ rc=$?
 grep -q -- "--model" <<<"$out" \
   || bad "oc: the --eval-model rejection doesn't name --model as the replacement"
 
+# ── 4. --dataset renders the whole dataset, with no image to inspect ────────
+# The wrapper used to read the size from the benchmark image's
+# eval.benchmark.tasks label through `oc get istag`, which a dry run skips — so
+# `--dataset --dry-run` rendered a single-task Job and showed you the wrong
+# thing. The chart holds the size now, so the render is the real one. Expected
+# value comes from the Dockerfile LABEL, not the chart's copy of it.
+want=$(sed -nE 's/^[[:space:]]*LABEL eval\.benchmark\.tasks="?([0-9]+)"?.*/\1/p' \
+  "$ROOT/containers/benchmarks/aime/Dockerfile" | head -1)
+out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+        --registry "$REG" --dataset --no-build --dry-run 2>&1)
+got=$(awk '/^  completions:/{print $2; exit}' <<<"$out")
+[ "$got" = "$want" ] \
+  || bad "oc: --dataset rendered completions=${got:-<none>}, but aime's Dockerfile says $want"
 # ── each launcher's path must differ between two runs of one combo ──────────
 varies "oc" bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
   --gateway "$GATEWAY" --registry "$REG" --task 0 --no-build --dry-run

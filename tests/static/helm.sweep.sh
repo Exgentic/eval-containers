@@ -185,5 +185,50 @@ case "$got" in
      fail=$((fail + 1)) ;;
 esac
 
+# 9. `--set dataset=true` sizes the Job from the chart, so a render is the whole
+# dataset with no image to inspect. Every wrapper used to read the benchmark
+# image's eval.benchmark.tasks label through its own transport (oc: an
+# imagestream; kind: a local `docker image inspect`), which meant a dry run
+# resolved nothing and rendered a single-task Job, and the CLI, having neither
+# transport, could not run a dataset at all.
+#
+# Asserted against the benchmark's DOCKERFILE LABEL, not against the chart's own
+# dataset-sizes.json — reading the same file the chart reads would pass whatever
+# the file said. (chart_dataset_sizes_match_labels covers the whole map; this
+# covers the lookup, and the three ways it must refuse or defer.)
+completions() { helm template ds-probe "$CHART" --set benchmark="$1" \
+  --set ephemeral=true --set dataset=true "${@:2}" 2>&1 |
+  awk '/^  completions:/{print $2; exit}'; }
+
+for b in aime humaneval mgsm; do
+  want=$(sed -nE 's/^[[:space:]]*LABEL eval\.benchmark\.tasks="?([0-9]+)"?.*/\1/p' \
+    "$ROOT/containers/benchmarks/$b/Dockerfile" | head -1)
+  got=$(completions "$b")
+  [ "$got" = "$want" ] || {
+    echo "FAIL dataset: $b rendered completions=${got:-<none>}, but its Dockerfile says $want"
+    fail=$((fail + 1)); }
+done
+
+# Running PART of a dataset stays a launch decision, so an explicit size wins.
+[ "$(completions humaneval --set datasetSize=7)" = "7" ] \
+  || { echo "FAIL dataset: an explicit --set datasetSize did not win over dataset=true"; fail=$((fail + 1)); }
+
+# The two refusals. Captured before grepping, not piped: these renders are meant
+# to fail, and `set -o pipefail` would report helm's exit code, not the match.
+refuses() {  # $1 = label, $2 = expected substring, rest = --set args
+  local what=$1 want=$2; shift 2
+  local out; out=$(helm template ds-probe "$CHART" --set ephemeral=true --set dataset=true "$@" 2>&1)
+  case "$out" in *"$want"*) ;;
+    *) echo "FAIL dataset: $what"; fail=$((fail + 1)) ;;
+  esac
+}
+# A benchmark the chart has no size for must say so, not quietly run one task.
+refuses "an unknown benchmark rendered instead of failing" "no size for not-a-benchmark" \
+  --set benchmark=not-a-benchmark
+# per-task families bake one image per task; dataset=true must hit the same guard
+# an explicit datasetSize does.
+refuses "dataset=true bypassed the per-task guard" "cannot use a dataset" \
+  --set benchmark=swe-bench
+
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]
