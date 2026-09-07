@@ -22,6 +22,9 @@ on:
     paths:
       - containers/benchmarks/_chart/**
       - .github/workflows/publish-chart.yml
+      # The publish itself: a fix to it must republish, or it ships untested.
+      # The first such fix (#480) had to be dispatched by hand to prove it worked.
+      - .github/actions/publish-chart/**
   workflow_dispatch:
 
 permissions:
