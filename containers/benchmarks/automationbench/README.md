@@ -52,10 +52,11 @@ auto-bench --tasks <task_name> --api chat_completions \
 ## How it's graded
 
 Deterministic, in-process assertion checking by AutomationBench's own rubric.
-The reward is **`task_completed_correctly`** (0/1): `1` iff every scored
-assertion passes. `run_automationbench.py` reads the exported per-task `passed`
-flag and writes `1`/`0` to `/logs/verifier/reward.txt`; the shared
-`write-result` then emits `result.json`.
+The reward is the exported per-task **`score`** — partial credit in `[0.0,
+1.0]`, the fraction of scored assertions that passed (rule 18 permits a
+fractional reward, not just 0/1). `run_automationbench.py` reads it and
+writes it to `/logs/verifier/reward.txt`; the shared `write-result` derives
+`passed` as `reward == 1.0` and emits `result.json`.
 
 ## Files
 

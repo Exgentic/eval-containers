@@ -8,10 +8,10 @@ materialized /tasks/$EVAL_TASK_ID/task_name.txt), then invoke the upstream
 loop over the simulated WorldState and grades in-process; we read the exported
 result and write the reward.
 
-Reward = task_completed_correctly (0/1): the exported per-task `passed` is
-`reward == 1.0`, and with the rubric weights (partial_credit=1.0,
-task_completed_correctly=0.0) `reward == partial_credit`, so
-`passed == (partial_credit == 1.0) == task_completed_correctly`.
+Reward = the exported per-task `score` (partial credit in [0.0, 1.0] —
+fraction of assertions passed; benchmarks/RULES.md rule 18 permits a
+fractional reward, not just 0/1). `passed` is `reward == 1.0`, matching
+the harness's own strict all-assertions bar.
 
 Fail-closed: any error leaves reward = 0.
 """
@@ -118,7 +118,8 @@ def main() -> int:
     if proc.returncode != 0:
         print(f"[runner] auto-bench exited {proc.returncode}", file=sys.stderr)
 
-    # Read the exported result and translate `passed` → reward (0/1).
+    # Read the exported result and write the task's partial-credit score as
+    # the reward (rule 18 permits a float in [0.0, 1.0], not just 0/1).
     try:
         with open(EXPORT_PATH) as f:
             data = json.load(f)
@@ -126,11 +127,19 @@ def main() -> int:
         if not tasks:
             print("[runner] export has no tasks; reward stays 0", file=sys.stderr)
             return 1
-        passed = bool(tasks[0].get("passed", False))
-        write_reward("1" if passed else "0")
-        print(f"[runner] task_completed_correctly={int(passed)}", file=sys.stderr)
+        score = float(tasks[0].get("score", 0.0))
+        score = min(1.0, max(0.0, score))
+        write_reward(repr(score))
+        print(f"[runner] score={score} passed={score == 1.0}", file=sys.stderr)
         return 0
-    except (OSError, json.JSONDecodeError, KeyError, IndexError) as e:
+    except (
+        OSError,
+        json.JSONDecodeError,
+        KeyError,
+        IndexError,
+        TypeError,
+        ValueError,
+    ) as e:
         print(f"[runner] could not read export {EXPORT_PATH}: {e}", file=sys.stderr)
         return 1
 
