@@ -30,6 +30,7 @@ ENV BENCHMARK_VERSION=${BENCHMARK_VERSION}
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="automationbench"
+LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.description="AutomationBench (Zapier) - business-workflow agent tasks over simulated SaaS tools, state-verified"
 LABEL eval.benchmark.tasks="600"
 LABEL eval.benchmark.env="shared-env"
