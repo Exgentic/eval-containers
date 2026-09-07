@@ -26,6 +26,7 @@ Environment variables only, no flags:
 | `OPENAI_API_BASE` | yes | — | Upstream URL to forward calls to |
 | `OPENAI_API_KEY` | for real calls | — | Upstream credential, attached per-wire and never recorded |
 | `EVAL_MODEL` | no | — | Model to pin every outbound call to; unset forwards the caller's own choice |
+| `EDGE_MODEL` | no | — | Same as `EVAL_MODEL`, for use outside the eval-containers framework; `EVAL_MODEL` wins if both are set |
 | `EDGE_UPSTREAM` | no | — | `gateway` when upstream serves the `/anthropic`, `/openai`, `/genai` namespaced paths; unset when upstream is a bare provider |
 | `LISTEN` | no | `:4100` | Address the edge listens on |
 | `OUT` | no | `/output/model/calls.jsonl` | Where call records are appended (JSON Lines) |
