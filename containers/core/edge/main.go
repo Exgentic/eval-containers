@@ -46,12 +46,14 @@ type call struct {
 }
 
 var (
-	mu     sync.Mutex
-	out    = envOr("OUT", "/output/model/calls.jsonl")
+	mu  sync.Mutex
+	out = envOr("OUT", "/output/model/calls.jsonl")
 	// 4100, not 4000: a gateway owns 4000, and in k8s it shares this pod's
 	// network namespace (edge rule 13).
 	listen = envOr("LISTEN", ":4100")
-	model  = os.Getenv("EVAL_MODEL")
+	// EVAL_MODEL is the in-framework name; EDGE_MODEL is the same knob for
+	// standalone use outside eval-containers (rule 3: still never parsed).
+	model  = envOr("EVAL_MODEL", os.Getenv("EDGE_MODEL"))
 	base   = strings.TrimSuffix(os.Getenv("OPENAI_API_BASE"), "/")
 	apiKey = os.Getenv("OPENAI_API_KEY")
 
