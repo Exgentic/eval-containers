@@ -13,3 +13,21 @@
 model_slug() {
   printf '%s' "$1" | sed 's#/#--#g; s#[^A-Za-z0-9._-][^A-Za-z0-9._-]*#-#g; s#^-*##; s#-*$##'
 }
+
+# The eval Job's name, read out of a rendered manifest. The name is the CHART's
+# (eval.jobName): it lowercases, collapses every RFC-1123-illegal run to `-`, and
+# past 63 characters truncates and appends a hash of the raw name. A wrapper that
+# composed its own copy could not follow that rule without reimplementing sha1 in
+# bash, so it reads the answer instead.
+#
+# The eval Job is the one carrying an `agent` label — a preset may ship Jobs of
+# its own (tau-bench has a harness) and those carry only `benchmark`, so matching
+# on `kind: Job` would pick whichever document came first.
+job_name_from_render() {
+  printf '%s\n' "$1" | awk '
+    /^# Source:/   { name=""; agent=0 }
+    /^  name: /    { if (!name) name=$2 }
+    /^    agent: / { agent=1 }
+    /^spec:/       { if (agent && name) { print name; exit } }
+  '
+}
