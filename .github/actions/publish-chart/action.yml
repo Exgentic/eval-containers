@@ -41,9 +41,12 @@ runs:
             exit 1
           fi
         fi
+        # An OCI repository name is lowercase, and github.repository_owner is not
+        # (`Exgentic`) — pushing it verbatim fails with "invalid reference".
+        reg=$(printf '%s' "${{ inputs.registry }}" | tr '[:upper:]' '[:lower:]')
         echo "${{ inputs.token }}" | helm registry login ghcr.io -u "${{ inputs.actor }}" --password-stdin
         helm package containers/benchmarks/_chart --version "$ver" --app-version "$ver" -d /tmp/chart
-        helm push "/tmp/chart/eval-${ver}.tgz" "oci://${{ inputs.registry }}/charts"
+        helm push "/tmp/chart/eval-${ver}.tgz" "oci://${reg}/charts"
         # delivery/RULES.md:17 — a zero exit is not evidence; read the artifact back.
-        helm show chart "oci://${{ inputs.registry }}/charts/eval" --version "$ver" >/dev/null
+        helm show chart "oci://${reg}/charts/eval" --version "$ver" >/dev/null
         echo "published charts/eval:$ver"
