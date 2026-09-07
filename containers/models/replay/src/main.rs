@@ -339,7 +339,23 @@ fn emit_chat(t: &Turn) -> Value {
         "content": if t.text.is_empty() { Value::Null } else { json!(t.text) },
     });
     if !t.tool_calls.is_empty() {
-        msg["tool_calls"] = json!(t.tool_calls);
+        // Recorded tool_calls may carry the flat bifrost/OTel shape
+        // (`{id, type, name, args}`) rather than Chat's nested
+        // `function.{name, arguments}` — normalize through tool_parts()
+        // like every other emitter does, else a Chat client's schema
+        // validation rejects the flat shape outright.
+        let calls: Vec<Value> = t
+            .tool_calls
+            .iter()
+            .map(|tc| {
+                let (id, name, args) = tool_parts(tc, "call_");
+                json!({
+                    "id": id, "type": "function",
+                    "function": { "name": name, "arguments": args },
+                })
+            })
+            .collect();
+        msg["tool_calls"] = json!(calls);
     }
     json!({
         "id": gen_id("chatcmpl-"),
@@ -1062,5 +1078,28 @@ mod tests {
             gem["candidates"][0]["content"]["parts"][1]["functionCall"]["name"],
             "read"
         );
+    }
+
+    #[test]
+    fn emit_chat_normalizes_flat_bifrost_tool_calls() {
+        // Real gateway captures record tool_calls in the flat bifrost/OTel
+        // shape (`{id, type, name, args}`), not Chat's nested
+        // `function.{name, arguments}` — a Chat client must still see the
+        // nested shape (regression for the emit_chat/tool_parts bug).
+        let t = Turn {
+            text: String::new(),
+            tool_calls: vec![json!({
+                "id": "call_1", "type": "function",
+                "name": "read", "args": "{\"p\":\"x\"}",
+            })],
+            finish_reason: "tool_calls".into(),
+            model: "m".into(),
+        };
+        let chat = emit_chat(&t);
+        let tc = &chat["choices"][0]["message"]["tool_calls"][0];
+        assert_eq!(tc["id"], "call_1");
+        assert_eq!(tc["type"], "function");
+        assert_eq!(tc["function"]["name"], "read");
+        assert_eq!(tc["function"]["arguments"], "{\"p\":\"x\"}");
     }
 }

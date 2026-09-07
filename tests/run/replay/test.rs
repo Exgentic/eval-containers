@@ -658,6 +658,13 @@ replay_test!(
     "19"
 );
 
+replay_test!(
+    replay_automationbench_0_claude_code,
+    "automationbench",
+    "claude-code",
+    "0"
+);
+
 replay_test!(replay_bbh_3906_copilot_cli, "bbh", "copilot-cli", "3906");
 
 replay_test!(replay_bbh_5208_crush, "bbh", "crush", "5208");
