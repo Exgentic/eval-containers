@@ -1,8 +1,10 @@
 # edge
 
-The reverse proxy every model call in an eval crosses: it pins the outbound
-model to `EVAL_MODEL`, forwards the call on the wire it arrived on, and
-records the exchange verbatim to `calls.jsonl`. Full spec:
+A tool to record every LLM call your code makes — request, response, and
+timing, verbatim — and optionally pin them all to one model, by running as a
+transparent proxy in front of your model provider. It forwards each call on
+whichever wire (OpenAI/Anthropic/Gemini-shaped) it arrived on and appends
+every exchange to `calls.jsonl`. Full spec:
 [`.agents/edge/RULES.md`](../../../.agents/edge/RULES.md).
 
 Stdlib-only Go — a single static binary with no runtime dependency — so it
