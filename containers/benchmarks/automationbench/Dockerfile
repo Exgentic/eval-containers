@@ -38,6 +38,7 @@ LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
 LABEL eval.benchmark.url="https://github.com/zapier/AutomationBench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2604.18934"
 
 # ── apt: git + jq (network-resilient, mirrors benchmark-base-external) ────
 RUN set -e; ok=0; \
