@@ -34,6 +34,9 @@
 #                                         # Platforms (e.g. linux/amd64,linux/arm64)
 #                                         # make one read of a merged :TAG answer
 #                                         # completeness too (`partial`)
+#   fleet-status.sh exists <ref>          # presence only: exit 0 = the registry
+#                                         # has it, 1 = never heard of it,
+#                                         # 2 = the reads never cleared
 #   fleet-status.sh compose [tag]         # per-benchmark eval-<b> artifacts:
 #                                         # published layer digest vs the local
 #                                         # flatten (+ `declined` for a stack
@@ -134,6 +137,18 @@ if [ "${1:-}" = "check" ]; then
   printf '%s\n' "$out"
   [ "$(cut -f2 <<< "$out")" = "fresh" ]
   exit
+fi
+
+if [ "${1:-}" = "exists" ]; then
+  # Presence alone — no hash, no platform set: the catalog (fleet-catalog.sh)
+  # asks only whether an image was ever published, which is the one fact the
+  # repository cannot answer about itself. Exit 1 means the registry says it has
+  # never heard of the ref; exit 2 means the reads never cleared, so a blip
+  # cannot read as "unpublished" and silently shrink the catalog.
+  { [ $# -eq 2 ] && [ -n "$2" ]; } \
+    || { echo "fleet-status: usage: fleet-status.sh exists <ref>" >&2; exit 2; }
+  inspect_retry "$2" --raw >/dev/null || exit $?
+  exit 0
 fi
 
 # ── compose artifacts: eval-<benchmark> ────────────────────────────────────

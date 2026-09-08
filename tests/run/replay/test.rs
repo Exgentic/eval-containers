@@ -851,6 +851,8 @@ replay_test!(replay_gsm8k_527_plandex, "gsm8k", "plandex", "527");
 
 replay_test!(replay_gsm8k_790_qwen_code, "gsm8k", "qwen-code", "790");
 
+replay_test!(replay_handbook_0_openhands, "handbook", "openhands", "0");
+
 replay_test!(
     replay_harmbench_0_claude_code,
     "harmbench",

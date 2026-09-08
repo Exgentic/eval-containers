@@ -215,6 +215,7 @@ jobs:
       leaves: ${{ steps.l.outputs.leaves }}        # bake targets: benchmarks(shared)+agents+models
       leaf_shards: ${{ steps.l.outputs.leaf_shards }} # [{idx}] — leaves chunked ≤128 shards × 2 arches
       benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
+      agents: ${{ steps.l.outputs.agents }}         # the combo lineup this run used ('[]' = no combos)
       combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256 (shared combos only, task=="")
       pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench/deepswe), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
@@ -404,7 +405,7 @@ jobs:
           # ── combos: shared (task="") + per-task, all as {b,a,task,kind} ──
           # Both build via one downstream bake-eval call (per-task just points at the
           # per-task base + a task-suffixed name), so they share one shape + matrix.
-          combos='[]'
+          combos='[]'; agents='[]'
           if [ -n "$COMBO_AGENTS" ]; then
             read -ra _ag <<< "$COMBO_AGENTS"
             agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')
@@ -474,8 +475,11 @@ jobs:
           # as arguments exceeds ARG_MAX — jq never starts and the step exits 126
           # ("Argument list too long"). printf is a shell builtin, so nothing is
           # exec'd and there is no limit. Each value is already compact JSON.
-          printf '{"leaf":%s,"combo":%s,"pertask_combo":%s,"pertask":%s}' \
-            "$leaf_shards" "$combo_shards" "$pertask_combo_shards" "$pertask_shards" > shards.json
+          # pertask_all is the UNPRUNED list — the catalog job describes the whole
+          # channel, not the delta this run happened to build.
+          printf '{"leaf":%s,"combo":%s,"pertask_combo":%s,"pertask":%s,"pertask_all":%s}' \
+            "$leaf_shards" "$combo_shards" "$pertask_combo_shards" "$pertask_shards" \
+            "$pertask_all" > shards.json
           idx() { jq -c '[.[] | {idx}]' <<< "$1"; }
           # combos build per shard via buildx --platform (one job/shard) → ≤256;
           # per-task and pertask-combo fan out per shard × 2 arches → matrix must fit 256.
@@ -496,6 +500,7 @@ jobs:
           {
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
+            echo "agents=$agents"
             echo "leaf_shards=$(idx "$leaf_shards")"
             echo "combo_shards=$(idx "$combo_shards")"
             echo "pertask_combo_shards=$(idx "$pertask_combo_shards")"
@@ -1154,6 +1159,61 @@ jobs:
           registry: ${{ env.REGISTRY }}
           token: ${{ secrets.GITHUB_TOKEN }}
           actor: ${{ github.actor }}
+
+  # ── the catalog: what the `latest` channel offers, so nobody has to scan ──
+  # No consumer can derive the offer from this tree: a benchmark whose base
+  # fails to build publishes nothing, and a per-task family publishes no shared
+  # `evals/<b>--<agent>` image at all. So consumers scanned GHCR themselves —
+  # thousands of probes per refresh against a shared rate budget, which starved
+  # CI. The publisher already knows the answer; this writes it down, once, at
+  # the end of every run that published anything.
+  catalog:
+    needs: [enumerate, merge, compose, combos, per-task, combos-pertask, merge-pertask-combos, release-gate]
+    # release-gate is skipped on a main push and required on a tag (it promotes
+    # :latest, which is what the catalog describes), so this waits on it with
+    # always() rather than depending on it having run.
+    # Not gated on `dirty`: the catalog describes the registry, not this run, so a
+    # push that builds nothing still republishes it — which is what makes it
+    # self-healing after a run that failed here, and what publishes it the first
+    # time, from the merge of this file. A partial run is excluded instead:
+    # `only` restricts every matrix to a handful of targets and
+    # `include_per_task: false` enumerates no task ids, so either would drop
+    # families the registry still has.
+    if: >-
+      always() && !inputs.dry_run && needs.enumerate.result == 'success' &&
+      needs.enumerate.outputs.agents != '[]' &&
+      inputs.only == '' && (github.event_name != 'workflow_dispatch' || inputs.include_per_task)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oras-project/setup-oras@v1
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
+      - name: Sweep the channel -> evals/catalog:latest
+        env:
+          CATALOG_AGENTS: ${{ join(fromJson(needs.enumerate.outputs.agents), ' ') }}
+        run: |
+          jq -c '.pertask_all' shards.json > pertask.json
+          bash containers/scripts/fleet-catalog.sh pertask.json > catalog.json
+          # An empty catalog reads as "the fleet publishes nothing" and would take
+          # every consumer's offer down with it. A sweep that answered nothing is
+          # a broken sweep, not an empty fleet (rule 14: fail dirty).
+          jq -e '.families | length > 0' catalog.json > /dev/null
+          oras push "${REGISTRY}/evals/catalog:latest" \
+            --artifact-type application/vnd.exgentic.catalog.v1+json \
+            catalog.json:application/json
+          # Rule 17: a zero exit is not evidence — read the artifact back.
+          d=$(mktemp -d); oras pull "${REGISTRY}/evals/catalog:latest" --output "$d"
+          cmp catalog.json "$d/catalog.json"
+          jq -r '"catalog: \(.families | length) families x \(.agents | length) agents"' \
+            catalog.json >> "$GITHUB_STEP_SUMMARY"
 
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:
