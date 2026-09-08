@@ -54,9 +54,15 @@ jobs:
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy
+          targets: x86_64-pc-windows-msvc
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+
+      # The release (dist-workspace.toml) ships a Windows binary that nothing
+      # else here compiles; v0.1.0 died on it. Type-check only — no linker.
+      - name: cargo check (windows release target)
+        run: cargo check -p eval-containers --target x86_64-pc-windows-msvc
 
       # Lint exactly the daemon-free surface this gate builds: the shipping CLI
       # crate (lib + bins + cli_conformance) and the static-stage gate crate
