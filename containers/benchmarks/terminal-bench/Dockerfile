@@ -49,7 +49,23 @@ LABEL eval.benchmark.timeout="${EVAL_AGENT_TIMEOUT}"
 # without this the agent cannot write its workspace and every build/write task
 # loops on EACCES until timeout. Numeric 1002:0 — the named user is added later
 # in the eval merge. Tests stay root-only 700 (below), so grading is unaffected.
-RUN chown -R 1002:0 /app && chmod -R g+w /app
+# `/app` is the workdir for 86 of the 89 tasks, but not all. Grant the agent its
+# workspace wherever the task env actually put it -- the image's own WORKDIR --
+# excluding `/`, which would hand it the whole filesystem. The three exceptions:
+# prove-plus-comm is `/workspace` and has NO /app, so the old hardcode failed its
+# build outright ("chown: cannot access '/app'"); fix-git (/app/personal-site) and
+# sanitize-git-repo (/app/dclm) nest deeper, and chowning /app for those keeps
+# today's behaviour exactly, since -R already covers the subdir. If neither the
+# workdir nor /app exists the build fails HERE, rather than shipping an image whose
+# agent has no writable workspace. /.eval-workdir carries the resolved path to the
+# grader and to the oracle gold (solution.sh), the two other readers of it.
+RUN set -eu; \
+    d="$(pwd)"; \
+    [ "$d" != / ] && [ -d "$d" ] || d=/app; \
+    [ -d "$d" ] || { echo "no agent workspace: PWD is / and /app is absent" >&2; exit 1; }; \
+    case "$d" in /app/*) w=/app ;; *) w="$d" ;; esac; \
+    chown -R 1002:0 "$w"; chmod -R g+w "$w"; \
+    printf '%s' "$d" > /.eval-workdir
 
 # Same rule-13/17 tension as /app, one layer up. Some tasks (e.g. build-cython-ext)
 # instruct the agent to install into the *system global* Python environment, which
@@ -73,10 +89,15 @@ COPY tests /tests
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 # Grader: run the upstream tests/test.sh, which writes /logs/verifier/reward.txt.
+# /.eval-workdir holds the task env's own WORKDIR, resolved above (86/89 use /app;
+# prove-plus-comm uses /workspace). A hardcoded `cd /app` silently no-ops for the
+# others, running the tests from / instead of the task dir, so a correct solution
+# could still score 0. Tolerant of a failed cd, as the hardcode was: the grader
+# must always reach the reward write below.
 RUN printf '%s\n' \
   '#!/bin/bash' \
   'mkdir -p /logs/verifier' \
-  'cd /app 2>/dev/null || true' \
+  'cd "$(cat /.eval-workdir)" || true' \
   'bash /tests/test.sh > /logs/verifier/test.log 2>&1 || true' \
   '[ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt' \
   > /grade.sh && chmod +x /grade.sh
