@@ -62,6 +62,14 @@ var (
 	recZstd *zstd.Encoder
 	recPath string // what recFile was opened for; reopen if OUT is repointed
 	out     = envOr("OUT", "/output/model/calls.jsonl")
+	// The running total (rules 10a, 10b). Beside the record, and deliberately
+	// not inside it: a reader that wants the number should not have to read the
+	// records, which is the whole point — each one repeats the conversation, so
+	// summing a task's usage from them costs the trajectory over again.
+	// Only the override is fixed here; the default follows OUT at write time,
+	// the way recPath does, so repointing OUT moves both together.
+	usageOverride = os.Getenv("USAGE_OUT")
+	totals        usage
 	// 4100, not 4000: a gateway owns 4000, and in k8s it shares this pod's
 	// network namespace (edge rule 13).
 	listen = envOr("LISTEN", ":4100")
@@ -182,6 +190,142 @@ func clip(b []byte) (string, bool) {
 	return string(b), false
 }
 
+// The running total beside the record (rule 10a). `Unread` is what rule 10b is
+// for: a response whose token counts the edge cannot find is counted here, not
+// folded into the totals as a zero — a reader can then tell a task that spent
+// nothing from one whose usage this edge did not understand.
+type usage struct {
+	Calls  int   `json:"calls"`
+	Input  int64 `json:"input"`
+	Output int64 `json:"output"`
+	Unread int   `json:"unread"`
+}
+
+// Where a response reports what a call cost. Providers agree on the shape — an
+// object of counts — and disagree on every name in it, so the names are listed
+// and the object is found by walking rather than by wire. That keeps rule 4's
+// promise intact: the edge still does not need to know which wire it is on.
+var (
+	usageObjects = []string{"usage", "usageMetadata"}
+	inputNames   = []string{"prompt_tokens", "input_tokens", "promptTokenCount"}
+	outputNames  = []string{"completion_tokens", "output_tokens", "candidatesTokenCount"}
+)
+
+// callUsage reads one response's token counts, and reports whether it found any.
+//
+// The maximum across the body, not the sum, because a streamed response reports
+// a *running* total: Anthropic sends input once in `message_start` and a growing
+// output in each `message_delta`, and OpenAI sends the finished figure in a
+// final chunk. Maximum is the one rule that reads all of those correctly, and
+// re-reading a non-streamed body under it changes nothing.
+func callUsage(body string) (in, out int64, found bool) {
+	for _, frame := range jsonFrames(body) {
+		var v any
+		if json.Unmarshal([]byte(frame), &v) != nil {
+			continue
+		}
+		i, o, f := findUsage(v)
+		in, out, found = max64(in, i), max64(out, o), found || f
+	}
+	return in, out, found
+}
+
+// findUsage looks for the counts wherever a response nests them. Anthropic
+// reports the first ones under `message` rather than at the top, so a top-level
+// lookup reads a streamed call as having no input at all; walking costs nothing
+// on a body already parsed and does not have to be revisited per wire.
+func findUsage(v any) (in, out int64, found bool) {
+	switch t := v.(type) {
+	case map[string]any:
+		for _, name := range usageObjects {
+			if u, ok := t[name].(map[string]any); ok {
+				if n, ok := number(u, inputNames); ok {
+					in, found = max64(in, n), true
+				}
+				if n, ok := number(u, outputNames); ok {
+					out, found = max64(out, n), true
+				}
+			}
+		}
+		for _, child := range t {
+			i, o, f := findUsage(child)
+			in, out, found = max64(in, i), max64(out, o), found || f
+		}
+	case []any:
+		for _, child := range t {
+			i, o, f := findUsage(child)
+			in, out, found = max64(in, i), max64(out, o), found || f
+		}
+	}
+	return in, out, found
+}
+
+// jsonFrames is every JSON document in a response body: the body itself, or —
+// when it is an event stream — each `data:` payload. Reported without deciding
+// which it is, since a wire is not what tells them apart.
+func jsonFrames(body string) []string {
+	if !strings.Contains(body, "data:") {
+		return []string{body}
+	}
+	var frames []string
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		if payload := strings.TrimSpace(strings.TrimPrefix(line, "data:")); payload != "" && payload != "[DONE]" {
+			frames = append(frames, payload)
+		}
+	}
+	return frames
+}
+
+func number(m map[string]any, names []string) (int64, bool) {
+	for _, n := range names {
+		if v, ok := m[n].(float64); ok {
+			return int64(v), true
+		}
+	}
+	return 0, false
+}
+
+func max64(a, b int64) int64 {
+	if b > a {
+		return b
+	}
+	return a
+}
+
+// writeTotals rewrites the total. Whole and renamed into place, because a reader
+// polls this file while calls are still landing and half a JSON object is not a
+// smaller answer, it is an unreadable one. Failure is logged and dropped: the
+// total is derived from the record, so losing it costs the shortcut, never the
+// evidence.
+// usagePath is where the total goes: USAGE_OUT when set, else beside whatever
+// OUT currently names.
+func usagePath() string {
+	if usageOverride != "" {
+		return usageOverride
+	}
+	return filepath.Join(filepath.Dir(out), "usage.json")
+}
+
+func writeTotals() {
+	path := usagePath()
+	tmp := path + ".tmp"
+	b, err := json.Marshal(totals)
+	if err == nil {
+		err = os.WriteFile(tmp, append(b, '\n'), 0o644)
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		log.Println("usage:", err)
+		os.Remove(tmp)
+	}
+}
+
 func record(c call) {
 	mu.Lock()
 	defer mu.Unlock()
@@ -239,6 +383,17 @@ func record(c call) {
 			log.Println("record:", err)
 		}
 	}
+	// Under the same lock as the record it summarises, so the total can never
+	// describe a set of calls different from the one on disk.
+	in, out, found := callUsage(c.Response)
+	totals.Calls++
+	if found {
+		totals.Input += in
+		totals.Output += out
+	} else {
+		totals.Unread++
+	}
+	writeTotals()
 }
 
 func handle(w http.ResponseWriter, r *http.Request) {
@@ -427,6 +582,6 @@ func main() {
 		log.Fatal(err)
 	}
 	http.HandleFunc("/", handle)
-	log.Printf("edge recording to %s, upstream %s", out, base)
+	log.Printf("edge recording to %s (totals in %s), upstream %s", out, usagePath(), base)
 	log.Fatal(http.ListenAndServe(listen, nil))
 }

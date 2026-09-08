@@ -697,3 +697,170 @@ func TestZstdRecordIsReadableWhileStillBeingWritten(t *testing.T) {
 		t.Fatalf("recovered %d of 3 records from an unterminated stream", n)
 	}
 }
+
+// ── the running total (rules 10a, 10b) ──────────────────────────────────────
+
+func TestCallUsageReadsEveryWireItIsSent(t *testing.T) {
+	for _, c := range []struct {
+		name, body string
+		in, out    int64
+	}{
+		{"openai chat", `{"usage":{"prompt_tokens":11,"completion_tokens":3}}`, 11, 3},
+		{"openai responses", `{"usage":{"input_tokens":11,"output_tokens":3}}`, 11, 3},
+		{"anthropic", `{"usage":{"input_tokens":11,"output_tokens":3}}`, 11, 3},
+		{"gemini", `{"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":3}}`, 11, 3},
+	} {
+		in, out, found := callUsage(c.body)
+		if !found || in != c.in || out != c.out {
+			t.Errorf("%s: got (%d, %d, %v), want (%d, %d, true)",
+				c.name, in, out, found, c.in, c.out)
+		}
+	}
+}
+
+func TestCallUsageTakesTheRunningTotalNotTheSum(t *testing.T) {
+	// Anthropic streams input once and a GROWING output; summing the frames
+	// would report 1+2+7 = 10 output tokens for a call that produced 7.
+	body := strings.Join([]string{
+		`data: {"type":"message_start","message":{"usage":{"input_tokens":11,"output_tokens":1}}}`,
+		`data: {"type":"message_delta","usage":{"output_tokens":2}}`,
+		`data: {"type":"message_delta","usage":{"output_tokens":7}}`,
+		`data: [DONE]`,
+	}, "\n")
+	in, out, found := callUsage(body)
+	if !found || in != 11 || out != 7 {
+		t.Errorf("got (%d, %d, %v), want (11, 7, true)", in, out, found)
+	}
+}
+
+func TestCallUsageReadsAFinalChunkStream(t *testing.T) {
+	// OpenAI with include_usage: every chunk but the last reports none.
+	body := strings.Join([]string{
+		`data: {"choices":[{"delta":{"content":"hi"}}]}`,
+		`data: {"choices":[],"usage":{"prompt_tokens":11,"completion_tokens":3}}`,
+		`data: [DONE]`,
+	}, "\n")
+	if in, out, found := callUsage(body); !found || in != 11 || out != 3 {
+		t.Errorf("got (%d, %d, %v), want (11, 3, true)", in, out, found)
+	}
+}
+
+func TestCallUsageReportsWhatItCannotRead(t *testing.T) {
+	// Rule 10b: none of these may pass as a call that spent nothing.
+	for _, body := range []string{
+		``,
+		`not json`,
+		`{"choices":[{"message":{"content":"hi"}}]}`,     // no usage object
+		`{"usage":{"total_tokens":14}}`,                  // only a name we don't read
+		`data: {"choices":[{"delta":{"content":"hi"}}]}`, // a stream cut short
+	} {
+		if _, _, found := callUsage(body); found {
+			t.Errorf("callUsage(%q) claimed to have read usage", body)
+		}
+	}
+}
+
+func TestTotalsAccumulateBesideTheRecord(t *testing.T) {
+	dir := t.TempDir()
+	resetRecorder(t, filepath.Join(dir, "calls.jsonl"))
+
+	body := `{"usage":{"input_tokens":10,"output_tokens":2}}`
+	for i := 0; i < 3; i++ {
+		record(call{Path: "/v1/messages", Response: body})
+	}
+	record(call{Path: "/v1/messages", Response: `{"choices":[]}`}) // usage unread
+
+	got := readTotals(t, filepath.Join(dir, "usage.json"))
+	want := usage{Calls: 4, Input: 30, Output: 6, Unread: 1}
+	if got != want {
+		t.Errorf("totals = %+v, want %+v", got, want)
+	}
+}
+
+func TestTotalsLandBesideACompressedRecord(t *testing.T) {
+	// The fleet sets OUT=/output/model/calls.jsonl.zst, and the total is the
+	// reason it no longer has to be decompressed to be counted.
+	dir := t.TempDir()
+	resetRecorder(t, filepath.Join(dir, "calls.jsonl.zst"))
+
+	record(call{Path: "/v1/messages", Response: `{"usage":{"input_tokens":5,"output_tokens":1}}`})
+
+	got := readTotals(t, filepath.Join(dir, "usage.json"))
+	if want := (usage{Calls: 1, Input: 5, Output: 1}); got != want {
+		t.Errorf("totals = %+v, want %+v", got, want)
+	}
+}
+
+func TestTotalsAreOnlyEverWholeJSON(t *testing.T) {
+	// A reader polls this file while calls are still landing; half an object is
+	// not a smaller answer, it is an unreadable one.
+	dir := t.TempDir()
+	resetRecorder(t, filepath.Join(dir, "calls.jsonl"))
+	path := filepath.Join(dir, "usage.json")
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			record(call{Path: "/v1/messages", Response: `{"usage":{"input_tokens":1,"output_tokens":1}}`})
+		}
+	}()
+	for reads := 0; reads < 200; reads++ {
+		if b, err := os.ReadFile(path); err == nil && len(b) > 0 {
+			var u usage
+			if err := json.Unmarshal(b, &u); err != nil {
+				t.Fatalf("a reader saw a partial total: %q", b)
+			}
+		}
+	}
+	<-done
+	if got := readTotals(t, path); got.Calls != 200 {
+		t.Errorf("calls = %d, want 200", got.Calls)
+	}
+}
+
+// resetRecorder points the recorder at a fresh file and clears the state a
+// previous test left in the package-level recorder.
+func resetRecorder(t *testing.T, path string) {
+	t.Helper()
+	mu.Lock()
+	if recZstd != nil {
+		recZstd.Close()
+		recZstd = nil
+	}
+	if recFile != nil {
+		recFile.Close()
+		recFile = nil
+	}
+	recPath = ""
+	prevOut, prevOverride, prevTotals := out, usageOverride, totals
+	out, usageOverride, totals = path, "", usage{}
+	mu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if recZstd != nil {
+			recZstd.Close()
+			recZstd = nil
+		}
+		if recFile != nil {
+			recFile.Close()
+			recFile = nil
+		}
+		recPath = ""
+		out, usageOverride, totals = prevOut, prevOverride, prevTotals
+	})
+}
+
+func readTotals(t *testing.T, path string) usage {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("no total beside the record: %v", err)
+	}
+	var u usage
+	if err := json.Unmarshal(b, &u); err != nil {
+		t.Fatalf("total is not JSON: %v (%q)", err, b)
+	}
+	return u
+}
