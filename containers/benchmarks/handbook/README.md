@@ -1,6 +1,6 @@
 # HANDBOOK.md
 
-**Status:** unreleased — files authored; build + end-to-end replay pending a Docker host (no `eval.benchmark.released` label yet; see [Release readiness](#release-readiness)).
+**Status:** released — fixture `tests/run/replay/fixtures/handbook-0-openhands.traces.jsonl` from a real openhands+claude-opus-4-8 run on task 0 (accounts-payable), 21/25 rubrics passed, reward 0.9508.
 
 **Paper:** [HANDBOOK.md](https://arxiv.org/abs/2607.25398) (Surge AI, 2026)
 **Upstream:** [surge-ai/handbook](https://github.com/surge-ai/handbook) @ `86505865`
@@ -74,12 +74,9 @@ The eval-containers generic runner bounds the agent by `EVAL_TIMEOUT` wall-clock
 
 ## Release readiness
 
-Blocked on two items (neither blocks running the benchmark):
+Released per rule 21a: the replay fixture above is recorded and its `replay_test!` passes. One item remains, and does not block release:
 
-1. **Replay fixture (rule 21a).** Needs one recorded end-to-end run (`tests/run/replay/fixtures/handbook-<task>-<agent>.traces.jsonl`) with `result.json` produced. Requires a Docker host — not available where these files were authored.
-2. **Oracle `solution.sh` (rule 20a).** `add-benchmark` wants an oracle that derives gold = 1.0; HANDBOOK ships no per-task gold solution. Options: stay unreleased (still fully runnable) or build a replay-based oracle from a known-good trajectory. Needs a call.
-
-Once a fixture lands and the replay sweep passes, add `LABEL eval.benchmark.released="true"` to the Dockerfile.
+1. **Oracle `solution.sh` (rule 20a).** `add-benchmark` wants an oracle that derives gold = 1.0; HANDBOOK ships no per-task gold solution. Options: build a replay-based oracle from a known-good trajectory, or leave unaddressed. Needs a call.
 
 ## Why `EVAL_AGENT` is meaningful here
 
