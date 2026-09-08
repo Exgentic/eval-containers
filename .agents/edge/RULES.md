@@ -21,7 +21,8 @@ interpreted as described in BCP 14, RFC 2119 and RFC 8174.
 The *edge* is the component every model call crosses on its way from an agent to
 an upstream provider. A *call* is one request-response exchange. The *inbound
 wire* is the protocol an agent used to reach the edge. A *record* is the edge's
-written account of one call.
+written account of one call. A *total* is the edge's running sum, over the calls
+it has recorded, of the token counts their responses report.
 
 ## Principles
 
@@ -56,6 +57,11 @@ written account of one call.
    credential.
 
 10. **Capture is unconditional.** Recording **MUST NOT** be disabled by default.
+
+10a. **Running total.** The edge **MUST** maintain a total beside the record.
+
+10b. **Unread usage is not zero.** The edge **MUST** count a call whose token
+     counts it cannot read as unread in the total.
 
 ### Transport
 
@@ -99,6 +105,7 @@ written account of one call.
 
 | Date | Change |
 |------|--------|
+| 2026-09-08 | Added 10a (running total) and 10b (unread usage is not zero), with *total* in Terminology. A reader that wants a task's token usage had to read the records, and a record is the whole conversation repeated once per call — the dashboard paid 917s of saturated CPU deriving it for one sweep of the history (Exgentic/dashboard#109). The edge already holds each response when the call completes; every other reader has to decompress the file to get back to it. Additive: 6-9 are unchanged, the record stays verbatim and whole, and a run recorded before this has no total, which readers already handle. 10b exists because a usage shape the edge cannot read would otherwise be indistinguishable from a call that used no tokens (#500). |
 | 2026-08-18 | Scoped to what the component actually is: an addition in front of the gateway, not a replacement for it. Capture rules (6-10) stand on their own; gateways keep translation, routing and OTel emission, and only model authority moves. An earlier draft superseded those too, which turned a small fix into a fleet-wide migration. |
 | 2026-08-12 | Pre-merge review, while Draft. Rule 5 now requires refusing to start rather than answering each call with an error, matching how the gateway `start` scripts reject bad env — and what the implementation does. Rule 13 binds to gateways 5 and 7 instead of restating the namespace and port, which mirrored a rule that already has a home (meta 4). |
 | 2026-08-11 | Initial version. Lifts model authority out of the gateway (superseding `gateways/RULES.md` 2b), makes call capture a property of one component rather than a per-gateway obligation (superseding 10 and 11 there), and removes the need for the path-rewriting shim (6). Translation and its declaration (8, 9) stay with gateways, which remain OPTIONAL and are needed only for cross-wire work. Status is Draft until the component lands and the verification suite covers it. |
