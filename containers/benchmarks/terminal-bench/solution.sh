@@ -13,7 +13,10 @@ ref="${TBENCH_REF:?TBENCH_REF not set}"
 task="${TBENCH_TASK:-${EVAL_TASK_ID:?TBENCH_TASK/EVAL_TASK_ID not set}}"
 url="https://raw.githubusercontent.com/harbor-framework/terminal-bench-2-1/${ref}/tasks/${task}/solution/solve.sh"
 
-cd /app
+# The task env's own WORKDIR, resolved at build time into /.eval-workdir (see
+# Dockerfile) — the same directory the grader cds to. Hardcoding /app here would
+# abort the gold on a task rooted elsewhere (prove-plus-comm: /workspace).
+cd "$(cat /.eval-workdir)"
 if command -v curl >/dev/null 2>&1; then curl -fsSL "$url"
 elif command -v wget >/dev/null 2>&1; then wget -qO- "$url"
 else python3 -c 'import sys,urllib.request; sys.stdout.write(urllib.request.urlopen(sys.argv[1]).read().decode())' "$url"
