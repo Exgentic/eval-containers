@@ -1,0 +1,26 @@
+# AutomationBench — model-only, native harness. No bespoke sidecars: the
+# simulated SaaS tools are in-process, and there is no user simulator, so unlike
+# tau-bench this needs no bridge / second gateway / extra Deployments.
+#
+# The default runnerArgs run /entrypoint.sh /usr/local/bin/run (the scrubbed
+# three-phase pipeline, which withholds the task id from the agent). This
+# benchmark instead runs its own harness in the runner (which HAS the task id):
+# materialize the task, run auto-bench (writes /logs/verifier/reward.txt), then
+# write result.json via the shared writer.
+timeout: '1800'
+# Each step runs regardless of the previous one's exit status (run's
+# `process_completed` semantics): write-result always grades whatever was
+# produced, fail-closed to 0. run_automationbench.py resolves the task from
+# /tasks/all.jsonl directly, so it does not depend on the materializer.
+runnerArgs: >-
+  /eval-materialize-task || true;
+  python3 /app/run_automationbench.py || true;
+  /usr/local/bin/write-result;
+  /usr/local/bin/reap-sidecars
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: '2'
+    memory: 4Gi

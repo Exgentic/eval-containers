@@ -27,6 +27,7 @@ ENV HANDBOOK_REPO=https://github.com/surge-ai/handbook.git
 ENV WORKDIR=/workdir
 
 LABEL eval.type="benchmark"
+LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.name="handbook"
 LABEL eval.benchmark.description="HANDBOOK.md - long-context agentic instruction following in a fake company over MCP, deterministically verified"
 LABEL eval.benchmark.tasks="65"

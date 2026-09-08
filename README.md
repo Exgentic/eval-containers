@@ -1,6 +1,6 @@
 # Eval Containers
 
-AI agent evaluations in containers. 104 benchmarks, 25 agents — ready to deploy at massive scale on any cloud.
+AI agent evaluations in containers. 105 benchmarks, 25 agents — ready to deploy at massive scale on any cloud.
 
 *An evaluation is **one benchmark + one agent + one model** — three independent axes, swappable without touching each other.* Our goal is agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
 
@@ -56,7 +56,7 @@ Human-facing docs — concepts, guides, and reference — live in [`docs/`](docs
 
 - **Concepts** — [Overview](docs/concepts/overview.md) · [Triple-mode](docs/concepts/triple-mode.md) · [Isolation & gateways](docs/concepts/isolation-and-gateways.md) · [The Helm chart](docs/concepts/the-helm-chart.md)
 - **Guides** — [Install](docs/guides/install.md) · [Run your first eval](docs/guides/run-your-first-eval.md) · [Deploy on Kubernetes](docs/guides/deploy-on-kubernetes.md) / [OpenShift](docs/guides/deploy-on-openshift.md) · [Run tests locally](docs/guides/running-tests-locally.md) · Add a [benchmark](docs/guides/add-a-benchmark.md) / [agent](docs/guides/add-an-agent.md) / [model](docs/guides/add-a-model.md)
-- **Reference** — [CLI](docs/reference/cli.md) · [Environment variables](docs/reference/env-vars.md) · [Chart values](docs/reference/chart-values.md)
+- **Reference** — [CLI](docs/reference/cli.md) · [Environment variables](docs/reference/env-vars.md) · [Chart values](docs/reference/chart-values.md) · [edge, standalone](containers/core/edge/README.md)
 
 ## Contributing & governance
 

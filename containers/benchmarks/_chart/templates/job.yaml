@@ -171,6 +171,14 @@ spec:
             {{- end }}
             {{- with $v.runnerExtraEnv }}
             {{- toYaml . | nindent 12 }}
+            {{- /* …and the same list as one value the runner can record beside its
+                   results (core/runner/write-result → /output/agent/launch.json).
+                   A rerun has to replay what the original was given — a custom
+                   prompt above all, since a rerun without it is not comparable —
+                   and the Job that knows is garbage-collected within the hour.
+                   Recorded by the chart, so every launcher's runs carry it and
+                   not just the ones whose launcher remembered to write a note. */}}
+            - { name: EVAL_LAUNCH, value: {{ toJson . | quote }} }
             {{- end }}
           resources:
             {{- toYaml $v.resources | nindent 12 }}

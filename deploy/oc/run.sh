@@ -8,7 +8,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
 BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
-NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX=""
+NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" FLAT_IMAGES="true"
 DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
@@ -21,6 +21,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --registry) REGISTRY="$2"; shift 2;; --pvc) PVC="$2"; shift 2;;
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
   --run-id) RUN_ID="$2"; shift 2;;
+  --flat-images) FLAT_IMAGES="$2"; shift 2;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --test) TEST=true; shift;;
   --test-suffix) TEST=true; SUFFIX="$2"; shift 2;;
@@ -82,18 +83,7 @@ if ! $NO_BUILD; then
 fi
 $NO_RUN && { log "--no-run: built only, not submitting."; exit 0; }
 
-# ── 2. Resolve dataset size, then render + apply ─────────────────────────────
-# --dataset (whole dataset) with no explicit --dataset-size → read the count from
-# the benchmark image's eval.benchmark.tasks label (set at build time). The image
-# exists by now (built above), so this is the authoritative per-benchmark size —
-# a grid of differently-sized benchmarks self-sizes without a flag.
-if $DATASET_MODE && [[ -z "$DATASET" ]] && ! $DRY_RUN; then
-  DATASET=$(command oc get istag "$(flat "$BENCHMARK")$SUFFIX:latest" -n "$NAMESPACE" \
-    -o jsonpath='{.image.dockerImageMetadata.Config.Labels.eval\.benchmark\.tasks}' 2>/dev/null || true)
-  [[ -z "$DATASET" ]] && { echo "error: could not read eval.benchmark.tasks label for $BENCHMARK; pass --dataset-size" >&2; exit 1; }
-  log "dataset size for $BENCHMARK (from image label): $DATASET"
-fi
-
+# ── 2. Render + apply ────────────────────────────────────────────────────────
 # Two things decide where results land, and both matter. The model's SLUG — the
 # whole handle with `/` → `--`, the shape the dashboard writes and reads back —
 # keys the prefix, so two models behind one gateway cannot share a directory.
@@ -105,37 +95,67 @@ fi
 # results, and a sweep re-run on the whole previous sweep.
 MODEL_SLUG="$(model_slug "$MODEL")"
 SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
-if [[ -n "$DATASET" ]]; then JOB="${BENCHMARK}-${AGENT}${SUFFIX}"
-else JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"; fi
 
-# flatImages=true → the chart composes flat ImageStream refs for the OC registry.
+# flatImages=true → the chart composes flat ImageStream refs for the OC internal
+# registry (no slashes). A nested-path registry (ghcr/ICR/external) publishes
+# evals/<b>--<a> instead, and needs the chart's own default — --flat-images false.
 # Two independent axes (gateways/RULES.md): `model` = the upstream handle → the
 # gateway's EVAL_MODEL; `gatewayImage` = which proxy image serves it.
 SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "model=$MODEL" --set "gatewayImage=$GATEWAY"
-     --set "registry=$REGISTRY" --set "flatImages=true"
+     --set "registry=$REGISTRY" --set "flatImages=$FLAT_IMAGES"
      --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB"
      --set "runId=$RUN_ID")
 [[ -n "$SUFFIX"      ]] && SET+=(--set "imageSuffix=$SUFFIX" --set "nameSuffix=$SUFFIX")
+# --dataset with no --dataset-size: the chart sizes it from its own
+# dataset-sizes.json, so a dry run renders the real Indexed Job and a grid of
+# differently-sized benchmarks self-sizes without a flag.
+$DATASET_MODE && SET+=(--set "dataset=true")
 [[ -n "$DATASET"     ]] && SET+=(--set "datasetSize=$DATASET")
 [[ -n "$PARALLELISM" ]] && SET+=(--set "parallelism=$PARALLELISM")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
 [[ -n "$QUEUE"       ]] && SET+=(--set "queueName=$QUEUE")
 [[ -n "$SWEEP_ID"    ]] && SET+=(--set "sweepId=$SWEEP_ID")
 
-RENDER=$(helm template "$JOB" "$REPO_DIR/containers/benchmarks/_chart" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
-if $DRY_RUN; then echo "$RENDER"; exit 0; fi
+# The release name is not the Job name: helm validates it as a DNS-1123 label
+# capped at 53 chars BEFORE the chart renders, and the chart never reads
+# .Release.Name. Passing the task id here is what made `--task sympy__sympy-24066`
+# die on helm's own check — an upstream id carries whatever upstream called it.
+# Benchmark, agent and suffix are already safe and short, so the task stays out.
+RENDER=$(helm template "$BENCHMARK-$AGENT$SUFFIX" "$REPO_DIR/containers/benchmarks/_chart" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
+JOB=$(job_name_from_render "$RENDER")
+[[ -n "$JOB" ]] || { echo "error: no eval Job in the rendered manifest" >&2; exit 1; }
+# Say which Job this is before exiting, so a dry run shows what --rerun, --watch
+# and the status line would address.
+if $DRY_RUN; then log "job: $JOB"; echo "$RENDER"; exit 0; fi
 $RERUN && command oc delete job "$JOB" -n "$NAMESPACE" --ignore-not-found >/dev/null
-log "=== apply $JOB${DATASET:+ (Indexed, $DATASET examples${QUEUE:+, queue=$QUEUE})} ==="
+# --dataset with no size: the chart supplies it, so say so rather than a number.
+DESC=""; $DATASET_MODE && DESC=" (Indexed, ${DATASET:-chart-sized} examples${QUEUE:+, queue=$QUEUE})"
+log "=== apply $JOB$DESC ==="
 printf '%s\n' "$RENDER" | command oc apply -n "$NAMESPACE" -f -
 
 # ── 3. Watch (opt-in; with Kueue the Job may sit Suspended until admitted) ───
 $WATCH || { log "submitted. status: ./oc/status.sh --benchmark $BENCHMARK"; exit 0; }
-# Poll for a terminal condition. `oc wait` can't OR two conditions — passing both
-# --for=complete --for=failed waits for *failed* and hangs on a successful job.
-for _ in $(seq 1 1800); do
-  st=$(command oc get job "$JOB" -n "$NAMESPACE" -o jsonpath='{.status.conditions[*].type}' 2>/dev/null || true)
-  [[ "$st" == *Complete* || "$st" == *Failed* ]] && break
+# Poll until the Job reaches a terminal condition — no deadline: --watch means
+# "block until this job is done", however long that takes. With Kueue that includes
+# time spent Suspended awaiting admission, during which the counters stay empty.
+# Ctrl-C is the way out; the Job is server-side and keeps running regardless.
+# `oc wait` can't OR two conditions — passing both --for=complete --for=failed waits
+# for *failed* and hangs on a successful job, and prints nothing meanwhile.
+# Re-GETting each tick also rides out API-server disconnects, which a `wait`/`-w`
+# stream would not, and yields the progress counters from the same call.
+# succeeded/failed are absent until non-zero, so early ticks read `/90/`.
+# Split on an explicit `|`, not whitespace: the condition field is empty for the
+# whole run until the Job finishes, and `read` would collapse the leading space and
+# shift the counters into $st.
+st="" last=""
+while [[ "$st" != *Complete* && "$st" != *Failed* ]]; do
   sleep 2
+  raw=$(command oc get job "$JOB" -n "$NAMESPACE" -o \
+    jsonpath='{.status.conditions[*].type}|{.status.succeeded}/{.spec.completions}/{.status.failed}' \
+    2>/dev/null || echo "|")
+  st="${raw%%|*}" now="${raw#*|}"
+  [[ -n "$now" && "$now" != "$last" ]] && { log "progress: $now"; last="$now"; }
 done
 command oc get job "$JOB" -n "$NAMESPACE" -o jsonpath='Job {.metadata.name}: succeeded={.status.succeeded}/{.spec.completions} failed={.status.failed}{"\n"}'
+[[ "$st" == *Failed* ]] && exit 1 || exit 0

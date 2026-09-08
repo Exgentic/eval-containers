@@ -31,16 +31,25 @@ RUN=r1
 # shellcheck source=tests/e2e/_lib.sh
 . "$ROOT/tests/e2e/_lib.sh"
 require_tools
+# zstd decodes the edge's record below; a silent skip would quietly ungate it.
+command -v zstd >/dev/null || { echo "zstd not found"; exit 1; }
 
 step "build eval image (agents-smoke + mock)"
 build_stubs gateway otel
 docker build -q --load -t eval-e2e/mock:latest "$ROOT/containers/agents/mock" >/dev/null || exit 1
+# From source, not ghcr: the combination image defaults EDGE_IMAGE to the
+# PUBLISHED edge, so without this the run exercises whatever was last released
+# and no change under containers/core/edge is testable here at all. Its own
+# Dockerfile runs go vet and go test, so this builds and checks it in one step.
+docker build -q --load -t eval-e2e/edge:latest "$ROOT/containers/core/edge" >/dev/null ||
+  { echo "edge build failed"; exit 1; }
 # The combination image is what a launcher actually runs: benchmark base, the
 # agent's /run.sh installed onto it, the runner and grading scripts.
 docker build -q --load -t eval-e2e/eval:latest \
   -f "$ROOT/containers/core/combination.Dockerfile" \
   --build-arg BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/agents-smoke:latest \
   --build-arg AGENT_IMAGE=eval-e2e/mock:latest \
+  --build-arg EDGE_IMAGE=eval-e2e/edge:latest \
   "$ROOT/containers/core" >/dev/null || { echo "combination build failed"; exit 1; }
 
 step "create cluster"
@@ -54,7 +63,8 @@ helm template real "$CHART" \
   --set runnerImageRef=eval-e2e/eval:latest \
   --set outputVolume.hostPath.path="$OUT" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
-  --set outputSubPath="$SUB" --set runId="$RUN" |
+  --set outputSubPath="$SUB" --set runId="$RUN" \
+  --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' |
   kubectl apply -f - >/dev/null || { echo "apply failed"; exit 1; }
 
 case "$(settle agents-smoke-mock-task-0 180)" in
@@ -78,7 +88,7 @@ step "check the output contract"
 # The contract the dashboard reads. Each file has a distinct writer, so a missing
 # one names which part of the machinery stopped: the grader, write-result, or the
 # runner's log capture.
-for f in task/result.json agent/result.json model/result.json; do
+for f in task/result.json agent/result.json model/result.json agent/launch.json; do
   r=$(onnode cat "$OUT/$SUB/$RUN/$f" 2>/dev/null)
   [ -n "$r" ] || { bad "$f is missing"; continue; }
   echo "  $f: $r"
@@ -99,6 +109,14 @@ a=$(onnode cat "$OUT/$SUB/$RUN/agent/result.json" 2>/dev/null)
 case "$a" in
   *'"exit_code":0'*|*'"exit_code": 0'*) ;;
   *) bad "agent/result.json has no exit_code — a crashed run would be indistinguishable from a clean one (got: ${a:-<empty>})" ;;
+esac
+
+# What the run was launched with. The Job that knew is collected within the hour,
+# so a rerun can only replay a custom prompt if the run recorded it itself.
+r=$(onnode cat "$OUT/$SUB/$RUN/agent/launch.json" 2>/dev/null)
+case "$r" in
+  *'"EVAL_MARK"'*) ;;
+  *) bad "agent/launch.json does not carry what the run was given (got: ${r:-<empty>})" ;;
 esac
 
 # The agent's own streams. The run page falls back to these whenever a trace is
@@ -129,6 +147,32 @@ esac
 case "$out" in
   *"mock agent"*) bad "stderr leaked into agent/stdout.log — the two streams are not being kept apart" ;;
 esac
+
+# The edge's record. The agent's probe above went through the edge (the runner
+# points it at :4100, not the gateway directly), so a run that reached the
+# gateway must also have recorded reaching it. The file is compressed — one
+# stream held open for the run — and it is never closed, because the pod SIGKILLs
+# the edge; so the thing worth asserting is that it decodes anyway.
+rec="$OUT/$SUB/$RUN/model/calls.jsonl.zst"
+if ! onnode test -s "$rec"; then
+  bad "model/calls.jsonl.zst is missing or empty — the edge recorded nothing"
+  onnode cat "$OUT/$SUB/$RUN/model/edge.log" 2>/dev/null | tail -5
+else
+  # Decoded here rather than on the node, which is a minimal image with no zstd.
+  # The stream is never closed — the pod SIGKILLs the edge — so this asserts the
+  # property actually at risk: an unterminated frame still yields its records.
+  raw=$(mktemp); onnode cat "$rec" > "$raw"
+  dec=$(zstd -dc "$raw" 2>/dev/null || true)
+  case "$dec" in
+    *'"path"'*) echo "  model/calls.jsonl.zst: $(printf '%s\n' "$dec" | grep -c '"path"') record(s) from $(wc -c < "$raw" | tr -d ' ') bytes" ;;
+    # The first bytes name the failure: 28b52ffd is a zstd frame that did not
+    # decode, anything else is the edge writing something other than a stream
+    # under a .zst name — which is what a missing rebuild looks like.
+    *) bad "model/calls.jsonl.zst holds no call record (first bytes:$(od -An -tx1 -N4 < "$raw"))"
+       onnode cat "$OUT/$SUB/$RUN/model/edge.log" 2>/dev/null | tail -5 ;;
+  esac
+  rm -f "$raw"
+fi
 
 # ── the launcher people actually use ────────────────────────────────────────
 # Everything above renders the chart the way this test wants it. deploy/kind/run.sh
@@ -163,6 +207,38 @@ else
     --model azure/gpt-5-mini --gateway stubgw --registry local \
     --cluster "$CLUSTER" --output-path "$OUT" --task 0 --no-build 2>&1 | tail -15
 fi
+
+# ── an upstream task id the launcher must not have to sanitize ──────────────
+# SWE-bench ids carry `_` (sympy__sympy-24066) and run past Helm's 53-char
+# release-name cap. The launcher used to pass its own composed name to helm as
+# the RELEASE name, so such an id died on helm's check before the chart rendered;
+# worse, any wrapper-side truncation would have addressed a Job the chart never
+# created, and `kubectl get job` on a missing name is silent, not an error.
+#
+# This id is chosen to reach BOTH chart branches: `_` and uppercase to sanitize,
+# and long enough that the name is truncated and given a sha1 suffix — the branch
+# no bash reimplementation was going to match. The launcher reports the name the
+# chart gave the Job, so this asks the CLUSTER whether that object exists, which
+# is the only answer that is not a restatement of the launcher's own arithmetic.
+step "an RFC-1123-hostile task id still launches and is addressable"
+HOSTILE='Sympy__Sympy-24066-with-a-long-tail-to-pass-fifty-three-chars'
+launch=$(bash "$ROOT/deploy/kind/run.sh" \
+           --benchmark agents-smoke --agent mock --model azure/gpt-5-mini \
+           --gateway stubgw --registry local --cluster "$CLUSTER" \
+           --output-path "$OUT" --task "$HOSTILE" --no-build 2>&1) && rc=0 || rc=1
+named=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$launch" | head -1)
+if [ "$rc" -ne 0 ]; then
+  bad "the launcher refused an upstream task id: $(grep -m1 -iE 'error|invalid' <<<"$launch")"
+elif [ -z "$named" ]; then
+  bad "the launcher did not report which Job it applied"
+elif ! kubectl get job "$named" >/dev/null 2>&1; then
+  bad "the launcher says it applied Job '$named', but no such Job exists — it addressed a name the chart never used"
+fi
+# Whether this Job then RUNS is not the claim: the mock bakes only /tasks/0, so a
+# made-up id has no task to load. The run above is what proves a Job completes;
+# this one proves the launcher can apply and address one at all. Clean it up so a
+# doomed pod is not left retrying.
+[ -n "$named" ] && kubectl delete job "$named" --wait=false >/dev/null 2>&1
 
 [ "$fail" -eq 0 ] && echo "PASS: all output-contract artifacts present, and deploy/kind/run.sh drives a run end to end"
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"

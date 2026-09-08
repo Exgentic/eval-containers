@@ -103,6 +103,11 @@ runId: ""
 # datasetSize empty → a single-task Job (debug: runs exactly `task`). Set it and
 # the Job becomes Indexed with one completion per example (task id = the index).
 datasetSize: ""
+# dataset: true asks the chart for the size instead of stating one — it reads
+# dataset-sizes.json, derived from each benchmark's `LABEL eval.benchmark.tasks`.
+# datasetSize wins if both are given: running PART of a dataset is a launch
+# decision, only the whole size is the benchmark's.
+dataset: false
 # parallelism: concurrency cap WITHIN one dataset run (empty → datasetSize, i.e.
 # all at once). When Kueue manages the Job the global cap is the ClusterQueue;
 # this stays as a per-run ceiling.

@@ -24,6 +24,26 @@ from --set and are never in a preset, so preset-wins is safe.
        benchmark shared-env. */ -}}
 {{- $perTask := .Files.Get "per-task.json" | default "[]" | fromJsonArray -}}
 {{- $env := has $name $perTask | ternary (dict "perTask" true) dict -}}
+{{- /* `dataset: true` means "run the whole thing" without the caller having to
+       know how big it is. Same reasoning as perTask, same shape: the size is a
+       property of the benchmark, so the chart holds it, and every launcher gets
+       the same number from one render. Each wrapper used to read the benchmark
+       image's `eval.benchmark.tasks` label through its own transport — oc through
+       an imagestream, kind through a local `docker image inspect` — which meant a
+       dry run resolved nothing and rendered a non-Indexed Job, and the CLI, having
+       neither transport, could not run a dataset at all.
+       dataset-sizes.json is derived from those same labels;
+       cli/tests/cli_conformance.rs asserts the two agree. An explicit
+       `--set datasetSize=` still wins — running part of a dataset is a launch
+       decision, and only the size is the benchmark's. */ -}}
+{{- if and .Values.dataset (not .Values.datasetSize) -}}
+{{- $sizes := .Files.Get "dataset-sizes.json" | default "{}" | fromJson -}}
+{{- $size := index $sizes $name -}}
+{{- if not $size -}}
+{{- fail (printf "dataset=true, but the chart has no size for %s: it is not in dataset-sizes.json, which is derived from the benchmarks' `LABEL eval.benchmark.tasks`. Give the number with --set datasetSize=<n>." $name) -}}
+{{- end -}}
+{{- $env = merge $env (dict "datasetSize" $size) -}}
+{{- end -}}
 {{- /* `timeout` is the one preset key an operator MUST be able to override per run:
        the right agent budget is a property of the model, not the benchmark (deepswe
        wants 90 min for gpt-5.5 and 8h for GLM-5.2 / claude-sonnet-5). Every other
