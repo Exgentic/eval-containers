@@ -62,10 +62,9 @@ case "${orgrepo}" in
 esac
 
 echo "[hwe-bench] ${ID} -> base ${TASK_BASE}, repo ${HWE_REPO_DIR}; building overlay -> ${IMAGE}"
-# --load so the result lands in the local image store for the run/oracle even when
-# the default buildx builder uses the docker-container driver (which otherwise
-# keeps the build in cache only).
-docker build --load --platform linux/amd64 -t "${IMAGE}" \
+# Plain `docker build` (not buildx): lands in the local image store for run/oracle
+# directly, same as every other per-task build.sh (skills-bench, terminal-bench).
+docker build --platform linux/amd64 -t "${IMAGE}" \
   --build-arg "TASK_BASE=${TASK_BASE}" \
   --build-arg "EVAL_TASK_ID=${ID}" \
   --build-arg "HWE_HF_SLUG=${hf_slug}" \

@@ -230,13 +230,41 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 benchmark_image(registry, &benchmark, &tag)
             };
             let agent_tag = agent_image(registry, &agent, &tag);
+            // --no-pull + --task-id + lean (no --standalone): per-task benchmarks
+            // have no bake target at all (their image comes from build.sh, outside
+            // the bake graph — RULES.md 24g), so eval-local's context-binding trick
+            // (which points BENCHMARK_IMAGE at an in-graph `target:benchmark-<name>`)
+            // cannot apply to them; the plain `eval` bake target always pulls
+            // BENCHMARK_IMAGE/AGENT_IMAGE from a registry via buildx regardless of
+            // --no-pull. Build with plain `docker build` instead, referencing the
+            // already-locally-tagged bench/agent images directly by tag (the same
+            // mechanism build.sh and every other classic per-task build use) — no
+            // registry round-trip, no buildx content-store isolation.
+            if let (Some(tid), true, false) = (&task_id, no_pull, standalone) {
+                let lean_tag = eval_task_image(registry, &benchmark, tid, &agent, &tag);
+                let mut build_args = vec![
+                    format!("BENCHMARK_IMAGE={bench_tag}"),
+                    format!("AGENT_IMAGE={agent_tag}"),
+                ];
+                if !agent_version.is_empty() {
+                    build_args.push(format!("AGENT_VERSION={agent_version}"));
+                }
+                return docker_build_dockerfile(
+                    &lean_tag,
+                    "containers/core",
+                    "combination.Dockerfile",
+                    &build_args,
+                    dry_run,
+                );
+            }
             // --no-pull on a base (non-task) build: use eval-local, which wires
             // bench+agent in-graph via named contexts. This avoids registry manifest
             // checks that fail on arm64 Mac (docker-container driver isolation means
             // --load'd images are not visible in the BuildKit content store). The
             // eval-local target produces the same image tag as eval. Per-task builds
-            // always use the plain eval target — their BENCHMARK_IMAGE is a task-
-            // specific image built outside bake, not a named bake target.
+            // that reach here (no --no-pull, or --standalone) always use the plain
+            // eval target — their BENCHMARK_IMAGE is a task-specific image built
+            // outside bake, not a named bake target.
             let eval_target = if no_pull && task_id.is_none() {
                 "eval-local"
             } else {
@@ -553,7 +581,50 @@ fn docker_build(
     labels: &[(String, String)],
     dry_run: bool,
 ) -> Result<(), String> {
+    docker_build_impl(tag, context, None, build_args, labels, true, dry_run)
+}
+
+/// Same as [`docker_build`], but for a Dockerfile that isn't `<context>/Dockerfile`
+/// — the per-task lean-eval escape hatch (`build eval --task-id --no-pull`): a
+/// per-task benchmark has no bake target to bind `eval-local`'s in-graph contexts
+/// to (its image comes from build.sh, outside the bake graph — RULES.md 24g), so
+/// this builds `combination.Dockerfile` directly against the already-locally-
+/// tagged benchmark/agent images, no registry round-trip. `combination.Dockerfile`
+/// never reads `HF_TOKEN`, and `--secret` is BuildKit-only (unsupported by the
+/// classic/legacy builder this escape hatch specifically targets — same class of
+/// bug as build.sh's `--load`), so it's deliberately never attached here.
+fn docker_build_dockerfile(
+    tag: &str,
+    context: &str,
+    dockerfile: &str,
+    build_args: &[String],
+    dry_run: bool,
+) -> Result<(), String> {
+    docker_build_impl(
+        tag,
+        context,
+        Some(dockerfile),
+        build_args,
+        &[],
+        false,
+        dry_run,
+    )
+}
+
+fn docker_build_impl(
+    tag: &str,
+    context: &str,
+    dockerfile: Option<&str>,
+    build_args: &[String],
+    labels: &[(String, String)],
+    allow_secret: bool,
+    dry_run: bool,
+) -> Result<(), String> {
+    let use_secret = allow_secret && std::env::var("HF_TOKEN").is_ok();
     let mut shown = format!("docker build -t {tag}");
+    if let Some(f) = dockerfile {
+        shown.push_str(&format!(" -f {context}/{f}"));
+    }
     for arg in build_args {
         shown.push_str(&format!(" --build-arg {arg}"));
     }
@@ -561,7 +632,7 @@ fn docker_build(
         shown.push_str(&format!(" --label {k}={v}"));
     }
     // HF_TOKEN as an ephemeral build secret, never a --build-arg (rule 8a).
-    if std::env::var("HF_TOKEN").is_ok() {
+    if use_secret {
         shown.push_str(" --secret id=HF_TOKEN,env=HF_TOKEN");
     }
     shown.push_str(&format!(" {context}"));
@@ -572,13 +643,16 @@ fn docker_build(
 
     let mut cmd = Command::new("docker");
     cmd.arg("build").arg("-t").arg(tag);
+    if let Some(f) = dockerfile {
+        cmd.arg("-f").arg(format!("{context}/{f}"));
+    }
     for arg in build_args {
         cmd.arg("--build-arg").arg(arg);
     }
     for (k, v) in labels {
         cmd.arg("--label").arg(format!("{k}={v}"));
     }
-    if std::env::var("HF_TOKEN").is_ok() {
+    if use_secret {
         cmd.arg("--secret").arg("id=HF_TOKEN,env=HF_TOKEN");
     }
     cmd.arg(context);

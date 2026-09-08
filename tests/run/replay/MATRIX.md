@@ -34,8 +34,15 @@ Each row is one replay test with a recorded fixture.
 | mmmu | claude-code | custom | mmmu-0-claude-code |
 | aider-polyglot | aider | custom | aider-polyglot-0-aider |
 | gaia | goose | exact-match | gaia-0-goose |
+| hwe-bench | claude-code | custom | hwe-bench-lowrisc__ibex-2232-claude-code |
 
 ## Per-task and sidecar benchmarks (TODO)
+
+`ensure_images` now builds per-task benchmarks generically (via the CLI's
+`--task-id` plumbing, detected through `benchmark::is_per_task_by_name` —
+same as `build`/`run`/`oracle`), so a new per-task benchmark below only needs
+a fixture + a `replay_test!(..., "<task-id>")` line, no further harness work.
+hwe-bench (above) is the first to land this way.
 
 | Benchmark | Agent | Pattern | Status |
 |-----------|-------|---------|--------|

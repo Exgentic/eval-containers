@@ -9,6 +9,7 @@ use std::fs;
 use std::path::Path;
 use std::process::Command;
 
+use eval_containers::benchmark::is_per_task_by_name;
 use eval_containers::naming;
 use testcontainers::compose::DockerCompose;
 use testcontainers::core::WaitFor;
@@ -334,11 +335,19 @@ async fn bootstrap_gateway() {
         .await;
 }
 
-async fn ensure_images(benchmark: &str, agent: &str, mode: ReplayMode) {
+async fn ensure_images(benchmark: &str, agent: &str, task_id: &str, mode: ReplayMode) {
     bootstrap_core_bases().await;
     if mode == ReplayMode::FullStack {
         bootstrap_gateway().await;
     }
+
+    // Per-task benchmarks (hwe-bench, swe-bench-pro, terminal-bench, ...) build
+    // their benchmark and eval images outside bake's static graph, keyed by
+    // task_id (benchmarks/RULES.md 24f/24g) — the CLI's `--task-id` flag already
+    // does this; shell it directly rather than reimplementing it here. Detected
+    // via the same label the CLI itself uses, not a benchmark-name list, so a
+    // new per-task benchmark needs zero changes here to get a replay test.
+    let per_task = is_per_task_by_name(benchmark);
 
     if common::classic_build() {
         // Bases are built above; these add only the benchmark, agent, and lean eval
@@ -348,6 +357,57 @@ async fn ensure_images(benchmark: &str, agent: &str, mode: ReplayMode) {
         // baked into the lean eval, so they aren't needed here.
         let reg =
             std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| common::LOCAL_REGISTRY.to_string());
+
+        if per_task {
+            let status = Command::new("cargo")
+                .args([
+                    "run",
+                    "--",
+                    "build",
+                    "bench",
+                    benchmark,
+                    "--task-id",
+                    task_id,
+                ])
+                .env("EVAL_REGISTRY", &reg)
+                .status()
+                .unwrap_or_else(|e| {
+                    panic!("failed to run cargo run -- build bench --task-id: {e}")
+                });
+            assert!(
+                status.success(),
+                "failed to build per-task bench image for {benchmark}/{task_id}"
+            );
+
+            common::build_target_classic(
+                &naming::agent_bake_target(agent),
+                &[],
+                &[("REGISTRY", reg.as_str())],
+            );
+
+            let status = Command::new("cargo")
+                .args([
+                    "run",
+                    "--",
+                    "build",
+                    "eval",
+                    benchmark,
+                    "--agent",
+                    agent,
+                    "--task-id",
+                    task_id,
+                    "--no-pull",
+                ])
+                .env("EVAL_REGISTRY", &reg)
+                .status()
+                .unwrap_or_else(|e| panic!("failed to run cargo run -- build eval --task-id: {e}"));
+            assert!(
+                status.success(),
+                "failed to build per-task eval image for {benchmark}-{task_id}--{agent}"
+            );
+            return;
+        }
+
         let base_env = [("REGISTRY", reg.as_str())];
         common::build_target_classic(&naming::benchmark_bake_target(benchmark), &[], &base_env);
         common::build_target_classic(&naming::agent_bake_target(agent), &[], &base_env);
@@ -368,6 +428,54 @@ async fn ensure_images(benchmark: &str, agent: &str, mode: ReplayMode) {
                 ("EVAL_BENCHMARK", benchmark),
                 ("EVAL_AGENT", agent),
             ],
+        );
+        return;
+    }
+
+    if per_task {
+        let status = Command::new("cargo")
+            .args([
+                "run",
+                "--",
+                "build",
+                "bench",
+                benchmark,
+                "--task-id",
+                task_id,
+            ])
+            .status()
+            .unwrap_or_else(|e| panic!("failed to run cargo run -- build bench --task-id: {e}"));
+        assert!(
+            status.success(),
+            "failed to build per-task bench image for {benchmark}/{task_id}"
+        );
+
+        let status = Command::new("cargo")
+            .args(["run", "--", "build", "agent", agent])
+            .status()
+            .unwrap_or_else(|e| panic!("failed to run cargo run -- build agent: {e}"));
+        assert!(status.success(), "failed to build agent image for {agent}");
+
+        // --no-pull: bench and agent images are in the BuildKit content store from
+        // the steps above; skip the remote manifest check that fails on arm64.
+        let status = Command::new("cargo")
+            .args([
+                "run",
+                "--",
+                "build",
+                "eval",
+                benchmark,
+                "--agent",
+                agent,
+                "--task-id",
+                task_id,
+                "--no-pull",
+            ])
+            .status()
+            .expect("failed to run cargo run -- build eval --task-id");
+        assert!(
+            status.success(),
+            "failed to build per-task eval image for {benchmark}-{task_id}--{agent}"
         );
         return;
     }
@@ -416,7 +524,7 @@ macro_rules! replay_test {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            ensure_images($benchmark, $agent, ReplayMode::Lean).await;
+            ensure_images($benchmark, $agent, $task_id, ReplayMode::Lean).await;
             let _compose = replay_compose($benchmark, $agent, $task_id, ReplayMode::Lean).await;
             assert_result_valid($benchmark, $task_id);
         }
@@ -487,7 +595,7 @@ macro_rules! replay_fullstack_test {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            ensure_images($benchmark, $agent, ReplayMode::FullStack).await;
+            ensure_images($benchmark, $agent, $task_id, ReplayMode::FullStack).await;
             let _compose =
                 replay_compose($benchmark, $agent, $task_id, ReplayMode::FullStack).await;
             assert_result_valid($benchmark, $task_id);
@@ -888,6 +996,13 @@ replay_test!(
     "hellaswag",
     "claude-code",
     "6024"
+);
+
+replay_test!(
+    replay_hwe_bench_lowrisc_ibex_2232_claude_code,
+    "hwe-bench",
+    "claude-code",
+    "lowrisc__ibex-2232"
 );
 
 replay_test!(replay_humaneval_0_codex, "humaneval", "codex", "0");
