@@ -5,19 +5,21 @@
 
 ## Abstract
 
-How Eval Containers is published — the delivery-specific outcomes that refine the
-one-version policy for the moment of release. One SemVer, set by the git tag,
-already spans every image, the per-benchmark `eval-<benchmark>` compose
-artifacts, the Helm chart, and the Rust CLI (top-level principle 9). These rules
-govern how a single tag releases the
-image fleet and the CLI together, which workflow owns which artifact, and the
-gates that keep a release honest.
+How Eval Containers is published. Every image is named immutably by its
+build-input hash; `latest` and each SemVer release, set by the git tag, are
+aliases of those digests, and the SemVer spans the per-benchmark
+`eval-<benchmark>` compose artifacts, the Helm chart, and the Rust CLI
+(top-level principle 9). These rules govern how a single tag releases fleet and
+CLI together, which workflow owns which artifact, what a default-branch push
+publishes, and the gates that keep a release honest.
 
 ## Terminology
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD",
 "SHOULD NOT", "RECOMMENDED", "MAY", and "OPTIONAL" in this document are to be
 interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
+A *hash tag* is an image tag equal to the image's recorded build-input hash
+(rule 12).
 
 ## Principles
 
@@ -29,7 +31,7 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 4. **One Release owner.** A tag's GitHub Release object MUST be created and owned solely by the CLI release workflow.
 
-5. **Tag-gated publishing.** The crate and any versioned image fleet MUST be published only by a `vX.Y.Z` tag push or an explicit `workflow_dispatch`, never by a branch push.
+5. **Tag-gated publishing.** The crate and any SemVer-tagged image fleet MUST be published only by a `vX.Y.Z` tag push or an explicit `workflow_dispatch`, never by a branch push.
 
 6. **Version-agreement gate.** A tagged release MUST abort unless the git tag equals both the `Cargo.toml` and `Chart.yaml` versions.
 
@@ -55,6 +57,16 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 
 17. **Verified publish.** A step that publishes an artifact MUST confirm the artifact is in the registry; a zero exit is not evidence. An artifact a stack cannot produce MUST be declared as such by the stack, never inferred from the text of a tool's error.
 
+18. **Version tag.** Every published image MUST carry its hash tag.
+
+19. **Immutable version tag.** A hash tag MUST NOT be repointed to a different digest.
+
+20. **`latest` alias.** `latest` MUST resolve to the digest that carries the hash tag of the default-branch tip.
+
+21. **Pinned artifacts.** A published `eval-<benchmark>` compose artifact or `charts/eval` chart MUST default every image reference to a hash tag.
+
+22. **Retention.** A published digest MUST be retained while `latest`, a `vX.Y.Z` release, or a published artifact resolves to it, and for 90 days after that ceases.
+
 ## References
 
 - [Process](../RULES.md) — principle 9 (the one-version policy and version knobs); principle 13 (self-contained repo).
@@ -74,3 +86,4 @@ interpreted as described in [RFC 2119](https://www.rfc-editor.org/rfc/rfc2119).
 | 2026-08-10 | Added rule 17 (Verified publish). Three bugs of one shape surfaced in a single release: arch-partial images read fresh, the merge silently skipped refs whose names it had mangled, and `docker compose publish` declined osworld's host-bind-mounted stack while exiting 0 — every one trusted a process instead of confirming the artifact. The second sentence closes the door the third came through: tau-bench's un-publishable stack was recognised by matching a substring of an error message, so a stack that failed *differently* (or silently) fell through. A stack now declares `x-eval-publish: false` itself. |
 | 2026-08-10 | Rule 14 extended to platform completeness: an image missing an expected platform is *changed*, not fresh. A hash-only test cannot see a half-built image — when one arch's leaf fails, the merge still stitches a `:latest` from the surviving arch, whose config carries the matching hash, so the image reads fresh forever and the missing arch never self-retries (found when the first cold full-fleet rebuild left `benchmarks/appworld` amd64-only yet green). Expected platforms default to `linux/amd64,linux/arm64`; an image that is single-arch by necessity declares its own set with `LABEL eval.platforms`, read from the committed source rather than from the registry so a broken image cannot vouch for itself. |
 | 2026-08-10 | Rule 5 rescoped from "the tagged image fleet" to "any versioned image fleet" — it gates *versioned* publishes, which a continuous `latest` publish is not. Added rule 16 (Continuous channel): a default-branch push MAY publish `latest`, and MUST publish only images whose build inputs changed — affordable exactly because rules 12–14 make "what changed" mechanical and rule 13 carries the rest forward. Versioned releases remain deliberate per rule 5; principle 9's "`latest` on `main`" becomes continuously true. |
+| 2026-09-08 | Added rules 18–22 (version tag, immutable version tag, `latest` alias, pinned artifacts, retention) and the *hash tag* term; rule 5 rescoped from "any versioned" to "any SemVer-tagged" fleet, since a hash tag is a version every channel publishes. The recorded build-input hash (rule 12) becomes each image's immutable name; `latest` and each SemVer are aliases of hash-tagged digests; deploy artifacts pin hash tags, so a consumer's view stays consistent even when a default-branch publish is cancelled midway — the name is fixed by the source, and a later run lands the same tag. Why: no `vX.Y.Z` has ever completed (#501), `latest` is the only shipping channel yet neither pinnable nor atomic, and the registry already keeps every superseded digest untagged. Rule 19 retires `force_rebuild` (rule 13 already forbade rebuilding under an unchanged hash) and needs rule 12's hash to cover rule 11's external base digests, which it omits today. Abstract updated. #506 |
