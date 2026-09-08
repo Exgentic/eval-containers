@@ -65,9 +65,9 @@ jobs:
           stale=$(grep -cE '	stale	' <<< "$REPORT" || true)
           [ "$stale" -eq 0 ] || echo "::warning::$stale image(s) stale at :${{ inputs.tag || 'latest' }} — inputs changed since they were built"
 
-  # Upstream drift: the one staleness the hash cannot see (rule 11 defers
-  # external digests to release time). Report-only — a moved base is picked up
-  # by dispatching Release the fleet with force_rebuild.
+  # Upstream drift: the one movement no push can see, because the hash reads
+  # containers/externals.tsv, not the registry. Report-only — a moved base is
+  # picked up by committing a refreshed lockfile (external-drift.sh's stdout).
   drift:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -78,28 +78,18 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # The previous run's digests, keyed so each run restores the last one and
-      # saves its own (a cache key cannot be overwritten).
-      - uses: actions/cache@v6
-        with:
-          path: external-digests.tsv
-          key: external-digests-${{ github.run_id }}
-          restore-keys: external-digests-
-      - name: Resolve external base digests and compare with the last run
+      - name: Resolve external base digests and compare with containers/externals.tsv
         run: |
           set -eo pipefail
           # Never fail the report on drift — record it, warn, and let a human
-          # decide whether to force a rebuild.
-          if [ -f external-digests.tsv ]; then
-            containers/scripts/external-drift.sh external-digests.tsv > current.tsv || true
-          else
-            containers/scripts/external-drift.sh > current.tsv || true
-          fi
-          mv current.tsv external-digests.tsv
+          # decide when to refresh the lockfile.
+          containers/scripts/external-drift.sh containers/externals.tsv > current.tsv || true
           {
-            echo "## External base digests @ $(git rev-parse --short HEAD)"
+            echo "## External base digests @ $(git rev-parse --short HEAD) vs containers/externals.tsv"
             echo
-            echo '| base | digest |'
-            echo '|---|---|'
-            awk -F'\t' '{printf "| `%s` | `%s` |\n", $1, substr($2,1,26) "…"}' external-digests.tsv
+            echo '| base | now | locked |'
+            echo '|---|---|---|'
+            awk -F'\t' 'NR==FNR { lock[$1]=$2; next }
+                        { printf "| `%s` | `%s` | `%s` |\n", $1, substr($2,1,26) "…", substr(lock[$1],1,26) "…" }' \
+              containers/externals.tsv current.tsv
           } >> "$GITHUB_STEP_SUMMARY"

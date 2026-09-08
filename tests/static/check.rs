@@ -1229,3 +1229,35 @@ fn the_chart_publishes_on_the_continuous_channel() {
          the two publishes drift"
     );
 }
+
+/// Every image is published under its hash tag, and the alias only after it
+/// (delivery/RULES.md:18–19): the three places a manifest list is stitched or
+/// pushed — merge, merge-pertask-combos, combos — go through fleet-tag.sh, and
+/// no dispatch knob rebuilds under an unchanged hash any more (rules 13, 19):
+/// an upstream refresh is a lockfile commit, so it is a changed input.
+#[test]
+fn every_publish_goes_through_the_hash_tag() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    for (job, next) in [
+        ("merge", "compose"),
+        ("merge-pertask-combos", "release-gate"),
+        ("combos", "combos-pertask"),
+    ] {
+        let body = wf
+            .split(&format!("\n  {job}:\n"))
+            .nth(1)
+            .and_then(|s| s.split(&format!("\n  {next}:")).next())
+            .unwrap_or_else(|| panic!("no `{job}` job in release-images.yml"));
+        assert!(
+            body.contains("fleet-tag.sh"),
+            "`{job}` must publish through fleet-tag.sh so the hash tag exists before the alias \
+             (delivery/RULES.md:18, :19)"
+        );
+    }
+    assert!(
+        !wf.contains("force_rebuild") && !wf.contains("rebuild_bases"),
+        "no knob may rebuild under an unchanged hash — refresh containers/externals.tsv instead \
+         (delivery/RULES.md:13, :19)"
+    );
+}

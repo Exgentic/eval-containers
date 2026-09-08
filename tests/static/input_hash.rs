@@ -324,6 +324,105 @@ fn externals_parse_every_dockerfile_shape() {
     );
 }
 
+/// The lockfile pins what every external resolves to, and that digest is a
+/// build input (delivery rule 11): a change cascades exactly like a base edit
+/// — through every closure that builds FROM it, via the bases component — and
+/// spares the rest; a `local` mark, an unresolved entry, or a ref nothing
+/// builds FROM folds nothing.
+#[test]
+fn lockfile_digests_are_build_inputs() {
+    let fx = fleet_fixture("lockfile");
+    let sha = |c: char| format!("sha256:{}", c.to_string().repeat(64));
+    let v0 = rows(&fleet_hash(&fx.0, &[]));
+
+    fx.write(
+        "containers/externals.tsv",
+        &format!(
+            "alpine:3.20\t{}\nredis:7\t{}\nmlebench-env:latest\tlocal\n",
+            sha('a'),
+            sha('b')
+        ),
+    );
+    fx.commit("lock alpine");
+    let v1 = rows(&fleet_hash(&fx.0, &[]));
+    for t in ["base-x", "base-y", "benchmark-leaf-a", "benchmark-leaf-c"] {
+        assert_ne!(
+            v0[t].0, v1[t].0,
+            "{t} builds FROM alpine (itself or via a base) and must move"
+        );
+    }
+    assert_eq!(
+        v0["benchmark-leaf-b"].0, v1["benchmark-leaf-b"].0,
+        "leaf-b never touches alpine"
+    );
+    assert_eq!(
+        v0["base-x"].3, v1["base-x"].3,
+        "the externals column lists refs, not digests"
+    );
+
+    fx.write(
+        "containers/externals.tsv",
+        &format!("alpine:3.20\t{}\n", sha('c')),
+    );
+    fx.commit("bump alpine");
+    let v2 = rows(&fleet_hash(&fx.0, &[]));
+    assert_ne!(
+        v1["base-x"].0, v2["base-x"].0,
+        "a moved digest is a changed input"
+    );
+    assert_eq!(
+        v1["base-y"].1, v2["base-y"].1,
+        "base-y's own context did not change"
+    );
+    assert_ne!(
+        v1["base-y"].2, v2["base-y"].2,
+        "the move rides base-y's bases component"
+    );
+
+    fx.write("containers/externals.tsv", "alpine:3.20\tunresolved\n");
+    fx.commit("unresolved");
+    let v3 = rows(&fleet_hash(&fx.0, &[]));
+    assert_eq!(
+        v0["base-x"].0, v3["base-x"].0,
+        "only a sha256 digest is an input"
+    );
+}
+
+/// containers/externals.tsv must name exactly the externals the fleet builds
+/// FROM (fleet-hash column 5, minus per-build `${…}` refs), each pinned to a
+/// digest or marked `local` — a missing or unresolved entry would silently
+/// drop an input (delivery rule 14, fail dirty).
+#[test]
+fn lockfile_covers_every_external_base() {
+    let repo = repo_root();
+    let mut want: Vec<String> = rows(&fleet_hash(&repo, &[]))
+        .values()
+        .flat_map(|r| r.3.split(',').map(str::to_string).collect::<Vec<_>>())
+        .filter(|e| e != "-" && !e.contains("${"))
+        .collect();
+    want.sort();
+    want.dedup();
+    let lock = std::fs::read_to_string(repo.join("containers/externals.tsv"))
+        .expect("read containers/externals.tsv");
+    let mut have = Vec::new();
+    for line in lock.lines() {
+        let (r, d) = line
+            .split_once('\t')
+            .unwrap_or_else(|| panic!("externals.tsv: not ref<TAB>digest: {line}"));
+        assert!(
+            d == "local" || d.strip_prefix("sha256:").is_some_and(is_sha256),
+            "externals.tsv: {r} is not pinned: {d} — refresh with external-drift.sh"
+        );
+        have.push(r.to_string());
+    }
+    have.sort();
+    assert_eq!(
+        have, want,
+        "containers/externals.tsv must list exactly the fleet's external bases — \
+         refresh it with `external-drift.sh containers/externals.tsv`"
+    );
+}
+
 /// Malformed inputs and misuse must fail loudly (exit 2 + a named cause),
 /// never produce a hash — a wrong hash fails open into a stale release.
 #[test]
