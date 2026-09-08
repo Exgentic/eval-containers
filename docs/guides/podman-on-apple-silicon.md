@@ -221,9 +221,10 @@ docker buildx bake -f containers/docker-bake.hcl \
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f containers/benchmarks/<name>/compose.yaml up --abort-on-container-exit
 
-# 4. Extract the trajectory from the named volume (NOT a host path)
+# 4. Extract the trajectory from the named volume (NOT a host path), then
+#    zstd-compress it — fixtures are committed compressed (verification/RULES.md rule 10)
 docker run --rm -v <name>_output:/output:ro alpine \
-  cat /output/traces.jsonl > tests/run/replay/fixtures/<name>-0-codex.traces.jsonl
+  cat /output/traces.jsonl | zstd -q -o tests/run/replay/fixtures/<name>-0-codex.traces.jsonl.zst
 
 # 5. Register the fixture in tests/run/replay/test.rs (replay_test! macro) and ship
 ```

@@ -28,7 +28,7 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 // Cleanup is automatic on drop — even if the test panics.
 //
 // Each test runs a full evaluation with a recorded trajectory fixture.
-// Fixtures are in tests/run/replay/fixtures/{benchmark}-0-{agent}.traces.jsonl
+// Fixtures are in tests/run/replay/fixtures/{benchmark}-0-{agent}.traces.jsonl.zst
 
 /// What a replay run puts under test. Two modes, nothing else — split by scope,
 /// not by where replay happens to sit.
@@ -76,7 +76,7 @@ async fn replay_compose(
     // A human runs the identical stack: `docker compose -f <compose> -f <overlay>`.
     let compose_file = cwd.join(format!("containers/benchmarks/{benchmark}/compose.yaml"));
     let fixture = cwd.join(format!(
-        "tests/run/replay/fixtures/{benchmark}-{task_id}-{agent}.traces.jsonl"
+        "tests/run/replay/fixtures/{benchmark}-{task_id}-{agent}.traces.jsonl.zst"
     ));
     let overlay = cwd.join(match mode {
         ReplayMode::Lean => "tests/run/replay/replay-lean.yaml",

@@ -30,3 +30,8 @@ tests/live/fleet-report.md
 
 # Claude Code local session state (the wiring in .claude/rules and .claude/skills is committed)
 .claude/settings.local.json
+
+# Scratch decompressed copies of committed *.traces.jsonl.zst fixtures, made
+# so gitleaks (a text scanner, blind to compressed content) can still see
+# fixture content — see .github/workflows/pre-commit.yml.
+tests/run/replay/fixtures/*.traces.jsonl

@@ -1,9 +1,10 @@
 //! Replay model server — serves recorded LLM responses for deterministic tests.
 //!
 //! Reads an OpenTelemetry trace file (OTLP/JSON, one ExportTraceServiceRequest
-//! per line — what an otelcol `file` exporter writes) and serves the recorded
-//! gen_ai responses in order. Indistinguishable to the eval container from a
-//! real proxy (models/RULES.md rule 17); needs no API keys.
+//! per line — what an otelcol `file` exporter writes, optionally zstd-compressed
+//! — see verification/RULES.md rule 10) and serves the recorded gen_ai
+//! responses in order. Indistinguishable to the eval container from a real
+//! proxy (models/RULES.md rule 17); needs no API keys.
 //!
 //! Both gateways encode `gen_ai.output.messages` as a JSON string, differently:
 //!
@@ -36,6 +37,9 @@ use std::io::{Read, Write};
 use std::net::{Ipv4Addr, TcpStream};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// The magic number that opens every zstd frame (RFC 8878 §3.1.1).
+const ZSTD_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
 
 /// One recorded LLM turn, normalized from a gen_ai span.
 #[derive(Clone)]
@@ -231,12 +235,38 @@ fn span_start_ns(span: &Value) -> u128 {
 }
 
 /// Parse an OTLP/JSON trace file into ordered, deduped canonical turns.
+/// Fixtures are committed zstd-compressed; the compose mount always lands at
+/// a fixed `/data/traces.jsonl` path regardless of the source filename, so
+/// compression is detected by the zstd magic number, not by extension.
 fn load_turns(path: &str) -> Vec<Turn> {
-    let raw = match std::fs::read_to_string(path) {
-        Ok(r) => r,
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
         Err(_) => {
             eprintln!("[replay] WARNING: no trace file at {path}");
             return Vec::new();
+        }
+    };
+    let raw = if bytes.starts_with(&ZSTD_MAGIC) {
+        let mut decoder = match ruzstd::decoding::StreamingDecoder::new(bytes.as_slice()) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("[replay] WARNING: zstd decode of {path} failed to start: {e}");
+                return Vec::new();
+            }
+        };
+        let mut out = String::new();
+        if let Err(e) = decoder.read_to_string(&mut out) {
+            eprintln!("[replay] WARNING: zstd decode of {path} failed: {e}");
+            return Vec::new();
+        }
+        out
+    } else {
+        match String::from_utf8(bytes) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[replay] WARNING: {path} is not valid UTF-8: {e}");
+                return Vec::new();
+            }
         }
     };
     parse_turns(&raw)
@@ -790,6 +820,47 @@ mod tests {
 
     fn attr(key: &str, s: &str) -> Value {
         json!({"key": key, "value": {"stringValue": s}})
+    }
+
+    #[test]
+    fn load_turns_decodes_zstd_by_magic_bytes_not_extension() {
+        // The compose mount always lands at a fixed `/data/traces.jsonl` path
+        // regardless of the committed fixture's real extension, so decoding
+        // must key off the zstd magic number in the content, not the name.
+        let out = json!([{"role":"assistant","parts":[{"type":"text","content":"HELLO_ZSTD"}],"finish_reason":"stop"}]).to_string();
+        let line = one_line(
+            json!([
+                attr("gen_ai.output.messages", &out),
+                attr("gen_ai.response.id", "chatcmpl-Z"),
+                attr("gen_ai.response.model", "gpt-5.4"),
+            ]),
+            1,
+            "100",
+        );
+        let dir = std::env::temp_dir().join(format!("replay-zstd-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("traces.jsonl");
+        let status = std::process::Command::new("zstd")
+            .args(["-q", "-f", "-o"])
+            .arg(&path)
+            .arg("-")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .and_then(|mut child| {
+                use std::io::Write as _;
+                child.stdin.take().unwrap().write_all(line.as_bytes())?;
+                child.wait()
+            });
+        let Ok(status) = status else {
+            eprintln!("skipping: zstd CLI not available to build test fixture");
+            return;
+        };
+        assert!(status.success());
+
+        let turns = load_turns(path.to_str().unwrap());
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].text, "HELLO_ZSTD");
     }
 
     #[test]
