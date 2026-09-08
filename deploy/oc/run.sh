@@ -8,7 +8,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
 BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
-NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX=""
+NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" FLAT_IMAGES="true"
 DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
@@ -21,6 +21,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --registry) REGISTRY="$2"; shift 2;; --pvc) PVC="$2"; shift 2;;
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
   --run-id) RUN_ID="$2"; shift 2;;
+  --flat-images) FLAT_IMAGES="$2"; shift 2;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --test) TEST=true; shift;;
   --test-suffix) TEST=true; SUFFIX="$2"; shift 2;;
@@ -95,12 +96,14 @@ $NO_RUN && { log "--no-run: built only, not submitting."; exit 0; }
 MODEL_SLUG="$(model_slug "$MODEL")"
 SUB="${RESULT_PREFIX}/${BENCHMARK}/${AGENT}/${MODEL_SLUG}"
 
-# flatImages=true → the chart composes flat ImageStream refs for the OC registry.
+# flatImages=true → the chart composes flat ImageStream refs for the OC internal
+# registry (no slashes). A nested-path registry (ghcr/ICR/external) publishes
+# evals/<b>--<a> instead, and needs the chart's own default — --flat-images false.
 # Two independent axes (gateways/RULES.md): `model` = the upstream handle → the
 # gateway's EVAL_MODEL; `gatewayImage` = which proxy image serves it.
 SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "model=$MODEL" --set "gatewayImage=$GATEWAY"
-     --set "registry=$REGISTRY" --set "flatImages=true"
+     --set "registry=$REGISTRY" --set "flatImages=$FLAT_IMAGES"
      --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB"
      --set "runId=$RUN_ID")
 [[ -n "$SUFFIX"      ]] && SET+=(--set "imageSuffix=$SUFFIX" --set "nameSuffix=$SUFFIX")
