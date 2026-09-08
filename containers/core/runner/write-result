@@ -10,6 +10,7 @@
 #   /output/task/result.json    task_id, benchmark, reward, passed
 #   /output/agent/result.json   agent, started_at, ended_at, exit_code
 #   /output/model/result.json   model
+#   /output/agent/launch.json   what the run was launched with (EVAL_LAUNCH)
 set -euo pipefail
 
 # The verifier may not produce a numeric reward (e.g. the agent errored or
@@ -35,3 +36,9 @@ printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s}\n' \
   > /output/agent/result.json
 
 printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
+
+# What this run was given, as the chart passed it. Written even when empty, so a
+# reader can tell "launched with nothing extra" from "this run predates the
+# record". Already JSON — the chart built it with toJson — so it is copied, not
+# re-quoted.
+printf '%s\n' "${EVAL_LAUNCH:-[]}" > /output/agent/launch.json
