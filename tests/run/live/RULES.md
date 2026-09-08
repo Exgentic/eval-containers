@@ -68,11 +68,12 @@ Parent: [../RULES.md](../RULES.md)
 ## Fixture promotion
 
 11. **Pass fixture → `tests/run/replay/fixtures/`.** Convert
-    `output/<bench>/<task>/model/trajectory.jsonl` to OTLP and write
-    `tests/run/replay/fixtures/<bench>-<task>-claude-code.traces.jsonl`
-    (once recording emits OTLP natively this is a plain copy), then add
-    an entry to `fixtures/provenance.json`. The promotion is a single
-    commit for auditability.
+    `output/<bench>/<task>/model/trajectory.jsonl` to OTLP, zstd-compress it,
+    and write
+    `tests/run/replay/fixtures/<bench>-<task>-claude-code.traces.jsonl.zst`
+    (once recording emits OTLP natively this is a plain copy plus
+    compression), then add an entry to `fixtures/provenance.json`. The
+    promotion is a single commit for auditability.
 
 12. **Fail fixture → `known-broken.md`.** A run that fails an
     inspection rule is not promoted to fixtures. Instead, its failure
@@ -218,3 +219,9 @@ human or agent judgment until we get more mechanical coverage.
     `provenance.json` entry and move on. A yellow entry is the
     starting point for a next-release-cycle conversation, not a
     blocker now.
+
+## Changelog
+
+| Date       | Change                                                                  |
+|------------|--------------------------------------------------------------------------|
+| 2026-09-08 | Rule 11: promoted fixtures are zstd-compressed (`*.traces.jsonl.zst`) before commit, matching [replay](../replay/RULES.md) rule 5. |
