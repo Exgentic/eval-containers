@@ -211,6 +211,36 @@ async fn replay_compose_with(
     compose
 }
 
+/// Every file a run leaves behind lives under `model/`, `agent/` or `task/`
+/// (output/RULES.md rule 12), and nothing lands outside the task directory
+/// (rule 24). Cheap post-conditions on a run that has already happened: the two
+/// ways this breaks are a component writing to the volume root — where
+/// `traces.jsonl` used to sit — and a mount widened past one task.
+fn assert_output_confined(benchmark: &str, agent: &str, model: &str, task_id: &str) {
+    let dir = task_dir(benchmark, agent, model, task_id);
+    let loose: Vec<_> = fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("task directory {dir:?} unreadable: {e}"))
+        .flatten()
+        .filter(|e| e.path().is_file())
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(
+        loose.is_empty(),
+        "{loose:?} sit loose in {dir:?} — every file belongs under model/, agent/ or task/"
+    );
+    let run_dir = dir.parent().expect("run directory");
+    let strays: Vec<_> = fs::read_dir(run_dir)
+        .unwrap_or_else(|e| panic!("run directory {run_dir:?} unreadable: {e}"))
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().into_owned())
+        .filter(|n| n != task_id)
+        .collect();
+    assert!(
+        strays.is_empty(),
+        "{strays:?} appeared beside the task directory in {run_dir:?} — a run writes only its own"
+    );
+}
+
 /// Assert the standard output contract: result.json with required fields.
 fn assert_result_valid(benchmark: &str, agent: &str, model: &str, task_id: &str) {
     let result_path = task_dir(benchmark, agent, model, task_id).join("task/result.json");
@@ -550,6 +580,7 @@ macro_rules! replay_test {
             ensure_images($benchmark, $agent, $task_id, ReplayMode::Lean).await;
             let _compose = replay_compose($benchmark, $agent, $task_id, ReplayMode::Lean).await;
             assert_result_valid($benchmark, $agent, "replay", $task_id);
+            assert_output_confined($benchmark, $agent, "replay", $task_id);
         }
     };
 }
@@ -649,6 +680,7 @@ macro_rules! replay_fullstack_test {
             let _compose =
                 replay_compose($benchmark, $agent, $task_id, ReplayMode::FullStack).await;
             assert_result_valid($benchmark, $agent, FULLSTACK_MODEL, $task_id);
+            assert_output_confined($benchmark, $agent, FULLSTACK_MODEL, $task_id);
             assert_gateway_traces($benchmark, $agent, $task_id);
             assert_agent_succeeded($benchmark, $agent, $task_id);
         }
