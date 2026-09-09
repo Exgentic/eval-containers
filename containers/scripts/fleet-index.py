@@ -237,7 +237,14 @@ def main() -> None:
         for kind in ("benchmarks", "agents", "models")
         for c in components(kind)
     }
-    declared = {r: v for r, v in declared.items() if v and r in images}
+    # Not filtered to what `images` holds: a per-task benchmark publishes no
+    # `benchmarks/<family>` image of its own — only `benchmarks/<family>-<task>`
+    # — so keying its labels off that image dropped swe-bench, terminal-bench and
+    # skills-bench from the labels entirely, and with them any consumer's way to
+    # tell that `evals/swe-bench-astropy__astropy-12907--codex` is a task of
+    # swe-bench rather than a benchmark of its own. Labels are what a component
+    # declares; `images` is what exists. They answer different questions.
+    declared = {r: v for r, v in declared.items() if v}
 
     commit = subprocess.run(
         ["git", "-C", CONTAINERS, "rev-parse", "HEAD"],
