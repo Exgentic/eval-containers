@@ -284,5 +284,23 @@ async fn the_launcher_records_reuses_retries_and_refuses() {
     let (code, log) = launch(&dir, &[]).await;
     assert_eq!(code, 0, "a stale claim still blocked the retry:\n{log}");
 
+    // And the claim has to be atomic, not checked-then-taken: two runs started
+    // at once must not both decide the directory is free. This is the case a
+    // sequential test cannot see, and the one that corrupts a real run.
+    let (a, b) = tokio::join!(
+        launch(&dir, &[("EVAL_FORCE", "1")]),
+        launch(&dir, &[("EVAL_FORCE", "1")])
+    );
+    let mut codes = [a.0, b.0];
+    codes.sort_unstable();
+    assert_eq!(
+        codes,
+        [0, 3],
+        "two runs raced for one task directory and did not settle on one winner \
+         and one refusal:\n{}\n{}",
+        a.1,
+        b.1
+    );
+
     let _ = std::fs::remove_dir_all(&run_dir);
 }

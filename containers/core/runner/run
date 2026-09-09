@@ -70,31 +70,42 @@ if [ -f /output/agent/config.env ] && [ "$config" != "$(cat /output/agent/config
   diff /output/agent/config.env <(printf '%s\n' "$config") >&2 || true
   exit 3
 fi
-if [ -z "${EVAL_FORCE:-}" ] && [ -s /output/task/result.json ] \
-   && grep -q '"error":null' /output/agent/result.json 2>/dev/null; then
+complete=false
+if [ -s /output/task/result.json ] && [ -f /output/agent/result.json ] \
+   && grep -q '"error":null' /output/agent/result.json; then
+  complete=true
+fi
+if [ "$complete" = true ] && [ -z "${EVAL_FORCE:-}" ]; then
   echo "run: complete, not rerun (rule 26): $(cat /output/task/result.json)"
   exit 0
 fi
-if [ -n "$(find /output/agent -maxdepth 1 -name .lock -mmin -2 2>/dev/null)" ]; then
-  echo "run: another attempt is in progress in /output — agent/.lock touched under 2 min ago (rule 32)" >&2
-  exit 3
+
+# Claim the directory before touching anything in it (rule 32). `set -C` makes
+# the create O_EXCL, so two launchers racing here cannot both win; a claim whose
+# holder stopped refreshing it is a dead attempt's, and is taken over.
+if ! (set -C; : > /output/agent/.lock) 2>/dev/null; then
+  if [ -n "$(find /output/agent -maxdepth 1 -name .lock -mmin -2)" ]; then
+    echo "run: another attempt is in progress in /output — agent/.lock touched under 2 min ago (rule 32)" >&2
+    exit 3
+  fi
+  : > /output/agent/.lock
 fi
-# Failed or forced: empty the previous attempt (rules 28–30). otelcol holds
-# model/traces.jsonl open, so that one is truncated, not unlinked.
+# Release the claim whenever this shell exits, or a launcher that dies before
+# the pipeline starts (an edge that never came up) would refuse its own retry.
+# The three phases `exec` past this trap on purpose: from there the claim is
+# write-result's to release, and a container killed outright leaves one that
+# nothing refreshes, so it goes stale on its own.
+trap 'rm -f /output/agent/.lock' EXIT
+( while sleep 30; do touch /output/agent/.lock; done ) &
+
+# Failed or forced: empty the previous attempt (rules 28–30), keeping this
+# attempt's own claim. otelcol holds model/traces.jsonl open, so that one is
+# truncated rather than unlinked.
 find /output -mindepth 1 -maxdepth 1 -type f -delete
-find /output/{model,agent,task} -mindepth 1 ! -path /output/model/traces.jsonl -delete
+find /output/{model,agent,task} -mindepth 1 \
+  ! -path /output/model/traces.jsonl ! -name .lock -delete
 if [ -f /output/model/traces.jsonl ]; then : > /output/model/traces.jsonl; fi
 printf '%s\n' "$config" > /output/agent/config.env
-# The lock is this attempt's claim on the directory (rule 32). Release it
-# whenever this shell exits, or a launcher that dies before the pipeline starts
-# (no supervisor, an edge that never came up) would refuse its own retry — and
-# refuse a forced one too, since the claim is checked before the emptying. The
-# three phases `exec` past this trap on purpose: from there the claim is
-# write-result's to release, and a container killed outright leaves a claim that
-# the heartbeat below stops refreshing, so it goes stale on its own.
-trap 'rm -f /output/agent/.lock' EXIT
-touch /output/agent/.lock
-( while sleep 30; do touch /output/agent/.lock; done ) &
 chown -R agent:agent /output/agent /tmp 2>/dev/null || true
 chmod 0755 /output /output/agent /output/task /output/model
 
