@@ -84,6 +84,7 @@ pub fn execute(registry: &str, args: OracleArgs) -> Result<(), String> {
                 builder: None,
                 dry_run: false,
                 imagestream_suffix: String::new(),
+                platform: None,
             },
         )?;
     }
