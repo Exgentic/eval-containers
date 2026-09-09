@@ -1219,29 +1219,6 @@ jobs:
           cmp catalog.json "$d/catalog.json"
           jq -r '"catalog: \(.families | length) families x \(.agents | length) agents"' \
             catalog.json >> "$GITHUB_STEP_SUMMARY"
-      # The inventory beside the catalog: every artifact this fleet names, proved
-      # against the registry one by one, with the labels each component declares.
-      # The catalog answers "which pair may I launch" as a model — families x a
-      # lineup — which is exactly how it came to offer an agent against 99
-      # benchmarks when one was published (#516). The index answers it by
-      # enumeration, so a consumer can search and filter what actually exists.
-      - name: Sweep the registry -> evals/index:latest
-        env:
-          CATALOG_AGENTS: ${{ join(fromJson(needs.enumerate.outputs.agents), ' ') }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 containers/scripts/fleet-index.py pertask.json > index.json
-          # A sweep that found nothing is a broken sweep, not an empty registry.
-          jq -e '.images | length > 0' index.json > /dev/null
-          oras push "${REGISTRY}/evals/index:latest" \
-            --artifact-type application/vnd.exgentic.index.v1+json \
-            index.json:application/json
-          # Rule 17: a zero exit is not evidence — read the artifact back.
-          d=$(mktemp -d); oras pull "${REGISTRY}/evals/index:latest" --output "$d"
-          cmp index.json "$d/index.json"
-          jq -r '"index: \(.images | length) published artifacts, \(.labels | length) labelled components"' \
-            index.json >> "$GITHUB_STEP_SUMMARY"
-
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:
     name: Build-time + size report

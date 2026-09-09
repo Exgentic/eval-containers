@@ -1,0 +1,76 @@
+name: Publish index
+
+# The fleet inventory — `evals/index:latest`, every artifact the registry holds
+# with its tags, plus the labels each component declares (containers/scripts/
+# fleet-index.py). Consumers read it instead of scanning: the dashboard's launch
+# form offers the pairs it lists, and `eval-containers list` filters it.
+#
+# Split out of release-images.yml, like publish-chart.yml before it, for a
+# second reason as well as the first. The first is that a 90-second sweep should
+# not sit behind a fleet build. The second is that the index can only be as true
+# as the last time someone looked: an image deleted, or pushed outside a
+# release, drifts from it silently and the release is not the event that would
+# catch it. So this also runs on a schedule.
+#
+# It is a full sweep, never an accumulation, so any run repairs the last one and
+# the first run after an outage is the backfill.
+
+on:
+  schedule:
+    # Every 30 minutes: the window in which a deletion or an out-of-band push can
+    # go unnoticed. It costs ~2 minutes of a runner — ~30000 registry reads, which
+    # do not touch the GitHub API budget (measured: 100 reads moved
+    # `core.remaining` by zero); the handful of REST calls per run are the
+    # upstream task listings.
+    - cron: "*/30 * * * *"
+  # Right after a release, rather than waiting up to half an hour to notice what
+  # it just published. `completed`, not `requested`: an index written mid-run
+  # would claim images that are still being pushed.
+  workflow_run:
+    workflows: ["Release the fleet"]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - containers/scripts/fleet-index.py
+      - .github/workflows/publish-index.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  # Not cancel-in-progress: two sweeps racing would publish in an unknown order,
+  # and the older one winning is exactly the staleness this exists to remove.
+  group: publish-index
+
+jobs:
+  index:
+    name: evals/index:latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oras-project/setup-oras@v1
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sweep the registry -> evals/index:latest
+        env:
+          REGISTRY: ghcr.io/exgentic
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 containers/scripts/fleet-index.py > index.json
+          # A sweep that found nothing is a broken sweep, not an empty registry.
+          jq -e '.images | length > 0' index.json > /dev/null
+          oras push "${REGISTRY}/evals/index:latest" \
+            --artifact-type application/vnd.exgentic.index.v1+json \
+            index.json:application/json
+          # Rule 17: a zero exit is not evidence — read the artifact back.
+          d=$(mktemp -d); oras pull "${REGISTRY}/evals/index:latest" --output "$d"
+          cmp index.json "$d/index.json"
+          jq -r '"index: \(.images | length) published artifacts, \(.labels | length) labelled components"' \
+            index.json >> "$GITHUB_STEP_SUMMARY"
