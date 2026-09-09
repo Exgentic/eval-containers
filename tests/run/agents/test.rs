@@ -316,21 +316,48 @@ async fn await_first_call(replay: &ContainerAsync<GenericImage>, timeout: Durati
     false
 }
 
+/// The record the edge actually writes: `runner/run` (and
+/// `runner/process-compose.yaml`) hand it `OUT=/output/model/calls.jsonl.zst`,
+/// so the name is fixed by the launcher, not overridable from the test's env.
+const RECORD_PATH: &str = "model/calls.jsonl.zst";
+
+/// Decode the edge's record stream. It is one zstd stream held open for the
+/// whole run and flushed after each record, and it is never closed — the pod
+/// SIGKILLs the edge — so an unterminated frame still has to yield the records
+/// written so far. `zstd -dc` does; it is how `tests/e2e/real-eval.sh` reads
+/// the same file, and it keeps a decoder out of this crate's dep tree.
+///
+/// Returns None while the file does not exist yet or has no complete record,
+/// which is the normal state until the agent's first call lands.
+fn decode_records(path: &Path) -> Option<Vec<serde_json::Value>> {
+    if !std::fs::metadata(path).is_ok_and(|m| m.len() > 0) {
+        return None;
+    }
+    let out = std::process::Command::new("zstd")
+        .arg("-dc")
+        .arg(path)
+        .output()
+        .ok()?;
+    // A truncated final record is expected mid-run: zstd exits non-zero having
+    // still written every whole record to stdout, so parse what came out rather
+    // than gating on the status. Only fully-parsed lines count.
+    let text = String::from_utf8_lossy(&out.stdout);
+    let rows: Vec<serde_json::Value> = text
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    (!rows.is_empty()).then_some(rows)
+}
+
 /// The edge writes one JSON line per call as each completes, so this polls
 /// rather than reading once.
 async fn await_records(output_dir: &Path, timeout: Duration) -> Vec<serde_json::Value> {
-    let path = output_dir.join("model/calls.jsonl");
+    let path = output_dir.join(RECORD_PATH);
     let deadline = Instant::now() + timeout;
     loop {
-        if let Ok(raw) = std::fs::read_to_string(&path) {
-            let rows: Vec<serde_json::Value> = raw
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .map(|l| serde_json::from_str(l).expect("edge wrote a malformed record"))
-                .collect();
-            if !rows.is_empty() {
-                return rows;
-            }
+        if let Some(rows) = decode_records(&path) {
+            return rows;
         }
         if Instant::now() >= deadline {
             return Vec::new();
@@ -347,7 +374,7 @@ async fn assert_edge_pinned_and_recorded(agent: &str, output_dir: &Path) {
     assert!(
         !rows.is_empty(),
         "{agent} reached the LLM but the edge wrote no record to \
-         /output/model/calls.jsonl"
+         /output/{RECORD_PATH}"
     );
 
     for (i, row) in rows.iter().enumerate() {
@@ -381,9 +408,15 @@ async fn assert_edge_pinned_and_recorded(agent: &str, output_dir: &Path) {
         rows.len()
     );
 
-    let raw = std::fs::read_to_string(output_dir.join("model/calls.jsonl")).unwrap_or_default();
+    // Check the decoded records, not the raw file: the credential would be
+    // compressed on disk, so scanning the bytes could not see it either way.
+    let decoded = rows
+        .iter()
+        .map(|r| r.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
     assert!(
-        !raw.contains(UPSTREAM_CREDENTIAL),
+        !decoded.contains(UPSTREAM_CREDENTIAL),
         "{agent}: the upstream credential reached the record"
     );
 }
