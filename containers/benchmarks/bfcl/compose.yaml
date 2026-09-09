@@ -2,6 +2,10 @@ include:
   - path: ../../compose/services.yaml
 
 services:
+  # Model-only runner: BFCL's native harness + AST checker grades one task
+  # (EVAL_TASK_ID) and drives the model through the gateway in native
+  # function-calling mode. No bridge and no user simulator — the harness is its
+  # own agent scaffold.
   runner:
     extends:
       file: ../../compose/runner.yaml
@@ -12,5 +16,27 @@ services:
       gateway:
         condition: service_healthy
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/bfcl--${EVAL_AGENT:-claude-code}:latest
+    # Model-only: run the native harness directly (it needs the task id, which
+    # the scrubbed agent phase withholds), then always write the result. Each
+    # step runs regardless of the previous one's status — write-result grades
+    # whatever was produced, fail-closed to 0 (mirrors /usr/local/bin/run).
+    # There is no separate agent phase here, so run-agent never writes
+    # /output/agent/.exit-code (rule 16) — capture the runner's own exit status
+    # into it so agent/result.json's exit_code reflects the program that ran.
+    entrypoint:
+      - bash
+      - -c
+      - "/eval-materialize-task || true; python3 /app/run_bfcl.py; echo $? > /output/agent/.exit-code; /usr/local/bin/write-result"
     environment:
       BENCHMARK: bfcl
+      # The harness talks to the gateway on the OpenAI-compatible surface.
+      OPENAI_BASE_URL: http://gateway:4000/openai/v1
+      # One model turn per task, but reasoning models can be slow — give it more
+      # wall-clock than the default.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-900}
+      TIMEOUT: ${EVAL_TIMEOUT:-900}
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
