@@ -1016,6 +1016,37 @@ fn build_scripts_use_docker_not_podman() {
     );
 }
 
+/// The per-task release job must inspect and push with the engine `build.sh`
+/// builds with (#522). `build.sh` uses `docker build` (rule 6c; guarded above),
+/// so the image lands in docker's store; a `podman image inspect` there returns
+/// nothing, the arch-pinned skip fires for every ref, and no per-task image is
+/// ever pushed — the catch-up on `main` never converges.
+#[test]
+fn the_per_task_job_pushes_with_the_engine_build_sh_builds_with() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  per-task:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  merge:").next())
+        .expect("no `per-task` job in release-images.yml");
+    let commands: Vec<&str> = job
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect();
+    assert!(
+        !commands.iter().any(|l| l.contains("podman")),
+        "the per-task job must not touch podman: build.sh builds with `docker build`, \
+         and an image in docker's store is invisible to podman"
+    );
+    assert!(
+        job.contains("docker image inspect \"$ref\" --format '{{.Architecture}}'")
+            && job.contains("retry docker push \"$ref\""),
+        "the per-task job must read the built arch and push with docker — the \
+         engine build.sh builds with"
+    );
+}
+
 /// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
 /// carries the gateway with one `COPY /opt/gateway`, so a shim outside it fails
 /// `not found` at boot (regression: #269's nginx at /usr/sbin broke every bundle).
