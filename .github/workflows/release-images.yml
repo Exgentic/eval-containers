@@ -56,10 +56,6 @@ on:
       tag:
         description: "Version to publish (e.g. v0.1.0); blank = build at :latest"
         default: ""
-      rebuild_bases:
-        description: "Rebuild shared bases even when their input-hashes are fresh"
-        type: boolean
-        default: false
       combo_agents:
         description: "Space-separated agents to build eval combos for (blank = skip)"
         # The 8 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
@@ -81,10 +77,6 @@ on:
       only:
         description: "Debug: restrict matrices to these space-separated leaf targets (e.g. 'benchmark-gsm8k agent-claude-code'); blank = whole fleet"
         default: ""
-      force_rebuild:
-        description: "Rebuild every image even when its recorded input-hash is fresh (use for CVE/base refreshes — upstream base drift is invisible to the input hash)"
-        type: boolean
-        default: false
 
 concurrency:
   group: fleet-release-${{ github.ref }}
@@ -175,17 +167,16 @@ jobs:
           # Carried-forward (rule 13): a base whose inputs are unchanged from
           # the prior release (:latest-<arch>) is retagged, never rebuilt —
           # digest-stable, so leaf caches keep hitting; this subsumes the old
-          # whole-set FROZEN sentinel with a per-target judgment. rebuild_bases
-          # / force_rebuild override it (CVE refreshes — upstream base drift is
-          # invisible to the input hash). The CVE gate scans whatever :TAG
+          # whole-set FROZEN sentinel with a per-target judgment. An upstream
+          # base bump is a changed input (containers/externals.tsv), so a CVE
+          # refresh rebuilds here by itself. The CVE gate scans whatever :TAG
           # points to, carried or fresh (rule 15).
           BUILD=(); LBL=()
           for d in "${DEPS[@]}"; do
             h=$(awk -F'\t' -v t="$d" '$1==t{print $2}' <<< "$HASHES")
             [ -n "$h" ] || { echo "::error::no input-hash for $d"; exit 1; }
             ref="${REGISTRY}/$(awk -F'|' -v t="$d" '$1==t{print $2}' <<< "$GRAPH" | sed 's|^containers/||')"
-            if [ "${{ inputs.rebuild_bases }}" != "true" ] && [ "${{ inputs.force_rebuild }}" != "true" ] && \
-               [ "${{ inputs.dry_run }}" != "true" ] && \
+            if [ "${{ inputs.dry_run }}" != "true" ] && \
                bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$h" >/dev/null; then
               if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
               else
@@ -564,7 +555,7 @@ jobs:
           # the repo-computed inputs at this commit; the ref comes from the
           # graph's context column (dot-safe — target names mangle gpt-5.4).
           # Unchanged inputs vs the prior release (:latest-<arch>) ⇒ retag its
-          # digest instead of rebuilding; force_rebuild overrides (CVE refresh).
+          # digest instead of rebuilding.
           H=$(bash containers/scripts/fleet-hash.sh | awk -F'\t' -v t="$T" '$1==t{print $2}')
           [ -n "$H" ] || { echo "::error::no input-hash for $T"; fails=$((fails+1)); continue; }
           ctx=$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}')
@@ -575,7 +566,7 @@ jobs:
           if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
             echo "skipping $T on $ARCH — declared platforms: $PLATS"; continue
           fi
-          if [ "${{ inputs.force_rebuild }}" != "true" ] && [ "${{ inputs.dry_run }}" != "true" ] && \
+          if [ "${{ inputs.dry_run }}" != "true" ] && \
              bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$H" >/dev/null; then
             if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
             else
@@ -691,9 +682,8 @@ jobs:
             H=$(bash containers/scripts/fleet-hash.sh per-task "$B" "$TASK" | cut -f2)
             [ -n "$H" ] || { echo "::error::no input-hash for $B/$TASK"; fails=$((fails+1)); continue; }
             # Carried-forward (rule 13): unchanged inputs vs the prior release
-            # ⇒ retag its digest; force_rebuild overrides (CVE refresh).
-            if [ "${{ inputs.force_rebuild }}" != "true" ] && \
-               bash containers/scripts/fleet-status.sh check "${REGISTRY}/benchmarks/${B}-${tid}:latest-${ARCH}" "$H" >/dev/null; then
+            # ⇒ retag its digest.
+            if bash containers/scripts/fleet-status.sh check "${REGISTRY}/benchmarks/${B}-${tid}:latest-${ARCH}" "$H" >/dev/null; then
               if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: $ref (unchanged; kept)"
               elif docker buildx imagetools create --tag "$ref" "${REGISTRY}/benchmarks/${B}-${tid}:latest-${ARCH}"; then
                 echo "carried forward: $ref <- :latest-${ARCH}"
@@ -760,7 +750,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64
         run: |
-          retry() { local n=0 max="${BUILD_RETRIES:-4}"; until "$@"; do n=$((n+1)); [ "$n" -ge "$max" ] && return 1; sleep $(( n*10 + (RANDOM % 10) )); done; }
           # Collect every image ref the per-arch jobs pushed: bases (core+gateways
           # dirs), leaves (target→path), per-task (benchmarks/<b>-<tid>).
           : > /tmp/refs.txt
@@ -799,7 +788,8 @@ jobs:
               echo "::warning::no ${TAG}-amd64/-arm64 found for ${ref} — :${TAG} left as-is"
               skipped=$((skipped+1)); continue
             fi
-            if retry docker buildx imagetools create --tag "${ref}:${TAG}" "${srcs[@]}"; then merged=$((merged+1)); \
+            # Hash tag first, :TAG alias second (delivery rules 18–19).
+            if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then merged=$((merged+1)); \
             else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
           done < /tmp/refs.txt
           echo "merged=$merged skipped=$skipped fails=$fails"
@@ -891,10 +881,10 @@ jobs:
           }
           # Carried-forward (rule 13), per variant: unchanged inputs vs the
           # prior release (:latest — combos push manifest lists directly)
-          # ⇒ retag its digest; force_rebuild overrides (CVE refresh). Reads
-          # the per-iteration eb/A/TAG/DRY at call time.
+          # ⇒ retag its digest. Reads the per-iteration eb/A/TAG/DRY at call
+          # time.
           carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
-            [ "${{ inputs.force_rebuild }}" != "true" ] && [ "$DRY" != "true" ] || return 1
+            [ "$DRY" != "true" ] || return 1
             bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" >/dev/null || return 1
             if [ "$TAG" = "latest" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
             else
@@ -933,13 +923,23 @@ jobs:
             ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A}"
+            # Pushed under the hash tag itself (rule 18); the :TAG alias follows
+            # via fleet-tag, so the hash name always exists first (rule 19).
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
                  --set "eval.labels.eval.input-hash=${EH}" \
                  --set "eval-standalone.labels.eval.input-hash=${SH}" \
+                 --set "eval.tags=${REGISTRY}/evals/${eb}--${A}:${EH}" \
+                 --set "eval-standalone.tags=${REGISTRY}/evals/${eb}--${A}-standalone:${SH}" \
                  --set "*.platform=${PLAT}" \
-                 "${ACT[@]}"; then :; \
+                 "${ACT[@]}"; then
+              for t in "${TGT[@]}"; do
+                sfx=""; h="$EH"; [ "$t" != "eval-standalone" ] || { sfx="-standalone"; h="$SH"; }
+                [ "$DRY" = "true" ] || bash containers/scripts/fleet-tag.sh \
+                  "${REGISTRY}/evals/${eb}--${A}${sfx}" "$TAG" "${REGISTRY}/evals/${eb}--${A}${sfx}:${h}" \
+                  || { echo "::error::alias failed: evals/${eb}--${A}${sfx}:${TAG}"; fails=$((fails+1)); }
+              done
             else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
             echo "::endgroup::"
           done < <(jq -c '.[]' <<< "$ITEMS")
@@ -997,9 +997,9 @@ jobs:
             done
           }
           # Carried-forward (rule 13), per arch + variant: unchanged inputs vs the
-          # prior release's per-arch tag ⇒ retag its digest; force_rebuild overrides.
+          # prior release's per-arch tag ⇒ retag its digest.
           carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
-            [ "${{ inputs.force_rebuild }}" != "true" ] && [ "$DRY" != "true" ] || return 1
+            [ "$DRY" != "true" ] || return 1
             bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest-${ARCH}" "$2" >/dev/null || return 1
             if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
             else
@@ -1059,13 +1059,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos)
         run: |
-          retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
-              sleep $(( n*10 + (RANDOM % 10) ))
-            done
-          }
           fails=0; merged=0; skipped=0
           # Process substitution, not a pipe: `jq | while` runs the loop body in a
           # subshell, silently dropping fails/merged/skipped and defeating the exit
@@ -1081,7 +1074,7 @@ jobs:
                 docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
               done
               [ "${#srcs[@]}" -eq 0 ] && { skipped=$((skipped+1)); continue; }
-              if retry docker buildx imagetools create --tag "${ref}:${TAG}" "${srcs[@]}"; then merged=$((merged+1))
+              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then merged=$((merged+1))
               else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
             done
           done < <(jq -r '.[]?|.items[]?|"\(.b)\t\(.a)\t\(.task)"' <<< "${SHARDS:-[]}")
@@ -1089,16 +1082,16 @@ jobs:
           [ "$fails" -eq 0 ] || { echo "::error::$fails pertask-combo manifest merge(s) failed"; exit 1; }
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
-  # Runs for real releases (tag / explicit version) or whenever the bases were
-  # force-rebuilt. The scan covers whatever :TAG points to — carried-forward
-  # digests included (rule 15) — so a base carried from the prior release is
-  # re-gated at every release; a failure there means the base accumulated CVEs
-  # since it was built, and the fix is a force_rebuild/rebuild_bases refresh.
+  # Runs for real releases (tag / explicit version). The scan covers whatever
+  # :TAG points to — carried-forward digests included (rule 15) — so a base
+  # carried from the prior release is re-gated at every release; a failure
+  # there means the base accumulated CVEs since it was built, and the fix is
+  # a refreshed containers/externals.tsv (a changed input, so it rebuilds).
   # A dev dispatch skips the gate (it isn't publishing :latest — the promotion
   # below is tag-only).
   release-gate:
     needs: [merge, per-task, compose, combos, merge-pertask-combos]
-    if: always() && needs.merge.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
+    if: always() && needs.merge.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
