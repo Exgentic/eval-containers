@@ -3,7 +3,7 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-rust:latest
-ARG AGENT_VERSION=1.5.0
+ARG AGENT_VERSION=1.5.1-rc2
 LABEL eval.type="agent"
 LABEL eval.agent.name="zerostack"
 LABEL eval.agent.description="Zerostack minimal Rust coding agent"
@@ -11,11 +11,12 @@ LABEL eval.agent.runtime="rust"
 LABEL eval.agent.url="https://github.com/gi-dellav/zerostack"
 LABEL eval.agent.version="${AGENT_VERSION}"
 ENV EVAL_AGENT=zerostack
-# Prebuilt release binary — the tarball is a single `zerostack` at its root.
-# Download to a file + size-check before extracting; streaming `curl | tar`
-# corrupts on partial bytes under flaky networks (same pattern as goose).
+# Prebuilt release binary, static **musl** build: the gnu build needs glibc 2.39, but
+# benchmark bases (where the combo actually runs the agent) are Debian 2.36 — gnu would
+# fail with `GLIBC_2.39 not found`. Download to a file + size-check before extracting;
+# streaming `curl | tar` corrupts on partial bytes under flaky networks (same as goose).
 RUN set -e; ok=0; ARCH=$(uname -m); \
-    URL="https://github.com/gi-dellav/zerostack/releases/download/v${AGENT_VERSION}/zerostack-${ARCH}-unknown-linux-gnu.tar.gz"; \
+    URL="https://github.com/gi-dellav/zerostack/releases/download/v${AGENT_VERSION}/zerostack-${ARCH}-unknown-linux-musl.tar.gz"; \
     for i in 1 2 3 4 5; do \
       if curl -fsSL --retry 5 --retry-delay 3 --retry-connrefused --max-time 300 \
            "$URL" -o /tmp/zerostack.tar.gz \
@@ -26,6 +27,7 @@ RUN set -e; ok=0; ARCH=$(uname -m); \
     done; \
     [ "$ok" = 1 ] || { echo "zerostack tarball download failed" >&2; exit 1; }; \
     tar xz -C /opt/agent/bin -f /tmp/zerostack.tar.gz && \
+    mv "/opt/agent/bin/zerostack-${ARCH}-unknown-linux-musl" /opt/agent/bin/zerostack && \
     rm /tmp/zerostack.tar.gz && \
     chmod +x /opt/agent/bin/zerostack && ln -sf /opt/agent/bin/zerostack /usr/local/bin/zerostack
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
@@ -51,8 +53,13 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # Name (not value) of the env var holding the placeholder key; the gateway holds
 # the real upstream credential, so this is not a secret.
 key_env=OPENAI_API_KEY  # pragma: allowlist secret
+# EVAL_AGENT_REASONING_EFFORT → reasoning_effort via zerostack's extra_body (>=1.5.1); explicit if, not ${VAR:+…}, since the JSON nests braces.
+reasoning=
+if [ -n "${EVAL_AGENT_REASONING_EFFORT:-}" ]; then
+  reasoning=",\"extra_body\":{\"reasoning_effort\":\"$EVAL_AGENT_REASONING_EFFORT\"}"
+fi
 cat > "$ZS_CONFIG_DIR/config.json" <<CONF
-{"custom_providers":{"eval":{"provider_type":"openai","base_url":"${OPENAI_BASE_URL:-http://gateway:4000/openai/v1}","api_key_env":"${key_env}","api_style":"completions"}},"enable-exa-mcp":false}
+{"custom_providers":{"eval":{"provider_type":"openai","base_url":"${OPENAI_BASE_URL:-http://gateway:4000/openai/v1}","api_key_env":"${key_env}","api_style":"completions"}},"enable-exa-mcp":false${reasoning}}
 CONF
 # -p prints the final answer to stdout and exits (no TUI). --no-session keeps the
 # run ephemeral. --dangerously-skip-permissions: the container is the sandbox, so
