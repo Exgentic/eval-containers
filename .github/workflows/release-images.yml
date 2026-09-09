@@ -62,10 +62,10 @@ on:
         default: false
       combo_agents:
         description: "Space-separated agents to build eval combos for (blank = skip)"
-        # The 7 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
+        # The 8 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
         # workflow_dispatch inputs are NOT populated on a tag push, so the enumerate
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
-        default: "claude-code codex gemini-cli openclaw zerostack opencode pi"
+        default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
       include_per_task:
         description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench)"
         type: boolean
@@ -248,7 +248,7 @@ jobs:
           # pruned below to what actually moved (#452), so the ~660 heavy per-task
           # images cost nothing on a push that did not touch them.
           if [ "$IS_DISPATCH" != "true" ]; then
-            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi"
+            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
             INCLUDE_PER_TASK=true
           fi
           # The :latest channel (delivery/RULES.md:16): a main push publishes only
