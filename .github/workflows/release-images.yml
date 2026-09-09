@@ -328,7 +328,7 @@ jobs:
           [ "$IS_MAIN_PUSH" != "true" ] || combo_bench=$(printf '%s\n' "$bench_all" | with_compose)
 
           # ── per-task bases: {b,task,kind} for every per-task benchmark ──
-          # kind=script -> build.sh (podman two-step upstream build; tasks from the
+          # kind=script -> build.sh (docker two-step upstream build; tasks from the
           # pinned GitHub tree). kind=bake -> docker buildx bake (swe-bench: FROM
           # the Epoch per-task base + EVAL_TASK_ID; tasks from the in-repo tasks.txt).
           pertask='[]'
@@ -613,8 +613,9 @@ jobs:
           [ "$fails" -eq 0 ] || { echo "::error::$fails leaf(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
 
   # ── per-task base images — sharded; each job builds a chunk of (b,task) ───
-  # Two mechanics in one job: kind=script (build.sh via podman, chained through
-  # the local store) and kind=bake (swe-bench via buildx FROM the Epoch base).
+  # Two mechanics in one job: kind=script (build.sh via docker build, chained
+  # through the local store) and kind=bake (swe-bench via buildx FROM the Epoch
+  # base). Both inspect/push with docker: the image lands in docker's store.
   # >256 (b,task) pairs are sharded; one item failing only fails its own ref.
   per-task:
     needs: [bases, enumerate]
@@ -635,15 +636,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: docker/setup-buildx-action@v4   # kind=bake (swe-bench)
-      - name: Ensure podman                    # kind=script (build.sh)
-        run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Log in to GHCR (podman)
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
       - uses: actions/download-artifact@v8
         with: { name: shards, path: . }
       - name: Build + push per-task shard ${{ matrix.shard.idx }} (${{ matrix.arch }})
@@ -698,9 +695,9 @@ jobs:
               # runner — a task whose upstream pins a different arch is skipped so the
               # merge keeps it single-arch (never a mislabeled :TAG-<arch>).
               if EVAL_INPUT_HASH="$H" retry bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK"; then
-                built=$(podman image inspect "$ref" --format '{{.Architecture}}' 2>/dev/null || echo unknown)
+                built=$(docker image inspect "$ref" --format '{{.Architecture}}' 2>/dev/null || echo unknown)
                 if [ "$built" = "$ARCH" ]; then
-                  retry podman push "$ref" || { echo "::error::push failed: $ref"; fails=$((fails+1)); }
+                  retry docker push "$ref" || { echo "::error::push failed: $ref"; fails=$((fails+1)); }
                 else
                   echo "::warning::$ref built $built != $ARCH (upstream arch-pinned) — skipping push; merge keeps it single-arch"
                 fi
