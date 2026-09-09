@@ -1,0 +1,38 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  # Model-only conformance probe: walle's runner resolves one case
+  # (EVAL_TASK_ID → a JSON Schema) and POSTs it as response_format to the
+  # gateway, scoring 1.0 iff the observed accept/reject verdict matches the
+  # expected one. No agent, no user simulator — the runner is its own scaffold.
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/walle--${EVAL_AGENT:-claude-code}:latest
+    # Model-only: run the probe directly (it needs the task id, which the
+    # scrubbed agent phase withholds), then always write the result. Each step
+    # runs regardless of the previous one's status — write-result grades
+    # whatever was produced, fail-closed to 0 (mirrors /usr/local/bin/run).
+    # There is no separate agent phase, so run-agent never writes
+    # /output/agent/.exit-code (rule 16) — capture the probe's own exit status
+    # into it so agent/result.json's exit_code reflects the program that ran.
+    entrypoint:
+      - bash
+      - -c
+      - "/eval-materialize-task || true; python3 /app/run_walle.py; echo $? > /output/agent/.exit-code; /usr/local/bin/write-result"
+    environment:
+      BENCHMARK: walle
+      # The probe talks to the gateway on the OpenAI-compatible surface.
+      OPENAI_BASE_URL: http://gateway:4000/openai/v1
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G

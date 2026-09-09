@@ -1,0 +1,29 @@
+# walle — model-only structured-output conformance probe. No bespoke sidecars:
+# the probe is one HTTP call to the gateway, no simulated tools, no user
+# simulator, so unlike tau-bench this needs no bridge / second gateway / extra
+# Deployments.
+#
+# The default runnerArgs run /entrypoint.sh /usr/local/bin/run (the scrubbed
+# three-phase pipeline, which withholds the task id from the agent). This
+# benchmark instead runs its own probe in the runner (which HAS the task id):
+# materialize the case, run run_walle.py (POSTs the schema as response_format
+# and writes /logs/verifier/reward.txt), then write result.json via the shared
+# writer.
+timeout: '300'
+# Each step runs regardless of the previous one's exit status: write-result
+# always grades whatever was produced, fail-closed to 0. The probe's own exit
+# status is captured into /output/agent/.exit-code (rule 16) so agent's
+# result.json reflects the program that actually ran.
+runnerArgs: >-
+  /eval-materialize-task || true;
+  python3 /app/run_walle.py;
+  echo $? > /output/agent/.exit-code;
+  /usr/local/bin/write-result;
+  /usr/local/bin/reap-sidecars
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: '1'
+    memory: 1Gi
