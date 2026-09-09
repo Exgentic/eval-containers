@@ -48,12 +48,20 @@ what consumers should pin. Per-task images (~600 heavy builds) are excluded
 from the continuous channel and refresh only on versioned releases or manual
 dispatch.
 
-## Forcing a rebuild
+## Refreshing upstream bases
 
-The input hash sees the repository, not the outside world: an upstream base
-image (`python:3.12-slim`) or unpinned package moving does not change any
-input. To pick up upstream fixes, dispatch **Release the fleet** with
-`force_rebuild: true` (or `rebuild_bases: true` for the shared bases alone) —
-principle 9 classes such CVE/base refreshes as a patch release. The CVE gate
-scans whatever the release tag points to, carried-forward or freshly built, so
-a stale-but-carried base cannot slip through a gated release unscanned.
+The input hash sees the repository only, so the digest of every external base
+image (`python:3.12-slim`, …) lives in the repository too:
+`containers/externals.tsv`, one `ref<TAB>digest` line per base the fleet builds
+`FROM`. To pick up upstream fixes, refresh it and commit — the push then
+rebuilds exactly the images whose base moved:
+
+```bash
+containers/scripts/external-drift.sh containers/externals.tsv > /tmp/externals.tsv; mv /tmp/externals.tsv containers/externals.tsv
+```
+
+Nothing rebuilds under an unchanged hash ([delivery rule 19](../../.agents/delivery/RULES.md)):
+an image's hash tag names one set of bytes for good, so a refresh is always a
+new input, never a repoint. The CVE gate scans whatever the release tag points
+to, carried-forward or freshly built, so a stale-but-carried base cannot slip
+through a gated release unscanned.

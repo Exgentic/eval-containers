@@ -56,16 +56,12 @@ on:
       tag:
         description: "Version to publish (e.g. v0.1.0); blank = build at :latest"
         default: ""
-      rebuild_bases:
-        description: "Rebuild shared bases even when their input-hashes are fresh"
-        type: boolean
-        default: false
       combo_agents:
         description: "Space-separated agents to build eval combos for (blank = skip)"
-        # The 7 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
+        # The 8 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
         # workflow_dispatch inputs are NOT populated on a tag push, so the enumerate
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
-        default: "claude-code codex gemini-cli openclaw zerostack opencode pi"
+        default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
       include_per_task:
         description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench)"
         type: boolean
@@ -81,10 +77,6 @@ on:
       only:
         description: "Debug: restrict matrices to these space-separated leaf targets (e.g. 'benchmark-gsm8k agent-claude-code'); blank = whole fleet"
         default: ""
-      force_rebuild:
-        description: "Rebuild every image even when its recorded input-hash is fresh (use for CVE/base refreshes — upstream base drift is invisible to the input hash)"
-        type: boolean
-        default: false
 
 concurrency:
   group: fleet-release-${{ github.ref }}
@@ -175,17 +167,16 @@ jobs:
           # Carried-forward (rule 13): a base whose inputs are unchanged from
           # the prior release (:latest-<arch>) is retagged, never rebuilt —
           # digest-stable, so leaf caches keep hitting; this subsumes the old
-          # whole-set FROZEN sentinel with a per-target judgment. rebuild_bases
-          # / force_rebuild override it (CVE refreshes — upstream base drift is
-          # invisible to the input hash). The CVE gate scans whatever :TAG
+          # whole-set FROZEN sentinel with a per-target judgment. An upstream
+          # base bump is a changed input (containers/externals.tsv), so a CVE
+          # refresh rebuilds here by itself. The CVE gate scans whatever :TAG
           # points to, carried or fresh (rule 15).
           BUILD=(); LBL=()
           for d in "${DEPS[@]}"; do
             h=$(awk -F'\t' -v t="$d" '$1==t{print $2}' <<< "$HASHES")
             [ -n "$h" ] || { echo "::error::no input-hash for $d"; exit 1; }
             ref="${REGISTRY}/$(awk -F'|' -v t="$d" '$1==t{print $2}' <<< "$GRAPH" | sed 's|^containers/||')"
-            if [ "${{ inputs.rebuild_bases }}" != "true" ] && [ "${{ inputs.force_rebuild }}" != "true" ] && \
-               [ "${{ inputs.dry_run }}" != "true" ] && \
+            if [ "${{ inputs.dry_run }}" != "true" ] && \
                bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$h" >/dev/null; then
               if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
               else
@@ -215,6 +206,7 @@ jobs:
       leaves: ${{ steps.l.outputs.leaves }}        # bake targets: benchmarks(shared)+agents+models
       leaf_shards: ${{ steps.l.outputs.leaf_shards }} # [{idx}] — leaves chunked ≤128 shards × 2 arches
       benchmarks: ${{ steps.l.outputs.benchmarks }} # benchmark names with a compose.yaml
+      agents: ${{ steps.l.outputs.agents }}         # the combo lineup this run used ('[]' = no combos)
       combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256 (shared combos only, task=="")
       pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench/deepswe), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
@@ -247,7 +239,7 @@ jobs:
           # pruned below to what actually moved (#452), so the ~660 heavy per-task
           # images cost nothing on a push that did not touch them.
           if [ "$IS_DISPATCH" != "true" ]; then
-            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi"
+            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
             INCLUDE_PER_TASK=true
           fi
           # The :latest channel (delivery/RULES.md:16): a main push publishes only
@@ -336,7 +328,7 @@ jobs:
           [ "$IS_MAIN_PUSH" != "true" ] || combo_bench=$(printf '%s\n' "$bench_all" | with_compose)
 
           # ── per-task bases: {b,task,kind} for every per-task benchmark ──
-          # kind=script -> build.sh (podman two-step upstream build; tasks from the
+          # kind=script -> build.sh (docker two-step upstream build; tasks from the
           # pinned GitHub tree). kind=bake -> docker buildx bake (swe-bench: FROM
           # the Epoch per-task base + EVAL_TASK_ID; tasks from the in-repo tasks.txt).
           pertask='[]'
@@ -404,7 +396,7 @@ jobs:
           # ── combos: shared (task="") + per-task, all as {b,a,task,kind} ──
           # Both build via one downstream bake-eval call (per-task just points at the
           # per-task base + a task-suffixed name), so they share one shape + matrix.
-          combos='[]'
+          combos='[]'; agents='[]'
           if [ -n "$COMBO_AGENTS" ]; then
             read -ra _ag <<< "$COMBO_AGENTS"
             agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')
@@ -474,8 +466,11 @@ jobs:
           # as arguments exceeds ARG_MAX — jq never starts and the step exits 126
           # ("Argument list too long"). printf is a shell builtin, so nothing is
           # exec'd and there is no limit. Each value is already compact JSON.
-          printf '{"leaf":%s,"combo":%s,"pertask_combo":%s,"pertask":%s}' \
-            "$leaf_shards" "$combo_shards" "$pertask_combo_shards" "$pertask_shards" > shards.json
+          # pertask_all is the UNPRUNED list — the catalog job describes the whole
+          # channel, not the delta this run happened to build.
+          printf '{"leaf":%s,"combo":%s,"pertask_combo":%s,"pertask":%s,"pertask_all":%s}' \
+            "$leaf_shards" "$combo_shards" "$pertask_combo_shards" "$pertask_shards" \
+            "$pertask_all" > shards.json
           idx() { jq -c '[.[] | {idx}]' <<< "$1"; }
           # combos build per shard via buildx --platform (one job/shard) → ≤256;
           # per-task and pertask-combo fan out per shard × 2 arches → matrix must fit 256.
@@ -496,6 +491,7 @@ jobs:
           {
             echo "leaves=$leaves"
             echo "benchmarks=$benchmarks"
+            echo "agents=$agents"
             echo "leaf_shards=$(idx "$leaf_shards")"
             echo "combo_shards=$(idx "$combo_shards")"
             echo "pertask_combo_shards=$(idx "$pertask_combo_shards")"
@@ -559,7 +555,7 @@ jobs:
           # the repo-computed inputs at this commit; the ref comes from the
           # graph's context column (dot-safe — target names mangle gpt-5.4).
           # Unchanged inputs vs the prior release (:latest-<arch>) ⇒ retag its
-          # digest instead of rebuilding; force_rebuild overrides (CVE refresh).
+          # digest instead of rebuilding.
           H=$(bash containers/scripts/fleet-hash.sh | awk -F'\t' -v t="$T" '$1==t{print $2}')
           [ -n "$H" ] || { echo "::error::no input-hash for $T"; fails=$((fails+1)); continue; }
           ctx=$(bash containers/scripts/fleet-hash.sh graph | awk -F'|' -v t="$T" '$1==t{print $2}')
@@ -570,7 +566,7 @@ jobs:
           if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
             echo "skipping $T on $ARCH — declared platforms: $PLATS"; continue
           fi
-          if [ "${{ inputs.force_rebuild }}" != "true" ] && [ "${{ inputs.dry_run }}" != "true" ] && \
+          if [ "${{ inputs.dry_run }}" != "true" ] && \
              bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$H" >/dev/null; then
             if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
             else
@@ -617,8 +613,9 @@ jobs:
           [ "$fails" -eq 0 ] || { echo "::error::$fails leaf(s) failed in shard ${{ matrix.shard.idx }}"; exit 1; }
 
   # ── per-task base images — sharded; each job builds a chunk of (b,task) ───
-  # Two mechanics in one job: kind=script (build.sh via podman, chained through
-  # the local store) and kind=bake (swe-bench via buildx FROM the Epoch base).
+  # Two mechanics in one job: kind=script (build.sh via docker build, chained
+  # through the local store) and kind=bake (swe-bench via buildx FROM the Epoch
+  # base). Both inspect/push with docker: the image lands in docker's store.
   # >256 (b,task) pairs are sharded; one item failing only fails its own ref.
   per-task:
     needs: [bases, enumerate]
@@ -639,15 +636,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: docker/setup-buildx-action@v4   # kind=bake (swe-bench)
-      - name: Ensure podman                    # kind=script (build.sh)
-        run: command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Log in to GHCR (podman)
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u "${{ github.actor }}" --password-stdin
       - uses: actions/download-artifact@v8
         with: { name: shards, path: . }
       - name: Build + push per-task shard ${{ matrix.shard.idx }} (${{ matrix.arch }})
@@ -686,9 +679,8 @@ jobs:
             H=$(bash containers/scripts/fleet-hash.sh per-task "$B" "$TASK" | cut -f2)
             [ -n "$H" ] || { echo "::error::no input-hash for $B/$TASK"; fails=$((fails+1)); continue; }
             # Carried-forward (rule 13): unchanged inputs vs the prior release
-            # ⇒ retag its digest; force_rebuild overrides (CVE refresh).
-            if [ "${{ inputs.force_rebuild }}" != "true" ] && \
-               bash containers/scripts/fleet-status.sh check "${REGISTRY}/benchmarks/${B}-${tid}:latest-${ARCH}" "$H" >/dev/null; then
+            # ⇒ retag its digest.
+            if bash containers/scripts/fleet-status.sh check "${REGISTRY}/benchmarks/${B}-${tid}:latest-${ARCH}" "$H" >/dev/null; then
               if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: $ref (unchanged; kept)"
               elif docker buildx imagetools create --tag "$ref" "${REGISTRY}/benchmarks/${B}-${tid}:latest-${ARCH}"; then
                 echo "carried forward: $ref <- :latest-${ARCH}"
@@ -703,9 +695,9 @@ jobs:
               # runner — a task whose upstream pins a different arch is skipped so the
               # merge keeps it single-arch (never a mislabeled :TAG-<arch>).
               if EVAL_INPUT_HASH="$H" retry bash "containers/benchmarks/$B/build.sh" "$ref" "$TASK"; then
-                built=$(podman image inspect "$ref" --format '{{.Architecture}}' 2>/dev/null || echo unknown)
+                built=$(docker image inspect "$ref" --format '{{.Architecture}}' 2>/dev/null || echo unknown)
                 if [ "$built" = "$ARCH" ]; then
-                  retry podman push "$ref" || { echo "::error::push failed: $ref"; fails=$((fails+1)); }
+                  retry docker push "$ref" || { echo "::error::push failed: $ref"; fails=$((fails+1)); }
                 else
                   echo "::warning::$ref built $built != $ARCH (upstream arch-pinned) — skipping push; merge keeps it single-arch"
                 fi
@@ -744,7 +736,6 @@ jobs:
     timeout-minutes: 90
     env:
       LEAVES: ${{ needs.enumerate.outputs.leaves }}
-      PERTASK_SHARDS: ${{ needs.enumerate.outputs.pertask_shards }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: docker/setup-buildx-action@v4
@@ -753,9 +744,10 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
       - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64
         run: |
-          retry() { local n=0 max="${BUILD_RETRIES:-4}"; until "$@"; do n=$((n+1)); [ "$n" -ge "$max" ] && return 1; sleep $(( n*10 + (RANDOM % 10) )); done; }
           # Collect every image ref the per-arch jobs pushed: bases (core+gateways
           # dirs), leaves (target→path), per-task (benchmarks/<b>-<tid>).
           : > /tmp/refs.txt
@@ -775,7 +767,8 @@ jobs:
             [ -n "$ctx" ] || { echo "::error::no graph context for leaf $T"; exit 1; }
             echo "${REGISTRY}/${ctx#containers/}" >> /tmp/refs.txt
           done
-          jq -r '.[]?|.items[]?|"\(.b)\t\(.task)"' <<< "${PERTASK_SHARDS:-[]}" | while IFS=$'\t' read -r B TASK; do
+          # Per-task items live in the shards artifact, not the job output (#478).
+          jq -r '.pertask[]?|.items[]?|"\(.b)\t\(.task)"' shards.json | while IFS=$'\t' read -r B TASK; do
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             echo "${REGISTRY}/benchmarks/${B}-${tid}" >> /tmp/refs.txt
           done
@@ -794,7 +787,8 @@ jobs:
               echo "::warning::no ${TAG}-amd64/-arm64 found for ${ref} — :${TAG} left as-is"
               skipped=$((skipped+1)); continue
             fi
-            if retry docker buildx imagetools create --tag "${ref}:${TAG}" "${srcs[@]}"; then merged=$((merged+1)); \
+            # Hash tag first, :TAG alias second (delivery rules 18–19).
+            if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then merged=$((merged+1)); \
             else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
           done < /tmp/refs.txt
           echo "merged=$merged skipped=$skipped fails=$fails"
@@ -886,10 +880,10 @@ jobs:
           }
           # Carried-forward (rule 13), per variant: unchanged inputs vs the
           # prior release (:latest — combos push manifest lists directly)
-          # ⇒ retag its digest; force_rebuild overrides (CVE refresh). Reads
-          # the per-iteration eb/A/TAG/DRY at call time.
+          # ⇒ retag its digest. Reads the per-iteration eb/A/TAG/DRY at call
+          # time.
           carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
-            [ "${{ inputs.force_rebuild }}" != "true" ] && [ "$DRY" != "true" ] || return 1
+            [ "$DRY" != "true" ] || return 1
             bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" >/dev/null || return 1
             if [ "$TAG" = "latest" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
             else
@@ -928,13 +922,23 @@ jobs:
             ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A}"
+            # Pushed under the hash tag itself (rule 18); the :TAG alias follows
+            # via fleet-tag, so the hash name always exists first (rule 19).
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
                  --set "eval.labels.eval.input-hash=${EH}" \
                  --set "eval-standalone.labels.eval.input-hash=${SH}" \
+                 --set "eval.tags=${REGISTRY}/evals/${eb}--${A}:${EH}" \
+                 --set "eval-standalone.tags=${REGISTRY}/evals/${eb}--${A}-standalone:${SH}" \
                  --set "*.platform=${PLAT}" \
-                 "${ACT[@]}"; then :; \
+                 "${ACT[@]}"; then
+              for t in "${TGT[@]}"; do
+                sfx=""; h="$EH"; [ "$t" != "eval-standalone" ] || { sfx="-standalone"; h="$SH"; }
+                [ "$DRY" = "true" ] || bash containers/scripts/fleet-tag.sh \
+                  "${REGISTRY}/evals/${eb}--${A}${sfx}" "$TAG" "${REGISTRY}/evals/${eb}--${A}${sfx}:${h}" \
+                  || { echo "::error::alias failed: evals/${eb}--${A}${sfx}:${TAG}"; fails=$((fails+1)); }
+              done
             else echo "::error::combo failed: evals/${eb}--${A}"; fails=$((fails+1)); fi
             echo "::endgroup::"
           done < <(jq -c '.[]' <<< "$ITEMS")
@@ -992,9 +996,9 @@ jobs:
             done
           }
           # Carried-forward (rule 13), per arch + variant: unchanged inputs vs the
-          # prior release's per-arch tag ⇒ retag its digest; force_rebuild overrides.
+          # prior release's per-arch tag ⇒ retag its digest.
           carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
-            [ "${{ inputs.force_rebuild }}" != "true" ] && [ "$DRY" != "true" ] || return 1
+            [ "$DRY" != "true" ] || return 1
             bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest-${ARCH}" "$2" >/dev/null || return 1
             if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
             else
@@ -1054,13 +1058,6 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos)
         run: |
-          retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
-              sleep $(( n*10 + (RANDOM % 10) ))
-            done
-          }
           fails=0; merged=0; skipped=0
           # Process substitution, not a pipe: `jq | while` runs the loop body in a
           # subshell, silently dropping fails/merged/skipped and defeating the exit
@@ -1076,7 +1073,7 @@ jobs:
                 docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
               done
               [ "${#srcs[@]}" -eq 0 ] && { skipped=$((skipped+1)); continue; }
-              if retry docker buildx imagetools create --tag "${ref}:${TAG}" "${srcs[@]}"; then merged=$((merged+1))
+              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then merged=$((merged+1))
               else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
             done
           done < <(jq -r '.[]?|.items[]?|"\(.b)\t\(.a)\t\(.task)"' <<< "${SHARDS:-[]}")
@@ -1084,16 +1081,16 @@ jobs:
           [ "$fails" -eq 0 ] || { echo "::error::$fails pertask-combo manifest merge(s) failed"; exit 1; }
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
-  # Runs for real releases (tag / explicit version) or whenever the bases were
-  # force-rebuilt. The scan covers whatever :TAG points to — carried-forward
-  # digests included (rule 15) — so a base carried from the prior release is
-  # re-gated at every release; a failure there means the base accumulated CVEs
-  # since it was built, and the fix is a force_rebuild/rebuild_bases refresh.
+  # Runs for real releases (tag / explicit version). The scan covers whatever
+  # :TAG points to — carried-forward digests included (rule 15) — so a base
+  # carried from the prior release is re-gated at every release; a failure
+  # there means the base accumulated CVEs since it was built, and the fix is
+  # a refreshed containers/externals.tsv (a changed input, so it rebuilds).
   # A dev dispatch skips the gate (it isn't publishing :latest — the promotion
   # below is tag-only).
   release-gate:
     needs: [merge, per-task, compose, combos, merge-pertask-combos]
-    if: always() && needs.merge.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '' || inputs.rebuild_bases)
+    if: always() && needs.merge.result == 'success' && !inputs.dry_run && (github.ref_type == 'tag' || inputs.tag != '')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
@@ -1154,6 +1151,83 @@ jobs:
           registry: ${{ env.REGISTRY }}
           token: ${{ secrets.GITHUB_TOKEN }}
           actor: ${{ github.actor }}
+
+  # ── the catalog: what the `latest` channel offers, so nobody has to scan ──
+  # No consumer can derive the offer from this tree: a benchmark whose base
+  # fails to build publishes nothing, and a per-task family publishes no shared
+  # `evals/<b>--<agent>` image at all. So consumers scanned GHCR themselves —
+  # thousands of probes per refresh against a shared rate budget, which starved
+  # CI. The publisher already knows the answer; this writes it down, once, at
+  # the end of every run that published anything.
+  catalog:
+    needs: [enumerate, merge, compose, combos, per-task, combos-pertask, merge-pertask-combos, release-gate]
+    # release-gate is skipped on a main push and required on a tag (it promotes
+    # :latest, which is what the catalog describes), so this waits on it with
+    # always() rather than depending on it having run.
+    # Not gated on `dirty`: the catalog describes the registry, not this run, so a
+    # push that builds nothing still republishes it — which is what makes it
+    # self-healing after a run that failed here, and what publishes it the first
+    # time, from the merge of this file. A partial run is excluded instead:
+    # `only` restricts every matrix to a handful of targets and
+    # `include_per_task: false` enumerates no task ids, so either would drop
+    # families the registry still has.
+    if: >-
+      always() && !inputs.dry_run && needs.enumerate.result == 'success' &&
+      needs.enumerate.outputs.agents != '[]' &&
+      inputs.only == '' && (github.event_name != 'workflow_dispatch' || inputs.include_per_task)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: oras-project/setup-oras@v1
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
+      - name: Sweep the channel -> evals/catalog:latest
+        env:
+          CATALOG_AGENTS: ${{ join(fromJson(needs.enumerate.outputs.agents), ' ') }}
+        run: |
+          jq -c '.pertask_all' shards.json > pertask.json
+          bash containers/scripts/fleet-catalog.sh pertask.json > catalog.json
+          # An empty catalog reads as "the fleet publishes nothing" and would take
+          # every consumer's offer down with it. A sweep that answered nothing is
+          # a broken sweep, not an empty fleet (rule 14: fail dirty).
+          jq -e '.families | length > 0' catalog.json > /dev/null
+          oras push "${REGISTRY}/evals/catalog:latest" \
+            --artifact-type application/vnd.exgentic.catalog.v1+json \
+            catalog.json:application/json
+          # Rule 17: a zero exit is not evidence — read the artifact back.
+          d=$(mktemp -d); oras pull "${REGISTRY}/evals/catalog:latest" --output "$d"
+          cmp catalog.json "$d/catalog.json"
+          jq -r '"catalog: \(.families | length) families x \(.agents | length) agents"' \
+            catalog.json >> "$GITHUB_STEP_SUMMARY"
+      # The inventory beside the catalog: every artifact this fleet names, proved
+      # against the registry one by one, with the labels each component declares.
+      # The catalog answers "which pair may I launch" as a model — families x a
+      # lineup — which is exactly how it came to offer an agent against 99
+      # benchmarks when one was published (#516). The index answers it by
+      # enumeration, so a consumer can search and filter what actually exists.
+      - name: Sweep the registry -> evals/index:latest
+        env:
+          CATALOG_AGENTS: ${{ join(fromJson(needs.enumerate.outputs.agents), ' ') }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 containers/scripts/fleet-index.py pertask.json > index.json
+          # A sweep that found nothing is a broken sweep, not an empty registry.
+          jq -e '.images | length > 0' index.json > /dev/null
+          oras push "${REGISTRY}/evals/index:latest" \
+            --artifact-type application/vnd.exgentic.index.v1+json \
+            index.json:application/json
+          # Rule 17: a zero exit is not evidence — read the artifact back.
+          d=$(mktemp -d); oras pull "${REGISTRY}/evals/index:latest" --output "$d"
+          cmp index.json "$d/index.json"
+          jq -r '"index: \(.images | length) published artifacts, \(.labels | length) labelled components"' \
+            index.json >> "$GITHUB_STEP_SUMMARY"
 
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:

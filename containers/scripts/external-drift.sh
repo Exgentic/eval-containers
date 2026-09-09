@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
 # external-drift — resolve the digest of every external base the fleet builds
-# FROM, so upstream movement becomes visible.
+# FROM, and compare it with the lockfile the hashes were computed against.
 #
-# The build-input hash sees the repository only (delivery/RULES.md rule 11
-# defers external digests to release time), so an upstream rebuild — a new
-# `python:3.12-slim`, a moved `:latest` — changes what our images contain while
-# every hash stays put. Nothing in the repo changed, so no PR runs and no push
-# rebuilds: the drift is invisible until someone forces a rebuild. This is the
-# one class of staleness only a scheduled check can catch, and the answer to it
-# is a `force_rebuild` dispatch.
+# The build-input hash sees the repository only, so the digest of every
+# external base lives in the repository: containers/externals.tsv (delivery
+# rule 11). An upstream rebuild — a new `python:3.12-slim`, a moved `:latest` —
+# therefore changes nothing until the lockfile is refreshed and committed,
+# which is exactly the push that rebuilds the images built FROM it. This
+# script is both the refresh (its stdout IS the lockfile) and the scheduled
+# check that says a refresh is due.
 #
 # Usage:
 #   external-drift.sh                 # ref<TAB>digest for every external base
-#   external-drift.sh <previous.tsv>  # same, plus ::warning per moved digest;
+#   external-drift.sh <lockfile.tsv>  # same, keeping the lockfile's `local`
+#                                     # marks, plus ::warning per moved digest;
 #                                     # exit 1 if any moved
 # Env: REF (default HEAD) — which committed tree's FROMs to read.
 set -euo pipefail
@@ -28,23 +29,27 @@ refs=$("$HERE/fleet-hash.sh" | cut -f5 | tr ',' '\n' \
 now=$(mktemp); trap 'rm -f "$now"' EXIT
 while read -r ref; do
   [ -n "$ref" ] || continue
-  d=$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo "unresolved")
+  # An image built beside the fleet (no registry to resolve against) stays
+  # `local` — the lockfile says so, and the tree already hashes its inputs.
+  if [ -n "${1:-}" ] && grep -qF "${ref}"$'\t'"local" "$1"; then d=local
+  else d=$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}' 2>/dev/null || echo "unresolved")
+  fi
   printf '%s\t%s\n' "$ref" "$d"
 done <<< "$refs" > "$now"
 cat "$now"
 
 [ $# -ge 1 ] && [ -s "${1:-}" ] || exit 0
 
-# Compare against the previous run: a changed digest means the image we build
-# FROM is not the image we built FROM last time.
+# Compare against the lockfile: a changed digest means the image we build FROM
+# is not the image the fleet's hashes were computed against.
 moved=0
 while IFS=$'\t' read -r ref digest; do
   was=$(awk -F'\t' -v r="$ref" '$1==r{print $2}' "$1")
   [ -n "$was" ] || continue                    # new ref, nothing to compare
   [ "$digest" != "unresolved" ] || continue    # transient/unauthenticated read
   if [ "$was" != "$digest" ]; then
-    echo "::warning::upstream base moved: $ref ${was:0:19}… -> ${digest:0:19}… (dispatch Release the fleet with force_rebuild to pick it up)"
+    echo "::warning::upstream base moved: $ref ${was:0:19}… -> ${digest:0:19}… (commit a refreshed containers/externals.tsv to pick it up)" >&2
     moved=$((moved + 1))
   fi
 done < "$now"
-[ "$moved" -eq 0 ] || { echo "::error::$moved external base(s) moved since the last check"; exit 1; }
+[ "$moved" -eq 0 ] || { echo "::error::$moved external base(s) moved since containers/externals.tsv was written" >&2; exit 1; }
