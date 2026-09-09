@@ -242,9 +242,24 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             // registry round-trip, no buildx content-store isolation.
             if let (Some(tid), true) = (&task_id, no_pull) {
                 let lean_tag = eval_task_image(registry, &benchmark, tid, &agent, &tag);
+                // Every arg the `eval` bake target passes must be re-passed here by
+                // hand: this build bypasses the HCL, so a MISSING arg silently falls
+                // back to combination.Dockerfile's hardcoded
+                // `ghcr.io/exgentic/core/<x>:latest` default — which would reach the
+                // public registry (defeating --no-pull) and ignore --registry/TAG
+                // entirely. Keep this list in sync with `eval`'s `args` block in
+                // core/combination.docker-bake.hcl.
                 let mut build_args = vec![
                     format!("BENCHMARK_IMAGE={bench_tag}"),
                     format!("AGENT_IMAGE={agent_tag}"),
+                    format!(
+                        "GOSU_IMAGE={}",
+                        core_image_arg("GOSU_IMAGE", registry, "gosu", &tag)
+                    ),
+                    format!(
+                        "EDGE_IMAGE={}",
+                        core_image_arg("EDGE_IMAGE", registry, "edge", &tag)
+                    ),
                 ];
                 if !agent_version.is_empty() {
                     build_args.push(format!("AGENT_VERSION={agent_version}"));
@@ -266,9 +281,31 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 // pulling the registry-based `eval-standalone` bake target, which
                 // would defeat --no-pull just as the lean case above would without
                 // this escape hatch.
+                //
+                // Same sync requirement as above, against `eval-standalone`'s `args`:
+                // MODEL_IMAGE is the --gateway image (models/<gateway>, matching the
+                // bake path's `model_image(registry, &gateway, &tag)` below), so
+                // omitting it would silently bake bifrost into a `--gateway litellm`
+                // bundle.
                 let bundle_tag =
                     eval_task_standalone_image(registry, &benchmark, tid, &agent, &tag);
-                return docker_build_standalone_local(&bundle_tag, &lean_tag, dry_run);
+                let bundle_args = vec![
+                    format!("MODEL_IMAGE={}", model_image(registry, &gateway, &tag)),
+                    format!(
+                        "OTEL_IMAGE={}",
+                        core_image_arg("OTEL_IMAGE", registry, "otel", &tag)
+                    ),
+                    format!(
+                        "PROCESS_COMPOSE_IMAGE={}",
+                        core_image_arg("PROCESS_COMPOSE_IMAGE", registry, "process-compose", &tag)
+                    ),
+                ];
+                return docker_build_standalone_local(
+                    &bundle_tag,
+                    &lean_tag,
+                    &bundle_args,
+                    dry_run,
+                );
             }
             // --no-pull on a base (non-task) build: use eval-local, which wires
             // bench+agent in-graph via named contexts. This avoids registry manifest
@@ -629,16 +666,42 @@ fn docker_build_dockerfile(
 /// `FROM eval-base` is a named build context, not an ARG-based FROM, so the
 /// lean tag is bound via `--build-context eval-base=docker-image://<tag>`
 /// rather than a bake in-graph target.
-fn docker_build_standalone_local(tag: &str, lean_tag: &str, dry_run: bool) -> Result<(), String> {
+///
+/// `build_args` must carry every arg the `eval-standalone` bake target passes
+/// (MODEL_IMAGE/OTEL_IMAGE/PROCESS_COMPOSE_IMAGE) — bypassing the HCL means an
+/// omitted arg falls back to standalone.Dockerfile's hardcoded
+/// `ghcr.io/exgentic/...:latest`, which pulls from the public registry and
+/// ignores --registry/TAG/--gateway.
+fn docker_build_standalone_local(
+    tag: &str,
+    lean_tag: &str,
+    build_args: &[String],
+    dry_run: bool,
+) -> Result<(), String> {
     docker_build_impl(
         tag,
         "containers/core",
         Some("standalone.Dockerfile"),
-        &[],
+        build_args,
         &[(OCI_SOURCE.to_string(), REPO_URL.to_string())],
         Some(("eval-base", lean_tag)),
         dry_run,
     )
+}
+
+/// Resolve one of the core base images that the combination/standalone bake
+/// targets pass as build args, for the escape hatches that build those
+/// Dockerfiles without bake.
+///
+/// Mirrors bake's own precedence exactly: each of these is an HCL `variable`
+/// defaulting to `"${REGISTRY}/core/<name>:${TAG}"`
+/// (core/combination.docker-bake.hcl), and buildx lets the process env override
+/// a `variable`. So an explicit env var wins; otherwise compose the default from
+/// the registry and tag in play. Without this, the escape hatch would inherit
+/// the Dockerfile's hardcoded `ghcr.io/exgentic/core/<name>:latest` ARG default
+/// and silently ignore both --registry and TAG.
+fn core_image_arg(var: &str, registry: &str, name: &str, tag: &str) -> String {
+    std::env::var(var).unwrap_or_else(|_| format!("{registry}/core/{name}:{tag}"))
 }
 
 fn docker_build_impl(
@@ -650,12 +713,15 @@ fn docker_build_impl(
     build_context: Option<(&str, &str)>,
     dry_run: bool,
 ) -> Result<(), String> {
-    // HF_TOKEN as an ephemeral build secret only applies to the classic
-    // combination.Dockerfile build (never a Dockerfile override): neither
-    // combination.Dockerfile's escape-hatch siblings read HF_TOKEN, and
-    // `--secret` is BuildKit-only, unsupported by the classic/legacy builder
-    // those escape hatches specifically target (same class of bug as
-    // build.sh's `--load`).
+    // HF_TOKEN as an ephemeral build secret applies only to the no-override
+    // caller — the per-task BENCHMARK build (`build bench --task-id`), which
+    // builds a benchmark's own Dockerfile. Those are the Dockerfiles that read
+    // HF_TOKEN (via benchmark-base-hf and friends). The `-f` override callers
+    // build core/combination.Dockerfile and core/standalone.Dockerfile, and
+    // neither declares an HF_TOKEN ARG or mounts that secret, so forwarding it
+    // there would be ceremony for an input nothing consumes (rule 8a's
+    // converse). If a per-task benchmark ever needs a secret through an
+    // overridden Dockerfile, widen this deliberately rather than by accident.
     let allow_secret = dockerfile.is_none();
     let use_secret = allow_secret && std::env::var("HF_TOKEN").is_ok();
     let mut shown = format!("docker build -t {tag}");
