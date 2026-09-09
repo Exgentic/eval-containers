@@ -41,8 +41,12 @@ if [[ -n "$SWEEP_ID" ]]; then
   # a label-built path misses every run whose handle had a provider prefix. The
   # Job's own `output` subPath is the one source that cannot disagree.
   oc get jobs -n "$NAMESPACE" -l "sweep-id=$SWEEP_ID,benchmark" \
-    -o jsonpath='{range .items[*]}{.spec.template.spec.containers[0].volumeMounts[?(@.name=="output")].subPath}{"\n"}{end}' \
-    | while read -r sub; do [[ -n "$sub" ]] && copy_sub "$sub"; done
+    -o jsonpath='{range .items[*]}{.spec.template.spec.containers[0].volumeMounts[?(@.name=="output")].subPathExpr}{"\n"}{end}' \
+    | while read -r sub; do
+        # An Indexed run's leaf is the kubelet's to expand; copy its run root.
+        sub="${sub%/\$(JOB_COMPLETION_INDEX)}"
+        [[ -n "$sub" ]] && copy_sub "$sub"
+      done
 else
   [[ -z "$BENCHMARK" || -z "$AGENT" || -z "$MODEL" ]] && {
     echo "error: --sweep-id, or --benchmark/--agent/--model, required" >&2; exit 1; }
