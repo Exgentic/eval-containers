@@ -15,7 +15,10 @@ services:
     # the whole directory. EVAL_RUN_ID names the run (a rerun of an id resumes
     # it); EVAL_MODEL_SLUG is the handle with `/` as `--` (the CLI sets it).
     volumes:
-      - ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-${EVAL_MODEL:-model}}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}/model:/output/model
+      - type: bind
+        source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-${EVAL_MODEL:?}}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}/model
+        target: /output/model
+        bind: { create_host_path: true }
     # Probe otelcol's health_check endpoint (:13133) so the gateway can gate on
     # `service_healthy` below. Same per-orchestrator pattern as the gateway's
     # /opt/gateway/health check. Image is alpine-based, so busybox wget exists.

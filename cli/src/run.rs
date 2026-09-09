@@ -606,7 +606,19 @@ fn run_id(explicit: Option<&str>) -> String {
         let t = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
-        format!("{}-{:09}", t.as_secs(), t.subsec_nanos())
+        // The clock alone is not enough: it can report the same instant twice in
+        // a row (macOS hands out a coarse value), and two runs sharing an id
+        // share a directory. The counter makes the id unique whatever the clock
+        // does, and the process id keeps two launchers started together apart.
+        static SEQ: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        format!(
+            "{}-{:09}-{}{}",
+            t.as_secs(),
+            t.subsec_nanos(),
+            std::process::id(),
+            seq
+        )
     })
 }
 

@@ -495,6 +495,7 @@ fn docker_compose_publish(
     let publish_env = [
         ("OPENAI_API_KEY", "unused-at-publish"),
         ("OPENAI_API_BASE", "unused-at-publish"),
+        ("EVAL_MODEL", "unused-at-publish"),
         ("EVAL_RUN_ID", "unused-at-publish"),
     ];
     let env_str = publish_env
@@ -510,7 +511,9 @@ fn docker_compose_publish(
     let flat = flat
         .to_str()
         .ok_or_else(|| "temp dir path is not valid UTF-8".to_string())?;
-    eprintln!("$ docker compose -f {compose_file} config --no-interpolate > {flat}");
+    eprintln!(
+        "$ docker compose -f {compose_file} config --no-interpolate --no-path-resolution > {flat}"
+    );
     eprintln!("$ {env_str} docker compose -f {flat} publish -y {tag}");
     eprintln!("$ docker buildx imagetools inspect {tag}");
     if dry_run {
@@ -519,7 +522,14 @@ fn docker_compose_publish(
 
     // Flatten: resolve the local include into one document, keep ${VAR}s.
     let out = Command::new("docker")
-        .args(["compose", "-f", compose_file, "config", "--no-interpolate"])
+        .args([
+            "compose",
+            "-f",
+            compose_file,
+            "config",
+            "--no-interpolate",
+            "--no-path-resolution",
+        ])
         .output()
         .map_err(|e| format!("failed to run docker compose config: {e}"))?;
     if !out.status.success() {
@@ -542,12 +552,7 @@ fn docker_compose_publish(
         let mut f = opts
             .open(flat)
             .map_err(|e| format!("failed to open {flat}: {e}"))?;
-        // The shared files require EVAL_BENCHMARK for the results path; the
-        // per-benchmark artifact knows its own name, so bake it in as the default.
-        let flat_doc = String::from_utf8_lossy(&out.stdout).replace(
-            "${EVAL_BENCHMARK:?}",
-            &format!("${{EVAL_BENCHMARK:-{benchmark}}}"),
-        );
+        let flat_doc = portable(&String::from_utf8_lossy(&out.stdout), benchmark);
         f.write_all(flat_doc.as_bytes())
             .map_err(|e| format!("failed to write {flat}: {e}"))?;
     }
@@ -588,6 +593,23 @@ fn docker_compose_publish(
 /// Whether a `compose.yaml` declares itself un-publishable with a top-level
 /// `x-eval-publish: false`. Declared by the stack, never inferred from whatever
 /// string `publish` happens to print.
+/// Make a flattened stack self-contained for its consumer. The shared compose
+/// files require EVAL_BENCHMARK for the results path; the per-benchmark artifact
+/// knows its own name, so it becomes the default. And `config` rebases a bind
+/// source it cannot see is a variable onto the shared files' directory
+/// (`../../compose/${EVAL_OUTPUT_DIR…`), which means nothing outside the repo —
+/// the path is the consumer's, so the prefix goes.
+fn portable(flat: &str, benchmark: &str) -> String {
+    flat.replace(
+        "${EVAL_BENCHMARK:?}",
+        &format!("${{EVAL_BENCHMARK:-{benchmark}}}"),
+    )
+    .replace(
+        "source: ../../compose/${EVAL_OUTPUT_DIR",
+        "source: ${EVAL_OUTPUT_DIR",
+    )
+}
+
 fn declines_publish(compose_file: &str) -> Result<bool, String> {
     let text = std::fs::read_to_string(compose_file)
         .map_err(|e| format!("failed to read {compose_file}: {e}"))?;
@@ -1227,7 +1249,7 @@ fn build_verdict(phase: &str, build: &str) -> Result<(), String> {
 mod tests {
     use super::{
         build_verdict, core_image_arg, declines_publish, dockerfile_label, lean_eval_build_args,
-        standalone_bundle_build_args,
+        portable, standalone_bundle_build_args,
     };
 
     /// The per-task `--no-pull` escape hatch bypasses bake's HCL, so every arg
@@ -1316,6 +1338,17 @@ mod tests {
             "registry.example/core/gosu:pinned"
         );
         unsafe { std::env::remove_var("EC_TEST_CORE_IMAGE_ARG_SET") };
+    }
+
+    // A published stack names its own benchmark and keeps the results path the
+    // consumer's, not a path rebased onto this repo's layout.
+    #[test]
+    fn a_published_stack_is_self_contained() {
+        let flat = "      BENCHMARK: aime\n      source: ../../compose/${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/x\n";
+        assert_eq!(
+            portable(flat, "aime"),
+            "      BENCHMARK: aime\n      source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:-aime}/x\n"
+        );
     }
 
     /// `oc start-build --follow` exits 0 on a failed build, so the phase is the

@@ -81,8 +81,8 @@ step "check the Job can be asked where it wrote"
 # against the API server, with the same query fetch.sh runs.
 got=$(kubectl get job agents-smoke-mock-task-0 \
   -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.name=="output")].subPathExpr}' 2>/dev/null)
-[ "$got" = "$SUB/$RUN" ] \
-  || bad "the Job reports subPath '${got:-<empty>}', not the '$SUB/$RUN' it writes to — fetch.sh would copy the wrong directory"
+[ "$got" = "$SUB/$RUN/0" ] \
+  || bad "the Job reports subPath '${got:-<empty>}', not the '$SUB/$RUN/0' it writes to — fetch.sh would copy the wrong directory"
 
 step "check the output contract"
 # The contract the dashboard reads. Each file has a distinct writer, so a missing
@@ -113,7 +113,7 @@ esac
 
 # What the run was launched with. The Job that knew is collected within the hour,
 # so a rerun can only replay a custom prompt if the run recorded it itself.
-r=$(onnode cat "$OUT/$SUB/$RUN/agent/launch.json" 2>/dev/null)
+r=$(onnode cat "$OUT/$SUB/$RUN/0/agent/launch.json" 2>/dev/null)
 case "$r" in
   *'"EVAL_MARK"'*) ;;
   *) bad "agent/launch.json does not carry what the run was given (got: ${r:-<empty>})" ;;
@@ -123,8 +123,8 @@ esac
 # empty, so it is not enough that both files exist: each has to hold the stream
 # it is named for. mock writes a different marker to each precisely so a runner
 # that merged or swapped them fails here.
-out=$(onnode cat "$OUT/$SUB/$RUN/agent/stdout.log" 2>/dev/null)
-err=$(onnode cat "$OUT/$SUB/$RUN/agent/stderr.log" 2>/dev/null)
+out=$(onnode cat "$OUT/$SUB/$RUN/0/agent/stdout.log" 2>/dev/null)
+err=$(onnode cat "$OUT/$SUB/$RUN/0/agent/stderr.log" 2>/dev/null)
 case "$out" in
   *"OK"*) ;;
   *) bad "agent/stdout.log did not capture the agent's answer (got: ${out:-<empty>})" ;;
@@ -153,10 +153,10 @@ esac
 # gateway must also have recorded reaching it. The file is compressed — one
 # stream held open for the run — and it is never closed, because the pod SIGKILLs
 # the edge; so the thing worth asserting is that it decodes anyway.
-rec="$OUT/$SUB/$RUN/model/calls.jsonl.zst"
+rec="$OUT/$SUB/$RUN/0/model/calls.jsonl.zst"
 if ! onnode test -s "$rec"; then
   bad "model/calls.jsonl.zst is missing or empty — the edge recorded nothing"
-  onnode cat "$OUT/$SUB/$RUN/model/edge.log" 2>/dev/null | tail -5
+  onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5
 else
   # Decoded here rather than on the node, which is a minimal image with no zstd.
   # The stream is never closed — the pod SIGKILLs the edge — so this asserts the
@@ -169,7 +169,7 @@ else
     # decode, anything else is the edge writing something other than a stream
     # under a .zst name — which is what a missing rebuild looks like.
     *) bad "model/calls.jsonl.zst holds no call record (first bytes:$(od -An -tx1 -N4 < "$raw"))"
-       onnode cat "$OUT/$SUB/$RUN/model/edge.log" 2>/dev/null | tail -5 ;;
+       onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
   esac
   rm -f "$raw"
 fi
