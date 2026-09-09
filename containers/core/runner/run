@@ -90,8 +90,8 @@ if ! (set -C; : > /output/agent/.lock) 2>/dev/null; then
   fi
   : > /output/agent/.lock
 fi
-# Release the claim whenever this shell exits, or a launcher that dies before
-# the pipeline starts (an edge that never came up) would refuse its own retry.
+# Release the claim whenever this shell exits, or a launcher that dies before the
+# pipeline starts (an edge that never came up) would refuse its own next attempt.
 # The three phases `exec` past this trap on purpose: from there the claim is
 # write-result's to release, and a container killed outright leaves one that
 # nothing refreshes, so it goes stale on its own.
