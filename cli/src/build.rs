@@ -230,7 +230,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 benchmark_image(registry, &benchmark, &tag)
             };
             let agent_tag = agent_image(registry, &agent, &tag);
-            // --no-pull + --task-id + lean (no --standalone): per-task benchmarks
+            // --no-pull + --task-id (lean or --standalone): per-task benchmarks
             // have no bake target at all (their image comes from build.sh, outside
             // the bake graph — RULES.md 24g), so eval-local's context-binding trick
             // (which points BENCHMARK_IMAGE at an in-graph `target:benchmark-<name>`)
@@ -240,7 +240,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             // already-locally-tagged bench/agent images directly by tag (the same
             // mechanism build.sh and every other classic per-task build use) — no
             // registry round-trip, no buildx content-store isolation.
-            if let (Some(tid), true, false) = (&task_id, no_pull, standalone) {
+            if let (Some(tid), true) = (&task_id, no_pull) {
                 let lean_tag = eval_task_image(registry, &benchmark, tid, &agent, &tag);
                 let mut build_args = vec![
                     format!("BENCHMARK_IMAGE={bench_tag}"),
@@ -249,22 +249,36 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 if !agent_version.is_empty() {
                     build_args.push(format!("AGENT_VERSION={agent_version}"));
                 }
-                return docker_build_dockerfile(
+                docker_build_dockerfile(
                     &lean_tag,
                     "containers/core",
                     "combination.Dockerfile",
                     &build_args,
                     dry_run,
-                );
+                )?;
+                if !standalone {
+                    return Ok(());
+                }
+                // --standalone layers the bundle onto the lean base we just built
+                // locally. `run --mode container --local` already does this same
+                // step (docker build -f standalone.Dockerfile --build-context
+                // eval-base=docker-image://<lean_tag>) — reuse it here instead of
+                // pulling the registry-based `eval-standalone` bake target, which
+                // would defeat --no-pull just as the lean case above would without
+                // this escape hatch.
+                let bundle_tag =
+                    eval_task_standalone_image(registry, &benchmark, tid, &agent, &tag);
+                return docker_build_standalone_local(&bundle_tag, &lean_tag, dry_run);
             }
             // --no-pull on a base (non-task) build: use eval-local, which wires
             // bench+agent in-graph via named contexts. This avoids registry manifest
             // checks that fail on arm64 Mac (docker-container driver isolation means
             // --load'd images are not visible in the BuildKit content store). The
             // eval-local target produces the same image tag as eval. Per-task builds
-            // that reach here (no --no-pull, or --standalone) always use the plain
-            // eval target — their BENCHMARK_IMAGE is a task-specific image built
-            // outside bake, not a named bake target.
+            // always use the plain eval target when they reach here — their
+            // BENCHMARK_IMAGE is a task-specific image built outside bake, not a
+            // named bake target; with --no-pull they never reach here at all (the
+            // escape hatch above returns first).
             let eval_target = if no_pull && task_id.is_none() {
                 "eval-local"
             } else {
@@ -581,7 +595,7 @@ fn docker_build(
     labels: &[(String, String)],
     dry_run: bool,
 ) -> Result<(), String> {
-    docker_build_impl(tag, context, None, build_args, labels, true, dry_run)
+    docker_build_impl(tag, context, None, build_args, labels, None, dry_run)
 }
 
 /// Same as [`docker_build`], but for a Dockerfile that isn't `<context>/Dockerfile`
@@ -589,10 +603,7 @@ fn docker_build(
 /// per-task benchmark has no bake target to bind `eval-local`'s in-graph contexts
 /// to (its image comes from build.sh, outside the bake graph — RULES.md 24g), so
 /// this builds `combination.Dockerfile` directly against the already-locally-
-/// tagged benchmark/agent images, no registry round-trip. `combination.Dockerfile`
-/// never reads `HF_TOKEN`, and `--secret` is BuildKit-only (unsupported by the
-/// classic/legacy builder this escape hatch specifically targets — same class of
-/// bug as build.sh's `--load`), so it's deliberately never attached here.
+/// tagged benchmark/agent images, no registry round-trip.
 fn docker_build_dockerfile(
     tag: &str,
     context: &str,
@@ -605,8 +616,27 @@ fn docker_build_dockerfile(
         context,
         Some(dockerfile),
         build_args,
+        &[(OCI_SOURCE.to_string(), REPO_URL.to_string())],
+        None,
+        dry_run,
+    )
+}
+
+/// Layer the standalone bundle (`standalone.Dockerfile`) onto a lean eval base
+/// that was just built locally by [`docker_build_dockerfile`] — the
+/// `--task-id --no-pull --standalone` escape hatch. Mirrors what `run --mode
+/// container --local` does for the same reason (`run.rs`'s `run_container`):
+/// `FROM eval-base` is a named build context, not an ARG-based FROM, so the
+/// lean tag is bound via `--build-context eval-base=docker-image://<tag>`
+/// rather than a bake in-graph target.
+fn docker_build_standalone_local(tag: &str, lean_tag: &str, dry_run: bool) -> Result<(), String> {
+    docker_build_impl(
+        tag,
+        "containers/core",
+        Some("standalone.Dockerfile"),
         &[],
-        false,
+        &[(OCI_SOURCE.to_string(), REPO_URL.to_string())],
+        Some(("eval-base", lean_tag)),
         dry_run,
     )
 }
@@ -617,9 +647,16 @@ fn docker_build_impl(
     dockerfile: Option<&str>,
     build_args: &[String],
     labels: &[(String, String)],
-    allow_secret: bool,
+    build_context: Option<(&str, &str)>,
     dry_run: bool,
 ) -> Result<(), String> {
+    // HF_TOKEN as an ephemeral build secret only applies to the classic
+    // combination.Dockerfile build (never a Dockerfile override): neither
+    // combination.Dockerfile's escape-hatch siblings read HF_TOKEN, and
+    // `--secret` is BuildKit-only, unsupported by the classic/legacy builder
+    // those escape hatches specifically target (same class of bug as
+    // build.sh's `--load`).
+    let allow_secret = dockerfile.is_none();
     let use_secret = allow_secret && std::env::var("HF_TOKEN").is_ok();
     let mut shown = format!("docker build -t {tag}");
     if let Some(f) = dockerfile {
@@ -630,6 +667,9 @@ fn docker_build_impl(
     }
     for (k, v) in labels {
         shown.push_str(&format!(" --label {k}={v}"));
+    }
+    if let Some((name, image)) = build_context {
+        shown.push_str(&format!(" --build-context {name}=docker-image://{image}"));
     }
     // HF_TOKEN as an ephemeral build secret, never a --build-arg (rule 8a).
     if use_secret {
@@ -651,6 +691,10 @@ fn docker_build_impl(
     }
     for (k, v) in labels {
         cmd.arg("--label").arg(format!("{k}={v}"));
+    }
+    if let Some((name, image)) = build_context {
+        cmd.arg("--build-context")
+            .arg(format!("{name}=docker-image://{image}"));
     }
     if use_secret {
         cmd.arg("--secret").arg("id=HF_TOKEN,env=HF_TOKEN");
