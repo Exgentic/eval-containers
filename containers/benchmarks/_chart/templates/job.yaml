@@ -83,7 +83,7 @@ spec:
             periodSeconds: 1
             failureThreshold: 30
           volumeMounts:
-            {{- include "eval.outputMount" $v | nindent 12 }}
+            {{- include "eval.outputMount" (dict "v" $v "sub" "model") | nindent 12 }}
 
         - name: gateway
           restartPolicy: Always
@@ -163,6 +163,9 @@ spec:
             {{- with $v.reasoningEffort }}
             - { name: EVAL_AGENT_REASONING_EFFORT, value: {{ . | quote }} }
             {{- end }}
+            {{- if $v.force }}
+            - { name: EVAL_FORCE, value: "1" }
+            {{- end }}
             {{- with $v.benchmarkVersion }}
             - { name: EVAL_BENCHMARK_VERSION, value: {{ . | quote }} }
             {{- end }}
@@ -183,7 +186,7 @@ spec:
           resources:
             {{- toYaml $v.resources | nindent 12 }}
           volumeMounts:
-            {{- include "eval.outputMount" $v | nindent 12 }}
+            {{- include "eval.outputMount" (dict "v" $v) | nindent 12 }}
             - { name: tmp,    mountPath: /tmp }
             - { name: logs,   mountPath: /logs }
             {{- with $v.runnerExtraVolumeMounts }}

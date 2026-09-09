@@ -60,8 +60,33 @@ fi
 # Defensive fallback (agent uid baked into image at build time).
 id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
 
-# Output dirs.
+# ─── Output lifecycle (.agents/output/RULES.md) ──────────────────────
+# /output is this task's directory. The launcher's own records live in agent/:
+# config.env (rule 16), .lock (rule 32) and result.json's `error` (rule 17).
 mkdir -p /output/{model,agent,task} /logs/verifier
+config=$(env | grep '^EVAL_' | grep -Ev '^EVAL_(OUTPUT_DIR|RUN_ID|FORCE)=' | LC_ALL=C sort)
+if [ -f /output/agent/config.env ] && [ "$config" != "$(cat /output/agent/config.env)" ]; then
+  echo "run: /output holds a run with a different configuration — use a new EVAL_RUN_ID (rule 23):" >&2
+  diff /output/agent/config.env <(printf '%s\n' "$config") >&2 || true
+  exit 3
+fi
+if [ -z "${EVAL_FORCE:-}" ] && [ -s /output/task/result.json ] \
+   && grep -q '"error":null' /output/agent/result.json 2>/dev/null; then
+  echo "run: complete, not rerun (rule 26): $(cat /output/task/result.json)"
+  exit 0
+fi
+if [ -n "$(find /output/agent -maxdepth 1 -name .lock -mmin -2 2>/dev/null)" ]; then
+  echo "run: another attempt is in progress in /output — agent/.lock touched under 2 min ago (rule 32)" >&2
+  exit 3
+fi
+# Failed or forced: empty the previous attempt (rules 28–30). otelcol holds
+# model/traces.jsonl open, so that one is truncated, not unlinked.
+find /output -mindepth 1 -maxdepth 1 -type f -delete
+find /output/{model,agent,task} -mindepth 1 ! -path /output/model/traces.jsonl -delete
+if [ -f /output/model/traces.jsonl ]; then : > /output/model/traces.jsonl; fi
+printf '%s\n' "$config" > /output/agent/config.env
+touch /output/agent/.lock
+( while sleep 30; do touch /output/agent/.lock; done ) &
 chown -R agent:agent /output/agent /tmp 2>/dev/null || true
 chmod 0755 /output /output/agent /output/task /output/model
 

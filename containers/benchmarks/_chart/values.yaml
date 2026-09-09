@@ -98,6 +98,10 @@ ephemeral: false
 # Optional — a caller that composes its own unique leaf needs nothing here. Any
 # unique string: `$(date -u +%Y%m%d-%H%M%S)-$RANDOM`.
 runId: ""
+# force: true reruns the task even if its directory already holds a complete
+# result, emptying it first. Without it a complete task is skipped and a failed
+# one retried (.agents/output/RULES.md rules 26–29).
+force: false
 
 # ── Sweep model: a dataset eval is ONE Indexed Job ───────────────────────────
 # datasetSize empty → a single-task Job (debug: runs exactly `task`). Set it and

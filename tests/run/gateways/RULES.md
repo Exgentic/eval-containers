@@ -44,7 +44,7 @@ Parent: [../RULES.md](../RULES.md)
      message MUST name the protocol and point at a working flavor.
 
 6. **OTel emission** — every flavor that natively serves a protocol
-   MUST emit OTel spans into `/output/traces.jsonl` containing the
+   MUST emit OTel spans into `/output/model/traces.jsonl` containing the
    gen_ai semconv attributes:
    - `gen_ai.input.messages`
    - `gen_ai.output.messages`
@@ -65,7 +65,7 @@ Parent: [../RULES.md](../RULES.md)
 
 7. **litellm trajectory + result extras** — the `otel` callback MUST emit
    `gen_ai.*` spans (rule 6) which the otelcol sidecar writes to
-   `/output/traces.jsonl` — the native OTLP/JSON trace that `models/replay`
+   `/output/model/traces.jsonl` — the native OTLP/JSON trace that `models/replay`
    replays and the inspection rules read. litellm MUST additionally write
    `/output/result.json` (aggregated cost) and `/output/trajectory.jsonl`
    (LiteLLM StandardLoggingPayload) via the `eval_logger` callback;

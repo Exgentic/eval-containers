@@ -6,7 +6,7 @@
 //! Run: cargo test --test replay -- --ignored
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use eval_containers::benchmark::is_per_task_by_name;
@@ -58,11 +58,38 @@ enum ReplayMode {
 /// `with_wait(false)` disables compose's default `--wait` (which would time out
 /// on the one-shot runner); `with_wait_for_service("runner", WaitFor::Exit(_))`
 /// blocks until the runner finishes before we assert on `result.json`.
+/// The run id every replay run is filed under; a rerun of it resumes.
+const RUN_ID: &str = "replay";
+/// The real handle bifrost routes on in full-stack mode (the lean stub is "replay").
+const FULLSTACK_MODEL: &str = "openai/azure/gpt-5.4";
+
+/// `./output/<benchmark>/<agent>/<model slug>/replay/<task>` — rule 11.
+fn task_dir(benchmark: &str, agent: &str, model: &str, task_id: &str) -> PathBuf {
+    Path::new("output")
+        .join(benchmark)
+        .join(agent)
+        .join(eval_containers::naming::model_slug(model))
+        .join(RUN_ID)
+        .join(task_id)
+}
+
 async fn replay_compose(
     benchmark: &str,
     agent: &str,
     task_id: &str,
     mode: ReplayMode,
+) -> DockerCompose {
+    replay_compose_with(benchmark, agent, task_id, mode, true, false).await
+}
+
+/// `fresh` clears the task directory first; `force` sets EVAL_FORCE.
+async fn replay_compose_with(
+    benchmark: &str,
+    agent: &str,
+    task_id: &str,
+    mode: ReplayMode,
+    fresh: bool,
+    force: bool,
 ) -> DockerCompose {
     test_support::enter_repo_root();
     let cwd = std::env::current_dir().unwrap();
@@ -84,12 +111,17 @@ async fn replay_compose(
         ReplayMode::FullStack => "tests/run/replay/replay-upstream.yaml",
     });
 
-    // Bind the named `output` volume to `./output/{benchmark}/{task_id}/` so the
-    // runner's `/output/task/result.json` lands on the host (compose/RULES.md
-    // rule 18). Pre-create it (else Docker makes it root-owned and the uid-1002
-    // agent can't write); clear it so the assertion sees *this* run.
-    let host_output = cwd.join("output").join(benchmark).join(task_id);
-    let _ = fs::remove_dir_all(&host_output);
+    // Results land at `./output/<b>/<a>/<model>/<run-id>/<task>/` (output/RULES.md
+    // rule 11). Clear the task directory unless the test is exercising a rerun,
+    // so the assertion sees *this* run.
+    let (model, label, api_base) = match mode {
+        ReplayMode::Lean => ("replay", "replay", "https://replay.test"),
+        ReplayMode::FullStack => (FULLSTACK_MODEL, "replay-fullstack", "http://upstream:4000"),
+    };
+    let host_output = task_dir(benchmark, agent, model, task_id);
+    if fresh {
+        let _ = fs::remove_dir_all(&host_output);
+    }
     fs::create_dir_all(&host_output).expect("failed to create host output dir");
 
     // Classic (podman) path: bootstrap built the images under a local-only
@@ -115,28 +147,25 @@ async fn replay_compose(
     // duplicated per test. The dummy OPENAI_API_KEY only satisfies services.yaml's
     // `${VAR:?}` interpolation; replay never authenticates. Lean serves the agent
     // directly (EVAL_MODEL=replay); full-stack routes a real handle through bifrost
-    // to the replay upstream (OPENAI_API_BASE). REPLAY_FIXTURE / REPLAY_OUTPUT are
-    // what the committed overlays read.
-    let (model, label, api_base) = match mode {
-        ReplayMode::Lean => ("replay", "replay", "https://replay.test"),
-        ReplayMode::FullStack => (
-            "openai/azure/gpt-5.4",
-            "replay-fullstack",
-            "http://upstream:4000",
-        ),
-    };
+    // to the replay upstream (OPENAI_API_BASE). REPLAY_FIXTURE is what the
+    // committed overlays read; EVAL_OUTPUT_DIR / EVAL_RUN_ID / EVAL_MODEL_SLUG
+    // are what runner.yaml builds the task directory from.
     let fixture_str = fixture.to_string_lossy().into_owned();
-    let output_str = host_output.to_string_lossy().into_owned();
+    let output_root = cwd.join("output").to_string_lossy().into_owned();
+    let slug = eval_containers::naming::model_slug(model);
     for (key, val) in [
         ("EVAL_BENCHMARK", benchmark),
         ("EVAL_AGENT", agent),
         ("EVAL_TASK_ID", task_id),
         ("EVAL_MODEL", model),
+        ("EVAL_MODEL_SLUG", slug.as_str()),
         ("EVAL_GATEWAY_LABEL", label),
+        ("EVAL_OUTPUT_DIR", output_root.as_str()),
+        ("EVAL_RUN_ID", RUN_ID),
+        ("EVAL_FORCE", if force { "1" } else { "" }),
         ("OPENAI_API_KEY", "sk-replay-test"),
         ("OPENAI_API_BASE", api_base),
         ("REPLAY_FIXTURE", fixture_str.as_str()),
-        ("REPLAY_OUTPUT", output_str.as_str()),
     ] {
         compose = compose.with_env(key, val);
     }
@@ -183,11 +212,8 @@ async fn replay_compose(
 }
 
 /// Assert the standard output contract: result.json with required fields.
-fn assert_result_valid(benchmark: &str, task_id: &str) {
-    let result_path = Path::new("output")
-        .join(benchmark)
-        .join(task_id)
-        .join("task/result.json");
+fn assert_result_valid(benchmark: &str, agent: &str, model: &str, task_id: &str) {
+    let result_path = task_dir(benchmark, agent, model, task_id).join("task/result.json");
     assert!(
         result_path.exists(),
         "result.json not written for {benchmark}/{task_id}"
@@ -219,10 +245,7 @@ fn assert_result_valid(benchmark: &str, task_id: &str) {
     // record clean runs, so it's an integer here; the crash/timeout paths are
     // exercised elsewhere. Guards against the field being dropped from the
     // orchestration.
-    let agent_path = Path::new("output")
-        .join(benchmark)
-        .join(task_id)
-        .join("agent/result.json");
+    let agent_path = task_dir(benchmark, agent, model, task_id).join("agent/result.json");
     assert!(
         agent_path.exists(),
         "agent/result.json not written for {benchmark}/{task_id}"
@@ -526,19 +549,49 @@ macro_rules! replay_test {
         async fn $name() {
             ensure_images($benchmark, $agent, $task_id, ReplayMode::Lean).await;
             let _compose = replay_compose($benchmark, $agent, $task_id, ReplayMode::Lean).await;
-            assert_result_valid($benchmark, $task_id);
+            assert_result_valid($benchmark, $agent, "replay", $task_id);
         }
     };
+}
+
+/// The output lifecycle (output/RULES.md 26–29): a rerun of the same run id
+/// skips a complete task untouched; `EVAL_FORCE` empties it and runs again.
+#[tokio::test]
+#[ignore]
+async fn rerun_is_skipped_and_force_reruns() {
+    let (b, a, t) = ("aime", "claude-code", "0");
+    ensure_images(b, a, ReplayMode::Lean).await;
+    let _first = replay_compose(b, a, t, ReplayMode::Lean).await;
+    assert_result_valid(b, a, "replay", t);
+    let agent_result = task_dir(b, a, "replay", t).join("agent/result.json");
+    let first = fs::read_to_string(&agent_result).unwrap();
+    assert!(
+        first.contains("\"error\":null"),
+        "first run errored: {first}"
+    );
+
+    let _rerun = replay_compose_with(b, a, t, ReplayMode::Lean, false, false).await;
+    assert_eq!(
+        fs::read_to_string(&agent_result).unwrap(),
+        first,
+        "a rerun of a complete task must leave it untouched"
+    );
+
+    let _forced = replay_compose_with(b, a, t, ReplayMode::Lean, false, true).await;
+    let forced = fs::read_to_string(&agent_result).unwrap();
+    assert_ne!(forced, first, "EVAL_FORCE must run the task again");
+    assert!(
+        forced.contains("\"error\":null"),
+        "forced run errored: {forced}"
+    );
 }
 
 /// Assert the real gateway emitted OTel `gen_ai` spans — the proof it booted,
 /// routed, and instrumented for real. Only exists in `ReplayMode::FullStack`;
 /// otelcol's `file` exporter writes the spans to the host-bound traces.jsonl.
-fn assert_gateway_traces(benchmark: &str, task_id: &str) {
-    let traces_path = Path::new("output")
-        .join(benchmark)
-        .join(task_id)
-        .join("traces.jsonl");
+fn assert_gateway_traces(benchmark: &str, agent: &str, task_id: &str) {
+    let traces_path =
+        task_dir(benchmark, agent, FULLSTACK_MODEL, task_id).join("model/traces.jsonl");
     let traces = fs::read_to_string(&traces_path)
         .unwrap_or_else(|e| panic!("traces.jsonl not readable at {traces_path:?}: {e}"));
     assert!(
@@ -560,11 +613,8 @@ fn assert_gateway_traces(benchmark: &str, task_id: &str) {
 /// missing-usage SDK crash ("Cannot read properties of undefined (reading
 /// 'input_tokens')") — so failing on them is what catches a regression. Requires
 /// a faithful replay upstream (SSE + usage); see containers/models/replay.
-fn assert_agent_succeeded(benchmark: &str, task_id: &str) {
-    let agent_dir = Path::new("output")
-        .join(benchmark)
-        .join(task_id)
-        .join("agent");
+fn assert_agent_succeeded(benchmark: &str, agent: &str, task_id: &str) {
+    let agent_dir = task_dir(benchmark, agent, FULLSTACK_MODEL, task_id).join("agent");
     let mut out = fs::read_to_string(agent_dir.join("stdout.log")).unwrap_or_default();
     out.push_str(&fs::read_to_string(agent_dir.join("stderr.log")).unwrap_or_default());
     assert!(
@@ -598,9 +648,9 @@ macro_rules! replay_fullstack_test {
             ensure_images($benchmark, $agent, $task_id, ReplayMode::FullStack).await;
             let _compose =
                 replay_compose($benchmark, $agent, $task_id, ReplayMode::FullStack).await;
-            assert_result_valid($benchmark, $task_id);
-            assert_gateway_traces($benchmark, $task_id);
-            assert_agent_succeeded($benchmark, $task_id);
+            assert_result_valid($benchmark, $agent, FULLSTACK_MODEL, $task_id);
+            assert_gateway_traces($benchmark, $agent, $task_id);
+            assert_agent_succeeded($benchmark, $agent, $task_id);
         }
     };
 }

@@ -346,15 +346,16 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     let run_dir =
         PathBuf::from("tests/run/live/runs").join(format!("{benchmark}-{task_id}-{agent}"));
 
-    // Every run starts from a clean output dir to avoid stale state
-    // from a prior aborted run getting mistaken for the current run's
-    // artifact.
-    let cwd_output = PathBuf::from("output").join(benchmark).join(task_id);
+    // Every run starts from a clean task directory (output/RULES.md rule 11:
+    // `output/<b>/<a>/<model>/<run-id>/<task>`) so a prior aborted run is never
+    // mistaken for this run's artifact.
+    let cwd_output = PathBuf::from("output")
+        .join(benchmark)
+        .join(agent)
+        .join(eval_containers::naming::model_slug(MODEL))
+        .join("live")
+        .join(task_id);
     let _ = fs::remove_dir_all(&cwd_output);
-    // Pre-create output subdirs so crun doesn't fail on missing host paths
-    for sub in &["model", "agent", "task"] {
-        let _ = fs::create_dir_all(cwd_output.join(sub));
-    }
 
     // Pre-build the eval combination image. `eval-containers run --local` uses
     // the in-repo compose file but the `image:` field still refers
@@ -407,6 +408,8 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
             MODEL,
             "--task-id",
             task_id,
+            "--run-id",
+            "live",
             "--local",
             "--max-budget",
         ])

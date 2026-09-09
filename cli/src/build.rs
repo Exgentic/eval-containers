@@ -495,6 +495,7 @@ fn docker_compose_publish(
     let publish_env = [
         ("OPENAI_API_KEY", "unused-at-publish"),
         ("OPENAI_API_BASE", "unused-at-publish"),
+        ("EVAL_RUN_ID", "unused-at-publish"),
     ];
     let env_str = publish_env
         .iter()
@@ -541,7 +542,13 @@ fn docker_compose_publish(
         let mut f = opts
             .open(flat)
             .map_err(|e| format!("failed to open {flat}: {e}"))?;
-        f.write_all(&out.stdout)
+        // The shared files require EVAL_BENCHMARK for the results path; the
+        // per-benchmark artifact knows its own name, so bake it in as the default.
+        let flat_doc = String::from_utf8_lossy(&out.stdout).replace(
+            "${EVAL_BENCHMARK:?}",
+            &format!("${{EVAL_BENCHMARK:-{benchmark}}}"),
+        );
+        f.write_all(flat_doc.as_bytes())
             .map_err(|e| format!("failed to write {flat}: {e}"))?;
     }
 

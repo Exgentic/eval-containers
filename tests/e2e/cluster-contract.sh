@@ -184,7 +184,7 @@ for id in first second; do
   case "$got" in *Complete*) ;; *) bad "E: the $id run ended '$got'"; diagnose "humaneval-stub-task-0-$id" ;; esac
 done
 for id in first second; do
-  r=$(onnode cat "$OUT/$ROOT_E/$id/task/result.json")
+  r=$(onnode cat "$OUT/$ROOT_E/$id/0/task/result.json")
   case "$r" in
     *"\"run\":\"$id\""*) ;;
     *) bad "E: the $id run's result is missing or was overwritten (got: ${r:-<empty>})" ;;
@@ -229,7 +229,7 @@ case "$got" in
   *Complete*)
     # A reader pod is the only way into an RWO claim once the writer is gone.
     kubectl run pvc-reader --image=eval-e2e/runner:stub --restart=Never \
-      --overrides='{"spec":{"containers":[{"name":"pvc-reader","image":"eval-e2e/runner:stub","command":["cat","/out/'"$ROOT_F"'/onpvc/task/result.json"],"volumeMounts":[{"name":"out","mountPath":"/out"}]}],"volumes":[{"name":"out","persistentVolumeClaim":{"claimName":"eval-e2e-output"}}]}}' \
+      --overrides='{"spec":{"containers":[{"name":"pvc-reader","image":"eval-e2e/runner:stub","command":["cat","/out/'"$ROOT_F"'/onpvc/0/task/result.json"],"volumeMounts":[{"name":"out","mountPath":"/out"}]}],"volumes":[{"name":"out","persistentVolumeClaim":{"claimName":"eval-e2e-output"}}]}}' \
       >/dev/null 2>&1
     kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/pvc-reader --timeout=60s >/dev/null 2>&1
     r=$(kubectl logs pvc-reader 2>/dev/null)
