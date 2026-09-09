@@ -29,32 +29,33 @@ Parent: [../RULES.md](../RULES.md)
 ## Fixture lifecycle
 
 4. **Fixtures are immutable ground truth.** Files under
-   `tests/run/replay/fixtures/*.traces.jsonl` are PRODUCED by release
+   `tests/run/replay/fixtures/*.traces.jsonl.zst` are PRODUCED by release
    verification's live fleet sweep. Contributors MUST NOT hand-edit
    fixtures; the fixture is the record of what a specific
    (benchmark, task, agent, model) combination actually produced
    under a specific release tag.
 
 4a. **No live secrets or internal endpoints in a fixture.** A
-   `*.traces.jsonl` MUST NOT contain a live credential (API key, token,
+   `*.traces.jsonl.zst` MUST NOT contain a live credential (API key, token,
    OAuth token, password) or an internal-only endpoint (e.g. a
    `*.vpc-int.res.ibm.com` gateway host). The live sweep (rule 4) captures the
-   eval container's environment, so it MUST redact these at capture. The secret
-   scanner is the enforced backstop: `.github/.gitleaks.toml` scans the fixture
-   tree for credential shapes (it does NOT trust the tree wholesale) and
-   suppresses only the benign one-way observability hashes (`user_api_key_hash`,
-   `prompt_cache_key`) and the base image's public `GPG_KEY` fingerprint — a real
-   `sk-`/`ya29.`/internal-host value fails the scan. This is rule 1 (no API keys)
-   extended from the replay runtime to the recorded artifact. A wholesale
-   trust-the-tree allowlist once blinded this scan and let a live HF token, a
-   LiteLLM key, and Google OAuth tokens through.
+   eval container's environment, so it MUST redact these at capture, before
+   compression. The secret scanner is the enforced backstop: `.github/.gitleaks.toml`
+   scans a decompressed copy of the fixture tree for credential shapes (it does
+   NOT trust the tree wholesale) and suppresses only the benign one-way
+   observability hashes (`user_api_key_hash`, `prompt_cache_key`) and the base
+   image's public `GPG_KEY` fingerprint — a real `sk-`/`ya29.`/internal-host value
+   fails the scan. This is rule 1 (no API keys) extended from the replay runtime
+   to the recorded artifact. A wholesale trust-the-tree allowlist once blinded
+   this scan and let a live HF token, a LiteLLM key, and Google OAuth tokens
+   through.
 
-5. **Filename convention.** `{benchmark}-{task-id}-{agent}.traces.jsonl`.
-   One fixture per (benchmark, task, agent) combination, stored as native
-   OTLP/JSON — OpenTelemetry `gen_ai` semconv spans, one
+5. **Filename convention.** `{benchmark}-{task-id}-{agent}.traces.jsonl.zst`.
+   One fixture per (benchmark, task, agent) combination, stored as a zstd
+   frame over native OTLP/JSON — OpenTelemetry `gen_ai` semconv spans, one
    `ExportTraceServiceRequest` per line (what an otelcol `file` exporter
-   writes). The model is fixed per release and recorded in
-   `fixtures/provenance.json`.
+   writes, compressed before commit). The model is fixed per release and
+   recorded in `fixtures/provenance.json`.
 
 6. **Provenance record.** `fixtures/provenance.json` MUST record, for
    every fixture: the model name and version, the agent version, the
@@ -71,7 +72,7 @@ Parent: [../RULES.md](../RULES.md)
 ## Adding a new fixture
 
 8. **Fixtures are added by release verification.** A contributor SHOULD
-   NOT commit a new `*.traces.jsonl` manually. New fixtures land as
+   NOT commit a new `*.traces.jsonl.zst` manually. New fixtures land as
    part of the release-verification live sweep commit.
 
 9. **Emergency fixture addition.** If a new benchmark is added to the
@@ -86,3 +87,9 @@ Parent: [../RULES.md](../RULES.md)
     and `models/replay` before any replay test runs. The build sweep's
     `ImageGuard::Drop` deletes them after a prior sweep, so replay
     cannot assume they exist.
+
+## Changelog
+
+| Date       | Change                                                                  |
+|------------|--------------------------------------------------------------------------|
+| 2026-09-08 | Rules 4, 4a, 5, 8: fixture files stored zstd-compressed (`*.traces.jsonl.zst`); gitleaks (rule 4a) now scans a decompressed copy in CI rather than the committed blob. |

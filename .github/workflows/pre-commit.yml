@@ -82,6 +82,18 @@ jobs:
           key: trivy-${{ runner.os }}
           restore-keys: trivy-
 
+      # Replay fixtures are committed zstd-compressed, opaque to gitleaks's
+      # text scanner. Decompress into gitignored sibling *.traces.jsonl files
+      # (tests/run/replay/RULES.md rule 4a) so the gitleaks hook below keeps
+      # scanning fixture content, not just the compressed bytes.
+      - name: Decompress fixtures for secret scanning
+        run: |
+          command -v zstd >/dev/null || { echo "zstd not found"; exit 1; }
+          for f in tests/run/replay/fixtures/*.traces.jsonl.zst; do
+            [ -e "$f" ] || continue
+            zstd -dq -f "$f" -o "${f%.zst}"
+          done
+
       # PRs: scope to changed files. main/manual: full check (no PR diff exists).
       - name: Run pre-commit (PR)
         if: github.event_name == 'pull_request'

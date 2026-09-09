@@ -508,7 +508,8 @@ fn status_code_of(status: Option<&Value>) -> i64 {
 
 /// Load every span from an OTLP/JSON fixture, ordered by start time.
 fn load_spans(path: &Path) -> Result<Vec<SpanCall>, String> {
-    let raw = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let raw =
+        test_support::read_fixture(path).map_err(|e| format!("read {}: {e}", path.display()))?;
     let mut calls: Vec<SpanCall> = Vec::new();
     for line in raw.lines() {
         if line.trim().is_empty() {
@@ -967,11 +968,11 @@ fn fixture_paths() -> Vec<PathBuf> {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.extension().and_then(|s| s.to_str()) == Some("jsonl")
+        if path.extension().and_then(|s| s.to_str()) == Some("zst")
             && path
                 .file_name()
                 .and_then(|s| s.to_str())
-                .map(|n| n.ends_with(".traces.jsonl"))
+                .map(|n| n.ends_with(".traces.jsonl.zst"))
                 .unwrap_or(false)
         {
             out.push(path);

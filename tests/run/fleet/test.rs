@@ -479,7 +479,11 @@ fn render_report(gates: &[Gate], verdict: Verdict) -> String {
     let fixtures = fs::read_dir("tests/run/replay/fixtures")
         .map(|d| {
             d.filter_map(Result::ok)
-                .filter(|e| e.file_name().to_string_lossy().ends_with(".traces.jsonl"))
+                .filter(|e| {
+                    e.file_name()
+                        .to_string_lossy()
+                        .ends_with(".traces.jsonl.zst")
+                })
                 .count()
         })
         .unwrap_or(0);

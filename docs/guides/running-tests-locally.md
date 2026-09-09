@@ -173,9 +173,10 @@ EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
 # The output lives in the named volume, not on the host filesystem.
-# Extract via a one-shot alpine container that mounts it read-only.
+# Extract via a one-shot alpine container that mounts it read-only, then
+# zstd-compress (fixtures are committed compressed — verification/RULES.md rule 10).
 docker run --rm -v aime_output:/output:ro alpine \
-  cat /output/traces.jsonl > tests/run/replay/fixtures/aime-0-codex.traces.jsonl
+  cat /output/traces.jsonl | zstd -q -o tests/run/replay/fixtures/aime-0-codex.traces.jsonl.zst
 ```
 
 The volume name follows `<benchmark>_output` (compose project + the `output` declared in `containers/compose/services.yaml`). Sanity-check the result:

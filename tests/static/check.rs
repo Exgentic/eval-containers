@@ -294,14 +294,14 @@ fn fixture_benchmarks() -> Vec<String> {
     };
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".traces.jsonl") {
+        if !name.ends_with(".traces.jsonl.zst") {
             continue;
         }
-        // Filename convention: <benchmark>-<task>-<agent>.traces.jsonl
+        // Filename convention: <benchmark>-<task>-<agent>.traces.jsonl.zst
         // The benchmark name is everything before the first "-<digit>-"
         // (task ids are typically "0", "1", ...). Fall back to everything
         // before the last "-" pair if that doesn't match.
-        let stem = name.trim_end_matches(".traces.jsonl");
+        let stem = name.trim_end_matches(".traces.jsonl.zst");
         // Find "<benchmark>-<task>-<agent>" by scanning for "-\d+-" first.
         let bench = stem
             .find('-')

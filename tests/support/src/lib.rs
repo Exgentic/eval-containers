@@ -8,6 +8,7 @@
 //! from every stage.
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::Once;
 
 /// Absolute path to the repository root (the workspace root).
@@ -46,4 +47,25 @@ pub fn enter_repo_root() {
     ENTER.call_once(|| {
         std::env::set_current_dir(repo_root()).expect("set current dir to repo root");
     });
+}
+
+/// Reads a fixture file, transparently zstd-decompressing if its name ends in
+/// `.zst`. Shells to the `zstd` CLI (already required by
+/// `tests/e2e/real-eval.sh`) rather than adding a crate dependency — this
+/// crate is kept dependency-free so the `tests/static` gate stays cheap to
+/// compile.
+pub fn read_fixture(path: &Path) -> std::io::Result<String> {
+    if path.extension().and_then(|e| e.to_str()) != Some("zst") {
+        return std::fs::read_to_string(path);
+    }
+    let output = Command::new("zstd").arg("-dc").arg(path).output()?;
+    if !output.status.success() {
+        return Err(std::io::Error::other(format!(
+            "zstd -dc {} failed: {}",
+            path.display(),
+            String::from_utf8_lossy(&output.stderr)
+        )));
+    }
+    String::from_utf8(output.stdout)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))
 }
