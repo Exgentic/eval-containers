@@ -100,7 +100,12 @@ def register_model(registry_key: str, api_model: str) -> None:
         input_price=None,
         output_price=None,
         is_fc_model=True,
-        underscore_to_dot=False,
+        # BFCL function names contain dots (e.g. `math.factorial`), which the
+        # function-calling API forbids, so BFCL sends them as underscores. This
+        # flag converts the model's underscore names back to dots before the AST
+        # checker grades them against the dotted ground truth. Without it, every
+        # dotted-name task fails on the name alone regardless of correct args.
+        underscore_to_dot=True,
     )
 
 
