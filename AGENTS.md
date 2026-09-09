@@ -32,7 +32,7 @@ active rule must not merge.
 
 **Skills — the *how***
 - Add a component — [`benchmarks/add-benchmark`](.agents/benchmarks/add-benchmark/SKILL.md) · [`agents/add-agent`](.agents/agents/add-agent/SKILL.md)
-- Build & release — [`delivery/build`](.agents/delivery/build/SKILL.md) · [`delivery/release`](.agents/delivery/release/SKILL.md)
+- Build & release — [`delivery/build`](.agents/delivery/build/SKILL.md) · [`delivery/publish`](.agents/delivery/publish/SKILL.md) · [`delivery/release`](.agents/delivery/release/SKILL.md)
 - Verify & audit — [`verification/verify`](.agents/verification/verify/SKILL.md) · [`audit-dockerfile`](.agents/verification/audit-dockerfile/SKILL.md) · [`audit-trajectory`](.agents/verification/audit-trajectory/SKILL.md) · [`audit-fleet`](.agents/verification/audit-fleet/SKILL.md) · [`audit-rules-drift`](.agents/verification/audit-rules-drift/SKILL.md) · [`audit/audit-benchmark`](.agents/verification/audit/audit-benchmark/SKILL.md) · [`audit/audit-rollup`](.agents/verification/audit/audit-rollup/SKILL.md)
 
 ## Working in this repo

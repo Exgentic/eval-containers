@@ -1125,10 +1125,10 @@ fn the_retry_round_is_driven_from_grade_sh() {
 /// A published `eval-<benchmark>` artifact republishes when *its* inputs move,
 /// not when its benchmark image happens to be stale (#451): the flattened
 /// compose bytes include the shared `containers/compose/` half, which sits in no
-/// image's build context, so a main push judges freshness with the compose sweep
-/// and publishes even when nothing needed rebuilding.
+/// image's build context, so a channel run judges freshness with the compose
+/// sweep and publishes even when nothing needed rebuilding.
 #[test]
-fn a_main_push_publishes_the_compose_artifacts_that_moved() {
+fn a_channel_run_publishes_the_compose_artifacts_that_moved() {
     let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");
     let enumerate = wf
@@ -1138,7 +1138,7 @@ fn a_main_push_publishes_the_compose_artifacts_that_moved() {
         .expect("no `enumerate` job in release-images.yml");
     assert!(
         enumerate.contains("fleet-status.sh compose"),
-        "the main-push compose list must come from the compose freshness sweep — \
+        "the channel-run compose list must come from the compose freshness sweep — \
          deriving it from the stale *leaf* list misses every change to \
          containers/compose/, which is inside no image's build context"
     );
@@ -1154,14 +1154,14 @@ fn a_main_push_publishes_the_compose_artifacts_that_moved() {
     );
 }
 
-/// Per-task images and their combos ride the continuous channel like every other
-/// image (#452). A main push enumerates them and prunes to the set whose input
+/// Per-task images and their combos ride the nightly channel like every other
+/// image (#452). A channel run enumerates them and prunes to the set whose input
 /// hashes moved, rather than excluding the class outright; and because a
 /// per-task benchmark publishes no `benchmarks/<b>:latest` of its own, the
 /// combo filter judges a per-task pair by its own task base, never by the
 /// benchmark target's (permanently absent) staleness.
 #[test]
-fn a_main_push_publishes_the_per_task_images_that_moved() {
+fn a_channel_run_publishes_the_per_task_images_that_moved() {
     let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");
     let enumerate = wf
@@ -1172,12 +1172,12 @@ fn a_main_push_publishes_the_per_task_images_that_moved() {
 
     assert!(
         !enumerate.contains("INCLUDE_PER_TASK=false"),
-        "a main push must not switch the per-task class off wholesale — rule 16 \
+        "a channel run must not switch the per-task class off wholesale — rule 16 \
          selects by changed build inputs, not by image class"
     );
     assert!(
         enumerate.contains("fleet-hash.sh per-task") && enumerate.contains("fleet-status.sh check"),
-        "the main-push per-task list must be pruned by comparing each image's \
+        "the channel-run per-task list must be pruned by comparing each image's \
          input hash against the registry, or every push rebuilds ~660 images"
     );
     assert!(
@@ -1318,5 +1318,46 @@ fn every_publish_goes_through_the_hash_tag() {
         !wf.contains("force_rebuild") && !wf.contains("rebuild_bases"),
         "no knob may rebuild under an unchanged hash — refresh containers/externals.tsv instead \
          (delivery/RULES.md:13, :19)"
+    );
+}
+
+/// The `latest` channel is nightly (delivery/RULES.md:16): a schedule, not a
+/// push, publishes from `main`, so a busy day of merges is one incremental run
+/// instead of a queue of superseded ones, and the channel predicate keys on
+/// that schedule. A dispatch can name exact task ids (`tasks=`) and fails loud
+/// when none match — a machine selection never passes vacuously
+/// (verification/RULES.md:15).
+#[test]
+fn the_channel_publishes_nightly() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let on = wf
+        .split("\non:\n")
+        .nth(1)
+        .and_then(|s| s.split("\nconcurrency:").next())
+        .expect("no `on:` block in release-images.yml");
+    assert!(
+        on.contains("schedule:") && on.contains("- cron: '17 1 * * *'"),
+        "the channel must publish on a nightly schedule (delivery/RULES.md:16)"
+    );
+    assert!(
+        !on.contains("branches:"),
+        "a branch push must not publish the channel — the nightly does; per-push \
+         runs superseded each other faster than the fleet could publish"
+    );
+    assert!(
+        wf.contains("IS_CHANNEL: ${{ github.event_name == 'schedule' }}")
+            && !wf.contains("IS_MAIN_PUSH"),
+        "the incremental (stale-set) path must key on the schedule, not on a push"
+    );
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+    assert!(
+        enumerate.contains("TASKS: ${{ inputs.tasks }}")
+            && enumerate.contains("tasks= matched no task id"),
+        "a dispatch must be able to name exact task ids, and fail loud when none match"
     );
 }

@@ -34,27 +34,32 @@ Only images work this way. Artifacts that embed the version in their own bytes
 — the per-benchmark `eval-<benchmark>` compose artifacts, the Helm chart, the
 CLI — are republished fresh on every release by definition.
 
-## The continuous `latest` channel
+## The nightly `latest` channel
 
-Every push to `main` publishes `:latest` automatically — and publishes **only
-the push's delta**. The release workflow computes the stale set up front and
-prunes every build matrix to it: a push touching one benchmark builds that
-benchmark (and its combos), a push touching a shared base rebuilds the base
-and everything the cascade reaches, and a push touching nothing under
-`containers/` publishes nothing. Versioned `vX.Y.Z` releases remain separate,
-deliberate, tag-triggered events — they always process the full fleet so every
-image gains the new tag (built or carried forward), pass the CVE gate, and are
-what consumers should pin. Per-task images (~600 heavy builds) are excluded
-from the continuous channel and refresh only on versioned releases or manual
-dispatch.
+`:latest` is published from `main` once a night
+([delivery rule 16](../../.agents/delivery/RULES.md)) — and publishes **only
+what changed** since the last publish. The release workflow computes the stale
+set up front and prunes every build matrix to it: a day that touched one
+benchmark rebuilds that benchmark (and its combos), a day that touched a
+shared base rebuilds the base and everything the cascade reaches, and a quiet
+night publishes nothing. Per-task images ride the same channel, pruned the
+same way. Every image is published under its hash tag first and `latest` is
+repointed after ([rules 18–20](../../.agents/delivery/RULES.md)), so a run
+that dies midway leaves `latest` a complete snapshot of an earlier tip, never
+a mix, and the next night lands the same names. Versioned `vX.Y.Z` releases
+remain separate, deliberate, tag-triggered events — they process the full
+fleet so every image gains the new tag (built or carried forward), pass the
+CVE gate, and are what consumers should pin. Need something before tonight?
+[Publish on demand](../guides/publish-on-demand.md).
 
 ## Refreshing upstream bases
 
 The input hash sees the repository only, so the digest of every external base
 image (`python:3.12-slim`, …) lives in the repository too:
 `containers/externals.tsv`, one `ref<TAB>digest` line per base the fleet builds
-`FROM`. To pick up upstream fixes, refresh it and commit — the push then
-rebuilds exactly the images whose base moved:
+`FROM`. To pick up upstream fixes, refresh it and commit — the next nightly
+(or a [dispatch](../guides/publish-on-demand.md)) then rebuilds exactly the
+images whose base moved:
 
 ```bash
 containers/scripts/external-drift.sh containers/externals.tsv > /tmp/externals.tsv; mv /tmp/externals.tsv containers/externals.tsv
