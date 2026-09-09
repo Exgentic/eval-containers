@@ -53,10 +53,18 @@ printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
 # re-quoted.
 printf '%s\n' "${EVAL_LAUNCH:-[]}" > /output/agent/launch.json
 
-# The attempt is over: release the task directory, and exit non-zero on an
-# errored attempt so the orchestrator (k8s backoffLimit, the CLI) sees it.
+# The attempt is over: release the directory so the next run can claim it.
 rm -f /output/agent/.lock
+
+# An errored attempt is recorded, not signalled through the exit code. The exit
+# code is the ORCHESTRATOR's input, and it reads it as "this pod could not do its
+# job": on an Indexed Job with the chart's `backoffLimit: 0`, one non-zero pod
+# marks the Job failed and the controller stops creating the rest — one timed-out
+# task would end the whole dataset run (rule 33 keeps going). So a pipeline that
+# ran to a recorded result exits 0 whatever the reward or the error, and a
+# non-zero exit stays what it should mean: no result was produced at all. Who
+# reports the failure is whoever spans the tasks — the CLI for a run it drives
+# (rules 34–35), the aggregation for a fleet of them (rule 36).
 if [ "$ERROR" != null ]; then
-  echo "write-result: attempt errored ($ERROR) — rerun to retry" >&2
-  exit 1
+  echo "write-result: attempt errored ($ERROR) — recorded; rerun this run id to retry it" >&2
 fi

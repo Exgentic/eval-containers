@@ -160,13 +160,20 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_default()
 }
 
-/// One task directory in the layout of rule 11, under a fresh output root.
-fn task_dir() -> PathBuf {
+/// One task directory in the layout of rule 11, under a fresh output root. The
+/// run id keeps concurrent tests in this file out of each other's directory.
+fn task_dir(run_id: &str) -> PathBuf {
     let root = std::env::current_dir()
         .expect("cwd")
         .join("output/lifecycle")
-        .join(std::process::id().to_string());
-    let dir = root.join(BENCH).join(AGENT).join("none/r1/0");
+        .join(std::process::id().to_string())
+        .join(run_id);
+    let dir = root
+        .join(BENCH)
+        .join(AGENT)
+        .join("none")
+        .join(run_id)
+        .join("0");
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&dir).expect("create the task directory");
     dir
@@ -176,7 +183,7 @@ fn task_dir() -> PathBuf {
 #[ignore]
 async fn the_launcher_records_reuses_retries_and_refuses() {
     ensure_image();
-    let dir = task_dir();
+    let dir = task_dir("r1");
     let run_dir = dir.parent().expect("run directory").to_path_buf();
     let agent_result = dir.join("agent/result.json");
 
@@ -303,4 +310,48 @@ async fn the_launcher_records_reuses_retries_and_refuses() {
     );
 
     let _ = std::fs::remove_dir_all(&run_dir);
+}
+
+/// Rule 17 from the writer's side, and the decision behind it: an attempt the
+/// framework ended is recorded in `agent/result.json`, and the pipeline still
+/// exits 0. The exit code is the ORCHESTRATOR's input — on an Indexed Job with
+/// the chart's `backoffLimit: 0`, one non-zero pod marks the Job failed and the
+/// controller creates none of the remaining indexes, so signalling an errored
+/// attempt that way would let one timed-out task end a whole dataset run
+/// (rule 33). `in_dir` waits for exit 0, so it is that half of the assertion.
+#[tokio::test]
+#[ignore]
+async fn an_errored_attempt_is_recorded_not_signalled() {
+    ensure_image();
+    let dir = task_dir("errored");
+    let result = dir.join("agent/result.json");
+
+    // The framework's own timeout: `timeout` kills the agent with 124.
+    in_dir(
+        &dir,
+        "mkdir -p /output/agent /output/task /output/model
+         printf 124 > /output/agent/.exit-code
+         TASK_ID=0 BENCHMARK=agents-smoke AGENT=mock /usr/local/bin/write-result",
+    )
+    .await;
+    let timed_out = read(&result);
+    assert!(
+        timed_out.contains(r#""error":"timeout""#) && timed_out.contains(r#""exit_code":124"#),
+        "a timed-out attempt was not recorded as errored: {timed_out}"
+    );
+
+    // An agent that never launched leaves no exit code at all.
+    in_dir(
+        &dir,
+        "rm -f /output/agent/.exit-code
+         TASK_ID=0 BENCHMARK=agents-smoke AGENT=mock /usr/local/bin/write-result",
+    )
+    .await;
+    let never_ran = read(&result);
+    assert!(
+        never_ran.contains(r#""error":"agent did not run""#),
+        "an attempt that never started was not recorded as errored: {never_ran}"
+    );
+
+    let _ = std::fs::remove_dir_all(dir.parent().expect("run directory"));
 }
