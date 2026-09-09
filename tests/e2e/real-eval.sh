@@ -80,7 +80,7 @@ step "check the Job can be asked where it wrote"
 # reports the path it was given, which no render can prove: assert it here,
 # against the API server, with the same query fetch.sh runs.
 got=$(kubectl get job agents-smoke-mock-task-0 \
-  -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.name=="output")].subPath}' 2>/dev/null)
+  -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.name=="output")].subPathExpr}' 2>/dev/null)
 [ "$got" = "$SUB/$RUN" ] \
   || bad "the Job reports subPath '${got:-<empty>}', not the '$SUB/$RUN' it writes to — fetch.sh would copy the wrong directory"
 
@@ -89,14 +89,14 @@ step "check the output contract"
 # one names which part of the machinery stopped: the grader, write-result, or the
 # runner's log capture.
 for f in task/result.json agent/result.json model/result.json agent/launch.json; do
-  r=$(onnode cat "$OUT/$SUB/$RUN/$f" 2>/dev/null)
+  r=$(onnode cat "$OUT/$SUB/$RUN/0/$f" 2>/dev/null)
   [ -n "$r" ] || { bad "$f is missing"; continue; }
   echo "  $f: $r"
 done
 # Presence is the weakest thing worth asserting, so assert the fields the
 # dashboard actually keys off: the grader's verdict, and the exit code it uses to
 # tell a failed run from an unscored one.
-r=$(onnode cat "$OUT/$SUB/$RUN/task/result.json" 2>/dev/null)
+r=$(onnode cat "$OUT/$SUB/$RUN/0/task/result.json" 2>/dev/null)
 case "$r" in
   *'"passed":true'*|*'"passed": true'*) ;;
   *) bad "the grader's verdict never reached task/result.json (got: ${r:-<empty>})" ;;
@@ -105,7 +105,7 @@ case "$r" in
   *'"reward":1'*|*'"reward": 1'*) ;;
   *) bad "task/result.json carries no reward from the grader (got: $r)" ;;
 esac
-a=$(onnode cat "$OUT/$SUB/$RUN/agent/result.json" 2>/dev/null)
+a=$(onnode cat "$OUT/$SUB/$RUN/0/agent/result.json" 2>/dev/null)
 case "$a" in
   *'"exit_code":0'*|*'"exit_code": 0'*) ;;
   *) bad "agent/result.json has no exit_code — a crashed run would be indistinguishable from a clean one (got: ${a:-<empty>})" ;;
@@ -194,10 +194,10 @@ if bash "$ROOT/deploy/kind/run.sh" \
     *Complete*)
       # Where it put things is its own business — the model segment is in flux
       # (#443) and the run id is generated — so assert the shape, not the string:
-      # one run directory under <benchmark>/<agent>/<model>, holding a result.
-      found=$(onnode sh -c "ls $OUT/agents-smoke/mock/*/*/task/result.json 2>/dev/null | head -1")
+      # one run directory under <benchmark>/<agent>/<model>, and the task under it.
+      found=$(onnode sh -c "ls $OUT/agents-smoke/mock/*/*/0/task/result.json 2>/dev/null | head -1")
       [ -n "$found" ] \
-        || bad "the launcher's Job completed but left no result under $OUT/agents-smoke/mock/*/*/" ;;
+        || bad "the launcher's Job completed but left no result under $OUT/agents-smoke/mock/*/*/0/" ;;
     *) bad "the Job deploy/kind/run.sh applied did not complete"
        diagnose agents-smoke-mock-task-0 ;;
   esac

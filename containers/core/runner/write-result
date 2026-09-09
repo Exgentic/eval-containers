@@ -8,7 +8,7 @@
 #
 # Writes:
 #   /output/task/result.json    task_id, benchmark, reward, passed
-#   /output/agent/result.json   agent, started_at, ended_at, exit_code
+#   /output/agent/result.json   agent, started_at, ended_at, exit_code, error
 #   /output/model/result.json   model
 #   /output/agent/launch.json   what the run was launched with (EVAL_LAUNCH)
 set -euo pipefail
@@ -31,8 +31,18 @@ printf '{"task_id":"%s","benchmark":"%s","reward":%s,"passed":%s}\n' \
   "${TASK_ID:-unknown}" "${BENCHMARK:-unknown}" "$REWARD" "$PASSED" \
   > /output/task/result.json
 
-printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s}\n' \
-  "${AGENT:-unknown}" "$STARTED_AT" "$ENDED_AT" "$EXIT_CODE" \
+# An attempt the framework ended — its own timeout, a crash, or an agent that
+# never ran — is errored (.agents/output/RULES.md 17): recorded here, retried on
+# the next run of this directory, never counted as a score.
+case "$EXIT_CODE" in
+  0)    ERROR=null ;;
+  null) ERROR='"agent did not run"' ;;
+  124)  ERROR='"timeout"' ;;
+  *)    ERROR="\"agent exited $EXIT_CODE\"" ;;
+esac
+
+printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s,"error":%s}\n' \
+  "${AGENT:-unknown}" "$STARTED_AT" "$ENDED_AT" "$EXIT_CODE" "$ERROR" \
   > /output/agent/result.json
 
 printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
@@ -42,3 +52,11 @@ printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
 # record". Already JSON — the chart built it with toJson — so it is copied, not
 # re-quoted.
 printf '%s\n' "${EVAL_LAUNCH:-[]}" > /output/agent/launch.json
+
+# The attempt is over: release the task directory, and exit non-zero on an
+# errored attempt so the orchestrator (k8s backoffLimit, the CLI) sees it.
+rm -f /output/agent/.lock
+if [ "$ERROR" != null ]; then
+  echo "write-result: attempt errored ($ERROR) — rerun to retry" >&2
+  exit 1
+fi

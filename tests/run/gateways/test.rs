@@ -20,7 +20,7 @@
 //!      mounted /output. Fire a real chat completion against the
 //!      upstream from `.env`, assert the gateway both serves the
 //!      protocol and emits gen_ai.* OTel semconv spans to
-//!      /output/traces.jsonl. litellm additionally must write
+//!      /output/model/traces.jsonl. litellm additionally must write
 //!      trajectory.jsonl + result.json via its eval_logger callback;
 //!      portkey is asserted NOT to emit gateway-side spans on
 //!      /openai (documents the known limitation — see
@@ -791,6 +791,9 @@ async fn start_pod_with_otel(
     // before any `ImageExt` method (with_platform, with_mount, ...)
     // because the ImageExt calls convert to ContainerRequest, on which
     // with_wait_for is not defined.
+    // otelcol writes /output/model/traces.jsonl (output/RULES.md rule 12); in an
+    // eval the runner's mount creates model/, here the test does.
+    std::fs::create_dir_all(host_output.join("model")).expect("create model/");
     let otel = GenericImage::new("ghcr.io/exgentic/core/otel", "latest")
         .with_wait_for(WaitFor::message_on_stderr(
             "Everything is ready. Begin running and processing data.",
@@ -858,7 +861,7 @@ async fn start_pod_with_otel(
 /// BatchSpanProcessor schedule_delay_millis + otelcol's 200ms batch
 /// timeout + filesystem flush slack.
 fn await_traces_with_gen_ai(host_output: &Path) -> String {
-    let path = host_output.join("traces.jsonl");
+    let path = host_output.join("model/traces.jsonl");
     let mut last = String::new();
     for _ in 0..60 {
         if let Ok(s) = std::fs::read_to_string(&path) {
@@ -993,7 +996,7 @@ async fn otel_portkey_openai_emits_no_gateway_spans() {
     assert_eq!(resp.status(), 200);
     std::thread::sleep(Duration::from_secs(3));
 
-    let traces = tmp.path().join("traces.jsonl");
+    let traces = tmp.path().join("model/traces.jsonl");
     let has_gen_ai = traces.exists()
         && std::fs::read_to_string(&traces)
             .unwrap_or_default()

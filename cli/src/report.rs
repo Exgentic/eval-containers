@@ -23,10 +23,9 @@ struct TaskResult {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 struct AgentResult {
     agent: Option<String>,
-    exit_code: Option<i32>,
+    error: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -63,13 +62,13 @@ pub fn execute(args: ReportArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// Walk the output directory to find all evaluation results.
-/// Supports layouts:
-///   ./output/task/result.json                           (single eval)
-///   ./output/<benchmark>/<task-id>/task/result.json     (multiple evals)
+/// Walk the output root for task directories —
+/// `<root>/<benchmark>/<agent>/<model>/<run-id>/<task-id>/` (output/RULES.md
+/// rule 11), a task directory being any dir holding `task/` or `agent/`, so a
+/// failed one (no result.json yet) is counted as failed, not skipped.
 fn find_results(dir: &Path) -> Vec<EvalResult> {
     let mut results = Vec::new();
-    walk_for_results(dir, &mut results, 3);
+    walk_for_results(dir, &mut results, 6);
     results
 }
 
@@ -78,8 +77,7 @@ fn walk_for_results(dir: &Path, results: &mut Vec<EvalResult>, depth: u32) {
         return;
     }
 
-    // If this directory contains task/result.json, it's an eval result
-    if dir.join("task/result.json").exists() {
+    if dir.join("task").is_dir() || dir.join("agent").is_dir() {
         results.push(load_eval(dir));
         return;
     }
@@ -107,14 +105,22 @@ fn load_eval(dir: &Path) -> EvalResult {
     }
 }
 
-/// True if the run dir has a traces file (.jsonl or .json) with at least one
-/// gen_ai (LLM) span. Substring check — no full OTel parse needed.
+/// True if the task dir's traces hold at least one gen_ai (LLM) span.
+/// Substring check — no full OTel parse needed.
 fn has_gen_ai_traces(dir: &Path) -> bool {
-    ["traces.jsonl", "traces.json"].iter().any(|name| {
-        fs::read_to_string(dir.join(name))
-            .map(|c| c.contains("gen_ai"))
-            .unwrap_or(false)
-    })
+    fs::read_to_string(dir.join("model/traces.jsonl"))
+        .map(|c| c.contains("gen_ai"))
+        .unwrap_or(false)
+}
+
+/// A failed task directory — errored or incomplete — is never a score
+/// (output/RULES.md rule 36).
+fn failure(r: &EvalResult) -> Option<&str> {
+    match (&r.task, &r.agent) {
+        (None, _) => Some("incomplete"),
+        (_, Some(a)) => a.error.as_deref(),
+        _ => None,
+    }
 }
 
 fn print_table(results: &[EvalResult]) {
@@ -129,7 +135,7 @@ fn print_table(results: &[EvalResult]) {
     let mut total_tokens: u64 = 0;
     let mut total_cost = 0.0;
     let mut total_no_traces = 0;
-    let count = results.len();
+    let mut total_failed = 0;
 
     for r in results {
         let task_id = r
@@ -157,17 +163,24 @@ fn print_table(results: &[EvalResult]) {
         let tokens = r.model.as_ref().and_then(|m| m.total_tokens).unwrap_or(0);
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
-        total_reward += reward;
-        if passed {
-            total_passed += 1;
-        }
         total_tokens += tokens;
         total_cost += cost;
         if !r.traces_ok {
             total_no_traces += 1;
         }
-
-        let pass_str = if passed { "PASS" } else { "FAIL" };
+        let pass_str = match failure(r) {
+            Some(_) => {
+                total_failed += 1;
+                "ERROR"
+            }
+            None => {
+                total_reward += reward;
+                if passed {
+                    total_passed += 1;
+                }
+                if passed { "PASS" } else { "FAIL" }
+            }
+        };
         let cost_str = format!("${cost:.3}");
         let traces_str = if r.traces_ok { "OK" } else { "NONE" };
         println!(
@@ -176,6 +189,7 @@ fn print_table(results: &[EvalResult]) {
     }
 
     println!("{}", "-".repeat(140));
+    let count = results.len() - total_failed;
     let avg_reward = if count > 0 {
         total_reward / count as f64
     } else {
@@ -189,7 +203,7 @@ fn print_table(results: &[EvalResult]) {
     println!(
         "{:<20} {:<30} {:<15} {:<30} {:<8.2} {}/{:<4} {:<10} {:<10} {}",
         "TOTAL",
-        format!("{count} tasks"),
+        format!("{count} tasks, {total_failed} failed"),
         "",
         "",
         avg_reward,
@@ -202,7 +216,7 @@ fn print_table(results: &[EvalResult]) {
 }
 
 fn print_csv(results: &[EvalResult]) {
-    println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd,traces_ok");
+    println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd,traces_ok,error");
     for r in results {
         let task_id = r
             .task
@@ -230,8 +244,9 @@ fn print_csv(results: &[EvalResult]) {
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
         println!(
-            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost},{traces_ok}",
-            traces_ok = r.traces_ok
+            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost},{traces_ok},{error}",
+            traces_ok = r.traces_ok,
+            error = failure(r).unwrap_or("")
         );
     }
 }
@@ -266,8 +281,9 @@ fn print_json(results: &[EvalResult]) {
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
         let comma = if i < results.len() - 1 { "," } else { "" };
+        let error = failure(r).map_or("null".to_string(), |e| format!("{e:?}"));
         println!(
-            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost},\"traces_ok\":{traces_ok}}}{comma}",
+            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost},\"traces_ok\":{traces_ok},\"error\":{error}}}{comma}",
             traces_ok = r.traces_ok
         );
     }

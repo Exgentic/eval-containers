@@ -17,12 +17,12 @@ receivers:
 exporters:
   # File exporter writes one JSON-encoded ExportTraceServiceRequest per line
   # (newline-delimited, NDJSON). The .jsonl extension reflects that format —
-  # `jq -s . /output/traces.jsonl` to slurp into an array. No batch processor:
+  # `jq -s . /output/model/traces.jsonl` to slurp into an array. No batch processor:
   # direct export so spans flush immediately on receipt rather than waiting for
   # a batch timeout (which causes empty files when the eval pod exits before the
   # batch fires).
   file:
-    path: /output/traces.jsonl
+    path: /output/model/traces.jsonl
 
 service:
   extensions: [health_check]

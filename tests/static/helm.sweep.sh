@@ -148,7 +148,7 @@ probe --set outputVolume.hostPath.path=/probe/out >/dev/null || {
 # What the chart does owe: when an id IS given it lands below the caller's prefix
 # and above the index. That ordering is what makes the directory per-run.
 got=$(probe --set ephemeral=true --set outputSubPath=pre/fix --set runId=rid --set datasetSize=2 |
-  awk '/subPathExpr:/{print $2; exit}')
+  awk '/mountPath: \/output,/{sub(/ }$/, ""); print $NF}' | head -1)
 # $(JOB_COMPLETION_INDEX) is the kubelet's to expand, not this shell's.
 # shellcheck disable=SC2016
 case "$got" in

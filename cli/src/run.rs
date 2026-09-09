@@ -40,6 +40,8 @@
 
 use clap::{Args, ValueEnum};
 use eval_containers::naming::compose_artifact;
+use std::fs;
+use std::path::Path;
 use std::process::Command;
 
 #[derive(Clone, Debug, ValueEnum, Default)]
@@ -160,10 +162,21 @@ pub struct RunArgs {
     #[arg(long)]
     dataset: bool,
 
-    /// (`--mode job`) Directory this run's results go in, under
-    /// `runs/<benchmark>/<agent>/<model>/`. Default: a fresh id each invocation.
+    /// Output root (maps to $EVAL_OUTPUT_DIR). A task's results land in
+    /// `<output-dir>/<benchmark>/<agent>/<model>/<run-id>/<task-id>/`.
+    /// Default: `./output`; in `--mode job`, `runs` inside the output volume.
+    #[arg(long)]
+    output_dir: Option<String>,
+
+    /// Name of this run (maps to $EVAL_RUN_ID). Rerunning a run id resumes it:
+    /// a complete task is skipped, a failed one retried. Default: a fresh id.
     #[arg(long)]
     run_id: Option<String>,
+
+    /// Rerun the task even if it is complete, emptying its directory first
+    /// (maps to $EVAL_FORCE).
+    #[arg(long)]
+    force: bool,
 
     /// (`--mode job`) This run's results are meant to be thrown away.
     ///
@@ -268,6 +281,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if let Some(budget) = args.max_budget {
         envs.push(("EVAL_MODEL_MAX_BUDGET", budget.to_string()));
     }
+    if args.force {
+        envs.push(("EVAL_FORCE", "1".into()));
+    }
 
     // Job-mode-only flags. Silently ignoring one is worse than refusing it: a
     // `--dataset` that did nothing would run a single task and look like a
@@ -275,7 +291,6 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     for (set, flag) in [
         (args.overlay.is_some(), "--overlay"),
         (args.dataset, "--dataset"),
-        (args.run_id.is_some(), "--run-id"),
     ] {
         if set && !matches!(args.mode, Mode::Job) {
             return Err(format!("{flag} applies only to `--mode job`"));
@@ -296,17 +311,69 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
 
     match args.mode {
-        Mode::Compose => run_compose(registry, &benchmark, &envs, args.local, args.dry_run),
-        Mode::Container => run_container(
-            registry,
-            &benchmark,
-            &args.agent,
-            &envs,
-            args.local,
-            args.dry_run,
-        ),
+        Mode::Compose | Mode::Container => {
+            let run = task_dir(&args, &benchmark)?;
+            match args.mode {
+                Mode::Compose => run_compose(registry, &benchmark, &envs, &run, &args)?,
+                _ => run_container(registry, &benchmark, &args.agent, &envs, &run, &args)?,
+            }
+            if args.dry_run {
+                return Ok(());
+            }
+            check_task_dir(&run.dir)
+        }
         Mode::Job => run_job(registry, &benchmark, &args, &envs),
     }
+}
+
+/// Where this task writes — `<root>/<benchmark>/<agent>/<model>/<run-id>/<task>`
+/// (output/RULES.md rule 11) — plus the env the compose files build it from.
+struct TaskDir {
+    dir: std::path::PathBuf,
+    envs: Vec<(&'static str, String)>,
+}
+
+fn task_dir(args: &RunArgs, benchmark: &str) -> Result<TaskDir, String> {
+    let root = std::env::current_dir()
+        .map_err(|e| format!("cwd: {e}"))?
+        .join(args.output_dir.as_deref().unwrap_or("./output"));
+    let agent = args.agent.as_deref().unwrap_or("claude-code");
+    let model = args.model.as_deref().unwrap_or("model");
+    let slug = eval_containers::naming::model_slug(model);
+    let run_id = run_id(args.run_id.as_deref());
+    let task = args.task_id.as_deref().unwrap_or("0");
+    let dir = root
+        .join(benchmark)
+        .join(agent)
+        .join(&slug)
+        .join(&run_id)
+        .join(task);
+    let root = root.to_string_lossy().into_owned();
+    Ok(TaskDir {
+        dir,
+        envs: vec![
+            ("EVAL_OUTPUT_DIR", root),
+            ("EVAL_MODEL_SLUG", slug),
+            ("EVAL_RUN_ID", run_id),
+        ],
+    })
+}
+
+/// A run ends complete or fails loudly, naming the directory (rules 26, 33–35).
+/// Complete = `task/result.json` present and no errored attempt recorded.
+fn check_task_dir(dir: &Path) -> Result<(), String> {
+    let graded = dir.join("task/result.json").is_file();
+    let clean = fs::read_to_string(dir.join("agent/result.json"))
+        .map(|a| a.contains("\"error\":null"))
+        .unwrap_or(false);
+    if graded && clean {
+        eprintln!("result: {}", dir.join("task/result.json").display());
+        return Ok(());
+    }
+    Err(format!(
+        "task failed — {} holds no complete result; rerun with the same --run-id to retry it",
+        dir.display()
+    ))
 }
 
 /// `--mode compose` → docker compose -f compose.yaml up
@@ -314,9 +381,15 @@ fn run_compose(
     registry: &str,
     benchmark: &str,
     envs: &[(&str, String)],
-    local: bool,
-    dry_run: bool,
+    run: &TaskDir,
+    args: &RunArgs,
 ) -> Result<(), String> {
+    let (local, dry_run) = (args.local, args.dry_run);
+    // The compose files interpolate the task directory from these; they are
+    // not container env (EVAL_OUTPUT_DIR inside a container would mean
+    // something else to the litellm gateway).
+    let envs: Vec<(&str, String)> = envs.iter().chain(run.envs.iter()).cloned().collect();
+    let envs = envs.as_slice();
     let compose_ref = if local {
         format!("./containers/benchmarks/{benchmark}/compose.yaml")
     } else {
@@ -380,9 +453,10 @@ fn run_container(
     benchmark: &str,
     agent: &Option<String>,
     envs: &[(&str, String)],
-    local: bool,
-    dry_run: bool,
+    run: &TaskDir,
+    args: &RunArgs,
 ) -> Result<(), String> {
+    let (local, dry_run) = (args.local, args.dry_run);
     let agent = agent
         .clone()
         .ok_or_else(|| "--agent is required in container mode".to_string())?;
@@ -468,7 +542,8 @@ fn run_container(
         .map(|(k, v)| format!("-e {k}={v}"))
         .collect::<Vec<_>>()
         .join(" ");
-    eprintln!("$ docker run --rm {env_str} -v output:/output {image}");
+    let mount = format!("{}:/output", run.dir.display());
+    eprintln!("$ docker run --rm {env_str} -v {mount} {image}");
     if dry_run {
         eprintln!("(--dry-run: stopping before docker run)");
         return Ok(());
@@ -489,7 +564,9 @@ fn run_container(
             cmd.arg("-e").arg(var);
         }
     }
-    cmd.arg("-v").arg("output:/output");
+    // Pre-create it so it is owned by the caller, not by the daemon (root).
+    fs::create_dir_all(&run.dir).map_err(|e| format!("create {}: {e}", run.dir.display()))?;
+    cmd.arg("-v").arg(&mount);
     cmd.arg(&image);
     let status = cmd
         .status()
@@ -608,10 +685,14 @@ fn run_job(
     if args.dataset {
         sets.push("dataset=true".into());
     }
+    if args.force {
+        sets.push("force=true".into());
+    }
     if args.ephemeral {
         sets.push("ephemeral=true".into());
     } else {
-        let mut sub = format!("runs/{benchmark}/{agent}");
+        let prefix = args.output_dir.as_deref().unwrap_or("runs");
+        let mut sub = format!("{prefix}/{benchmark}/{agent}");
         if let Some(m) = &args.model {
             sub += &format!("/{}", eval_containers::naming::model_slug(m));
         }
@@ -732,6 +813,62 @@ fn run_job(
 #[cfg(test)]
 mod tests {
     use super::{CHART_NAME, CHART_VERSION, is_registry_denied};
+
+    #[derive(clap::Parser)]
+    struct Cli {
+        #[command(flatten)]
+        run: super::RunArgs,
+    }
+
+    // The task directory is <root>/<benchmark>/<agent>/<model slug>/<run-id>/<task>
+    // (output/RULES.md rule 11), and the compose files get the same three values.
+    #[test]
+    fn task_dir_follows_the_output_layout() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "run",
+            "aime",
+            "--agent",
+            "codex",
+            "--model",
+            "openai/gpt-5.4",
+            "--task-id",
+            "7",
+            "--run-id",
+            "r1",
+            "--output-dir",
+            "/out",
+        ])
+        .unwrap();
+        let run = super::task_dir(&cli.run, "aime").unwrap();
+        assert_eq!(
+            run.dir,
+            std::path::Path::new("/out/aime/codex/openai--gpt-5.4/r1/7")
+        );
+        assert_eq!(
+            run.envs,
+            vec![
+                ("EVAL_OUTPUT_DIR", "/out".to_string()),
+                ("EVAL_MODEL_SLUG", "openai--gpt-5.4".to_string()),
+                ("EVAL_RUN_ID", "r1".to_string()),
+            ]
+        );
+    }
+
+    // A directory is complete only with a graded result and no errored attempt.
+    #[test]
+    fn check_task_dir_wants_a_clean_graded_result() {
+        let dir = std::env::temp_dir().join(format!("eval-check-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("task")).unwrap();
+        std::fs::create_dir_all(dir.join("agent")).unwrap();
+        assert!(super::check_task_dir(&dir).is_err());
+        std::fs::write(dir.join("task/result.json"), "{}").unwrap();
+        std::fs::write(dir.join("agent/result.json"), r#"{"error":"timeout"}"#).unwrap();
+        assert!(super::check_task_dir(&dir).is_err());
+        std::fs::write(dir.join("agent/result.json"), r#"{"error":null}"#).unwrap();
+        assert!(super::check_task_dir(&dir).is_ok());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn the_default_run_id_differs_per_invocation() {
