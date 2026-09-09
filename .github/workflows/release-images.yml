@@ -893,6 +893,15 @@ jobs:
               echo "carried forward: evals/${eb}--${A}$1:${TAG} <- :latest"
             fi
           }
+          # An agent's eval.agent.* labels don't reach the combo on their own: it is
+          # FROM the benchmark, and a COPY --from stage's labels never propagate.
+          # Read them off the published agent image (what the combo installs) and
+          # stamp them on the lean base; the standalone bundle inherits them.
+          agent_labels() {  # $1=agent image -> eval.labels.eval.agent.<k>=<v> lines
+            docker buildx imagetools inspect "$1" --format '{{json .Image}}' 2>/dev/null \
+              | jq -r '[.. | objects | .Labels? // empty][0] // {} | to_entries[]
+                       | select(.key | startswith("eval.agent.")) | "eval.labels.\(.key)=\(.value)"'
+          }
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A < <(jq -r '[.b,.a]|@tsv' <<< "$it")   # shared combo only: evals/<b>--<a> (per-task combos build in combos-pertask)
@@ -925,11 +934,14 @@ jobs:
             echo "::group::evals/${eb}--${A}"
             # Pushed under the hash tag itself (rule 18); the :TAG alias follows
             # via fleet-tag, so the hash name always exists first (rule 19).
+            agent_img="${REGISTRY}/agents/${A}:${TAG}"
+            mapfile -t AL < <(agent_labels "$agent_img")
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
-               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
+               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="$agent_img" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
                  --set "eval.labels.eval.input-hash=${EH}" \
                  --set "eval-standalone.labels.eval.input-hash=${SH}" \
+                 "${AL[@]/#/--set=}" \
                  --set "eval.tags=${REGISTRY}/evals/${eb}--${A}:${EH}" \
                  --set "eval-standalone.tags=${REGISTRY}/evals/${eb}--${A}-standalone:${SH}" \
                  --set "*.platform=${PLAT}" \
@@ -1008,6 +1020,15 @@ jobs:
               echo "carried forward: evals/${eb}--${A}$1:${TAG} <- :latest-${ARCH}"
             fi
           }
+          # An agent's eval.agent.* labels don't reach the combo on their own: it is
+          # FROM the benchmark, and a COPY --from stage's labels never propagate.
+          # Read them off the published agent image (what the combo installs) and
+          # stamp them on the lean base; the standalone bundle inherits them.
+          agent_labels() {  # $1=agent image -> eval.labels.eval.agent.<k>=<v> lines
+            docker buildx imagetools inspect "$1" --format '{{json .Image}}' 2>/dev/null \
+              | jq -r '[.. | objects | .Labels? // empty][0] // {} | to_entries[]
+                       | select(.key | startswith("eval.agent.")) | "eval.labels.\(.key)=\(.value)"'
+          }
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
@@ -1030,11 +1051,14 @@ jobs:
             ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A} (${ARCH})"
+            agent_img="${REGISTRY}/agents/${A}:${ORIG_TAG}"
+            mapfile -t AL < <(agent_labels "$agent_img")
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
-               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${ORIG_TAG}" \
+               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="$agent_img" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
                  --set "eval.labels.eval.input-hash=${EH}" \
                  --set "eval-standalone.labels.eval.input-hash=${SH}" \
+                 "${AL[@]/#/--set=}" \
                  --set "*.platform=linux/${ARCH}" \
                  "${ACT[@]}"; then :; \
             else echo "::error::pertask combo failed: evals/${eb}--${A} (${ARCH})"; fails=$((fails+1)); fi
