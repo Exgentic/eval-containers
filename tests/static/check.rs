@@ -292,36 +292,27 @@ fn fixture_benchmarks() -> Vec<String> {
     let Ok(entries) = fs::read_dir(repo_root().join("tests/run/replay/fixtures")) else {
         return out;
     };
+    // Filename convention: <benchmark>-<task-id>-<agent>.traces.jsonl (rule 5,
+    // tests/run/replay/RULES.md). Task ids are free-form and may themselves
+    // contain "-<digits>-" (e.g. hwe-bench's "lowrisc__ibex-2232"), so the
+    // benchmark name can't be recovered from the filename alone — match it
+    // against the known benchmark directories instead, picking the longest
+    // one that prefixes the stem.
+    let known: Vec<String> = sibling_dirs("benchmarks")
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if !name.ends_with(".traces.jsonl") {
             continue;
         }
-        // Filename convention: <benchmark>-<task>-<agent>.traces.jsonl
-        // The benchmark name is everything before the first "-<digit>-"
-        // (task ids are typically "0", "1", ...). Fall back to everything
-        // before the last "-" pair if that doesn't match.
         let stem = name.trim_end_matches(".traces.jsonl");
-        // Find "<benchmark>-<task>-<agent>" by scanning for "-\d+-" first.
-        let bench = stem
-            .find('-')
-            .and_then(|_| {
-                // Greedy: take the longest prefix such that the remainder
-                // starts with "<digit>-<agent>"
-                let mut best = None;
-                for (i, c) in stem.char_indices() {
-                    if c != '-' {
-                        continue;
-                    }
-                    let rest = &stem[i + 1..];
-                    let after_digit: String =
-                        rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-                    if !after_digit.is_empty() && rest[after_digit.len()..].starts_with('-') {
-                        best = Some(stem[..i].to_string());
-                    }
-                }
-                best
-            })
+        let bench = known
+            .iter()
+            .filter(|b| stem.starts_with(b.as_str()) && stem[b.len()..].starts_with('-'))
+            .max_by_key(|b| b.len())
+            .cloned()
             .unwrap_or_else(|| stem.to_string());
         out.push(bench);
     }
