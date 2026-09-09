@@ -156,7 +156,10 @@ def main() -> int:
     registry_key = re.sub(r"[^0-9A-Za-z._-]", "_", api_model)
 
     category, bfcl_id = resolve_task(task_id)
-    print(f"[runner] task={task_id} category={category} bfcl_id={bfcl_id}", file=sys.stderr)
+    print(
+        f"[runner] task={task_id} category={category} bfcl_id={bfcl_id}",
+        file=sys.stderr,
+    )
     print(f"[runner] model={api_model} base_url={base_url}", file=sys.stderr)
 
     # The key is a placeholder; the real credential lives on the gateway.
@@ -210,7 +213,10 @@ def main() -> int:
         # aggregation is cosmetic, so a crash here is non-fatal: the score file
         # is the graded verdict, and read_accuracy below is the real gate —
         # reward stays 0 only if no score file was actually written.
-        print(f"[runner] evaluation post-processing raised (non-fatal): {e}", file=sys.stderr)
+        print(
+            f"[runner] evaluation post-processing raised (non-fatal): {e}",
+            file=sys.stderr,
+        )
 
     try:
         accuracy = read_accuracy(category)
@@ -220,7 +226,10 @@ def main() -> int:
 
     reward = min(1.0, max(0.0, accuracy))
     write_reward(repr(reward))
-    print(f"[runner] accuracy={accuracy} reward={reward} passed={reward == 1.0}", file=sys.stderr)
+    print(
+        f"[runner] accuracy={accuracy} reward={reward} passed={reward == 1.0}",
+        file=sys.stderr,
+    )
     return 0
 
 
