@@ -50,7 +50,7 @@ step numbers are the procedural steps each gate corresponds to.
 | 30–31 | README presence — every benchmark + agent | mechanical (sanity) |
 | 35 | Fleet report rendered | mechanical (fleet) |
 | 40 | Fleet freshness — every image `fresh` at the tag | mechanical (`fleet-status.sh <tag>`) |
-| — | Upstream drift reviewed — the nightly `drift` job reports no unwanted movement, or the release was dispatched with `force_rebuild` | human judgment |
+| — | Upstream drift reviewed — the nightly `drift` job reports no unwanted movement, or `containers/externals.tsv` was refreshed to take it | human judgment |
 
 Gate authorities by category:
 `tests/static/RULES.md` (steps 4–10, 30–31),

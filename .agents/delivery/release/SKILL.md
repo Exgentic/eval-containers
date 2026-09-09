@@ -129,9 +129,9 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
 
 7. **Prefer letting CI build the fleet.** `.github/workflows/release-images.yml`
    runs bake on every `v*` tag (tag: the git tag), on `workflow_dispatch`
-   (tag: the input, or `latest`), and on every push to `main` (tag: `latest` —
-   the continuous channel, delivery rule 16, publishing only the push's
-   delta), setting `GIT_SHA` and `BUILD_DATE`, then
+   (tag: the input, or `latest`), and nightly from `main` (tag: `latest` —
+   the nightly channel, delivery rule 16, publishing only what changed
+   since the last publish), setting `GIT_SHA` and `BUILD_DATE`, then
    `bake --push`es the result. CI runs on real Docker on Linux, where
    the full sweep is clean; local podman-on-macOS chokes the parallel
    fleet build on network contention (a documented, non-structural
@@ -149,17 +149,19 @@ red), and `.agents/RULES.md:15` (the bake graph is the build artifact).
    or `containers/scripts/fleet-status.sh <tag>` (log in to the registry
    first — an anonymous sweep hits the rate limit and reads `unreadable`).
 
-   **Decide the force knob from the drift report, not from memory.**
-   Upstream movement — a rebuilt base image, an unpinned package — is
-   invisible to the input hash, so a release can carry forward images
-   whose *contents* moved. The Fleet status workflow's nightly `drift`
-   job resolves every external base's digest and warns per moved one.
-   Before tagging, read the latest run: if it reports movement you want
-   in this release, dispatch with `force_rebuild: true` (or
-   `rebuild_bases: true` for the shared bases alone) and let it rebuild;
-   if it reports none, the carried-forward digests are current and no
-   knob is needed. Principle 9 classes such base/CVE refreshes as a
-   patch bump.
+   **Refresh the externals lockfile from the drift report, not from
+   memory.** Every external base's digest is a build input through
+   `containers/externals.tsv` (delivery rule 11), so upstream movement —
+   a rebuilt `python:3.12-slim` — changes nothing until the lockfile is
+   refreshed. The Fleet status workflow's nightly `drift` job resolves
+   every external base's digest and warns per moved one. Before tagging,
+   read the latest run: if it reports movement you want in this release,
+   refresh and commit the lockfile
+   (`containers/scripts/external-drift.sh containers/externals.tsv >
+   /tmp/e.tsv && mv /tmp/e.tsv containers/externals.tsv`) and let the
+   nightly run — or a dispatch — rebuild exactly what moved; nothing
+   rebuilds under an unchanged hash (rule 19). Principle 9 classes such
+   base/CVE refreshes as a patch bump.
 
 8. **Commit the fleet report alongside the release tag.** When cutting
    the tag, commit the final `.agents/verification/fleet/report.md` so
