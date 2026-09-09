@@ -5,11 +5,12 @@
 # The hash tag is the recorded eval.input-hash of the first source (the label
 # is arch-independent, so every source of one image carries the same one),
 # read through fleet-status.sh so the read logic keeps its one home. A hash
-# tag is never repointed: when it already exists, every platform it resolves
-# to must keep its digest — a platform may only be ADDED (rule 14 calls a
-# half-built image changed, and completing it is the fix) — else this dies
-# before touching the registry. The TAG alias is written only after the hash
-# tag, so a digest reachable by name is always reachable by hash.
+# tag is never repointed: when it already exists, its digests win — a second
+# build of the same inputs (two runs racing on one image) is discarded with a
+# warning, and only a platform the published tag lacks is added (rule 14 calls
+# a half-built image changed, and completing it is the fix). The TAG alias is
+# written only after the hash tag, so a digest reachable by name is always
+# reachable by hash.
 #
 # Usage: fleet-tag.sh <ref> <tag> <src-ref>…   (<ref> is the image path, no tag)
 # Env: BUILD_RETRIES (default 4)
@@ -34,7 +35,18 @@ old=""
 if raw=$(docker buildx imagetools inspect "${ref}:${h}" --raw 2>/dev/null); then
   old=$(plat_digests <<< "$raw")
   clash=$(join -t "$(printf '\t')" <(printf '%s\n' "$old") <(printf '%s\n' "$new") | awk -F'\t' '$2 != $3')
-  [ -z "$clash" ] || die "${ref}:${h} would be repointed (platform, published, new):"$'\n'"$clash"
+  if [ -n "$clash" ]; then
+    echo "::warning::${ref}:${h} is already published; keeping its digests (rule 19), this run's build of the same inputs is discarded:"$'\n'"$clash"
+    # Sources become the published hash tag plus only the sources whose
+    # platforms it lacks.
+    published=$(cut -f1 <<< "$old"); srcs=("${ref}:${h}")
+    for src in "$@"; do
+      plats=$(docker buildx imagetools create --dry-run "$src" | plat_digests | cut -f1)
+      grep -qxF -f <(printf '%s\n' "$plats") <<< "$published" || srcs+=("$src")
+    done
+    set -- "${srcs[@]}"
+    new=$(docker buildx imagetools create --dry-run "$@" | plat_digests)
+  fi
 fi
 if [ "$old" = "$new" ]; then echo "hash tag current: ${ref}:${h}"
 else retry docker buildx imagetools create --tag "${ref}:${h}" "$@" || die "creating ${ref}:${h} failed"

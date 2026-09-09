@@ -84,7 +84,9 @@ on:
         default: ""
 
 concurrency:
-  group: fleet-release-${{ github.ref }}
+  # A dispatch gets its own lane (starts now, never evicted); tag and nightly
+  # runs serialize per ref. Two lanes on one image: fleet-tag keeps the first.
+  group: fleet-release-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: false  # never cancel a release mid-flight
 
 permissions:
