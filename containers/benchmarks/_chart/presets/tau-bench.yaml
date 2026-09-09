@@ -106,10 +106,15 @@ extraManifests:
     ports:
     - port: 4000
       targetPort: 4000
+# The harness is per *task*, not per benchmark: it evaluates the one task the
+# runner Job is running. Both the name and EVAL_TASK_ID therefore track the run's
+# axes — with the name fixed and the id baked as '0', every task of every run
+# rendered this same object, `apply` was a no-op after the first, and tau-bench
+# only ever evaluated task 0.
 - apiVersion: batch/v1
   kind: Job
   metadata:
-    name: tau-bench-harness
+    name: tau-bench-harness{{ .Values.nameSuffix }}-{{ .Values.task }}
     labels:
       benchmark: tau-bench
       app: harness
@@ -140,7 +145,7 @@ extraManifests:
           - /eval-materialize-task && python3 /app/run_tau_bench.py
           env:
           - name: EVAL_TASK_ID
-            value: '0'
+            value: '{{ .Values.task }}'
           - name: BRIDGE_URL
             value: http://bridge:8000/v1
           - name: MODEL_URL
