@@ -85,22 +85,30 @@ inspect_retry() {  # $1=ref  $2…=inspect args
 }
 export -f inspect_retry
 
+# One inspect serves both reads: .Image carries the labels, .Manifest the
+# published platform set.
+read_image() {
+  inspect_retry "$1" --format '{"image":{{json .Image}},"manifest":{{json .Manifest}}}'
+}
+export -f read_image
+# A manifest list yields a platform-keyed map (attestation entries live at
+# unknown/unknown); a single-arch image yields the config object directly.
+recorded_hash() {  # $1=read_image output → the eval.input-hash label, "" if none
+  jq -r '(.image | if has("linux/amd64") or has("linux/arm64")
+          then (.["linux/amd64"] // .["linux/arm64"]) else . end)
+         .config.Labels["eval.input-hash"] // ""' <<< "$1"
+}
+export -f recorded_hash
+
 check_one() {
   local ref=$1 want=$2 expect=${3:-} img got have missing p rc
-  # One inspect serves both reads: .Image carries the labels, .Manifest the
-  # published platform set.
-  img=$(inspect_retry "$ref" \
-    --format '{"image":{{json .Image}},"manifest":{{json .Manifest}}}') || {
+  img=$(read_image "$ref") || {
     rc=$?
     if [ "$rc" -eq 1 ]; then printf '%s\tabsent\t%s\t-\t-\n' "$ref" "$want"
     else printf '%s\tunreadable\t%s\t-\t-\n' "$ref" "$want"; fi
     return
   }
-  # A manifest list yields a platform-keyed map (attestation entries live at
-  # unknown/unknown); a single-arch image yields the config object directly.
-  got=$(jq -r '(.image | if has("linux/amd64") or has("linux/arm64")
-                then (.["linux/amd64"] // .["linux/arm64"]) else . end)
-               .config.Labels["eval.input-hash"] // ""' <<< "$img")
+  got=$(recorded_hash "$img")
   # Platforms come from the index entries, minus the attestation manifests that
   # ride along at unknown/unknown; a plain (non-index) manifest carries its own
   # platform in the config instead.
@@ -137,6 +145,18 @@ if [ "${1:-}" = "check" ]; then
   printf '%s\n' "$out"
   [ "$(cut -f2 <<< "$out")" = "fresh" ]
   exit
+fi
+
+if [ "${1:-}" = "hash" ]; then
+  # The recorded hash alone — what fleet-tag.sh publishes an image under
+  # (delivery rule 18). Exit 1 absent, 2 unreadable, 3 unlabeled.
+  { [ $# -eq 2 ] && [ -n "$2" ]; } \
+    || { echo "fleet-status: usage: fleet-status.sh hash <ref>" >&2; exit 2; }
+  img=$(read_image "$2") || exit $?
+  got=$(recorded_hash "$img")
+  [ -n "$got" ] || { echo "fleet-status: $2 carries no eval.input-hash label" >&2; exit 3; }
+  printf '%s\n' "$got"
+  exit 0
 fi
 
 if [ "${1:-}" = "exists" ]; then

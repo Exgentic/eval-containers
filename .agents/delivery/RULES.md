@@ -10,7 +10,7 @@ build-input hash; `latest` and each SemVer release, set by the git tag, are
 aliases of those digests, and the SemVer spans the per-benchmark
 `eval-<benchmark>` compose artifacts, the Helm chart, and the Rust CLI
 (top-level principle 9). These rules govern how a single tag releases fleet and
-CLI together, which workflow owns which artifact, what a default-branch push
+CLI together, which workflow owns which artifact, what the nightly channel
 publishes, and the gates that keep a release honest.
 
 ## Terminology
@@ -53,7 +53,7 @@ A *hash tag* is an image tag equal to the image's recorded build-input hash
 
 15. **Gate parity.** A carried-forward image MUST pass every release gate that a freshly built image passes.
 
-16. **Continuous channel.** A push to the default branch MAY publish the `latest` fleet channel, and MUST publish only images whose build inputs changed.
+16. **Nightly channel.** The `latest` fleet channel MUST be published from the default branch at least once a day, publishing only images whose build inputs changed.
 
 17. **Verified publish.** A step that publishes an artifact MUST confirm the artifact is in the registry; a zero exit is not evidence. An artifact a stack cannot produce MUST be declared as such by the stack, never inferred from the text of a tool's error.
 
@@ -61,7 +61,7 @@ A *hash tag* is an image tag equal to the image's recorded build-input hash
 
 19. **Immutable version tag.** A hash tag MUST NOT be repointed to a different digest.
 
-20. **`latest` alias.** `latest` MUST resolve to the digest that carries the hash tag of the default-branch tip.
+20. **`latest` alias.** `latest` MUST resolve to the digest that carries the hash tag of the default-branch tip as of the channel's most recent publish.
 
 21. **Pinned artifacts.** A published `eval-<benchmark>` compose artifact or `charts/eval` chart MUST default every image reference to a hash tag.
 
@@ -87,3 +87,4 @@ A *hash tag* is an image tag equal to the image's recorded build-input hash
 | 2026-08-10 | Rule 14 extended to platform completeness: an image missing an expected platform is *changed*, not fresh. A hash-only test cannot see a half-built image — when one arch's leaf fails, the merge still stitches a `:latest` from the surviving arch, whose config carries the matching hash, so the image reads fresh forever and the missing arch never self-retries (found when the first cold full-fleet rebuild left `benchmarks/appworld` amd64-only yet green). Expected platforms default to `linux/amd64,linux/arm64`; an image that is single-arch by necessity declares its own set with `LABEL eval.platforms`, read from the committed source rather than from the registry so a broken image cannot vouch for itself. |
 | 2026-08-10 | Rule 5 rescoped from "the tagged image fleet" to "any versioned image fleet" — it gates *versioned* publishes, which a continuous `latest` publish is not. Added rule 16 (Continuous channel): a default-branch push MAY publish `latest`, and MUST publish only images whose build inputs changed — affordable exactly because rules 12–14 make "what changed" mechanical and rule 13 carries the rest forward. Versioned releases remain deliberate per rule 5; principle 9's "`latest` on `main`" becomes continuously true. |
 | 2026-09-08 | Added rules 18–22 (version tag, immutable version tag, `latest` alias, pinned artifacts, retention) and the *hash tag* term; rule 5 rescoped from "any versioned" to "any SemVer-tagged" fleet, since a hash tag is a version every channel publishes. The recorded build-input hash (rule 12) becomes each image's immutable name; `latest` and each SemVer are aliases of hash-tagged digests; deploy artifacts pin hash tags, so a consumer's view stays consistent even when a default-branch publish is cancelled midway — the name is fixed by the source, and a later run lands the same tag. Why: no `vX.Y.Z` has ever completed (#501), `latest` is the only shipping channel yet neither pinnable nor atomic, and the registry already keeps every superseded digest untagged. Rule 19 retires `force_rebuild` (rule 13 already forbade rebuilding under an unchanged hash) and needs rule 12's hash to cover rule 11's external base digests, which it omits today. Abstract updated. #506 |
+| 2026-09-09 | Rule 16 renamed Continuous → Nightly channel: `latest` is published from the default branch on a schedule, at least daily, instead of on every push — five consecutive per-push runs were cancelled by supersession on 2026-09-09 while `main` merged faster than the fleet could publish, and with hash tags (rules 18–20) a batched run costs only what changed. Rule 20 anchored to the channel's most recent publish: `latest` is always a complete snapshot of one `main` tip, never a mix, though not necessarily the newest tip. The on-demand route is unchanged — `workflow_dispatch` narrows to leaves, agents' combos, per-task and standalone — and rule 5 still gates SemVer. Abstract updated. #530 |

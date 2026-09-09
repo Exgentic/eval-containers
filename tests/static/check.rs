@@ -292,36 +292,27 @@ fn fixture_benchmarks() -> Vec<String> {
     let Ok(entries) = fs::read_dir(repo_root().join("tests/run/replay/fixtures")) else {
         return out;
     };
+    // Filename convention: <benchmark>-<task-id>-<agent>.traces.jsonl (rule 5,
+    // tests/run/replay/RULES.md). Task ids are free-form and may themselves
+    // contain "-<digits>-" (e.g. hwe-bench's "lowrisc__ibex-2232"), so the
+    // benchmark name can't be recovered from the filename alone — match it
+    // against the known benchmark directories instead, picking the longest
+    // one that prefixes the stem.
+    let known: Vec<String> = sibling_dirs("benchmarks")
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if !name.ends_with(".traces.jsonl") {
             continue;
         }
-        // Filename convention: <benchmark>-<task>-<agent>.traces.jsonl
-        // The benchmark name is everything before the first "-<digit>-"
-        // (task ids are typically "0", "1", ...). Fall back to everything
-        // before the last "-" pair if that doesn't match.
         let stem = name.trim_end_matches(".traces.jsonl");
-        // Find "<benchmark>-<task>-<agent>" by scanning for "-\d+-" first.
-        let bench = stem
-            .find('-')
-            .and_then(|_| {
-                // Greedy: take the longest prefix such that the remainder
-                // starts with "<digit>-<agent>"
-                let mut best = None;
-                for (i, c) in stem.char_indices() {
-                    if c != '-' {
-                        continue;
-                    }
-                    let rest = &stem[i + 1..];
-                    let after_digit: String =
-                        rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-                    if !after_digit.is_empty() && rest[after_digit.len()..].starts_with('-') {
-                        best = Some(stem[..i].to_string());
-                    }
-                }
-                best
-            })
+        let bench = known
+            .iter()
+            .filter(|b| stem.starts_with(b.as_str()) && stem[b.len()..].starts_with('-'))
+            .max_by_key(|b| b.len())
+            .cloned()
             .unwrap_or_else(|| stem.to_string());
         out.push(bench);
     }
@@ -1016,6 +1007,37 @@ fn build_scripts_use_docker_not_podman() {
     );
 }
 
+/// The per-task release job must inspect and push with the engine `build.sh`
+/// builds with (#522). `build.sh` uses `docker build` (rule 6c; guarded above),
+/// so the image lands in docker's store; a `podman image inspect` there returns
+/// nothing, the arch-pinned skip fires for every ref, and no per-task image is
+/// ever pushed — the catch-up on `main` never converges.
+#[test]
+fn the_per_task_job_pushes_with_the_engine_build_sh_builds_with() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  per-task:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  merge:").next())
+        .expect("no `per-task` job in release-images.yml");
+    let commands: Vec<&str> = job
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect();
+    assert!(
+        !commands.iter().any(|l| l.contains("podman")),
+        "the per-task job must not touch podman: build.sh builds with `docker build`, \
+         and an image in docker's store is invisible to podman"
+    );
+    assert!(
+        job.contains("docker image inspect \"$ref\" --format '{{.Architecture}}'")
+            && job.contains("retry docker push \"$ref\""),
+        "the per-task job must read the built arch and push with docker — the \
+         engine build.sh builds with"
+    );
+}
+
 /// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
 /// carries the gateway with one `COPY /opt/gateway`, so a shim outside it fails
 /// `not found` at boot (regression: #269's nginx at /usr/sbin broke every bundle).
@@ -1094,10 +1116,10 @@ fn the_retry_round_is_driven_from_grade_sh() {
 /// A published `eval-<benchmark>` artifact republishes when *its* inputs move,
 /// not when its benchmark image happens to be stale (#451): the flattened
 /// compose bytes include the shared `containers/compose/` half, which sits in no
-/// image's build context, so a main push judges freshness with the compose sweep
-/// and publishes even when nothing needed rebuilding.
+/// image's build context, so a channel run judges freshness with the compose
+/// sweep and publishes even when nothing needed rebuilding.
 #[test]
-fn a_main_push_publishes_the_compose_artifacts_that_moved() {
+fn a_channel_run_publishes_the_compose_artifacts_that_moved() {
     let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");
     let enumerate = wf
@@ -1107,7 +1129,7 @@ fn a_main_push_publishes_the_compose_artifacts_that_moved() {
         .expect("no `enumerate` job in release-images.yml");
     assert!(
         enumerate.contains("fleet-status.sh compose"),
-        "the main-push compose list must come from the compose freshness sweep — \
+        "the channel-run compose list must come from the compose freshness sweep — \
          deriving it from the stale *leaf* list misses every change to \
          containers/compose/, which is inside no image's build context"
     );
@@ -1123,14 +1145,14 @@ fn a_main_push_publishes_the_compose_artifacts_that_moved() {
     );
 }
 
-/// Per-task images and their combos ride the continuous channel like every other
-/// image (#452). A main push enumerates them and prunes to the set whose input
+/// Per-task images and their combos ride the nightly channel like every other
+/// image (#452). A channel run enumerates them and prunes to the set whose input
 /// hashes moved, rather than excluding the class outright; and because a
 /// per-task benchmark publishes no `benchmarks/<b>:latest` of its own, the
 /// combo filter judges a per-task pair by its own task base, never by the
 /// benchmark target's (permanently absent) staleness.
 #[test]
-fn a_main_push_publishes_the_per_task_images_that_moved() {
+fn a_channel_run_publishes_the_per_task_images_that_moved() {
     let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");
     let enumerate = wf
@@ -1141,12 +1163,12 @@ fn a_main_push_publishes_the_per_task_images_that_moved() {
 
     assert!(
         !enumerate.contains("INCLUDE_PER_TASK=false"),
-        "a main push must not switch the per-task class off wholesale — rule 16 \
+        "a channel run must not switch the per-task class off wholesale — rule 16 \
          selects by changed build inputs, not by image class"
     );
     assert!(
         enumerate.contains("fleet-hash.sh per-task") && enumerate.contains("fleet-status.sh check"),
-        "the main-push per-task list must be pruned by comparing each image's \
+        "the channel-run per-task list must be pruned by comparing each image's \
          input hash against the registry, or every push rebuilds ~660 images"
     );
     assert!(
@@ -1158,6 +1180,34 @@ fn a_main_push_publishes_the_per_task_images_that_moved() {
         enumerate.contains(r#"[ "$pertask" = "[]" ]"#),
         "`dirty` must count per-task images: merge stitches their per-arch tags, \
          so a push that moved only per-task images is not clean"
+    );
+}
+
+/// `merge` must take the per-task refs it stitches from the shards artifact —
+/// the `pertask_shards` job output carries only `[{idx}]` since #478, so reading
+/// items from it yields nothing, no per-task `:TAG` is ever stitched, and the
+/// main-push prune (which reads the merged `:latest`) judges every per-task image
+/// stale forever (#525).
+#[test]
+fn merge_stitches_per_task_refs_from_the_shards_artifact() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  merge:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  combos:").next())
+        .expect("no `merge` job in release-images.yml");
+    assert!(
+        !job.contains("PERTASK_SHARDS") && !job.contains("outputs.pertask_shards"),
+        "the merge job must not read per-task items from the pertask_shards output — \
+         it carries only shard indices"
+    );
+    assert!(
+        job.contains("name: shards")
+            && job.contains(".pertask[]?|.items[]?")
+            && job.contains("shards.json"),
+        "the merge job must download the shards artifact and read `.pertask[].items` \
+         from shards.json, as the per-task shards themselves do"
     );
 }
 
@@ -1227,5 +1277,96 @@ fn the_chart_publishes_on_the_continuous_channel() {
         job.contains("./.github/actions/publish-chart"),
         "the versioned channel must run the same action as the continuous one, or \
          the two publishes drift"
+    );
+}
+
+/// Every image is published under its hash tag, and the alias only after it
+/// (delivery/RULES.md:18–19): the three places a manifest list is stitched or
+/// pushed — merge, merge-pertask-combos, combos — go through fleet-tag.sh, and
+/// no dispatch knob rebuilds under an unchanged hash any more (rules 13, 19):
+/// an upstream refresh is a lockfile commit, so it is a changed input.
+#[test]
+fn every_publish_goes_through_the_hash_tag() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    for (job, next) in [
+        ("merge", "compose"),
+        ("merge-pertask-combos", "release-gate"),
+        ("combos", "combos-pertask"),
+    ] {
+        let body = wf
+            .split(&format!("\n  {job}:\n"))
+            .nth(1)
+            .and_then(|s| s.split(&format!("\n  {next}:")).next())
+            .unwrap_or_else(|| panic!("no `{job}` job in release-images.yml"));
+        assert!(
+            body.contains("fleet-tag.sh"),
+            "`{job}` must publish through fleet-tag.sh so the hash tag exists before the alias \
+             (delivery/RULES.md:18, :19)"
+        );
+    }
+    assert!(
+        !wf.contains("force_rebuild") && !wf.contains("rebuild_bases"),
+        "no knob may rebuild under an unchanged hash — refresh containers/externals.tsv instead \
+         (delivery/RULES.md:13, :19)"
+    );
+}
+
+/// The `latest` channel is nightly (delivery/RULES.md:16): a schedule, not a
+/// push, publishes from `main`, so a busy day of merges is one incremental run
+/// instead of a queue of superseded ones, and the channel predicate keys on
+/// that schedule. A dispatch can name exact task ids (`tasks=`) and fails loud
+/// when none match — a machine selection never passes vacuously
+/// (verification/RULES.md:15).
+#[test]
+fn the_channel_publishes_nightly() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let on = wf
+        .split("\non:\n")
+        .nth(1)
+        .and_then(|s| s.split("\nconcurrency:").next())
+        .expect("no `on:` block in release-images.yml");
+    assert!(
+        on.contains("schedule:") && on.contains("- cron: '17 1 * * *'"),
+        "the channel must publish on a nightly schedule (delivery/RULES.md:16)"
+    );
+    assert!(
+        !on.contains("branches:"),
+        "a branch push must not publish the channel — the nightly does; per-push \
+         runs superseded each other faster than the fleet could publish"
+    );
+    assert!(
+        wf.contains("IS_CHANNEL: ${{ github.event_name == 'schedule' }}")
+            && !wf.contains("IS_MAIN_PUSH"),
+        "the incremental (stale-set) path must key on the schedule, not on a push"
+    );
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+    assert!(
+        enumerate.contains("TASKS: ${{ inputs.tasks }}")
+            && enumerate.contains("tasks= matched no task id"),
+        "a dispatch must be able to name exact task ids, and fail loud when none match"
+    );
+}
+
+/// A dispatch is a developer's own lane: it must start immediately and never
+/// queue behind the nightly or another dispatch — one shared concurrency group
+/// serialized every run on `main`, and since only one run may wait per group,
+/// a second dispatch silently evicted the first. Tag and nightly runs keep
+/// serializing per ref.
+#[test]
+fn a_dispatch_runs_in_its_own_lane() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    assert!(
+        wf.contains(
+            "group: fleet-release-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}"
+        ),
+        "a workflow_dispatch must get a per-run concurrency group, or it waits for the nightly \
+         and evicts other pending dispatches"
     );
 }

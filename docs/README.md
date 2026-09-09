@@ -33,6 +33,7 @@ way on a laptop, in CI, or on a Kubernetes cluster.
 - [Run with Podman on Apple Silicon](guides/podman-on-apple-silicon.md)
 - [Run offline or airgapped](guides/offline-and-airgapped.md)
 - [Run the tests locally](guides/running-tests-locally.md)
+- [Publish on demand](guides/publish-on-demand.md) — get an image out before tonight's nightly, scoped to a benchmark, an agent's combos, or single tasks
 - [Deploy on Kubernetes](guides/deploy-on-kubernetes.md)
 - [Deploy on OpenShift](guides/deploy-on-openshift.md)
 - [Deploy on a local cluster (kind)](guides/deploy-on-kind.md)

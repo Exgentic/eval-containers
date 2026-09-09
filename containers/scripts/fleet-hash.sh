@@ -9,9 +9,11 @@
 # (principle 15.d keeps each target's `contexts` aligned with its Dockerfile's
 # FROMs). A flat set is sensitivity-equivalent to a Merkle chain here: wiring
 # changes edit bake files, which live inside a hashed context. External FROMs
-# are emitted with same-Dockerfile ARG defaults expanded; refs that still
-# carry `${…}` are per-build by design. Digest resolution needs the network
-# and happens at release time (rule 11), keeping this script offline.
+# are emitted with same-Dockerfile ARG defaults expanded and folded into the
+# hash through containers/externals.tsv (ref<TAB>digest, written by
+# external-drift.sh), so an upstream base bump is a changed input (rule 11)
+# while this script stays offline; refs that still carry `${…}` are per-build
+# by design and have no digest to fold.
 #
 # Usage:
 #   fleet-hash.sh                          # every static bake target
@@ -88,29 +90,6 @@ git rev-parse "${PATHS[@]}" > "$M/hashes" 2>/dev/null || {
 }
 paste -d'|' <(cut -d'|' -f1 "$M/graph") "$M/hashes" > "$M/trees"
 
-# ── closures: recursive walk in awk → one sorted tree-hash file per target ──
-# full/<t> holds the target's own context tree + every transitive base tree;
-# bases/<t> holds the base trees only (the cascade component).
-while IFS='|' read -r t _; do : > "$M/full/$t"; : > "$M/bases/$t"; done < "$M/graph"
-awk -F'|' '
-  FNR==NR { ctx[$1]=$2; deps[$1]=$3; order[++n]=$1; next }
-  { tree[$1]=$2 }
-  END { for (i=1; i<=n; i++) { t=order[i]; delete hit; walk(t, t, 1) } }
-  function walk(root, t, isroot,  m, p, j) {
-    if (t in hit) return; hit[t]=1
-    if (!(t in ctx)) { print "fleet-hash: " root " depends on unknown target " t > "/dev/stderr"; exit 2 }
-    print "F|" root "|" tree[t]
-    if (!isroot) print "B|" root "|" tree[t]
-    m = split(deps[t], p, " ")
-    for (j=1; j<=m; j++) if (p[j]!="") walk(root, p[j], 0)
-  }
-' "$M/graph" "$M/trees" | LC_ALL=C sort -u \
-  | awk -F'|' -v m="$M" '{
-      f = m "/" ($1=="F" ? "full" : "bases") "/" $2
-      if (f != prev) { if (prev != "") close(prev); prev = f }
-      print $3 >> f
-    }'
-
 # ── externals: one awk over every context Dockerfile → dir|image ────────────
 # Only an unindented uppercase FROM outside a backslash continuation is an
 # instruction — SQL `FROM` fragments and Python `from … import` in heredoc
@@ -141,6 +120,41 @@ awk -v strip="$S/" '
   }
   { cont = ($0 ~ /\\[ \t]*$/) }
 ' "${DFS[@]}" | LC_ALL=C sort -u > "$M/ext"
+# The lockfile (ref<TAB>digest, written by external-drift.sh) pins what each
+# external resolves to; only a real digest is an input — `local` marks an
+# image built beside the fleet, whose inputs the tree already covers.
+: > "$M/extd"
+[ ! -f "$S/containers/externals.tsv" ] || awk '
+  FILENAME ~ /externals\.tsv$/ { split($0, l, "\t"); if (l[2] ~ /^sha256:/) lock[l[1]]=l[2]; next }
+  { split($0, a, "|"); if (a[2] in lock) print a[1] "|" lock[a[2]] }
+' "$S/containers/externals.tsv" "$M/ext" > "$M/extd"
+
+# ── closures: recursive walk in awk → one sorted input file per target ──────
+# full/<t> holds the target's own context tree + every transitive base tree,
+# plus the pinned digest of every external those contexts build FROM;
+# bases/<t> holds the base half only (the cascade component).
+while IFS='|' read -r t _; do : > "$M/full/$t"; : > "$M/bases/$t"; done < "$M/graph"
+awk -F'|' '
+  FILENAME ~ /graph$/ { ctx[$1]=$2; deps[$1]=$3; order[++n]=$1; next }
+  FILENAME ~ /trees$/ { tree[$1]=$2; next }
+  { xd[$1] = xd[$1] " " $2 }
+  END { for (i=1; i<=n; i++) { t=order[i]; delete hit; walk(t, t, 1) } }
+  function emit(root, isroot, v) { print "F|" root "|" v; if (!isroot) print "B|" root "|" v }
+  function walk(root, t, isroot,  m, p, j, x) {
+    if (t in hit) return; hit[t]=1
+    if (!(t in ctx)) { print "fleet-hash: " root " depends on unknown target " t > "/dev/stderr"; exit 2 }
+    emit(root, isroot, tree[t])
+    m = split(xd[ctx[t]], x, " ")
+    for (j=1; j<=m; j++) if (x[j]!="") emit(root, isroot, x[j])
+    m = split(deps[t], p, " ")
+    for (j=1; j<=m; j++) if (p[j]!="") walk(root, p[j], 0)
+  }
+' "$M/graph" "$M/trees" "$M/extd" | LC_ALL=C sort -u \
+  | awk -F'|' -v m="$M" '{
+      f = m "/" ($1=="F" ? "full" : "bases") "/" $2
+      if (f != prev) { if (prev != "") close(prev); prev = f }
+      print $3 >> f
+    }'
 
 # ── one sha pass over every closure file, then a single join → the TSV ──────
 (cd "$M" && sha full/* bases/*) > "$M/sums"

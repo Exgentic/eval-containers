@@ -34,8 +34,20 @@ Each row is one replay test with a recorded fixture.
 | mmmu | claude-code | custom | mmmu-0-claude-code |
 | aider-polyglot | aider | custom | aider-polyglot-0-aider |
 | gaia | goose | exact-match | gaia-0-goose |
+| hwe-bench | claude-code | custom | hwe-bench-lowrisc__ibex-2232-claude-code |
 
 ## Per-task and sidecar benchmarks (TODO)
+
+`ensure_images` now builds per-task benchmarks generically (via the CLI's
+`--task-id` plumbing, detected through `benchmark::is_per_task_by_name` —
+same as `build`/`run`/`oracle`), so a per-task benchmark whose image needs no
+build-time input beyond `EVAL_TASK_ID` (agent + benchmark base only) needs just
+a fixture + a `replay_test!(..., "<task-id>")` line, no further harness work.
+hwe-bench (above) is the first, and so far only, benchmark to land this way —
+`swe-bench` and `compilebench` below still need extra build-arg plumbing, and
+`terminal-bench` builds a second env image from a `build.sh` first, so this
+generalization is proven for hwe-bench's shape, not yet for every per-task
+benchmark.
 
 | Benchmark | Agent | Pattern | Status |
 |-----------|-------|---------|--------|

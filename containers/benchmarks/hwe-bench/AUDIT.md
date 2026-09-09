@@ -54,7 +54,7 @@ commit: add-hwe-bench
 | Check | Status / Value | Evidence |
 |-------|:--------------:|----------|
 | published | ✗ | not in ghcr.io/exgentic/benchmarks |
-| released | ✗ | `released` label deferred (rule 21a) — needs a recorded replay fixture from a live sweep (M3) |
+| released | ✓ | `LABEL eval.benchmark.released="true"` set (rule 21a) — proven end-to-end with a recorded replay fixture: `lowrisc__ibex-2232` × claude-code × `aws/claude-opus-4-8`, real live sweep (not oracle), reward=1/passed=true, recorded to `tests/run/replay/fixtures/hwe-bench-lowrisc__ibex-2232-claude-code.traces.jsonl` and exercised by `replay_hwe_bench_lowrisc_ibex_2232_claude_code` in `tests/run/replay/test.rs` (passes: `cargo test --test replay replay_hwe_bench_lowrisc_ibex_2232_claude_code -- --ignored`) |
 | pull size | — | not published (per-task; base pulled from GHCR + overlay) |
 
 ## Coverage / status
@@ -72,8 +72,7 @@ verified: gold scores 0 under the fixed grader). The remaining 11 mixed
 submodule+source cases are kept (source hunk alone resolves the test, gold=1); both
 `grade.sh` and `solution.sh` ignore submodule-pointer hunks. Net: 169.
 
-- **Shipped, unreleased-but-runnable:** ibex (35), cva6 (35), caliptra-rtl (16),
-  rocket-chip (31), XiangShan (52). One representative per project is oracle-proven
-  and registered in the oracle `SPECIAL` gate.
-- **Release (deferred, rule 21a):** record a replay fixture from a live agent sweep,
-  then set `LABEL eval.benchmark.released="true"`.
+- **Shipped and released:** ibex (35), cva6 (35), caliptra-rtl (16), rocket-chip
+  (31), XiangShan (52). One representative per project is oracle-proven and
+  registered in the oracle `SPECIAL` gate; `lowrisc__ibex-2232` additionally has
+  a real live-agent replay fixture (rule 21a).
