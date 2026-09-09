@@ -39,18 +39,20 @@ name: Release the fleet
 # cache outlives the runner (Depot or self-hosted BuildKit), which is NOT
 # GitHub-Actions-native, so both are deliberately out of scope here.
 #
-# Triggered by a vX.Y.Z tag (full versioned release) or workflow_dispatch (knobs
-# below). Only validated by a real run — the fleet build does not run locally.
+# Triggered by a vX.Y.Z tag (full versioned release), the nightly schedule (the
+# :latest channel), or workflow_dispatch (knobs below). Only validated by a real
+# run — the fleet build does not run locally.
 
 on:
   push:
-    # One vX.Y.Z tag fires this + release.yml (delivery/RULES.md:1). A push to
-    # main continuously publishes the :latest channel (delivery/RULES.md:16):
-    # enumerate prunes every matrix to the stale set, so a push builds only its
-    # own delta and a no-op push costs ~2 short jobs. No `paths:` filter — it
-    # would also filter the tag ref, silently skipping releases.
+    # One vX.Y.Z tag fires this + release.yml (delivery/RULES.md:1).
     tags: ['**[0-9]+.[0-9]+.[0-9]+*']
-    branches: [main]
+  schedule:
+    # The nightly :latest channel (delivery/RULES.md:16): enumerate prunes every
+    # matrix to what changed since the last publish, so a quiet night costs ~2
+    # short jobs. 01:17 UTC — ahead of the 03:17 replay and 06:17 fleet-status
+    # nightlies, which read what this publishes.
+    - cron: '17 1 * * *'
   workflow_dispatch:
     inputs:
       tag:
@@ -75,11 +77,16 @@ on:
         type: boolean
         default: false
       only:
-        description: "Debug: restrict matrices to these space-separated leaf targets (e.g. 'benchmark-gsm8k agent-claude-code'); blank = whole fleet"
+        description: "Restrict matrices to these space-separated leaf targets (e.g. 'benchmark-gsm8k agent-claude-code'); blank = whole fleet"
+        default: ""
+      tasks:
+        description: "Per-task benchmarks: build only these space-separated task ids (their benchmark named in `only`); blank = every task, or one per benchmark under `only`"
         default: ""
 
 concurrency:
-  group: fleet-release-${{ github.ref }}
+  # A dispatch gets its own lane (starts now, never evicted); tag and nightly
+  # runs serialize per ref. Two lanes on one image: fleet-tag keeps the first.
+  group: fleet-release-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: false  # never cancel a release mid-flight
 
 permissions:
@@ -210,8 +217,8 @@ jobs:
       combo_shards: ${{ steps.l.outputs.combo_shards }}   # [{idx,items:[{b,a,task,kind}]}] sharded ≤256 (shared combos only, task=="")
       pertask_combo_shards: ${{ steps.l.outputs.pertask_combo_shards }} # [{idx,items:[{b,a,task,kind}]}] per-task combos (swe-bench/terminal-bench/skills-bench/deepswe), sharded ≤256 — built native per-arch by combos-pertask + merge-pertask-combos
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
-      has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a main push with no stale leaf
-      dirty: ${{ steps.l.outputs.dirty }}           # main push: anything at all to publish?
+      has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a channel run with no stale leaf
+      dirty: ${{ steps.l.outputs.dirty }}           # channel run: anything at all to publish?
     steps:
       - uses: actions/checkout@v7.0.1
       # The staleness sweeps below read the registry (images + compose artifacts);
@@ -228,27 +235,28 @@ jobs:
           COMBO_AGENTS: ${{ inputs.combo_agents }}
           INCLUDE_PER_TASK: ${{ inputs.include_per_task }}
           ONLY: ${{ inputs.only }}
+          TASKS: ${{ inputs.tasks }}
           IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
-          IS_MAIN_PUSH: ${{ github.event_name == 'push' && github.ref_type == 'branch' }}
+          IS_CHANNEL: ${{ github.event_name == 'schedule' }}
         run: |
           # A tag push does NOT populate workflow_dispatch inputs, so COMBO_AGENTS /
           # INCLUDE_PER_TASK arrive empty and combos + per-task would be skipped. On
           # any non-dispatch trigger (the vX.Y.Z release tag) force the full published
           # lineup; a manual dispatch keeps its inputs (blank combo_agents = skip).
-          # A main push keeps the combo lineup and the per-task lineup; both are
-          # pruned below to what actually moved (#452), so the ~660 heavy per-task
-          # images cost nothing on a push that did not touch them.
+          # The nightly run keeps the combo lineup and the per-task lineup; both
+          # are pruned below to what actually moved (#452), so the ~660 heavy
+          # per-task images cost nothing on a night that did not touch them.
           if [ "$IS_DISPATCH" != "true" ]; then
             COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
             INCLUDE_PER_TASK=true
           fi
-          # The :latest channel (delivery/RULES.md:16): a main push publishes only
+          # The :latest channel (delivery/RULES.md:16): the nightly run publishes only
           # images whose inputs changed. Compute the stale set once; every matrix
           # below intersects with it. Safe to prune here — unchanged images are
           # already at :latest, the target tag — but NEVER on a version tag, where
           # every image must gain the new tag (the full matrix carries them).
           STALE_TARGETS=""; BASES_DIRTY=false; CANARY_DIRTY=false
-          if [ "$IS_MAIN_PUSH" = "true" ]; then
+          if [ "$IS_CHANNEL" = "true" ]; then
             STATUS=$(bash containers/scripts/fleet-status.sh latest)
             GRAPHMAP=$(bash containers/scripts/fleet-hash.sh graph)
             STALE_TARGETS=$(awk -F'\t' '$2!="fresh"{print $1}' <<< "$STATUS" \
@@ -278,10 +286,10 @@ jobs:
             leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(tr ' ' '\n' <<< "$ONLY" | sort -u))
             echo "ONLY active -> $(printf '%s\n' "$leaf_list" | grep -c .) leaf target(s)"
           fi
-          # Main push: only stale leaves build (fresh ones are already at :latest).
-          if [ "$IS_MAIN_PUSH" = "true" ]; then
+          # Channel run: only stale leaves build (fresh ones are already at :latest).
+          if [ "$IS_CHANNEL" = "true" ]; then
             leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(printf '%s\n' "$STALE_TARGETS" | sort -u))
-            echo "main push -> $(printf '%s\n' "$leaf_list" | grep -c .) stale leaf target(s)"
+            echo "channel run -> $(printf '%s\n' "$leaf_list" | grep -c .) stale leaf target(s)"
           fi
           leaves=$(printf '%s\n' "$leaf_list" | jq -Rsc 'split("\n")|map(select(length>0))')
           n=$(printf '%s' "$leaves" | jq 'length')
@@ -289,20 +297,20 @@ jobs:
           # not exceed 128 of them — and at 129 it stopped being able to release
           # at all on a tag or dispatch. They are sharded with every other
           # oversize list below instead.
-          if [ "$n" -le 0 ] && [ "$IS_MAIN_PUSH" != "true" ]; then echo "::error::leaf count 0 — releases and dispatches must name at least one leaf"; exit 1; fi
+          if [ "$n" -le 0 ] && [ "$IS_CHANNEL" != "true" ]; then echo "::error::leaf count 0 — releases and dispatches must name at least one leaf"; exit 1; fi
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
           # --only mode derives the compose list from the restricted leaves, a
-          # main push from the artifacts that moved (below); else all shared.
+          # channel run from the artifacts that moved (below); else all shared.
           bench_all=$(comm -23 \
             <(find containers/benchmarks -mindepth 1 -maxdepth 1 -type d | sed -E 's#.*/##' | sort -u) \
             <(printf '%s\n' "$pertaskdirs" | sed 's/^benchmark-//' | sort -u))
-          # A main push publishes the artifacts that actually moved. An eval-<b>
+          # A channel run publishes the artifacts that actually moved. An eval-<b>
           # artifact is the flattened compose bytes, whose inputs include the
           # shared containers/compose/ half that sits in no image's build context
           # — so its freshness is judged against the published layer digest, not
           # against the benchmark image's staleness (#451).
-          if [ "$IS_MAIN_PUSH" = "true" ]; then
+          if [ "$IS_CHANNEL" = "true" ]; then
             # Into a file, not a process substitution: a sweep that dies would
             # otherwise read as "nothing moved" and publish nothing, the
             # fail-clean rule 14 forbids.
@@ -313,7 +321,7 @@ jobs:
               <(awk -F'\t' '$2!="fresh" && $2!="declined"{print $1}' "$cs" \
                   | sed -E "s#^${REGISTRY}/eval-##; s#:latest\$##" | sort -u) \
               <(printf '%s\n' "$bench_all" | sort -u))
-            echo "main push -> $(printf '%s\n' "$bench_src" | grep -c .) compose artifact(s) to publish"
+            echo "channel run -> $(printf '%s\n' "$bench_src" | grep -c .) compose artifact(s) to publish"
           elif [ -n "${ONLY:-}" ]; then
             bench_src=$(printf '%s\n' "$leaf_list" | sed -n 's/^benchmark-//p')
           else
@@ -321,11 +329,11 @@ jobs:
           fi
           with_compose() { while read -r b; do [ -n "$b" ] && [ -f "containers/benchmarks/$b/compose.yaml" ] && echo "$b"; done | jq -Rsc 'split("\n")|map(select(length>0))'; }
           benchmarks=$(printf '%s\n' "$bench_src" | with_compose)
-          # Combos need the FULL shared list on a main push (a stale agent dirties
+          # Combos need the FULL shared list on a channel run (a stale agent dirties
           # its combos across every benchmark, not only stale ones); the pair list
           # is pruned to stale parents below.
           combo_bench="$benchmarks"
-          [ "$IS_MAIN_PUSH" != "true" ] || combo_bench=$(printf '%s\n' "$bench_all" | with_compose)
+          [ "$IS_CHANNEL" != "true" ] || combo_bench=$(printf '%s\n' "$bench_all" | with_compose)
 
           # ── per-task bases: {b,task,kind} for every per-task benchmark ──
           # kind=script -> build.sh (docker two-step upstream build; tasks from the
@@ -348,19 +356,26 @@ jobs:
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             pertask="$acc"
-            # --only mode: one task per benchmark as a smoke, not all ~600.
-            [ -n "${ONLY:-}" ] && pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
+            # tasks= names exact ids (loud when none match — a selection never
+            # passes vacuously); --only alone keeps one task per benchmark as a
+            # smoke, not all ~600.
+            if [ -n "${TASKS:-}" ]; then
+              pertask=$(printf '%s' "$pertask" | jq -c --arg t " $TASKS " '[.[] | select($t | index(" " + .task + " "))]')
+              [ "$pertask" != "[]" ] || { echo "::error::tasks= matched no task id of the benchmarks in scope: $TASKS"; exit 1; }
+            elif [ -n "${ONLY:-}" ]; then
+              pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
+            fi
           fi
           # Combos expand over the FULL list (a stale agent dirties every task's
           # combo, not only the tasks whose base moved); the base matrix below is
           # pruned to what moved.
           pertask_all="$pertask"
-          # Main push: keep only the per-task images whose inputs moved (#452).
+          # Channel run: keep only the per-task images whose inputs moved (#452).
           # One fleet-hash pass per benchmark yields every task's hash (they share
           # the benchmark's closure), then one read of the merged :latest per image
           # — passing the expected platform set so that same read also catches an
           # image that is missing an arch, which is changed too (rule 14).
-          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$pertask" != "[]" ]; then
+          if [ "$IS_CHANNEL" = "true" ] && [ "$pertask" != "[]" ]; then
             T=$(mktemp -d); : > "$T/pairs"; : > "$T/map"
             for B in $(jq -r '[.[].b] | unique | .[]' <<< "$pertask"); do
               plat=$(sed -nE 's/.*eval\.platforms="([^"]*)".*/\1/p' "containers/benchmarks/$B/Dockerfile" | head -1)
@@ -390,7 +405,7 @@ jobs:
               ($keep | split("\n") | map(select(length>0)) | INDEX(.)) as $k
               | map(select($k[.b + "\t" + .task] != null))' <<< "$pertask")
             PT_KEEP="$T/keep"
-            echo "main push -> $(jq length <<< "$pertask") of $(jq length <<< "$pertask_all") per-task image(s) moved"
+            echo "channel run -> $(jq length <<< "$pertask") of $(jq length <<< "$pertask_all") per-task image(s) moved"
           fi
 
           # ── combos: shared (task="") + per-task, all as {b,a,task,kind} ──
@@ -409,10 +424,10 @@ jobs:
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
           fi
-          # Main push: keep only combos with a stale parent — unless a combo-global
+          # Channel run: keep only combos with a stale parent — unless a combo-global
           # input moved (canary), which dirties every pair. The combos job still
           # judges each pair itself (carry), so over-inclusion here only costs time.
-          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$CANARY_DIRTY" != "true" ]; then
+          if [ "$IS_CHANNEL" = "true" ] && [ "$CANARY_DIRTY" != "true" ]; then
             sb=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^benchmark-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
             sa=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^agent-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
             # A per-task pair's benchmark side is its own task base, not `sb`: a
@@ -425,7 +440,7 @@ jobs:
               | [ .[] | . as $p | select(($sa | index($p.a)) != null
                     or (if $p.task == "" then ($sb | index($p.b)) != null
                         else $mv[$p.b + "\t" + $p.task] != null end)) ]')
-            echo "main push -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
+            echo "channel run -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
           fi
 
           # Every per-task combo (swe-bench, terminal-bench, skills-bench, deepswe) is the
@@ -486,7 +501,7 @@ jobs:
           dirty=true
           # `merge` stitches the per-arch tags of leaves AND per-task images, so a
           # push that moved only per-task images is still dirty (#452).
-          if [ "$IS_MAIN_PUSH" = "true" ] && [ "$n" -eq 0 ] && [ "$combos" = "[]" ] \
+          if [ "$IS_CHANNEL" = "true" ] && [ "$n" -eq 0 ] && [ "$combos" = "[]" ] \
              && [ "$pertask" = "[]" ] && [ "$BASES_DIRTY" != "true" ]; then dirty=false; fi
           {
             echo "leaves=$leaves"
@@ -511,7 +526,7 @@ jobs:
   build:
     name: leaf shard ${{ matrix.shard.idx }} (${{ matrix.arch }})
     needs: [bases, enumerate]
-    # A main push with zero stale leaves skips the whole matrix (an empty
+    # A channel run with zero stale leaves skips the whole matrix (an empty
     # matrix list is a workflow error, not zero jobs).
     if: needs.enumerate.outputs.has_leaves == 'true'
     runs-on: ${{ matrix.runner }}
@@ -729,8 +744,8 @@ jobs:
   # them). Combos + compose then consume the :TAG manifest lists.
   merge:
     needs: [bases, build, per-task, enumerate]
-    # build is 'skipped' on a main push with no stale leaf; a clean (dirty=false)
-    # main push skips merge and everything downstream of it.
+    # build is 'skipped' on a channel run with no stale leaf; a clean
+    # (dirty=false) channel run skips merge and everything downstream of it.
     if: always() && !inputs.dry_run && needs.bases.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'failure' || needs.build.result == 'skipped') && needs.enumerate.outputs.dirty == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -1161,7 +1176,7 @@ jobs:
   # the end of every run that published anything.
   catalog:
     needs: [enumerate, merge, compose, combos, per-task, combos-pertask, merge-pertask-combos, release-gate]
-    # release-gate is skipped on a main push and required on a tag (it promotes
+    # release-gate is skipped on a channel run and required on a tag (it promotes
     # :latest, which is what the catalog describes), so this waits on it with
     # always() rather than depending on it having run.
     # Not gated on `dirty`: the catalog describes the registry, not this run, so a
