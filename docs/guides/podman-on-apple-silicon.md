@@ -157,8 +157,40 @@ pull limit:
 toomanyrequests: You have reached your pull rate limit.
 ```
 
-Fix: log in (`docker login`), or use the ECR public mirror which has no rate
-limit:
+The limit is 100 pulls per 6 hours per IP for anonymous users (200 with
+`docker login`), shared across every tool on the machine — the build daemon, the
+podman/kind node, and any other puller.
+
+**Durable fix (no Docker Hub account) — a transparent mirror.** Route `docker.io`
+through Google's public pull-through cache `mirror.gcr.io`. Image references stay
+unchanged (`python:3.12-slim`, `busybox:1.36`); only the byte source moves, so no
+Dockerfile or manifest edits are needed. Configure it in both toolchains:
+
+- **Builds (podman machine).** On this stack `docker` is the podman machine's
+  Docker-compat socket, so the mirror goes in podman's `registries.conf`, not a
+  Docker daemon config. Add a drop-in inside the machine and it takes effect with
+  no restart:
+
+  ```bash
+  podman machine ssh podman-machine-default \
+    'sudo tee /etc/containers/registries.conf.d/010-dockerhub-mirror.conf >/dev/null' <<'EOF'
+  [[registry]]
+  prefix = "docker.io"
+  location = "docker.io"
+  [[registry.mirror]]
+  location = "mirror.gcr.io"
+  EOF
+  ```
+
+- **kind cluster (node containerd).** `deploy/kind/create.sh` already wires this
+  in: it renders a `containerdConfigPatches` block setting
+  `config_path = "/etc/containerd/certs.d"`, then writes a `docker.io` hosts.toml
+  pointing at `mirror.gcr.io`. A fresh cluster (or `--recreate`) picks it up; a
+  cluster created before this was added needs a `--recreate`.
+
+**Quick one-off (single image, no config).** Pull from the ECR public mirror
+(also unlimited, no auth) and retag to the bare Docker Hub name so the build
+finds it cached:
 
 ```bash
 docker pull public.ecr.aws/docker/library/python:3.12-slim
