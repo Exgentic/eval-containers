@@ -1161,6 +1161,34 @@ fn a_main_push_publishes_the_per_task_images_that_moved() {
     );
 }
 
+/// `merge` must take the per-task refs it stitches from the shards artifact —
+/// the `pertask_shards` job output carries only `[{idx}]` since #478, so reading
+/// items from it yields nothing, no per-task `:TAG` is ever stitched, and the
+/// main-push prune (which reads the merged `:latest`) judges every per-task image
+/// stale forever (#525).
+#[test]
+fn merge_stitches_per_task_refs_from_the_shards_artifact() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  merge:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  combos:").next())
+        .expect("no `merge` job in release-images.yml");
+    assert!(
+        !job.contains("PERTASK_SHARDS") && !job.contains("outputs.pertask_shards"),
+        "the merge job must not read per-task items from the pertask_shards output — \
+         it carries only shard indices"
+    );
+    assert!(
+        job.contains("name: shards")
+            && job.contains(".pertask[]?|.items[]?")
+            && job.contains("shards.json"),
+        "the merge job must download the shards artifact and read `.pertask[].items` \
+         from shards.json, as the per-task shards themselves do"
+    );
+}
+
 /// The Helm chart rides the same channel as every image (RULES.md principle 9):
 /// a push to `main` publishes `charts/eval`, not only a version tag — publishing
 /// it tag-only is what left the registry with no chart at all (#449, #440). A

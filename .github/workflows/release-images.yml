@@ -739,7 +739,6 @@ jobs:
     timeout-minutes: 90
     env:
       LEAVES: ${{ needs.enumerate.outputs.leaves }}
-      PERTASK_SHARDS: ${{ needs.enumerate.outputs.pertask_shards }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: docker/setup-buildx-action@v4
@@ -748,6 +747,8 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
       - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64
         run: |
           # Collect every image ref the per-arch jobs pushed: bases (core+gateways
@@ -769,7 +770,8 @@ jobs:
             [ -n "$ctx" ] || { echo "::error::no graph context for leaf $T"; exit 1; }
             echo "${REGISTRY}/${ctx#containers/}" >> /tmp/refs.txt
           done
-          jq -r '.[]?|.items[]?|"\(.b)\t\(.task)"' <<< "${PERTASK_SHARDS:-[]}" | while IFS=$'\t' read -r B TASK; do
+          # Per-task items live in the shards artifact, not the job output (#478).
+          jq -r '.pertask[]?|.items[]?|"\(.b)\t\(.task)"' shards.json | while IFS=$'\t' read -r B TASK; do
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             echo "${REGISTRY}/benchmarks/${B}-${tid}" >> /tmp/refs.txt
           done
