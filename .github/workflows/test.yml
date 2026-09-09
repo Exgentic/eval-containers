@@ -312,6 +312,19 @@ jobs:
             echo "::error::expected the full-stack fixture and the rerun test to run"; exit 1
           fi
 
+      # The launcher's output lifecycle (skip, retry, force, refuse) on the one
+      # agent that answers without a model — six seconds a case, no fixture.
+      - name: Output lifecycle
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -eo pipefail
+          cargo test -p eval-containers-tests-run --test lifecycle \
+            -- --ignored --nocapture | tee lifecycle.log
+          if grep -qE "running 0 tests" lifecycle.log; then
+            echo "::error::the output-lifecycle test did not run"; exit 1
+          fi
+
       # Standalone bundle: the single-container path (core/standalone.Dockerfile
       # COPYs only /opt/gateway). Build the -standalone bundle and boot its gateway;
       # fails if the shim isn't self-contained under /opt/gateway (the #274 class).

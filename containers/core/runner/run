@@ -85,6 +85,14 @@ find /output -mindepth 1 -maxdepth 1 -type f -delete
 find /output/{model,agent,task} -mindepth 1 ! -path /output/model/traces.jsonl -delete
 if [ -f /output/model/traces.jsonl ]; then : > /output/model/traces.jsonl; fi
 printf '%s\n' "$config" > /output/agent/config.env
+# The lock is this attempt's claim on the directory (rule 32). Release it
+# whenever this shell exits, or a launcher that dies before the pipeline starts
+# (no supervisor, an edge that never came up) would refuse its own retry — and
+# refuse a forced one too, since the claim is checked before the emptying. The
+# three phases `exec` past this trap on purpose: from there the claim is
+# write-result's to release, and a container killed outright leaves a claim that
+# the heartbeat below stops refreshing, so it goes stale on its own.
+trap 'rm -f /output/agent/.lock' EXIT
 touch /output/agent/.lock
 ( while sleep 30; do touch /output/agent/.lock; done ) &
 chown -R agent:agent /output/agent /tmp 2>/dev/null || true
