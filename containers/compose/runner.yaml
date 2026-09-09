@@ -71,7 +71,7 @@ services:
     # Same task directory as otelcol's mount in services.yaml (rule 11).
     volumes:
       - type: bind
-        source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-${EVAL_MODEL:?}}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}
+        source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-${EVAL_MODEL}}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}
         target: /output
         bind: { create_host_path: true }
     networks:
