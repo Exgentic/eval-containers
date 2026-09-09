@@ -84,7 +84,12 @@ on:
         default: ""
 
 concurrency:
-  group: fleet-release-${{ github.ref }}
+  # A dispatch is a developer's own lane: it starts now, never queues behind
+  # the nightly or another dispatch, and is never evicted by one (only one run
+  # may wait per group). Tag and nightly runs still serialize per ref. Two
+  # lanes building the same image resolve at fleet-tag: the first published
+  # hash tag wins (delivery rule 19), the other build is discarded.
+  group: fleet-release-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: false  # never cancel a release mid-flight
 
 permissions:

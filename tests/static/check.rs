@@ -1361,3 +1361,21 @@ fn the_channel_publishes_nightly() {
         "a dispatch must be able to name exact task ids, and fail loud when none match"
     );
 }
+
+/// A dispatch is a developer's own lane: it must start immediately and never
+/// queue behind the nightly or another dispatch — one shared concurrency group
+/// serialized every run on `main`, and since only one run may wait per group,
+/// a second dispatch silently evicted the first. Tag and nightly runs keep
+/// serializing per ref.
+#[test]
+fn a_dispatch_runs_in_its_own_lane() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    assert!(
+        wf.contains(
+            "group: fleet-release-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}"
+        ),
+        "a workflow_dispatch must get a per-run concurrency group, or it waits for the nightly \
+         and evicts other pending dispatches"
+    );
+}

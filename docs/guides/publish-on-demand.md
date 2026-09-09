@@ -11,10 +11,13 @@ benchmark you just merged, one agent's combos, a single task — run the
 gh workflow run release-images.yml --ref main -f only="benchmark-gsm8k agent-claude-code" -f combo_agents=claude-code -f include_per_task=false
 ```
 
-Every run publishes only images whose inputs changed since they were last
-published, under their hash tag first and `latest` after
-([delivery rules 16, 18–20](../../.agents/delivery/RULES.md)), so a dispatch
-is safe to repeat and "nothing built" means everything was already current.
+A dispatch starts immediately in its own lane — it never waits for the
+nightly or for another dispatch. Every run publishes only images whose inputs
+changed since they were last published, under their hash tag first and
+`latest` after ([delivery rules 16, 18–20](../../.agents/delivery/RULES.md)),
+so a dispatch is safe to repeat, "nothing built" means everything was already
+current, and two runs that race on one image resolve to the first published
+hash tag.
 
 ## Choosing the scope
 
