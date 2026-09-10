@@ -87,22 +87,23 @@ jobs:
         env:
           REGISTRY: ghcr.io/exgentic
         run: |
-          jq -r '.images | to_entries[]
-                 | select((.value | index("latest") | not)
-                          and ((.value | index("latest-amd64"))
-                               or (.value | index("latest-arm64"))))
-                 | "\(.key)\t\(.value | join(","))"' index.json > /tmp/halves
+          # name + the per-arch refs to join, straight out of the index: whatever
+          # arches exist. An image with one is usable on that one, and rule 14
+          # still reads it as changed, so the missing arch is built by a later
+          # release rather than blocking this one from being pullable at all.
+          jq -r --arg r "$REGISTRY" '.images | to_entries[]
+                 | select(.value | index("latest") | not)
+                 | . as $i
+                 | (.value | map(select(. == "latest-amd64" or . == "latest-arm64"))
+                           | map("\($r)/\($i.key):\(.)")) as $srcs
+                 | select($srcs | length > 0)
+                 | "\(.key) \($srcs | join(" "))"' index.json > /tmp/halves
           echo "half-published: $(wc -l < /tmp/halves)"
           fixed=0; failed=0
-          while IFS=$'\t' read -r name tags; do
+          while read -r name srcs; do
             [ -n "$name" ] || continue
-            srcs=()
-            case ",$tags," in *,latest-amd64,*) srcs+=("${REGISTRY}/${name}:latest-amd64") ;; esac
-            case ",$tags," in *,latest-arm64,*) srcs+=("${REGISTRY}/${name}:latest-arm64") ;; esac
-            # Whatever arches exist: an image that has one is usable on that one,
-            # and rule 14 still reads it as changed, so the missing arch is built
-            # by a later release rather than blocking this one from being pullable.
-            if bash containers/scripts/fleet-tag.sh "${REGISTRY}/${name}" latest "${srcs[@]}"; then
+            # shellcheck disable=SC2086  # the split is the point: one ref per arch
+            if bash containers/scripts/fleet-tag.sh "${REGISTRY}/${name}" latest $srcs; then
               fixed=$((fixed+1))
             else
               echo "::warning::could not stitch ${name}"; failed=$((failed+1))
