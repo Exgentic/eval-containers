@@ -28,16 +28,13 @@ mod common;
 const BENCH: &str = "agents-smoke";
 const AGENT: &str = "mock";
 
-/// Registry the carrier is built under — local-only on the classic build path so
-/// a stale published image can't be force-pulled over what we just built.
+/// Registry the carrier is built under.
 fn registry() -> String {
-    std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| {
-        if common::classic_build() {
-            common::LOCAL_REGISTRY.to_string()
-        } else {
-            "ghcr.io/exgentic".to_string()
-        }
-    })
+    if common::classic_build() {
+        common::classic_registry()
+    } else {
+        std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| "ghcr.io/exgentic".to_string())
+    }
 }
 
 /// The carrier as testcontainers wants it: repository and tag, separately.
@@ -55,30 +52,10 @@ fn ensure_image() {
     test_support::enter_repo_root();
     let reg = registry();
     if common::classic_build() {
-        let env = [("REGISTRY", reg.as_str())];
         for target in ["gosu", "edge", "entrypoint"] {
-            common::build_target_classic(target, &[], &env);
+            common::build_target_classic(target, &[], &[("REGISTRY", reg.as_str())]);
         }
-        common::build_target_classic(&naming::benchmark_bake_target(BENCH), &[], &env);
-        common::build_target_classic(&naming::agent_bake_target(AGENT), &[], &env);
-        common::build_target_classic(
-            "eval",
-            &[
-                &format!(
-                    "eval.args.BENCHMARK_IMAGE={}",
-                    naming::benchmark_image(&reg, BENCH, "latest")
-                ),
-                &format!(
-                    "eval.args.AGENT_IMAGE={}",
-                    naming::agent_image(&reg, AGENT, "latest")
-                ),
-            ],
-            &[
-                ("REGISTRY", reg.as_str()),
-                ("EVAL_BENCHMARK", BENCH),
-                ("EVAL_AGENT", AGENT),
-            ],
-        );
+        common::build_eval_classic(BENCH, AGENT, &reg);
         return;
     }
     let status = std::process::Command::new("cargo")
