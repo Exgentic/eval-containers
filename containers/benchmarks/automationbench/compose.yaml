@@ -20,13 +20,13 @@ services:
     # step runs regardless of the previous one's status — write-result grades
     # whatever was produced, fail-closed to 0 (mirrors /usr/local/bin/run).
     # There is no separate agent phase here, so run-agent never writes
-    # /output/agent/.exit-code (rule 16) — capture the harness's own exit
-    # status into it instead, so agent/result.json's exit_code reflects the
-    # program that actually ran rather than staying permanently null.
+    # /output/agent/.exit-code (rule 16) nor bounds the run (rule 14) — this
+    # sequence does both itself. `$$` keeps ${TIMEOUT} for the container's
+    # shell; unescaped, compose would substitute the host's value at parse time.
     entrypoint:
       - bash
       - -c
-      - "/eval-materialize-task || true; python3 /app/run_automationbench.py; echo $? > /output/agent/.exit-code; /usr/local/bin/write-result"
+      - "/eval-materialize-task || true; timeout -k 30 \"$${TIMEOUT:-300}\" python3 /app/run_automationbench.py; echo $? > /output/agent/.exit-code; /usr/local/bin/write-result"
     environment:
       BENCHMARK: automationbench
       # The harness talks to the gateway on the OpenAI-compatible surface.

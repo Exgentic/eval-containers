@@ -636,6 +636,49 @@ fn eval_image_launches_the_pipeline() {
     eprintln!("✓ eval image launches the pipeline across all three modes (rule 12)");
 }
 
+/// A benchmark that replaces `runnerArgs` replaces `/usr/local/bin/run`, and
+/// with it `run-agent` — the one place that bounds the agent by `$TIMEOUT`
+/// (rule 14) and records its status in `/output/agent/.exit-code` for
+/// `agent/result.json` (compose rule 16). AutomationBench runs its own harness
+/// because it needs the task identity rule 7 withholds from an agent, so it owes
+/// both itself, on both orchestration paths. It owed neither: nothing capped the
+/// run, so an over-budget task was SIGKILLed by the pod's activeDeadlineSeconds
+/// before the verifier could grade it, and `|| true` swallowed the status, so
+/// every task of this benchmark reported `"exit_code": null` (#547).
+#[test]
+fn automationbench_bounds_its_harness_and_records_its_status() {
+    let paths = [
+        "containers/benchmarks/_chart/presets/automationbench.yaml",
+        "containers/benchmarks/automationbench/compose.yaml",
+    ];
+    for rel in paths {
+        let src =
+            fs::read_to_string(repo_root().join(rel)).unwrap_or_else(|e| panic!("{rel}: {e}"));
+        // Both paths spell the same two obligations; compose escapes `$` as `$$`
+        // so the expansion reaches the container's shell rather than the host's.
+        assert!(
+            src.contains("timeout -k 30")
+                && (src.contains("{TIMEOUT:-300}") || src.contains("{EVAL_TIMEOUT:-300}")),
+            "{rel}: the harness replaces run-agent, so it must bound itself with \
+             `timeout -k 30 \"$TIMEOUT\"` (rule 14) — otherwise the only cap is the pod \
+             deadline, which kills the task before write-result can grade it"
+        );
+        assert!(
+            src.contains("> /output/agent/.exit-code"),
+            "{rel}: the harness replaces run-agent, so it must record its own status in \
+             /output/agent/.exit-code — write-result copies it into agent/result.json, \
+             and without it exit_code is permanently null (compose rule 16)"
+        );
+        assert!(
+            !src.contains("run_automationbench.py || true"),
+            "{rel}: `|| true` discards the harness's exit status, which is the value \
+             /output/agent/.exit-code exists to carry"
+        );
+    }
+
+    eprintln!("✓ automationbench bounds its harness and records its status (rules 14, 16)");
+}
+
 /// Eval integrity (rule 7): the agent process MUST NOT receive the task
 /// identity. The agent runs via `gosu agent env -i <allow-list> /run.sh`; that
 /// allow-list must not pass TASK_ID/EVAL_TASK_ID — a model that recognizes a
