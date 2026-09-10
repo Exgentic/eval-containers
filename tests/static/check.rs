@@ -1038,6 +1038,65 @@ fn the_per_task_job_pushes_with_the_engine_build_sh_builds_with() {
     );
 }
 
+/// Every per-task `build.sh` MUST stamp `EVAL_INPUT_HASH` as the
+/// `eval.input-hash` label (delivery/RULES.md rule 12). This path has no bake
+/// invocation to `--set` the label on, so the script is the only place it can be
+/// applied — and without it `fleet-tag.sh` cannot read the hash it needs to name
+/// the hash tag rule 18 requires, so `merge` fails the image after a build that
+/// otherwise succeeded (hwe-bench shipped without it and could not be released).
+#[test]
+fn every_per_task_build_script_stamps_the_input_hash() {
+    // The benchmarks the release enumerates as kind=script — the ones that are
+    // handed EVAL_INPUT_HASH today. A per-task benchmark the workflow does not
+    // enumerate yet (swe-bench-pro, swe-lancer) is never passed one, so it is
+    // held to this only once it joins the loop in release-images.yml.
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let mut missing = Vec::new();
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let script = dir.join("build.sh");
+        if !script.is_file() {
+            continue;
+        }
+        let enumerated = wf.contains(&format!("for B in {name} "))
+            || wf.contains(&format!(" {name} "))
+            || wf.contains(&format!("{name}:script"));
+        if !enumerated {
+            continue;
+        }
+        let text = fs::read_to_string(&script).expect("read build.sh");
+        if !text.contains("EVAL_INPUT_HASH") {
+            missing.push(name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "per-task build.sh must stamp --label=eval.input-hash from EVAL_INPUT_HASH \
+         (delivery/RULES.md rule 12), else merge cannot name its hash tag: {missing:?}"
+    );
+}
+
+/// The per-task job MUST skip an arch the benchmark's `eval.platforms` excludes,
+/// the way the leaf matrix does. The post-build arch comparison only catches a
+/// base that builds the *wrong* arch; a base with no such arch at all fails its
+/// first `RUN` with "exec format error", which counts as a build failure and
+/// fails the job, so the skip has to happen before the build starts (rule 14).
+#[test]
+fn the_per_task_job_honours_declared_platforms() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  per-task:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  merge:").next())
+        .expect("no `per-task` job in release-images.yml");
+    assert!(
+        job.contains(r#"eval\.platforms"#) && job.contains(r#",linux/$ARCH,"#),
+        "the per-task job must skip an arch outside the benchmark's declared \
+         eval.platforms before building (delivery/RULES.md rule 14)"
+    );
+}
+
 /// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
 /// carries the gateway with one `COPY /opt/gateway`, so a shim outside it fails
 /// `not found` at boot (regression: #269's nginx at /usr/sbin broke every bundle).
