@@ -286,6 +286,28 @@ async fn the_launcher_records_reuses_retries_and_refuses() {
         b.1
     );
 
+    // …and when what they race for is a dead claim, which cannot be taken over
+    // atomically on its own: both would find it stale, both remove it, both
+    // proceed. The claim names its holder, so exactly one comes out owning it.
+    in_dir(
+        &dir,
+        "rm -f /output/task/result.json
+         printf 'ghost\\n' > /output/agent/.lock
+         touch -d '1 hour ago' /output/agent/.lock",
+    )
+    .await;
+    let (a, b) = tokio::join!(launch(&dir, &[]), launch(&dir, &[]));
+    let mut codes = [a.0, b.0];
+    codes.sort_unstable();
+    assert_eq!(
+        codes,
+        [0, 3],
+        "two runs raced to take over a dead claim and did not settle on one \
+         winner and one refusal:\n{}\n{}",
+        a.1,
+        b.1
+    );
+
     let _ = std::fs::remove_dir_all(&run_dir);
 }
 
