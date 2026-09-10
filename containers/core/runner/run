@@ -77,7 +77,8 @@ if [ -s /output/task/result.json ] && [ -f /output/agent/result.json ] \
    && grep -q '"error":null' /output/agent/result.json; then
   complete=true
 fi
-if [ "$complete" = true ] && [ -z "${EVAL_FORCE:-}" ]; then
+case "${EVAL_FORCE:-}" in ''|0|false|no) force=false ;; *) force=true ;; esac
+if [ "$complete" = true ] && [ "$force" = false ]; then
   echo "run: complete, not rerun (rule 26): $(cat /output/task/result.json)"
   exit 0
 fi
@@ -107,12 +108,16 @@ fi
 # write-result's to release, and a container killed outright leaves one that
 # nothing refreshes, so it goes stale on its own.
 trap 'rm -f /output/agent/.lock' EXIT
-( while sleep 30; do touch /output/agent/.lock; done ) &
+# The heartbeat outlives this shell (the three phases `exec` past the trap), so
+# it stops the moment the claim it refreshes is gone — otherwise write-result
+# releases the claim and the next tick puts it straight back, and a pod the
+# kubelet restarts within the stale window is refused by its own leftovers.
+( while [ -f /output/agent/.lock ]; do sleep 30; touch /output/agent/.lock 2>/dev/null || exit 0; done ) &
 
 # Failed or forced: empty the previous attempt (rules 28–30), keeping this
 # attempt's own claim. otelcol holds model/traces.jsonl open, so that one is
 # truncated rather than unlinked.
-find /output -mindepth 1 -maxdepth 1 -type f -delete
+find /output -mindepth 1 -maxdepth 1 ! -name model ! -name agent ! -name task -delete
 find /output/{model,agent,task} -mindepth 1 \
   ! -path /output/model/traces.jsonl ! -name .lock -delete
 if [ -f /output/model/traces.jsonl ]; then : > /output/model/traces.jsonl; fi
