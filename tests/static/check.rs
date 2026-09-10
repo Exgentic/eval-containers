@@ -1268,6 +1268,34 @@ fn merge_stitches_per_task_refs_from_the_shards_artifact() {
         "the merge job must download the shards artifact and read `.pertask[].items` \
          from shards.json, as the per-task shards themselves do"
     );
+    // Same defect, same fix, one job over: merge-pertask-combos read `.items[]?`
+    // off the stripped `pertask_combo_shards` output, so it stitched no combo
+    // `:TAG` at all while exiting 0 — hwe-bench's combos published per-arch with
+    // no `:latest` alias. The gate above covered only `merge`, so the sibling
+    // kept the bug.
+    let combos = wf
+        .split("\n  merge-pertask-combos:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  release-gate:").next())
+        .expect("no `merge-pertask-combos` job in release-images.yml");
+    assert!(
+        !combos.contains("outputs.pertask_combo_shards }}\n    steps")
+            && !combos.contains("SHARDS: "),
+        "merge-pertask-combos must not read combo items from the \
+         pertask_combo_shards output — it carries only shard indices"
+    );
+    assert!(
+        combos.contains("name: shards")
+            && combos.contains(".pertask_combo[]?|.items[]?")
+            && combos.contains("shards.json"),
+        "merge-pertask-combos must download the shards artifact and read \
+         `.pertask_combo[].items` from shards.json"
+    );
+    assert!(
+        combos.contains(r#"[ "$((merged + skipped))" -gt 0 ]"#),
+        "merge-pertask-combos must fail when it reads zero refs — a silent empty \
+         sweep is how the missing item list stayed green"
+    );
 }
 
 /// The Helm chart rides the same channel as every image (RULES.md principle 9):

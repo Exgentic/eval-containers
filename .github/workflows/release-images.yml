@@ -1087,15 +1087,20 @@ jobs:
     if: always() && needs.combos-pertask.result == 'success' && needs.enumerate.outputs.pertask_combo_shards != '[]'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      SHARDS: ${{ needs.enumerate.outputs.pertask_combo_shards }}
     steps:
+      - uses: actions/checkout@v7.0.1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      # The items live in the shards artifact, not the job output: the output is
+      # passed through `idx()` for the 1 MB cap and carries only shard indices, so
+      # reading `.items[]?` off it silently yields nothing and the job merges
+      # nothing while still exiting 0 (same shape as the `merge` bug in #478).
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
       - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos)
         run: |
           fails=0; merged=0; skipped=0
@@ -1116,8 +1121,14 @@ jobs:
               if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then merged=$((merged+1))
               else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
             done
-          done < <(jq -r '.[]?|.items[]?|"\(.b)\t\(.a)\t\(.task)"' <<< "${SHARDS:-[]}")
+          done < <(jq -r '.pertask_combo[]?|.items[]?|"\(.b)\t\(.a)\t\(.task)"' shards.json)
           echo "merged=$merged skipped=$skipped fails=$fails"
+          # An empty sweep is the bug this job shipped with: the loop read a
+          # stripped output, matched nothing, and stayed green. The job only runs
+          # when enumerate found per-task combos, so zero refs means the item list
+          # did not arrive.
+          [ "$((merged + skipped))" -gt 0 ] \
+            || { echo "::error::no per-task combo refs read from shards.json — item list missing"; exit 1; }
           [ "$fails" -eq 0 ] || { echo "::error::$fails pertask-combo manifest merge(s) failed"; exit 1; }
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
