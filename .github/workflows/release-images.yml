@@ -372,7 +372,10 @@ jobs:
             # passes vacuously); --only alone keeps one task per benchmark as a
             # smoke, not all ~600.
             if [ -n "${TASKS:-}" ]; then
-              pertask=$(printf '%s' "$pertask" | jq -c --arg t " $TASKS " '[.[] | select($t | index(" " + .task + " "))]')
+              # `$t | index(...)` rebinds `.` to the string $t, so `.task` inside it
+              # indexes a string and jq dies "Cannot index string with string". Match
+              # the id against the split allowlist instead — exact tokens, no padding.
+              pertask=$(printf '%s' "$pertask" | jq -c --arg t "$TASKS" '[.[] | select(.task | IN($t | split(" ")[]))]')
               [ "$pertask" != "[]" ] || { echo "::error::tasks= matched no task id of the benchmarks in scope: $TASKS"; exit 1; }
             elif [ -n "${ONLY:-}" ]; then
               pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
