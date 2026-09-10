@@ -310,20 +310,21 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
         );
     }
 
-    match args.mode {
-        Mode::Compose | Mode::Container => {
-            let run = task_dir(&args, &benchmark)?;
-            match args.mode {
-                Mode::Compose => run_compose(registry, &benchmark, &envs, &run, &args)?,
-                _ => run_container(registry, &benchmark, &args.agent, &envs, &run, &args)?,
-            }
-            if args.dry_run {
-                return Ok(());
-            }
-            check_task_dir(&run.dir)
-        }
-        Mode::Job => run_job(registry, &benchmark, &args, &envs),
+    // Job hands the results path to the chart, which composes it per pod. The
+    // other two run one task here, so this is where its directory is composed —
+    // and where the run is held to having produced something.
+    if matches!(args.mode, Mode::Job) {
+        return run_job(registry, &benchmark, &args, &envs);
     }
+    let run = task_dir(&args, &benchmark)?;
+    match args.mode {
+        Mode::Compose => run_compose(registry, &benchmark, &envs, &run, &args)?,
+        _ => run_container(registry, &benchmark, &args.agent, &envs, &run, &args)?,
+    }
+    if args.dry_run {
+        return Ok(());
+    }
+    check_task_dir(&run.dir)
 }
 
 /// Where this task writes — `<root>/<benchmark>/<agent>/<model>/<run-id>/<task>`
