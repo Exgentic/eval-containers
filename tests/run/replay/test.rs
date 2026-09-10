@@ -900,6 +900,13 @@ replay_test!(replay_core_bench_35_cline, "core-bench", "cline", "35");
 replay_test!(replay_core_bench_8_codex, "core-bench", "codex", "8");
 
 replay_test!(
+    replay_deepswe_csstree_shorthand_expansion_compression_opencode,
+    "deepswe",
+    "opencode",
+    "csstree-shorthand-expansion-compression"
+);
+
+replay_test!(
     replay_drop_5720_continue_cli,
     "drop",
     "continue-cli",
