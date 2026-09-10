@@ -230,5 +230,34 @@ refuses "an unknown benchmark rendered instead of failing" "no size for not-a-be
 refuses "dataset=true bypassed the per-task guard" "cannot use a dataset" \
   --set benchmark=swe-bench
 
+# 8. an index fails alone. `backoffLimit` on an Indexed Job is a whole-sweep
+# budget — the first failure fails the Job and the controller deletes every pod
+# still running, which cost run 20260910-091433-61fe 22 healthy tasks (#548).
+# Asserted on the rendered manifest, per branch, because the trap was in the
+# condition rather than the value: `{{ if }}` reads an explicit 0 as unset, so
+# the safe setting rendered as the unsafe one.
+indexed() { helm template idx-probe "$CHART" --set benchmark=humaneval --set ephemeral=true \
+  --set datasetSize=7 "$@" 2>/dev/null; }
+
+for want in "backoffLimitPerIndex: 0" "maxFailedIndexes: 7"; do
+  indexed | grep -qF "$want" || {
+    echo "FAIL indexed: a dataset sweep did not render '$want' — one failed index would delete every pod still running (#548)"
+    fail=$((fail + 1)); }
+done
+indexed | grep -qE '^  backoffLimit:' && {
+  echo "FAIL indexed: a dataset sweep rendered a whole-Job backoffLimit — that is the all-or-nothing budget per-index isolation exists to replace"
+  fail=$((fail + 1)); }
+
+# An explicit retry count must survive, and 0 must mean "no retry", never "unset".
+indexed --set backoffLimitPerIndex=2 | grep -qF "backoffLimitPerIndex: 2" || {
+  echo "FAIL indexed: --set backoffLimitPerIndex=2 did not reach the manifest"
+  fail=$((fail + 1)); }
+
+# The opt-out for a cluster older than k8s 1.29 / OCP 4.16, which has neither
+# field: empty — not 0 — falls back to the whole-Job budget.
+indexed --set backoffLimitPerIndex= | grep -qE '^  backoffLimit: 0' || {
+  echo "FAIL indexed: an empty backoffLimitPerIndex did not fall back to backoffLimit: 0 for a pre-1.29 cluster"
+  fail=$((fail + 1)); }
+
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]
