@@ -83,14 +83,23 @@ if [ "$complete" = true ] && [ -z "${EVAL_FORCE:-}" ]; then
 fi
 
 # Claim the directory before touching anything in it (rule 32). `set -C` makes
-# the create O_EXCL, so two launchers racing here cannot both win; a claim whose
-# holder stopped refreshing it is a dead attempt's, and is taken over.
-if ! (set -C; : > /output/agent/.lock) 2>/dev/null; then
+# the create O_EXCL, so two launchers racing for a free directory cannot both
+# win. The claim names its holder, because taking over a dead one cannot be
+# atomic on its own: two launchers that both find the same dead claim would both
+# remove it and both proceed. Whoever's name is in the file afterwards holds it.
+me="${HOSTNAME:-unknown}-$$"
+claim() { (set -C; printf '%s\n' "$me" > /output/agent/.lock) 2>/dev/null; }
+if ! claim; then
   if [ -n "$(find /output/agent -maxdepth 1 -name .lock -mmin -2)" ]; then
     echo "run: another attempt is in progress in /output — agent/.lock touched under 2 min ago (rule 32)" >&2
     exit 3
   fi
-  : > /output/agent/.lock
+  rm -f /output/agent/.lock
+  claim || true   # losing the create is fine; the read-back below is the verdict
+  if [ "$(cat /output/agent/.lock)" != "$me" ]; then
+    echo "run: lost the race to take over a dead claim in /output (rule 32)" >&2
+    exit 3
+  fi
 fi
 # Release the claim whenever this shell exits, or a launcher that dies before the
 # pipeline starts (an edge that never came up) would refuse its own next attempt.
