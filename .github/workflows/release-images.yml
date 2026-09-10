@@ -703,6 +703,16 @@ jobs:
             ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
             cache="${REGISTRY}/buildcache/${B}-${tid}-${ARCH}"
             if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
+            # An arch the benchmark does not declare cannot build (its base lacks
+            # it) — skip, leaving it legitimately single-arch, as the leaf matrix
+            # does. The mismatch check after a script build only catches a base
+            # that builds the WRONG arch; a base with no arm64 at all fails its
+            # first RUN ("exec format error"), which is a build failure, not a
+            # mismatch, so it has to be skipped before the build starts.
+            PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "containers/benchmarks/$B/Dockerfile" | tail -1)
+            if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
+              echo "skipping $ref on $ARCH — declared platforms: $PLATS"; continue
+            fi
             # Per-task build-input hash (delivery/RULES.md rule 12): the raw
             # task id is part of the preimage; build.sh stamps it via
             # EVAL_INPUT_HASH, bake via a per-target label --set.
