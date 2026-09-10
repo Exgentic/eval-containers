@@ -28,8 +28,22 @@ hash tag.
 | `tasks` | task ids of a per-task benchmark named in `only` (`terminal-bench`, `skills-bench`, `deepswe`, `swe-bench`) | every task; with `only` alone, one task per benchmark as a smoke |
 | `include_per_task` | build per-task images at all | on |
 | `include_standalone` | also build the `-standalone` single-container bundles | on |
+| `channel` | publish the `:latest` channel as the nightly does — every matrix pruned to images whose inputs changed | off (the named scope builds) |
 | `dry_run` | print what would build; push nothing | off |
 | `tag` | a `vX.Y.Z` to publish — a versioned release, not a preview ([rule 5](../../.agents/delivery/RULES.md)) | `latest` |
+
+To publish the whole `:latest` channel now — everything whose inputs changed,
+exactly what tonight's nightly would pick up — ask for the channel instead of
+naming a scope:
+
+```bash
+gh workflow run release-images.yml --ref main -f channel=true
+```
+
+Without `channel`, a dispatch that names no scope enumerates the *whole* fleet:
+every leaf gets a job, and each one re-checks its own hash to decide whether to
+build. That is correct but slow — prefer `channel=true` for a full refresh, and
+`only=` when you know what moved.
 
 ```bash
 # one benchmark, no combos

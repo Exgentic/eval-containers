@@ -82,6 +82,10 @@ on:
       tasks:
         description: "Per-task benchmarks: build only these space-separated task ids (their benchmark named in `only`); blank = every task, or one per benchmark under `only`"
         default: ""
+      channel:
+        description: "Publish the :latest channel as the nightly does — prune every matrix to images whose inputs changed (delivery/RULES.md:16)"
+        type: boolean
+        default: false
 
 concurrency:
   # A dispatch gets its own lane (starts now, never evicted); tag and nightly
@@ -237,7 +241,12 @@ jobs:
           ONLY: ${{ inputs.only }}
           TASKS: ${{ inputs.tasks }}
           IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
-          IS_CHANNEL: ${{ github.event_name == 'schedule' }}
+          # The channel is a MODE, not an event: the nightly enters it by cron, a
+          # dispatch by asking for it (`channel: true`). Both publish `latest`
+          # pruned to changed inputs (delivery/RULES.md:16) — keying this on the
+          # event alone left the only on-demand route unable to publish the
+          # channel, so a dispatch rebuilt the whole fleet to discover that.
+          IS_CHANNEL: ${{ github.event_name == 'schedule' || inputs.channel }}
         run: |
           # A tag push does NOT populate workflow_dispatch inputs, so COMBO_AGENTS /
           # INCLUDE_PER_TASK arrive empty and combos + per-task would be skipped. On
