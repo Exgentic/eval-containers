@@ -26,6 +26,7 @@ The CLI shells out only to this fixed set of standard, user-installable tools. "
 | `docker push` | publishing images |
 | `kubectl` (+ `helm template`) | `run --mode job` — Helm renders the shared chart, `kubectl apply -f -` submits it |
 | `oc` | applying manifests on OpenShift (`helm template … \| oc apply -f -`); single-artifact in-cluster builds via `BuildConfig` (`oc start-build`) for `build --builder oc`; the `kubectl` superset for OpenShift login and registry routing |
+| `curl` | reading the published index over the registry's HTTP API (`list`, rule 14) — an anonymous token, a manifest, one blob |
 
 Each tool MUST be a standard release the user can install and invoke themselves — no forks, no wrappers. Adding a tool to this list is a rule change and MUST be recorded in the changelog; the CLI MUST NOT reach for any tool outside it.
 
@@ -63,7 +64,7 @@ Each tool MUST be a standard release the user can install and invoke themselves 
 
 13. **Report.** `eval-containers report ./output/` — MUST walk the output directory, read `result.json` files, and aggregate. MUST support `--format csv|json`.
 
-14. **List.** `eval-containers list benchmarks|agents|models` — MUST read Docker image labels. No separate database or index.
+14. **List.** `eval-containers list benchmarks|agents|models|evals` — MUST answer from what the fleet has published and the labels its components declare, and MUST NOT keep a list of its own. It MAY read both from the published **index** (`evals/index:latest`, written by containers/scripts/fleet-index.py from the registry itself and from those same labels), so that a listing answers for the whole fleet without pulling an image; `--local` MUST answer from the checkout's `containers/*/*/Dockerfile` instead. A listing MUST offer a benchmark×agent pair only if that pair is published under the tag a run would pull, and MUST NOT derive pairs by multiplying a benchmark list by an agent list.
 
 15. **Push.** `eval-containers push agent|bench|model|eval` — MUST map to `docker push`.
 
@@ -78,6 +79,7 @@ Each tool MUST be a standard release the user can install and invoke themselves 
 | 2026-04-13 | Initial version |
 | 2026-04-14 | Added principle 10: env var / CLI flag parity — every `EVAL_*` env var MUST be exposable as a `--kebab-case` flag; CLI flag overrides env var. Updated `eval-containers run` (principle 12) to list the standard version/timeout flags. Renumbered commands (11–15). |
 | 2026-04-14 | Updated `eval-containers run` (principle 12) to enumerate both axes of versioning: container tags (`--benchmark-tag`, `--agent-tag`, `--model-tag`) and internal upstream versions (`--benchmark-version`, `--agent-version`, `--litellm-version`). |
+| 2026-09-10 | Rule 14 (List): a listing answers from the published **index**, not only from images pulled to the local daemon, and `--local` answers from the checkout. "MUST read Docker image labels" had one workable reading — `docker images` + `docker inspect` — under which `list` could only describe what you already had, never what the fleet publishes, which is the question a listing is asked. The index is not the list the rule forbids: the release derives it from the registry and from the components' own labels, so nothing is kept that a component does not declare. The last sentence is the lesson from the dashboard: it offered every benchmark×agent product, so an agent published for one benchmark was offered for ninety-nine, and an image whose manifest list was never stitched (`latest-amd64`, no `latest`) was offered although nothing could pull it. Added `curl` to the underlying tools for the three HTTP calls that read the index. |
 | 2026-04-14 | Tightened principle 10 (parity): every `EVAL_*` env var used anywhere in the README or in a published compose artifact MUST have a matching `--kebab-case` flag with no exceptions. Positional shortcuts are allowed but MUST NOT replace the flag form. `eval-containers run`'s job is to translate every flag to its env var and shell out to the exact docker compose command in the README. |
 | 2026-05-31 | Restated the CLI's purpose (Abstract): it is a *reminder of the simplest standard command* for each task — every command MUST be reducible to, and able to print, a plain `docker`/`kubectl`/`oc` invocation; anything not expressible that way does not belong in the CLI. Principle 2 reinforced: the CLI exists to discover the command, never to hide it. |
 | 2026-05-31 | Generalized the tool surface from Docker-only to the set actually in use: added the **Underlying tools** subsection (docker `build`/`buildx bake`/`compose`/`run`/`push`, `kubectl`+Kustomize, `oc`) and rewrote principles 1–6, 8, 10 to reference it. Principle 2 now requires `--dry-run` to print the underlying commands; principle 3 forbids CLI-resident dependency-ordering — a build/deploy graph MUST be data the tool executes (bake file run by buildx, Kustomize overlay run by `kubectl`/`oc`), linking top-level principle 15. |
