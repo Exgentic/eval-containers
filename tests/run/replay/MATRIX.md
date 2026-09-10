@@ -35,6 +35,7 @@ Each row is one replay test with a recorded fixture.
 | aider-polyglot | aider | custom | aider-polyglot-0-aider |
 | gaia | goose | exact-match | gaia-0-goose |
 | hwe-bench | claude-code | custom | hwe-bench-lowrisc__ibex-2232-claude-code |
+| deepswe | opencode | custom | deepswe-csstree-shorthand-expansion-compression-opencode |
 
 ## Per-task and sidecar benchmarks (TODO)
 
@@ -43,11 +44,16 @@ Each row is one replay test with a recorded fixture.
 same as `build`/`run`/`oracle`), so a per-task benchmark whose image needs no
 build-time input beyond `EVAL_TASK_ID` (agent + benchmark base only) needs just
 a fixture + a `replay_test!(..., "<task-id>")` line, no further harness work.
-hwe-bench (above) is the first, and so far only, benchmark to land this way —
-`swe-bench` and `compilebench` below still need extra build-arg plumbing, and
-`terminal-bench` builds a second env image from a `build.sh` first, so this
-generalization is proven for hwe-bench's shape, not yet for every per-task
-benchmark.
+hwe-bench and deepswe (above) have landed this way. deepswe additionally proves
+the `build.sh` shape: its per-task base is a pull-and-overlay of a pinned
+upstream image resolved from the task's own `task.toml`, so the harness path
+covers both "agent + benchmark base only" and "benchmark base built by a
+`build.sh`". `swe-bench` and `compilebench` below still need extra build-arg
+plumbing, and `terminal-bench` builds a second env image from its `build.sh`.
+
+Both per-task fixtures so far are amd64-only (`LABEL eval.platforms`), because
+their upstream bases publish a single amd64 manifest: replaying either on an
+arm64 host fails at image pull, not in the test.
 
 | Benchmark | Agent | Pattern | Status |
 |-----------|-------|---------|--------|

@@ -1,0 +1,41 @@
+{
+  "$comment": [
+    "Provenance for recorded replay fixtures (tests/run/replay/RULES.md rule 6).",
+    "One entry per fixture, keyed by its filename stem. Rule 6 requires the model",
+    "name and version, the agent version, the benchmark data_revision, the capture",
+    "timestamp, and the release tag of the sweep that produced it.",
+    "",
+    "This file starts with the fixtures captured out-of-band under rule 9. The 243",
+    "fixtures that predate it have no entry yet — that backfill is tracked as its",
+    "own task (issue #483), and rule 6 calls an entry-less fixture drift, so this",
+    "file is the place it gets paid down rather than a new convention."
+  ],
+  "fixtures": {
+    "deepswe-csstree-shorthand-expansion-compression-opencode": {
+      "benchmark": "deepswe",
+      "task_id": "csstree-shorthand-expansion-compression",
+      "agent": "opencode",
+      "agent_version": "1.4.3",
+      "model": "gpt-5.5",
+      "gateway": "bifrost",
+      "benchmark_data_revision": "435ee89ec2f2e2289f33b0da4f992f0b7b7266b9",
+      "captured_at": "2026-09-10T11:05:02Z",
+      "release_tag": null,
+      "capture_method": "out-of-band (RULES.md rule 9)",
+      "platform": "linux/amd64",
+      "reward": 1,
+      "passed": true,
+      "notes": [
+        "Captured on the OpenShift cluster c111-e-us-east (native amd64). DeepSWE's",
+        "upstream per-task bases are amd64-only single manifests, so this fixture",
+        "cannot be re-recorded or replayed on arm64 at all (see eval.platforms).",
+        "release_tag is null because the capture was out-of-band between release",
+        "cycles, which is exactly what rule 9 permits; the next live fleet sweep",
+        "supersedes it.",
+        "Recorded with OPENCODE_DISABLE_AUTOCOMPACT=1: opencode's auto-compaction",
+        "silently summarizes context mid-run, which would make the recorded turn",
+        "sequence a summary rather than the real trajectory."
+      ]
+    }
+  }
+}
