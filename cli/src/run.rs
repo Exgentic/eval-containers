@@ -623,6 +623,27 @@ fn run_id(explicit: Option<&str>) -> String {
     })
 }
 
+/// Where a `--mode job` run's results land, as chart values. `--mode job` used
+/// to pass no path at all, so every run wrote to the volume root and a re-run of
+/// one combination overwrote the last — the #428 bug, fixed in the shell
+/// wrappers, still open here. This is the shape they compose; the chart appends
+/// the run id and then the index or task (output/RULES.md rule 11). An ephemeral
+/// run keeps the chart's pathless emptyDir mount: nothing to keep apart.
+fn output_sets(args: &RunArgs, benchmark: &str, agent: &str) -> Vec<String> {
+    if args.ephemeral {
+        return vec!["ephemeral=true".into()];
+    }
+    let prefix = args.output_dir.as_deref().unwrap_or("runs");
+    let mut sub = format!("{prefix}/{benchmark}/{agent}");
+    if let Some(m) = &args.model {
+        sub += &format!("/{}", eval_containers::naming::model_slug(m));
+    }
+    vec![
+        format!("outputSubPath={sub}"),
+        format!("runId={}", run_id(args.run_id.as_deref())),
+    ]
+}
+
 /// Cluster `eval-secrets` Secret still provides upstream credentials.
 fn run_job(
     registry: &str,
@@ -690,28 +711,13 @@ fn run_job(
         format!("agent={agent}"),
         format!("task={task}"),
     ];
-    // Where results land. `--mode job` used to pass no path, so every run wrote
-    // to the volume root and a re-run of one combination overwrote the last —
-    // the #428 bug, fixed in the shell wrappers, still open here. Same shape they
-    // compose; the chart appends the runId. Ephemeral runs keep the chart's
-    // pathless emptyDir mount: nothing to keep apart.
     if args.dataset {
         sets.push("dataset=true".into());
     }
     if args.force {
         sets.push("force=true".into());
     }
-    if args.ephemeral {
-        sets.push("ephemeral=true".into());
-    } else {
-        let prefix = args.output_dir.as_deref().unwrap_or("runs");
-        let mut sub = format!("{prefix}/{benchmark}/{agent}");
-        if let Some(m) = &args.model {
-            sub += &format!("/{}", eval_containers::naming::model_slug(m));
-        }
-        sets.push(format!("outputSubPath={sub}"));
-        sets.push(format!("runId={}", run_id(args.run_id.as_deref())));
-    }
+    sets.extend(output_sets(args, benchmark, agent));
     // No `perTask` here on purpose. The chart resolves it from its own committed
     // per-task.json (rule 24h): this path renders the PUBLISHED chart with no repo
     // checkout, and the detection that used to live here read
@@ -881,6 +887,45 @@ mod tests {
         std::fs::write(dir.join("agent/result.json"), r#"{"error":null}"#).unwrap();
         assert!(super::check_task_dir(&dir).is_ok());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // `--mode job` hands the results path to the chart, which appends the run id
+    // and then the index or task (output/RULES.md rule 11). The model segment is
+    // the slugged handle — the Job's `model` label is only its last segment, so
+    // two models behind one gateway would otherwise share a directory (#428).
+    #[test]
+    fn job_mode_names_the_run_and_keys_it_by_the_whole_handle() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            let mut argv = vec!["run", "aime", "--mode", "job", "--agent", "codex"];
+            argv.extend_from_slice(extra);
+            Cli::try_parse_from(argv).unwrap().run
+        };
+
+        let sets = super::output_sets(&parse(&["--model", "azure/gpt-5-mini"]), "aime", "codex");
+        assert_eq!(sets[0], "outputSubPath=runs/aime/codex/azure--gpt-5-mini");
+        assert!(
+            sets[1].starts_with("runId=") && sets[1].len() > "runId=".len(),
+            "a run that keeps its results must be named: {sets:?}"
+        );
+
+        // --output-dir moves the prefix; --run-id pins the name so a rerun resumes.
+        let sets = super::output_sets(
+            &parse(&["--output-dir", "sweeps/x", "--run-id", "r1"]),
+            "aime",
+            "codex",
+        );
+        assert_eq!(
+            sets,
+            ["outputSubPath=sweeps/x/aime/codex", "runId=r1"],
+            "the output root and the run id are the caller's to pin"
+        );
+
+        // A run whose results are meant to be thrown away has nothing to keep apart.
+        assert_eq!(
+            super::output_sets(&parse(&["--ephemeral"]), "aime", "codex"),
+            ["ephemeral=true"]
+        );
     }
 
     #[test]
