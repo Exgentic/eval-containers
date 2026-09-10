@@ -1225,7 +1225,7 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - uses: oras-project/setup-oras@v1
+      - uses: oras-project/setup-oras@v2
       - uses: actions/download-artifact@v8
         with: { name: shards, path: . }
       - name: Sweep the channel -> evals/catalog:latest
