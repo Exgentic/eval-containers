@@ -53,6 +53,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: oras-project/setup-oras@v1
+      # For the stitch below: fleet-tag.sh works through `docker buildx imagetools`.
+      - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
@@ -74,3 +76,40 @@ jobs:
           cmp index.json "$d/index.json"
           jq -r '"index: \(.images | length) published artifacts, \(.labels | length) labelled components"' \
             index.json >> "$GITHUB_STEP_SUMMARY"
+      # An image whose per-arch tags landed but whose manifest list was never
+      # stitched has no `:latest`, so nothing can pull it — the bits are there and
+      # the name everyone uses is not. The merge step does this, but it is the
+      # last step of a release and this queue cancels runs, so the arch tags
+      # outlive the run that would have joined them: 719 of 7649 artifacts, 412 of
+      # them with BOTH arches already pushed. The sweep above has just worked out
+      # exactly which ones, so finish the job — a retag, never a rebuild.
+      - name: Stitch what was built but never joined
+        env:
+          REGISTRY: ghcr.io/exgentic
+        run: |
+          # name + the per-arch refs to join, straight out of the index: whatever
+          # arches exist. An image with one is usable on that one, and rule 14
+          # still reads it as changed, so the missing arch is built by a later
+          # release rather than blocking this one from being pullable at all.
+          jq -r --arg r "$REGISTRY" '.images | to_entries[]
+                 | select(.value | index("latest") | not)
+                 | . as $i
+                 | (.value | map(select(. == "latest-amd64" or . == "latest-arm64"))
+                           | map("\($r)/\($i.key):\(.)")) as $srcs
+                 | select($srcs | length > 0)
+                 | "\(.key) \($srcs | join(" "))"' index.json > /tmp/halves
+          echo "half-published: $(wc -l < /tmp/halves)"
+          fixed=0; failed=0
+          while read -r name srcs; do
+            [ -n "$name" ] || continue
+            # shellcheck disable=SC2086  # the split is the point: one ref per arch
+            if bash containers/scripts/fleet-tag.sh "${REGISTRY}/${name}" latest $srcs; then
+              fixed=$((fixed+1))
+            else
+              echo "::warning::could not stitch ${name}"; failed=$((failed+1))
+            fi
+          done < /tmp/halves
+          echo "stitched $fixed, failed $failed" >> "$GITHUB_STEP_SUMMARY"
+          # Never fatal: this repairs what a previous run left behind, and a name
+          # that cannot be stitched today is one the next release rebuilds.
+          echo "stitched=$fixed failed=$failed"
