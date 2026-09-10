@@ -97,7 +97,7 @@ jobs:
                  | (.value | map(select(. == "latest-amd64" or . == "latest-arm64"))
                            | map("\($r)/\($i.key):\(.)")) as $srcs
                  | select($srcs | length > 0)
-                 | "\(.key) \($srcs | join(" "))"' index.json | head -5 > /tmp/halves
+                 | "\(.key) \($srcs | join(" "))"' index.json | grep '^evals/' | head -5 > /tmp/halves
           echo "half-published: $(wc -l < /tmp/halves)"
           fixed=0; failed=0
           while read -r name srcs; do
