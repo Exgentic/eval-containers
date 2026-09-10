@@ -777,18 +777,10 @@ replay_test!(replay_bbh_3906_copilot_cli, "bbh", "copilot-cli", "3906");
 
 replay_test!(replay_bbh_5208_crush, "bbh", "crush", "5208");
 
-replay_test!(replay_bfcl_0_gemini_cli, "bfcl", "gemini-cli", "0");
-
-replay_test!(replay_bfcl_1199_goose, "bfcl", "goose", "1199");
-
-replay_test!(replay_bfcl_399_codex, "bfcl", "codex", "399");
-
-replay_test!(
-    replay_bfcl_799_mini_swe_agent,
-    "bfcl",
-    "mini-swe-agent",
-    "799"
-);
+// bfcl was converted to a model-only native-harness benchmark; the legacy
+// exact-match fixtures no longer describe its flow. This fixture was recorded
+// from a live gateway run of the model-only harness (azure/FW-GLM-5.2).
+replay_test!(replay_bfcl_0_claude_code, "bfcl", "claude-code", "0");
 
 replay_test!(replay_bigcodebench_0_codex, "bigcodebench", "codex", "0");
 

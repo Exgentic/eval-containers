@@ -28,7 +28,7 @@ Each row is one replay test with a recorded fixture.
 | healthbench | claude-code | llm-as-judge | healthbench-0-claude-code |
 | kumo | codex | external | kumo-0-codex |
 | gdpval | claude-code | external (HF) | gdpval-0-claude-code |
-| bfcl | codex | custom | bfcl-0-codex |
+| bfcl | claude-code | model-only (AST) | bfcl-0-claude-code |
 | appworld | claude-code | custom | appworld-0-claude-code |
 | arc-agi | claude-code | custom | arc-agi-0-claude-code |
 | mmmu | claude-code | custom | mmmu-0-claude-code |
@@ -97,7 +97,7 @@ property.
 | Agent | Count | Benchmarks |
 |-------|-------|------------|
 | claude-code | 10 | aime, hle, mrcr, humaneval, mbpp, ifeval, healthbench, gdpval, arc-agi, mmmu |
-| codex | 7 | gpqa-diamond, mgsm, livecodebench, usaco, browsecomp, kumo, bfcl |
+| codex | 6 | gpqa-diamond, mgsm, livecodebench, usaco, browsecomp, kumo |
 | goose | 2 | simpleqa, gaia |
 | aider | 2 | math-500, aider-polyglot |
 | openhands | 1 | mmlu-pro |
