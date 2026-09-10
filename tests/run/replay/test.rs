@@ -128,7 +128,7 @@ async fn replay_compose_with(
     // registry (overridable via EVAL_REGISTRY); Docker/Linux uses ghcr.io/exgentic.
     let classic = common::classic_build();
     let replay_registry = if classic {
-        std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| common::LOCAL_REGISTRY.to_string())
+        common::classic_registry()
     } else {
         "ghcr.io/exgentic".to_string()
     };
@@ -408,8 +408,7 @@ async fn ensure_images(benchmark: &str, agent: &str, task_id: &str, mode: Replay
         // exactly two overrides (BENCHMARK_IMAGE/AGENT_IMAGE — the CLI's Eval arm);
         // EVAL_BENCHMARK/EVAL_AGENT drive its tag. Models are runtime sidecars, not
         // baked into the lean eval, so they aren't needed here.
-        let reg =
-            std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| common::LOCAL_REGISTRY.to_string());
+        let reg = common::classic_registry();
 
         if per_task {
             let status = Command::new("cargo")
@@ -461,27 +460,7 @@ async fn ensure_images(benchmark: &str, agent: &str, task_id: &str, mode: Replay
             return;
         }
 
-        let base_env = [("REGISTRY", reg.as_str())];
-        common::build_target_classic(&naming::benchmark_bake_target(benchmark), &[], &base_env);
-        common::build_target_classic(&naming::agent_bake_target(agent), &[], &base_env);
-
-        let bench_ov = format!(
-            "eval.args.BENCHMARK_IMAGE={}",
-            naming::benchmark_image(&reg, benchmark, "latest")
-        );
-        let agent_ov = format!(
-            "eval.args.AGENT_IMAGE={}",
-            naming::agent_image(&reg, agent, "latest")
-        );
-        common::build_target_classic(
-            "eval",
-            &[&bench_ov, &agent_ov],
-            &[
-                ("REGISTRY", reg.as_str()),
-                ("EVAL_BENCHMARK", benchmark),
-                ("EVAL_AGENT", agent),
-            ],
-        );
+        common::build_eval_classic(benchmark, agent, &reg);
         return;
     }
 
@@ -591,7 +570,7 @@ macro_rules! replay_test {
 #[ignore]
 async fn rerun_is_skipped_and_force_reruns() {
     let (b, a, t) = ("aime", "claude-code", "0");
-    ensure_images(b, a, ReplayMode::Lean).await;
+    ensure_images(b, a, t, ReplayMode::Lean).await;
     let _first = replay_compose(b, a, t, ReplayMode::Lean).await;
     assert_result_valid(b, a, "replay", t);
     let agent_result = task_dir(b, a, "replay", t).join("agent/result.json");
