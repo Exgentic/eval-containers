@@ -28,7 +28,7 @@ Run an eval with nothing installed but Docker — no clone needed:
 
 ```bash
 echo "OPENAI_API_KEY=sk-..." > .env
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_RUN_ID=first \
   docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
 ```
 
