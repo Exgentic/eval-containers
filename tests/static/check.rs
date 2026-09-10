@@ -1336,10 +1336,17 @@ fn the_channel_publishes_nightly() {
         "a branch push must not publish the channel — the nightly does; per-push \
          runs superseded each other faster than the fleet could publish"
     );
+    // The channel is a mode, not an event: the nightly enters it by cron, a
+    // dispatch by asking for it (`channel: true`). What must never gate it is a
+    // branch push — that is the supersession failure rule 16 was written for.
     assert!(
-        wf.contains("IS_CHANNEL: ${{ github.event_name == 'schedule' }}")
+        wf.contains("IS_CHANNEL: ${{ github.event_name == 'schedule'")
             && !wf.contains("IS_MAIN_PUSH"),
         "the incremental (stale-set) path must key on the schedule, not on a push"
+    );
+    assert!(
+        !wf.contains("IS_CHANNEL: ${{ github.event_name == 'push'"),
+        "a push must not enter the channel path (delivery/RULES.md:16)"
     );
     let enumerate = wf
         .split("\n  enumerate:\n")
