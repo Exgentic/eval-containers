@@ -66,7 +66,7 @@ subset on native amd64.
 | Check | Status / Value | Evidence |
 |-------|:--------------:|----------|
 | published | ✗ | not in ghcr.io/exgentic/benchmarks |
-| released | ✗ | no `eval.benchmark.released="true"` — no replay fixture yet (rule 21a) |
+| released | ✓ | `eval.benchmark.released="true"` — replay fixture `deepswe-csstree-shorthand-expansion-compression-opencode` (rule 21a), recorded on native amd64 (OpenShift `c111-e-us-east`) against `gpt-5.5` with `opencode` 1.4.3: `reward: 1, passed: true`, agent exit 0 in 12.5 min, 56 OTLP lines / 1344 spans / 10MB. Captured out-of-band per `tests/run/replay/RULES.md` rule 9, provenance in `fixtures/provenance.json` (rule 6). Recorded with `OPENCODE_DISABLE_AUTOCOMPACT=1` so the trajectory is the real turn sequence, not a mid-run summary. Replay is amd64-only (`LABEL eval.platforms`) — the upstream per-task base is a single amd64 manifest, so an arm64 host fails at pull. |
 | pull size | — | not published (per-task, built on demand) |
 
 ## Deviations from upstream (deliberate, recorded)

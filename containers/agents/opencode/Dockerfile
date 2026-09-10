@@ -53,6 +53,11 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export OPENCODE_DISABLE_AUTOUPDATE=1
 export OPENCODE_DISABLE_MODELS_FETCH=1
+# Auto-compaction silently summarizes the context mid-run, which corrupts a
+# recorded trajectory (the replay fixture must be the real turn sequence) and
+# was a source of anomalous results in the 113-task sweep. Keep the window
+# honest: fail loud on overflow rather than quietly rewriting history.
+export OPENCODE_DISABLE_AUTOCOMPACT=1
 # `--`: end-of-options. A task whose text begins with "-" is otherwise parsed as
 # a flag — `opencode run` then prints its usage and exits 1 WITHOUT running, which
 # scores as reward 0 and is indistinguishable from a wrong answer (observed on

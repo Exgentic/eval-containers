@@ -32,6 +32,7 @@ LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="deepswe"
 LABEL eval.benchmark.description="DeepSWE v1.1 - long-horizon software engineering on active open-source repositories"
 LABEL eval.benchmark.tasks="113"
+LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
@@ -41,6 +42,11 @@ LABEL eval.benchmark.url="https://github.com/datacurve-ai/deep-swe"
 # rather than omitted, so a reader can tell "none exists" from "nobody checked".
 LABEL eval.benchmark.paper="n/a"
 LABEL eval.benchmark.upstream_base="public.ecr.aws/d3j8x8q7/swe-bench-202605 (per-task tag from task.toml)"
+# Every per-task base upstream publishes is a single amd64 manifest (no manifest
+# list), so arm64 cannot be built at all: its /bin/sh is x86 and the first RUN
+# dies "exec format error". build.sh pins --platform linux/amd64 for the same
+# reason; this label is what the release job reads to stop demanding arm64.
+LABEL eval.platforms="linux/amd64"
 
 # EVAL_TASK_ID is consumed here (the per-task marker, rules 24a/24f).
 # DEEPSWE_TASK pins the real task name for solution.sh: the oracle/runner
