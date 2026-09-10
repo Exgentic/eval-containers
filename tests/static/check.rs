@@ -1473,7 +1473,10 @@ fn a_preset_that_replaces_the_agent_phase_records_its_exit_status() {
         );
         checked += 1;
     }
-    assert!(checked > 0, "expected at least one preset defining runnerArgs");
+    assert!(
+        checked > 0,
+        "expected at least one preset defining runnerArgs"
+    );
     eprintln!("✓ {checked} runnerArgs preset(s) record an exit status (rules 16, 24)");
 }
 
