@@ -212,10 +212,11 @@ async fn replay_compose_with(
 }
 
 /// Every file a run leaves behind lives under `model/`, `agent/` or `task/`
-/// (output/RULES.md rule 12), and nothing lands outside the task directory
-/// (rule 24). Cheap post-conditions on a run that has already happened: the two
-/// ways this breaks are a component writing to the volume root — where
-/// `traces.jsonl` used to sit — and a mount widened past one task.
+/// (output/RULES.md rule 12). A cheap post-condition on a run that already
+/// happened: the way this breaks is a component writing to the task-directory
+/// root, where `traces.jsonl` used to sit. Confinement to the run directory
+/// (rule 24) is not asserted here — a run directory legitimately holds one
+/// directory per task, and these suites share one.
 fn assert_output_confined(benchmark: &str, agent: &str, model: &str, task_id: &str) {
     let dir = task_dir(benchmark, agent, model, task_id);
     let loose: Vec<_> = fs::read_dir(&dir)
@@ -227,17 +228,6 @@ fn assert_output_confined(benchmark: &str, agent: &str, model: &str, task_id: &s
     assert!(
         loose.is_empty(),
         "{loose:?} sit loose in {dir:?} — every file belongs under model/, agent/ or task/"
-    );
-    let run_dir = dir.parent().expect("run directory");
-    let strays: Vec<_> = fs::read_dir(run_dir)
-        .unwrap_or_else(|e| panic!("run directory {run_dir:?} unreadable: {e}"))
-        .flatten()
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n != task_id)
-        .collect();
-    assert!(
-        strays.is_empty(),
-        "{strays:?} appeared beside the task directory in {run_dir:?} — a run writes only its own"
     );
 }
 

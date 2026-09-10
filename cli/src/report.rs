@@ -36,6 +36,8 @@ struct ModelResult {
 }
 
 struct EvalResult {
+    /// Where it is, so a failed one can be named (output/RULES.md rule 35).
+    dir: PathBuf,
     task: Option<TaskResult>,
     agent: Option<AgentResult>,
     model: Option<ModelResult>,
@@ -64,11 +66,17 @@ pub fn execute(args: ReportArgs) -> Result<(), String> {
 
 /// Walk the output root for task directories —
 /// `<root>/<benchmark>/<agent>/<model>/<run-id>/<task-id>/` (output/RULES.md
-/// rule 11), a task directory being any dir holding `task/` or `agent/`, so a
-/// failed one (no result.json yet) is counted as failed, not skipped.
+/// rule 11), a task directory being any dir holding `task/`, `agent/` or
+/// `model/`. All three, so a task whose runner never started — in k8s the
+/// collector is an init sidecar and mints `model/` on its own — is counted as
+/// failed rather than being invisible (rules 33–36).
+///
+/// The depth allows one level more than the layout: a run launched with plain
+/// compose rather than the CLI has no slug to name the model with, so a handle
+/// like `openai/gpt-5.4` arrives as two segments.
 fn find_results(dir: &Path) -> Vec<EvalResult> {
     let mut results = Vec::new();
-    walk_for_results(dir, &mut results, 6);
+    walk_for_results(dir, &mut results, 7);
     results
 }
 
@@ -77,7 +85,10 @@ fn walk_for_results(dir: &Path, results: &mut Vec<EvalResult>, depth: u32) {
         return;
     }
 
-    if dir.join("task").is_dir() || dir.join("agent").is_dir() {
+    if ["task", "agent", "model"]
+        .iter()
+        .any(|d| dir.join(d).is_dir())
+    {
         results.push(load_eval(dir));
         return;
     }
@@ -98,6 +109,7 @@ fn walk_for_results(dir: &Path, results: &mut Vec<EvalResult>, depth: u32) {
 
 fn load_eval(dir: &Path) -> EvalResult {
     EvalResult {
+        dir: dir.to_path_buf(),
         task: read_json(dir.join("task/result.json")),
         agent: read_json(dir.join("agent/result.json")),
         model: read_json(dir.join("model/result.json")),
@@ -114,12 +126,15 @@ fn has_gen_ai_traces(dir: &Path) -> bool {
 }
 
 /// A failed task directory — errored or incomplete — is never a score
-/// (output/RULES.md rule 36).
+/// (output/RULES.md rule 36). Complete is what the launcher and the CLI also
+/// require: a graded result AND the runner's own record saying it did not
+/// error. A directory missing either was never a finished attempt, whatever
+/// `task/result.json` says.
 fn failure(r: &EvalResult) -> Option<&str> {
     match (&r.task, &r.agent) {
         (None, _) => Some("incomplete"),
+        (_, None) => Some("no runner record"),
         (_, Some(a)) => a.error.as_deref(),
-        _ => None,
     }
 }
 
@@ -205,6 +220,9 @@ fn print_table(results: &[EvalResult]) {
         );
     }
 
+    for r in results.iter().filter(|r| failure(r).is_some()) {
+        println!("  failed: {}", r.dir.display());
+    }
     println!("{}", "-".repeat(140));
     let avg_reward = if t.scored > 0 {
         t.reward / t.scored as f64

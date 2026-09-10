@@ -167,8 +167,8 @@ Rule of thumb: `--test-threads = VM_GB / 4` (each replay stack uses ~4 GB peak).
 One-time. Runs a real task with a real model, saves the trajectory as a fixture.
 
 ```bash
-# Record one combination — uses the shared `output` named volume from
-# containers/compose/services.yaml (the runner writes to /output inside the container).
+# Record one combination — the run writes to
+# <EVAL_OUTPUT_DIR>/<benchmark>/<agent>/<model>/<run-id>/<task>/ on the host.
 EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_RUN_ID=dev \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 

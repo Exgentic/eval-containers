@@ -24,7 +24,7 @@ echo "OPENAI_API_KEY=sk-..." > .env
 EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_RUN_ID=first \
   docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
 
-cat output/aime/codex/openai/gpt-5.4/first/0/task/result.json
+cat output/aime/codex/openai/gpt-5.4/first/0/task/result.json   # plain compose: the handle is the path
 ```
 
 Prefer a CLI? `cargo install eval-containers`, then `eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4` prints and runs that exact Docker command — every command is a reminder of a plain `docker`/`kubectl` one (`--dry-run` to just print it).
