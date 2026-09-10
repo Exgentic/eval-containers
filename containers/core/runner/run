@@ -64,7 +64,9 @@ id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
 # /output is this task's directory. The launcher's own records live in agent/:
 # config.env (rule 16), .lock (rule 32) and result.json's `error` (rule 17).
 mkdir -p /output/{model,agent,task} /logs/verifier
-config=$(env | grep '^EVAL_' | grep -Ev '^EVAL_(OUTPUT_DIR|RUN_ID|FORCE)=' | LC_ALL=C sort)
+# One awk, not two greps: with `pipefail` a grep that matches nothing fails the
+# whole assignment, and a run launched with no EVAL_* at all is empty, not broken.
+config=$(env | awk '/^EVAL_/ && !/^EVAL_(OUTPUT_DIR|RUN_ID|FORCE)=/' | LC_ALL=C sort)
 if [ -f /output/agent/config.env ] && [ "$config" != "$(cat /output/agent/config.env)" ]; then
   echo "run: /output holds a run with a different configuration — use a new EVAL_RUN_ID (rule 23):" >&2
   diff /output/agent/config.env <(printf '%s\n' "$config") >&2 || true
