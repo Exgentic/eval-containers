@@ -65,7 +65,7 @@ on:
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, hwe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -359,9 +359,21 @@ jobs:
                 --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
-            for B in swe-bench; do
+            # tasks.txt holds the ids: `#` headings and blanks are skipped, since a
+            # heading read as a task id is an image nobody built (the same contract
+            # containers/scripts/fleet-index.py reads these files under). Which
+            # builder runs them is the base image's shape, not the list's:
+            #   kind=bake   swe-bench — FROM the Epoch per-task base, named from
+            #               EVAL_TASK_ID + EVAL_BASE_ARCH, so bake alone suffices.
+            #   kind=script hwe-bench — its per-PR base (ghcr.io/pku-liang/…:pr-N)
+            #               and HF slug are a string transform of the task id that
+            #               only its build.sh knows, so it builds like the three
+            #               above while sourcing ids from the repo.
+            for B in swe-bench:bake hwe-bench:script; do
+              K="${B##*:}"; B="${B%%:*}"
               tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
-              tks=$(jq -Rn --arg B "$B" '[inputs | select(length>0) | {b:$B, task:., kind:"bake"}]' < "$tf")
+              tks=$(jq -Rn --arg B "$B" --arg K "$K" \
+                '[inputs | select(length>0 and (startswith("#") | not)) | {b:$B, task:., kind:$K}]' < "$tf")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             pertask="$acc"

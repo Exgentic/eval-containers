@@ -25,7 +25,7 @@ hash tag.
 |---|---|---|
 | `only` | space-separated leaf targets — the first column of `containers/scripts/fleet-hash.sh graph` | the whole fleet |
 | `combo_agents` | agents whose `evals/<benchmark>--<agent>` combos to build, over the benchmarks in scope | no combos |
-| `tasks` | task ids of a per-task benchmark named in `only` (`terminal-bench`, `skills-bench`, `deepswe`, `swe-bench`) | every task; with `only` alone, one task per benchmark as a smoke |
+| `tasks` | task ids of a per-task benchmark named in `only` (`terminal-bench`, `skills-bench`, `deepswe`, `swe-bench`, `hwe-bench`) | every task; with `only` alone, one task per benchmark as a smoke |
 | `include_per_task` | build per-task images at all | on |
 | `include_standalone` | also build the `-standalone` single-container bundles | on |
 | `channel` | publish the `:latest` channel as the nightly does — every matrix pruned to images whose inputs changed | off (the named scope builds) |
