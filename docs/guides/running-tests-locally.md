@@ -167,20 +167,18 @@ Rule of thumb: `--test-threads = VM_GB / 4` (each replay stack uses ~4 GB peak).
 One-time. Runs a real task with a real model, saves the trajectory as a fixture.
 
 ```bash
-# Record one combination — uses the shared `output` named volume from
-# containers/compose/services.yaml (the runner writes to /output inside the container).
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
+# Record one combination — the run writes to
+# <EVAL_OUTPUT_DIR>/<benchmark>/<agent>/<model>/<run-id>/<task>/ on the host.
+EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_RUN_ID=dev \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
-# The output lives in the named volume, not on the host filesystem.
-# Extract via a one-shot alpine container that mounts it read-only.
-docker run --rm -v aime_output:/output:ro alpine \
-  cat /output/traces.jsonl > tests/run/replay/fixtures/aime-0-codex.traces.jsonl
+# The output is on the host, under output/<benchmark>/<agent>/<model>/<run-id>/<task>/.
+cp output/aime/codex/*/*/0/model/traces.jsonl tests/run/replay/fixtures/aime-0-codex.traces.jsonl
 ```
 
-The volume name follows `<benchmark>_output` (compose project + the `output` declared in `containers/compose/services.yaml`). Sanity-check the result:
+Sanity-check the result:
 ```bash
-docker run --rm -v aime_output:/output:ro alpine cat /output/task/result.json
+cat output/aime/codex/*/*/0/task/result.json
 ```
 
 Use `gpt-5.4` — the cheap-but-capable default. One fixture per combination forever.
@@ -223,11 +221,11 @@ cargo test --test check structural_validation
 docker build -t local/aime containers/benchmarks/aime/
 
 # 3. Run one task with a real model
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
+EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_RUN_ID=dev \
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
-# 4. Check the output — it lives in the `aime_output` named volume, not on the host.
-docker run --rm -v aime_output:/output:ro alpine cat /output/task/result.json
+# 4. Check the output — output/<benchmark>/<agent>/<model>/<run-id>/<task>/ on the host.
+cat output/aime/codex/openai/gpt-5.4/dev/0/task/result.json
 ```
 
 **Before pushing a PR:**

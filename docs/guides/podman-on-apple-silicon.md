@@ -218,19 +218,20 @@ docker buildx bake -f containers/docker-bake.hcl \
   -f containers/benchmarks/<name>/docker-bake.hcl <name> --load
 
 # 3. Run one task — needs OPENAI_API_KEY + OPENAI_API_BASE in .env
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
+EVAL_BENCHMARK=<name> EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_RUN_ID=dev \
   docker compose -f containers/benchmarks/<name>/compose.yaml up --abort-on-container-exit
 
-# 4. Extract the trajectory from the named volume (NOT a host path)
-docker run --rm -v <name>_output:/output:ro alpine \
-  cat /output/traces.jsonl > tests/run/replay/fixtures/<name>-0-codex.traces.jsonl
+# 4. Take the trajectory from the run's own directory on the host
+cp output/<name>/codex/openai--gpt-5.4/dev/0/model/traces.jsonl \
+  tests/run/replay/fixtures/<name>-0-codex.traces.jsonl
 
 # 5. Register the fixture in tests/run/replay/test.rs (replay_test! macro) and ship
 ```
 
-The named volume is the gotcha — `find output/` returns nothing because compose
-mounts `output:/output` (declared in `compose/services.yaml`), not a bind
-mount. Use `docker run -v <name>_output:/output:ro` to read it.
+A run writes to `<EVAL_OUTPUT_DIR>/<benchmark>/<agent>/<model>/<run-id>/<task>/`
+on the host, so the trajectory is a `cp` away. The model segment is the handle
+as a path — the CLI slugs it (`openai--gpt-5.4`); a plain `docker compose` run
+has no slug to use, so `openai/gpt-5.4` arrives as two directories.
 
 ### BuildKit garbage collection
 

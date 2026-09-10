@@ -8,7 +8,7 @@
 #
 # Writes:
 #   /output/task/result.json    task_id, benchmark, reward, passed
-#   /output/agent/result.json   agent, started_at, ended_at, exit_code
+#   /output/agent/result.json   agent, started_at, ended_at, exit_code, error
 #   /output/model/result.json   model
 #   /output/agent/launch.json   what the run was launched with (EVAL_LAUNCH)
 set -euo pipefail
@@ -31,8 +31,18 @@ printf '{"task_id":"%s","benchmark":"%s","reward":%s,"passed":%s}\n' \
   "${TASK_ID:-unknown}" "${BENCHMARK:-unknown}" "$REWARD" "$PASSED" \
   > /output/task/result.json
 
-printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s}\n' \
-  "${AGENT:-unknown}" "$STARTED_AT" "$ENDED_AT" "$EXIT_CODE" \
+# An attempt the framework ended — its own timeout, a crash, or an agent that
+# never ran — is errored (.agents/output/RULES.md 17): recorded here, retried on
+# the next run of this directory, never counted as a score.
+case "$EXIT_CODE" in
+  0)    ERROR=null ;;
+  null) ERROR='"agent did not run"' ;;
+  124)  ERROR='"timeout"' ;;
+  *)    ERROR="\"agent exited $EXIT_CODE\"" ;;
+esac
+
+printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s,"error":%s}\n' \
+  "${AGENT:-unknown}" "$STARTED_AT" "$ENDED_AT" "$EXIT_CODE" "$ERROR" \
   > /output/agent/result.json
 
 printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
@@ -42,3 +52,19 @@ printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
 # record". Already JSON — the chart built it with toJson — so it is copied, not
 # re-quoted.
 printf '%s\n' "${EVAL_LAUNCH:-[]}" > /output/agent/launch.json
+
+# The attempt is over: release the directory so the next run can claim it.
+rm -f /output/agent/.lock
+
+# An errored attempt is recorded, not signalled through the exit code. The exit
+# code is the ORCHESTRATOR's input, and it reads it as "this pod could not do its
+# job": on an Indexed Job with the chart's `backoffLimit: 0`, one non-zero pod
+# marks the Job failed and the controller stops creating the rest — one timed-out
+# task would end the whole dataset run (rule 33 keeps going). So a pipeline that
+# ran to a recorded result exits 0 whatever the reward or the error, and a
+# non-zero exit stays what it should mean: no result was produced at all. Who
+# reports the failure is whoever spans the tasks — the CLI for a run it drives
+# (rules 34–35), the aggregation for a fleet of them (rule 36).
+if [ "$ERROR" != null ]; then
+  echo "write-result: attempt errored ($ERROR) — recorded; rerun this run id to retry it" >&2
+fi

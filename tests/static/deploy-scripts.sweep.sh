@@ -62,11 +62,11 @@ if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "
   # on purpose: label values forbid `/` and cap at 63 chars, so the path is the
   # only place that can carry a whole handle, and fetch.sh reads the Job's own
   # subPath rather than rebuilding one from the label.
-  grep -qE "subPath: runs/aime/codex/$SLUG/" <<<"$out" \
+  grep -qE "subPath(Expr)?: runs/aime/codex/$SLUG/" <<<"$out" \
     || bad "oc: the output subPath is not keyed by the model slug"
   grep -qE "^ *model: \"gpt-5-mini\"" <<<"$out" \
     || bad "oc: the Job's model label is no longer the agent-facing short name"
-  grep -qE "subPath: runs/aime/codex/$GATEWAY/" <<<"$out" \
+  grep -qE "subPath(Expr)?: runs/aime/codex/$GATEWAY/" <<<"$out" \
     && bad "oc: the output subPath is keyed by the gateway image"
 else
   echo "FAIL oc: --dry-run render failed:"; printf '%s\n' "$out" | sed 's/^/  /'; fail=$((fail + 1))

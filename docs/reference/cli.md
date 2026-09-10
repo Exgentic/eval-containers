@@ -55,6 +55,9 @@ overrides the env var.
 | `--litellm-version <v>` | `EVAL_LITELLM_VERSION` | LiteLLM version inside the image |
 | `--timeout <secs>` | `EVAL_TIMEOUT` | default `300` |
 | `--max-budget <usd>` | `EVAL_MODEL_MAX_BUDGET` | hard spend cap; default `$1` |
+| `--output-dir <dir>` | `EVAL_OUTPUT_DIR` | output root; results at `<dir>/<benchmark>/<agent>/<model>/<run-id>/<task>/`; default `./output` (`job`: `runs`) |
+| `--run-id <id>` | `EVAL_RUN_ID` | name of the run; rerunning an id skips complete tasks and retries failed ones; default: a fresh id |
+| `--force` | `EVAL_FORCE` | rerun even a complete task, emptying its directory first |
 | `--local` | — | use in-repo `containers/benchmarks/<name>/` instead of the registry |
 | `--dry-run` | — | print/validate without deploying (`job`: `kubectl --dry-run=server`) |
 | `-n, --namespace <ns>` | — | `job` mode only; `kubectl -n` |

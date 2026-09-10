@@ -22,7 +22,7 @@ C="$ROOT/containers/benchmarks/aime/compose.yaml"
 fail=0
 
 # 1. GENERIC (default gateway) + a <provider>/<model> handle.
-if out=$(OPENAI_API_KEY=x OPENAI_API_BASE=x EVAL_MODEL=openai/gpt-5.4 \
+if out=$(OPENAI_API_KEY=x OPENAI_API_BASE=x EVAL_BENCHMARK=aime EVAL_RUN_ID=r EVAL_MODEL=openai/gpt-5.4 \
           docker compose --env-file /dev/null -f "$C" config 2>&1); then
   grep -qE 'image:.*/models/bifrost:' <<<"$out" \
     || { echo "FAIL generic: default gateway is not models/bifrost"; fail=$((fail + 1)); }
@@ -33,7 +33,7 @@ else
 fi
 
 # 2. PINNED per-model image, NO EVAL_MODEL — must still load (the model is baked).
-if out=$(OPENAI_API_KEY=x OPENAI_API_BASE=x EVAL_GATEWAY=gpt-5.4 \
+if out=$(OPENAI_API_KEY=x OPENAI_API_BASE=x EVAL_BENCHMARK=aime EVAL_RUN_ID=r EVAL_GATEWAY=gpt-5.4 \
           docker compose --env-file /dev/null -f "$C" config 2>&1); then
   grep -qE 'image:.*/models/gpt-5\.4:' <<<"$out" \
     || { echo "FAIL pinned: gateway is not the pinned models/gpt-5.4"; fail=$((fail + 1)); }
@@ -45,7 +45,7 @@ fi
 # 3. The GATEWAY axis is selected independently of the model, tag included
 #    (gateways/RULES.md rule 2c). Before it had its own selector the tag was
 #    silently ignored here — compose pinned the gateway to `:latest`.
-if out=$(OPENAI_API_KEY=x OPENAI_API_BASE=x EVAL_MODEL=openai/gpt-5.4 \
+if out=$(OPENAI_API_KEY=x OPENAI_API_BASE=x EVAL_BENCHMARK=aime EVAL_RUN_ID=r EVAL_MODEL=openai/gpt-5.4 \
           EVAL_GATEWAY=litellm EVAL_GATEWAY_TAG=v-test \
           docker compose --env-file /dev/null -f "$C" config 2>&1); then
   grep -qE 'image:.*/models/litellm:v-test' <<<"$out" \

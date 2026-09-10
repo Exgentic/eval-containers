@@ -34,6 +34,18 @@ shopt -u nullglob
 fail=0
 for f in "${files[@]}"; do
   name=$(basename "$(dirname "$f")")
+  # Interpolated too: `--no-interpolate` skips validation that needs resolved
+  # values, and an undefined volume is exactly that — webarena and
+  # visualwebarena kept a `- output:/output` after the shared volume went away
+  # and this sweep stayed green on both. Dummy values; we validate STRUCTURE.
+  if ! vol=$(EVAL_BENCHMARK="$name" EVAL_MODEL=probe/model EVAL_RUN_ID=probe EVAL_TASK_ID=0 \
+             OPENAI_API_KEY=probe OPENAI_API_BASE=probe \
+             docker compose -f "$f" config 2>&1); then
+    echo "FAIL $name: docker compose config (interpolated) failed:"
+    printf '%s\n' "$vol" | sed 's/^/  /'
+    fail=$((fail + 1))
+    continue
+  fi
   if ! out=$(docker compose -f "$f" config --no-interpolate 2>&1); then
     echo "FAIL $name: docker compose config failed:"
     printf '%s\n' "$out" | sed 's/^/  /'

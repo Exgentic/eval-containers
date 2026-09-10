@@ -53,7 +53,7 @@ echo "$(read_file "$RESULT/agent/stderr.log")" | grep -q "Reconnecting\.\.\. 5/5
   && fail "agent exhausted gateway retries (LLM call failed)" \
   || pass "agent reached the gateway"
 
-if echo "$(read_file "$RESULT/traces.jsonl")$(read_file "$RESULT/traces.json")" | grep -q '"gen_ai'; then
+if read_file "$RESULT/model/traces.jsonl" | grep -q '"gen_ai'; then
   pass "OTel gen_ai spans present"
 else
   echo "[test] WARN: no gen_ai spans (LLM call still confirmed by clean agent exit)"

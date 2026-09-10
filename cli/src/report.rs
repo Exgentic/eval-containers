@@ -23,10 +23,9 @@ struct TaskResult {
 }
 
 #[derive(Deserialize, Debug)]
-#[allow(dead_code)]
 struct AgentResult {
     agent: Option<String>,
-    exit_code: Option<i32>,
+    error: Option<String>,
 }
 
 #[derive(Deserialize, Debug)]
@@ -37,6 +36,8 @@ struct ModelResult {
 }
 
 struct EvalResult {
+    /// Where it is, so a failed one can be named (output/RULES.md rule 35).
+    dir: PathBuf,
     task: Option<TaskResult>,
     agent: Option<AgentResult>,
     model: Option<ModelResult>,
@@ -63,13 +64,19 @@ pub fn execute(args: ReportArgs) -> Result<(), String> {
     Ok(())
 }
 
-/// Walk the output directory to find all evaluation results.
-/// Supports layouts:
-///   ./output/task/result.json                           (single eval)
-///   ./output/<benchmark>/<task-id>/task/result.json     (multiple evals)
+/// Walk the output root for task directories —
+/// `<root>/<benchmark>/<agent>/<model>/<run-id>/<task-id>/` (output/RULES.md
+/// rule 11), a task directory being any dir holding `task/`, `agent/` or
+/// `model/`. All three, so a task whose runner never started — in k8s the
+/// collector is an init sidecar and mints `model/` on its own — is counted as
+/// failed rather than being invisible (rules 33–36).
+///
+/// The depth allows one level more than the layout: a run launched with plain
+/// compose rather than the CLI has no slug to name the model with, so a handle
+/// like `openai/gpt-5.4` arrives as two segments.
 fn find_results(dir: &Path) -> Vec<EvalResult> {
     let mut results = Vec::new();
-    walk_for_results(dir, &mut results, 3);
+    walk_for_results(dir, &mut results, 7);
     results
 }
 
@@ -78,8 +85,10 @@ fn walk_for_results(dir: &Path, results: &mut Vec<EvalResult>, depth: u32) {
         return;
     }
 
-    // If this directory contains task/result.json, it's an eval result
-    if dir.join("task/result.json").exists() {
+    if ["task", "agent", "model"]
+        .iter()
+        .any(|d| dir.join(d).is_dir())
+    {
         results.push(load_eval(dir));
         return;
     }
@@ -100,6 +109,7 @@ fn walk_for_results(dir: &Path, results: &mut Vec<EvalResult>, depth: u32) {
 
 fn load_eval(dir: &Path) -> EvalResult {
     EvalResult {
+        dir: dir.to_path_buf(),
         task: read_json(dir.join("task/result.json")),
         agent: read_json(dir.join("agent/result.json")),
         model: read_json(dir.join("model/result.json")),
@@ -107,14 +117,60 @@ fn load_eval(dir: &Path) -> EvalResult {
     }
 }
 
-/// True if the run dir has a traces file (.jsonl or .json) with at least one
-/// gen_ai (LLM) span. Substring check — no full OTel parse needed.
+/// True if the task dir's traces hold at least one gen_ai (LLM) span.
+/// Substring check — no full OTel parse needed.
 fn has_gen_ai_traces(dir: &Path) -> bool {
-    ["traces.jsonl", "traces.json"].iter().any(|name| {
-        fs::read_to_string(dir.join(name))
-            .map(|c| c.contains("gen_ai"))
-            .unwrap_or(false)
-    })
+    fs::read_to_string(dir.join("model/traces.jsonl"))
+        .map(|c| c.contains("gen_ai"))
+        .unwrap_or(false)
+}
+
+/// A failed task directory — errored or incomplete — is never a score
+/// (output/RULES.md rule 36). Complete is what the launcher and the CLI also
+/// require: a graded result AND the runner's own record saying it did not
+/// error. A directory missing either was never a finished attempt, whatever
+/// `task/result.json` says.
+fn failure(r: &EvalResult) -> Option<&str> {
+    match (&r.task, &r.agent) {
+        (None, _) => Some("incomplete"),
+        (_, None) => Some("no runner record"),
+        (_, Some(a)) => a.error.as_deref(),
+    }
+}
+
+/// What an aggregation reports over an output root. A failed task directory —
+/// errored or incomplete — counts as failed and contributes no reward
+/// (output/RULES.md rule 36), so `scored` is the denominator, never the row count.
+#[derive(Default, Debug, PartialEq)]
+struct Totals {
+    scored: usize,
+    failed: usize,
+    passed: usize,
+    reward: f64,
+    tokens: u64,
+    cost: f64,
+    no_traces: usize,
+}
+
+fn totals(results: &[EvalResult]) -> Totals {
+    let mut t = Totals::default();
+    for r in results {
+        t.tokens += r.model.as_ref().and_then(|m| m.total_tokens).unwrap_or(0);
+        t.cost += r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
+        if !r.traces_ok {
+            t.no_traces += 1;
+        }
+        if failure(r).is_some() {
+            t.failed += 1;
+            continue;
+        }
+        t.scored += 1;
+        t.reward += r.task.as_ref().and_then(|x| x.reward).unwrap_or(0.0);
+        if r.task.as_ref().and_then(|x| x.passed).unwrap_or(false) {
+            t.passed += 1;
+        }
+    }
+    t
 }
 
 fn print_table(results: &[EvalResult]) {
@@ -124,12 +180,7 @@ fn print_table(results: &[EvalResult]) {
     );
     println!("{}", "-".repeat(140));
 
-    let mut total_reward = 0.0;
-    let mut total_passed = 0;
-    let mut total_tokens: u64 = 0;
-    let mut total_cost = 0.0;
-    let mut total_no_traces = 0;
-    let count = results.len();
+    let t = totals(results);
 
     for r in results {
         let task_id = r
@@ -157,17 +208,11 @@ fn print_table(results: &[EvalResult]) {
         let tokens = r.model.as_ref().and_then(|m| m.total_tokens).unwrap_or(0);
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
-        total_reward += reward;
-        if passed {
-            total_passed += 1;
-        }
-        total_tokens += tokens;
-        total_cost += cost;
-        if !r.traces_ok {
-            total_no_traces += 1;
-        }
-
-        let pass_str = if passed { "PASS" } else { "FAIL" };
+        let pass_str = match (failure(r), passed) {
+            (Some(_), _) => "ERROR",
+            (None, true) => "PASS",
+            (None, false) => "FAIL",
+        };
         let cost_str = format!("${cost:.3}");
         let traces_str = if r.traces_ok { "OK" } else { "NONE" };
         println!(
@@ -175,34 +220,37 @@ fn print_table(results: &[EvalResult]) {
         );
     }
 
+    for r in results.iter().filter(|r| failure(r).is_some()) {
+        println!("  failed: {}", r.dir.display());
+    }
     println!("{}", "-".repeat(140));
-    let avg_reward = if count > 0 {
-        total_reward / count as f64
+    let avg_reward = if t.scored > 0 {
+        t.reward / t.scored as f64
     } else {
         0.0
     };
-    let traces_summary = if total_no_traces == 0 {
+    let traces_summary = if t.no_traces == 0 {
         "all OK".to_string()
     } else {
-        format!("{total_no_traces} NONE")
+        format!("{} NONE", t.no_traces)
     };
     println!(
         "{:<20} {:<30} {:<15} {:<30} {:<8.2} {}/{:<4} {:<10} {:<10} {}",
         "TOTAL",
-        format!("{count} tasks"),
+        format!("{} tasks, {} failed", t.scored, t.failed),
         "",
         "",
         avg_reward,
-        total_passed,
-        count,
-        total_tokens,
-        format!("${total_cost:.3}"),
+        t.passed,
+        t.scored,
+        t.tokens,
+        format!("${:.3}", t.cost),
         traces_summary
     );
 }
 
 fn print_csv(results: &[EvalResult]) {
-    println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd,traces_ok");
+    println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd,traces_ok,error");
     for r in results {
         let task_id = r
             .task
@@ -230,8 +278,9 @@ fn print_csv(results: &[EvalResult]) {
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
         println!(
-            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost},{traces_ok}",
-            traces_ok = r.traces_ok
+            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost},{traces_ok},{error}",
+            traces_ok = r.traces_ok,
+            error = failure(r).unwrap_or("")
         );
     }
 }
@@ -266,8 +315,9 @@ fn print_json(results: &[EvalResult]) {
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
         let comma = if i < results.len() - 1 { "," } else { "" };
+        let error = failure(r).map_or("null".to_string(), |e| format!("{e:?}"));
         println!(
-            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost},\"traces_ok\":{traces_ok}}}{comma}",
+            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost},\"traces_ok\":{traces_ok},\"error\":{error}}}{comma}",
             traces_ok = r.traces_ok
         );
     }
@@ -277,4 +327,85 @@ fn print_json(results: &[EvalResult]) {
 fn read_json<T: serde::de::DeserializeOwned>(path: PathBuf) -> Option<T> {
     let content = fs::read_to_string(&path).ok()?;
     serde_json::from_str(&content).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Write one task directory in the layout of rule 11.
+    fn task(root: &Path, id: &str, result: Option<&str>, agent: Option<&str>) {
+        let d = root.join("aime/codex/openai--gpt-5.4/r1").join(id);
+        fs::create_dir_all(d.join("task")).unwrap();
+        fs::create_dir_all(d.join("agent")).unwrap();
+        if let Some(r) = result {
+            fs::write(d.join("task/result.json"), r).unwrap();
+        }
+        if let Some(a) = agent {
+            fs::write(d.join("agent/result.json"), a).unwrap();
+        }
+    }
+
+    /// A failed task directory is counted as failed and never as a reward
+    /// (output/RULES.md rule 36) — the two ways a task fails are an attempt the
+    /// runner recorded as errored, and one that never reached grading at all.
+    /// The mean is over what was scored, so an infrastructure failure cannot
+    /// drag a benchmark's number down as if it were a wrong answer.
+    #[test]
+    fn an_aggregation_never_scores_a_failed_task_directory() {
+        let root = std::env::temp_dir().join(format!("eval-report-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        task(
+            &root,
+            "0",
+            Some(r#"{"reward":1.0,"passed":true}"#),
+            Some(r#"{"agent":"codex","error":null}"#),
+        );
+        task(
+            &root,
+            "1",
+            Some(r#"{"reward":0.0,"passed":false}"#),
+            Some(r#"{"agent":"codex","error":"timeout"}"#),
+        );
+        task(&root, "2", None, None);
+
+        let results = find_results(&root);
+        assert_eq!(
+            results.len(),
+            3,
+            "a failed task directory must still be found — invisible is worse than failed"
+        );
+        let t = totals(&results);
+        assert_eq!(
+            t,
+            Totals {
+                scored: 1,
+                failed: 2,
+                passed: 1,
+                reward: 1.0,
+                tokens: 0,
+                cost: 0.0,
+                no_traces: 3,
+            }
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The graded zero of a clean run is a result, not a failure: only an
+    /// errored attempt or a missing result is failed.
+    #[test]
+    fn a_clean_zero_is_scored_and_an_errored_one_is_not() {
+        let root = std::env::temp_dir().join(format!("eval-report-zero-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        task(
+            &root,
+            "0",
+            Some(r#"{"reward":0.0,"passed":false}"#),
+            Some(r#"{"agent":"codex","error":null}"#),
+        );
+        let results = find_results(&root);
+        assert!(failure(&results[0]).is_none());
+        assert_eq!(totals(&results).scored, 1);
+        let _ = fs::remove_dir_all(&root);
+    }
 }

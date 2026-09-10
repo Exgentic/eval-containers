@@ -42,7 +42,10 @@ services:
       --listen-port 8080
       --set hardump=/output/network.har
     volumes:
-      - output:/output
+      - type: bind
+        source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-${EVAL_MODEL}}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}/task
+        target: /output
+        bind: { create_host_path: true }
     networks:
       - internal
       - upstream

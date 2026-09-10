@@ -302,11 +302,27 @@ jobs:
             bases="$bases otel"
           fi
           export EVAL_BASES_OVERRIDE="$bases"
+          # …plus the output lifecycle on the cheapest lean fixture: a rerun of a
+          # run id is skipped, EVAL_FORCE runs it again (output/RULES.md 26–29).
           cargo test -p eval-containers-tests-run --test replay \
-            -- --ignored --nocapture --test-threads=1 replay_fullstack_bigcodebench_0_zerostack \
+            -- --ignored --nocapture --test-threads=1 \
+            replay_fullstack_bigcodebench_0_zerostack rerun_is_skipped_and_force_reruns \
             | tee replay.log
-          if grep -qE "running 0 tests" replay.log; then
-            echo "::error::ran 0 tests — no 'replay_fullstack_bigcodebench_0_zerostack' fixture matched"; exit 1
+          if ! grep -qE "running 2 tests" replay.log; then
+            echo "::error::expected the full-stack fixture and the rerun test to run"; exit 1
+          fi
+
+      # The launcher's output lifecycle (skip, retry, force, refuse) on the one
+      # agent that answers without a model — six seconds a case, no fixture.
+      - name: Output lifecycle
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -eo pipefail
+          cargo test -p eval-containers-tests-run --test lifecycle \
+            -- --ignored --nocapture | tee lifecycle.log
+          if grep -qE "running 0 tests" lifecycle.log; then
+            echo "::error::the output-lifecycle test did not run"; exit 1
           fi
 
       # Standalone bundle: the single-container path (core/standalone.Dockerfile

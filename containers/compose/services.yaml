@@ -1,15 +1,24 @@
 # Shared compose topology that per-benchmark `compose.yaml` files pull in
 # verbatim with `include:` — the parts no benchmark overrides: the `otelcol`
-# and `gateway` services, the `internal`/`upstream` networks, and the `output`
-# volume. The `runner` service is NOT here: every benchmark must override its
+# and `gateway` services and the `internal`/`upstream` networks. The `runner`
+# service is NOT here: every benchmark must override its
 # image and `BENCHMARK` env, and Compose forbids overriding an `include:`d
 # service, so the runner template lives in `runner.yaml` and is pulled via
 # `extends:` instead. See `.agents/compose/RULES.md` rule 8.
 services:
   otelcol:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/otel:latest
+    # This task's directory on the host is
+    # <EVAL_OUTPUT_DIR>/<benchmark>/<agent>/<model slug>/<run id>/<task>
+    # (.agents/output/RULES.md rule 11); otelcol writes its traces.jsonl into
+    # its model/ half. The same path is spelled in runner.yaml, which mounts
+    # the whole directory. EVAL_RUN_ID names the run (a rerun of an id resumes
+    # it); EVAL_MODEL_SLUG is the handle with `/` as `--` (the CLI sets it).
     volumes:
-      - output:/output
+      - type: bind
+        source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-${EVAL_MODEL}}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}/model
+        target: /output/model
+        bind: { create_host_path: true }
     # Probe otelcol's health_check endpoint (:13133) so the gateway can gate on
     # `service_healthy` below. Same per-orchestrator pattern as the gateway's
     # /opt/gateway/health check. Image is alpine-based, so busybox wget exists.
@@ -37,7 +46,7 @@ services:
       # Both gateway flavors emit OTel: bifrost via its native `otel`
       # plugin (collector_url derived from this in /opt/gateway/start),
       # litellm via the `otel` callback in config.yaml.template (reads
-      # this env var directly). Spans land in /output/traces.jsonl via
+      # this env var directly). Spans land in /output/model/traces.jsonl via
       # the otelcol sidecar's file exporter.
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
     healthcheck:
@@ -66,6 +75,3 @@ networks:
   internal:
     internal: true
   upstream: {}
-
-volumes:
-  output:

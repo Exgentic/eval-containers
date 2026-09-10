@@ -60,8 +60,68 @@ fi
 # Defensive fallback (agent uid baked into image at build time).
 id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
 
-# Output dirs.
+# ─── Output lifecycle (.agents/output/RULES.md) ──────────────────────
+# /output is this task's directory. The launcher's own records live in agent/:
+# config.env (rule 16), .lock (rule 32) and result.json's `error` (rule 17).
 mkdir -p /output/{model,agent,task} /logs/verifier
+# One awk, not two greps: with `pipefail` a grep that matches nothing fails the
+# whole assignment, and a run launched with no EVAL_* at all is empty, not broken.
+config=$(env | awk '/^EVAL_/ && !/^EVAL_(OUTPUT_DIR|RUN_ID|FORCE)=/' | LC_ALL=C sort)
+if [ -f /output/agent/config.env ] && [ "$config" != "$(cat /output/agent/config.env)" ]; then
+  echo "run: /output holds a run with a different configuration — use a new EVAL_RUN_ID (rule 23):" >&2
+  diff /output/agent/config.env <(printf '%s\n' "$config") >&2 || true
+  exit 3
+fi
+complete=false
+if [ -s /output/task/result.json ] && [ -f /output/agent/result.json ] \
+   && grep -q '"error":null' /output/agent/result.json; then
+  complete=true
+fi
+case "${EVAL_FORCE:-}" in ''|0|false|no) force=false ;; *) force=true ;; esac
+if [ "$complete" = true ] && [ "$force" = false ]; then
+  echo "run: complete, not rerun (rule 26): $(cat /output/task/result.json)"
+  exit 0
+fi
+
+# Claim the directory before touching anything in it (rule 32). `set -C` makes
+# the create O_EXCL, so two launchers racing for a free directory cannot both
+# win. The claim names its holder, because taking over a dead one cannot be
+# atomic on its own: two launchers that both find the same dead claim would both
+# remove it and both proceed. Whoever's name is in the file afterwards holds it.
+me="${HOSTNAME:-unknown}-$$"
+claim() { (set -C; printf '%s\n' "$me" > /output/agent/.lock) 2>/dev/null; }
+if ! claim; then
+  if [ -n "$(find /output/agent -maxdepth 1 -name .lock -mmin -2)" ]; then
+    echo "run: another attempt is in progress in /output — agent/.lock touched under 2 min ago (rule 32)" >&2
+    exit 3
+  fi
+  rm -f /output/agent/.lock
+  claim || true   # losing the create is fine; the read-back below is the verdict
+  if [ "$(cat /output/agent/.lock)" != "$me" ]; then
+    echo "run: lost the race to take over a dead claim in /output (rule 32)" >&2
+    exit 3
+  fi
+fi
+# Release the claim whenever this shell exits, or a launcher that dies before the
+# pipeline starts (an edge that never came up) would refuse its own next attempt.
+# The three phases `exec` past this trap on purpose: from there the claim is
+# write-result's to release, and a container killed outright leaves one that
+# nothing refreshes, so it goes stale on its own.
+trap 'rm -f /output/agent/.lock' EXIT
+# The heartbeat outlives this shell (the three phases `exec` past the trap), so
+# it stops the moment the claim it refreshes is gone — otherwise write-result
+# releases the claim and the next tick puts it straight back, and a pod the
+# kubelet restarts within the stale window is refused by its own leftovers.
+( while [ -f /output/agent/.lock ]; do sleep 30; touch /output/agent/.lock 2>/dev/null || exit 0; done ) &
+
+# Failed or forced: empty the previous attempt (rules 28–30), keeping this
+# attempt's own claim. otelcol holds model/traces.jsonl open, so that one is
+# truncated rather than unlinked.
+find /output -mindepth 1 -maxdepth 1 ! -name model ! -name agent ! -name task -delete
+find /output/{model,agent,task} -mindepth 1 \
+  ! -path /output/model/traces.jsonl ! -name .lock -delete
+if [ -f /output/model/traces.jsonl ]; then : > /output/model/traces.jsonl; fi
+printf '%s\n' "$config" > /output/agent/config.env
 chown -R agent:agent /output/agent /tmp 2>/dev/null || true
 chmod 0755 /output /output/agent /output/task /output/model
 
