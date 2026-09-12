@@ -22,10 +22,22 @@ timeout: '1800'
 # sourced script's `return 1` is otherwise swallowed and the harness would carry
 # on against the gateway — an unrecorded run that still scores. Fail loudly
 # instead; the pod's own restart/backoff surfaces it.
+#
+# There is no separate agent phase here, so run-agent never runs and nothing
+# writes /output/agent/.exit-code (rule 16) — write-result then coerces it to
+# JSON null, and a task killed at the wall clock is indistinguishable from one
+# that never started. Bound the harness the way run-agent bounds an agent
+# (`timeout -k 30 $TIMEOUT`, rule 14) and record its status, so a timeout lands
+# as 124 rather than as nothing. The inner bound must fire BEFORE the pod's
+# activeDeadlineSeconds (timeout + deadlineGrace), which SIGKILLs the whole pod
+# and leaves no shell alive to record anything. The edge starter is deliberately
+# OUTSIDE that bound: it is framework setup, not the harness, and a bring-up
+# failure must fail the task rather than eat into its budget.
 runnerArgs: >-
   . /usr/local/bin/start-edge || exit 1;
   /eval-materialize-task || true;
-  python3 /app/run_automationbench.py || true;
+  timeout -k 30 "${TIMEOUT:-1800}" python3 /app/run_automationbench.py;
+  printf '%s' "$?" > /output/agent/.exit-code;
   /usr/local/bin/write-result;
   /usr/local/bin/reap-sidecars
 resources:

@@ -20,9 +20,11 @@ services:
     # step runs regardless of the previous one's status — write-result grades
     # whatever was produced, fail-closed to 0 (mirrors /usr/local/bin/run).
     # There is no separate agent phase here, so run-agent never writes
-    # /output/agent/.exit-code (rule 16) — capture the harness's own exit
-    # status into it instead, so agent/result.json's exit_code reflects the
-    # program that actually ran rather than staying permanently null.
+    # /output/agent/.exit-code (rule 16) — bound the harness the way run-agent
+    # bounds an agent (`timeout -k 30 $TIMEOUT`, rule 14) and capture its exit
+    # status into that file, so agent/result.json's exit_code reflects the
+    # program that actually ran rather than staying permanently null, and a
+    # wall-clock kill lands as 124 rather than as nothing.
     #
     # `. /usr/local/bin/start-edge` FIRST and unconditionally: overriding the
     # entrypoint also skips the edge bring-up that lives inside
@@ -31,11 +33,13 @@ services:
     # 10 — #558). Sourced, so its repointed OPENAI_BASE_URL (:4100) reaches the
     # harness. `|| exit 1`, not `|| true`: there is no `set -e` here, so a
     # sourced script's `return 1` is otherwise swallowed and an unrecorded run
-    # would still score.
+    # would still score. It sits OUTSIDE the `timeout` bound: it is framework
+    # setup, not the harness, and a bring-up failure must fail the task rather
+    # than eat into its budget.
     entrypoint:
       - bash
       - -c
-      - ". /usr/local/bin/start-edge || exit 1; /eval-materialize-task || true; python3 /app/run_automationbench.py; echo $? > /output/agent/.exit-code; /usr/local/bin/write-result"
+      - '. /usr/local/bin/start-edge || exit 1; /eval-materialize-task || true; timeout -k 30 "${TIMEOUT:-1800}" python3 /app/run_automationbench.py; printf %s "$?" > /output/agent/.exit-code; /usr/local/bin/write-result'
     environment:
       BENCHMARK: automationbench
       # NOT what the harness reads: start-edge overwrites OPENAI_BASE_URL with

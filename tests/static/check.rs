@@ -1571,3 +1571,82 @@ fn a_dispatch_runs_in_its_own_lane() {
          and evicts other pending dispatches"
     );
 }
+
+/// Rule 16 requires `agent/result.json` to carry an `exit_code`, and rule 24
+/// requires every surface to produce byte-equivalent results for the same
+/// inputs. Only `run-agent` writes `/output/agent/.exit-code`, so a benchmark
+/// whose preset replaces the standard three-phase pipeline with its own harness
+/// (`runnerArgs`) must record the status itself — otherwise `write-result`
+/// coerces it to JSON null and every task of that benchmark reports an
+/// unrecorded exit status for the rest of time.
+///
+/// automationbench shipped exactly that gap on the k8s surface while its compose
+/// twin recorded the code, so the two surfaces disagreed (a rule 24b lockstep
+/// violation) and a wall-clock kill was indistinguishable from a task that never
+/// started. Rule 29's per-surface checks cannot catch it: each surface renders
+/// fine on its own, and the drift lives in the one per-benchmark command a
+/// preset is still allowed to define.
+#[test]
+fn a_preset_that_replaces_the_agent_phase_records_its_exit_status() {
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    let mut checked = 0;
+    for entry in fs::read_dir(&presets).expect("read presets dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+            continue;
+        }
+        let body = fs::read_to_string(&path).expect("read preset");
+        // Only presets that take over the runner command bypass run-agent.
+        if !body.contains("runnerArgs:") {
+            continue;
+        }
+        let name = path.file_stem().unwrap().to_string_lossy().to_string();
+        // Either record the status into the file write-result reads, or hand the
+        // harness's own status back as the container's (tau-bench's `exit $rc`),
+        // which keeps the Job's outcome honest.
+        let records = body.contains("/output/agent/.exit-code") || body.contains("exit $rc");
+        assert!(
+            records,
+            "preset {name}.yaml overrides runnerArgs (so run-agent never writes \
+             /output/agent/.exit-code) but never records an exit status — \
+             write-result will coerce agent/result.json exit_code to null and a \
+             timeout becomes indistinguishable from a task that never ran \
+             (rules 16, 24)"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 0,
+        "expected at least one preset defining runnerArgs"
+    );
+    eprintln!("✓ {checked} runnerArgs preset(s) record an exit status (rules 16, 24)");
+}
+
+/// Rule 14: agent execution MUST be bounded by `EVAL_TIMEOUT`. `run-agent`
+/// enforces it with `timeout -k 30 $TIMEOUT`; a preset that runs its own harness
+/// instead of `run-agent` must enforce it too. Without an inner bound the only
+/// limit left is the pod's `activeDeadlineSeconds` (timeout + deadlineGrace),
+/// which SIGKILLs the whole pod — so nothing survives to write `.exit-code`, and
+/// the recorded-status guarantee above silently stops holding at the wall clock.
+#[test]
+fn a_preset_that_replaces_the_agent_phase_bounds_its_harness() {
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    for entry in fs::read_dir(&presets).expect("read presets dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+            continue;
+        }
+        let body = fs::read_to_string(&path).expect("read preset");
+        if !body.contains("/output/agent/.exit-code") {
+            continue; // covered by the sibling test, or defers to run-agent
+        }
+        let name = path.file_stem().unwrap().to_string_lossy().to_string();
+        assert!(
+            body.contains("timeout -k"),
+            "preset {name}.yaml records its own exit status but never bounds the \
+             harness with `timeout -k … $TIMEOUT` (rule 14) — the pod's \
+             activeDeadlineSeconds SIGKILL would then be the only limit, and it \
+             leaves no shell alive to record 124"
+        );
+    }
+}
