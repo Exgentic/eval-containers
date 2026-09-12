@@ -1,5 +1,22 @@
 timeout: '1800'
-runnerArgs: python3 /app/agent.py; rc=$?; /usr/local/bin/reap-sidecars; exit $rc
+# `. /usr/local/bin/start-edge` FIRST: replacing `run` also skips the edge
+# bring-up that lives inside it, and without this the pass-through agent
+# inherits the gateway URL the chart passed and every forwarded call bypasses
+# the edge unrecorded (.agents/edge/RULES.md rules 1, 6, 10 — #558). Sourced, so
+# the repointed OPENAI_BASE_URL (:4100) reaches agent.py, which reads it as
+# MODEL_URL. `|| exit 1`, not `|| true`: these args run under `bash -c` with no
+# `set -e`, so a sourced script's `return 1` is otherwise swallowed and the
+# agent would carry on against the gateway — an unrecorded run that still
+# scores. The reaper is skipped on that path deliberately; there is nothing to
+# reap because the agent never started.
+#
+# Only the AGENT's calls cross this edge. The user simulator's LLM goes through
+# the separate `user-gateway` below and is deliberately not recorded — it is the
+# environment, not the system under test.
+runnerArgs: >-
+  . /usr/local/bin/start-edge || exit 1;
+  python3 /app/agent.py; rc=$?;
+  /usr/local/bin/reap-sidecars; exit $rc
 runnerExtraEnv:
 - name: BRIDGE_URL
   value: http://bridge:8000
