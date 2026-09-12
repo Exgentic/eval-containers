@@ -30,6 +30,10 @@ ARG TASK_BASE
 FROM ${TASK_BASE}
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="deepswe"
+# Every per-task base in task.toml is a single amd64 manifest, which is why
+# build.sh pins --platform linux/amd64 (see its header). Declare it so the
+# release skips arm64 up front instead of failing its first RUN there.
+LABEL eval.platforms="linux/amd64"
 LABEL eval.benchmark.description="DeepSWE v1.1 - long-horizon software engineering on active open-source repositories"
 LABEL eval.benchmark.tasks="113"
 LABEL eval.benchmark.released="true"
