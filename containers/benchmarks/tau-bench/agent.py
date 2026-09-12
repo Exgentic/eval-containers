@@ -15,7 +15,15 @@ import urllib.request
 import urllib.error
 
 BRIDGE_URL = os.environ.get("BRIDGE_URL", "http://bridge:8000")
-MODEL_URL = os.environ.get("OPENAI_BASE_URL", "http://model:4000")
+# No default. This used to fall back to "http://model:4000", which silently
+# reinstated the very bypass #558 is about: every forwarded call would skip the
+# edge and go unrecorded (.agents/edge/RULES.md rules 1, 6, 10) while the task
+# still scored, so the run looked fine and only the missing calls.jsonl.zst gave
+# it away. Both surfaces source /usr/local/bin/start-edge before this runs, which
+# sets OPENAI_BASE_URL to the edge's own :4100 — so an unset var means the
+# bring-up did not happen and there is nothing to record through. main() fails
+# loud on it rather than defaulting.
+MODEL_URL = os.environ.get("OPENAI_BASE_URL")
 API_KEY = os.environ.get("OPENAI_API_KEY", "sk-proxy")
 
 
@@ -84,6 +92,14 @@ def post_response(response_data):
 
 
 def main():
+    if not MODEL_URL:
+        print(
+            "[agent] OPENAI_BASE_URL is unset — /usr/local/bin/start-edge must be "
+            "sourced before this agent so every call crosses the edge "
+            "(.agents/edge/RULES.md rule 1)",
+            file=sys.stderr,
+        )
+        return 1
     print("[agent] starting pass-through agent loop", file=sys.stderr)
     turn = 0
     while True:
@@ -115,4 +131,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

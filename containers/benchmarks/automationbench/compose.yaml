@@ -25,13 +25,26 @@ services:
     # status into that file, so agent/result.json's exit_code reflects the
     # program that actually ran rather than staying permanently null, and a
     # wall-clock kill lands as 124 rather than as nothing.
+    #
+    # `. /usr/local/bin/start-edge` FIRST and unconditionally: overriding the
+    # entrypoint also skips the edge bring-up that lives inside
+    # /usr/local/bin/run, and without this the harness talks straight to the
+    # gateway and every call goes unrecorded (.agents/edge/RULES.md rules 1, 6,
+    # 10 — #558). Sourced, so its repointed OPENAI_BASE_URL (:4100) reaches the
+    # harness. `|| exit 1`, not `|| true`: there is no `set -e` here, so a
+    # sourced script's `return 1` is otherwise swallowed and an unrecorded run
+    # would still score. It sits OUTSIDE the `timeout` bound: it is framework
+    # setup, not the harness, and a bring-up failure must fail the task rather
+    # than eat into its budget.
     entrypoint:
       - bash
       - -c
-      - '/eval-materialize-task || true; timeout -k 30 "${TIMEOUT:-1800}" python3 /app/run_automationbench.py; printf %s "$?" > /output/agent/.exit-code; /usr/local/bin/write-result'
+      - '. /usr/local/bin/start-edge || exit 1; /eval-materialize-task || true; timeout -k 30 "${TIMEOUT:-1800}" python3 /app/run_automationbench.py; printf %s "$?" > /output/agent/.exit-code; /usr/local/bin/write-result'
     environment:
       BENCHMARK: automationbench
-      # The harness talks to the gateway on the OpenAI-compatible surface.
+      # NOT what the harness reads: start-edge overwrites OPENAI_BASE_URL with
+      # the edge's own :4100 before the harness runs, so this only ever reaches
+      # the edge as its upstream (via the inherited OPENAI_API_BASE).
       OPENAI_BASE_URL: http://gateway:4000/openai/v1
       # Multi-step tool-calling loop — give it more wall-clock than the default.
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}

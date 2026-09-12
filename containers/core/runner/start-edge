@@ -1,0 +1,78 @@
+#!/bin/bash
+# Bring up the edge and repoint the agent-facing base URLs at it.
+#
+# SOURCE this, don't execute it: the exports below must land in the caller's
+# environment. `. /usr/local/bin/start-edge`.
+#
+# It signals failure by `return 1`, which a caller running WITHOUT `set -e` will
+# silently ignore — and continuing past a failed bring-up is precisely the bug
+# this file exists to prevent, since the caller then falls back to the gateway
+# URL it was given and the run proceeds unrecorded. So a caller MUST either run
+# under `set -e` (as /usr/local/bin/run does) or gate on it explicitly:
+#
+#     . /usr/local/bin/start-edge || exit 1
+#
+# The edge sits between the agent and the gateway: it pins the model to
+# EVAL_MODEL and records every call verbatim, including the tool definitions the
+# gateway's own traces summarise away (.agents/edge/RULES.md rules 1, 6, 10).
+# One static binary, so it needs no supervisor — start it, wait for its own
+# probe, and point the agent at it instead of at the gateway.
+#
+# This lives in its own file because the edge must come up on EVERY path that
+# reaches a model, and /usr/local/bin/run is not the only one: benchmarks whose
+# harness needs the task identity (which run's agent phase withholds, rule 7)
+# replace run via the chart's `runnerArgs` / compose's `entrypoint`, and before
+# #558 those paths never started the edge at all — no listener on 4100, so the
+# agent's traffic went straight to the gateway and nothing was recorded, for
+# every task on every agent. A bespoke harness sources this instead of
+# reimplementing the bring-up.
+#
+# Reads:  ANTHROPIC_BASE_URL (the gateway, as the orchestrator set it),
+#         OPENAI_API_BASE    (the gateway, preferred when set)
+# Writes: /output/model/edge.log, /output/model/calls.jsonl.zst
+# Exports: ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GOOGLE_GEMINI_BASE_URL → :4100
+#
+# Idempotent: if something already answers the edge's health probe, this only
+# re-points the URLs. So a preset that sources this and then calls `run` (which
+# sources it too) cannot start a second edge over the first one's record.
+
+# Not `set -euo pipefail`: sourced into callers with their own error discipline.
+
+_start_edge_health() { /opt/edge/start health >/dev/null 2>&1; }
+
+if ! _start_edge_health; then
+  mkdir -p /output/model
+  # Scoped to the edge's own process: OPENAI_API_BASE is the *gateway's*
+  # upstream everywhere else, and exporting it here would repoint whatever else
+  # reads it.
+  _start_edge_upstream="${OPENAI_API_BASE:-$(printf '%s' "${ANTHROPIC_BASE_URL:-}" | sed 's#/anthropic$##')}"
+  if [ -z "$_start_edge_upstream" ]; then
+    echo "start-edge: neither OPENAI_API_BASE nor ANTHROPIC_BASE_URL is set — no gateway to forward to" >&2
+    return 1 2>/dev/null || exit 1
+  fi
+  # .zst: the edge holds one encoder open for the run, so it sees that each
+  # request repeats the previous conversation — ~138x on a real trajectory,
+  # against ~7x for anything that compresses each record alone.
+  OPENAI_API_BASE="$_start_edge_upstream" EDGE_UPSTREAM=gateway \
+    OUT=/output/model/calls.jsonl.zst \
+    /opt/edge/start >> /output/model/edge.log 2>&1 &
+  _start_edge_ready=0
+  for _ in $(seq 1 60); do
+    if _start_edge_health; then _start_edge_ready=1; break; fi
+    sleep 0.5
+  done
+  if [ "$_start_edge_ready" != 1 ]; then
+    echo "start-edge: edge did not become ready; see /output/model/edge.log" >&2
+    tail -5 /output/model/edge.log >&2 || true
+    return 1 2>/dev/null || exit 1
+  fi
+  unset _start_edge_upstream _start_edge_ready
+fi
+
+# Rule 13's protocol-namespaced prefixes, on the edge's port rather than the
+# gateway's. Every caller's agent/harness reads these.
+export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
+export OPENAI_BASE_URL="http://127.0.0.1:4100/openai/v1"
+export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:4100/genai"
+
+unset -f _start_edge_health

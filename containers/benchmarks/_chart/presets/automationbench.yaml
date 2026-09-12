@@ -13,6 +13,16 @@ timeout: '1800'
 # produced, fail-closed to 0. run_automationbench.py resolves the task from
 # /tasks/all.jsonl directly, so it does not depend on the materializer.
 #
+# `. /usr/local/bin/start-edge` FIRST and unconditionally: replacing `run` also
+# skips the edge bring-up that lives inside it, and without this the harness
+# inherits the gateway URL the chart passed and every call bypasses the edge
+# unrecorded (.agents/edge/RULES.md rules 1, 6, 10 — #558). Sourced, so its
+# repointed OPENAI_BASE_URL (:4100) reaches the harness below. `|| exit 1`, not
+# `|| true`: the chart runs these args under `bash -c` with no `set -e`, so a
+# sourced script's `return 1` is otherwise swallowed and the harness would carry
+# on against the gateway — an unrecorded run that still scores. Fail loudly
+# instead; the pod's own restart/backoff surfaces it.
+#
 # There is no separate agent phase here, so run-agent never runs and nothing
 # writes /output/agent/.exit-code (rule 16) — write-result then coerces it to
 # JSON null, and a task killed at the wall clock is indistinguishable from one
@@ -20,8 +30,11 @@ timeout: '1800'
 # (`timeout -k 30 $TIMEOUT`, rule 14) and record its status, so a timeout lands
 # as 124 rather than as nothing. The inner bound must fire BEFORE the pod's
 # activeDeadlineSeconds (timeout + deadlineGrace), which SIGKILLs the whole pod
-# and leaves no shell alive to record anything.
+# and leaves no shell alive to record anything. The edge starter is deliberately
+# OUTSIDE that bound: it is framework setup, not the harness, and a bring-up
+# failure must fail the task rather than eat into its budget.
 runnerArgs: >-
+  . /usr/local/bin/start-edge || exit 1;
   /eval-materialize-task || true;
   timeout -k 30 "${TIMEOUT:-1800}" python3 /app/run_automationbench.py;
   printf '%s' "$?" > /output/agent/.exit-code;

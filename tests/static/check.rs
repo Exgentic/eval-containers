@@ -228,6 +228,148 @@ fn timeout_override_beats_a_preset() {
     eprintln!("✓ timeoutOverride: helper honours it, values.yaml defaults empty, comment trimmed");
 }
 
+/// Edge capture is unconditional (.agents/edge/RULES.md rules 1, 6, 10): every
+/// model call an agent makes MUST cross the edge and be recorded. The bring-up
+/// that makes that true lives in `/usr/local/bin/start-edge`, sourced by
+/// `/usr/local/bin/run` — so any surface that REPLACES `run` with its own
+/// command has to source it itself, or the edge never starts, nothing listens on
+/// 4100, and the agent's traffic goes straight to the gateway unrecorded.
+///
+/// That is #558: automationbench and tau-bench each replace the launcher (their
+/// harness needs the task identity, which run's agent phase withholds per rule
+/// 7) on BOTH surfaces — the chart's `runnerArgs` and compose's `entrypoint` —
+/// and neither started the edge. The failure is silent: the task still scores,
+/// and only a missing `model/calls.jsonl.zst` gives it away. So this gate is
+/// structural rather than a runtime assertion on the record — it catches the
+/// next bespoke harness at PR time, offline, without a cluster.
+///
+/// The bar is "invokes the launcher OR the edge starter": a command that runs
+/// `run` gets the edge through it, and one that doesn't must source start-edge.
+#[test]
+fn every_launcher_override_starts_the_edge() {
+    const RUN: &str = "/usr/local/bin/run";
+    const START_EDGE: &str = "/usr/local/bin/start-edge";
+
+    // `run` is what makes the default path conform, so pin that it still brings
+    // the edge up — via the shared starter, not a second inlined copy.
+    let run = fs::read_to_string(repo_root().join("containers/core/runner/run"))
+        .expect("missing containers/core/runner/run");
+    assert!(
+        run.contains(START_EDGE),
+        "core/runner/run must source {START_EDGE} — it is the one home for the edge \
+         bring-up that every launcher override also has to reach (edge rules 1, 6, 10)"
+    );
+    let starter = repo_root().join("containers/core/runner/start-edge");
+    assert!(
+        starter.is_file(),
+        "containers/core/runner/start-edge must exist — `run` and every launcher \
+         override source it to bring the edge up (edge rules 1, 6, 10)"
+    );
+    // The starter is only useful if it actually lands in the eval image.
+    let combo = fs::read_to_string(repo_root().join("containers/core/combination.Dockerfile"))
+        .expect("missing containers/core/combination.Dockerfile");
+    assert!(
+        combo.contains("runner/start-edge"),
+        "combination.Dockerfile must COPY runner/start-edge — an override that sources \
+         a path the image lacks fails at run time, on the cluster, per task"
+    );
+
+    let mut offenders: Vec<String> = Vec::new();
+
+    // ── k8s surface: presets that override `runnerArgs`. ──────────────
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    let mut preset_files: Vec<PathBuf> = fs::read_dir(&presets)
+        .expect("missing _chart/presets")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "yaml"))
+        .collect();
+    preset_files.sort();
+    for path in &preset_files {
+        let text = fs::read_to_string(path).expect("read preset");
+        // `runnerArgs:` may be a scalar or a `>-` block; take everything from
+        // the key to the next top-level (column-0) key, which is the whole value
+        // either way. Anything the value contains counts as "invoked".
+        let Some(start) = text
+            .find("\nrunnerArgs:")
+            .or_else(|| text.starts_with("runnerArgs:").then_some(0))
+        else {
+            continue; // no override — the default runnerArgs invoke `run`
+        };
+        let rest = &text[start + 1..];
+        let value: String = rest
+            .lines()
+            .enumerate()
+            .take_while(|(i, l)| *i == 0 || l.trim().is_empty() || l.starts_with([' ', '\t', '#']))
+            .map(|(_, l)| l)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !(value.contains(RUN) || value.contains(START_EDGE)) {
+            let name = path.file_name().unwrap().to_string_lossy();
+            offenders.push(format!(
+                "_chart/presets/{name}: runnerArgs replaces the launcher but invokes neither \
+                 {RUN} nor {START_EDGE}"
+            ));
+        }
+    }
+
+    // ── compose surface: benchmarks that override `entrypoint`. ───────
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let compose = dir.join("compose.yaml");
+        let Ok(text) = fs::read_to_string(&compose) else {
+            continue;
+        };
+        // Only the `runner` service's entrypoint matters — a bespoke sidecar
+        // (tau-bench's `harness`, its `bridge`) is the environment, not the
+        // system under test, and does not carry the agent's calls. Slice the
+        // runner service out: from its 2-space key to the next one.
+        let Some(at) = text.find("\n  runner:") else {
+            continue;
+        };
+        let body = &text[at + 1..];
+        let end = body
+            .lines()
+            .skip(1)
+            .position(|l| {
+                l.starts_with("  ") && !l.starts_with("   ") && l.trim_end().ends_with(':')
+            })
+            .map(|i| body.lines().take(i + 1).map(|l| l.len() + 1).sum::<usize>())
+            .unwrap_or(body.len());
+        let runner = &body[..end];
+        // Ignore commented-out lines: a comment naming start-edge must not
+        // satisfy the gate, and a commented entrypoint must not trip it.
+        let live: String = runner
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !live.contains("entrypoint:") {
+            continue; // inherits the image CMD, which is `run`
+        }
+        if !(live.contains(RUN) || live.contains(START_EDGE)) {
+            offenders.push(format!(
+                "benchmarks/{name}/compose.yaml: the runner's entrypoint replaces the launcher \
+                 but invokes neither {RUN} nor {START_EDGE}"
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "every surface that replaces the framework launcher MUST still bring the edge up, \
+         or its model calls bypass the edge and nothing is recorded — silently, since the \
+         task still scores (.agents/edge/RULES.md rules 1, 6, 10; #558). Source \
+         `. {START_EDGE} || exit 1` first (`|| exit 1` because these commands run under \
+         `bash -c` with no `set -e`, which swallows a sourced script's failure):\n  {}",
+        offenders.join("\n  ")
+    );
+
+    eprintln!(
+        "✓ every launcher override starts the edge ({} preset(s), compose runners checked)",
+        preset_files.len()
+    );
+}
+
 #[test]
 fn count_reconciliation() {
     let claims = readme_counts();
