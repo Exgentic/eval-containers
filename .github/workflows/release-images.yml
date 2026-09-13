@@ -1026,8 +1026,19 @@ jobs:
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
           ITEMS=$(jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json)
-          ORIG_TAG="$TAG"             # benchmark/agent image refs stay on the merged multi-arch :TAG
+          ORIG_TAG="$TAG"             # every base image ref stays on the merged multi-arch :TAG
           export TAG="${TAG}-${ARCH}" # this combo's own OUTPUT tag; merge-pertask-combos builds the final :TAG
+          # Rebinding TAG above renames the OUTPUT, but combination.docker-bake.hcl
+          # derives every base default from ${TAG} too, so left alone they would
+          # resolve to per-arch tags (core/edge:latest-amd64) instead of the merged
+          # manifest — a wrong-arch or stale /opt/edge baked into the combo (#559).
+          # Every *_IMAGE the two combo targets consume is therefore pinned back to
+          # $ORIG_TAG explicitly, exactly as BENCHMARK_IMAGE/AGENT_IMAGE are.
+          export EDGE_IMAGE="${REGISTRY}/core/edge:${ORIG_TAG}"
+          export GOSU_IMAGE="${REGISTRY}/core/gosu:${ORIG_TAG}"
+          export OTEL_IMAGE="${REGISTRY}/core/otel:${ORIG_TAG}"
+          export MODEL_IMAGE="${REGISTRY}/models/bifrost:${ORIG_TAG}"
+          export PROCESS_COMPOSE_IMAGE="${REGISTRY}/core/process-compose:${ORIG_TAG}"
           retry() {
             local n=0 max="${BUILD_RETRIES:-4}"
             until "$@"; do

@@ -1650,3 +1650,103 @@ fn a_preset_that_replaces_the_agent_phase_bounds_its_harness() {
         );
     }
 }
+
+/// A combo job that rebinds `TAG` (the per-task one does, to `$TAG-$ARCH`, so
+/// the combo it PUSHES carries a per-arch tag) MUST pin every base image ref
+/// back to the unrebound tag. `combination.docker-bake.hcl` derives each base
+/// default from `${TAG}` too, so left alone they resolve to per-arch tags
+/// (`core/edge:latest-amd64`) rather than the merged multi-arch manifest — which
+/// bakes a wrong-arch or stale base into the combo. #559 shipped per-task evals
+/// whose `/opt/edge` came from whichever matrix leg pushed last, and those
+/// benchmarks recorded no LLM calls at all; `BENCHMARK_IMAGE`/`AGENT_IMAGE` were
+/// already pinned, every other `*_IMAGE` was not.
+///
+/// Both halves are derived: the required refs from the HCL's `${TAG}`-shaped
+/// defaults, and the jobs to check from which ones bake the combination file and
+/// rebind `TAG`. So a base added to the HCL, or a combo job that starts
+/// rebinding `TAG` (the shared `combos` job does not today), is held to this
+/// without editing the test.
+#[test]
+fn a_tag_rebinding_combo_job_pins_every_base_to_the_multi_arch_tag() {
+    let hcl = fs::read_to_string(repo_root().join("containers/core/combination.docker-bake.hcl"))
+        .expect("read containers/core/combination.docker-bake.hcl");
+    // variable "X_IMAGE" { default = "${REGISTRY}/<dir>:${TAG}" } — a ${TAG}-derived
+    // default is exactly what a TAG rebinding corrupts.
+    let derived: Vec<(String, String)> = hcl
+        .lines()
+        .filter_map(|l| {
+            let rest = l.trim().strip_prefix("variable \"")?;
+            let (var, rest) = rest.split_once('"')?;
+            let (_, rest) = rest.split_once("\"${REGISTRY}/")?;
+            let (dir, _) = rest.split_once(":${TAG}\"")?;
+            Some((var.to_string(), dir.to_string()))
+        })
+        .collect();
+    assert!(
+        derived.iter().any(|(v, _)| v == "EDGE_IMAGE"),
+        "combination.docker-bake.hcl must default EDGE_IMAGE from ${{TAG}} — the pins \
+         this test demands are derived from those defaults"
+    );
+
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    // Split into jobs: a job header is a `  <name>:` line at two-space indent.
+    let is_header = |l: &str| {
+        l.strip_prefix("  ")
+            .and_then(|r| r.strip_suffix(':'))
+            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_alphanumeric() || c == '-'))
+    };
+    let mut jobs: Vec<(String, String)> = Vec::new();
+    for line in wf.lines().skip_while(|l| !l.starts_with("jobs:")) {
+        if is_header(line) {
+            jobs.push((line.trim().trim_end_matches(':').to_string(), String::new()));
+        } else if let Some(last) = jobs.last_mut() {
+            last.1.push_str(line);
+            last.1.push('\n');
+        }
+    }
+    let combo_jobs: Vec<&(String, String)> = jobs
+        .iter()
+        .filter(|(_, body)| {
+            body.contains("core/combination.docker-bake.hcl") && body.contains("export TAG=")
+        })
+        .collect();
+    assert!(
+        combo_jobs.iter().any(|(n, _)| n == "combos-pertask"),
+        "expected `combos-pertask` to bake the combination file with a rebound TAG; \
+         if that job stopped rebinding TAG the pins are moot and this check should be \
+         retired with it (jobs seen: {:?})",
+        jobs.iter().map(|(n, _)| n).collect::<Vec<_>>()
+    );
+
+    for (name, body) in &combo_jobs {
+        // The unrebound tag is saved before the rebinding; require the name the
+        // per-task job already uses, so the pin below is unambiguous.
+        assert!(
+            body.contains("ORIG_TAG=\"$TAG\""),
+            "{name} rebinds TAG; it must first save the original as ORIG_TAG so the \
+             base refs below can be pinned to it"
+        );
+        let missing: Vec<&String> = derived
+            .iter()
+            .filter(|(var, dir)| {
+                !body.contains(&format!(
+                    r#"export {var}="${{REGISTRY}}/{dir}:${{ORIG_TAG}}""#
+                ))
+            })
+            .map(|(var, _)| var)
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{name} rebinds TAG, so these combination.docker-bake.hcl defaults resolve \
+             to per-arch tags instead of the merged manifest and bake a stale/wrong-arch \
+             base into the combo (#559) — pin each back to $ORIG_TAG the way \
+             BENCHMARK_IMAGE/AGENT_IMAGE are: {missing:?}"
+        );
+    }
+    eprintln!(
+        "✓ {} TAG-rebinding combo job(s) pin all {} combo base refs to the multi-arch tag",
+        combo_jobs.len(),
+        derived.len()
+    );
+}
