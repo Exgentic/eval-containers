@@ -186,7 +186,7 @@ target_for_dir() {
   [ "$(printf '%s\n' "$t" | wc -l)" -eq 1 ] || die "multiple targets with context $1"
   printf '%s' "$t"
 }
-blobs() { git rev-parse "$@" 2>/dev/null || die "blob not in $REF"; }
+blobs() { git rev-parse "$@" 2>/dev/null || die "blob not in $REF: $*"; }
 # Combo parents come from combination.docker-bake.hcl's *_IMAGE defaults, so a
 # changed default re-points the closure at the new target automatically.
 parent_target() {
@@ -213,6 +213,7 @@ combo)
   b=$(target_for_dir "containers/benchmarks/$2")
   a=$(target_for_dir "containers/agents/$3")
   gosu=$(parent_target GOSU_IMAGE)
+  edge=$(parent_target EDGE_IMAGE)
   # The combination Dockerfiles COPY from runner/ and entrypoint/ inside the
   # containers/core context, so those trees are combo inputs alongside the
   # Dockerfile + bake-file blobs and the parents' closures.
@@ -220,7 +221,8 @@ combo)
     "$REF:containers/core/combination.docker-bake.hcl" \
     "$REF:containers/core/runner" "$REF:containers/core/entrypoint" \
     | LC_ALL=C sort > "$M/eval.ctx"
-  LC_ALL=C sort -u "$M/full/$b" "$M/full/$a" "$M/full/$gosu" > "$M/eval.bases"
+  LC_ALL=C sort -u "$M/full/$b" "$M/full/$a" "$M/full/$gosu" "$M/full/$edge" \
+    > "$M/eval.bases"
   LC_ALL=C sort -u "$M/eval.ctx" "$M/eval.bases" > "$M/eval.full"
   # A per-task combo mixes the task id into the hash the same way per-task
   # does, and names its rows with the release's <bench>-<tid> convention.
