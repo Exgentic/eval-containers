@@ -219,6 +219,11 @@ const GATEWAY_CRED_VARS: &[&str] = &["OPENAI_API_KEY", "OPENAI_API_BASE"];
 const CHART_NAME: &str = "eval";
 const CHART_VERSION: &str = "0.1.0";
 
+/// The model segment for a run that named no model. Not `model`, `agent` or
+/// `task`: those are the directory names inside a task directory, and a reader
+/// walking the layout would stop one level early on them.
+const NO_MODEL: &str = "no-model";
+
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     // Resolve benchmark: --benchmark flag wins over positional, either must be set.
     let benchmark = args
@@ -291,6 +296,7 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     for (set, flag) in [
         (args.overlay.is_some(), "--overlay"),
         (args.dataset, "--dataset"),
+        (args.ephemeral, "--ephemeral"),
     ] {
         if set && !matches!(args.mode, Mode::Job) {
             return Err(format!("{flag} applies only to `--mode job`"));
@@ -327,6 +333,18 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     check_task_dir(&run.dir)
 }
 
+/// A path segment the layout can hold: task ids come from datasets and run ids
+/// from callers, and either would otherwise be able to walk out of the run
+/// directory that the launcher is about to empty.
+fn segment(kind: &str, value: &str) -> Result<String, String> {
+    if value.is_empty() || value == "." || value == ".." || value.contains('/') {
+        return Err(format!(
+            "{kind} {value:?} cannot name a directory — it must not be empty, `.`, `..`, or contain `/`"
+        ));
+    }
+    Ok(value.to_string())
+}
+
 /// Where this task writes — `<root>/<benchmark>/<agent>/<model>/<run-id>/<task>`
 /// (output/RULES.md rule 11) — plus the env the compose files build it from.
 struct TaskDir {
@@ -339,16 +357,16 @@ fn task_dir(args: &RunArgs, benchmark: &str) -> Result<TaskDir, String> {
         .map_err(|e| format!("cwd: {e}"))?
         .join(args.output_dir.as_deref().unwrap_or("./output"));
     let agent = args.agent.as_deref().unwrap_or("claude-code");
-    let model = args.model.as_deref().unwrap_or("model");
+    let model = args.model.as_deref().unwrap_or(NO_MODEL);
     let slug = eval_containers::naming::model_slug(model);
-    let run_id = run_id(args.run_id.as_deref());
-    let task = args.task_id.as_deref().unwrap_or("0");
+    let run_id = segment("--run-id", &run_id(args.run_id.as_deref()))?;
+    let task = segment("--task-id", args.task_id.as_deref().unwrap_or("0"))?;
     let dir = root
         .join(benchmark)
         .join(agent)
         .join(&slug)
         .join(&run_id)
-        .join(task);
+        .join(&task);
     let root = root.to_string_lossy().into_owned();
     Ok(TaskDir {
         dir,
@@ -629,19 +647,32 @@ fn run_id(explicit: Option<&str>) -> String {
 /// wrappers, still open here. This is the shape they compose; the chart appends
 /// the run id and then the index or task (output/RULES.md rule 11). An ephemeral
 /// run keeps the chart's pathless emptyDir mount: nothing to keep apart.
-fn output_sets(args: &RunArgs, benchmark: &str, agent: &str) -> Vec<String> {
+fn output_sets(args: &RunArgs, benchmark: &str, agent: &str) -> Result<Vec<String>, String> {
     if args.ephemeral {
-        return vec!["ephemeral=true".into()];
+        return Ok(vec!["ephemeral=true".into()]);
     }
+    // In this mode the prefix is a subPath inside the volume, and the kubelet
+    // rejects an absolute one at admission with nothing that names the cause.
     let prefix = args.output_dir.as_deref().unwrap_or("runs");
-    let mut sub = format!("{prefix}/{benchmark}/{agent}");
-    if let Some(m) = &args.model {
-        sub += &format!("/{}", eval_containers::naming::model_slug(m));
+    let model = args
+        .model
+        .as_deref()
+        .map(eval_containers::naming::model_slug)
+        .unwrap_or_else(|| NO_MODEL.to_string());
+    let sub = format!("{prefix}/{benchmark}/{agent}/{model}");
+    if prefix.starts_with('/') {
+        return Err(format!(
+            "--output-dir {prefix:?} is absolute: in `--mode job` it is a path inside the \
+             output volume, and the kubelet refuses an absolute subPath"
+        ));
     }
-    vec![
+    Ok(vec![
         format!("outputSubPath={sub}"),
-        format!("runId={}", run_id(args.run_id.as_deref())),
-    ]
+        format!(
+            "runId={}",
+            segment("--run-id", &run_id(args.run_id.as_deref()))?
+        ),
+    ])
 }
 
 /// Cluster `eval-secrets` Secret still provides upstream credentials.
@@ -717,7 +748,7 @@ fn run_job(
     if args.force {
         sets.push("force=true".into());
     }
-    sets.extend(output_sets(args, benchmark, agent));
+    sets.extend(output_sets(args, benchmark, agent)?);
     // No `perTask` here on purpose. The chart resolves it from its own committed
     // per-task.json (rule 24h): this path renders the PUBLISHED chart with no repo
     // checkout, and the detection that used to live here read
@@ -874,6 +905,24 @@ mod tests {
         );
     }
 
+    // A task id comes from a dataset and a run id from a caller; either would
+    // otherwise be able to walk out of the directory the launcher then empties.
+    #[test]
+    fn a_path_segment_cannot_leave_the_run_directory() {
+        use clap::Parser;
+        for bad in ["..", ".", "", "a/b", "../../etc"] {
+            let cli = Cli::try_parse_from(["run", "aime", "--agent", "codex", "--task-id", bad])
+                .expect("parses");
+            assert!(
+                super::task_dir(&cli.run, "aime").is_err(),
+                "--task-id {bad:?} was allowed to name a directory"
+            );
+        }
+        let ok = Cli::try_parse_from(["run", "aime", "--agent", "codex", "--task-id", "sympy__1"])
+            .expect("parses");
+        assert!(super::task_dir(&ok.run, "aime").is_ok());
+    }
+
     // A directory is complete only with a graded result and no errored attempt.
     #[test]
     fn check_task_dir_wants_a_clean_graded_result() {
@@ -902,7 +951,8 @@ mod tests {
             Cli::try_parse_from(argv).unwrap().run
         };
 
-        let sets = super::output_sets(&parse(&["--model", "azure/gpt-5-mini"]), "aime", "codex");
+        let sets =
+            super::output_sets(&parse(&["--model", "azure/gpt-5-mini"]), "aime", "codex").unwrap();
         assert_eq!(sets[0], "outputSubPath=runs/aime/codex/azure--gpt-5-mini");
         assert!(
             sets[1].starts_with("runId=") && sets[1].len() > "runId=".len(),
@@ -914,18 +964,24 @@ mod tests {
             &parse(&["--output-dir", "sweeps/x", "--run-id", "r1"]),
             "aime",
             "codex",
-        );
+        )
+        .unwrap();
         assert_eq!(
             sets,
-            ["outputSubPath=sweeps/x/aime/codex", "runId=r1"],
-            "the output root and the run id are the caller's to pin"
+            ["outputSubPath=sweeps/x/aime/codex/no-model", "runId=r1"],
+            "the output root and the run id are the caller's to pin, and the model \
+             level is kept even when no model was named"
         );
 
         // A run whose results are meant to be thrown away has nothing to keep apart.
         assert_eq!(
-            super::output_sets(&parse(&["--ephemeral"]), "aime", "codex"),
+            super::output_sets(&parse(&["--ephemeral"]), "aime", "codex").unwrap(),
             ["ephemeral=true"]
         );
+
+        // An absolute prefix is a subPath here, which the kubelet refuses at
+        // admission with nothing that names the cause.
+        assert!(super::output_sets(&parse(&["--output-dir", "/abs"]), "aime", "codex").is_err());
     }
 
     #[test]

@@ -197,6 +197,9 @@ emptyDir: {}
      Called with (dict "v" $v) or (dict "v" $v "sub" "model"). */}}
 {{- define "eval.outputMount" -}}
 {{- $path := include "eval.outputPath" .v -}}
+{{- if and (not $path) (not .v.ephemeral) -}}
+{{- fail "no outputSubPath or runId: this run would mount the volume root at /output, and the runner empties the directory it is given — every earlier run on the volume would go with it. Name the run (--set runId=<id>), give it a prefix (--set outputSubPath=<path>), or say the results do not matter with --set ephemeral=true." -}}
+{{- end -}}
 {{- $sub := .sub | default "" -}}
 {{- $leaf := ternary (printf "%s/%s" $path $sub) $path (ne $sub "") -}}
 {{- if $path }}

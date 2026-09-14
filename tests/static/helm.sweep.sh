@@ -139,11 +139,19 @@ done
 
 # 7. runId is offered, not demanded: the chart sees one render and cannot tell a
 # fresh id from a constant, so it composes and the caller stays responsible. A
-# render without one must therefore still work — the dashboard composes its own
-# leaf and passes none.
-probe --set outputVolume.hostPath.path=/probe/out >/dev/null || {
+# caller that composed its own leaf into outputSubPath — as the dashboard does —
+# must still render without one.
+probe --set outputVolume.hostPath.path=/probe/out --set outputSubPath=runs/b/a/m/rid >/dev/null || {
   echo "FAIL runId: a render without one was refused, but composing the leaf is a caller's right"
   fail=$((fail + 1)); }
+
+# What it must NOT do is mount the volume root: the runner empties the directory
+# it is given, so a pathless mount would take every earlier run on the volume
+# with it. Neither a prefix nor an id, and a volume that keeps its results, is
+# the one shape that has to be refused.
+if probe --set outputVolume.hostPath.path=/probe/out >/dev/null 2>&1; then
+  echo "FAIL runId: a run with no prefix and no id mounted the volume root"
+  fail=$((fail + 1)); fi
 
 # What the chart does owe: when an id IS given it lands below the caller's prefix
 # and above the index. That ordering is what makes the directory per-run.

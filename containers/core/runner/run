@@ -91,8 +91,12 @@ fi
 me="${HOSTNAME:-unknown}-$$"
 claim() { (set -C; printf '%s\n' "$me" > "$lock") 2>/dev/null; }
 if ! claim; then
-  if [ -n "$(find /output/agent -maxdepth 1 -name .lock -mmin -2)" ]; then
-    echo "run: another attempt is in progress in /output — agent/.lock touched under 2 min ago (rule 32)" >&2
+  # A claim stops being refreshed the moment its holder dies, so three missed
+  # beats means dead. Short, because a killed pod leaves a claim with a fresh
+  # mtime and the orchestrator restarts it within seconds — a long lease would
+  # have its own next attempt refused by its leftovers.
+  if [ -n "$(find /output/agent -maxdepth 1 -name .lock -newermt '-45 seconds')" ]; then
+    echo "run: another attempt is in progress in /output — agent/.lock refreshed under 45s ago (rule 32)" >&2
     exit 3
   fi
   rm -f "$lock"
@@ -106,7 +110,9 @@ fi
 # to release. The trap covers every way this shell dies first, and the heartbeat
 # stops with the claim so a released one is never put back.
 trap 'rm -f "$lock"' EXIT
-( while [ -f "$lock" ]; do sleep 30; touch "$lock" 2>/dev/null || exit 0; done ) &
+# `touch` creates, so test and refresh on the same tick: releasing the claim
+# while this sleeps must not bring it back.
+( while sleep 15; do [ -e "$lock" ] || exit 0; touch "$lock" 2>/dev/null || exit 0; done ) &
 
 # Failed or forced: empty the previous attempt, keeping this claim (rules 28–30).
 # otelcol holds model/traces.jsonl open, so truncate that one rather than unlink.
