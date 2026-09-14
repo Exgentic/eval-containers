@@ -248,24 +248,30 @@ async fn the_launcher_records_reuses_retries_and_refuses() {
     );
 
     // ── 32: a second attempt while one is in progress is refused ───────
-    // Not complete, so the refusal can only be the claim — a complete directory
-    // would have been skipped a check earlier.
+    // A live holder keeps refreshing its claim, so the mtime stays ahead of the
+    // lease however long the newcomer waits. A future mtime is that, without a
+    // second container to keep touching it.
     in_dir(
         &dir,
-        "rm -f /output/task/result.json; touch /output/agent/.lock",
+        "rm -f /output/task/result.json
+         printf holder > /output/agent/.lock
+         touch -d '+1 hour' /output/agent/.lock",
     )
     .await;
-    let (code, log) = launch(&dir, &[]).await;
+    let (code, log) = launch(&dir, &[("EVAL_CLAIM_LEASE", "2")]).await;
     assert_eq!(
         code, 3,
         "a second concurrent attempt was let into the same task directory:\n{log}"
     );
 
-    // A claim whose holder is gone stops being refreshed and goes stale, or a
-    // killed run would strand its own directory forever.
+    // A claim nobody refreshes goes stale, and is taken over rather than
+    // stranding the directory — the case a killed container leaves behind.
     in_dir(&dir, "touch -d '1 hour ago' /output/agent/.lock").await;
-    let (code, log) = launch(&dir, &[]).await;
-    assert_eq!(code, 0, "a stale claim still blocked the retry:\n{log}");
+    let (code, log) = launch(&dir, &[("EVAL_CLAIM_LEASE", "2")]).await;
+    assert_eq!(
+        code, 0,
+        "a dead claim still blocked the next attempt:\n{log}"
+    );
 
     let _ = std::fs::remove_dir_all(&run_dir);
 }

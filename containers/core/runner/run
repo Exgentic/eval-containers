@@ -66,7 +66,7 @@ mkdir -p /output/{model,agent,task} /logs/verifier
 lock=/output/agent/.lock
 # awk, not grep: under `pipefail` a grep that matches nothing would fail the
 # assignment, and a run with no EVAL_* at all is empty, not broken (rule 16).
-config=$(env | awk '/^EVAL_/ && !/^EVAL_(OUTPUT_DIR|RUN_ID|FORCE)=/' | LC_ALL=C sort)
+config=$(env | awk '/^EVAL_/ && !/^EVAL_(OUTPUT_DIR|RUN_ID|FORCE|CLAIM_LEASE)=/' | LC_ALL=C sort)
 if [ -f /output/agent/config.env ] && [ "$config" != "$(cat /output/agent/config.env)" ]; then
   echo "run: /output holds a run with a different configuration — use a new EVAL_RUN_ID (rule 23):" >&2
   diff /output/agent/config.env <(printf '%s\n' "$config") >&2 || true
@@ -86,7 +86,9 @@ fi
 
 # Claim the directory before touching it (rule 32). `set -C` makes the create
 # O_EXCL, so two launchers racing for a free one cannot both win.
-lease=45
+# How long a claim survives without being refreshed. A test drives it down;
+# nothing else should need to.
+lease=${EVAL_CLAIM_LEASE:-45}
 me="${HOSTNAME:-unknown}-$$"
 claim() { (set -C; printf '%s\n' "$me" > "$lock") 2>/dev/null; }
 held() { [ -n "$(find /output/agent -maxdepth 1 -name .lock -newermt "-$lease seconds")" ]; }
