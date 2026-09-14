@@ -219,9 +219,7 @@ const GATEWAY_CRED_VARS: &[&str] = &["OPENAI_API_KEY", "OPENAI_API_BASE"];
 const CHART_NAME: &str = "eval";
 const CHART_VERSION: &str = "0.1.0";
 
-/// The model segment for a run that named no model. Not `model`, `agent` or
-/// `task`: those are the directory names inside a task directory, and a reader
-/// walking the layout would stop one level early on them.
+/// Not `model`, `agent` or `task`: a reader walking the layout stops on those.
 const NO_MODEL: &str = "no-model";
 
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
@@ -324,8 +322,16 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     let run = task_dir(&args, &benchmark)?;
     match args.mode {
-        Mode::Compose => run_compose(registry, &benchmark, &envs, &run, &args)?,
-        _ => run_container(registry, &benchmark, &args.agent, &envs, &run, &args)?,
+        Mode::Compose => run_compose(registry, &benchmark, &envs, &run, args.local, args.dry_run)?,
+        _ => run_container(
+            registry,
+            &benchmark,
+            &args.agent,
+            &envs,
+            &run,
+            args.local,
+            args.dry_run,
+        )?,
     }
     if args.dry_run {
         return Ok(());
@@ -379,12 +385,10 @@ fn task_dir(args: &RunArgs, benchmark: &str) -> Result<TaskDir, String> {
 }
 
 /// A run ends complete or fails loudly, naming the directory (rules 26, 33–35).
-/// Complete = `task/result.json` present and no errored attempt recorded.
+/// Complete is what the aggregation calls complete — one definition, not two.
 fn check_task_dir(dir: &Path) -> Result<(), String> {
     let graded = dir.join("task/result.json").is_file();
-    let clean = fs::read_to_string(dir.join("agent/result.json"))
-        .map(|a| a.contains("\"error\":null"))
-        .unwrap_or(false);
+    let clean = crate::report::attempt_error(dir).is_none();
     if graded && clean {
         eprintln!("result: {}", dir.join("task/result.json").display());
         return Ok(());
@@ -401,9 +405,9 @@ fn run_compose(
     benchmark: &str,
     envs: &[(&str, String)],
     run: &TaskDir,
-    args: &RunArgs,
+    local: bool,
+    dry_run: bool,
 ) -> Result<(), String> {
-    let (local, dry_run) = (args.local, args.dry_run);
     // The compose files interpolate the task directory from these; they are
     // not container env (EVAL_OUTPUT_DIR inside a container would mean
     // something else to the litellm gateway).
@@ -473,9 +477,9 @@ fn run_container(
     agent: &Option<String>,
     envs: &[(&str, String)],
     run: &TaskDir,
-    args: &RunArgs,
+    local: bool,
+    dry_run: bool,
 ) -> Result<(), String> {
-    let (local, dry_run) = (args.local, args.dry_run);
     let agent = agent
         .clone()
         .ok_or_else(|| "--agent is required in container mode".to_string())?;
@@ -641,12 +645,8 @@ fn run_id(explicit: Option<&str>) -> String {
     })
 }
 
-/// Where a `--mode job` run's results land, as chart values. `--mode job` used
-/// to pass no path at all, so every run wrote to the volume root and a re-run of
-/// one combination overwrote the last — the #428 bug, fixed in the shell
-/// wrappers, still open here. This is the shape they compose; the chart appends
-/// the run id and then the index or task (output/RULES.md rule 11). An ephemeral
-/// run keeps the chart's pathless emptyDir mount: nothing to keep apart.
+/// Chart values for where a job's results land; the chart appends the run id,
+/// then the index or the task. An ephemeral run keeps the pathless mount.
 fn output_sets(args: &RunArgs, benchmark: &str, agent: &str) -> Result<Vec<String>, String> {
     if args.ephemeral {
         return Ok(vec!["ephemeral=true".into()]);

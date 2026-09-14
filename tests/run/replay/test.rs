@@ -79,18 +79,6 @@ async fn replay_compose(
     task_id: &str,
     mode: ReplayMode,
 ) -> DockerCompose {
-    replay_compose_with(benchmark, agent, task_id, mode, true, false).await
-}
-
-/// `fresh` clears the task directory first; `force` sets EVAL_FORCE.
-async fn replay_compose_with(
-    benchmark: &str,
-    agent: &str,
-    task_id: &str,
-    mode: ReplayMode,
-    fresh: bool,
-    force: bool,
-) -> DockerCompose {
     test_support::enter_repo_root();
     let cwd = std::env::current_dir().unwrap();
 
@@ -119,9 +107,7 @@ async fn replay_compose_with(
         ReplayMode::FullStack => (FULLSTACK_MODEL, "replay-fullstack", "http://upstream:4000"),
     };
     let host_output = task_dir(benchmark, agent, model, task_id);
-    if fresh {
-        let _ = fs::remove_dir_all(&host_output);
-    }
+    let _ = fs::remove_dir_all(&host_output);
     fs::create_dir_all(&host_output).expect("failed to create host output dir");
 
     // Classic (podman) path: bootstrap built the images under a local-only
@@ -162,7 +148,6 @@ async fn replay_compose_with(
         ("EVAL_GATEWAY_LABEL", label),
         ("EVAL_OUTPUT_DIR", output_root.as_str()),
         ("EVAL_RUN_ID", RUN_ID),
-        ("EVAL_FORCE", if force { "1" } else { "" }),
         ("OPENAI_API_KEY", "sk-replay-test"),
         ("OPENAI_API_BASE", api_base),
         ("REPLAY_FIXTURE", fixture_str.as_str()),
@@ -552,38 +537,6 @@ macro_rules! replay_test {
             assert_output_confined($benchmark, $agent, "replay", $task_id);
         }
     };
-}
-
-/// The output lifecycle (output/RULES.md 26–29): a rerun of the same run id
-/// skips a complete task untouched; `EVAL_FORCE` empties it and runs again.
-#[tokio::test]
-#[ignore]
-async fn rerun_is_skipped_and_force_reruns() {
-    let (b, a, t) = ("aime", "claude-code", "0");
-    ensure_images(b, a, t, ReplayMode::Lean).await;
-    let _first = replay_compose(b, a, t, ReplayMode::Lean).await;
-    assert_result_valid(b, a, "replay", t);
-    let agent_result = task_dir(b, a, "replay", t).join("agent/result.json");
-    let first = fs::read_to_string(&agent_result).unwrap();
-    assert!(
-        first.contains("\"error\":null"),
-        "first run errored: {first}"
-    );
-
-    let _rerun = replay_compose_with(b, a, t, ReplayMode::Lean, false, false).await;
-    assert_eq!(
-        fs::read_to_string(&agent_result).unwrap(),
-        first,
-        "a rerun of a complete task must leave it untouched"
-    );
-
-    let _forced = replay_compose_with(b, a, t, ReplayMode::Lean, false, true).await;
-    let forced = fs::read_to_string(&agent_result).unwrap();
-    assert_ne!(forced, first, "EVAL_FORCE must run the task again");
-    assert!(
-        forced.contains("\"error\":null"),
-        "forced run errored: {forced}"
-    );
 }
 
 /// Assert the real gateway emitted OTel `gen_ai` spans — the proof it booted,

@@ -8,12 +8,7 @@
 services:
   otelcol:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/otel:latest
-    # This task's directory on the host is
-    # <EVAL_OUTPUT_DIR>/<benchmark>/<agent>/<model slug>/<run id>/<task>
-    # (.agents/output/RULES.md rule 11); otelcol writes its traces.jsonl into
-    # its model/ half. The same path is spelled in runner.yaml, which mounts
-    # the whole directory. EVAL_RUN_ID names the run (a rerun of an id resumes
-    # it); EVAL_MODEL_SLUG is the handle with `/` as `--` (the CLI sets it).
+    # otelcol mounts the model/ half of the directory runner.yaml mounts whole.
     volumes:
       - type: bind
         source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-${EVAL_MODEL}}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}/model

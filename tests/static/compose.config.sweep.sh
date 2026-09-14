@@ -38,11 +38,11 @@ for f in "${files[@]}"; do
   # values, and an undefined volume is exactly that — webarena and
   # visualwebarena kept a `- output:/output` after the shared volume went away
   # and this sweep stayed green on both. Dummy values; we validate STRUCTURE.
-  if ! vol=$(EVAL_BENCHMARK="$name" EVAL_MODEL=probe/model EVAL_RUN_ID=probe EVAL_TASK_ID=0 \
+  if ! interp=$(EVAL_BENCHMARK="$name" EVAL_MODEL=probe/model EVAL_RUN_ID=probe EVAL_TASK_ID=0 \
              OPENAI_API_KEY=probe OPENAI_API_BASE=probe \
              docker compose -f "$f" config 2>&1); then
     echo "FAIL $name: docker compose config (interpolated) failed:"
-    printf '%s\n' "$vol" | sed 's/^/  /'
+    printf '%s\n' "$interp" | sed 's/^/  /'
     fail=$((fail + 1))
     continue
   fi
