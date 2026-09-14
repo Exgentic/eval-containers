@@ -1,6 +1,6 @@
 # deepswe
 
-**Status:** Not released — no replay fixture yet (rule 21a). See [`AUDIT.md`](AUDIT.md).
+**Status:** Released — replay fixture `deepswe-csstree-shorthand-expansion-compression-opencode` (rule 21a). See [`AUDIT.md`](AUDIT.md).
 
 DeepSWE v1.1 (Datacurve) — 113 original, long-horizon software-engineering tasks
 drawn from active open-source repositories.
@@ -12,7 +12,7 @@ drawn from active open-source repositories.
 | Tasks | 113 (35 TypeScript, 34 Python, 34 Go, 5 Rust, 5 JavaScript) |
 | Environment | per-task (built from a pinned upstream per-task image) |
 | Internet required | false (upstream sets `no-network` for both agent and verifier) |
-| Released | no |
+| Released | yes |
 | Upstream | [github.com/datacurve-ai/deep-swe](https://github.com/datacurve-ai/deep-swe) |
 | Dataset | `datacurve/deep-swe-1-1` |
 | Dataset revision | `435ee89ec2f2e2289f33b0da4f992f0b7b7266b9` |

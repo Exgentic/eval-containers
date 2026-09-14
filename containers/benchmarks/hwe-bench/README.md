@@ -9,7 +9,7 @@ HWE-Bench — real fail-to-pass RTL bug-repair tasks graded by simulation ("SWE-
 | Tasks | 169 (5 projects) |
 | Environment | per-task |
 | Internet required | false |
-| Released | no |
+| Released | yes |
 | Upstream | [github.com/pku-liang/hwe-bench](https://github.com/pku-liang/hwe-bench) |
 | Dataset | [henryen/hwe-bench](https://huggingface.co/datasets/henryen/hwe-bench) |
 | Paper | [arXiv:2604.14709](https://arxiv.org/abs/2604.14709) |

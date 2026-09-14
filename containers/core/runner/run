@@ -76,34 +76,11 @@ date -u +%Y-%m-%dT%H:%M:%SZ > /output/agent/.started-at
 # whatever the agent produced — even on a timeout or crash — and a result.json
 # is always written.
 if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
-  # The edge sits between the agent and the gateway: it pins the model and
-  # records every call verbatim, including the tool definitions the gateway's
-  # own traces summarise away (.agents/edge/RULES.md). One static binary, so it
-  # needs no supervisor — start it, wait for its own probe, and point the agent
-  # at it instead of at the gateway.
-  # Scoped to the edge's own process: OPENAI_API_BASE is the *gateway's*
-  # upstream everywhere else, and exporting it here would repoint whatever else
-  # reads it.
-  edge_upstream="${OPENAI_API_BASE:-$(printf '%s' "$ANTHROPIC_BASE_URL" | sed 's#/anthropic$##')}"
-  # .zst: the edge holds one encoder open for the run, so it sees that each
-  # request repeats the previous conversation — ~138x on a real trajectory,
-  # against ~7x for anything that compresses each record alone.
-  OPENAI_API_BASE="$edge_upstream" EDGE_UPSTREAM=gateway \
-    OUT=/output/model/calls.jsonl.zst \
-    /opt/edge/start >> /output/model/edge.log 2>&1 &
-  edge_ready=0
-  for _ in $(seq 1 60); do
-    if /opt/edge/start health >/dev/null 2>&1; then edge_ready=1; break; fi
-    sleep 0.5
-  done
-  if [ "$edge_ready" != 1 ]; then
-    echo "edge did not become ready; see /output/model/edge.log" >&2
-    tail -5 /output/model/edge.log >&2 || true
-    exit 1
-  fi
-  export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
-  export OPENAI_BASE_URL="http://127.0.0.1:4100/openai/v1"
-  export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:4100/genai"
+  # Start the edge and repoint the agent-facing base URLs at it. The bring-up
+  # lives in /usr/local/bin/start-edge so that it has ONE home shared by every
+  # path that reaches a model — this sequence and the bespoke harnesses that
+  # replace it via the chart's `runnerArgs` / compose's `entrypoint` (#558).
+  . /usr/local/bin/start-edge
 
   /usr/local/bin/run-agent || true
   bash /grade.sh || true

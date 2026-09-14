@@ -18,10 +18,20 @@ instead: `/v2/_catalog` returns all of GHCR with no way to seek to one org, and
 the packages REST listing is capped at 10000 results, which this org already
 exceeds.
 
-Usage: fleet-index.py <pertask.json> > index.json
-  pertask.json  [{b,task,...}] — every per-task image this release enumerates
-                (release-images.yml puts it in shards.json); `-` for none.
-Env: REGISTRY (default ghcr.io/exgentic), GH_TOKEN, CATALOG_JOBS (default 32).
+Every candidate is asked about, every time: ~30000 of them in ~2 minutes. Testing
+a few of a group before asking about the rest would be a third of the work and
+would lie — `cline` publishes 3 per-task combos out of 664, so any sample small
+enough to be worth taking misses it. The registry reads do not touch the GitHub
+API budget (measured: 100 of them moved `core.remaining` by zero), so the cost of
+being exact is wall-clock on a runner, once a cycle, for everyone.
+
+Usage: fleet-index.py > index.json
+Env: REGISTRY (default ghcr.io/exgentic), GH_TOKEN, CATALOG_JOBS (default 32),
+     CATALOG_AGENTS (the agent lineup; defaults to every agent in the tree).
+
+Self-contained on purpose: it needs no artifact from a release, so the same
+script answers on a schedule — which is what catches a deleted image or a push
+that happened outside a release.
 
 Python, not bash like its neighbours: a few thousand parallel HTTP calls whose
 failures must be told apart from empty answers is what a shell script does badly.
@@ -32,6 +42,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import subprocess
 import sys
 import urllib.error
@@ -42,7 +53,7 @@ from datetime import UTC, datetime
 
 REGISTRY = os.environ.get("REGISTRY", "ghcr.io/exgentic")
 HOST, _, ORG = REGISTRY.partition("/")
-JOBS = int(os.environ.get("CATALOG_JOBS", "32"))
+JOBS = int(os.environ.get("CATALOG_JOBS", "64"))
 # One token carries many repository scopes, so a token is minted per batch rather
 # than per repository: 7k artifacts cost ~70 token calls, not 7k.
 SCOPES_PER_TOKEN = 100
@@ -129,6 +140,56 @@ def labels(kind: str, name: str) -> dict[str, str]:
     return dict(sorted(out.items()))
 
 
+def task_ids(family: str) -> list[str]:
+    """The task ids a per-task benchmark bakes.
+
+    From its own tasks.txt when it has one — `#` headings and blanks skipped,
+    since a heading read as a task id is an image nobody built — and otherwise
+    from the `tasks/` directory of the upstream repo its build.sh pins, which is
+    where terminal-bench, skills-bench and deepswe get theirs.
+    """
+    d = os.path.join(CONTAINERS, "benchmarks", family)
+    listed = os.path.join(d, "tasks.txt")
+    if os.path.isfile(listed):
+        with open(listed) as f:
+            return [
+                t
+                for t in (line.strip().lower() for line in f)
+                if t and not t.startswith("#")
+            ]
+    build = os.path.join(d, "build.sh")
+    if not os.path.isfile(build):
+        return []
+    with open(build) as f:
+        text = f.read()
+    repo = re.search(
+        r"github\.com/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+?)(?:\.git)?[\s\"'#]", text
+    )
+    ref = re.search(r"\b[0-9a-f]{40}\b", text)
+    if not (repo and ref):
+        # swe-bench-pro resolves its ids from a HuggingFace dataset and
+        # swe-lancer from Docker Hub tags. Neither publishes per-task images
+        # today, so there is nothing to miss; named, not swallowed.
+        print(f"fleet-index: {family}: no enumerable task list", file=sys.stderr)
+        return []
+    out = subprocess.run(
+        [
+            "gh",
+            "api",
+            f"repos/{repo.group(1)}/contents/tasks?ref={ref.group(0)}",
+            "--paginate",
+            "--jq",
+            '.[] | select(.type=="dir") | .name',
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if out.returncode != 0:
+        die(f"{family}: upstream task list unreadable: {out.stderr.strip()[:200]}")
+    return sorted({t.lower() for t in out.stdout.split() if t})
+
+
 def candidates(tasks: dict[str, list[str]], agents: list[str]) -> list[str]:
     """Every artifact name this tree can publish. Proved against the registry
     below — naming one here claims nothing."""
@@ -201,31 +262,35 @@ def tags_of(repo: str, bearer: str) -> tuple[str, list[str]]:
 
 
 def sweep(repos: list[str], gh: str, fn):
-    """`fn(repo, bearer)` over every repo, one scoped token per batch. Every repo
-    yields a row or the run dies: a sweep that answered for fewer than it asked
-    is a broken sweep, not a smaller fleet."""
-    out = []
-    for i in range(0, len(repos), SCOPES_PER_TOKEN):
-        batch = repos[i : i + SCOPES_PER_TOKEN]
-        bearer = registry_token(batch, gh)
-        with ThreadPoolExecutor(max_workers=JOBS) as pool:
-            out.extend(pool.map(lambda r, b=bearer: fn(r, b), batch))
+    """`fn(repo, bearer)` over every repo, in one pool.
+
+    A token carries a batch of repository scopes, but minting one batch's token
+    and then waiting for that batch's slowest probe before minting the next made
+    the sweep 300 sequential steps: the tokens are minted first, in parallel, and
+    every probe then runs against the pool as one flat list.
+
+    Every repo yields a row or the run dies — a sweep that answered for fewer
+    than it asked is a broken sweep, not a smaller fleet.
+    """
+    batches = [
+        repos[i : i + SCOPES_PER_TOKEN] for i in range(0, len(repos), SCOPES_PER_TOKEN)
+    ]
+    with ThreadPoolExecutor(max_workers=JOBS) as pool:
+        bearers = list(pool.map(lambda b: registry_token(b, gh), batches))
+        work = [
+            (r, bearer)
+            for batch, bearer in zip(batches, bearers, strict=True)
+            for r in batch
+        ]
+        out = list(pool.map(lambda rb: fn(*rb), work))
     if len(out) != len(repos):
         die(f"sweep answered {len(out)} of {len(repos)}")
     return out
 
 
 def main() -> None:
-    pertask = sys.argv[1] if len(sys.argv) > 1 else "-"
-    if pertask == "-":
-        entries = []
-    else:
-        with open(pertask) as f:
-            entries = json.load(f)
-    tasks: dict[str, list[str]] = {}
-    for e in entries:
-        tasks.setdefault(e["b"], []).append(str(e["task"]).lower())
-    agents = os.environ.get("CATALOG_AGENTS", "").split() or die_no_agents()
+    agents = os.environ.get("CATALOG_AGENTS", "").split() or components("agents")
+    tasks = {f: task_ids(f) for f in components("benchmarks") if per_task(f)}
 
     names = candidates(tasks, agents)
     images = {n: t for n, t in sweep(names, gh_token(), tags_of) if t}
@@ -273,11 +338,6 @@ def main() -> None:
         f"{len(declared)} labelled components",
         file=sys.stderr,
     )
-
-
-def die_no_agents() -> list[str]:
-    die("CATALOG_AGENTS (the agent lineup) is required")
-    raise AssertionError  # unreachable
 
 
 if __name__ == "__main__":

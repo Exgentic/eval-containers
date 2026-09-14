@@ -1,0 +1,115 @@
+name: Publish index
+
+# The fleet inventory — `evals/index:latest`, every artifact the registry holds
+# with its tags, plus the labels each component declares (containers/scripts/
+# fleet-index.py). Consumers read it instead of scanning: the dashboard's launch
+# form offers the pairs it lists, and `eval-containers list` filters it.
+#
+# Split out of release-images.yml, like publish-chart.yml before it, for a
+# second reason as well as the first. The first is that a 90-second sweep should
+# not sit behind a fleet build. The second is that the index can only be as true
+# as the last time someone looked: an image deleted, or pushed outside a
+# release, drifts from it silently and the release is not the event that would
+# catch it. So this also runs on a schedule.
+#
+# It is a full sweep, never an accumulation, so any run repairs the last one and
+# the first run after an outage is the backfill.
+
+on:
+  schedule:
+    # Every 30 minutes: the window in which a deletion or an out-of-band push can
+    # go unnoticed. It costs ~2 minutes of a runner — ~30000 registry reads, which
+    # do not touch the GitHub API budget (measured: 100 reads moved
+    # `core.remaining` by zero); the handful of REST calls per run are the
+    # upstream task listings.
+    - cron: "*/30 * * * *"
+  # Right after a release, rather than waiting up to half an hour to notice what
+  # it just published. `completed`, not `requested`: an index written mid-run
+  # would claim images that are still being pushed.
+  workflow_run:
+    workflows: ["Release the fleet"]
+    types: [completed]
+  push:
+    branches: [main]
+    paths:
+      - containers/scripts/fleet-index.py
+      - .github/workflows/publish-index.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  # Not cancel-in-progress: two sweeps racing would publish in an unknown order,
+  # and the older one winning is exactly the staleness this exists to remove.
+  group: publish-index
+
+jobs:
+  index:
+    name: evals/index:latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oras-project/setup-oras@v1
+      # For the stitch below: fleet-tag.sh works through `docker buildx imagetools`.
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Sweep the registry -> evals/index:latest
+        env:
+          REGISTRY: ghcr.io/exgentic
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 containers/scripts/fleet-index.py > index.json
+          # A sweep that found nothing is a broken sweep, not an empty registry.
+          jq -e '.images | length > 0' index.json > /dev/null
+          oras push "${REGISTRY}/evals/index:latest" \
+            --artifact-type application/vnd.exgentic.index.v1+json \
+            index.json:application/json
+          # Rule 17: a zero exit is not evidence — read the artifact back.
+          d=$(mktemp -d); oras pull "${REGISTRY}/evals/index:latest" --output "$d"
+          cmp index.json "$d/index.json"
+          jq -r '"index: \(.images | length) published artifacts, \(.labels | length) labelled components"' \
+            index.json >> "$GITHUB_STEP_SUMMARY"
+      # An image whose per-arch tags landed but whose manifest list was never
+      # stitched has no `:latest`, so nothing can pull it — the bits are there and
+      # the name everyone uses is not. The merge step does this, but it is the
+      # last step of a release and this queue cancels runs, so the arch tags
+      # outlive the run that would have joined them: 719 of 7649 artifacts, 412 of
+      # them with BOTH arches already pushed. The sweep above has just worked out
+      # exactly which ones, so finish the job — a retag, never a rebuild.
+      - name: Stitch what was built but never joined
+        env:
+          REGISTRY: ghcr.io/exgentic
+        run: |
+          # name + the per-arch refs to join, straight out of the index: whatever
+          # arches exist. An image with one is usable on that one, and rule 14
+          # still reads it as changed, so the missing arch is built by a later
+          # release rather than blocking this one from being pullable at all.
+          jq -r --arg r "$REGISTRY" '.images | to_entries[]
+                 | select(.value | index("latest") | not)
+                 | . as $i
+                 | (.value | map(select(. == "latest-amd64" or . == "latest-arm64"))
+                           | map("\($r)/\($i.key):\(.)")) as $srcs
+                 | select($srcs | length > 0)
+                 | "\(.key) \($srcs | join(" "))"' index.json > /tmp/halves
+          echo "half-published: $(wc -l < /tmp/halves)"
+          fixed=0; failed=0
+          while read -r name srcs; do
+            [ -n "$name" ] || continue
+            # shellcheck disable=SC2086  # the split is the point: one ref per arch
+            if bash containers/scripts/fleet-tag.sh "${REGISTRY}/${name}" latest $srcs; then
+              fixed=$((fixed+1))
+            else
+              echo "::warning::could not stitch ${name}"; failed=$((failed+1))
+            fi
+          done < /tmp/halves
+          echo "stitched $fixed, failed $failed" >> "$GITHUB_STEP_SUMMARY"
+          # Never fatal: this repairs what a previous run left behind, and a name
+          # that cannot be stitched today is one the next release rebuilds.
+          echo "stitched=$fixed failed=$failed"

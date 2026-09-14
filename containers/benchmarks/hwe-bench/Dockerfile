@@ -28,9 +28,14 @@ FROM ${TASK_BASE}
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="hwe-bench"
 LABEL eval.benchmark.upstream_base="ghcr.io/pku-liang/<org>_m_<repo>:pr-<number> (pku-liang/hwe-bench per-PR image, ref per task)"
+# Every per-PR base upstream publishes is a single amd64 manifest (no manifest
+# list), so arm64 cannot be built at all: its /bin/sh is x86, and the first RUN
+# dies "exec format error" rather than producing a wrong-arch image.
+LABEL eval.platforms="linux/amd64"
 LABEL eval.benchmark.description="HWE-Bench - real fail-to-pass RTL bug-repair tasks graded by simulation (SWE-bench for hardware)"
 LABEL eval.benchmark.tasks="169"
 LABEL eval.benchmark.env="per-task"
+LABEL eval.benchmark.released="true"
 # Internet policy: grading is fully offline and a web fetch could leak the
 # reference fix (some task ids encode their upstream source), so the agent runs
 # web-tools-off. One ARG drives BOTH the declarative label and the EVAL_INTERNET

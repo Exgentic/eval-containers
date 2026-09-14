@@ -45,8 +45,9 @@ dispatch), `:16` (nightly channel), `:18`–`:20` (hash tag, immutability,
    gh run watch "$(gh run list --workflow=release-images.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
    ```
 
-   Never pass `tag`: that publishes a versioned release (rule 5), not a
-   preview.
+   The run starts immediately in its own lane; it never waits for the
+   nightly or another dispatch. Never pass `tag`: that publishes a versioned
+   release (rule 5), not a preview.
 
 5. **Read the result.** The `report` job's summary lists the leaf images in
    scope with build time and size; each build job's log says `fresh`

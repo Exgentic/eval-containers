@@ -14,10 +14,25 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/tau-bench--${EVAL_AGENT:-claude-code}:latest
     build:
       context: .
-    entrypoint: ["python3", "/app/agent.py"]
+    # `. /usr/local/bin/start-edge` FIRST: overriding the entrypoint also skips
+    # the edge bring-up that lives inside /usr/local/bin/run, and without this
+    # the pass-through agent forwards straight to the gateway and every call goes
+    # unrecorded (.agents/edge/RULES.md rules 1, 6, 10 — #558). Sourced, so the
+    # repointed OPENAI_BASE_URL (:4100) reaches agent.py, which reads it as
+    # MODEL_URL. `|| exit 1`, not `|| true`: there is no `set -e` here, so a
+    # sourced script's `return 1` is otherwise swallowed and an unrecorded run
+    # would still score.
+    #
+    # Only the AGENT's calls cross this edge. The user simulator's LLM goes
+    # through the separate `user-gateway` below and is deliberately not recorded
+    # — it is the environment, not the system under test.
+    entrypoint: ["bash", "-c", ". /usr/local/bin/start-edge || exit 1; exec python3 /app/agent.py"]
     environment:
       BENCHMARK: tau-bench
       BRIDGE_URL: http://bridge:8000
+      # NOT what agent.py reads: start-edge overwrites OPENAI_BASE_URL with the
+      # edge's own :4100 first, so this only ever reaches the edge as its
+      # upstream (via the inherited OPENAI_API_BASE).
       OPENAI_BASE_URL: http://gateway:4000
       OPENAI_API_KEY: sk-proxy
     depends_on:

@@ -112,10 +112,14 @@ dataset: false
 # all at once). When Kueue manages the Job the global cap is the ClusterQueue;
 # this stays as a per-run ceiling.
 parallelism: ""
-# Per-example retry (k8s ≥1.29). Empty → whole-Job backoffLimit: 0 (older
-# clusters / OCP <4.16). Set e.g. 2 to retry a flaky example without failing the
-# sweep; maxFailedIndexes then bounds how many examples may stay broken.
-backoffLimitPerIndex: ""
+# Per-example retry (k8s ≥1.29). 0 → no retry, but a failed index still fails
+# ALONE; set e.g. 2 to also retry a flaky example. maxFailedIndexes bounds how
+# many examples may stay broken (empty → the whole dataset, i.e. never give up
+# early). Empty is the opt-out for a cluster older than k8s 1.29 / OCP 4.16,
+# which has neither field: it falls back to a whole-Job backoffLimit: 0, where
+# the first failure deletes every pod still running (#548) — the wrong default
+# everywhere it is not forced.
+backoffLimitPerIndex: 0
 maxFailedIndexes: ""
 # Kueue local-queue name. Empty → no Kueue (runs immediately, capped by
 # parallelism). Set it and the Job starts suspended for Kueue to admit by quota.

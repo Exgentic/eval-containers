@@ -73,7 +73,23 @@ def main() -> int:
 
     task_id = int(os.environ.get("EVAL_TASK_ID", os.environ.get("TASK_ID", "0")))
     model = os.environ.get("MODEL") or os.environ.get("EVAL_MODEL") or "gpt-5-mini"
-    base_url = os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1")
+    # No default. This used to fall back to the gateway
+    # ("http://gateway:4000/openai/v1"), which silently reinstated the very
+    # bypass #558 is about: every call would skip the edge and go unrecorded
+    # (.agents/edge/RULES.md rules 1, 6, 10) while the task still scored, so the
+    # run looked fine and only the missing calls.jsonl.zst gave it away. Both
+    # surfaces source /usr/local/bin/start-edge before this runs, which sets
+    # OPENAI_BASE_URL to the edge's own :4100 — so an unset var means the
+    # bring-up did not happen and there is nothing to record through. Fail loud.
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    if not base_url:
+        print(
+            "[runner] OPENAI_BASE_URL is unset — /usr/local/bin/start-edge must be "
+            "sourced before this harness so every call crosses the edge "
+            "(.agents/edge/RULES.md rule 1)",
+            file=sys.stderr,
+        )
+        return 1
 
     task_name = resolve_task_name(task_id)
     print(f"[runner] task={task_id} name={task_name}", file=sys.stderr)

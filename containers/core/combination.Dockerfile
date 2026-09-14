@@ -23,6 +23,7 @@
 #   /usr/local/bin/gosu              from GOSU_IMAGE (drop to agent uid)
 #   /usr/local/bin/run               framework launcher (runner sequence / single-image)
 #   /usr/local/bin/run-agent         shared agent launcher (rule 7 allow-list, one home)
+#   /usr/local/bin/start-edge        shared edge bring-up (edge rules 1/6/10, one home)
 #   /usr/local/bin/write-result      final result writer
 #   /usr/local/bin/materialize-task  per-task setup helper
 #   /usr/local/bin/reap-sidecars     post-run sidecar reaper (k8s shareProcessNamespace)
@@ -89,6 +90,7 @@ RUN grep -q '^agent:' /etc/passwd || echo 'agent:x:1002:0::/home/agent:/bin/bash
 # ─── Framework scripts ───────────────────────────────────────────────
 COPY runner/run              /usr/local/bin/run
 COPY runner/run-agent        /usr/local/bin/run-agent
+COPY runner/start-edge       /usr/local/bin/start-edge
 COPY runner/write-result     /usr/local/bin/write-result
 COPY entrypoint/eval-materialize-task /usr/local/bin/materialize-task
 COPY entrypoint/reap-sidecars         /usr/local/bin/reap-sidecars
@@ -98,6 +100,7 @@ COPY entrypoint/reap-sidecars         /usr/local/bin/reap-sidecars
 RUN chmod 0755 /usr/local/bin/gosu \
  && chmod +x /usr/local/bin/run \
               /usr/local/bin/run-agent \
+              /usr/local/bin/start-edge \
               /usr/local/bin/write-result \
               /usr/local/bin/materialize-task \
               /usr/local/bin/reap-sidecars

@@ -65,7 +65,7 @@ on:
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, hwe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -84,7 +84,9 @@ on:
         default: ""
 
 concurrency:
-  group: fleet-release-${{ github.ref }}
+  # A dispatch gets its own lane (starts now, never evicted); tag and nightly
+  # runs serialize per ref. Two lanes on one image: fleet-tag keeps the first.
+  group: fleet-release-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}
   cancel-in-progress: false  # never cancel a release mid-flight
 
 permissions:
@@ -348,9 +350,21 @@ jobs:
                 --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
-            for B in swe-bench; do
+            # tasks.txt holds the ids: `#` headings and blanks are skipped, since a
+            # heading read as a task id is an image nobody built (the same contract
+            # containers/scripts/fleet-index.py reads these files under). Which
+            # builder runs them is the base image's shape, not the list's:
+            #   kind=bake   swe-bench — FROM the Epoch per-task base, named from
+            #               EVAL_TASK_ID + EVAL_BASE_ARCH, so bake alone suffices.
+            #   kind=script hwe-bench — its per-PR base (ghcr.io/pku-liang/…:pr-N)
+            #               and HF slug are a string transform of the task id that
+            #               only its build.sh knows, so it builds like the three
+            #               above while sourcing ids from the repo.
+            for B in swe-bench:bake hwe-bench:script; do
+              K="${B##*:}"; B="${B%%:*}"
               tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
-              tks=$(jq -Rn --arg B "$B" '[inputs | select(length>0) | {b:$B, task:., kind:"bake"}]' < "$tf")
+              tks=$(jq -Rn --arg B "$B" --arg K "$K" \
+                '[inputs | select(length>0 and (startswith("#") | not)) | {b:$B, task:., kind:$K}]' < "$tf")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             pertask="$acc"
@@ -358,7 +372,10 @@ jobs:
             # passes vacuously); --only alone keeps one task per benchmark as a
             # smoke, not all ~600.
             if [ -n "${TASKS:-}" ]; then
-              pertask=$(printf '%s' "$pertask" | jq -c --arg t " $TASKS " '[.[] | select($t | index(" " + .task + " "))]')
+              # `$t | index(...)` rebinds `.` to the string $t, so `.task` inside it
+              # indexes a string and jq dies "Cannot index string with string". Match
+              # the id against the split allowlist instead — exact tokens, no padding.
+              pertask=$(printf '%s' "$pertask" | jq -c --arg t "$TASKS" '[.[] | select(.task | IN($t | split(" ")[]))]')
               [ "$pertask" != "[]" ] || { echo "::error::tasks= matched no task id of the benchmarks in scope: $TASKS"; exit 1; }
             elif [ -n "${ONLY:-}" ]; then
               pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
@@ -686,6 +703,16 @@ jobs:
             ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
             cache="${REGISTRY}/buildcache/${B}-${tid}-${ARCH}"
             if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
+            # An arch the benchmark does not declare cannot build (its base lacks
+            # it) — skip, leaving it legitimately single-arch, as the leaf matrix
+            # does. The mismatch check after a script build only catches a base
+            # that builds the WRONG arch; a base with no arm64 at all fails its
+            # first RUN ("exec format error"), which is a build failure, not a
+            # mismatch, so it has to be skipped before the build starts.
+            PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "containers/benchmarks/$B/Dockerfile" | tail -1)
+            if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
+              echo "skipping $ref on $ARCH — declared platforms: $PLATS"; continue
+            fi
             # Per-task build-input hash (delivery/RULES.md rule 12): the raw
             # task id is part of the preimage; build.sh stamps it via
             # EVAL_INPUT_HASH, bake via a per-target label --set.
@@ -716,6 +743,27 @@ jobs:
                 fi
               else echo "::error::per-task build failed: $ref"; fails=$((fails+1)); fi
             else
+              # The base this bake is FROM (benchmarks/swe-bench/Dockerfile). Epoch
+              # publishes it per arch and per task, and for many tasks only x86_64
+              # exists — delivery/RULES.md 14a: the platforms an image is expected
+              # to publish are the ones its inputs can produce, so an arch its base
+              # does not have was never expected and is not a failure. Without this
+              # the same 80 arm64 bakes failed in every release, for ever (#564);
+              # the merge keeps what did build as a single-arch :TAG.
+              base="ghcr.io/epoch-research/swe-bench.eval.${EPOCH_ARCH}.${TASK}:latest"
+              # Through fleet-status, which is where the read discipline lives: it
+              # answers 1 only when the registry says it has never heard of the
+              # ref, and 2 when the read never cleared. A blip must not read as
+              # "upstream has no arm64" and quietly stop building an image that
+              # exists — measured locally, a plain `imagetools inspect` called
+              # three published bases absent when it could not authenticate.
+              rc=0; bash containers/scripts/fleet-status.sh exists "$base" >/dev/null || rc=$?
+              if [ "$rc" -eq 1 ]; then
+                echo "::warning::$ref: upstream publishes no ${EPOCH_ARCH} base ($base) — not built, not failed"
+                continue
+              elif [ "$rc" -ne 0 ]; then
+                echo "::error::$base: unreadable, cannot tell absent from a blip"; fails=$((fails+1)); continue
+              fi
               # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the published entrypoint.
               if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
                    --set "benchmark-${B}.labels.eval.input-hash=${H}" \
@@ -999,8 +1047,19 @@ jobs:
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
           ITEMS=$(jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json)
-          ORIG_TAG="$TAG"             # benchmark/agent image refs stay on the merged multi-arch :TAG
+          ORIG_TAG="$TAG"             # every base image ref stays on the merged multi-arch :TAG
           export TAG="${TAG}-${ARCH}" # this combo's own OUTPUT tag; merge-pertask-combos builds the final :TAG
+          # Rebinding TAG above renames the OUTPUT, but combination.docker-bake.hcl
+          # derives every base default from ${TAG} too, so left alone they would
+          # resolve to per-arch tags (core/edge:latest-amd64) instead of the merged
+          # manifest — a wrong-arch or stale /opt/edge baked into the combo (#559).
+          # Every *_IMAGE the two combo targets consume is therefore pinned back to
+          # $ORIG_TAG explicitly, exactly as BENCHMARK_IMAGE/AGENT_IMAGE are.
+          export EDGE_IMAGE="${REGISTRY}/core/edge:${ORIG_TAG}"
+          export GOSU_IMAGE="${REGISTRY}/core/gosu:${ORIG_TAG}"
+          export OTEL_IMAGE="${REGISTRY}/core/otel:${ORIG_TAG}"
+          export MODEL_IMAGE="${REGISTRY}/models/bifrost:${ORIG_TAG}"
+          export PROCESS_COMPOSE_IMAGE="${REGISTRY}/core/process-compose:${ORIG_TAG}"
           retry() {
             local n=0 max="${BUILD_RETRIES:-4}"
             until "$@"; do
@@ -1219,29 +1278,6 @@ jobs:
           cmp catalog.json "$d/catalog.json"
           jq -r '"catalog: \(.families | length) families x \(.agents | length) agents"' \
             catalog.json >> "$GITHUB_STEP_SUMMARY"
-      # The inventory beside the catalog: every artifact this fleet names, proved
-      # against the registry one by one, with the labels each component declares.
-      # The catalog answers "which pair may I launch" as a model — families x a
-      # lineup — which is exactly how it came to offer an agent against 99
-      # benchmarks when one was published (#516). The index answers it by
-      # enumeration, so a consumer can search and filter what actually exists.
-      - name: Sweep the registry -> evals/index:latest
-        env:
-          CATALOG_AGENTS: ${{ join(fromJson(needs.enumerate.outputs.agents), ' ') }}
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          python3 containers/scripts/fleet-index.py pertask.json > index.json
-          # A sweep that found nothing is a broken sweep, not an empty registry.
-          jq -e '.images | length > 0' index.json > /dev/null
-          oras push "${REGISTRY}/evals/index:latest" \
-            --artifact-type application/vnd.exgentic.index.v1+json \
-            index.json:application/json
-          # Rule 17: a zero exit is not evidence — read the artifact back.
-          d=$(mktemp -d); oras pull "${REGISTRY}/evals/index:latest" --output "$d"
-          cmp index.json "$d/index.json"
-          jq -r '"index: \(.images | length) published artifacts, \(.labels | length) labelled components"' \
-            index.json >> "$GITHUB_STEP_SUMMARY"
-
   # ── end-of-run report: stages + per-image build time & registry size ──────
   report:
     name: Build-time + size report

@@ -85,7 +85,7 @@ oc auth can-i create clusterqueues.kueue.x-k8s.io   # can you set it up?
 | feature | needs | OpenShift | if older |
 |---------|-------|-----------|----------|
 | `completionMode: Indexed` | k8s 1.24 | OCP ≥ 4.11 | hard floor |
-| `--retry` (`backoffLimitPerIndex`) | k8s 1.29 | OCP ≥ 4.16 | omit `--retry`; whole-Job `backoffLimit: 0` |
+| per-index failure isolation (`backoffLimitPerIndex`) | k8s 1.29 | OCP ≥ 4.16 | `--set backoffLimitPerIndex=` (empty) for the whole-Job `backoffLimit: 0`, where the first failed index deletes every pod still running |
 | Kueue | k8s 1.22 + admin | any recent | drop `--queue`; use `--parallelism` |
 
 Namespace prereqs, applied once from `deploy/` (vanilla k8s skips the SA): the

@@ -228,6 +228,148 @@ fn timeout_override_beats_a_preset() {
     eprintln!("✓ timeoutOverride: helper honours it, values.yaml defaults empty, comment trimmed");
 }
 
+/// Edge capture is unconditional (.agents/edge/RULES.md rules 1, 6, 10): every
+/// model call an agent makes MUST cross the edge and be recorded. The bring-up
+/// that makes that true lives in `/usr/local/bin/start-edge`, sourced by
+/// `/usr/local/bin/run` — so any surface that REPLACES `run` with its own
+/// command has to source it itself, or the edge never starts, nothing listens on
+/// 4100, and the agent's traffic goes straight to the gateway unrecorded.
+///
+/// That is #558: automationbench and tau-bench each replace the launcher (their
+/// harness needs the task identity, which run's agent phase withholds per rule
+/// 7) on BOTH surfaces — the chart's `runnerArgs` and compose's `entrypoint` —
+/// and neither started the edge. The failure is silent: the task still scores,
+/// and only a missing `model/calls.jsonl.zst` gives it away. So this gate is
+/// structural rather than a runtime assertion on the record — it catches the
+/// next bespoke harness at PR time, offline, without a cluster.
+///
+/// The bar is "invokes the launcher OR the edge starter": a command that runs
+/// `run` gets the edge through it, and one that doesn't must source start-edge.
+#[test]
+fn every_launcher_override_starts_the_edge() {
+    const RUN: &str = "/usr/local/bin/run";
+    const START_EDGE: &str = "/usr/local/bin/start-edge";
+
+    // `run` is what makes the default path conform, so pin that it still brings
+    // the edge up — via the shared starter, not a second inlined copy.
+    let run = fs::read_to_string(repo_root().join("containers/core/runner/run"))
+        .expect("missing containers/core/runner/run");
+    assert!(
+        run.contains(START_EDGE),
+        "core/runner/run must source {START_EDGE} — it is the one home for the edge \
+         bring-up that every launcher override also has to reach (edge rules 1, 6, 10)"
+    );
+    let starter = repo_root().join("containers/core/runner/start-edge");
+    assert!(
+        starter.is_file(),
+        "containers/core/runner/start-edge must exist — `run` and every launcher \
+         override source it to bring the edge up (edge rules 1, 6, 10)"
+    );
+    // The starter is only useful if it actually lands in the eval image.
+    let combo = fs::read_to_string(repo_root().join("containers/core/combination.Dockerfile"))
+        .expect("missing containers/core/combination.Dockerfile");
+    assert!(
+        combo.contains("runner/start-edge"),
+        "combination.Dockerfile must COPY runner/start-edge — an override that sources \
+         a path the image lacks fails at run time, on the cluster, per task"
+    );
+
+    let mut offenders: Vec<String> = Vec::new();
+
+    // ── k8s surface: presets that override `runnerArgs`. ──────────────
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    let mut preset_files: Vec<PathBuf> = fs::read_dir(&presets)
+        .expect("missing _chart/presets")
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == "yaml"))
+        .collect();
+    preset_files.sort();
+    for path in &preset_files {
+        let text = fs::read_to_string(path).expect("read preset");
+        // `runnerArgs:` may be a scalar or a `>-` block; take everything from
+        // the key to the next top-level (column-0) key, which is the whole value
+        // either way. Anything the value contains counts as "invoked".
+        let Some(start) = text
+            .find("\nrunnerArgs:")
+            .or_else(|| text.starts_with("runnerArgs:").then_some(0))
+        else {
+            continue; // no override — the default runnerArgs invoke `run`
+        };
+        let rest = &text[start + 1..];
+        let value: String = rest
+            .lines()
+            .enumerate()
+            .take_while(|(i, l)| *i == 0 || l.trim().is_empty() || l.starts_with([' ', '\t', '#']))
+            .map(|(_, l)| l)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !(value.contains(RUN) || value.contains(START_EDGE)) {
+            let name = path.file_name().unwrap().to_string_lossy();
+            offenders.push(format!(
+                "_chart/presets/{name}: runnerArgs replaces the launcher but invokes neither \
+                 {RUN} nor {START_EDGE}"
+            ));
+        }
+    }
+
+    // ── compose surface: benchmarks that override `entrypoint`. ───────
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let compose = dir.join("compose.yaml");
+        let Ok(text) = fs::read_to_string(&compose) else {
+            continue;
+        };
+        // Only the `runner` service's entrypoint matters — a bespoke sidecar
+        // (tau-bench's `harness`, its `bridge`) is the environment, not the
+        // system under test, and does not carry the agent's calls. Slice the
+        // runner service out: from its 2-space key to the next one.
+        let Some(at) = text.find("\n  runner:") else {
+            continue;
+        };
+        let body = &text[at + 1..];
+        let end = body
+            .lines()
+            .skip(1)
+            .position(|l| {
+                l.starts_with("  ") && !l.starts_with("   ") && l.trim_end().ends_with(':')
+            })
+            .map(|i| body.lines().take(i + 1).map(|l| l.len() + 1).sum::<usize>())
+            .unwrap_or(body.len());
+        let runner = &body[..end];
+        // Ignore commented-out lines: a comment naming start-edge must not
+        // satisfy the gate, and a commented entrypoint must not trip it.
+        let live: String = runner
+            .lines()
+            .filter(|l| !l.trim_start().starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !live.contains("entrypoint:") {
+            continue; // inherits the image CMD, which is `run`
+        }
+        if !(live.contains(RUN) || live.contains(START_EDGE)) {
+            offenders.push(format!(
+                "benchmarks/{name}/compose.yaml: the runner's entrypoint replaces the launcher \
+                 but invokes neither {RUN} nor {START_EDGE}"
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "every surface that replaces the framework launcher MUST still bring the edge up, \
+         or its model calls bypass the edge and nothing is recorded — silently, since the \
+         task still scores (.agents/edge/RULES.md rules 1, 6, 10; #558). Source \
+         `. {START_EDGE} || exit 1` first (`|| exit 1` because these commands run under \
+         `bash -c` with no `set -e`, which swallows a sourced script's failure):\n  {}",
+        offenders.join("\n  ")
+    );
+
+    eprintln!(
+        "✓ every launcher override starts the edge ({} preset(s), compose runners checked)",
+        preset_files.len()
+    );
+}
+
 #[test]
 fn count_reconciliation() {
     let claims = readme_counts();
@@ -292,36 +434,27 @@ fn fixture_benchmarks() -> Vec<String> {
     let Ok(entries) = fs::read_dir(repo_root().join("tests/run/replay/fixtures")) else {
         return out;
     };
+    // Filename convention: <benchmark>-<task-id>-<agent>.traces.jsonl (rule 5,
+    // tests/run/replay/RULES.md). Task ids are free-form and may themselves
+    // contain "-<digits>-" (e.g. hwe-bench's "lowrisc__ibex-2232"), so the
+    // benchmark name can't be recovered from the filename alone — match it
+    // against the known benchmark directories instead, picking the longest
+    // one that prefixes the stem.
+    let known: Vec<String> = sibling_dirs("benchmarks")
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         if !name.ends_with(".traces.jsonl") {
             continue;
         }
-        // Filename convention: <benchmark>-<task>-<agent>.traces.jsonl
-        // The benchmark name is everything before the first "-<digit>-"
-        // (task ids are typically "0", "1", ...). Fall back to everything
-        // before the last "-" pair if that doesn't match.
         let stem = name.trim_end_matches(".traces.jsonl");
-        // Find "<benchmark>-<task>-<agent>" by scanning for "-\d+-" first.
-        let bench = stem
-            .find('-')
-            .and_then(|_| {
-                // Greedy: take the longest prefix such that the remainder
-                // starts with "<digit>-<agent>"
-                let mut best = None;
-                for (i, c) in stem.char_indices() {
-                    if c != '-' {
-                        continue;
-                    }
-                    let rest = &stem[i + 1..];
-                    let after_digit: String =
-                        rest.chars().take_while(|c| c.is_ascii_digit()).collect();
-                    if !after_digit.is_empty() && rest[after_digit.len()..].starts_with('-') {
-                        best = Some(stem[..i].to_string());
-                    }
-                }
-                best
-            })
+        let bench = known
+            .iter()
+            .filter(|b| stem.starts_with(b.as_str()) && stem[b.len()..].starts_with('-'))
+            .max_by_key(|b| b.len())
+            .cloned()
             .unwrap_or_else(|| stem.to_string());
         out.push(bench);
     }
@@ -1047,6 +1180,65 @@ fn the_per_task_job_pushes_with_the_engine_build_sh_builds_with() {
     );
 }
 
+/// Every per-task `build.sh` MUST stamp `EVAL_INPUT_HASH` as the
+/// `eval.input-hash` label (delivery/RULES.md rule 12). This path has no bake
+/// invocation to `--set` the label on, so the script is the only place it can be
+/// applied — and without it `fleet-tag.sh` cannot read the hash it needs to name
+/// the hash tag rule 18 requires, so `merge` fails the image after a build that
+/// otherwise succeeded (hwe-bench shipped without it and could not be released).
+#[test]
+fn every_per_task_build_script_stamps_the_input_hash() {
+    // The benchmarks the release enumerates as kind=script — the ones that are
+    // handed EVAL_INPUT_HASH today. A per-task benchmark the workflow does not
+    // enumerate yet (swe-bench-pro, swe-lancer) is never passed one, so it is
+    // held to this only once it joins the loop in release-images.yml.
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let mut missing = Vec::new();
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let script = dir.join("build.sh");
+        if !script.is_file() {
+            continue;
+        }
+        let enumerated = wf.contains(&format!("for B in {name} "))
+            || wf.contains(&format!(" {name} "))
+            || wf.contains(&format!("{name}:script"));
+        if !enumerated {
+            continue;
+        }
+        let text = fs::read_to_string(&script).expect("read build.sh");
+        if !text.contains("EVAL_INPUT_HASH") {
+            missing.push(name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "per-task build.sh must stamp --label=eval.input-hash from EVAL_INPUT_HASH \
+         (delivery/RULES.md rule 12), else merge cannot name its hash tag: {missing:?}"
+    );
+}
+
+/// The per-task job MUST skip an arch the benchmark's `eval.platforms` excludes,
+/// the way the leaf matrix does. The post-build arch comparison only catches a
+/// base that builds the *wrong* arch; a base with no such arch at all fails its
+/// first `RUN` with "exec format error", which counts as a build failure and
+/// fails the job, so the skip has to happen before the build starts (rule 14).
+#[test]
+fn the_per_task_job_honours_declared_platforms() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  per-task:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  merge:").next())
+        .expect("no `per-task` job in release-images.yml");
+    assert!(
+        job.contains(r#"eval\.platforms"#) && job.contains(r#",linux/$ARCH,"#),
+        "the per-task job must skip an arch outside the benchmark's declared \
+         eval.platforms before building (delivery/RULES.md rule 14)"
+    );
+}
+
 /// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
 /// carries the gateway with one `COPY /opt/gateway`, so a shim outside it fails
 /// `not found` at boot (regression: #269's nginx at /usr/sbin broke every bundle).
@@ -1359,5 +1551,202 @@ fn the_channel_publishes_nightly() {
         enumerate.contains("TASKS: ${{ inputs.tasks }}")
             && enumerate.contains("tasks= matched no task id"),
         "a dispatch must be able to name exact task ids, and fail loud when none match"
+    );
+}
+
+/// A dispatch is a developer's own lane: it must start immediately and never
+/// queue behind the nightly or another dispatch — one shared concurrency group
+/// serialized every run on `main`, and since only one run may wait per group,
+/// a second dispatch silently evicted the first. Tag and nightly runs keep
+/// serializing per ref.
+#[test]
+fn a_dispatch_runs_in_its_own_lane() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    assert!(
+        wf.contains(
+            "group: fleet-release-${{ github.event_name == 'workflow_dispatch' && github.run_id || github.ref }}"
+        ),
+        "a workflow_dispatch must get a per-run concurrency group, or it waits for the nightly \
+         and evicts other pending dispatches"
+    );
+}
+
+/// Rule 16 requires `agent/result.json` to carry an `exit_code`, and rule 24
+/// requires every surface to produce byte-equivalent results for the same
+/// inputs. Only `run-agent` writes `/output/agent/.exit-code`, so a benchmark
+/// whose preset replaces the standard three-phase pipeline with its own harness
+/// (`runnerArgs`) must record the status itself — otherwise `write-result`
+/// coerces it to JSON null and every task of that benchmark reports an
+/// unrecorded exit status for the rest of time.
+///
+/// automationbench shipped exactly that gap on the k8s surface while its compose
+/// twin recorded the code, so the two surfaces disagreed (a rule 24b lockstep
+/// violation) and a wall-clock kill was indistinguishable from a task that never
+/// started. Rule 29's per-surface checks cannot catch it: each surface renders
+/// fine on its own, and the drift lives in the one per-benchmark command a
+/// preset is still allowed to define.
+#[test]
+fn a_preset_that_replaces_the_agent_phase_records_its_exit_status() {
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    let mut checked = 0;
+    for entry in fs::read_dir(&presets).expect("read presets dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+            continue;
+        }
+        let body = fs::read_to_string(&path).expect("read preset");
+        // Only presets that take over the runner command bypass run-agent.
+        if !body.contains("runnerArgs:") {
+            continue;
+        }
+        let name = path.file_stem().unwrap().to_string_lossy().to_string();
+        // Either record the status into the file write-result reads, or hand the
+        // harness's own status back as the container's (tau-bench's `exit $rc`),
+        // which keeps the Job's outcome honest.
+        let records = body.contains("/output/agent/.exit-code") || body.contains("exit $rc");
+        assert!(
+            records,
+            "preset {name}.yaml overrides runnerArgs (so run-agent never writes \
+             /output/agent/.exit-code) but never records an exit status — \
+             write-result will coerce agent/result.json exit_code to null and a \
+             timeout becomes indistinguishable from a task that never ran \
+             (rules 16, 24)"
+        );
+        checked += 1;
+    }
+    assert!(
+        checked > 0,
+        "expected at least one preset defining runnerArgs"
+    );
+    eprintln!("✓ {checked} runnerArgs preset(s) record an exit status (rules 16, 24)");
+}
+
+/// Rule 14: agent execution MUST be bounded by `EVAL_TIMEOUT`. `run-agent`
+/// enforces it with `timeout -k 30 $TIMEOUT`; a preset that runs its own harness
+/// instead of `run-agent` must enforce it too. Without an inner bound the only
+/// limit left is the pod's `activeDeadlineSeconds` (timeout + deadlineGrace),
+/// which SIGKILLs the whole pod — so nothing survives to write `.exit-code`, and
+/// the recorded-status guarantee above silently stops holding at the wall clock.
+#[test]
+fn a_preset_that_replaces_the_agent_phase_bounds_its_harness() {
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    for entry in fs::read_dir(&presets).expect("read presets dir") {
+        let path = entry.expect("dir entry").path();
+        if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
+            continue;
+        }
+        let body = fs::read_to_string(&path).expect("read preset");
+        if !body.contains("/output/agent/.exit-code") {
+            continue; // covered by the sibling test, or defers to run-agent
+        }
+        let name = path.file_stem().unwrap().to_string_lossy().to_string();
+        assert!(
+            body.contains("timeout -k"),
+            "preset {name}.yaml records its own exit status but never bounds the \
+             harness with `timeout -k … $TIMEOUT` (rule 14) — the pod's \
+             activeDeadlineSeconds SIGKILL would then be the only limit, and it \
+             leaves no shell alive to record 124"
+        );
+    }
+}
+
+/// A combo job that rebinds `TAG` (the per-task one does, to `$TAG-$ARCH`, so
+/// the combo it PUSHES carries a per-arch tag) MUST pin every base image ref
+/// back to the unrebound tag. `combination.docker-bake.hcl` derives each base
+/// default from `${TAG}` too, so left alone they resolve to per-arch tags
+/// (`core/edge:latest-amd64`) rather than the merged multi-arch manifest — which
+/// bakes a wrong-arch or stale base into the combo. #559 shipped per-task evals
+/// whose `/opt/edge` came from whichever matrix leg pushed last, and those
+/// benchmarks recorded no LLM calls at all; `BENCHMARK_IMAGE`/`AGENT_IMAGE` were
+/// already pinned, every other `*_IMAGE` was not.
+///
+/// Both halves are derived: the required refs from the HCL's `${TAG}`-shaped
+/// defaults, and the jobs to check from which ones bake the combination file and
+/// rebind `TAG`. So a base added to the HCL, or a combo job that starts
+/// rebinding `TAG` (the shared `combos` job does not today), is held to this
+/// without editing the test.
+#[test]
+fn a_tag_rebinding_combo_job_pins_every_base_to_the_multi_arch_tag() {
+    let hcl = fs::read_to_string(repo_root().join("containers/core/combination.docker-bake.hcl"))
+        .expect("read containers/core/combination.docker-bake.hcl");
+    // variable "X_IMAGE" { default = "${REGISTRY}/<dir>:${TAG}" } — a ${TAG}-derived
+    // default is exactly what a TAG rebinding corrupts.
+    let derived: Vec<(String, String)> = hcl
+        .lines()
+        .filter_map(|l| {
+            let rest = l.trim().strip_prefix("variable \"")?;
+            let (var, rest) = rest.split_once('"')?;
+            let (_, rest) = rest.split_once("\"${REGISTRY}/")?;
+            let (dir, _) = rest.split_once(":${TAG}\"")?;
+            Some((var.to_string(), dir.to_string()))
+        })
+        .collect();
+    assert!(
+        derived.iter().any(|(v, _)| v == "EDGE_IMAGE"),
+        "combination.docker-bake.hcl must default EDGE_IMAGE from ${{TAG}} — the pins \
+         this test demands are derived from those defaults"
+    );
+
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    // Split into jobs: a job header is a `  <name>:` line at two-space indent.
+    let is_header = |l: &str| {
+        l.strip_prefix("  ")
+            .and_then(|r| r.strip_suffix(':'))
+            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_alphanumeric() || c == '-'))
+    };
+    let mut jobs: Vec<(String, String)> = Vec::new();
+    for line in wf.lines().skip_while(|l| !l.starts_with("jobs:")) {
+        if is_header(line) {
+            jobs.push((line.trim().trim_end_matches(':').to_string(), String::new()));
+        } else if let Some(last) = jobs.last_mut() {
+            last.1.push_str(line);
+            last.1.push('\n');
+        }
+    }
+    let combo_jobs: Vec<&(String, String)> = jobs
+        .iter()
+        .filter(|(_, body)| {
+            body.contains("core/combination.docker-bake.hcl") && body.contains("export TAG=")
+        })
+        .collect();
+    assert!(
+        combo_jobs.iter().any(|(n, _)| n == "combos-pertask"),
+        "expected `combos-pertask` to bake the combination file with a rebound TAG; \
+         if that job stopped rebinding TAG the pins are moot and this check should be \
+         retired with it (jobs seen: {:?})",
+        jobs.iter().map(|(n, _)| n).collect::<Vec<_>>()
+    );
+
+    for (name, body) in &combo_jobs {
+        // The unrebound tag is saved before the rebinding; require the name the
+        // per-task job already uses, so the pin below is unambiguous.
+        assert!(
+            body.contains("ORIG_TAG=\"$TAG\""),
+            "{name} rebinds TAG; it must first save the original as ORIG_TAG so the \
+             base refs below can be pinned to it"
+        );
+        let missing: Vec<&String> = derived
+            .iter()
+            .filter(|(var, dir)| {
+                !body.contains(&format!(
+                    r#"export {var}="${{REGISTRY}}/{dir}:${{ORIG_TAG}}""#
+                ))
+            })
+            .map(|(var, _)| var)
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{name} rebinds TAG, so these combination.docker-bake.hcl defaults resolve \
+             to per-arch tags instead of the merged manifest and bake a stale/wrong-arch \
+             base into the combo (#559) — pin each back to $ORIG_TAG the way \
+             BENCHMARK_IMAGE/AGENT_IMAGE are: {missing:?}"
+        );
+    }
+    eprintln!(
+        "✓ {} TAG-rebinding combo job(s) pin all {} combo base refs to the multi-arch tag",
+        combo_jobs.len(),
+        derived.len()
     );
 }
