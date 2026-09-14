@@ -17,7 +17,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --pvc) PASS_ARGS+=(--pvc "$2"); shift 2;;
   --repo-dir) PASS_ARGS+=(--repo-dir "$2"); shift 2;;
   --rebuild) PASS_ARGS+=(--rebuild); shift;;
-  --no-build) PASS_ARGS+=(--no-build); shift;;
+  --build) PASS_ARGS+=(--build); shift;;
   --test-suffix) SUFFIX="$2"; shift 2;;   # isolated env, e.g. --test-suffix -ci-42
   *) echo "Unknown argument: $1" >&2; exit 1;;
 esac; done

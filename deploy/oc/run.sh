@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# run.sh — build + run one eval on OpenShift: a single --task, or --dataset
-# (whole dataset → an Indexed Job). Model + flags: oc/README.md and the case below.
+# run.sh — run one eval on OpenShift: a single --task, or --dataset (whole
+# dataset → an Indexed Job). Model + flags: oc/README.md and the case below.
+#
+# It launches the PUBLISHED chart + GHCR fleet by default — what the dashboard
+# launches — so a run from here and a run from the form are the same run.
+# `--build` is the development path: build the four images into the namespace's
+# internal registry and launch those instead.
 #
 #   ./oc/run.sh --benchmark aime --agent codex --model azure/gpt-5-mini --dataset
 #   ./oc/run.sh --benchmark aime --agent codex --model azure/gpt-5-mini --task 0   # single, debug
@@ -8,8 +13,8 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
 BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
-NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" FLAT_IMAGES="true"
-DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
+NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" FLAT_IMAGES=""
+DATASET_MODE=false BUILD=false LOCAL_CHART=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
   --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; shift 2;;
@@ -22,7 +27,11 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
   --run-id) RUN_ID="$2"; shift 2;;
   --flat-images) FLAT_IMAGES="$2"; shift 2;;
-  --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
+  --build) BUILD=true; shift;; --rebuild) BUILD=true; REBUILD=true; shift;;
+  --local-chart) LOCAL_CHART=true; shift;;
+  # Building is opt-in now: the published fleet is the default, so there is
+  # nothing to opt out of. Say that rather than take a flag that means "default".
+  --no-build) echo "error: --no-build is gone — the published fleet is the default; --build opts in" >&2; exit 1;;
   --no-run) NO_RUN=true; shift;; --test) TEST=true; shift;;
   --test-suffix) TEST=true; SUFFIX="$2"; shift 2;;
   --rerun) RERUN=true; shift;; --watch) WATCH=true; shift;; --dry-run) DRY_RUN=true; shift;;
@@ -45,16 +54,22 @@ log() { echo "[run] $*"; }
 # --task-id outright, and a flat ImageStream name cannot even hold a task id like
 # `sympy__sympy-24066` (`_` is not RFC-1123). Say so here rather than failing
 # three steps later on a build that could never have produced the right image.
-# The published GHCR fleet has these images already — launch them from there (the
-# dashboard does); the chart renders the task-aware ref on its own.
-if per_task "$BENCHMARK"; then
+# Only --build is blocked: the published fleet has these images already and the
+# chart renders the task-aware ref on its own, which is how the dashboard runs
+# them and, by default, how this script does too.
+if $BUILD && per_task "$BENCHMARK"; then
   echo "error: $BENCHMARK is a per-task benchmark — one eval image per task, which" >&2
   echo "       the internal registry cannot build (build --builder oc has no --task-id)." >&2
-  echo "       Launch it from the published fleet instead of building it here." >&2
+  echo "       Drop --build to launch it from the published fleet." >&2
   exit 1
 fi
 
-[[ -z "$REGISTRY" ]] && REGISTRY="$(oc_registry "$NAMESPACE")"
+# Where the images come from is the whole of what --build changes: the
+# namespace's internal registry (flat ImageStream names) or the published fleet
+# (nested paths) — the same GHCR refs the dashboard launches, so a run from here
+# and a run from the form are the same run.
+[[ -z "$REGISTRY" ]] && { $BUILD && REGISTRY="$(oc_registry "$NAMESPACE")" || REGISTRY="$PUBLISHED_REGISTRY"; }
+[[ -z "$FLAT_IMAGES" ]] && FLAT_IMAGES=$($BUILD && echo true || echo false)
 [[ -x "$REPO_DIR/target/release/eval-containers" ]] && PATH="$REPO_DIR/target/release:$PATH"
 # --test / --test-suffix: isolate behind a suffix so production is untouched.
 if $TEST && [[ -z "$SUFFIX" ]]; then SUFFIX="-test"; fi
@@ -68,7 +83,7 @@ RUN_ID="${RUN_ID:-$(date -u +%Y%m%d-%H%M%S)-$RANDOM}"
 # Per-build ConfigMap cleanup is the BuildConfig's job — the CLI sets
 # successfulBuildsHistoryLimit on it so the controller GCs old build pods (and
 # their ConfigMaps) natively; no shell housekeeping needed here.
-if ! $NO_BUILD; then
+if $BUILD; then
   log "=== build ($BENCHMARK / $AGENT / $GATEWAY) ==="
   ISFLAG=(); [[ -n "$SUFFIX" ]] && ISFLAG=(--imagestream-suffix="$SUFFIX")
   build() { local label="$1" is="$2"; shift 2
@@ -106,7 +121,9 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "registry=$REGISTRY" --set "flatImages=$FLAT_IMAGES"
      --set "outputVolume.persistentVolumeClaim.claimName=$PVC" --set "outputSubPath=$SUB"
      --set "runId=$RUN_ID")
-[[ -n "$SUFFIX"      ]] && SET+=(--set "imageSuffix=$SUFFIX" --set "nameSuffix=$SUFFIX")
+# An imagestream suffix isolates BUILT images; the published fleet has nothing to
+# suffix, but the Job name still has to stay out of production's way.
+[[ -n "$SUFFIX" ]] && { $BUILD && SET+=(--set "imageSuffix=$SUFFIX"); SET+=(--set "nameSuffix=$SUFFIX"); }
 # --dataset with no --dataset-size: the chart sizes it from its own
 # dataset-sizes.json, so a dry run renders the real Indexed Job and a grid of
 # differently-sized benchmarks self-sizes without a flag.
@@ -122,7 +139,16 @@ $DATASET_MODE && SET+=(--set "dataset=true")
 # .Release.Name. Passing the task id here is what made `--task sympy__sympy-24066`
 # die on helm's own check — an upstream id carries whatever upstream called it.
 # Benchmark, agent and suffix are already safe and short, so the task stays out.
-RENDER=$(helm template "$BENCHMARK-$AGENT$SUFFIX" "$REPO_DIR/containers/benchmarks/_chart" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
+# The published chart is the artifact a release ships and the dashboard vendors;
+# rendering the working tree can render a chart that was never published, so that
+# is the opt-in. Pinned to the version this checkout declares, so the two cannot
+# silently diverge.
+if $LOCAL_CHART; then
+  CHART=("$REPO_DIR/containers/benchmarks/_chart")
+else
+  CHART=("oci://$PUBLISHED_REGISTRY/charts/eval" --version "$(sed -n 's/^version: *//p' "$REPO_DIR/containers/benchmarks/_chart/Chart.yaml")")
+fi
+RENDER=$(helm template "$BENCHMARK-$AGENT$SUFFIX" "${CHART[@]}" -f "$REPO_DIR/deploy/values-openshift.yaml" "${SET[@]}")
 JOB=$(job_name_from_render "$RENDER")
 [[ -n "$JOB" ]] || { echo "error: no eval Job in the rendered manifest" >&2; exit 1; }
 # Say which Job this is before exiting, so a dry run shows what --rerun, --watch
