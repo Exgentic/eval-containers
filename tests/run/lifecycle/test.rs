@@ -319,3 +319,31 @@ async fn an_errored_attempt_is_recorded_not_signalled() {
 
     let _ = std::fs::remove_dir_all(dir.parent().expect("run directory"));
 }
+
+/// The launcher empties the directory it is given, so being given the wrong one
+/// is the expensive mistake: a mount with no subPath, or a path composed a level
+/// short, would take every other run on the volume. Every surface passes through
+/// here, so this is where it is caught — whatever the caller got wrong.
+#[tokio::test]
+#[ignore]
+async fn a_run_root_is_refused_before_anything_is_emptied() {
+    ensure_image();
+    let task = task_dir("guard");
+    let run_dir = task.parent().expect("run directory").to_path_buf();
+    let sibling = run_dir.join("7/task");
+    std::fs::create_dir_all(&sibling).expect("an earlier task of the same run");
+    std::fs::write(sibling.join("result.json"), "{}").expect("its result");
+
+    // Mounting the RUN directory: one level short of a task.
+    let (code, log) = launch(&run_dir, &[]).await;
+    assert_eq!(
+        code, 3,
+        "the launcher accepted a run root as a task directory:\n{log}"
+    );
+    assert!(
+        sibling.join("result.json").exists(),
+        "an earlier task's result was destroyed:\n{log}"
+    );
+
+    let _ = std::fs::remove_dir_all(&run_dir);
+}

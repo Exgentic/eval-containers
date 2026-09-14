@@ -120,6 +120,20 @@ trap 'rm -f "$lock"' EXIT
 ( while sleep 15; do touch "$lock" 2>/dev/null || exit 0; done ) &
 echo $! > /output/agent/.heartbeat
 
+# Before emptying anything: /output must BE a task directory. If a child of it
+# holds model/, agent/ or task/, we were pointed at a run root or higher — a
+# mount with no subPath, a path composed wrong — and emptying would take other
+# runs with it. No caller should be able to reach that, which is exactly why
+# this is checked here, where every surface passes through.
+for child in /output/*/; do
+  for half in model agent task; do
+    if [ -d "$child$half" ]; then
+      echo "run: /output is not a task directory — $child holds $half/, so this is a run root or higher; refusing to empty it" >&2
+      exit 3
+    fi
+  done
+done
+
 # Failed or forced: empty the previous attempt, keeping this claim (rules 28-30).
 # `rm -rf`, not `-delete`: find cannot remove a non-empty directory at maxdepth 1,
 # and a benchmark that left one would abort the run under `set -e`.
