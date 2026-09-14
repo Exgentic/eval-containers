@@ -43,6 +43,7 @@ ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
 LABEL eval.benchmark.url="https://github.com/MoonshotAI/walle"
 LABEL eval.benchmark.license="MIT"
+LABEL eval.benchmark.released="true"
 
 # ── apt: ca-certificates for the build-time HTTPS fetch (network-resilient,
 # mirrors benchmark-base-external) ────────────────────────────────────────
