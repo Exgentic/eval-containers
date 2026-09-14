@@ -1,0 +1,146 @@
+# Output
+
+**Status:** Active
+**Date:** September 2026
+
+## Abstract
+
+Every evaluation, on every deployment surface, leaves one thing behind: its
+output. This document fixes what that output is and how it behaves over its
+life — where a run writes, what each task directory holds (results, logs,
+benchmark artifacts, the run's configuration), when an existing result is
+reused, when a dead attempt is retried, when a result is deleted, and when a
+run must fail loudly. Compose, single-container, and Kubernetes surfaces all
+produce the same output under these rules.
+
+## Terminology
+
+The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**,
+**SHOULD**, **SHOULD NOT**, **RECOMMENDED**, **MAY**, and **OPTIONAL** are to be
+interpreted as described in BCP 14, RFC 2119 and RFC 8174.
+
+A *run* is one launch of one benchmark with one agent and one model over one or
+more tasks, named by a *run id*. The *output root* is the directory under which
+every run writes. The *run directory* is
+`{output root}/{benchmark}/{agent}/{model}/{run-id}/`. A *task directory* is the
+directory under the run directory holding one task's `task/`, `agent/`, and
+`model/` outputs. An *attempt* is one execution of a task. An attempt is
+*errored* when the framework, not the benchmark, ended it before completion —
+the framework's own timeout, a crash, or an infrastructure failure — whatever
+reward was then graded; an attempt ended by a limit the benchmark defines as
+part of its task is graded, not errored. A task directory is
+*complete* when it holds `task/result.json` and records no errored attempt,
+*errored* when it records one, and *incomplete* otherwise; a task directory is
+*failed* when it is errored, or incomplete with no attempt in progress. In the run directory, `{model}` is the
+model handle with each `/` replaced by `--` and every other character outside
+letters, digits, `.`, `_`, and `-` replaced by `-`. A run's *configuration* is
+every `EVAL_*` value it was launched with, except the output root, run id, and
+force selectors. An attempt is *in progress* from when it starts until it records a
+result or stops. A *forced run* is a run whose `EVAL_FORCE` selector is true. A *disposable run* is a run whose caller has explicitly
+declared that its output may be discarded.
+
+## Principles
+
+### Layout
+
+1. **Three directories.** Each task directory MUST hold three output directories: `model/`, `agent/`, and `task/`.
+
+2. **No cross-reads.** A component SHOULD NOT read another component's output directory.
+
+3. **Task result.** `task/result.json` MUST contain at minimum `task_id`, `benchmark`, `reward`, and `passed`.
+
+4. **Named metrics.** Every metric a benchmark reports MUST be a named field in `task/result.json`.
+
+5. **Primary metric.** The metric that determines `passed` MUST be named `reward`.
+
+6. **One writer.** `task/result.json` MUST be written by exactly one component.
+
+7. **Not stdout.** A metric a benchmark reports MUST NOT be obtainable only from stdout.
+
+8. **Agent result.** `agent/result.json` MUST contain `agent`, `started_at`, `ended_at`, `exit_code`, and `error`.
+
+9. **Model result.** `model/result.json` MUST contain `model`, `provider`, `total_tokens`, and `cost_usd`.
+
+10. **Trajectory.** The model service MUST write `model/trajectory.jsonl` containing every LLM request and response, one JSON object per line.
+
+11. **Task directory.** Every task MUST write its results in `{output root}/{benchmark}/{agent}/{model}/{run-id}/{task-id}/`.
+
+### Contents
+
+12. **Nothing loose.** Every file in a task directory MUST live under `model/`, `agent/`, or `task/`.
+
+13. **Logs are output.** Every log a run writes into the output root MUST live in the output directory of the component that wrote it.
+
+14. **Benchmark artifacts.** Every artifact a benchmark collects from the agent's work MUST be written inside the task directory.
+
+15. **Framework files.** A benchmark MUST NOT modify a file written by the framework launcher.
+
+16. **Recorded configuration.** Every task directory MUST hold a file naming every value in its run's configuration.
+
+17. **Recorded error.** The `error` of a task directory whose attempt errored MUST name how it ended, and MUST be null otherwise.
+
+### Root and run
+
+18. **One root.** Every run MUST write beneath one output root.
+
+19. **Root selector.** The output root MUST be the value of `EVAL_OUTPUT_DIR`, or `output/` in the invoking working directory when it is unset.
+
+20. **Outlives the run.** The output root of a run that is not disposable MUST outlive every container, pod, and job of the run.
+
+21. **Named run.** Every run MUST be named by a run id.
+
+22. **Run id selector.** The run id MUST be the value of `EVAL_RUN_ID`, or a freshly generated unique value when it is unset.
+
+23. **Same configuration.** A task resumed under an existing run id MUST fail before starting when its run's configuration differs from the one its task directory records.
+
+24. **Confined writes.** A run MUST NOT write anything in the output root outside its own run directory.
+
+### Reuse, retry, force
+
+25. **Never overwrite.** A run that is not forced MUST NOT modify a complete task directory.
+
+26. **Reuse.** A task whose task directory is complete MUST be skipped unless its run is forced.
+
+27. **Visible reuse.** A skipped task MUST be reported with the path of its existing result.
+
+28. **Retry.** A task whose task directory is failed MUST have that directory emptied of the previous attempt before it is attempted again.
+
+28a. **Failed is retried.** A task whose task directory is failed MUST be attempted again when its run is repeated.
+
+29. **Force.** A forced run MUST have every task directory it runs emptied of any previous attempt, complete or not, before the attempt starts.
+
+30. **One attempt.** A task directory MUST NOT hold a file written by an earlier attempt.
+
+31. **Bounded deletion.** A run MUST NOT delete any path outside its own run directory.
+
+32. **Single writer.** A task MUST fail before starting when another attempt on its task directory is in progress.
+
+### Failure
+
+33. **Keep going.** A run MUST continue past a task whose task directory is failed.
+
+34. **Loud failure.** A run MUST exit non-zero when any of its task directories is failed.
+
+35. **Named failure.** A run MUST report the path of every failed task directory.
+
+36. **Failed is not a score.** An aggregation over an output root MUST count a failed task directory as failed, never as a reward.
+
+## References
+
+- [Process](../RULES.md) — principle 9 (an output-format change is a major bump), principle 12 (the `EVAL_` namespace).
+- [Compose](../compose/RULES.md) — rules 14–18, the deprecated former home of rules 1–11.
+- [Benchmarks](../benchmarks/RULES.md) — rule 24 (byte-equivalent `task/result.json` across the three surfaces).
+- [CLI](../src/RULES.md) — principle 12 (`--output-dir`, `--run-id`, `--force`) and principle 13 (`report`).
+- [Agents](../agents/RULES.md) — rules 3 and 8 (the agent answers on stdout and never touches `/output/task/`).
+- [Models](../models/RULES.md) — rules 7 and 11 (only the agent's model service writes `model/`).
+- [tests/run/replay/RULES.md](../../tests/run/replay/RULES.md) — the OTLP `traces.jsonl` fixtures derived from the trajectory.
+- RFC 2119, RFC 8174 (BCP 14).
+
+## Changelog
+
+| Date | Change |
+|------|--------|
+| 2026-09-06 | Initial version (#467). Rules 1–10 carried from [compose/RULES.md](../compose/RULES.md) 14–17, split into atomic requirements with paths relative to the task directory. Rule 11 replaces compose 18: the task directory is `{output root}/{benchmark}/{agent}/{model}/{run-id}/{task-id}/`, the layout the cluster launchers already mint (#428) with their model encoding, where the old `output/{benchmark}/{task-id}/` let two agents or models on one task overwrite each other (#136). Rules 12–17 fix what a directory holds: no loose files (today `traces.jsonl` and a second `result.json` sit at the volume root), every component's log in its own directory, benchmark artifacts inside the task directory, framework-written files untouched by benchmarks, the run's configuration recorded, and an errored attempt (the framework's own timeout, a crash, an infrastructure failure — never a limit the benchmark itself defines as part of the task) recorded so it is retried rather than mistaken for a graded zero. Rules 18–24 fix root and run: one output root from `EVAL_OUTPUT_DIR` that outlives the run unless the caller declared it disposable (the chart's `ephemeral` escape hatch); a run id from `EVAL_RUN_ID` or freshly generated, so an unnamed rerun never collides and a named one resumes; a resume with a different configuration is refused; writes confined to the run directory. Rules 25–32 fix reuse: a complete task directory is never modified and its task is skipped, visibly; a failed one — errored or incomplete — is emptied of the dead attempt and retried; a forced run empties every task directory it runs; one attempt per directory; deletion bounded to the run directory; a second concurrent attempt fails (the output half of #399). Rules 33–36 fix failure: a run keeps going past a failed task, exits non-zero, names each failed directory, and aggregation never scores one. Resume, lock, recorded-configuration, and one-attempt semantics mirror Harbor's job resume and Inspect's eval-set log directory. |
+| 2026-09-09 | Rule 16: the configuration is recorded in every task directory, not once per run directory — on Kubernetes a pod sees only its own task subPath, so the task directory is the one place every surface can write and every resume can check (rule 23 is per task accordingly). |
+| 2026-09-14 | Review pass before merge. Status Draft → Active: compose 14–18 become pointers on merge, and a deprecated rule may not forward to a non-normative one (meta 1, 8). Rules 25 and 26 gained the forced-run carve-out they needed — as written a conforming forced run was impossible against rule 29. Rule 6 said the grader writes `task/result.json`; the framework launcher does, so it now states the property that is true and worth having (one writer). Rule 7 constrained a reader rather than an artifact, 13 named a component per directory where the pipeline has five units, 24 outlawed the `/logs` and `/tmp` writes benchmarks rule 18 and agents rule 8 require, 30 could not be checked, and 23 said *run* where the changelog and the surfaces say *task* — each now states an observable property. New rule 28a: nothing required a failed task to be attempted again, which is the point of the topic. Rule 2 takes the RFC-2119 negation on its keyword. "In progress" is defined, since rule 32 turns on it. |
+| 2026-09-14 | A second review, before merge. *Failed* had no temporal qualifier, so a task directory was failed while its own attempt was still running — rule 34 was then true of every healthy run, and 28/28a would have emptied a live attempt against rule 32. A directory is failed when it is errored, or incomplete with nothing in progress. Rule 1 claimed each of the three directories has one writer; `model/` alone has four, so it now says only what it holds. Rule 13 required moving `/logs/verifier`, which benchmarks rule 18 mandates and agents rule 8 forbids the agent to read — it binds what a run writes into the output root. Rule 8 names `error`, so the field rule 17 turns on has a home in the schema, and 16 and 17 say what must be recorded rather than that something must be. A `EVAL_FORCE` of `false` is not a request to force. Known drift this topic now makes visible: `containers/core/runner/write-result` emits `model/result.json` with the model alone, where rule 9 requires the provider, tokens and cost; and litellm writes its trajectory at the task-directory root, where rule 12 says nothing loose. Both belong to the code, not to this document. |

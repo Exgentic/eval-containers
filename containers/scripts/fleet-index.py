@@ -140,6 +140,17 @@ def labels(kind: str, name: str) -> dict[str, str]:
     return dict(sorted(out.items()))
 
 
+def _lines(path: str) -> list[str]:
+    """Lowercased ids from a one-per-line file, `#` comments and blanks dropped —
+    a heading read as a task id is an image nobody built."""
+    if not os.path.isfile(path):
+        return []
+    with open(path) as f:
+        return [
+            t for t in (ln.strip().lower() for ln in f) if t and not t.startswith("#")
+        ]
+
+
 def task_ids(family: str) -> list[str]:
     """The task ids a per-task benchmark bakes.
 
@@ -149,14 +160,13 @@ def task_ids(family: str) -> list[str]:
     where terminal-bench, skills-bench and deepswe get theirs.
     """
     d = os.path.join(CONTAINERS, "benchmarks", family)
+    # excluded.txt: ids this benchmark does not publish, because the task cannot
+    # be built at all. Dropped from both lists so the sweep does not go looking
+    # for images nothing builds (release-images.yml drops them too).
+    skip = _lines(os.path.join(d, "excluded.txt"))
     listed = os.path.join(d, "tasks.txt")
     if os.path.isfile(listed):
-        with open(listed) as f:
-            return [
-                t
-                for t in (line.strip().lower() for line in f)
-                if t and not t.startswith("#")
-            ]
+        return [t for t in _lines(listed) if t not in skip]
     build = os.path.join(d, "build.sh")
     if not os.path.isfile(build):
         return []
@@ -187,7 +197,9 @@ def task_ids(family: str) -> list[str]:
     )
     if out.returncode != 0:
         die(f"{family}: upstream task list unreadable: {out.stderr.strip()[:200]}")
-    return sorted({t.lower() for t in out.stdout.split() if t})
+    return sorted(
+        {t.lower() for t in out.stdout.split() if t and t.lower() not in skip}
+    )
 
 
 def candidates(tasks: dict[str, list[str]], agents: list[str]) -> list[str]:

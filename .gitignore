@@ -10,6 +10,7 @@
 # Evaluation output
 /output
 **/output/
+!.agents/output/
 /eval-output
 
 # Editor
@@ -30,3 +31,4 @@ tests/live/fleet-report.md
 
 # Claude Code local session state (the wiring in .claude/rules and .claude/skills is committed)
 .claude/settings.local.json
+__pycache__/

@@ -46,6 +46,9 @@ Cluster / output:
   --repo-dir <p>        repo root (default: two levels up from this script)
 
 Build / run control:
+  --run-id <id>         name this run; rerunning an id skips tasks it already
+                        holds a result for and retries the ones that failed
+  --force               rerun a task even if this run id already has its result
   --rebuild             force rebuild + reload of every image
   --no-build            skip the build (use images already present)
   --no-run              build (and load) only; do not submit
@@ -70,6 +73,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --cluster) CLUSTER="$2"; shift 2;;
   --output-path) OUTPUT_PATH="$2"; shift 2;; --repo-dir) REPO_DIR="$2"; shift 2;;
+  --run-id) RUN_ID="$2"; shift 2;; --force) FORCE_RUN=true; shift;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --rerun) RERUN=true; shift;;
   --watch) WATCH=true; shift;; --dry-run) DRY_RUN=true; shift;;
@@ -204,6 +208,8 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "registry=$REGISTRY"
      --set "outputVolume.hostPath.path=$OUTPUT_PATH" --set "outputSubPath=$SUB"
      --set "runId=$RUN_ID")
+# Rerun a task the run id already holds a result for, instead of skipping it.
+${FORCE_RUN:-false} && SET+=(--set "force=true")
 # Per-task benchmarks render the task-aware runner (evals/<b>-<task>--<a>) — the
 # chart needs perTask=true to match the image built + loaded above.
 $PER_TASK && SET+=(--set "perTask=true")

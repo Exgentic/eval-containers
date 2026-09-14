@@ -1,7 +1,7 @@
 //! Shared test helpers — included via `#[path = "../common/mod.rs"] mod common;`.
 #![allow(dead_code)]
 
-use eval_containers::bake;
+use eval_containers::{bake, naming};
 use tokio::process::Command;
 
 /// Local-only registry used by the classic build path so podman can't force-pull a
@@ -54,6 +54,42 @@ pub async fn bake_targets(targets: &[&str]) {
         status.success(),
         "docker buildx bake failed for targets {:?}",
         targets
+    );
+}
+
+/// The registry the classic path builds under: local-only so a stale published
+/// base can't be force-pulled over what was just built, overridable for a runner
+/// that has its own.
+pub fn classic_registry() -> String {
+    std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| LOCAL_REGISTRY.to_string())
+}
+
+/// Build one shared-env eval image on the classic path: the benchmark, the
+/// agent, then the lean eval combining them. The two `eval.args.*` overrides are
+/// the CLI's Eval arm; `EVAL_BENCHMARK`/`EVAL_AGENT` drive its tag. A per-task
+/// image, whose name carries the task id, stays with the suite that needs one —
+/// only this shape is shared.
+pub fn build_eval_classic(benchmark: &str, agent: &str, registry: &str) {
+    let env = [("REGISTRY", registry)];
+    build_target_classic(&naming::benchmark_bake_target(benchmark), &[], &env);
+    build_target_classic(&naming::agent_bake_target(agent), &[], &env);
+    build_target_classic(
+        "eval",
+        &[
+            &format!(
+                "eval.args.BENCHMARK_IMAGE={}",
+                naming::benchmark_image(registry, benchmark, "latest")
+            ),
+            &format!(
+                "eval.args.AGENT_IMAGE={}",
+                naming::agent_image(registry, agent, "latest")
+            ),
+        ],
+        &[
+            ("REGISTRY", registry),
+            ("EVAL_BENCHMARK", benchmark),
+            ("EVAL_AGENT", agent),
+        ],
     );
 }
 
