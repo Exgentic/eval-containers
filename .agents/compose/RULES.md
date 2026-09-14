@@ -61,7 +61,7 @@ Rules 14–18 moved to [output/RULES.md](../output/RULES.md), which governs run 
 
 17. **Trajectory.** *Deprecated — see [output/RULES.md](../output/RULES.md) rule 10.*
 
-18. **Accumulating results.** *Deprecated — see [output/RULES.md](../output/RULES.md) rule 11.*
+18. **Accumulating results.** *Deprecated — the layout is [output/RULES.md](../output/RULES.md) rule 11, the no-overwrite half is its rule 25.*
 
 ### Registry
 
