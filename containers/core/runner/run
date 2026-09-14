@@ -125,14 +125,12 @@ echo $! > /output/agent/.heartbeat
 # mount with no subPath, a path composed wrong — and emptying would take other
 # runs with it. No caller should be able to reach that, which is exactly why
 # this is checked here, where every surface passes through.
-for child in /output/*/; do
-  for half in model agent task; do
-    if [ -d "$child$half" ]; then
-      echo "run: /output is not a task directory — $child holds $half/, so this is a run root or higher; refusing to empty it" >&2
-      exit 3
-    fi
-  done
-done
+nested=$(find /output -mindepth 2 -maxdepth 2 -type d \
+  \( -name model -o -name agent -o -name task \) -print -quit)
+if [ -n "$nested" ]; then
+  echo "run: /output is not a task directory — $nested makes it a run root or higher; refusing to empty it" >&2
+  exit 3
+fi
 
 # Failed or forced: empty the previous attempt, keeping this claim (rules 28-30).
 # `rm -rf`, not `-delete`: find cannot remove a non-empty directory at maxdepth 1,
