@@ -56,7 +56,18 @@ else
 fi
 
 echo "[terminal-bench] 1/2 building task env for '${TASK}' (environment/Dockerfile)"
-docker build -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"
+# A task whose Dockerfile pins an EOL Debian cannot `apt-get update` any more:
+# the suite left the live mirrors, and upstream has not touched the file. The
+# distro is incidental to these tasks — qemu-alpine-ssh is about booting Alpine
+# under qemu, not about bullseye — so build them against the supported release
+# instead, which carries the same packages. `--build-context` redirects a FROM
+# without editing upstream's file; only tasks that actually fail are affected.
+if ! docker build -t "${ENVIMG}" "${REPO}#${REF}:tasks/${TASK}/environment"; then
+  echo "[terminal-bench] env build failed — retrying on debian:bookworm-slim"
+  docker build --load -t "${ENVIMG}" \
+    --build-context "debian:bullseye-slim=docker-image://debian:bookworm-slim" \
+    "${REPO}#${REF}:tasks/${TASK}/environment"
+fi
 
 echo "[terminal-bench] 2/2 overlaying the eval pipeline -> ${IMAGE}"
 # EVAL_INPUT_HASH (optional): the release stamps the build-input hash here
