@@ -6,24 +6,20 @@
 //! Reading it is three anonymous HTTP calls, so `list` answers for the whole
 //! fleet from anywhere, with no images pulled and no credential.
 //!
-//! `--local` answers the other question — what does *this checkout* declare —
-//! straight from `containers/*/*/Dockerfile`. Both feed the same renderer, so the
-//! two views differ in source, never in shape.
+//! What a checkout declares is not this command's job: `ls containers/benchmarks`
+//! already answers it, and the CLI is a mnemonic for commands you could type
+//! yourself (src/RULES.md). What no standard command can tell you is what the
+//! fleet has published — that is what this reads.
 
 use clap::{Args, Subcommand};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::Path;
 use std::process::Command;
 
 #[derive(Args)]
 pub struct ListArgs {
     #[command(subcommand)]
     pub target: ListTarget,
-    /// List what this checkout declares, from `containers/*/*/Dockerfile`,
-    /// instead of what the registry publishes.
-    #[arg(long, global = true)]
-    pub local: bool,
 }
 
 #[derive(Subcommand)]
@@ -75,13 +71,8 @@ pub struct Meta {
 }
 
 pub fn execute(registry: &str, args: ListArgs) -> Result<(), String> {
-    let catalog = if args.local {
-        eprintln!("$ containers/*/*/Dockerfile");
-        local_catalog(Path::new("containers"))?
-    } else {
-        eprintln!("$ {registry}/evals/index:latest");
-        published(registry)?
-    };
+    eprintln!("$ {registry}/evals/index:latest");
+    let catalog = published(registry)?;
     for line in render(&catalog, &args.target) {
         println!("{line}");
     }
@@ -291,44 +282,30 @@ fn fetch_index(registry: &str) -> Result<Index, String> {
         .ok_or_else(|| format!("registry {registry} is not <host>/<org>"))?;
     let repo = format!("{org}/evals/index");
     // Anonymous: the published packages are public, so `list` works with no
-    // credential and no docker login.
-    let token: TokenBody = curl_json(
+    // credential and no docker login. Token, then manifest, then the one blob.
+    let token = get(
         &format!("https://{host}/token?scope=repository:{repo}:pull&service={host}"),
         &[],
     )?;
-    let auth = format!("Authorization: Bearer {}", token.token);
-    let manifest: ManifestBody = curl_json(
+    let auth = format!(
+        "Authorization: Bearer {}",
+        token["token"].as_str().unwrap_or_default()
+    );
+    let manifest = get(
         &format!("https://{host}/v2/{repo}/manifests/latest"),
         &[&auth, "Accept: application/vnd.oci.image.manifest.v1+json"],
     )?;
-    let digest = manifest
-        .layers
-        .first()
-        .map(|l| l.digest.clone())
+    let digest = manifest["layers"][0]["digest"]
+        .as_str()
         .ok_or_else(|| format!("{repo}:latest carries no index layer"))?;
-    curl_json(
+    let blob = get(
         &format!("https://{host}/v2/{repo}/blobs/{digest}"),
         &[&auth],
-    )
+    )?;
+    serde_json::from_value(blob).map_err(|e| format!("{repo}: {e}"))
 }
 
-#[derive(Deserialize)]
-struct TokenBody {
-    token: String,
-}
-
-#[derive(Deserialize)]
-struct ManifestBody {
-    #[serde(default)]
-    layers: Vec<LayerRef>,
-}
-
-#[derive(Deserialize)]
-struct LayerRef {
-    digest: String,
-}
-
-fn curl_json<T: serde::de::DeserializeOwned>(url: &str, headers: &[&str]) -> Result<T, String> {
+fn get(url: &str, headers: &[&str]) -> Result<serde_json::Value, String> {
     let mut cmd = Command::new("curl");
     cmd.args(["-sfL", "--max-time", "60"]);
     for h in headers {
@@ -345,105 +322,6 @@ fn curl_json<T: serde::de::DeserializeOwned>(url: &str, headers: &[&str]) -> Res
         ));
     }
     serde_json::from_slice(&out.stdout).map_err(|e| format!("{url}: {e}"))
-}
-
-// ── local: the checkout's own Dockerfiles ────────────────────────────────────
-
-/// The same shape, filled from the tree. What a checkout can answer is what its
-/// components declare — so a benchmark that has never been published lists here
-/// and nowhere else, which is the point of `--local`.
-fn local_catalog(containers: &Path) -> Result<Catalog, String> {
-    if !containers.is_dir() {
-        return Err(format!(
-            "{}: not a checkout of the fleet — run --local from the repo root",
-            containers.display()
-        ));
-    }
-    let mut cat = Catalog::default();
-    for (kind, prefix) in [
-        ("benchmarks", "eval.benchmark"),
-        ("agents", "eval.agent"),
-        ("models", "eval.model"),
-    ] {
-        for (name, dir) in components(&containers.join(kind))? {
-            let labels = std::fs::read_to_string(dir.join("Dockerfile"))
-                .map(|d| labels_of(&d, prefix))
-                .unwrap_or_default();
-            match kind {
-                "benchmarks" => {
-                    // Task ids come from the benchmark's own tasks.txt when it has
-                    // one; the ones that resolve theirs from a pinned upstream tree
-                    // are a network call away, which --local is not.
-                    let tasks = std::fs::read_to_string(dir.join("tasks.txt"))
-                        .map(|t| task_ids(&t))
-                        .unwrap_or_default();
-                    cat.families.insert(name.clone(), tasks);
-                    cat.meta.benchmarks.insert(name, labels);
-                }
-                "agents" => {
-                    cat.agents.push(name.clone());
-                    cat.meta.agents.insert(name, labels);
-                }
-                _ => {
-                    cat.meta.models.insert(name, labels);
-                }
-            }
-        }
-    }
-    // A checkout has published nothing, so what it can say is that each of its
-    // benchmarks could pair with each of its agents.
-    cat.pairs = cat
-        .families
-        .keys()
-        .flat_map(|b| cat.agents.iter().map(move |a| (b.clone(), a.clone())))
-        .collect();
-    Ok(cat)
-}
-
-fn components(dir: &Path) -> Result<Vec<(String, std::path::PathBuf)>, String> {
-    let mut out = Vec::new();
-    let entries = std::fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    for e in entries.flatten() {
-        let name = e.file_name().to_string_lossy().to_string();
-        // `_chart` and friends are scaffolding, not components.
-        if name.starts_with('_') || !e.path().is_dir() {
-            continue;
-        }
-        out.push((name, e.path()));
-    }
-    out.sort();
-    Ok(out)
-}
-
-/// `LABEL <prefix>.<key>="<value>"` → {key: value}. Matched on a LABEL line, so a
-/// comment or a `RUN echo` mentioning a label cannot invent one (benchmark.rs).
-fn labels_of(dockerfile: &str, prefix: &str) -> Labels {
-    let mut out = Labels::new();
-    for line in dockerfile.lines() {
-        let Some(rest) = line.trim_start().strip_prefix("LABEL ") else {
-            continue;
-        };
-        let Some(rest) = rest.trim_start().strip_prefix(&format!("{prefix}.")) else {
-            continue;
-        };
-        let Some((key, value)) = rest.split_once("=\"") else {
-            continue;
-        };
-        let Some(value) = value.strip_suffix('"') else {
-            continue;
-        };
-        out.insert(key.trim().to_string(), value.to_string());
-    }
-    out
-}
-
-/// tasks.txt groups its ids under `#` headings; a heading read as a task id is a
-/// row for an image nobody built.
-fn task_ids(text: &str) -> Vec<String> {
-    text.lines()
-        .map(|l| l.trim().to_lowercase())
-        .filter(|l| !l.is_empty() && !l.starts_with('#'))
-        .collect()
 }
 
 #[cfg(test)]
@@ -563,34 +441,5 @@ mod tests {
         assert!(pairs.iter().any(|r| r.starts_with("swe-bench--codex")));
         // gaia--pi has no `latest`, so nothing could pull it.
         assert!(!pairs.iter().any(|r| r.starts_with("gaia--")), "{pairs:?}");
-    }
-
-    #[test]
-    fn labels_come_off_label_lines_only() {
-        let d = "FROM x\n# eval.benchmark.description=\"a comment\"\n\
-                 LABEL eval.benchmark.description=\"AIME\"\n\
-                 LABEL eval.benchmark.env=\"per-task\"\n\
-                 RUN echo eval.benchmark.tasks=\"9\"\n";
-        let l = labels_of(d, "eval.benchmark");
-        assert_eq!(l.get("description").unwrap(), "AIME");
-        assert_eq!(l.get("env").unwrap(), "per-task");
-        assert!(!l.contains_key("tasks"), "a RUN echo is not a label");
-    }
-
-    #[test]
-    fn task_ids_skip_the_headings_that_group_them() {
-        assert_eq!(
-            task_ids("# django\nDjango__django-1\n\n# astropy\nastropy-2\n"),
-            vec!["django__django-1", "astropy-2"]
-        );
-    }
-
-    #[test]
-    fn local_mode_needs_a_checkout_and_says_so() {
-        let err = match local_catalog(Path::new("/nonexistent/containers")) {
-            Err(e) => e,
-            Ok(_) => panic!("listed a tree that is not there"),
-        };
-        assert!(err.contains("not a checkout"), "{err}");
     }
 }
