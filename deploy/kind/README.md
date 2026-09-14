@@ -56,13 +56,13 @@ OPENAI_API_KEY=sk-... OPENAI_API_BASE=https://your-endpoint ./deploy/kind/create
 ./deploy/kind/run.sh --benchmark aime --agent codex --model openai/gpt-5.4 --dataset --parallelism 4 --watch
 
 kubectl --context kind-eval get jobs                    # run progress
-cat ./eval-output/aime/codex/bifrost/0/result.json      # results on the host (default bind-mount)
+cat ./eval-output/aime/codex/<model>/<run-id>/0/task/result.json      # results on the host (default bind-mount)
 kind delete cluster --name eval                         # teardown
 ```
 
 By default `create.sh` bind-mounts `./eval-output` into the node at the
 `/eval-output` hostPath (`--output-dir` overrides the host dir), so results land
-on your *host* filesystem — `cat ./eval-output/aime/codex/bifrost/0/result.json`.
+on your *host* filesystem — `cat ./eval-output/aime/codex/<model>/<run-id>/0/task/result.json`.
 The bind-mount is fixed at cluster creation; change `--output-dir` on an existing
 cluster by re-running with `--recreate`. Results also remain readable inside the
 node with `docker exec <cluster>-control-plane cat /eval-output/…`.

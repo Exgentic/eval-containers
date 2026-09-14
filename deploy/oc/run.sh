@@ -14,7 +14,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
 BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
 NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" FLAT_IMAGES=""
-DATASET_MODE=false BUILD=false LOCAL_CHART=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
+FORCE=false DATASET_MODE=false BUILD=false LOCAL_CHART=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
   --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; shift 2;;
@@ -25,7 +25,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --pvc) PVC="$2"; shift 2;;
   --repo-dir) REPO_DIR="$2"; shift 2;; --sweep-id) SWEEP_ID="$2"; shift 2;;
-  --run-id) RUN_ID="$2"; shift 2;;
+  --run-id) RUN_ID="$2"; shift 2;; --force) FORCE=true; shift;;
   --flat-images) FLAT_IMAGES="$2"; shift 2;;
   --build) BUILD=true; shift;; --rebuild) BUILD=true; REBUILD=true; shift;;
   --local-chart) LOCAL_CHART=true; shift;;
@@ -124,6 +124,8 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
 # An imagestream suffix isolates BUILT images; the published fleet has nothing to
 # suffix, but the Job name still has to stay out of production's way.
 [[ -n "$SUFFIX" ]] && { $BUILD && SET+=(--set "imageSuffix=$SUFFIX"); SET+=(--set "nameSuffix=$SUFFIX"); }
+# Rerun a task the run id already holds a result for, instead of skipping it.
+$FORCE && SET+=(--set "force=true")
 # --dataset with no --dataset-size: the chart sizes it from its own
 # dataset-sizes.json, so a dry run renders the real Indexed Job and a grid of
 # differently-sized benchmarks self-sizes without a flag.

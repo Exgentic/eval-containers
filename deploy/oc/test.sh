@@ -29,7 +29,11 @@ fail() { echo "[test] FAIL: $*" >&2; exit 1; }
 # Isolated run: job <b>-<a>-task-<t><suffix>, results under runs<suffix>/.
 JOB="${BENCHMARK}-${AGENT}-task-${TASK}${SUFFIX}"
 # Results are keyed by the model's slug — run.sh writes the same path.
-RESULT="/data/runs${SUFFIX}/${BENCHMARK}/${AGENT}/$(model_slug "$MODEL")/${TASK}/${JOB}"
+# The run writes runs<suffix>/<b>/<a>/<model>/<run-id>/<task>; the run id is the
+# caller's, so read it from the Job rather than rebuilding a path that drifts.
+SUB=$(oc get job "$JOB" -n "$NAMESPACE" \
+  -o jsonpath='{.spec.template.spec.containers[0].volumeMounts[?(@.name=="output")].subPathExpr}' 2>/dev/null)
+RESULT="/data/${SUB:-runs${SUFFIX}/${BENCHMARK}/${AGENT}/$(model_slug "$MODEL")}"
 read_file() { oc exec eval-reader -n "$NAMESPACE" -- cat "$1" 2>/dev/null || true; }
 
 echo "[test] running $BENCHMARK/$AGENT/$MODEL task=$TASK (isolated $SUFFIX) …"
@@ -53,7 +57,7 @@ echo "$(read_file "$RESULT/agent/stderr.log")" | grep -q "Reconnecting\.\.\. 5/5
   && fail "agent exhausted gateway retries (LLM call failed)" \
   || pass "agent reached the gateway"
 
-if echo "$(read_file "$RESULT/traces.jsonl")$(read_file "$RESULT/traces.json")" | grep -q '"gen_ai'; then
+if read_file "$RESULT/model/traces.jsonl" | grep -q '"gen_ai'; then
   pass "OTel gen_ai spans present"
 else
   echo "[test] WARN: no gen_ai spans (LLM call still confirmed by clean agent exit)"

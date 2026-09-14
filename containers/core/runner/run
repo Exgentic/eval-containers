@@ -60,8 +60,88 @@ fi
 # Defensive fallback (agent uid baked into image at build time).
 id agent &>/dev/null || useradd -m -s /bin/bash -u 1002 agent
 
-# Output dirs.
+# ─── Output lifecycle (.agents/output/RULES.md) ──────────────────────
+# /output is this task's directory; the launcher's own records live in agent/.
 mkdir -p /output/{model,agent,task} /logs/verifier
+lock=/output/agent/.lock
+# awk, not grep: under `pipefail` a grep that matches nothing would fail the
+# assignment, and a run with no EVAL_* at all is empty, not broken (rule 16).
+config=$(env | awk '/^EVAL_/ && !/^EVAL_(OUTPUT_DIR|RUN_ID|FORCE|CLAIM_LEASE)=/' | LC_ALL=C sort)
+if [ -f /output/agent/config.env ] && [ "$config" != "$(cat /output/agent/config.env)" ]; then
+  echo "run: /output holds a run with a different configuration — use a new EVAL_RUN_ID (rule 23):" >&2
+  diff /output/agent/config.env <(printf '%s\n' "$config") >&2 || true
+  exit 3
+fi
+
+complete=false
+if [ -s /output/task/result.json ] && [ -f /output/agent/result.json ] \
+   && grep -q '"error":null' /output/agent/result.json; then
+  complete=true
+fi
+case "${EVAL_FORCE:-}" in ''|0|false|no) force=false ;; *) force=true ;; esac
+if [ "$complete" = true ] && [ "$force" = false ]; then
+  echo "run: complete, not rerun (rule 26): $(cat /output/task/result.json)"
+  exit 0
+fi
+
+# Claim the directory before touching it (rule 32). `set -C` makes the create
+# O_EXCL, so two launchers racing for a free one cannot both win.
+# How long a claim survives without being refreshed. A test drives it down;
+# nothing else should need to.
+lease=${EVAL_CLAIM_LEASE:-45}
+me="${HOSTNAME:-unknown}-$$"
+claim() { (set -C; printf '%s\n' "$me" > "$lock") 2>/dev/null; }
+held() { [ -n "$(find /output/agent -maxdepth 1 -name .lock -newermt "-$lease seconds")" ]; }
+if ! claim; then
+  # A claim stops being refreshed when its holder dies, so one that is still
+  # fresh is either alive or was killed moments ago. Wait it out rather than
+  # refuse: an orchestrator recreates a killed pod within seconds, and refusing
+  # there would spend its attempts on its own leftovers.
+  held && sleep "$lease"
+  if held; then
+    echo "run: another attempt is in progress in /output (rule 32)" >&2
+    exit 3
+  fi
+  # The holder is gone. Replacing its claim is itself a claim, or two launchers
+  # would both find it dead, both remove it, and both proceed.
+  if mkdir "$lock.taking" 2>/dev/null; then
+    rm -f "$lock"
+    claim || true
+    rmdir "$lock.taking"
+  fi
+  if [ "$(cat "$lock" 2>/dev/null)" != "$me" ]; then
+    echo "run: lost the race to take over a dead claim in /output (rule 32)" >&2
+    exit 3
+  fi
+fi
+# The three phases `exec` past this trap: from there the claim is
+# write-result's to release, and it stops the heartbeat first.
+trap 'rm -f "$lock"' EXIT
+( while sleep 15; do touch "$lock" 2>/dev/null || exit 0; done ) &
+echo $! > /output/agent/.heartbeat
+
+# Before emptying anything: /output must BE a task directory. If a child of it
+# holds model/, agent/ or task/, we were pointed at a run root or higher — a
+# mount with no subPath, a path composed wrong — and emptying would take other
+# runs with it. No caller should be able to reach that, which is exactly why
+# this is checked here, where every surface passes through.
+nested=$(find /output -mindepth 2 -maxdepth 2 -type d \
+  \( -name model -o -name agent -o -name task \) -print -quit)
+if [ -n "$nested" ]; then
+  echo "run: /output is not a task directory — $nested makes it a run root or higher; refusing to empty it" >&2
+  exit 3
+fi
+
+# Failed or forced: empty the previous attempt, keeping this claim (rules 28-30).
+# `rm -rf`, not `-delete`: find cannot remove a non-empty directory at maxdepth 1,
+# and a benchmark that left one would abort the run under `set -e`.
+find /output -mindepth 1 -maxdepth 1 ! -name model ! -name agent ! -name task \
+  -exec rm -rf {} +
+find /output/{model,agent,task} -mindepth 1 \
+  ! -path /output/model/traces.jsonl ! -name .lock ! -name .heartbeat \
+  -exec rm -rf {} +
+if [ -f /output/model/traces.jsonl ]; then : > /output/model/traces.jsonl; fi
+printf '%s\n' "$config" > /output/agent/config.env
 chown -R agent:agent /output/agent /tmp 2>/dev/null || true
 chmod 0755 /output /output/agent /output/task /output/model
 
