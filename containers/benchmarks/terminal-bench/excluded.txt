@@ -1,0 +1,15 @@
+# Task ids this benchmark does not publish, one per line.
+#
+# Not a preference: a task is here because it cannot be built at all, so the
+# alternative is shipping results from whatever image happens to be left in the
+# registry — an image predating the current edge and runner, whose runs would be
+# recorded differently from every other task's, silently.
+#
+# qemu-alpine-ssh, qemu-startup: upstream pins `FROM debian:bullseye-slim` and
+# that suite has left the live mirrors, so `apt-get update` fails with "Release
+# file … is expired". It is broken for everyone, not just us — upstream issue
+# #233, in a repo frozen since 2026-08-11 ("community submissions are currently
+# closed"), so a newer pinned ref would change nothing. Drop the exclusion when
+# upstream fixes the base.
+qemu-alpine-ssh
+qemu-startup
