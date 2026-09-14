@@ -6,8 +6,10 @@
 # The default runnerArgs run /entrypoint.sh /usr/local/bin/run (the scrubbed
 # three-phase pipeline, which withholds the task id from the agent). This
 # benchmark instead runs its own probe in the runner (which HAS the task id):
-# materialize the case, run run_walle.py (POSTs the schema as response_format
-# and writes /logs/verifier/reward.txt), then write result.json via the shared
+# source start-edge so the recording edge (:4100) comes up before any model
+# call (#558), materialize the case, run run_walle.py bounded by
+# timeout -k … $TIMEOUT (rule 14; POSTs the schema as response_format and
+# writes /logs/verifier/reward.txt), then write result.json via the shared
 # writer.
 timeout: '300'
 # Each step runs regardless of the previous one's exit status: write-result
@@ -15,9 +17,10 @@ timeout: '300'
 # status is captured into /output/agent/.exit-code (rule 16) so agent's
 # result.json reflects the program that actually ran.
 runnerArgs: >-
+  . /usr/local/bin/start-edge || exit 1;
   /eval-materialize-task || true;
-  python3 /app/run_walle.py;
-  echo $? > /output/agent/.exit-code;
+  timeout -k 30 "${TIMEOUT:-300}" python3 /app/run_walle.py;
+  printf '%s' "$?" > /output/agent/.exit-code;
   /usr/local/bin/write-result;
   /usr/local/bin/reap-sidecars
 resources:
