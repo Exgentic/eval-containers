@@ -162,6 +162,12 @@ def main() -> None:
         base_url=base_url,
         usage_id="agent",
         timeout=LLM_TIMEOUT,
+        # Shared ingress in front of a model endpoint cuts a connection that
+        # returns no byte within ~50s, so a slow non-streaming generation dies
+        # with an empty workspace and LLM_TIMEOUT only buys more retries.
+        # Streaming sends headers before generation, so the timer never fires.
+        # Transport-only: the SDK rebuilds one ModelResponse from the chunks.
+        stream=True,
     )
     # Honor the framework's reasoning-effort allow-list var when set; otherwise
     # leave the SDK default (native reasoning_effort="high").
@@ -204,6 +210,11 @@ def main() -> None:
     if not os.access(workspace, os.W_OK):
         workspace = tempfile.mkdtemp(prefix="openhands-")
 
+    # The pinned SDK raises on stream=True without an on_token callback instead
+    # of degrading, and Conversation(token_callbacks=...) is what supplies one.
+    # The SDK accumulates the chunks, so this only has to exist.
+    token_callbacks = [lambda _chunk: None]
+
     system_prompt, mcp_url, instruction = _parse_task(task)
 
     if mcp_url:
@@ -226,7 +237,9 @@ def main() -> None:
         if system_prompt:
             agent_kwargs["system_prompt"] = system_prompt
         agent = Agent(**agent_kwargs)
-        conversation = Conversation(agent=agent, workspace=workspace)
+        conversation = Conversation(
+            agent=agent, workspace=workspace, token_callbacks=token_callbacks
+        )
         conversation.send_message(instruction)
     else:
         # Non-MCP benchmark: the SDK's default agent (terminal + file-editor +
@@ -236,7 +249,9 @@ def main() -> None:
         # registers none — that lives in the separate openhands-tools package),
         # so it can only emit text and never run a command or edit a file.
         agent = get_default_agent(llm=llm, cli_mode=True)
-        conversation = Conversation(agent=agent, workspace=workspace)
+        conversation = Conversation(
+            agent=agent, workspace=workspace, token_callbacks=token_callbacks
+        )
         conversation.send_message(
             Message(role="user", content=[TextContent(text=task)])
         )
