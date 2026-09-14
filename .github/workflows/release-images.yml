@@ -743,6 +743,27 @@ jobs:
                 fi
               else echo "::error::per-task build failed: $ref"; fails=$((fails+1)); fi
             else
+              # The base this bake is FROM (benchmarks/swe-bench/Dockerfile). Epoch
+              # publishes it per arch and per task, and for many tasks only x86_64
+              # exists — delivery/RULES.md 14a: the platforms an image is expected
+              # to publish are the ones its inputs can produce, so an arch its base
+              # does not have was never expected and is not a failure. Without this
+              # the same 80 arm64 bakes failed in every release, for ever (#564);
+              # the merge keeps what did build as a single-arch :TAG.
+              base="ghcr.io/epoch-research/swe-bench.eval.${EPOCH_ARCH}.${TASK}:latest"
+              # Through fleet-status, which is where the read discipline lives: it
+              # answers 1 only when the registry says it has never heard of the
+              # ref, and 2 when the read never cleared. A blip must not read as
+              # "upstream has no arm64" and quietly stop building an image that
+              # exists — measured locally, a plain `imagetools inspect` called
+              # three published bases absent when it could not authenticate.
+              rc=0; bash containers/scripts/fleet-status.sh exists "$base" >/dev/null || rc=$?
+              if [ "$rc" -eq 1 ]; then
+                echo "::warning::$ref: upstream publishes no ${EPOCH_ARCH} base ($base) — not built, not failed"
+                continue
+              elif [ "$rc" -ne 0 ]; then
+                echo "::error::$base: unreadable, cannot tell absent from a blip"; fails=$((fails+1)); continue
+              fi
               # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the published entrypoint.
               if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
                    --set "benchmark-${B}.labels.eval.input-hash=${H}" \
