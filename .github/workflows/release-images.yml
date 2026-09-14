@@ -219,6 +219,7 @@ jobs:
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
       has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a channel run with no stale leaf
       dirty: ${{ steps.l.outputs.dirty }}           # channel run: anything at all to publish?
+      maxpar: ${{ steps.l.outputs.maxpar }}         # matrix width, by the clock (see below)
     steps:
       - uses: actions/checkout@v7.0.1
       # The staleness sweeps below read the registry (images + compose artifacts);
@@ -512,6 +513,16 @@ jobs:
           [ "$((ptn * 2))" -le 256 ] || { echo "::error::pertask_shards = $ptn × 2 arch = $((ptn * 2)) > 256 — raise the per-task chunk size in enumerate"; exit 1; }
           [ "$((pcn * 2))" -le 256 ] || { echo "::error::pertask_combo_shards = $pcn × 2 arch = $((pcn * 2)) > 256 — raise the pertask-combo chunk size in enumerate"; exit 1; }
 
+          # Matrix width by the clock: these matrices are the widest thing this
+          # account runs, so overnight they take everything and in working hours
+          # they leave room for PR checks. A run that drags into the day narrows
+          # itself, since each matrix reads this when it starts. FLEET_MAXPAR
+          # still wins when set.
+          H=$(date -u +%H)
+          if [ "$H" -ge 22 ] || [ "$H" -lt 7 ]; then maxpar=20; else maxpar=6; fi
+          maxpar="${FLEET_MAXPAR:-$maxpar}"
+          echo "matrix width: $maxpar (UTC hour $H)"
+
           has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
           dirty=true
           # `merge` stitches the per-arch tags of leaves AND per-task images, so a
@@ -526,6 +537,7 @@ jobs:
             echo "combo_shards=$(idx "$combo_shards")"
             echo "pertask_combo_shards=$(idx "$pertask_combo_shards")"
             echo "pertask_shards=$(idx "$pertask_shards")"
+            echo "maxpar=$maxpar"
             echo "has_leaves=$has_leaves"
             echo "dirty=$dirty"
           } >> "$GITHUB_OUTPUT"
@@ -548,7 +560,7 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.leaf_shards) }}
         arch: [amd64, arm64]
@@ -654,7 +666,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.pertask_shards) }}
         arch: [amd64, arm64]
@@ -868,7 +880,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         benchmark: ${{ fromJson(needs.enumerate.outputs.benchmarks) }}
     steps:
@@ -909,7 +921,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.combo_shards) }}
     steps:
@@ -1019,7 +1031,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}
         arch: [amd64, arm64]
