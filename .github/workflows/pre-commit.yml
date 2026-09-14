@@ -10,6 +10,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  # PRs only: on `main` each push is a different merged PR, and cancelling one
+  # loses the answer to which PR broke it.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
