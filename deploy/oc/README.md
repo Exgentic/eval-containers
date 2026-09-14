@@ -12,7 +12,7 @@ The model in one line: **a dataset eval is one [Indexed Job](https://kubernetes.
 
 | script | what |
 |--------|------|
-| `run.sh`    | build + submit **one** eval. `--dataset-size N` → an Indexed Job over the dataset; omit it for a single-`--task` debug run. |
+| `run.sh`    | submit **one** eval, from the published chart + GHCR fleet (what the dashboard launches); `--build` builds into the internal registry instead. `--dataset-size N` → an Indexed Job over the dataset; omit it for a single-`--task` debug run. |
 | `sweep.sh`  | loop a benchmark×agent grid, one Indexed Job per cell, all tagged `sweep-id=<id>`. |
 | `status.sh` | `oc get jobs` by label — run progress (`COMPLETIONS` is `<succeeded>/<datasetSize>`). For eval results, fetch + `eval-containers report` (see below). |
 | `fetch.sh`  | `oc cp` results off the PVC (reads paths from Job labels). |
@@ -20,7 +20,9 @@ The model in one line: **a dataset eval is one [Indexed Job](https://kubernetes.
 | `discover.sh` | regenerate `agents.txt` / `benchmarks.txt`. |
 | `_lib.sh`   | shared defaults (namespace/registry) + the name-flatten helper. |
 
-`run.sh` also carries `--rebuild` (force rebuild), `--no-run` (build only),
+`run.sh` also carries `--build` (build the four images into the namespace's
+internal registry and launch those — the development path; `--rebuild` implies
+it), `--local-chart` (render this checkout's chart instead of the published one), `--rebuild` (force rebuild), `--no-run` (build only),
 `--test` (isolated `-test` imagestreams + `runs-test/` results — production
 untouched), and `--test-suffix <s>` (a custom isolation suffix, e.g. `-ci-42`,
 so parallel test envs don't collide). Build-ConfigMap cleanup is handled by the

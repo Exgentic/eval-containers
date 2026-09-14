@@ -9,7 +9,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 RUN="$(dirname "${BASH_SOURCE[0]}")/run.sh"
 
 MODEL="" GATEWAY="" DATASET="" PARALLELISM="" RETRY="" QUEUE="" BSET="" ASET=""
-NAMESPACE="$NS_DEFAULT" PVC="eval-output-pvc" NO_BUILD=false DRY_RUN=false
+NAMESPACE="$NS_DEFAULT" PVC="eval-output-pvc" BUILD=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; shift 2;;
   --dataset-size) DATASET="$2"; shift 2;;
@@ -17,7 +17,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --queue) QUEUE="$2"; shift 2;; --benchmarks) BSET="$2"; shift 2;; --agents) ASET="$2"; shift 2;;
   --namespace) NAMESPACE="$2"; shift 2;;
   --pvc) PVC="$2"; shift 2;; --repo-dir) REPO_DIR="$2"; shift 2;;
-  --no-build) NO_BUILD=true; shift;; --dry-run) DRY_RUN=true; shift;;
+  --build) BUILD=true; shift;; --dry-run) DRY_RUN=true; shift;;
   # Renamed, not aliased: --eval-model named the handle when --model meant the
   # gateway image (gateways/RULES.md rule 2c). Say so instead of accepting both.
   --eval-model) echo "error: --eval-model was renamed --model (the proxy image is --gateway)" >&2; exit 1;;
@@ -43,7 +43,7 @@ if [[ -n "$DATASET" ]]; then PASS+=(--dataset-size "$DATASET"); else PASS+=(--da
 [[ -n "$PARALLELISM" ]] && PASS+=(--parallelism "$PARALLELISM")
 [[ -n "$RETRY"       ]] && PASS+=(--retry "$RETRY")
 [[ -n "$QUEUE"       ]] && PASS+=(--queue "$QUEUE")
-$NO_BUILD && PASS+=(--no-build)
+$BUILD && PASS+=(--build)
 $DRY_RUN  && PASS+=(--dry-run)
 
 # Per-task benchmarks run one Job per task, so they are not a dataset sweep at all
