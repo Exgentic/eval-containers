@@ -29,7 +29,15 @@ spec:
   completionMode: Indexed
   completions: {{ $v.datasetSize }}
   parallelism: {{ $v.parallelism | default $v.datasetSize }}
-  {{- if $v.backoffLimitPerIndex }}
+  {{- /* An index fails alone. backoffLimit on an Indexed Job is a whole-SWEEP
+         budget: the first index to fail fails the Job, and the controller then
+         deletes every pod still running — 8 timeouts took 22 healthy tasks,
+         and the 1.8M tokens already spent on them, with it (#548).
+         backoffLimitPerIndex isolates the
+         failure; maxFailedIndexes is what decides the sweep is not worth
+         continuing. Empty (not 0) is the opt-out for a cluster older than
+         k8s 1.29 / OCP 4.16, which has neither field. */}}
+  {{- if ne (toString $v.backoffLimitPerIndex) "" }}
   backoffLimitPerIndex: {{ $v.backoffLimitPerIndex }}   # per-example retry (k8s ≥1.29)
   maxFailedIndexes: {{ $v.maxFailedIndexes | default $v.datasetSize }}
   {{- else }}

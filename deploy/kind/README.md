@@ -157,5 +157,6 @@ kind version && kubectl version --client && helm version && docker version   # a
 - `kind`, `kubectl`, `helm`, `docker`, and the repo CLI (`target/release/eval-containers`, auto-added to PATH) available.
 - An `eval-secrets` Secret (`OPENAI_API_KEY` + `OPENAI_API_BASE`) in the target namespace — the gateway reads it.
 - No PVC, no `anyuid` SCC, no Kueue (those are OpenShift concerns). kind ships a
-  current Kubernetes, so `completionMode: Indexed` and `--retry`
-  (`backoffLimitPerIndex`) are always available.
+  current Kubernetes, so `completionMode: Indexed` and per-index failure
+  isolation (`backoffLimitPerIndex`, which `--retry` sets a retry count on) are
+  always available.
