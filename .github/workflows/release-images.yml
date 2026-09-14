@@ -346,8 +346,14 @@ jobs:
               bs="containers/benchmarks/$B/build.sh"; [ -f "$bs" ] || continue
               repo=$(grep -oE 'github\.com/[A-Za-z0-9_./-]+' "$bs" | head -1 | sed -E 's#github\.com/##; s#\.git$##')
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
+              # excluded.txt: ids this benchmark cannot publish (a task whose
+              # upstream base no longer builds). Dropped here so nothing tries,
+              # rather than failing every release for ever.
+              ex="containers/benchmarks/$B/excluded.txt"
+              skip='[]'; [ -f "$ex" ] && skip=$(grep -vE '^\s*(#|$)' "$ex" | jq -Rsc 'split("\n")|map(select(length>0))')
               tks=$(gh api "repos/$repo/contents/tasks?ref=$ref" --paginate \
                 --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
+              tks=$(jq -c --argjson skip "$skip" 'map(select(.task as $t | $skip | index($t) | not))' <<< "$tks")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             # tasks.txt holds the ids: `#` headings and blanks are skipped, since a
