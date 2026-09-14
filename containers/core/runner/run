@@ -85,40 +85,47 @@ if [ "$complete" = true ] && [ "$force" = false ]; then
 fi
 
 # Claim the directory before touching it (rule 32). `set -C` makes the create
-# O_EXCL, so two launchers racing for a free one cannot both win; taking over a
-# dead claim cannot be atomic on its own, so the claim names its holder and the
-# taker reads it back.
+# O_EXCL, so two launchers racing for a free one cannot both win.
+lease=45
 me="${HOSTNAME:-unknown}-$$"
 claim() { (set -C; printf '%s\n' "$me" > "$lock") 2>/dev/null; }
+held() { [ -n "$(find /output/agent -maxdepth 1 -name .lock -newermt "-$lease seconds")" ]; }
 if ! claim; then
-  # A claim stops being refreshed the moment its holder dies, so three missed
-  # beats means dead. Short, because a killed pod leaves a claim with a fresh
-  # mtime and the orchestrator restarts it within seconds — a long lease would
-  # have its own next attempt refused by its leftovers.
-  if [ -n "$(find /output/agent -maxdepth 1 -name .lock -newermt '-45 seconds')" ]; then
-    echo "run: another attempt is in progress in /output — agent/.lock refreshed under 45s ago (rule 32)" >&2
+  # A claim stops being refreshed when its holder dies, so one that is still
+  # fresh is either alive or was killed moments ago. Wait it out rather than
+  # refuse: an orchestrator recreates a killed pod within seconds, and refusing
+  # there would spend its attempts on its own leftovers.
+  held && sleep "$lease"
+  if held; then
+    echo "run: another attempt is in progress in /output (rule 32)" >&2
     exit 3
   fi
-  rm -f "$lock"
-  claim || true   # the read-back is the verdict, not the create
-  if [ "$(cat "$lock")" != "$me" ]; then
+  # The holder is gone. Replacing its claim is itself a claim, or two launchers
+  # would both find it dead, both remove it, and both proceed.
+  if mkdir "$lock.taking" 2>/dev/null; then
+    rm -f "$lock"
+    claim || true
+    rmdir "$lock.taking"
+  fi
+  if [ "$(cat "$lock" 2>/dev/null)" != "$me" ]; then
     echo "run: lost the race to take over a dead claim in /output (rule 32)" >&2
     exit 3
   fi
 fi
-# The three phases `exec` past this trap: from there the claim is write-result's
-# to release. The trap covers every way this shell dies first, and the heartbeat
-# stops with the claim so a released one is never put back.
+# The three phases `exec` past this trap: from there the claim is
+# write-result's to release, and it stops the heartbeat first.
 trap 'rm -f "$lock"' EXIT
-# `touch` creates, so test and refresh on the same tick: releasing the claim
-# while this sleeps must not bring it back.
-( while sleep 15; do [ -e "$lock" ] || exit 0; touch "$lock" 2>/dev/null || exit 0; done ) &
+( while sleep 15; do touch "$lock" 2>/dev/null || exit 0; done ) &
+echo $! > /output/agent/.heartbeat
 
-# Failed or forced: empty the previous attempt, keeping this claim (rules 28–30).
-# otelcol holds model/traces.jsonl open, so truncate that one rather than unlink.
-find /output -mindepth 1 -maxdepth 1 ! -name model ! -name agent ! -name task -delete
+# Failed or forced: empty the previous attempt, keeping this claim (rules 28-30).
+# `rm -rf`, not `-delete`: find cannot remove a non-empty directory at maxdepth 1,
+# and a benchmark that left one would abort the run under `set -e`.
+find /output -mindepth 1 -maxdepth 1 ! -name model ! -name agent ! -name task \
+  -exec rm -rf {} +
 find /output/{model,agent,task} -mindepth 1 \
-  ! -path /output/model/traces.jsonl ! -name .lock -delete
+  ! -path /output/model/traces.jsonl ! -name .lock ! -name .heartbeat \
+  -exec rm -rf {} +
 if [ -f /output/model/traces.jsonl ]; then : > /output/model/traces.jsonl; fi
 printf '%s\n' "$config" > /output/agent/config.env
 chown -R agent:agent /output/agent /tmp 2>/dev/null || true

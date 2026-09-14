@@ -660,10 +660,10 @@ fn output_sets(args: &RunArgs, benchmark: &str, agent: &str) -> Result<Vec<Strin
         .map(eval_containers::naming::model_slug)
         .unwrap_or_else(|| NO_MODEL.to_string());
     let sub = format!("{prefix}/{benchmark}/{agent}/{model}");
-    if prefix.starts_with('/') {
+    if prefix.starts_with('/') || prefix.split('/').any(|p| p == "..") {
         return Err(format!(
-            "--output-dir {prefix:?} is absolute: in `--mode job` it is a path inside the \
-             output volume, and the kubelet refuses an absolute subPath"
+            "--output-dir {prefix:?} cannot be a subPath: in `--mode job` it is a path inside \
+             the output volume, and the kubelet refuses one that is absolute or climbs out"
         ));
     }
     Ok(vec![

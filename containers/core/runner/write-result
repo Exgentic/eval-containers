@@ -53,8 +53,10 @@ printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
 # re-quoted.
 printf '%s\n' "${EVAL_LAUNCH:-[]}" > /output/agent/launch.json
 
-# The attempt is over: release the directory so the next run can claim it.
-rm -f /output/agent/.lock
+# The attempt is over. Stop the heartbeat first: it outlives the shell that
+# started it, and a tick landing after the release would put the claim back.
+[ -f /output/agent/.heartbeat ] && kill "$(cat /output/agent/.heartbeat)" 2>/dev/null
+rm -f /output/agent/.heartbeat /output/agent/.lock
 
 # Recorded, not signalled: a non-zero pod fails the whole Indexed Job (the
 # chart runs backoffLimit: 0), so one timed-out task would end a dataset run.

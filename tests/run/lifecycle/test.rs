@@ -211,13 +211,16 @@ async fn the_launcher_records_reuses_retries_and_refuses() {
     in_dir(
         &dir,
         "rm -f /output/task/result.json
-         touch /output/agent/stale.log /output/task/stale.json",
+         touch /output/agent/stale.log /output/task/stale.json
+         mkdir -p /output/stray/deep && touch /output/stray/deep/f",
     )
     .await;
     std::fs::write(run_dir.join("sibling.txt"), "keep").expect("plant a sentinel");
     let (code, log) = launch(&dir, &[]).await;
     assert_eq!(code, 0, "a failed task was not retried:\n{log}");
-    for stale in ["agent/stale.log", "task/stale.json"] {
+    // The directory matters: `find -delete` cannot remove a non-empty one at
+    // maxdepth 1, so a benchmark that left one would abort the run under set -e.
+    for stale in ["agent/stale.log", "task/stale.json", "stray"] {
         assert!(
             !dir.join(stale).exists(),
             "the retry left {stale} behind from the previous attempt:\n{log}"

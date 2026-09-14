@@ -225,7 +225,7 @@ EVAL_BENCHMARK=aime EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EV
   docker compose -f containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 
 # 4. Check the output — output/<benchmark>/<agent>/<model>/<run-id>/<task>/ on the host.
-cat output/aime/codex/openai/gpt-5.4/dev/0/task/result.json
+cat output/aime/codex/no-model/dev/0/task/result.json
 ```
 
 **Before pushing a PR:**

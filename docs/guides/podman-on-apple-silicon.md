@@ -222,7 +222,7 @@ EVAL_BENCHMARK=<name> EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 
   docker compose -f containers/benchmarks/<name>/compose.yaml up --abort-on-container-exit
 
 # 4. Take the trajectory from the run's own directory on the host
-cp output/<name>/codex/openai--gpt-5.4/dev/0/model/traces.jsonl \
+cp output/<name>/codex/no-model/dev/0/model/traces.jsonl \
   tests/run/replay/fixtures/<name>-0-codex.traces.jsonl
 
 # 5. Register the fixture in tests/run/replay/test.rs (replay_test! macro) and ship

@@ -51,7 +51,7 @@ Lean-base build args (for CI to rebuild via `core/combination.Dockerfile`): `BEN
 docker run --rm \
   -e OPENAI_API_KEY="$OPENAI_API_KEY" -e OPENAI_API_BASE="$OPENAI_API_BASE" \
   -e EVAL_TASK_ID=0 \
-  -v output:/output \
+  -v "$PWD/output/aime/claude-code/no-model/first/0:/output" \
   ghcr.io/exgentic/evals/aime--claude-code:latest
 
 # Compose mode
