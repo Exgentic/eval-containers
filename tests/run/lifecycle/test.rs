@@ -1,17 +1,13 @@
 //! The launcher's output lifecycle — `.agents/output/RULES.md` 16, 23, 26–32.
 //!
-//! Each case is one real run of the pipeline — agent, grader, result writer —
-//! against a task directory the case prepares. The carrier is
-//! `agents-smoke--mock`: the thinnest eval image in the fleet (debian-slim + a
-//! busybox agent) and the only agent that answers without calling a model, so a
-//! whole run takes about six seconds and needs no gateway, no credential, and no
-//! recorded fixture. Running the real thing is what makes the assertions worth
-//! anything: the lock is released the way production releases it, and a
-//! directory is complete because the pipeline completed it.
-//!
-//! The cases run in one test, in sequence, because each one's state is the
-//! previous one's output — which is also the honest shape of the contract: a
-//! task directory is a thing that persists between runs.
+//! Each case is one real run of the pipeline against a task directory it
+//! prepares. The carrier is `agents-smoke--mock`, the thinnest eval image in the
+//! fleet and the only agent that answers without calling a model, so a run costs
+//! about six seconds and needs no gateway, credential or fixture. Running the
+//! real thing is what makes the assertions worth anything: the claim is released
+//! the way production releases it, and a directory is complete because the
+//! pipeline completed it. The cases run in sequence because each one's state is
+//! the previous one's output — which is the shape of the contract.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;

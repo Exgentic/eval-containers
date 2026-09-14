@@ -65,15 +65,12 @@ pub fn execute(args: ReportArgs) -> Result<(), String> {
 }
 
 /// Walk the output root for task directories —
-/// `<root>/<benchmark>/<agent>/<model>/<run-id>/<task-id>/` (output/RULES.md
-/// rule 11), a task directory being any dir holding `task/`, `agent/` or
-/// `model/`. All three, so a task whose runner never started — in k8s the
-/// collector is an init sidecar and mints `model/` on its own — is counted as
-/// failed rather than being invisible (rules 33–36).
-///
-/// The depth allows one level more than the layout: a run launched with plain
-/// compose rather than the CLI has no slug to name the model with, so a handle
-/// like `openai/gpt-5.4` arrives as two segments.
+/// `<root>/<benchmark>/<agent>/<model>/<run-id>/<task-id>/` (rule 11). A task
+/// directory is any dir holding `task/`, `agent/` or `model/`: all three, so a
+/// task whose runner never started (k8s mints `model/` from the collector
+/// sidecar alone) is counted as failed rather than being invisible. The depth
+/// allows one level more than the layout, because a plain-compose run has no
+/// slug and `openai/gpt-5.4` arrives as two segments.
 fn find_results(dir: &Path) -> Vec<EvalResult> {
     let mut results = Vec::new();
     walk_for_results(dir, &mut results, 7);
