@@ -84,6 +84,20 @@ grep -q -- "--no-build" <<<"$(bash "$OC" --benchmark aime --agent codex --model 
         --registry "$REG" --task 0 --no-build --dry-run 2>&1)" \
   || bad "oc: --no-build was not refused by name (building is opt-in now)"
 
+# ── 1c. a per-task benchmark runs by default, and only --build refuses it ───
+# The published fleet has one image per task and the chart renders the task-aware
+# ref; the internal registry can build neither (no --task-id, and a flat name
+# cannot hold `sympy__sympy-24066`). So the refusal belongs to --build alone.
+out=$(bash "$OC" --benchmark swe-bench --agent codex --model "$HANDLE" \
+        --registry "$REG" --task sympy__sympy-24066 --local-chart --dry-run 2>&1)
+grep -qE "image: $REG/evals/swe-bench-sympy__sympy-24066--codex:" <<<"$out" \
+  || bad "oc: a per-task benchmark did not render its task-aware runner from the published fleet"
+out=$(bash "$OC" --benchmark swe-bench --agent codex --model "$HANDLE" \
+        --registry "$REG" --task sympy__sympy-24066 --build --local-chart --dry-run 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] || bad "oc --build: a per-task benchmark was accepted; the internal registry cannot build one"
+grep -q -- "--build" <<<"$out" || bad "oc --build: the per-task refusal doesn't name --build as the cause"
+
 # ── 2. both wrappers reject the pre-2c `--model <gateway flavor>` form ───────
 # A bare name would otherwise be forwarded as EVAL_MODEL and routed to a model
 # that doesn't exist. It must fail loud, and the error must name --gateway.

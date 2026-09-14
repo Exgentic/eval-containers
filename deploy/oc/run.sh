@@ -54,12 +54,13 @@ log() { echo "[run] $*"; }
 # --task-id outright, and a flat ImageStream name cannot even hold a task id like
 # `sympy__sympy-24066` (`_` is not RFC-1123). Say so here rather than failing
 # three steps later on a build that could never have produced the right image.
-# The published GHCR fleet has these images already — launch them from there (the
-# dashboard does); the chart renders the task-aware ref on its own.
-if per_task "$BENCHMARK"; then
+# Only --build is blocked: the published fleet has these images already and the
+# chart renders the task-aware ref on its own, which is how the dashboard runs
+# them and, by default, how this script does too.
+if $BUILD && per_task "$BENCHMARK"; then
   echo "error: $BENCHMARK is a per-task benchmark — one eval image per task, which" >&2
   echo "       the internal registry cannot build (build --builder oc has no --task-id)." >&2
-  echo "       Launch it from the published fleet instead of building it here." >&2
+  echo "       Drop --build to launch it from the published fleet." >&2
   exit 1
 fi
 
