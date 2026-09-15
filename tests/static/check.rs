@@ -1506,6 +1506,19 @@ fn merge_pertask_combos_stitches_from_the_shards_artifact() {
         "merge-pertask-combos must fan out one job per pertask_combo shard, each \
          stitching only its own shard's items"
     );
+    // One failed shard out of ~200 must not leave every other combo unstitched: the
+    // job ran on `success` only, was skipped six nights running, and left per-task
+    // combo tags pointing at digests built before the edge existed. `merge` has run
+    // on a partial build since it was written; this is the same rule.
+    let gate = job
+        .lines()
+        .find(|l| l.trim_start().starts_with("if: "))
+        .expect("merge-pertask-combos has no `if:` gate");
+    assert!(
+        gate.contains("needs.combos-pertask.result == 'failure'"),
+        "merge-pertask-combos must stitch a PARTIAL build the way `merge` does — gating it on \
+         the whole matrix going green skips the merge for every combo that did build"
+    );
     assert!(
         job.contains("actions/checkout@"),
         "merge-pertask-combos runs containers/scripts/fleet-tag.sh, so it must check out \

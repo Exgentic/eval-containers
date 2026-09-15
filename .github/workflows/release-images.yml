@@ -1160,7 +1160,10 @@ jobs:
   # ── merge per-task combos' per-arch tags into :TAG manifest lists ─────────
   merge-pertask-combos:
     needs: [combos-pertask, enumerate]
-    if: always() && needs.combos-pertask.result == 'success' && needs.enumerate.outputs.pertask_combo_shards != '[]'
+    # Runs on a PARTIAL build (success OR failure), like `merge`: one failed shard
+    # out of ~200 must not leave every other combo's :TAG unstitched. A combo that
+    # did not build has no per-arch tag and is counted as skipped below.
+    if: always() && (needs.combos-pertask.result == 'success' || needs.combos-pertask.result == 'failure') && needs.enumerate.outputs.pertask_combo_shards != '[]'
     runs-on: ubuntu-latest
     # One job per shard, mirroring combos-pertask: fleet-tag.sh costs 3-10 s per
     # ref (run 34928071602's merge: 88 refs in 874 s) and a nightly lists
