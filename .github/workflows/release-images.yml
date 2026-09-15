@@ -1157,7 +1157,17 @@ jobs:
     needs: [combos-pertask, enumerate]
     if: always() && needs.combos-pertask.result == 'success' && needs.enumerate.outputs.pertask_combo_shards != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # One job per shard, mirroring combos-pertask: fleet-tag.sh costs 3-10 s per
+    # ref (run 34928071602's merge: 88 refs in 874 s) and a nightly lists
+    # thousands of per-task combos x 2 variants — a single job would need hours
+    # past any timeout, and a re-run starts over from the top. A shard is at most
+    # 80 combos (160 refs), which fits with room to spare.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
+      matrix:
+        shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}
     steps:
       # checkout: this job runs containers/scripts/fleet-tag.sh.
       - uses: actions/checkout@v7.0.1
@@ -1172,8 +1182,11 @@ jobs:
       # yielded ZERO iterations and merged nothing while still exiting 0.
       - uses: actions/download-artifact@v8
         with: { name: shards, path: . }
-      - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos)
+      - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos, shard ${{ matrix.shard.idx }})
+        env:
+          IDX: ${{ matrix.shard.idx }}
         run: |
+          jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json > items.json
           fails=0; merged=0; skipped=0
           # Process substitution, not a pipe: `jq | while` runs the loop body in a
           # subshell, silently dropping fails/merged/skipped and defeating the exit
@@ -1192,7 +1205,7 @@ jobs:
               if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then merged=$((merged+1))
               else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
             done
-          done < <(jq -r '.pertask_combo[]?|.items[]?|"\(.b)\t\(.a)\t\(.task)"' shards.json)
+          done < <(jq -r '.[]|"\(.b)\t\(.a)\t\(.task)"' items.json)
           echo "merged=$merged skipped=$skipped fails=$fails"
           [ "$fails" -eq 0 ] || { echo "::error::$fails pertask-combo manifest merge(s) failed"; exit 1; }
           # Rule 17 (a zero exit is not evidence): the work list is known up
@@ -1201,8 +1214,8 @@ jobs:
           # `fails` check alone passes vacuously on zero iterations — which is
           # how every per-task combo shipped amd64-only under a stale :TAG
           # while this job reported success.
-          want=$(jq '[.pertask_combo[]?|.items[]?] | length' shards.json)
-          [ "$want" -gt 0 ] || { echo "::error::shards.json lists no per-task combos, but this job was scheduled"; exit 1; }
+          want=$(jq length items.json)
+          [ "$want" -gt 0 ] || { echo "::error::shard $IDX lists no per-task combos, but this job was scheduled"; exit 1; }
           [ "$((merged + skipped))" -eq "$((want * 2))" ] \
             || { echo "::error::expected $((want * 2)) merge attempts (${want} combos x 2 variants), saw $((merged + skipped))"; exit 1; }
           # Verify what actually landed: every merged :TAG must resolve to a
@@ -1220,7 +1233,7 @@ jobs:
                 *) echo "::error::${ref}:${TAG} published platforms=[${plats:-none}], expected amd64,arm64"; bad=$((bad+1));;
               esac
             done
-          done < <(jq -r '.pertask_combo[]?|.items[]?|"\(.b)\t\(.a)\t\(.task)"' shards.json)
+          done < <(jq -r '.[]|"\(.b)\t\(.a)\t\(.task)"' items.json)
           [ "$bad" -eq 0 ] || { echo "::error::$bad per-task combo tag(s) are not multi-arch after merge"; exit 1; }
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
