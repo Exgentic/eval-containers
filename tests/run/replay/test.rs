@@ -771,9 +771,9 @@ replay_test!(
 );
 
 replay_test!(
-    replay_automationbench_0_claude_code,
+    replay_automationbench_0_native,
     "automationbench",
-    "claude-code",
+    "native",
     "0"
 );
 
@@ -1466,7 +1466,7 @@ replay_test!(replay_usaco_183_openhands, "usaco", "openhands", "183");
 
 replay_test!(replay_usaco_61_claude_code, "usaco", "claude-code", "61");
 
-replay_test!(replay_walle_0_mock, "walle", "mock", "0");
+replay_test!(replay_walle_0_native, "walle", "native", "0");
 
 replay_test!(replay_webarena_0_gemini_cli, "webarena", "gemini-cli", "0");
 

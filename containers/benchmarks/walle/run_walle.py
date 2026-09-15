@@ -1,7 +1,8 @@
 """Probe the stack's structured-output conformance for one walle case (model-only).
 
-The runner container holds the case identity (EVAL_TASK_ID) and the gateway
-endpoint. Each case is one JSON Schema plus an expected verdict: valid schemas
+The framework launcher runs this as the benchmark's native harness — root, with
+the case identity (EVAL_TASK_ID) and the gateway endpoint (the edge, sourced by
+/usr/local/bin/run before run-agent launches it). Each case is one JSON Schema plus an expected verdict: valid schemas
 MUST be accepted (2xx), invalid schemas MUST be rejected (HTTP 400/422). We POST
 the schema as `response_format.json_schema` to the gateway's OpenAI-compatible
 chat/completions surface, classify the observed verdict, and write the reward.
@@ -19,7 +20,6 @@ constrained-decoding-quality question; walle's contract is schema acceptance.
 Fail-closed: any unexpected error leaves reward = 0.
 """
 
-import datetime
 import json
 import os
 import sys
@@ -174,18 +174,6 @@ def check_conforms(content: str | None, schema_obj: dict) -> bool | None:
 
 
 def main() -> int:
-    # We bypass /usr/local/bin/run, so create the output dirs write-result
-    # expects and record a start time it would otherwise write.
-    for d in ("/output/model", "/output/agent", "/output/task"):
-        os.makedirs(d, exist_ok=True)
-    if not os.path.exists("/output/agent/.started-at"):
-        try:
-            now = datetime.datetime.now(datetime.timezone.utc)
-            with open("/output/agent/.started-at", "w") as f:
-                f.write(now.strftime("%Y-%m-%dT%H:%M:%SZ"))
-        except OSError:
-            pass
-
     # Fail-closed baseline before anything can go wrong.
     write_reward("0")
 

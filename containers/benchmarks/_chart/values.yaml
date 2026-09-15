@@ -5,6 +5,9 @@
 # fills these and gets the types right (task stays a quoted string).
 
 # ── Per-run axes (overridden at deploy via --set / the eval-containers CLI) ──
+# A native-harness benchmark pins `agent: native` in its preset instead: its own
+# harness is its only agent, so the axis is the benchmark's, not the run's
+# (benchmarks/RULES.md 12b).
 agent: claude-code
 task: "0"
 # perTask: this benchmark bakes one eval image per task, so the runner image is

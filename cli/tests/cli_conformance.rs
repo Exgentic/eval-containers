@@ -193,6 +193,28 @@ fn per_task_benchmarks_are_detected() {
     }
 }
 
+/// `benchmark::is_native` (label-driven) is what decides that a benchmark pairs
+/// with `native` and nothing else (benchmarks/RULES.md 12a). The known native
+/// set MUST be detected; an ordinary benchmark MUST NOT.
+#[test]
+fn native_harness_benchmarks_are_detected() {
+    enter_repo_root();
+    for b in ["walle", "automationbench", "tau-bench"] {
+        assert_eq!(
+            eval_containers::benchmark::is_native_by_name(b),
+            Some(true),
+            "{b} should be detected as native-harness"
+        );
+    }
+    for b in ["aime", "gpqa-diamond", "swe-bench"] {
+        assert_eq!(
+            eval_containers::benchmark::is_native_by_name(b),
+            Some(false),
+            "{b} should not be native-harness"
+        );
+    }
+}
+
 /// Regression guard for the per-task eval-image naming bug: `build eval --task-id X`
 /// used to tag `evals/<b>--<a>` while compose/run expected `evals/<b>-<task>--<a>`.
 /// build/container/job are now anchored to `naming::eval_task_image`; this guards

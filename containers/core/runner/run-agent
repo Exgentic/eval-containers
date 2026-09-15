@@ -39,7 +39,15 @@ fi
 # pairings would break every existing recorded fixture that pairs an
 # internet=false benchmark with one of them. Blocking the LLM provider's own
 # web-search tool at the gateway is tracked as future work.
-if [ "${EVAL_INTERNET:-}" = "false" ] && ! grep -q EVAL_INTERNET /run.sh; then
+#
+# The native agent (agents/RULES.md 23) is the benchmark's own harness: it
+# resolves the task and grades in-process against the gold data, so it runs in
+# the verifier's position of trust — root, full environment, task identity —
+# rather than through the scrub below (benchmarks/RULES.md 12c). The image
+# declares it, so a bundle run with no EVAL_AGENT set still takes this path.
+native=false; [ -f /opt/agent/native ] && native=true
+
+if [ "$native" = false ] && [ "${EVAL_INTERNET:-}" = "false" ] && ! grep -q EVAL_INTERNET /run.sh; then
   echo "run-agent: EVAL_INTERNET=false but agent '${EVAL_AGENT:-?}' does not support denying its web tools — continuing (network isolation still applies, rule 9)" >&2
 fi
 
@@ -50,16 +58,21 @@ fi
 #
 # Not exec'd: record the exit status for write-result (rule 16). 124 = timeout.
 rc=0
-timeout -k 30 "${TIMEOUT:-300}" gosu agent env -i \
-  PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
-  HOME=/home/agent USER=agent LANG=C.UTF-8 \
-  TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
-  EVAL_AGENT_REASONING_EFFORT="${EVAL_AGENT_REASONING_EFFORT:-}" \
-  EVAL_INTERNET="${EVAL_INTERNET:-}" \
-  OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" OPENAI_API_KEY=sk-proxy \
-  ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}" ANTHROPIC_API_KEY=sk-proxy \
-  GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \
-  /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log || rc=$?
+if [ "$native" = true ]; then
+  timeout -k 30 "${TIMEOUT:-300}" \
+    /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log || rc=$?
+else
+  timeout -k 30 "${TIMEOUT:-300}" gosu agent env -i \
+    PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+    HOME=/home/agent USER=agent LANG=C.UTF-8 \
+    TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
+    EVAL_AGENT_REASONING_EFFORT="${EVAL_AGENT_REASONING_EFFORT:-}" \
+    EVAL_INTERNET="${EVAL_INTERNET:-}" \
+    OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" OPENAI_API_KEY=sk-proxy \
+    ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}" ANTHROPIC_API_KEY=sk-proxy \
+    GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \
+    /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log || rc=$?
+fi
 printf '%s' "$rc" > /output/agent/.exit-code
 
 # On a non-zero exit the agent's own diagnostics (upstream 4xx/5xx from the

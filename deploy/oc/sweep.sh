@@ -53,7 +53,9 @@ $DRY_RUN  && PASS+=(--dry-run)
 SUBMITTED=0
 for b in "${BENCHMARKS[@]}"; do
   if per_task "$b"; then log "skip $b (per-task: one Job per task, not a dataset sweep)"; continue; fi
-  for a in "${AGENTS[@]}"; do
+  # A native-harness benchmark has one agent, its own; the grid's agents do not apply.
+  if native "$b"; then pair=(native); else pair=("${AGENTS[@]}"); fi
+  for a in "${pair[@]}"; do
     log "→ $b × $a"
     bash "$RUN" --benchmark "$b" --agent "$a" "${PASS[@]}"
     SUBMITTED=$((SUBMITTED + 1))

@@ -11,10 +11,10 @@
     "file is the place it gets paid down rather than a new convention."
   ],
   "fixtures": {
-    "walle-0-mock": {
+    "walle-0-native": {
       "benchmark": "walle",
       "task_id": "0",
-      "agent": "mock",
+      "agent": "native",
       "agent_version": "1.0.0",
       "model": "gpt-4.1-mini",
       "gateway": "litellm",
@@ -35,7 +35,11 @@
         "rule 9 permits; the next live fleet sweep supersedes it.",
         "The gateway's recorded api_base pointed at an internal-only host; per",
         "rule 4a it was scrubbed to litellm.example.invalid before commit. No",
-        "credential was present in the trace (all user_api_key_* fields empty)."
+        "credential was present in the trace (all user_api_key_* fields empty).",
+        "Renamed from walle-0-mock when native agent mode landed (#577): the",
+        "benchmark's own harness made these calls, not the mock agent the",
+        "fixture was named after, and evals/<b>--native is now its only eval image.",
+        "Traces unchanged."
       ]
     },
     "deepswe-csstree-shorthand-expansion-compression-opencode": {

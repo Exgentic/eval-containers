@@ -18,7 +18,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 
 | Field | Default | CLI flag |
 |---|---|---|
-| `agent` | `claude-code` | `--agent` |
+| `agent` | `claude-code` | `--agent` — a native-harness benchmark's preset pins `native`, its only agent, and wins |
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
 | `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
@@ -38,7 +38,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `timeout` | `"300"` |
 | `deadlineGrace` | `600` |
 | `activeDeadlineSeconds` | `""` (derives from `timeout + deadlineGrace`) |
-| `runnerArgs` | `/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc` |
+| `runnerArgs` | `/entrypoint.sh /usr/local/bin/run; rc=$?; /usr/local/bin/reap-sidecars; exit $rc` — the framework launcher; not a preset hook (a native-harness benchmark pins `agent: native` instead) |
 | `resources.requests` | `{ cpu: 500m, memory: 512Mi }` |
 | `resources.limits` | `{ cpu: 2, memory: 2Gi }` |
 | `outputVolume` | `{}` (→ ephemeral `emptyDir`); set a source to persist `/output`, e.g. `--set outputVolume.hostPath.path=/eval-output` or a `persistentVolumeClaim` |

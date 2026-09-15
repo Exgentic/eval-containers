@@ -105,6 +105,21 @@ def per_task(name: str) -> bool:
         return False
 
 
+def native(name: str) -> bool:
+    """A benchmark whose own harness is the agent pairs with `native` and nothing
+    else, declared on a LABEL line the same way (benchmarks/RULES.md 12a, 12b)."""
+    path = os.path.join(CONTAINERS, "benchmarks", name, "Dockerfile")
+    try:
+        with open(path) as f:
+            return any(
+                line.lstrip().startswith("LABEL ")
+                and 'eval.benchmark.agent="native"' in line
+                for line in f
+            )
+    except OSError:
+        return False
+
+
 def labels(kind: str, name: str) -> dict[str, str]:
     """The component's `eval.*` labels, off its Dockerfile.
 
@@ -217,12 +232,13 @@ def candidates(tasks: dict[str, list[str]], agents: list[str]) -> list[str]:
             else [family]
         )
         names += [f"benchmarks/{b}" for b in benchmarks if b != family]
+        pair = ["native"] if native(family) else [a for a in agents if a != "native"]
         for b in benchmarks:
-            names += [f"evals/{b}--{a}" for a in agents]
+            names += [f"evals/{b}--{a}" for a in pair]
             if b == family:
                 # The standalone bundle is a name suffix on the same pair
                 # (src/RULES.md 11), published only for shared-env combos.
-                names += [f"evals/{b}--{a}-standalone" for a in agents]
+                names += [f"evals/{b}--{a}-standalone" for a in pair]
     return sorted(set(names))
 
 

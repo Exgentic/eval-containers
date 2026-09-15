@@ -113,15 +113,21 @@ the sidecars when done.
 
 See [Triple-mode](triple-mode.md) for the full details on each.
 
-## Not every benchmark follows the standard flow
+## When the benchmark brings its own agent
 
-The entrypoint → framework → orchestrator chain is the default path, not
-a hard requirement. A benchmark with unusual needs can override it.
+A few benchmarks — tau-bench, walle, automationbench — drive the model
+through their own upstream harness: a tool loop, a user simulator, a
+structured-output probe. There is no agent to install, so they declare
+`LABEL eval.benchmark.agent="native"`, ship the harness at `/harness.sh`,
+and pair with exactly one agent: `native`, whose `/run.sh` execs that
+file. The eval image is `evals/<benchmark>--native` and nothing else.
 
-For example, tau-bench replaces the runner's entrypoint entirely with
-its own Python script and adds extra containers for its harness. It
-doesn't use the built-in orchestrator at all — but the four steps
-(launch → agent → grade → result) still happen in order.
+The four steps still happen in order, through the same launcher. The
+one difference is inside the agent step: `run-agent` sees the native
+agent's marker and runs the harness as root with the task id — it
+resolves the task and grades in-process, like a verifier — instead of
+through the scrubbed, unprivileged agent launch. A benchmark never
+replaces the launcher itself.
 
 ## Where to go next
 

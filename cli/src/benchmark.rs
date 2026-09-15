@@ -30,6 +30,52 @@ pub fn is_per_task_by_name(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// A benchmark is *native-harness* — its own upstream harness is the agent, so
+/// it pairs with exactly one agent, `native`, and its eval image is
+/// `evals/<b>--native` — iff its `Dockerfile` declares
+/// `LABEL eval.benchmark.agent="native"` (benchmarks/RULES.md 12a). Same
+/// LABEL-line matching as [`is_per_task`], for the same reason.
+pub fn is_native(dockerfile: &str) -> bool {
+    dockerfile.lines().any(|line| {
+        let t = line.trim_start();
+        t.starts_with("LABEL ") && t.contains(r#"eval.benchmark.agent="native""#)
+    })
+}
+
+/// [`is_native`] for a benchmark by name, read like [`is_per_task_by_name`] —
+/// `None` outside a checkout, where the Dockerfile cannot be read. The caller
+/// keeps the distinction: inside the repo the pairing is decided (and a wrong
+/// `--agent` refused); outside it, `--agent` is taken as given.
+pub fn is_native_by_name(name: &str) -> Option<bool> {
+    std::fs::read_to_string(format!("containers/benchmarks/{name}/Dockerfile"))
+        .ok()
+        .map(|df| is_native(&df))
+}
+
+/// The agent a run or build of `benchmark` pairs with, given the one asked for
+/// (`None` = the surface's default). A native-harness benchmark pairs only with
+/// `native`, and `native` pairs only with one — the eval image for any other
+/// pairing does not exist, and a run that got past the pull would grade the
+/// wrong program. Decided from the label, so only inside a checkout; outside
+/// one the request passes through.
+pub fn agent_for(benchmark: &str, requested: Option<&str>) -> Result<Option<String>, String> {
+    match (is_native_by_name(benchmark), requested) {
+        (Some(true), None | Some(NATIVE)) => Ok(Some(NATIVE.to_string())),
+        (Some(true), Some(other)) => Err(format!(
+            "{benchmark} is a native-harness benchmark: its own harness is its only agent \
+             (evals/{benchmark}--native), so it cannot run with --agent {other}"
+        )),
+        (Some(false), Some(NATIVE)) => Err(format!(
+            "{benchmark} does not declare a native harness (LABEL eval.benchmark.agent=\"native\"), \
+             so there is no evals/{benchmark}--native to run — pick an agent"
+        )),
+        (_, requested) => Ok(requested.map(str::to_string)),
+    }
+}
+
+/// The one agent a native-harness benchmark pairs with (`containers/agents/native`).
+pub const NATIVE: &str = "native";
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -46,5 +92,34 @@ mod tests {
         assert!(!is_per_task("ARG EVAL_TASK_ID\nFROM x-${EVAL_TASK_ID}\n"));
         // A comment / RUN echo mentioning the label string must not false-positive.
         assert!(!is_per_task("# eval.benchmark.env=\"per-task\"\nFROM x\n"));
+    }
+
+    #[test]
+    fn is_native_keys_off_the_label() {
+        assert!(is_native(
+            "FROM scratch\nLABEL eval.benchmark.agent=\"native\"\n"
+        ));
+        assert!(!is_native(
+            "FROM scratch\nLABEL eval.benchmark.env=\"shared-env\"\n"
+        ));
+        assert!(!is_native("# eval.benchmark.agent=\"native\"\nFROM x\n"));
+    }
+
+    /// Outside a checkout the label is unreadable, so nothing is decided: the
+    /// request passes through, whatever it is.
+    #[test]
+    fn agent_for_passes_the_request_through_outside_a_checkout() {
+        let dir = std::env::temp_dir().join(format!("ec-agent-for-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let prev = std::env::current_dir().unwrap();
+        std::env::set_current_dir(&dir).unwrap();
+        let a = agent_for("walle", None);
+        let b = agent_for("walle", Some("native"));
+        let c = agent_for("aime", Some("native"));
+        std::env::set_current_dir(prev).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(a, Ok(None));
+        assert_eq!(b, Ok(Some("native".into())));
+        assert_eq!(c, Ok(Some("native".into())));
     }
 }

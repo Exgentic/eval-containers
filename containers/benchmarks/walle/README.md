@@ -19,7 +19,7 @@ model-only.
 | Upstream | [github.com/MoonshotAI/walle](https://github.com/MoonshotAI/walle) |
 | License | MIT |
 | Dataset revision | `cc1c6b7dab5496d5184677ecf4c3b95fc1bd1606` (tag v0.1.10) |
-| Canonical agent | `claude-code` (naming only; there is no agent) |
+| Agent | `native` — the probe is the benchmark's own harness; the only pairing (rule 12b) |
 
 ## What this is
 
@@ -44,10 +44,13 @@ The 16 suites: `TestAdditionalProperties`, `TestAnyOf`, `TestBasicTypes`,
 
 ## Model-only conformance probe
 
-There is no repo agent and no user simulator. The runner container (which holds
-`EVAL_TASK_ID`, withheld from the scrubbed agent phase per rule 7) resolves the
-sequential case id to its schema via the build-time map (`/tasks/all.jsonl`),
-then POSTs it to the gateway's OpenAI-compatible surface:
+There is no repo agent and no user simulator: the probe is the benchmark's own
+harness, shipped at `/harness.sh` and declared with
+`LABEL eval.benchmark.agent="native"`, so the benchmark pairs only with the
+`native` agent and its eval image is `evals/walle--native`. The shared launcher
+runs it in place of the agent phase — as root, with `EVAL_TASK_ID` — and it
+resolves the sequential case id to its schema via the build-time map
+(`/tasks/all.jsonl`), then POSTs it to the gateway's OpenAI-compatible surface:
 
 ```
 POST $OPENAI_BASE_URL/chat/completions
@@ -89,11 +92,11 @@ llm-d, a vendor endpoint) on the same corpus.
   the pinned corpus; assembles the case map; installs `jsonschema`).
 - `run_walle.py` — single-case probe (resolve id → schema, POST as
   `response_format`, classify, write reward + diagnostic).
-- `compose.yaml` — compose-mode deployment (runner entrypoint override; no
-  bespoke services).
+- `compose.yaml` — compose-mode deployment (extends the shared
+  `compose/runner-native.yaml`; no bespoke services).
 - single — the standalone bundle, from the generic `core/standalone.Dockerfile`.
 - k8s — the shared chart `benchmarks/_chart`, `--set benchmark=walle`
-  (`presets/walle.yaml` for the probe entrypoint).
+  (`presets/walle.yaml` pins `agent: native`).
 - `README.md` — this file.
 - `AUDIT.md` — standing audit record.
 
@@ -128,8 +131,7 @@ To rebuild the eval image from source (instead of pulling):
 ```bash
 docker build -f core/combination.Dockerfile \
   --build-arg BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/walle:latest \
-  --build-arg AGENT_IMAGE=ghcr.io/exgentic/agents/claude-code:latest \
-  --build-arg AGENT_VERSION=2.1.0 \
+  --build-arg AGENT_IMAGE=ghcr.io/exgentic/agents/native:latest \
   --build-arg MODEL_IMAGE=ghcr.io/exgentic/models/bifrost:latest \
-  -t ghcr.io/exgentic/evals/walle--claude-code:latest .
+  -t ghcr.io/exgentic/evals/walle--native:latest .
 ```

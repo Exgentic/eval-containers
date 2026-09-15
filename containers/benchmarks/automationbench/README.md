@@ -18,7 +18,7 @@ tools, state-verified.
 | Upstream | [github.com/zapier/AutomationBench](https://github.com/zapier/AutomationBench) |
 | License | MIT |
 | Dataset revision | `4a8e1061254004d9dac807054eed33fad7d1ff14` (commit — no upstream tags) |
-| Canonical agent | `claude-code` (naming only; the harness ignores the agent axis) |
+| Agent | `native` — the harness is the benchmark's own; the only pairing (rule 12b) |
 
 ## What this is
 
@@ -38,8 +38,11 @@ directly, pointing its model endpoint at the fleet gateway. This is a
 repo agent, and — because AutomationBench has no user simulator — none of the
 bridge / second-gateway complexity that `tau-bench` needs.
 
-The runner (which holds `EVAL_TASK_ID`, withheld from the scrubbed agent phase
-per rule 7) resolves the sequential task id to its upstream `task_name` via a
+The harness ships at `/harness.sh` and is declared with
+`LABEL eval.benchmark.agent="native"`, so the benchmark pairs only with the
+`native` agent and its eval image is `evals/automationbench--native`. The shared
+launcher runs it in place of the agent phase — as root, with `EVAL_TASK_ID` —
+and it resolves the sequential task id to its upstream `task_name` via a
 build-time map (`/tasks/all.jsonl`), then runs:
 
 ```
@@ -64,11 +67,11 @@ writes it to `/logs/verifier/reward.txt`; the shared `write-result` derives
   AutomationBench at the pinned commit; builds the task-name map).
 - `run_automationbench.py` — single-task runner (resolve id → name, run harness,
   write reward).
-- `compose.yaml` — compose-mode deployment (runner entrypoint override; no
-  bespoke services).
+- `compose.yaml` — compose-mode deployment (extends the shared
+  `compose/runner-native.yaml`; no bespoke services).
 - single — the standalone bundle, from the generic `core/standalone.Dockerfile`.
 - k8s — the shared chart `benchmarks/_chart`, `--set benchmark=automationbench`
-  (`presets/automationbench.yaml` for the harness entrypoint + longer timeout).
+  (`presets/automationbench.yaml` pins `agent: native` + a longer timeout).
 - `README.md` — this file.
 - `AUDIT.md` — standing audit record.
 
@@ -103,8 +106,7 @@ To rebuild the eval image from source (instead of pulling):
 ```bash
 docker build -f core/combination.Dockerfile \
   --build-arg BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/automationbench:latest \
-  --build-arg AGENT_IMAGE=ghcr.io/exgentic/agents/claude-code:latest \
-  --build-arg AGENT_VERSION=2.1.0 \
+  --build-arg AGENT_IMAGE=ghcr.io/exgentic/agents/native:latest \
   --build-arg MODEL_IMAGE=ghcr.io/exgentic/models/bifrost:latest \
-  -t ghcr.io/exgentic/evals/automationbench--claude-code:latest .
+  -t ghcr.io/exgentic/evals/automationbench--native:latest .
 ```

@@ -39,6 +39,17 @@ flows and how the image is built:
   anti-pattern rule 24g exists to prevent. Copy `benchmarks/terminal-bench/`
   (`build.sh` + overlay `Dockerfile` + fetch-the-gold `solution.sh`) and
   substitute the repo + ref (`.agents/benchmarks/RULES.md:24g`).
+- **Native harness** — the upstream benchmark drives the model through its own
+  scaffold (a tool loop, a user simulator, a structured-output probe), so there
+  is no agent to install. Any of the shapes above can be native; what changes
+  is the agent axis: declare `LABEL eval.benchmark.agent="native"`, ship the
+  harness at `/harness.sh` (it runs as root with `EVAL_TASK_ID`, resolves the
+  task, drives the model through `$OPENAI_BASE_URL`, and writes
+  `/logs/verifier/reward.txt`), and the benchmark pairs only with the `native`
+  agent — `evals/<name>--native` is its one eval image. Do NOT replace the
+  launcher (compose `entrypoint`, chart `runnerArgs`); the shared launcher runs
+  the harness in place of the agent phase. Copy `benchmarks/walle/`
+  (`.agents/benchmarks/RULES.md:12a`).
 
 Either `docker run` (single-image) or `docker compose up` (multi-service) MUST
 work with no Dock install and no internet, resolving task content, expected
@@ -166,14 +177,17 @@ answer, and any attached files from `EVAL_TASK_ID` alone
    - `compose.yaml` (**compose**) — pull in `compose/services.yaml` via
      `include:` and only declare overrides; do NOT inline a service, network, or
      volume that already exists there
-     (`.agents/benchmarks/RULES.md:24b`, `.agents/benchmarks/RULES.md:25`).
+     (`.agents/benchmarks/RULES.md:24b`, `.agents/benchmarks/RULES.md:25`). A
+     native harness extends `compose/runner-native.yaml` instead of
+     `runner.yaml`, which pins the agent axis to `native`.
    - **k8s** — the shared chart `benchmarks/_chart`, selected with
      `--set benchmark=<name>`. A standard benchmark needs nothing here. One with
      bespoke topology adds `benchmarks/_chart/presets/<name>.yaml` to compose its
      sidecars/`Deployment`s/`Service`s through the chart's hooks
-     (`initContainers`, `runnerArgs`, `runnerExtraEnv`, `extraManifests`, …) —
-     do NOT redeclare the otelcol/gateway/runner Pod
-     (`.agents/benchmarks/RULES.md:24b`, `.agents/benchmarks/RULES.md:25`).
+     (`initContainers`, `runnerExtraEnv`, `extraManifests`, …) — do NOT
+     redeclare the otelcol/gateway/runner Pod, and do NOT set `runnerArgs`
+     (`.agents/benchmarks/RULES.md:24b`, `.agents/benchmarks/RULES.md:25`). A
+     native harness's preset pins `agent: native`.
 
    For a simple shared-env benchmark, copy `benchmarks/aime/` and substitute the
    name (no preset needed). Changes to the compose base (`compose/services.yaml`)

@@ -110,7 +110,7 @@ A simple shared-env benchmark needs no k8s file — the shared chart
 
 For complex benchmarks (bespoke services like a VM, browser, or database
 sidecar), add `benchmarks/_chart/presets/{name}.yaml` and set the chart's
-composition hooks there — `initContainers`, `runnerExtraEnv`, `runnerArgs`, and
+composition hooks there — `initContainers`, `runnerExtraEnv`, and
 `extraManifests` (full `Deployment`/`Service` docs). See
 `benchmarks/_chart/presets/osworld.yaml` (a desktop `Deployment`/`Service`) or
 `benchmarks/_chart/presets/webarena.yaml` (proxy + 6 site `Deployment`s) for examples.

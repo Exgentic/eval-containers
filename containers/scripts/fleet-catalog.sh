@@ -37,10 +37,13 @@ read -ra AGENTS <<< "$CATALOG_AGENTS"
 # mentioning the string cannot false-positive (benchmarks/RULES.md 24f makes the
 # label the single source of truth for per-task-ness).
 per_task() { grep -qE '^[ \t]*LABEL .*eval\.benchmark\.env="per-task"' "$1" 2>/dev/null; }
+# A native-harness family pairs with `native` and nothing else (benchmarks/RULES.md
+# 12b), so it is probed through that one image rather than the lineup.
+native() { grep -qE '^[ \t]*LABEL .*eval\.benchmark\.agent="native"' "$1" 2>/dev/null; }
 
-published() {  # $1 = image name segment; 0 = some agent has it, 1 = none does
-  local seg=$1 a rc
-  for a in "${AGENTS[@]}"; do
+published() {  # $1 = image name segment, $2… = agents to try; 0 = some agent has it, 1 = none does
+  local seg=$1 a rc; shift
+  for a in "$@"; do
     rc=0; bash "$HERE/fleet-status.sh" exists "${REGISTRY}/evals/${seg}--${a}:latest" >/dev/null || rc=$?
     [ "$rc" -eq 0 ] && return 0
     # Anything but a clean "never heard of it" is unreadable, and publishing a
@@ -68,7 +71,8 @@ for d in "$HERE"/../benchmarks/*/; do
   else
     tasks='[]'; probe="$b"
   fi
-  if published "$probe"; then
+  if native "$d/Dockerfile"; then pair=(native); else pair=("${AGENTS[@]}"); fi
+  if published "$probe" "${pair[@]}"; then
     families=$(jq -c --arg b "$b" --argjson t "$tasks" '.[$b] = $t' <<< "$families")
   else
     dropped="$dropped $b"

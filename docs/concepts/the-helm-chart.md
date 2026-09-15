@@ -37,7 +37,10 @@ time via `--set` (or the CLI). The bespoke benchmarks (osworld, tau-bench,
 visualwebarena, webarena) ship a `presets/<name>.yaml` in the chart that adds
 sidecars/Deployments through composition hooks (`initContainers`,
 `runnerExtraEnv`, `extraManifests`, …); the chart overlays it automatically when
-that benchmark is selected.
+that benchmark is selected. A native-harness benchmark (tau-bench, walle,
+automationbench) pins `agent: native` in its preset: its own harness is its only
+agent, so that axis is the benchmark's, not the run's, and the preset wins over
+`--set agent=`.
 
 Full field list: [Chart values reference](../reference/chart-values.md).
 

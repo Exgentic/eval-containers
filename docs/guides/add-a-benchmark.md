@@ -16,7 +16,13 @@ replacement — follow the skill and the rules it links.
    chart selected with `--set benchmark=<x>` — neither needs a per-benchmark
    file (add a `containers/benchmarks/_chart/presets/<x>.yaml` only for bespoke
    topology). See [Triple-mode](../concepts/triple-mode.md).
-4. **Open the PR** using the
+4. **Bringing your own harness?** If the upstream benchmark drives the model
+   through its own scaffold (a tool loop, a user simulator), there is no agent
+   to install: declare `LABEL eval.benchmark.agent="native"`, ship the harness
+   at `/harness.sh`, and extend `compose/runner-native.yaml` — the benchmark
+   pairs only with the `native` agent and the shared launcher runs the harness
+   in place of one (`.agents/benchmarks/RULES.md` 12a–12d). See `benchmarks/walle`.
+5. **Open the PR** using the
    [benchmark PR template](../../.github/PULL_REQUEST_TEMPLATE/benchmark.md),
    which lists every required label, env var, and evidence step.
 

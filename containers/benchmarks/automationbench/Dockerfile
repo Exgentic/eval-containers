@@ -8,8 +8,10 @@
 # We run AutomationBench's OWN harness (`auto-bench`) for one task, pointing its
 # model endpoint at the fleet gateway. This is a model-only eval: the harness IS
 # the agent scaffold (no user simulator, so — unlike tau-bench — no bridge /
-# second gateway / pass-through agent). The runner (which has EVAL_TASK_ID)
-# resolves the task, runs the harness, and writes the reward.
+# second gateway / pass-through agent). It ships as /harness.sh, which the
+# framework launcher runs in place of an agent (with EVAL_TASK_ID): it resolves
+# the task, runs auto-bench, and writes the reward. The benchmark pairs only
+# with the `native` agent (benchmarks/RULES.md 12b).
 #
 # Upstream: github.com/zapier/AutomationBench  (MIT)  pinned by commit.
 # Requires Python >=3.13, so this image is FROM python:3.13-slim (the shared
@@ -34,6 +36,7 @@ LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.description="AutomationBench (Zapier) - business-workflow agent tasks over simulated SaaS tools, state-verified"
 LABEL eval.benchmark.tasks="600"
 LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.agent="native"
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
@@ -115,7 +118,11 @@ ENV EVAL_BENCHMARK=automationbench
 # Single-task runner: resolve EVAL_TASK_ID → task_name, run the harness against
 # the gateway, parse the export, and write the reward.
 COPY run_automationbench.py /app/run_automationbench.py
-RUN chmod 755 /app/run_automationbench.py
+RUN chmod 755 /app/run_automationbench.py \
+ && printf '#!/bin/bash\nexec python3 /app/run_automationbench.py\n' > /harness.sh && chmod +x /harness.sh
+
+RUN printf '#!/bin/bash\n/eval-materialize-task\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
 
 # The runner writes /logs/verifier/reward.txt itself; keep a fail-closed
 # baseline grader so a run that never reaches the writer still scores 0.

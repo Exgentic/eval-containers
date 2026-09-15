@@ -436,12 +436,19 @@ jobs:
           combos='[]'; agents='[]'
           if [ -n "$COMBO_AGENTS" ]; then
             read -ra _ag <<< "$COMBO_AGENTS"
-            agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')
+            # `native` is no lineup agent: a native-harness benchmark pairs with
+            # it and nothing else, and nothing else pairs with it
+            # (benchmarks/RULES.md 12b) — so it is dropped from the lineup here
+            # and paired by label below.
+            agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0 and . != "native"))')
+            nativebench=$(grep -rl 'eval.benchmark.agent="native"' containers/benchmarks/*/Dockerfile \
+              | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#\1#' | sort -u | jq -Rsc 'split("\n")|map(select(length>0))')
             # Large arrays go through stdin, never argv: a per-task combo list is
             # >128KB, which exceeds Linux's MAX_ARG_STRLEN (--argjson would E2BIG).
             # Only the small agents list rides argv.
-            shared=$(printf '%s' "$combo_bench" | jq -c --argjson as "$agents" \
-              '[.[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
+            shared=$(printf '%s' "$combo_bench" | jq -c --argjson as "$agents" --argjson nb "$nativebench" \
+              '[.[] as $b | (if ($nb | index($b)) != null then ["native"] else $as end)[] as $a
+                | {b:$b, a:$a, task:"", kind:"shared"}]')
             ptc=$(printf '%s' "$pertask_all" | jq -c --argjson as "$agents" \
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')

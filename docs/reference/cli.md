@@ -41,7 +41,7 @@ overrides the env var.
 | Flag | Maps to | Notes |
 |---|---|---|
 | `--benchmark <name>` | `EVAL_BENCHMARK` | or positional |
-| `--agent <name>` | `EVAL_AGENT` | |
+| `--agent <name>` | `EVAL_AGENT` | resolved to `native` for a native-harness benchmark inside a checkout (its only agent; any other is refused); pass it explicitly outside one |
 | `--model <handle>` | `EVAL_MODEL` | the `<provider>/<model>` upstream the gateway routes to |
 | `--gateway <name>` | `EVAL_GATEWAY` | which proxy serves it (`bifrost` / `litellm` / `portkey`, or a pinned per-model image); default `bifrost` |
 | `--agent-reasoning-effort <level>` | `EVAL_AGENT_REASONING_EFFORT` | the agent applies it; e.g. `high` |
