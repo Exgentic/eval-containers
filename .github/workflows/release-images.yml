@@ -298,7 +298,6 @@ jobs:
           # not exceed 128 of them — and at 129 it stopped being able to release
           # at all on a tag or dispatch. They are sharded with every other
           # oversize list below instead.
-          if [ "$n" -le 0 ] && [ "$IS_CHANNEL" != "true" ]; then echo "::error::leaf count 0 — releases and dispatches must name at least one leaf"; exit 1; fi
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
           # --only mode derives the compose list from the restricted leaves, a
@@ -516,6 +515,18 @@ jobs:
           # Leaves shard at 1: below the cap every shard holds exactly one leaf,
           # so the fan-out is what it has always been, and only a fleet past 128
           # starts pairing them up.
+          # A release or dispatch must name at least one thing to BUILD — which is
+          # not the same as one LEAF. `only=` naming a per-task benchmark leaves
+          # zero leaves (its tasks are built by the per-task matrix, not the leaf
+          # one) and a full per-task list, and testing leaves alone rejected that
+          # with "leaf count 0" before the per-task list had even been computed —
+          # so a per-task-only release could not be dispatched at all. Count the
+          # work, and count it once every list is known.
+          if [ "$IS_CHANNEL" != "true" ]; then
+            work=$(( $(jq length <<< "$leaves") + $(jq length <<< "$pertask") + $(jq length <<< "$combos") ))
+            [ "$work" -gt 0 ] \
+              || { echo "::error::nothing to build: 0 leaves, 0 per-task images, 0 combos — check only= / tasks="; exit 1; }
+          fi
           leaf_shards=$(shard "$leaves" "$(chunk "$leaves" 1)")
           combo_shards=$(shard "$combos" 25)
           pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 10)")
