@@ -9,8 +9,9 @@ Every model call an agent makes crosses one component: the edge. It pins the
 model to the handle the framework selected, forwards the call on the wire it
 arrived on, and records the exchange verbatim — the request as the agent sent
 it, tool schemas included. This document fixes what the edge must be. Wire
-translation, provider routing and trace emission remain gateway concerns; the
-edge sits in front of a gateway, it does not replace one.
+translation and provider routing remain gateway concerns; the edge forwards to
+whatever upstream it is given — a provider directly, or a gateway when one is
+asked for — and its record is the framework's account of a call.
 
 ## Terminology
 
@@ -87,8 +88,8 @@ written account of one call.
 
 - [Project rules](../RULES.md) — principle 5, independent observation: the
   general requirement this topic refines into one component.
-- [Gateways](../gateways/RULES.md) — translation, routing and OTel emission,
-  which remain gateway concerns; only model authority (2b) moves here.
+- [Gateways](../gateways/RULES.md) — translation and routing, which remain
+  gateway concerns; model authority (2b) moves here, and a gateway is OPTIONAL.
 - [Verification](../verification/RULES.md) — the gates a contribution passes,
   and the fixture format the records feed.
 - [Meta rules](../meta/rules/RULES.md) — rule form and no-silent-drift.
@@ -99,6 +100,7 @@ written account of one call.
 
 | Date | Change |
 |------|--------|
+| 2026-09-15 | No rule changed. Recorded because the edge's position did: a gateway is now opt-in ([gateways](../gateways/RULES.md) 10, 11), so the default path is agent → edge → provider and the edge holds the upstream credential inside the runner container. Rule 14 (credential isolation) carries that weight: the agent runs as its own uid under `gosu agent env -i`, so it neither inherits the container environment nor can read the edge's `/proc/<pid>/environ`, and `start-edge` scrubs the credential from the container environment once the edge has it. |
 | 2026-08-18 | Scoped to what the component actually is: an addition in front of the gateway, not a replacement for it. Capture rules (6-10) stand on their own; gateways keep translation, routing and OTel emission, and only model authority moves. An earlier draft superseded those too, which turned a small fix into a fleet-wide migration. |
 | 2026-08-12 | Pre-merge review, while Draft. Rule 5 now requires refusing to start rather than answering each call with an error, matching how the gateway `start` scripts reject bad env — and what the implementation does. Rule 13 binds to gateways 5 and 7 instead of restating the namespace and port, which mirrored a rule that already has a home (meta 4). |
 | 2026-08-11 | Initial version. Lifts model authority out of the gateway (superseding `gateways/RULES.md` 2b), makes call capture a property of one component rather than a per-gateway obligation (superseding 10 and 11 there), and removes the need for the path-rewriting shim (6). Translation and its declaration (8, 9) stay with gateways, which remain OPTIONAL and are needed only for cross-wire work. Status is Draft until the component lands and the verification suite covers it. |
