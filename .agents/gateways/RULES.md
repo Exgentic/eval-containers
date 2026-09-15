@@ -65,9 +65,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### OpenTelemetry
 
-10. **OTel emission required.** Every gateway image MUST emit OpenTelemetry traces following the GenAI semantic conventions (`gen_ai.*` attributes) to the endpoint specified by `OTEL_EXPORTER_OTLP_ENDPOINT`. The default endpoint is `http://otelcol:4318/v1/traces` (resolved by the eval image's hosts file in single-image mode, or by service-name DNS in compose/k8s modes).
+10. **OTel emission is opt-in.** A gateway image MUST emit OpenTelemetry traces following the GenAI semantic conventions (`gen_ai.*` attributes) to `OTEL_EXPORTER_OTLP_ENDPOINT` **when that variable is set**, and MUST NOT require a collector to start or to serve when it is unset. The framework leaves it unset: the call record the edge writes ([edge](../edge/RULES.md) rules 6-10) is its account of a call, and an orchestration mode MUST NOT gate a run on a collector. Supersedes the pre-2026-09 requirement that every gateway emit unconditionally to a default `http://otelcol:4318/v1/traces`.
 
-11. **No conditional OTel.** OTel emission MUST NOT be disabled by default. A gateway that requires explicit enablement of GenAI tracing MUST set the relevant flag in its template at build time.
+11. **Emission follows the endpoint, nothing else.** A gateway that needs a build-time flag to emit GenAI spans at all MUST set it, so that rule 10's "endpoint set" is the only switch a user touches. A gateway MUST NOT require a second, flavor-specific opt-in. Supersedes the pre-2026-09 requirement that emission never be disabled by default; capture is unconditional at the edge ([edge](../edge/RULES.md) rule 10), which is where the framework reads it.
 
 ### Image Layout
 
@@ -127,6 +127,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 ## References
 
 - [Top-level Rules](../RULES.md)
+- [Edge](../edge/RULES.md) — the component every call crosses, and the framework's account of one; a gateway sits behind it and is OPTIONAL
 - [Models](../models/RULES.md) — model-image conventions for pre-built (model, gateway) combos
 - [Benchmarks](../benchmarks/RULES.md)
 - [Compose / Repository](../compose/RULES.md)
@@ -143,3 +144,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-07-30 | Rule 6: the shim binary+config MUST live under `/opt/gateway/` and be static (Caddy) — bifrost switched nginx→Caddy so the single-container `-standalone` bundle (one `COPY /opt/gateway`) actually boots the gateway (nginx at `/usr/sbin`, musl, silently broke every bundle). Guard: `tests/static/check.rs::gateway_shim_lives_under_opt_gateway`. |
 | 2026-09-02 | Rule 2c added: the gateway image is selected by `EVAL_GATEWAY` / `--gateway` (tag: `EVAL_GATEWAY_TAG` / `--gateway-tag`), never by the model selector. Renames `EVAL_GATEWAY_IMAGE` → `EVAL_GATEWAY` and `EVAL_MODEL_TAG` → `EVAL_GATEWAY_TAG` (it always tagged the gateway image), and un-conflates `--model` in `build eval` and the `deploy/` scripts, where it named a proxy image. Every pre-2c name is refused by name rather than aliased — an alias leaves two live spellings of one axis, and silently ignoring a set variable would drop the user's pinned gateway (rule 22). The CLI refuses for compose too, which interpolates silently. A renamed *artifact* takes its compatibility from the registry instead — the same digest published under both paths — so no consumer carries two names. |
 | 2026-08-18 | Rule 2b superseded in place by [edge:2](../edge/RULES.md): the edge fronts the gateway and pins the model before a call reaches it, so model authority is implemented and verified once instead of once per flavor. Everything else here stands — rules 10 and 11 still require OTel emission, and the edge emits none. Motivation: the per-flavor capture obligation carried tool names and descriptions without their schemas, and none at all on the chat-completions wire. |
+| 2026-09-15 | Rules 10 and 11 revised: OTel emission is opt-in, keyed on `OTEL_EXPORTER_OTLP_ENDPOINT` being set, and no mode gates a run on a collector. The edge records every call verbatim, so the framework reads no span; requiring one meant every run carried a collector nothing consumed. A gateway itself is now opt-in too — the edge forwards straight to the upstream provider unless one is asked for — which leaves gateways for what only they do: cross-wire translation (rules 8, 9). |
