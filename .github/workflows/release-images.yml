@@ -375,6 +375,29 @@ jobs:
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             pertask="$acc"
+            # `only` names leaf targets, and a per-task benchmark is named there
+            # as benchmark-<b>. Restrict the per-task list to those benchmarks
+            # FIRST: without this, naming one benchmark in `only` still built (and
+            # published) a task of every OTHER per-task benchmark, because the
+            # branches below prune tasks without ever pruning benchmarks. `only`
+            # naming no per-task benchmark leaves the list untouched — an agent-only
+            # `only` still smokes one task each, as before.
+            if [ -n "${ONLY:-}" ]; then
+              ob=$(tr ' ' '\n' <<< "$ONLY" | sed -n 's/^benchmark-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
+              # Only prune when `only` names at least one PER-TASK benchmark:
+              # `only` naming solely shared benchmarks (or agents) must leave the
+              # per-task smoke list alone, not empty it.
+              obp=$(jq -c --argjson ob "$ob" --argjson pt "$(printf '%s' "$pertask" | jq -c '[.[].b] | unique')" \
+                      -n '[$ob[] | select(. | IN($pt[]))]')
+              if [ "$obp" != "[]" ]; then
+                pertask=$(printf '%s' "$pertask" | jq -c --argjson ob "$obp" '[.[] | select(.b | IN($ob[]))]')
+                echo "ONLY active -> per-task restricted to $(jq -r '.[]' <<< "$obp" | paste -sd, -)"
+                # A named per-task benchmark that matched nothing is a typo, not a
+                # no-op: never pass vacuously (same contract as tasks= below).
+                [ "$pertask" != "[]" ] \
+                  || { echo "::error::only= named per-task benchmark(s) that matched no task: $(jq -r '.[]' <<< "$obp" | paste -sd, -)"; exit 1; }
+              fi
+            fi
             # tasks= names exact ids (loud when none match — a selection never
             # passes vacuously); --only alone keeps one task per benchmark as a
             # smoke, not all ~600.
