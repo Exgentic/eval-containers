@@ -21,7 +21,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 3. **Output is stdout.** The agent MUST print its answer to stdout. The entrypoint captures it. The agent MUST NOT write results to files or specific paths.
 
-4. **Benchmark-agnostic.** The agent MUST NOT know which benchmark it is running in. The same agent image MUST work with any compatible benchmark.
+4. **Benchmark-agnostic.** The agent MUST NOT know which benchmark it is running in. The same agent image MUST work with any compatible benchmark (the native agent excepted, rule 24).
 
 ### LLM Access
 
@@ -79,6 +79,12 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 22. **The task text MUST tell the agent when no internet is needed.** When `EVAL_INTERNET=false`, the runner MUST append a plain-language note to `TASK` stating that no internet connection is required and the agent should not attempt to access it, so the agent does not spend turns diagnosing or working around a perceived connectivity failure.
 
+### Native
+
+23. **The native agent.** `agents/native` is the benchmark's own harness as an agent image: its `/run.sh` MUST exec `/harness.sh`, and it MUST be paired only with a benchmark that declares `eval.benchmark.agent="native"` ([benchmarks/RULES.md rule 12b](../benchmarks/RULES.md)).
+
+24. **Native exemptions.** Rules 2, 3, 4, 7, 8 and 18 do not apply to the native agent — it reads no `$TASK`, is the benchmark's code, runs privileged, and makes no model call of its own; every other rule does.
+
 ## References
 
 - [Process](../RULES.md)
@@ -93,3 +99,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-05-21 | Added rule 18 (smoke test) — agents must pass `tests/run/agents/test.rs` or be documented in `tests/run/agents/broken.md`. |
 | 2026-08-10 | Rule 8: replaced the hardcoded `/app/` with "its task working directory (wherever the benchmark's entrypoint places it)" — only 39 of 102 benchmarks actually use `/app`; swe-bench stages at `/testbed`. The old wording had already misled one agent image into hardcoding `/app` (#308). |
 | 2026-09-06 | Added rules 19–22 (Internet policy): `EVAL_INTERNET` is a capability toggle read verbatim (19); the runner warns, not rejects (20 — corrected from an initial fail-loud draft, since network isolation, rule 21, holds regardless of agent support, and most of the fleet's agents don't yet support denying their own web tools, so failing would have broken existing valid pairings); denying the agent's web tools is not the isolation boundary (rule 9 already covers raw-socket tools like `WebFetch` unconditionally) but is a temporary client-side mitigation for the one channel that boundary can't reach — the LLM provider's own server-side web-search (21); the runner appends a plain-language no-internet-needed note to `TASK` (22). The label/ENV agreement requirement moved to [benchmarks/RULES.md rule 21c](../benchmarks/RULES.md) (#423); rules 21–23 renumbered to 20–22. |
+| 2026-09-15 | Added rules 23–24 (Native, #577): `agents/native` is the one non-agent — its `/run.sh` execs the harness a native-harness benchmark ships at `/harness.sh` (benchmarks rule 12a), and it pairs only with such a benchmark (23); rules 2, 3, 4, 7, 8 and 18 do not apply to it (24). It exists so a benchmark that brings its own agent still has exactly one eval image, named and built like every other, instead of one per agent that never runs. Rule 4 gained the pointer. |
