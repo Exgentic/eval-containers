@@ -57,8 +57,7 @@ jobs:
           # --link makes a COPY's layer independent of the base underneath it, so
           # the identical agent/edge/gosu bytes are compressed once and then reused
           # (and cross-repo mounted on push) instead of redone per combo.
-          sed -i -E 's|^COPY --from=(agent|gosu|edge) |COPY --link --from=\1 |' containers/core/combination.Dockerfile
-          sed -i -E 's|^COPY (runner/|entrypoint/)|COPY --link \1|' containers/core/combination.Dockerfile
+          sed -i -E 's#^COPY --from=#COPY --link --from=#; s#^COPY runner/#COPY --link runner/#; s#^COPY entrypoint/#COPY --link entrypoint/#' containers/core/combination.Dockerfile
           grep -n "^COPY" containers/core/combination.Dockerfile
           build() {
             local b="$1" t="$2"; shift 2
