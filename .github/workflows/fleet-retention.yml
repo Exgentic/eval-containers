@@ -1,0 +1,124 @@
+name: Fleet retention
+
+# Retention census (delivery/RULES.md rule 22): every version the registry
+# holds, and which of them nothing resolves to any more. Report-only — this
+# workflow has no `packages: delete` and the script it runs contains no DELETE.
+# The census is the artifact a human reviews before any deletion is proposed.
+#
+# It exists because nothing could measure the question: ~9,900 packages and
+# ~1.5M versions, with no way to tell a superseded digest from a live one. The
+# obvious sweep — "delete the untagged ones" — is the one thing that must never
+# run: a multi-arch image is an index whose per-arch and attestation children
+# are themselves versions carrying no tags, so on benchmarks/aime 3 of the 4
+# children of the live `:latest` look exactly like garbage. Reachability is
+# computed instead, by expanding every tagged manifest into its children.
+#
+# The census DOES NOT authorise deletion. Rule 22 counts 90 days from when a
+# digest stopped being referenced, and the packages API records no such field
+# (`updated_at` equals `created_at` on every version measured), so the `aged`
+# verdict is keyed on creation date — an over-selecting proxy. Every manifest
+# carries `clock.sound: false` saying so.
+#
+# Weekly, not nightly: a whole-registry sweep is ~20k paginated requests against
+# a 5,000/hr budget shared with the release pipeline, so it spans several
+# rate-limit windows and parks itself at a floor rather than racing to
+# exhaustion. It is resumable per package, so an expiry loses no work.
+
+on:
+  schedule:
+    - cron: '43 4 * * 0' # weekly, Sunday 04:43 UTC (off the nightly lanes)
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Space-separated globs to census (blank = every package)"
+        default: ""
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  census:
+    runs-on: ubuntu-latest
+    # A full sweep spans multiple rate-limit windows; the script parks for each
+    # reset rather than failing, so the ceiling is wall-clock, not work.
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Census every published version against rule 22
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RETENTION_STATE: ${{ runner.temp }}/retention
+          # Through the environment, never interpolated into the script: an
+          # input spliced into a shell line is a command-injection seam.
+          ONLY: ${{ inputs.only }}
+        run: |
+          set -o pipefail
+          # Deliberate word-splitting: ONLY is a space-separated glob list, and
+          # each glob is its own argument. read -ra does that without exposing
+          # the value to the shell as code.
+          read -ra globs <<< "$ONLY"
+          args=()
+          [ "${#globs[@]}" -gt 0 ] && args=(--only "${globs[@]}")
+          python3 containers/scripts/fleet-retention.py "${args[@]}" \
+            > retention.json 2> census.log || rc=$?
+          cat census.log
+          # Exit 3 is "partially enumerated, re-run to continue" — a rate-limit
+          # window outlasting the job, not a failure. Anything else is real.
+          case "${rc:-0}" in
+            0) ;;
+            3) echo "::warning::census incomplete — re-run to continue"; exit 0 ;;
+            *) exit "$rc" ;;
+          esac
+
+      - name: Summarise
+        if: always() && hashFiles('retention.json') != ''
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          j = json.load(open("retention.json"))
+          t, c = j["totals"], j["completeness"]
+          print(f"## Retention census @ {j['generated']}\n")
+          print(f"`{j['registry']}` — {c['packages_censused']} packages, "
+                f"{t['versions']} versions. Rule: {j['rule']}\n")
+          print("| verdict | versions | meaning |")
+          print("|---|---|---|")
+          for k, why in (
+              ("tagged", "a name a consumer can pull — retained (rules 18-20)"),
+              ("child", "untagged, but a child of a tagged index — retained"),
+              ("recent", f"unreachable, inside the {j['retention_days']}-day window"),
+              ("aged", "unreachable and past the cutoff — **review candidates**"),
+              ("cache", "`buildcache/*`, outside rule 22 entirely"),
+              ("unreadable", "status undetermined — withheld (rule 14)"),
+          ):
+              print(f"| `{k}` | {t.get(k, 0)} | {why} |")
+          print(f"\n> **The clock is a proxy, not a clearance.** {j['clock']['note']}\n")
+          if c["truncated"]:
+              print(f"> **Listing truncated.** {c['note']}\n")
+          if j["would_empty"]:
+              print(f"<details><summary>{len(j['would_empty'])} package(s) whose "
+                    "every version is a candidate — usually an unstitched "
+                    "manifest list, so the fix is <code>fleet-tag.sh</code>, "
+                    "not deletion</summary>\n")
+              for p in j["would_empty"][:100]:
+                  print(f"- `{p}`")
+              print("\n</details>\n")
+          if j["blocked"]:
+              print(f"<details><summary>{len(j['blocked'])} package(s) withheld — "
+                    "a tagged manifest never read, so reachability is "
+                    "unknown</summary>\n")
+              for p in j["blocked"][:100]:
+                  print(f"- `{p}`")
+              print("\n</details>\n")
+          PY
+          # GITHUB_ENV only reaches *later* steps, so read the count back here.
+          aged=$(python3 -c "import json;print(json.load(open('retention.json'))['totals'].get('aged',0))")
+          [ "$aged" -eq 0 ] || echo "::warning::$aged version(s) are review candidates — an unsound proxy for rule 22, never a clearance to delete"
+
+      - uses: actions/upload-artifact@v4
+        if: always() && hashFiles('retention.json') != ''
+        with:
+          name: retention-census
+          path: retention.json
+          retention-days: 90
