@@ -228,16 +228,11 @@ fn timeout_override_beats_a_preset() {
     eprintln!("✓ timeoutOverride: helper honours it, values.yaml defaults empty, comment trimmed");
 }
 
-/// The framework launcher (`/usr/local/bin/run`) is the one place the three
-/// phases — and the edge bring-up before them — are wired (benchmarks/RULES.md
-/// 12; edge rules 1, 6, 10). The benchmarks whose own harness is the agent used
-/// to replace it on both surfaces (a preset's `runnerArgs`, a compose runner's
-/// `entrypoint`), each with its own copy of the bring-up, the timeout, the
-/// exit-status record and the result write: #558 was one copy silently missing
-/// the edge, and two more gates existed only to police the rest. Native mode
-/// (rule 12c, #577) moved all of that into `run-agent`, so no surface has a
-/// reason left to replace the launcher — and one that does is drift, refused
-/// here outright rather than audited for what its copy forgot.
+/// The three phases and the edge bring-up have one home, `run` + `run-agent`
+/// (benchmarks/RULES.md 12, edge rules 1, 6, 10). Bespoke harnesses used to
+/// replace the launcher on both surfaces with their own copy (#558 was one
+/// missing the edge); native mode (rule 12c) removed the reason, so a surface
+/// that replaces it is refused outright.
 #[test]
 fn no_surface_replaces_the_launcher() {
     const START_EDGE: &str = "/usr/local/bin/start-edge";
@@ -315,8 +310,7 @@ fn no_surface_replaces_the_launcher() {
     eprintln!("✓ no preset runnerArgs, no compose runner entrypoint/command");
 }
 
-/// The `runner` service's live (uncommented) lines of a benchmark compose file:
-/// from its 2-space key to the next one. Empty when there is no runner.
+/// The `runner` service's live (uncommented) lines; empty when there is none.
 fn compose_runner_service(text: &str) -> String {
     let Some(at) = text.find("\n  runner:") else {
         return String::new();
@@ -335,10 +329,8 @@ fn compose_runner_service(text: &str) -> String {
         .join("\n")
 }
 
-/// `LABEL eval.benchmark.agent="native"` on a LABEL line — the declaration that
-/// a benchmark's own harness is its only agent (benchmarks/RULES.md 12b). The
-/// CLI's `benchmark::is_native` reads the same line; this crate stays free of
-/// the CLI on purpose (see Cargo.toml).
+/// `LABEL eval.benchmark.agent="native"` (rule 12a); mirrors the CLI's
+/// `benchmark::is_native`, which this crate deliberately does not depend on.
 fn is_native_dockerfile(text: &str) -> bool {
     text.lines().any(|l| {
         let t = l.trim_start();
@@ -346,14 +338,10 @@ fn is_native_dockerfile(text: &str) -> bool {
     })
 }
 
-/// A native-harness benchmark says so once, on a LABEL, and every surface has
-/// to agree: its compose runner extends `compose/runner-native.yaml` (image,
-/// recorded agent and task directory pinned to `native`) and names
-/// `evals/<b>--native`; its chart preset pins `agent: native`; its image ships
-/// the harness at `/harness.sh`, which the native agent's `/run.sh` execs. The
-/// converse holds too — no other benchmark may borrow any of the three — and
-/// `run-agent` keys the privileged launch off the native agent's marker, so the
-/// marker and the launch each have one home (agents/RULES.md 23).
+/// The native label (rule 12a) and every surface must agree: compose extends
+/// `runner-native.yaml` and names `evals/<b>--native`, the preset pins
+/// `agent: native`, the image ships `/harness.sh` — and no other benchmark
+/// borrows any of them. The marker run-agent keys on has one home too.
 #[test]
 fn native_harness_benchmarks_pin_the_native_agent_on_every_surface() {
     let agent = fs::read_to_string(repo_root().join("containers/agents/native/Dockerfile"))

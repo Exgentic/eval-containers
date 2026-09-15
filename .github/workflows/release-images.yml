@@ -436,10 +436,8 @@ jobs:
           combos='[]'; agents='[]'
           if [ -n "$COMBO_AGENTS" ]; then
             read -ra _ag <<< "$COMBO_AGENTS"
-            # `native` is no lineup agent: a native-harness benchmark pairs with
-            # it and nothing else, and nothing else pairs with it
-            # (benchmarks/RULES.md 12b) — so it is dropped from the lineup here
-            # and paired by label below.
+            # A native-harness benchmark pairs with `native` and nothing else
+            # (benchmarks/RULES.md 12b): paired by label below, never from the lineup.
             agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0 and . != "native"))')
             nativebench=$(grep -rl 'eval.benchmark.agent="native"' containers/benchmarks/*/Dockerfile \
               | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#\1#' | sort -u | jq -Rsc 'split("\n")|map(select(length>0))')

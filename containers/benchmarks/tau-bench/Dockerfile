@@ -3,10 +3,8 @@
 # Interactive benchmark: agent uses domain tools guided by policy documents.
 # Evaluation is state-based (database + output checks), requires the TAU-bench runtime.
 # Externally graded: test writes -1.
-# Native harness (benchmarks/RULES.md 12a–12b): tau-bench's own runtime is the agent
-# scaffold, so the benchmark pairs only with the `native` agent. /harness.sh is
-# the runner-side half — the pass-through that answers the bridge's completion
-# requests through the edge; the tau-bench runtime itself is the `harness` sidecar.
+# Native harness (benchmarks/RULES.md 12a): tau-bench's own runtime is the agent;
+# /harness.sh is the runner-side pass-through that answers the bridge via the edge.
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/

@@ -141,9 +141,8 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     let builder = args.builder.as_deref();
     let dry_run = args.dry_run;
 
-    // A native-harness benchmark pairs only with `native`, and `native` only
-    // with one (benchmarks/RULES.md 12b): refuse the other combinations here,
-    // before either builder, rather than bake an eval image nothing can run.
+    // Native pairs only with native (benchmarks/RULES.md 12b): refuse before
+    // either builder bakes an eval image nothing can run.
     if let BuildTarget::Eval {
         benchmark, agent, ..
     } = &args.target

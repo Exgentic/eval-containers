@@ -45,12 +45,11 @@ The 16 suites: `TestAdditionalProperties`, `TestAnyOf`, `TestBasicTypes`,
 ## Model-only conformance probe
 
 There is no repo agent and no user simulator: the probe is the benchmark's own
-harness, shipped at `/harness.sh` and declared with
-`LABEL eval.benchmark.agent="native"`, so the benchmark pairs only with the
-`native` agent and its eval image is `evals/walle--native`. The shared launcher
-runs it in place of the agent phase — as root, with `EVAL_TASK_ID` — and it
-resolves the sequential case id to its schema via the build-time map
-(`/tasks/all.jsonl`), then POSTs it to the gateway's OpenAI-compatible surface:
+harness (`/harness.sh`, `LABEL eval.benchmark.agent="native"`), so the benchmark
+pairs only with the `native` agent (`evals/walle--native`). The launcher runs it
+as root with `EVAL_TASK_ID`; it resolves the sequential case id to its schema via
+the build-time map (`/tasks/all.jsonl`), then POSTs it to the gateway's
+OpenAI-compatible surface:
 
 ```
 POST $OPENAI_BASE_URL/chat/completions

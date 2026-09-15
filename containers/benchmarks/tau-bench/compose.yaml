@@ -5,12 +5,9 @@ include:
   - path: ../../compose/services.yaml
 
 services:
-  # Native harness (benchmarks/RULES.md 12b): the runner is evals/tau-bench--native,
-  # and the framework launcher runs /harness.sh — the pass-through that polls the
-  # bridge for tau-bench's completion requests and answers them through the edge
-  # — in place of an agent. Only the AGENT's calls cross that edge; the user
-  # simulator's LLM goes through the separate `user-gateway` below and is
-  # deliberately not recorded — it is the environment, not the system under test.
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh — the
+  # pass-through answering the bridge through the edge. The user simulator's LLM
+  # goes through `user-gateway` below and is not recorded: environment, not agent.
   runner:
     extends:
       file: ../../compose/runner-native.yaml
@@ -26,7 +23,7 @@ services:
     environment:
       BENCHMARK: tau-bench
       BRIDGE_URL: http://bridge:8000
-      # A full tau-bench episode plus the pass-through's idle exit (120s).
+      # A full episode plus the pass-through's 120s idle exit.
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
       TIMEOUT: ${EVAL_TIMEOUT:-1800}
 

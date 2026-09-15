@@ -2,10 +2,7 @@ include:
   - path: ../../compose/services.yaml
 
 services:
-  # Native harness (benchmarks/RULES.md 12b): the runner is
-  # evals/automationbench--native, and the framework launcher runs /harness.sh —
-  # AutomationBench's own auto-bench loop over its in-process simulated tools,
-  # graded in-process — in place of an agent. No user simulator, no sidecars.
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
   runner:
     extends:
       file: ../../compose/runner-native.yaml

@@ -18,7 +18,7 @@ TAU-bench - Tool-Agent-User interaction (retail + airline)
 
 The agent receives a task of the form: "$(cat /tasks/$EVAL_TASK_ID/problem.txt)"" The problem text is read from `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment variable.
 
-There is no fleet agent, though: tau-bench's own runtime (the `harness` sidecar) drives the tool loop and the user simulator, and the runner's `/harness.sh` is the pass-through that answers its completion requests through the edge. The benchmark declares `LABEL eval.benchmark.agent="native"`, so it pairs only with the `native` agent and its eval image is `evals/tau-bench--native` (rule 12b).
+There is no fleet agent, though: tau-bench's own runtime (the `harness` sidecar) drives the tool loop and the user simulator; the runner's `/harness.sh` is the pass-through that answers it through the edge. The benchmark declares `LABEL eval.benchmark.agent="native"` and pairs only with the `native` agent (`evals/tau-bench--native`).
 
 ## How it's graded
 

@@ -1,12 +1,6 @@
-# Shared `runner` template for a native-harness benchmark — one whose own
-# harness is the agent (benchmarks/RULES.md 12b, agents/RULES.md 23).
-#
-# The agent axis is fixed by the benchmark, not chosen per run, so this pins it
-# to `native` everywhere runner.yaml would read EVAL_AGENT: the eval image
-# (`evals/<benchmark>--native`, the only one such a benchmark publishes), the
-# agent the result records, and the task directory it writes to. Everything
-# else — env contract, gateway URLs, tmpfs, limits — is runner.yaml's, pulled in
-# with the same `extends:` chain a benchmark uses on this file.
+# `runner` for a native-harness benchmark (benchmarks/RULES.md 12b): the agent
+# axis is the benchmark's, so image, recorded agent and task directory are
+# pinned to `native` instead of read from EVAL_AGENT. Everything else is runner.yaml's.
 services:
   runner:
     extends:
@@ -16,8 +10,7 @@ services:
     environment:
       EVAL_AGENT: native
       AGENT: native
-    # Same shape as runner.yaml's mount with the agent segment pinned; compose
-    # merges volumes by target, so this one replaces it.
+    # Replaces runner.yaml's mount (compose merges volumes by target).
     volumes:
       - type: bind
         source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/native/${EVAL_MODEL_SLUG:-no-model}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}

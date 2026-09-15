@@ -1,12 +1,8 @@
-# tau-bench — native harness (benchmarks/RULES.md 12b): the agent axis is the
-# benchmark's, not the run's. The runner is evals/tau-bench--native and the
-# shared launcher runs /harness.sh — the pass-through that answers the bridge's
-# completion requests through the edge — in place of an agent. Only the AGENT's
-# calls cross that edge; the user simulator's LLM goes through the separate
-# `user-gateway` below and is deliberately not recorded — it is the environment,
-# not the system under test. The tau-bench runtime itself is the harness Job.
+# Native harness (benchmarks/RULES.md 12b): the agent axis is the benchmark's;
+# /harness.sh is the pass-through answering the bridge through the edge. The user
+# simulator's LLM goes through `user-gateway` below and is not recorded.
 agent: native
-# A full episode plus the pass-through's idle exit (120s).
+# A full episode plus the pass-through's 120s idle exit.
 timeout: '1800'
 runnerExtraEnv:
 - name: BRIDGE_URL

@@ -36,10 +36,8 @@
         "The gateway's recorded api_base pointed at an internal-only host; per",
         "rule 4a it was scrubbed to litellm.example.invalid before commit. No",
         "credential was present in the trace (all user_api_key_* fields empty).",
-        "Renamed from walle-0-mock when native agent mode landed (#577): the",
-        "benchmark's own harness made these calls, not the mock agent the",
-        "fixture was named after, and evals/<b>--native is now its only eval image.",
-        "Traces unchanged."
+        "Renamed from walle-0-mock with native agent mode (#577): the harness made",
+        "these calls, not the mock agent. Traces unchanged."
       ]
     },
     "deepswe-csstree-shorthand-expansion-compression-opencode": {

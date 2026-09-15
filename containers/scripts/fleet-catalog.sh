@@ -37,8 +37,7 @@ read -ra AGENTS <<< "$CATALOG_AGENTS"
 # mentioning the string cannot false-positive (benchmarks/RULES.md 24f makes the
 # label the single source of truth for per-task-ness).
 per_task() { grep -qE '^[ \t]*LABEL .*eval\.benchmark\.env="per-task"' "$1" 2>/dev/null; }
-# A native-harness family pairs with `native` and nothing else (benchmarks/RULES.md
-# 12b), so it is probed through that one image rather than the lineup.
+# A native-harness family pairs only with `native` (benchmarks/RULES.md 12b).
 native() { grep -qE '^[ \t]*LABEL .*eval\.benchmark\.agent="native"' "$1" 2>/dev/null; }
 
 published() {  # $1 = image name segment, $2… = agents to try; 0 = some agent has it, 1 = none does

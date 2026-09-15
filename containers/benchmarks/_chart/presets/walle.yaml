@@ -1,8 +1,4 @@
-# walle — native harness (benchmarks/RULES.md 12b): the probe is one HTTP call
-# to the gateway, no simulated tools, no user simulator, so unlike tau-bench this
-# needs no bridge / second gateway / extra Deployments. The agent axis is the
-# benchmark's, not the run's: the runner is evals/walle--native and the shared
-# launcher runs /harness.sh in place of an agent.
+# Native harness (benchmarks/RULES.md 12b): the agent axis is the benchmark's.
 agent: native
 timeout: '300'
 resources:

@@ -1,8 +1,7 @@
 """Probe the stack's structured-output conformance for one walle case (model-only).
 
-The framework launcher runs this as the benchmark's native harness — root, with
-the case identity (EVAL_TASK_ID) and the gateway endpoint (the edge, sourced by
-/usr/local/bin/run before run-agent launches it). Each case is one JSON Schema plus an expected verdict: valid schemas
+The runner container holds the case identity (EVAL_TASK_ID) and the gateway
+endpoint. Each case is one JSON Schema plus an expected verdict: valid schemas
 MUST be accepted (2xx), invalid schemas MUST be rejected (HTTP 400/422). We POST
 the schema as `response_format.json_schema` to the gateway's OpenAI-compatible
 chat/completions surface, classify the observed verdict, and write the reward.

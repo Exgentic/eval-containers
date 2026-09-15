@@ -246,10 +246,8 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
         return Err(renamed);
     }
 
-    // The agent axis: `--agent`, or the surface's default — except for a
-    // native-harness benchmark, whose own harness is its only agent: there
-    // `native` is resolved for the caller, and any other pairing is refused
-    // (benchmarks/RULES.md 12b).
+    // `--agent`, or the surface's default; a native-harness benchmark resolves
+    // to `native` and refuses any other pairing (benchmarks/RULES.md 12b).
     let agent = eval_containers::benchmark::agent_for(&benchmark, args.agent.as_deref())?;
 
     // Build the env var set. Every flag maps to EVAL_* per src/RULES.md rule 10.

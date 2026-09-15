@@ -24,8 +24,7 @@ flat() { echo "$1" | tr '[:upper:]' '[:lower:]' | tr '.' '-' | sed 's/--/-/g'; }
 per_task() {
   grep -qE "^[[:space:]]*\"$1\",?$" "$REPO_DIR/containers/benchmarks/_chart/per-task.json"
 }
-# A native-harness benchmark pairs with `native` and nothing else
-# (benchmarks/RULES.md 12b); the label is the source of truth, as for per_task.
+# Pairs only with `native` (benchmarks/RULES.md 12b); the label is the truth, as for per_task.
 native() {
   grep -qE '^[[:space:]]*LABEL .*eval\.benchmark\.agent="native"' "$REPO_DIR/containers/benchmarks/$1/Dockerfile" 2>/dev/null
 }

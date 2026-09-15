@@ -8,10 +8,9 @@
 # We run AutomationBench's OWN harness (`auto-bench`) for one task, pointing its
 # model endpoint at the fleet gateway. This is a model-only eval: the harness IS
 # the agent scaffold (no user simulator, so — unlike tau-bench — no bridge /
-# second gateway / pass-through agent). It ships as /harness.sh, which the
-# framework launcher runs in place of an agent (with EVAL_TASK_ID): it resolves
-# the task, runs auto-bench, and writes the reward. The benchmark pairs only
-# with the `native` agent (benchmarks/RULES.md 12b).
+# second gateway / pass-through agent). It ships as /harness.sh (benchmarks/
+# RULES.md 12a): with EVAL_TASK_ID it resolves the task, runs auto-bench, and
+# writes the reward.
 #
 # Upstream: github.com/zapier/AutomationBench  (MIT)  pinned by commit.
 # Requires Python >=3.13, so this image is FROM python:3.13-slim (the shared

@@ -14,12 +14,11 @@
 # etc. Each task is one schema plus an `expect` verdict (accept | reject).
 #
 # Model-only, native-harness (like automationbench): there is no repo agent.
-# The probe is the benchmark's own harness (/harness.sh), run by the framework
-# launcher in place of an agent — it holds EVAL_TASK_ID + the gateway endpoint,
-# POSTs the schema as `response_format` to the gateway, observes accept (2xx) vs
-# reject (400/422), and writes the reward = 1.0 iff the observed verdict matches
-# the expected one. No LLM judge, no external services. The benchmark pairs
-# only with the `native` agent (benchmarks/RULES.md 12b).
+# The probe is the benchmark's own harness (/harness.sh, benchmarks/RULES.md 12a):
+# it holds EVAL_TASK_ID + the gateway endpoint, POSTs the schema as
+# `response_format`, observes accept (2xx) vs reject (400/422), and writes the
+# reward = 1.0 iff the observed verdict matches the expected one. No LLM judge,
+# no external services.
 #
 # Upstream: github.com/MoonshotAI/walle  (MIT)  pinned by commit (tag v0.1.10).
 

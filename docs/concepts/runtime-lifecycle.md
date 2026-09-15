@@ -115,19 +115,13 @@ See [Triple-mode](triple-mode.md) for the full details on each.
 
 ## When the benchmark brings its own agent
 
-A few benchmarks — tau-bench, walle, automationbench — drive the model
-through their own upstream harness: a tool loop, a user simulator, a
-structured-output probe. There is no agent to install, so they declare
+A few benchmarks (tau-bench, walle, automationbench) drive the model
+through their own upstream harness. They declare
 `LABEL eval.benchmark.agent="native"`, ship the harness at `/harness.sh`,
-and pair with exactly one agent: `native`, whose `/run.sh` execs that
-file. The eval image is `evals/<benchmark>--native` and nothing else.
-
-The four steps still happen in order, through the same launcher. The
-one difference is inside the agent step: `run-agent` sees the native
-agent's marker and runs the harness as root with the task id — it
-resolves the task and grades in-process, like a verifier — instead of
-through the scrubbed, unprivileged agent launch. A benchmark never
-replaces the launcher itself.
+and pair with exactly one agent, `native`, whose `/run.sh` execs it. The
+four steps still happen in order through the same launcher; the one
+difference is that `run-agent` runs the harness as root with the task id,
+since it grades in-process, instead of through the scrubbed agent launch.
 
 ## Where to go next
 

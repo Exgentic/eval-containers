@@ -38,12 +38,11 @@ directly, pointing its model endpoint at the fleet gateway. This is a
 repo agent, and — because AutomationBench has no user simulator — none of the
 bridge / second-gateway complexity that `tau-bench` needs.
 
-The harness ships at `/harness.sh` and is declared with
-`LABEL eval.benchmark.agent="native"`, so the benchmark pairs only with the
-`native` agent and its eval image is `evals/automationbench--native`. The shared
-launcher runs it in place of the agent phase — as root, with `EVAL_TASK_ID` —
-and it resolves the sequential task id to its upstream `task_name` via a
-build-time map (`/tasks/all.jsonl`), then runs:
+The harness ships at `/harness.sh` (`LABEL eval.benchmark.agent="native"`), so
+the benchmark pairs only with the `native` agent (`evals/automationbench--native`).
+The launcher runs it as root with `EVAL_TASK_ID`; it resolves the sequential task
+id to its upstream `task_name` via a build-time map (`/tasks/all.jsonl`), then
+runs:
 
 ```
 auto-bench --tasks <task_name> --api chat_completions \

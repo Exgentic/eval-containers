@@ -2,10 +2,7 @@ include:
   - path: ../../compose/services.yaml
 
 services:
-  # Native harness (benchmarks/RULES.md 12b): the runner is evals/walle--native,
-  # and the framework launcher runs /harness.sh — one POST of the case's schema
-  # as response_format, scored 1.0 iff the observed accept/reject verdict matches
-  # the expected one — in place of an agent. No user simulator, no sidecars.
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
   runner:
     extends:
       file: ../../compose/runner-native.yaml

@@ -19,10 +19,10 @@ BRIDGE_URL = os.environ.get("BRIDGE_URL", "http://bridge:8000")
 # reinstated the very bypass #558 is about: every forwarded call would skip the
 # edge and go unrecorded (.agents/edge/RULES.md rules 1, 6, 10) while the task
 # still scored, so the run looked fine and only the missing calls.jsonl.zst gave
-# it away. /usr/local/bin/run sources start-edge before run-agent launches this
-# (as the benchmark's native harness), which sets OPENAI_BASE_URL to the edge's
-# own :4100 — so an unset var means the bring-up did not happen and there is
-# nothing to record through. main() fails loud on it rather than defaulting.
+# it away. `run` sources /usr/local/bin/start-edge before this runs, which
+# sets OPENAI_BASE_URL to the edge's own :4100 — so an unset var means the
+# bring-up did not happen and there is nothing to record through. main() fails
+# loud on it rather than defaulting.
 MODEL_URL = os.environ.get("OPENAI_BASE_URL")
 API_KEY = os.environ.get("OPENAI_API_KEY", "sk-proxy")
 

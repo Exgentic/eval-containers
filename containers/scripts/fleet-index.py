@@ -106,8 +106,7 @@ def per_task(name: str) -> bool:
 
 
 def native(name: str) -> bool:
-    """A benchmark whose own harness is the agent pairs with `native` and nothing
-    else, declared on a LABEL line the same way (benchmarks/RULES.md 12a, 12b)."""
+    """Pairs only with `native`, declared on a LABEL line (benchmarks/RULES.md 12b)."""
     path = os.path.join(CONTAINERS, "benchmarks", name, "Dockerfile")
     try:
         with open(path) as f:
