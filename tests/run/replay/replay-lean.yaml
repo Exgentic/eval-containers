@@ -1,19 +1,38 @@
-# Lean replay overlay: put `models/replay` in the gateway slot so the lean eval
-# image talks to a stub — only the benchmark/agent/verifier run, no real gateway
-# (ReplayMode::Lean in test.rs). Layered as a plain `-f` overlay on the
-# benchmark's own compose.yaml; a human runs the same stack by hand:
+# Lean replay overlay: put `models/replay` behind the edge as its PROVIDER, so
+# only the benchmark/agent/verifier run — no gateway, no collector
+# (ReplayMode::Lean in test.rs). That is the default topology
+# (compose/RULES.md 8a), so the sweep covers the path real runs take. Layered as
+# a plain `-f` overlay on the benchmark's own compose.yaml; a human runs the
+# same stack by hand:
 #   REPLAY_FIXTURE=… EVAL_RUN_ID=… \
 #     docker compose -f <benchmark>/compose.yaml -f replay-lean.yaml up
 #
-# The one per-run value is REPLAY_FIXTURE (the recorded trajectory); results
-# land where every run's do (EVAL_OUTPUT_DIR / EVAL_RUN_ID, runner.yaml). This
-# overrides the imported `gateway` service (image + healthcheck + fixture mount).
+# `models/replay` serves both the bare provider paths (/v1/messages,
+# /v1/chat/completions) and the gateway's namespaced ones, so the same image
+# works in either slot; here it is the provider, and the edge strips the
+# namespace on the way out (edge rule 4).
 services:
-  gateway:
+  upstream:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/replay:latest
     # Distroless replay image: probe via the binary's own `health` mode rather
-    # than services.yaml's `/opt/gateway/health` script, which it lacks.
+    # than the gateway overlay's `/opt/gateway/health` script, which it lacks.
     healthcheck:
       test: ["CMD", "/opt/gateway/server", "health"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
     volumes:
       - ${REPLAY_FIXTURE:?}:/data/traces.jsonl:ro
+    networks:
+      - internal
+
+  runner:
+    environment:
+      # The edge's upstream is the recorded engine. Empty credential on purpose:
+      # replay never authenticates, and contribution verification carries no key
+      # of any shape (verification/RULES.md rule 7).
+      EVAL_UPSTREAM_API_BASE: http://upstream:4000
+      EVAL_UPSTREAM_API_KEY: ""
+    depends_on:
+      upstream:
+        condition: service_healthy

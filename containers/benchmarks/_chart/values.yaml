@@ -26,6 +26,14 @@ registry: ghcr.io/exgentic
 # gateway errors on an empty handle. The runner's clean label is derived from it
 # (last path segment).
 gatewayImage: bifrost
+# Is there a gateway at all? Default no: the edge inside the runner forwards
+# straight to the provider and records every call, which is what an eval needs
+# (gateways/RULES.md 10-11). Set `gateway=true` for the one thing only a gateway
+# does — translating the agent's wire to a different upstream wire — and
+# `gatewayImage` above then picks which one. `otel` likewise adds the collector
+# sidecar; nothing in the framework reads its spans.
+gateway: false
+otel: false
 model: ""
 # Agent-side reasoning effort (e.g. high); empty → the agent's default.
 reasoningEffort: ""

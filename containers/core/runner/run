@@ -5,16 +5,19 @@
 # Two execution paths, selected by whether the caller pre-set ANTHROPIC_BASE_URL:
 #
 #   set (compose / k8s "runner" mode)  → the lean eval base.
-#       otelcol + gateway are sibling containers/pods the orchestrator already
-#       started and health-gated. The edge runs HERE, in front of the gateway,
-#       so the agent's calls are recorded verbatim; the three phases then run as
-#       a plain shell sequence — no process-compose.
+#       The edge runs HERE and is the whole proxy path by default: it forwards
+#       to the provider and records every call verbatim. A gateway and a
+#       collector are opt-in sibling containers the orchestrator starts when
+#       asked (gateways/RULES.md 10-11, compose/RULES.md 8a); the edge waits for
+#       a gateway itself when one is in play. The three phases then run as a
+#       plain shell sequence — no process-compose.
 #
 #   unset (single-container mode)      → the -standalone bundle.
-#       otelcol + gateway run in-process, so process-compose brings up all five
-#       units (otelcol → gateway → agent → verifier → result) with readiness
-#       gating. process-compose + /etc/process-compose.yaml ship ONLY in the
-#       bundle (core/standalone.Dockerfile); the lean base has neither.
+#       process-compose brings up the pipeline in-process: edge → agent →
+#       verifier → result, plus gateway and otelcol when EVAL_WITH_GATEWAY /
+#       EVAL_WITH_OTEL ask for them. process-compose + /etc/process-compose.yaml
+#       ship ONLY in the bundle (core/standalone.Dockerfile); the lean base has
+#       neither.
 #
 # Same agent/verifier/result semantics in both paths; the agent launch itself is
 # shared via /usr/local/bin/run-agent so rule 7's env allow-list has one home.
@@ -168,27 +171,45 @@ if [ -n "${ANTHROPIC_BASE_URL+set}" ]; then
 fi
 
 # ─── Single-container mode (bundle) ───────────────────────────────────
-# We own the whole pipeline. Point the agent + gateway at loopback and let
-# process-compose bring up otelcol → gateway → agent → verifier → result.
-# The edge fronts the in-process gateway here too, so a single-container run is
-# recorded exactly like a compose one. Its upstream is set on the edge process
-# in process-compose.yaml, NOT exported: OPENAI_API_BASE is the gateway's own
-# upstream, and overwriting it would point the gateway at itself.
+# We own the whole pipeline. Point the agent at the edge on loopback and let
+# process-compose bring the units up.
+#
+# The default pipeline is edge → agent → verifier → result: the edge forwards
+# straight to the provider in OPENAI_API_BASE and records every call, which is
+# all an eval needs. The bundle still SHIPS the gateway and the collector — a
+# single image that can do the cross-wire case is the point of the bundle — but
+# it does not START them unless asked, so the common run costs two processes
+# fewer and needs no collector at all. Which processes run is decided here, by
+# naming them: process-compose starts the ones listed and their dependencies.
 export ANTHROPIC_BASE_URL="http://127.0.0.1:4100/anthropic"
 # OpenAI base needs /v1 (clients append /chat/completions); anthropic doesn't.
 export OPENAI_BASE_URL="http://127.0.0.1:4100/openai/v1"
 export GOOGLE_GEMINI_BASE_URL="http://127.0.0.1:4100/genai"
-# litellm's OTel callback honors this env var; bifrost reads its collector_url
-# from config.json. Setting it unconditionally is harmless for bifrost.
-export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
 
-# The gateway config hardcodes the hostname `otelcol`; in-process there is no
-# DNS, so map it to loopback (only when nothing else already resolves it).
-if ! getent hosts otelcol >/dev/null 2>&1; then
-  echo "127.0.0.1 otelcol" >> /etc/hosts
+units=(edge agent verifier result)
+
+if [ -n "${EVAL_WITH_GATEWAY:-}" ]; then
+  units+=(gateway)
+  # Declared to run-edge: the edge keeps the protocol namespace and lets the
+  # gateway hold the credential (it reads OPENAI_API_* from this container's
+  # env, which is why that pair is NOT repointed here — it is the gateway's own
+  # upstream, and overwriting it would point the gateway at itself).
+  export EVAL_GATEWAY_URL="http://127.0.0.1:4000"
 fi
 
-exec /usr/local/bin/process-compose up \
+if [ -n "${EVAL_WITH_OTEL:-}" ]; then
+  units+=(otelcol)
+  # litellm's OTel callback honors this env var; bifrost reads its collector_url
+  # from config.json. Setting it unconditionally is harmless for bifrost.
+  export OTEL_EXPORTER_OTLP_ENDPOINT="${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otelcol:4318}"
+  # The gateway config hardcodes the hostname `otelcol`; in-process there is no
+  # DNS, so map it to loopback (only when nothing else already resolves it).
+  if ! getent hosts otelcol >/dev/null 2>&1; then
+    echo "127.0.0.1 otelcol" >> /etc/hosts
+  fi
+fi
+
+exec /usr/local/bin/process-compose up "${units[@]}" \
   --config /etc/process-compose.yaml \
   --disable-dotenv \
   --tui=false

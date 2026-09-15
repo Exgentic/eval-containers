@@ -1,71 +1,21 @@
 # Shared compose topology that per-benchmark `compose.yaml` files pull in
-# verbatim with `include:` — the parts no benchmark overrides: the `otelcol`
-# and `gateway` services and the `internal`/`upstream` networks. The `runner`
-# service is NOT here: every benchmark must override its
-# image and `BENCHMARK` env, and Compose forbids overriding an `include:`d
-# service, so the runner template lives in `runner.yaml` and is pulled via
-# `extends:` instead. See `.agents/compose/RULES.md` rule 8.
-services:
-  otelcol:
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/otel:latest
-    # otelcol mounts the model/ half of the directory runner.yaml mounts whole.
-    volumes:
-      - type: bind
-        source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-no-model}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}/model
-        target: /output/model
-        bind: { create_host_path: true }
-    # Probe otelcol's health_check endpoint (:13133) so the gateway can gate on
-    # `service_healthy` below. Same per-orchestrator pattern as the gateway's
-    # /opt/gateway/health check. Image is alpine-based, so busybox wget exists.
-    healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
-      interval: 1s
-      timeout: 1s
-      retries: 30
-      start_period: 1s
-    networks:
-      - internal
-
-  gateway:
-    # EVAL_GATEWAY picks the proxy image, EVAL_GATEWAY_TAG its version
-    # (gateways/RULES.md rule 2c). One name each: the CLI rejects the pre-2c
-    # spellings by name, so nothing here has to carry a fallback.
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/${EVAL_GATEWAY:-bifrost}:${EVAL_GATEWAY_TAG:-latest}
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
-      OPENAI_API_BASE: ${OPENAI_API_BASE:?}
-      # The model authority: a generic gateway pins to this handle. Unset ->
-      # passthrough (client model); a pinned per-model image bakes its own.
-      EVAL_MODEL: ${EVAL_MODEL}
-      HOST: 0.0.0.0
-      # Both gateway flavors emit OTel: bifrost via its native `otel`
-      # plugin (collector_url derived from this in /opt/gateway/start),
-      # litellm via the `otel` callback in config.yaml.template (reads
-      # this env var directly). Spans land in /output/model/traces.jsonl via
-      # the otelcol sidecar's file exporter.
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
-    healthcheck:
-      test: ["CMD", "/opt/gateway/health"]
-      interval: 2s
-      timeout: 2s
-      retries: 60
-      start_period: 5s
-    # condition: service_started (not service_healthy) so this costs no startup
-    # latency — gateway and otelcol still boot in parallel, the runner gates on
-    # both healthy (rule 8). The edge exists for STOP order: Compose stops
-    # dependents before dependencies, so gateway (and its async OTel batch
-    # exporter) is stopped before otelcol — without it, `docker compose up
-    # --abort-on-container-exit` can stop both in parallel, otelcol's hostname
-    # drops from Compose's embedded DNS, and the gateway's still-flushing final
-    # span batch (typically the actual gen_ai completion span, emitted right as
-    # the process winds down) fails with a DNS NameResolutionError and is lost.
-    depends_on:
-      otelcol:
-        condition: service_started
-    networks:
-      - internal
-      - upstream
-
+# verbatim with `include:` — the parts no benchmark overrides: the `internal`
+# and `upstream` networks. The `runner` service is NOT here: every benchmark
+# must override its image and `BENCHMARK` env, and Compose forbids overriding
+# an `include:`d service, so the runner template lives in `runner.yaml` and is
+# pulled via `extends:` instead. See `.agents/compose/RULES.md` rule 8.
+#
+# The `gateway` and `otelcol` services are NOT here either, and are not part of
+# a default run (gateways/RULES.md 10-11, compose/RULES.md 8a). The edge inside
+# the runner is the whole proxy path: it forwards to the provider in
+# OPENAI_API_BASE and records every call verbatim. Ask for the extras by
+# layering their overlay, which brings the service AND the runner wiring it
+# needs, so one `-f` is the whole opt-in:
+#
+#   docker compose -f containers/benchmarks/<b>/compose.yaml \
+#                  -f containers/compose/gateway.yaml up     # cross-wire translation
+#   docker compose -f containers/benchmarks/<b>/compose.yaml \
+#                  -f containers/compose/otel.yaml up        # gen_ai spans
 networks:
   internal:
     internal: true

@@ -632,64 +632,197 @@ fn openshift_values_overlay_is_present() {
     eprintln!("✓ deploy/values-openshift.yaml is present and sets anyuid-sa");
 }
 
-/// Issue #45: otelcol's readiness was gated on :13133, but the otel image
-/// enabled no `health_check` extension there — the probe never passed until the
-/// failure_threshold elapsed, a latent race that could silently drop spans into
-/// a not-yet-listening collector.
+/// Every `/usr/local/bin/<script>` the framework invokes must actually be in the
+/// image. The lean base COPYs its helpers one line at a time, so adding a script
+/// and forgetting its COPY produces an image that builds, publishes and passes
+/// every static gate — and then fails at run time with "No such file or
+/// directory", on every task of every benchmark.
 ///
-/// The fix makes otelcol readiness a *real, verified* signal and gates on it in
-/// all three orchestration modes: the image enables the health_check extension
-/// on :13133, compose waits via `service_healthy`, the k8s sidecar via its
-/// `startupProbe`, and single-image (process-compose) via its `http_get` probe
-/// + `process_healthy`. This pins the contract.
+/// Caught exactly that while splitting the edge bring-up: `run-edge` was
+/// referenced by `start-edge` and by process-compose, and copied by neither.
 #[test]
-fn otelcol_health_gate_is_consistent_across_modes() {
+fn every_framework_script_invoked_is_copied_into_the_image() {
+    let root = repo_root();
+    // The bundle is FROM the lean base and adds the single-container glue, so a
+    // script is "in the image that runs it" if either Dockerfile places it.
+    let dockerfile = [
+        "containers/core/combination.Dockerfile",
+        "containers/core/standalone.Dockerfile",
+    ]
+    .iter()
+    .map(|p| fs::read_to_string(root.join(p)).unwrap_or_else(|_| panic!("read {p}")))
+    .collect::<Vec<_>>()
+    .join("\n");
+
+    // What the framework's own files invoke by absolute path.
+    let callers = [
+        "containers/core/runner/run",
+        "containers/core/runner/run-agent",
+        "containers/core/runner/start-edge",
+        "containers/core/runner/run-edge",
+        "containers/core/runner/write-result",
+        "containers/core/runner/process-compose.yaml",
+    ];
+    let mut wanted: Vec<String> = Vec::new();
+    for caller in callers {
+        let text =
+            fs::read_to_string(root.join(caller)).unwrap_or_else(|_| panic!("read {caller}"));
+        for (idx, _) in text.match_indices("/usr/local/bin/") {
+            let rest = &text[idx + "/usr/local/bin/".len()..];
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
+                .collect();
+            if !name.is_empty() && !wanted.contains(&name) {
+                wanted.push(name);
+            }
+        }
+    }
+    assert!(
+        wanted.contains(&"run-edge".to_string()),
+        "the scan found no run-edge — it is invoked by start-edge and process-compose, \
+         so a scan that misses it would not catch the bug this test exists for"
+    );
+
+    let mut missing = Vec::new();
+    for name in &wanted {
+        let dest = format!("/usr/local/bin/{name}");
+        // gosu is COPYd --from a stage; the rest are COPYd from the build context.
+        // A COPY specifically, not any mention: the chmod block names each script
+        // too, so a `contains` on the path alone still passes when the COPY is
+        // the line that went missing — which is the bug this test is for.
+        let copied = dockerfile.lines().any(|l| {
+            let l = l.trim_start();
+            l.starts_with("COPY ") && l.split_whitespace().last() == Some(dest.as_str())
+        });
+        if !copied {
+            missing.push(name.clone());
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "invoked by the framework but placed by neither Dockerfile — the image \
+         builds and then fails at run time on every task: {missing:#?}"
+    );
+
+    eprintln!(
+        "✓ all {} invoked framework scripts are placed by an image",
+        wanted.len()
+    );
+}
+
+/// Issue #45: a readiness gate must be a *real, verified* signal, not a probe
+/// against a port nothing serves. otelcol's was gated on :13133 while the image
+/// enabled no `health_check` extension there, so the probe never passed until
+/// the failure_threshold elapsed — a latent race that dropped spans into a
+/// not-yet-listening collector.
+///
+/// The topology moved (gateways/RULES.md 10-11, compose/RULES.md 8a): a default
+/// run has no collector and no gateway, so there is nothing for a benchmark file
+/// to gate on, and Compose refuses a project whose service depends on one that
+/// is not there. What survives is #45's actual contract — every dependency an
+/// eval has is waited for by something that can verify it — so this pins where
+/// that wait now lives:
+///
+///   1. the edge holds off serving until its upstream answers, which is the gate
+///      the 107 benchmark files used to carry, now in one place for all modes;
+///   2. no benchmark file, and no default render of the chart, gates on a
+///      service that a default run does not start;
+///   3. the opt-in overlays still carry a verified gate for what they add.
+#[test]
+fn readiness_gates_are_verified_and_belong_to_what_needs_them() {
     let read = |p: &str| {
         fs::read_to_string(repo_root().join(p))
-            .unwrap_or_else(|_| panic!("missing {p} — expected by #45 gate"))
+            .unwrap_or_else(|_| panic!("missing {p} — expected by the #45 gate"))
     };
 
-    // 1. The image serves a health endpoint: health_check extension enabled
-    //    and wired into the collector config.
+    // 1. The edge waits for a gateway upstream before it serves, so its own
+    //    readiness covers the whole path.
+    let edge = read("containers/core/edge/main.go");
+    assert!(
+        edge.contains("func awaitUpstream(") && edge.contains("upstreamIsGateway {"),
+        "the edge must wait for a gateway upstream before serving — it is the only \
+         gate left for a gateway (#45, compose/RULES.md 8a)"
+    );
+
+    // 2. No benchmark file may depend on a service a default run does not start.
+    //    Compose fails the whole project on one, so this is a hard gate.
+    let benchmarks = repo_root().join("containers/benchmarks");
+    let mut offenders = Vec::new();
+    for entry in fs::read_dir(&benchmarks).expect("read benchmarks dir") {
+        let dir = entry.expect("benchmark dir entry").path();
+        let file = dir.join("compose.yaml");
+        if !file.is_file() {
+            continue;
+        }
+        let text = fs::read_to_string(&file).expect("read compose.yaml");
+        // Only a `depends_on` entry matters; a comment or an env value naming
+        // the word is harmless.
+        for svc in ["otelcol", "gateway"] {
+            let dep = format!("      {svc}:\n        condition:");
+            if text.contains(&dep) {
+                offenders.push(format!("{}: depends_on {svc}", dir.display()));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "a benchmark compose.yaml must not depend on the opt-in gateway/otelcol \
+         (compose/RULES.md 8a) — Compose fails the project when they are absent: {offenders:#?}"
+    );
+
+    // 3. The opt-in overlays bring a verified gate with the service they add:
+    //    otelcol still healthchecks the endpoint its image actually serves.
     let cfg = read("containers/core/otel/config.yaml");
     assert!(
         cfg.contains("health_check:") && cfg.contains("extensions: [health_check]"),
         "containers/core/otel/config.yaml must enable + wire the health_check extension (#45)"
     );
-
-    // 2. Compose: services.yaml healthchecks otelcol on :13133; the gateway no
-    //    longer gates on it (parallel boot) — each benchmark runner does (#45).
-    let svc = read("containers/compose/services.yaml");
+    let otel_overlay = read("containers/compose/otel.yaml");
     assert!(
-        svc.contains("13133"),
-        "containers/compose/services.yaml must healthcheck otelcol on :13133 (#45)"
+        otel_overlay.contains("13133"),
+        "containers/compose/otel.yaml must healthcheck otelcol on the port its image serves (#45)"
     );
-    let runner = read("containers/benchmarks/gsm8k/compose.yaml");
+    let gw_overlay = read("containers/compose/gateway.yaml");
     assert!(
-        runner.contains("otelcol:") && runner.contains("condition: service_healthy"),
-        "benchmark runners must gate on otelcol service_healthy (#45 — moved from the gateway)"
+        gw_overlay.contains("/opt/gateway/health") && gw_overlay.contains("service_healthy"),
+        "containers/compose/gateway.yaml must healthcheck the gateway and gate the runner on it (#45)"
     );
 
-    // 3. k8s: the otelcol sidecar has a startupProbe on :13133.
+    // 4. k8s: the sidecars are rendered only when asked for, and keep their
+    //    startupProbes when they are.
     let job = read("containers/benchmarks/_chart/templates/job.yaml");
-    let otelcol_block = job
-        .split("- name: gateway")
-        .next()
-        .expect("job.yaml has an otelcol section before the gateway");
     assert!(
-        otelcol_block.contains("startupProbe:") && otelcol_block.contains("port: 13133"),
-        "job.yaml otelcol sidecar must define a startupProbe on :13133 (#45)"
+        job.contains("{{- if $v.otel }}") && job.contains("{{- if $v.gateway }}"),
+        "job.yaml must render the otelcol/gateway sidecars only when asked for \
+         (gateways/RULES.md 10-11)"
+    );
+    assert!(
+        job.contains("port: 13133") && job.contains("/opt/gateway/health"),
+        "job.yaml sidecars must keep their startupProbes when they ARE rendered (#45)"
     );
 
-    // 4. Single-image (process-compose): otelcol probes :13133, the gateway
-    //    gates on process_healthy.
+    // 5. Single-container: the agent gates on the edge, never on a process the
+    //    bundle may not have started.
     let pc = read("containers/core/runner/process-compose.yaml");
+    let agent_block = pc
+        .split("  agent:")
+        .nth(1)
+        .and_then(|s| s.split("\n  verifier:").next())
+        .expect("process-compose.yaml has an agent process before the verifier");
     assert!(
-        pc.contains("port: 13133") && pc.contains("condition: process_healthy"),
-        "process-compose.yaml must probe otelcol :13133 and gate on process_healthy (#45)"
+        agent_block.contains("edge:") && agent_block.contains("process_healthy"),
+        "process-compose.yaml's agent must gate on the edge (#45)"
     );
+    for absent in ["otelcol:", "gateway:"] {
+        assert!(
+            !agent_block.contains(absent),
+            "process-compose.yaml's agent must not gate on `{absent}` — it is not \
+             started unless asked for, and a dependency on an unstarted process fails the run"
+        );
+    }
 
-    eprintln!("✓ otelcol health gate consistent across all three modes (#45)");
+    eprintln!("✓ every dependency is waited for by something that can verify it (#45)");
 }
 
 /// The model axis supports BOTH paths, with the generic gateway as the default
@@ -702,13 +835,16 @@ fn otelcol_health_gate_is_consistent_across_modes() {
 ///     its model + custom config — a shared, versioned artifact. Allowed, not forbidden.
 #[test]
 fn model_axis_generic_default_no_silent_model() {
-    let svc = fs::read_to_string(repo_root().join("containers/compose/services.yaml"))
-        .expect("missing containers/compose/services.yaml");
+    // The gateway itself is opt-in (gateways/RULES.md 10-11), so its definition
+    // lives in the overlay that turns it on; WHICH gateway is still the same
+    // choice, with the same generic default.
+    let svc = fs::read_to_string(repo_root().join("containers/compose/gateway.yaml"))
+        .expect("missing containers/compose/gateway.yaml");
 
     // Generic gateway is the DEFAULT proxy.
     assert!(
         svc.contains("${EVAL_GATEWAY:-bifrost}"),
-        "services.yaml gateway must default to the generic `bifrost` proxy (#187)"
+        "gateway.yaml must default to the generic `bifrost` proxy (#187)"
     );
     // No silent fallback model: the compose never bakes a default EVAL_MODEL — an
     // unset handle surfaces as the generic gateway's own startup error, never a

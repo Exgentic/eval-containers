@@ -4,7 +4,8 @@
 
 In `job` mode, every benchmark deploys through **one shared Helm chart**,
 `containers/benchmarks/_chart`. A benchmark is selected by name (`--set benchmark=<x>`);
-the chart renders the otelcol + gateway + runner Job. A benchmark with bespoke
+the chart renders the runner Job, plus the gateway and otelcol sidecars when
+`--set gateway=true` / `--set otel=true` ask for them. A benchmark with bespoke
 topology adds an optional preset file inside the chart — standard benchmarks
 contribute nothing, so the published chart is self-contained.
 

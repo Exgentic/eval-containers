@@ -31,16 +31,17 @@ per-benchmark file:
 
 - `container` mode builds the standalone bundle from the one generic
   `containers/core/standalone.Dockerfile` (`FROM` the lean base + the in-process
-  gateway/otelcol/process-compose). The lean base `:latest` is the eval; the
-  bundle is the single-container convenience.
+  gateway/otelcol/process-compose). The bundle ships all of them and starts the
+  gateway/otelcol only with `--with-gateway` / `--with-otel`. The lean base
+  `:latest` is the eval; the bundle is the single-container convenience.
 - `job` mode renders the shared Helm chart, selected with `--set benchmark=<x>`.
   A benchmark with bespoke topology adds an optional
   `containers/benchmarks/_chart/presets/<x>.yaml`. See [The Helm chart](the-helm-chart.md).
 
 ## The mental model
 
-Whichever mode you pick, the wiring is the same: a runner (benchmark + agent), a
-gateway (logging model proxy), and otelcol. The mode only changes *who
-orchestrates them* — `process-compose` inside one container, a Compose network,
-or a Kubernetes Pod. See [Overview](overview.md) and
+Whichever mode you pick, the wiring is the same: a runner (benchmark + agent)
+whose edge records every model call, plus an optional gateway and collector when
+a run asks for them. The mode only changes *who orchestrates them* —
+`process-compose` inside one container, a Compose network, or a Kubernetes Pod. See [Overview](overview.md) and
 [Isolation & gateways](isolation-and-gateways.md).

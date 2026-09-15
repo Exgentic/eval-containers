@@ -1,0 +1,44 @@
+# Opt-in overlay: collect the gateway's OpenTelemetry spans.
+#
+#   docker compose -f containers/benchmarks/<b>/compose.yaml \
+#                  -f containers/compose/gateway.yaml \
+#                  -f containers/compose/otel.yaml up
+#
+# Only a gateway emits spans, so this is worth layering only WITH the gateway
+# overlay. Nothing in the framework reads the result: the edge's
+# `model/calls.jsonl.zst` is the account of a call (edge rules 6-10), and the
+# spans are a summary of the same exchange without the tool schemas. This
+# exists for someone who wants OTLP for their own tooling.
+services:
+  otelcol:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/otel:latest
+    # otelcol mounts the model/ half of the directory runner.yaml mounts whole.
+    volumes:
+      - type: bind
+        source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-no-model}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}/model
+        target: /output/model
+        bind: { create_host_path: true }
+    # Probe otelcol's health_check endpoint (:13133). Image is alpine-based, so
+    # busybox wget exists.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:13133/"]
+      interval: 1s
+      timeout: 1s
+      retries: 30
+      start_period: 1s
+    networks:
+      - internal
+
+  gateway:
+    environment:
+      # Both gateway flavors emit OTel: bifrost via its native `otel` plugin
+      # (collector_url derived from this in /opt/gateway/start), litellm via the
+      # `otel` callback in config.yaml.template (reads this env var directly).
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
+    # Stop order: Compose stops dependents before dependencies, so the gateway —
+    # and its async OTel batch exporter — is flushed before otelcol leaves
+    # Compose's embedded DNS. Without the edge, `--abort-on-container-exit` can
+    # stop both at once and the final completion span is lost to a DNS error.
+    depends_on:
+      otelcol:
+        condition: service_started

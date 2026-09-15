@@ -2,16 +2,20 @@
 # The variant is a NAME suffix, never the tag — `:tag` is the release version.
 #
 # FROM the lean eval base (combination.Dockerfile) + the in-process serving glue
-# that ONLY single-container mode runs: the gateway (LLM proxy), otelcol, the
-# process-compose orchestrator, and the full five-unit pipeline. This is the
-# laptop / `--mode container` artifact and the image that ships to a
-# single-container harness (e.g. llm-d), where the in-process gateway does the
-# Anthropic→OpenAI translation.
+# that ONLY single-container mode runs: the gateway (LLM proxy), otelcol and the
+# process-compose orchestrator. This is the laptop / `--mode container` artifact
+# and the image that ships to a single-container harness (e.g. llm-d), where the
+# in-process gateway can do the Anthropic→OpenAI translation.
 #
-# `/usr/local/bin/run` self-selects: with the gateway in-process here,
-# ANTHROPIC_BASE_URL is unset, so run execs process-compose against the full
-# pipeline. The same run script also drives the lean base's runner sequence —
-# only the image contents differ.
+# It SHIPS all of them and STARTS what it is asked to: the default pipeline is
+# edge → agent → verifier → result, and `EVAL_WITH_GATEWAY` / `EVAL_WITH_OTEL`
+# add the other two (gateways/RULES.md 10-11). Shipping them anyway is the point
+# of a bundle — one image that can also do the cross-wire case, with no second
+# artifact to pull.
+#
+# `/usr/local/bin/run` self-selects: ANTHROPIC_BASE_URL is unset here, so run
+# execs process-compose. The same run script also drives the lean base's runner
+# sequence — only the image contents differ.
 #
 # The lean base to layer onto is supplied as the `eval-base` **build context**
 # (NOT a build arg): a named context binds the `FROM eval-base` below to a
