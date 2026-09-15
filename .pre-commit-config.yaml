@@ -75,9 +75,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: '\.(jsonl|lock)$'
+        exclude: '\.(jsonl|lock|patch)$'
       - id: end-of-file-fixer
-        exclude: '\.(jsonl|lock)$'
+        exclude: '\.(jsonl|lock|patch)$'
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1024]

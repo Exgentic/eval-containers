@@ -1468,6 +1468,61 @@ fn merge_stitches_per_task_refs_from_the_shards_artifact() {
     );
 }
 
+/// The same rule for the per-task COMBO merge, which #525 fixed for `merge` but
+/// not for its sibling: `merge-pertask-combos` read `.items[]` off the
+/// `pertask_combo_shards` output, which carries only `[{idx}]`, so the loop ran
+/// ZERO times, stitched no manifest list, and still exited 0 — every per-task
+/// combo stayed amd64-only under a `:TAG` that still pointed at a months-old
+/// digest, while the job reported success. A `fails == 0` check cannot catch
+/// that (nothing failed; nothing ran), so the job must also assert it attempted
+/// the whole work list and read the registry back (delivery/RULES.md:14, :17).
+#[test]
+fn merge_pertask_combos_stitches_from_the_shards_artifact() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  merge-pertask-combos:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  release-gate:").next())
+        .expect("no `merge-pertask-combos` job in release-images.yml");
+    assert!(
+        !job.contains("SHARDS: ${{ needs.enumerate.outputs.pertask_combo_shards }}"),
+        "merge-pertask-combos must not read combo items from the pertask_combo_shards \
+         output — it carries only shard indices, so the merge loop runs zero times"
+    );
+    assert!(
+        job.contains("name: shards")
+            && job.contains(".pertask_combo[] | select(.idx==$i).items")
+            && job.contains("shards.json"),
+        "merge-pertask-combos must download the shards artifact and read \
+         `.pertask_combo[].items` from shards.json"
+    );
+    // One job per shard, like combos-pertask: a single job stitching every
+    // per-task combo (thousands, x 2 variants, 3-10 s each) cannot finish
+    // inside any job timeout, and a re-run starts over from the top.
+    assert!(
+        job.contains("shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}")
+            && job.contains("select(.idx==$i)"),
+        "merge-pertask-combos must fan out one job per pertask_combo shard, each \
+         stitching only its own shard's items"
+    );
+    assert!(
+        job.contains("actions/checkout@"),
+        "merge-pertask-combos runs containers/scripts/fleet-tag.sh, so it must check out \
+         the repository"
+    );
+    assert!(
+        job.contains("merged + skipped"),
+        "merge-pertask-combos must assert it attempted every combo in the work list — a \
+         zero-iteration run passes a `fails == 0` check vacuously (delivery/RULES.md:17)"
+    );
+    assert!(
+        job.contains("expected amd64,arm64"),
+        "merge-pertask-combos must read the published tags back and confirm both arches — \
+         a zero exit is not evidence (delivery/RULES.md:14, :17)"
+    );
+}
+
 /// The Helm chart rides the same channel as every image (RULES.md principle 9):
 /// a push to `main` publishes `charts/eval`, not only a version tag — publishing
 /// it tag-only is what left the registry with no chart at all (#449, #440). A
