@@ -43,3 +43,7 @@ path = "input_hash.rs"
 [[test]]
 name = "fleet_status"
 path = "fleet_status.rs"
+
+[[test]]
+name = "fleet_retention"
+path = "fleet_retention.rs"
