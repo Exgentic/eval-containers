@@ -10,7 +10,7 @@
 # Helm accepted it silently. A rendered-manifest assertion catches exactly that
 # class; nothing else in the static stage renders these wrappers.
 #
-# Cheap by construction: `run.sh --dry-run --no-build` stops at `helm template`
+# Cheap by construction: `run.sh --dry-run` stops at `helm template`
 # against the in-repo chart, so this needs helm and nothing else — no cluster, no
 # oc, no daemon, no network. The kind wrapper can't render without a live kind
 # cluster, so only its argument guard is exercised here.
@@ -47,10 +47,13 @@ varies() {   # $1 = label, rest = the launcher invocation
 
 # ── 1. oc render: each axis lands where it belongs ──────────────────────────
 if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
-           --registry "$REG" --task 0 --no-build --dry-run 2>&1); then
+           --registry "$REG" --task 0 --local-chart --dry-run 2>&1); then
   # The gateway sidecar runs the image --gateway named …
-  grep -qE "image: $REG/$GATEWAY:" <<<"$out" \
-    || bad "oc: gateway image is not the one --gateway named ($GATEWAY)"
+  # …from the PUBLISHED fleet (nested path): the default launches what the
+  # dashboard launches, and flat ImageStream names exist only where --build put
+  # them.
+  grep -qE "image: $REG/models/$GATEWAY:" <<<"$out" \
+    || bad "oc: gateway image is not the published $REG/models/$GATEWAY"
   # … and receives the handle --model named, verbatim, as its EVAL_MODEL.
   grep -qE "EVAL_MODEL.*\"$HANDLE\"" <<<"$out" \
     || bad "oc: EVAL_MODEL is not the --model handle ($HANDLE)"
@@ -62,15 +65,38 @@ if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "
   # on purpose: label values forbid `/` and cap at 63 chars, so the path is the
   # only place that can carry a whole handle, and fetch.sh reads the Job's own
   # subPath rather than rebuilding one from the label.
-  grep -qE "subPath: runs/aime/codex/$SLUG/" <<<"$out" \
+  grep -qE "subPath(Expr)?: runs/aime/codex/$SLUG/" <<<"$out" \
     || bad "oc: the output subPath is not keyed by the model slug"
   grep -qE "^ *model: \"gpt-5-mini\"" <<<"$out" \
     || bad "oc: the Job's model label is no longer the agent-facing short name"
-  grep -qE "subPath: runs/aime/codex/$GATEWAY/" <<<"$out" \
+  grep -qE "subPath(Expr)?: runs/aime/codex/$GATEWAY/" <<<"$out" \
     && bad "oc: the output subPath is keyed by the gateway image"
 else
   echo "FAIL oc: --dry-run render failed:"; printf '%s\n' "$out" | sed 's/^/  /'; fail=$((fail + 1))
 fi
+
+# ── 1b. --build is the only thing that moves where images come from ─────────
+out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+        --registry "$REG" --task 0 --build --local-chart --dry-run 2>&1)
+grep -qE "image: $REG/$GATEWAY:" <<<"$out" \
+  || bad "oc --build: gateway image is not the flat ImageStream ref $REG/$GATEWAY"
+grep -q -- "--no-build" <<<"$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
+        --registry "$REG" --task 0 --no-build --dry-run 2>&1)" \
+  || bad "oc: --no-build was not refused by name (building is opt-in now)"
+
+# ── 1c. a per-task benchmark runs by default, and only --build refuses it ───
+# The published fleet has one image per task and the chart renders the task-aware
+# ref; the internal registry can build neither (no --task-id, and a flat name
+# cannot hold `sympy__sympy-24066`). So the refusal belongs to --build alone.
+out=$(bash "$OC" --benchmark swe-bench --agent codex --model "$HANDLE" \
+        --registry "$REG" --task sympy__sympy-24066 --local-chart --dry-run 2>&1)
+grep -qE "image: $REG/evals/swe-bench-sympy__sympy-24066--codex:" <<<"$out" \
+  || bad "oc: a per-task benchmark did not render its task-aware runner from the published fleet"
+out=$(bash "$OC" --benchmark swe-bench --agent codex --model "$HANDLE" \
+        --registry "$REG" --task sympy__sympy-24066 --build --local-chart --dry-run 2>&1)
+rc=$?
+[ "$rc" -ne 0 ] || bad "oc --build: a per-task benchmark was accepted; the internal registry cannot build one"
+grep -q -- "--build" <<<"$out" || bad "oc --build: the per-task refusal doesn't name --build as the cause"
 
 # ── 2. both wrappers reject the pre-2c `--model <gateway flavor>` form ───────
 # A bare name would otherwise be forwarded as EVAL_MODEL and routed to a model
@@ -78,7 +104,7 @@ fi
 for w in "$OC" "$KIND"; do
   n=$(basename "$(dirname "$w")")/$(basename "$w")
   out=$(bash "$w" --benchmark aime --agent codex --model "$GATEWAY" \
-          --registry "$REG" --task 0 --no-build --dry-run 2>&1)
+          --registry "$REG" --task 0 --local-chart --dry-run 2>&1)
   rc=$?
   [ "$rc" -ne 0 ] || bad "$n: --model $GATEWAY (a gateway image) was accepted as a model handle"
   grep -q -- "--gateway" <<<"$out" \
@@ -89,7 +115,7 @@ done
 # One live spelling per axis (rule 2c): a rename tells you what to use; only
 # artifact renames get a compatibility link, and that lives in the registry.
 out=$(bash "$OC" --benchmark aime --agent codex --eval-model "$HANDLE" \
-        --registry "$REG" --task 0 --no-build --dry-run 2>&1)
+        --registry "$REG" --task 0 --local-chart --dry-run 2>&1)
 rc=$?
 [ "$rc" -ne 0 ] || bad "oc: --eval-model was accepted; it was renamed --model"
 grep -q -- "--model" <<<"$out" \
@@ -104,7 +130,7 @@ grep -q -- "--model" <<<"$out" \
 want=$(sed -nE 's/^[[:space:]]*LABEL eval\.benchmark\.tasks="?([0-9]+)"?.*/\1/p' \
   "$ROOT/containers/benchmarks/aime/Dockerfile" | head -1)
 out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
-        --registry "$REG" --dataset --no-build --dry-run 2>&1)
+        --registry "$REG" --dataset --local-chart --dry-run 2>&1)
 got=$(awk '/^  completions:/{print $2; exit}' <<<"$out")
 [ "$got" = "$want" ] \
   || bad "oc: --dataset rendered completions=${got:-<none>}, but aime's Dockerfile says $want"
@@ -124,8 +150,8 @@ got=$(awk '/^  completions:/{print $2; exit}' <<<"$out")
 # reuses the implementation it is checking would agree with any answer.
 for shape in "--task sympy__sympy-24066" "--task 0" "--dataset"; do
   # shellcheck disable=SC2086  # $shape is a deliberate two-word argument
-  out=$(bash "$OC" --benchmark tau-bench --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
-          --registry "$REG" $shape --no-build --dry-run 2>&1)
+  out=$(bash "$OC" --benchmark tau-bench --agent native --model "$HANDLE" --gateway "$GATEWAY" \
+          --registry "$REG" $shape --local-chart --dry-run 2>&1)
   said=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$out" | head -1)
   rendered=$(awk '
     /^# Source:/          { name=""; agent=0 }
@@ -145,7 +171,7 @@ done
 
 # ── each launcher's path must differ between two runs of one combo ──────────
 varies "oc" bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
-  --gateway "$GATEWAY" --registry "$REG" --task 0 --no-build --dry-run
+  --gateway "$GATEWAY" --registry "$REG" --task 0 --local-chart --dry-run
 # deploy/kind/run.sh is not checked here: it refuses to render without a live
 # cluster ("kind cluster not found — provision it first"), so its leaf can only
 # be compared where a cluster exists. It composes the path the same way, from the

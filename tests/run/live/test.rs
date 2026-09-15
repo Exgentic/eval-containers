@@ -76,6 +76,19 @@ struct Benchmark {
     task_count: u32,
     per_task_build: bool,
     per_task_ids: Vec<String>, // only populated for per-task-build benchmarks
+    /// Native harness: the benchmark's own harness is its only agent, so it is
+    /// run once, as `native`, instead of across the rotation.
+    native: bool,
+}
+
+/// The agent for the i-th chosen task: the rotation, or `native` for a
+/// native-harness benchmark (which has exactly one).
+fn agent_for(b: &Benchmark, i: usize) -> &'static str {
+    if b.native {
+        "native"
+    } else {
+        AGENTS[i % AGENTS.len()]
+    }
 }
 
 fn list_benchmarks() -> Vec<Benchmark> {
@@ -114,6 +127,7 @@ fn list_benchmarks() -> Vec<Benchmark> {
             continue;
         }
         let per_task_build = eval_containers::benchmark::is_per_task(&dockerfile);
+        let native = eval_containers::benchmark::is_native(&dockerfile);
         let per_task_ids = if per_task_build {
             // For per-task-build benchmarks we reuse a single curated
             // representative task id (see tests/build/test.rs
@@ -139,6 +153,7 @@ fn list_benchmarks() -> Vec<Benchmark> {
             task_count,
             per_task_build,
             per_task_ids,
+            native,
         });
     }
     out.sort_by(|a, b| a.name.cmp(&b.name));
@@ -191,6 +206,10 @@ fn per_task_representative(name: &str) -> Option<&'static str> {
 /// back to 0 — one task id may be repeated across agents.
 fn pick_task_ids(b: &Benchmark) -> Vec<String> {
     let k = AGENTS.len();
+    if b.native {
+        // One agent, so one task: the rotation would rerun the same pairing.
+        return vec!["0".into()];
+    }
     if b.per_task_build {
         // Per-task-build benchmarks require a separate image per task
         // id and are heavy to rebuild. We run all K agents against the
@@ -346,15 +365,16 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     let run_dir =
         PathBuf::from("tests/run/live/runs").join(format!("{benchmark}-{task_id}-{agent}"));
 
-    // Every run starts from a clean output dir to avoid stale state
-    // from a prior aborted run getting mistaken for the current run's
-    // artifact.
-    let cwd_output = PathBuf::from("output").join(benchmark).join(task_id);
+    // Every run starts from a clean task directory (output/RULES.md rule 11:
+    // `output/<b>/<a>/<model>/<run-id>/<task>`) so a prior aborted run is never
+    // mistaken for this run's artifact.
+    let cwd_output = PathBuf::from("output")
+        .join(benchmark)
+        .join(agent)
+        .join(eval_containers::naming::model_slug(MODEL))
+        .join("live")
+        .join(task_id);
     let _ = fs::remove_dir_all(&cwd_output);
-    // Pre-create output subdirs so crun doesn't fail on missing host paths
-    for sub in &["model", "agent", "task"] {
-        let _ = fs::create_dir_all(cwd_output.join(sub));
-    }
 
     // Pre-build the eval combination image. `eval-containers run --local` uses
     // the in-repo compose file but the `image:` field still refers
@@ -407,6 +427,8 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
             MODEL,
             "--task-id",
             task_id,
+            "--run-id",
+            "live",
             "--local",
             "--max-budget",
         ])
@@ -591,7 +613,7 @@ fn live_fleet_sweep() {
     'outer: for b in &benchmarks {
         let task_ids = pick_task_ids(b);
         for (i, task_id) in task_ids.iter().enumerate() {
-            let agent = AGENTS[i % AGENTS.len()];
+            let agent = agent_for(b, i);
             let key = checkpoint_key(&b.name, task_id, agent);
             if checkpoint.contains(&key) {
                 records.push(RunRecord {
@@ -696,7 +718,7 @@ fn write_matrix() {
         let rotation: Vec<String> = task_ids
             .iter()
             .enumerate()
-            .map(|(j, t)| format!("{}→{}", t, AGENTS[j % AGENTS.len()]))
+            .map(|(j, t)| format!("{}→{}", t, agent_for(b, j)))
             .collect();
         out.push_str(&format!(
             "| {} | `{}` | {} | {} | {} |\n",
@@ -755,6 +777,7 @@ fn pick_task_ids_spreads_across_agents() {
         task_count: 100,
         per_task_build: false,
         per_task_ids: vec![],
+        native: false,
     };
     let ids = pick_task_ids(&b);
     assert_eq!(ids.len(), AGENTS.len());
@@ -771,6 +794,7 @@ fn pick_task_ids_handles_small_count() {
         task_count: 2,
         per_task_build: false,
         per_task_ids: vec![],
+        native: false,
     };
     let ids = pick_task_ids(&b);
     assert_eq!(ids.len(), AGENTS.len());
@@ -786,6 +810,7 @@ fn pick_task_ids_handles_single_task() {
         task_count: 1,
         per_task_build: false,
         per_task_ids: vec![],
+        native: false,
     };
     let ids = pick_task_ids(&b);
     assert_eq!(ids.len(), AGENTS.len());
@@ -799,6 +824,7 @@ fn pick_task_ids_per_task_build_reuses_representative() {
         task_count: 500,
         per_task_build: true,
         per_task_ids: vec!["sympy__sympy-24066".into()],
+        native: false,
     };
     let ids = pick_task_ids(&b);
     assert_eq!(ids.len(), AGENTS.len());

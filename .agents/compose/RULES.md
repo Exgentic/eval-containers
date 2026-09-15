@@ -1,11 +1,11 @@
-# Repository, Naming & Output
+# Repository, Naming & Compose
 
 **Status:** Active
 **Date:** April 2026
 
 ## Abstract
 
-This document defines the repository structure, image naming conventions, compose patterns, output format, and registry usage for Eval Containers.
+This document defines the repository structure, image naming conventions, compose patterns, and registry usage for Eval Containers. Run outputs are governed by [output/RULES.md](../output/RULES.md).
 
 ## Terminology
 
@@ -35,9 +35,9 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 7. **Compose is the format.** Every evaluation MUST be expressible as a Docker Compose file. Simple benchmarks and complex multi-service benchmarks MUST use the same format.
 
-8. **Shared service definitions.** Per-benchmark `compose.yaml` files MUST pull the shared, never-overridden topology — the `otelcol` and `gateway` services, the `internal`/`upstream` networks, and the `output` volume — from `compose/services.yaml` via `include:`. The `runner` service MUST instead be pulled from `compose/runner.yaml` via `extends:`, NOT `include:`: every benchmark overrides the runner's image (its self-describing `evals/{benchmark}--{agent}` artifact) and `BENCHMARK` env, and Docker Compose rejects overriding a service that arrived through `include:` (`services.runner conflicts with imported resource` — `include` is not `-f` merge). Because `extends:` does not carry `depends_on`, each benchmark `compose.yaml` MUST redeclare `depends_on: {otelcol: {condition: service_healthy}, gateway: {condition: service_healthy}}` on its runner (plus any sidecar the runner waits on). The runner MUST gate on **both** `otelcol` and `gateway`. `gateway` itself MUST declare `depends_on: {otelcol: {condition: service_started}}` in `services.yaml` — `service_started`, not `service_healthy`, so it costs no startup latency (the two still boot in parallel; the gateway's OTLP exporter retries until otelcol is up). This edge exists for **stop order**: Compose stops dependents before dependencies, so on teardown (`--abort-on-container-exit`) `gateway` is stopped — and its async OTel batch exporter flushed — before `otelcol` disappears from Compose's embedded DNS. Without the edge, both can stop in parallel and the gateway's final (often the actual `gen_ai` completion) span batch fails to export and is silently lost. Benchmark-specific overrides — the runner image, `BENCHMARK` env, any extra env/resources, and sidecar services — are the only things a benchmark compose file should declare.
+8. **Shared service definitions.** Per-benchmark `compose.yaml` files MUST pull the shared, never-overridden topology — the `otelcol` and `gateway` services, the `internal`/`upstream` networks, and the `output` volume — from `compose/services.yaml` via `include:`. The `runner` service MUST instead be pulled from `compose/runner.yaml` via `extends:`, NOT `include:`: every benchmark overrides the runner's image (its self-describing `evals/{benchmark}--{agent}` artifact) and `BENCHMARK` env, and Docker Compose rejects overriding a service that arrived through `include:` (`services.runner conflicts with imported resource` — `include` is not `-f` merge). Because `extends:` does not carry `depends_on`, each benchmark `compose.yaml` MUST redeclare `depends_on: {otelcol: {condition: service_healthy}, gateway: {condition: service_healthy}}` on its runner (plus any sidecar the runner waits on). The runner MUST gate on **both** `otelcol` and `gateway`. `gateway` itself MUST declare `depends_on: {otelcol: {condition: service_started}}` in `services.yaml` — `service_started`, not `service_healthy`, so it costs no startup latency (the two still boot in parallel; the gateway's OTLP exporter retries until otelcol is up). This edge exists for **stop order**: Compose stops dependents before dependencies, so on teardown (`--abort-on-container-exit`) `gateway` is stopped — and its async OTel batch exporter flushed — before `otelcol` disappears from Compose's embedded DNS. Without the edge, both can stop in parallel and the gateway's final (often the actual `gen_ai` completion) span batch fails to export and is silently lost. Benchmark-specific overrides — the runner image, `BENCHMARK` env, any extra env/resources, and sidecar services — are the only things a benchmark compose file should declare. A native-harness benchmark ([benchmarks/RULES.md rule 12b](../benchmarks/RULES.md)) MUST extend `compose/runner-native.yaml` instead, which extends `runner.yaml` and pins the agent axis — image, recorded agent, task directory — to `native`.
 
-9. **Parameterized.** Compose files MUST be parameterized by `EVAL_TASK_ID`, `EVAL_AGENT`, `EVAL_MODEL`, and `EVAL_REGISTRY`. Defaults MUST be provided for all except `EVAL_TASK_ID`.
+9. **Parameterized.** Compose files MUST be parameterized by `EVAL_TASK_ID`, `EVAL_AGENT`, `EVAL_MODEL`, and `EVAL_REGISTRY`. Defaults MUST be provided for all except `EVAL_TASK_ID`. A native-harness benchmark fixes `EVAL_AGENT` to `native` rather than parameterizing it (benchmarks rule 12b).
 
 10. **`.env` is the single config.** API keys, registry, agent, model, and timeout MUST all be configurable from a single `.env` file. No provider-specific variables hardcoded in compose.
 
@@ -51,19 +51,17 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Output
 
-14. **Three directories.** Each evaluation MUST write to three separate output directories: `model/`, `agent/`, `task/`. Each MUST be owned by exactly one component.
+Rules 14–18 moved to [output/RULES.md](../output/RULES.md), which governs run outputs on every deployment surface; they are kept here as pointers so citations stay valid.
 
-15. **No cross-reads.** No component SHOULD read another component's output directory. The model service writes `model/`, the eval container writes `agent/` and `task/`.
+14. **Three directories.** *Deprecated — see [output/RULES.md](../output/RULES.md) rule 1.*
 
-16. **Result schema.**
-    - `/output/task/result.json` MUST contain at minimum: `task_id`, `benchmark`, `reward`, `passed`.
-    - **Every metric the benchmark reports MUST be a named field in `task/result.json`.** The primary metric — the one that determines `passed` and that downstream aggregators compare across runs — MUST be called `reward`. Additional benchmark-specific metrics (e.g. `exact_match`, `f1`, `bleu`, `rouge`, `tool_calls`, `partial_credit`) are named fields alongside `reward`. `test.sh` is the only writer of this file and MUST emit every metric it computes; downstream inspection never reads values from stdout.
-    - `/output/agent/result.json` MUST contain: `agent`, `started_at`, `ended_at`, `exit_code`.
-    - `/output/model/result.json` MUST contain: `model`, `provider`, `total_tokens`, `cost_usd`.
+15. **No cross-reads.** *Deprecated — see [output/RULES.md](../output/RULES.md) rule 2.*
 
-17. **Trajectory.** The model service MUST write `/output/model/trajectory.jsonl` containing every LLM request and response (one JSON object per line, LiteLLM StandardLoggingPayload format). Replay fixtures derive from this but are stored as native OTLP/JSON `traces.jsonl` (OpenTelemetry `gen_ai` spans, emitted by the gateway's `otel` callback into the otelcol sidecar) — converted from the recording until the gateway emits OTLP natively. See [tests/run/replay/RULES.md](../../tests/run/replay/RULES.md).
+16. **Result schema.** *Deprecated — see [output/RULES.md](../output/RULES.md) rules 3–9.*
 
-18. **Accumulating results.** Results MUST be organized as `output/{benchmark}/{task-id}/`. Running multiple tasks MUST accumulate results without overwriting.
+17. **Trajectory.** *Deprecated — see [output/RULES.md](../output/RULES.md) rule 10.*
+
+18. **Accumulating results.** *Deprecated — the layout is [output/RULES.md](../output/RULES.md) rule 11, the no-overwrite half is its rule 25.*
 
 ### Registry
 
@@ -93,4 +91,6 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-06-16 | Rule 8 (Shared service definitions): the `runner` service is now pulled via `extends:` from a dedicated `compose/runner.yaml`, not `include:`d from `compose/services.yaml` and redeclared. The old shape (`include:` services.yaml + redeclare `runner`) failed to load on real Docker Compose — `include` forbids overriding an imported service (`services.runner conflicts with imported resource`); only Podman's tolerant merge accepted it, so it broke `eval run --local`, the publish flatten, and the docs' `docker compose up`. `services.yaml` now holds only the never-overridden topology (`otelcol`, `gateway`, networks, volume); `runner.yaml` holds the runner template; each benchmark `extends:` it and redeclares the `depends_on: {gateway}` that `extends` drops. Applied across all per-benchmark composes; effective `docker compose config` is byte-identical to before. |
 | 2026-06-18 | Rule 8 (boot ordering): `gateway` no longer `depends_on` `otelcol`, so they boot in parallel instead of serially (the gateway's OTLP exporter retries until the collector is up). Each benchmark runner now gates on **both** `otelcol` and `gateway` (`depends_on: {otelcol, gateway}`) so the agent's first span is never dropped. Removes the serialized otelcol→gateway wait (~1–2s) from time-to-first-token. Mirrored in the single-container path (`core/runner/process-compose.yaml`: gateway drops the otelcol dep, the `agent` process waits on both). K8s mode keeps its sequential native-sidecar ordering (initContainers can't run in parallel). |
 | 2026-08-10 | Rule 8 (stop ordering): restored `gateway`'s `depends_on: {otelcol: {condition: service_started}}` in `compose/services.yaml` — dropping it in the 2026-06-18 change fixed boot latency but left teardown unordered, so `docker compose up --abort-on-container-exit` could stop `gateway` and `otelcol` in parallel. Observed failure: `otelcol` exits, drops out of Compose's embedded DNS, and the gateway's still-flushing final span batch (often the run's actual `gen_ai` completion span) fails to export with a `NameResolutionError` and is silently lost — producing a `traces.jsonl` with only early routing spans and no evidence the agent's LLM call ever completed. `service_started` (not `service_healthy`) restores the stop-order edge without reintroducing the serialized boot wait. |
+| 2026-09-06 | Rules 14–18 (Output) deprecated in place and moved to the new [output/RULES.md](../output/RULES.md) topic (#467): run outputs are a property of every deployment surface, not of the compose one, so their home is a mode-agnostic topic. Title and abstract narrowed to repository, naming, compose, and registry. |
 | 2026-09-08 | Rule 5 (Version tags): the tag is a container version — a hash tag or a release alias of one (principle 9; [delivery/RULES.md](../delivery/RULES.md) rules 18–20) — replacing "one SemVer for the whole fleet" now that `latest` and SemVer are aliases. |
+| 2026-09-15 | Rules 8 and 9: a native-harness benchmark's runner extends `compose/runner-native.yaml`, which pins the agent axis to `native` (image, recorded agent, task directory) instead of reading `EVAL_AGENT` — its own harness is its only agent ([benchmarks/RULES.md rule 12b](../benchmarks/RULES.md), #577). |

@@ -64,7 +64,12 @@ esac
 echo "[hwe-bench] ${ID} -> base ${TASK_BASE}, repo ${HWE_REPO_DIR}; building overlay -> ${IMAGE}"
 # Plain `docker build` (not buildx): lands in the local image store for run/oracle
 # directly, same as every other per-task build.sh (skills-bench, terminal-bench).
+# EVAL_INPUT_HASH (optional): the release stamps the build-input hash here
+# (delivery/RULES.md rule 12) — this path has no bake invocation to --set it on,
+# and without the label fleet-tag cannot name the hash tag rule 18 requires.
+# shellcheck disable=SC2086  # the hash is hex; empty expands to no arg
 docker build --platform linux/amd64 -t "${IMAGE}" \
+  ${EVAL_INPUT_HASH:+--label=eval.input-hash=${EVAL_INPUT_HASH}} \
   --build-arg "TASK_BASE=${TASK_BASE}" \
   --build-arg "EVAL_TASK_ID=${ID}" \
   --build-arg "HWE_HF_SLUG=${hf_slug}" \

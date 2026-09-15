@@ -602,3 +602,156 @@ fn per_task_hashes_in_batch_match_the_single_form() {
         "ids on stdin must hash identically, and a blank line is noise, not a task"
     );
 }
+
+/// Every in-repo base image the combo targets COPY from MUST be folded into the
+/// combo's closure (delivery/RULES.md rule 11) — including the edge, whose
+/// omission let a changed `containers/core/edge/**` leave every combo hash
+/// unmoved, so `carry()` retagged the previous digest forever and the edge could
+/// never propagate into an otherwise-unchanged eval image (#559: per-task
+/// benchmarks shipped with no `/opt/edge` and recorded zero LLM calls).
+///
+/// The required parent set is DERIVED from the real
+/// `containers/core/combination.docker-bake.hcl` — each target's `args` block
+/// names the `*_IMAGE` variables it consumes, and each variable's default names
+/// the in-repo target it points at — so a parent added tomorrow is held to this
+/// without editing the test. The real HCL and Dockerfile are copied into a
+/// fixture, the one place each parent's context can be mutated and the cascade
+/// observed (the checked-out tree is read-only here).
+#[test]
+fn combo_closure_folds_in_every_in_repo_base() {
+    let root = repo_root();
+    let hcl = std::fs::read_to_string(root.join("containers/core/combination.docker-bake.hcl"))
+        .expect("read combination.docker-bake.hcl");
+
+    // variable "X_IMAGE" { default = "${REGISTRY}/<dir>:${TAG}" } -> (X_IMAGE, dir).
+    // This is the same derivation fleet-hash.sh's `parent_target` performs.
+    let mut points_at: HashMap<String, String> = HashMap::new();
+    for line in hcl.lines() {
+        let Some(rest) = line.trim().strip_prefix("variable \"") else {
+            continue;
+        };
+        let Some((var, rest)) = rest.split_once('"') else {
+            continue;
+        };
+        let Some((_, rest)) = rest.split_once("\"${REGISTRY}/") else {
+            continue;
+        };
+        let Some((dir, _)) = rest.split_once(":${TAG}\"") else {
+            continue;
+        };
+        points_at.insert(var.to_string(), dir.to_string());
+    }
+    assert!(
+        points_at.contains_key("EDGE_IMAGE"),
+        "combination.docker-bake.hcl must default EDGE_IMAGE to an in-repo core/edge \
+         ref — the closure this test demands is derived from these defaults"
+    );
+
+    // Which of those does each combo target consume? The lean row (`eval`) and
+    // the standalone row (`eval-standalone`) hash separately, and standalone
+    // builds ON the lean base via the eval-base context, so it owes the union.
+    let args_of = |target: &str| -> Vec<String> {
+        let body = hcl
+            .split(&format!("target \"{target}\" {{"))
+            .nth(1)
+            .unwrap_or_else(|| panic!("no `{target}` target in combination.docker-bake.hcl"))
+            .split("\n}")
+            .next()
+            .expect("target body");
+        points_at
+            .keys()
+            .filter(|v| {
+                body.lines()
+                    .any(|l| l.trim_end().ends_with(&format!("= {v}")))
+            })
+            .cloned()
+            .collect()
+    };
+    let lean = args_of("eval");
+    let mut standalone = args_of("eval-standalone");
+    standalone.extend(lean.iter().cloned());
+    assert!(
+        lean.contains(&"EDGE_IMAGE".to_string()),
+        "the lean `eval` target must pass EDGE_IMAGE — combination.Dockerfile COPYs \
+         /opt/edge from that stage"
+    );
+    // Not vacuous: the lean row must NOT claim every parent, or the negative
+    // half below (a parent it does not consume must leave its hash still) never
+    // runs and the test would pass on a closure that folds in everything blindly.
+    assert!(
+        lean.len() < points_at.len(),
+        "at least one parent must be standalone-only, or this test proves nothing \
+         about over-inclusion: lean={lean:?} all={:?}",
+        points_at.keys().collect::<Vec<_>>()
+    );
+
+    // A fixture carrying the REAL combination files, one benchmark, one agent,
+    // and a stub context for every in-repo parent the HCL points at.
+    let fx = Fixture::new("combo-bases");
+    for f in [
+        "containers/core/combination.docker-bake.hcl",
+        "containers/core/combination.Dockerfile",
+        "containers/core/standalone.Dockerfile",
+    ] {
+        fx.write(
+            f,
+            &std::fs::read_to_string(root.join(f)).expect("read real combination file"),
+        );
+    }
+    // combination.Dockerfile COPYs from these two trees; they are combo context.
+    fx.write("containers/core/runner/run", "#!/bin/sh\n");
+    fx.write("containers/core/entrypoint/entrypoint.sh", "#!/bin/sh\n");
+    fx.artifact("benchmarks", "b", "benchmark-b", &[], "FROM scratch\n");
+    fx.artifact("agents", "a", "agent-a", &[], "FROM scratch\n");
+    for dir in points_at.values() {
+        let (kind, name) = dir.split_once('/').expect("kind/name in the default ref");
+        // fleet-hash's target_for_dir keys on the context path, so the stub's
+        // target name is free; use the dir's own leaf.
+        fx.artifact(kind, name, name, &[], "FROM scratch\n");
+    }
+    fx.commit("fixture");
+
+    let combo = |fx: &Fixture| rows(&fleet_hash(&fx.0, &["combo", "b", "a"]));
+    let base = combo(&fx);
+
+    // Each parent in turn: editing its context must move the hash of every row
+    // that consumes it, through the BASES component, never the context one.
+    for (var, dir) in &points_at {
+        let probe = format!("containers/{dir}/probe.txt");
+        fx.write(&probe, "changed\n");
+        fx.commit("probe");
+        let now = combo(&fx);
+        for (target, owed) in [
+            ("evals/b--a", &lean),
+            ("evals/b--a-standalone", &standalone),
+        ] {
+            let (was, is) = (&base[target], &now[target]);
+            if owed.contains(var) {
+                assert_ne!(
+                    was.0, is.0,
+                    "{target} passes {var} (-> containers/{dir}) but its hash did not move \
+                     when that context changed: the closure omits it, so an unchanged combo \
+                     is carried forward with the stale base forever (delivery/RULES.md \
+                     rules 11/13, #559)"
+                );
+                assert_ne!(
+                    was.2, is.2,
+                    "{target}: a {var} change must ride the bases component"
+                );
+                assert_eq!(
+                    was.1, is.1,
+                    "{target}: a {var} change must not move the context component"
+                );
+            } else {
+                assert_eq!(
+                    was.0, is.0,
+                    "{target} does not pass {var}; its hash must not move"
+                );
+            }
+        }
+        // Roll back so every parent is measured against the same baseline.
+        std::fs::remove_file(fx.0.join(&probe)).unwrap();
+        fx.commit("revert probe");
+        assert_eq!(combo(&fx), base, "rollback must restore the baseline");
+    }
+}

@@ -228,6 +228,204 @@ fn timeout_override_beats_a_preset() {
     eprintln!("✓ timeoutOverride: helper honours it, values.yaml defaults empty, comment trimmed");
 }
 
+/// The three phases and the edge bring-up have one home, `run` + `run-agent`
+/// (benchmarks/RULES.md 12, edge rules 1, 6, 10). Bespoke harnesses used to
+/// replace the launcher on both surfaces with their own copy (#558 was one
+/// missing the edge); native mode (rule 12c) removed the reason, so a surface
+/// that replaces it is refused outright.
+#[test]
+fn no_surface_replaces_the_launcher() {
+    const START_EDGE: &str = "/usr/local/bin/start-edge";
+    // `run` is what makes every path conform, so pin that it still brings the
+    // edge up via the shared starter, and that the starter lands in the image.
+    let run = fs::read_to_string(repo_root().join("containers/core/runner/run"))
+        .expect("missing containers/core/runner/run");
+    assert!(
+        run.contains(START_EDGE),
+        "core/runner/run must source {START_EDGE} — the one home for the edge bring-up \
+         (edge rules 1, 6, 10)"
+    );
+    assert!(
+        repo_root()
+            .join("containers/core/runner/start-edge")
+            .is_file(),
+        "containers/core/runner/start-edge must exist — `run` sources it"
+    );
+    let combo = fs::read_to_string(repo_root().join("containers/core/combination.Dockerfile"))
+        .expect("missing containers/core/combination.Dockerfile");
+    assert!(
+        combo.contains("runner/start-edge"),
+        "combination.Dockerfile must COPY runner/start-edge into the eval image"
+    );
+
+    let mut offenders: Vec<String> = Vec::new();
+
+    // k8s surface: a preset's `runnerArgs` replaces the runner command.
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    for entry in fs::read_dir(&presets)
+        .expect("missing _chart/presets")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().is_none_or(|x| x != "yaml") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).expect("read preset");
+        if text.lines().any(|l| l.starts_with("runnerArgs:")) {
+            let name = path.file_name().unwrap().to_string_lossy();
+            offenders.push(format!(
+                "_chart/presets/{name}: runnerArgs replaces the launcher"
+            ));
+        }
+    }
+
+    // compose surface: the runner service's `entrypoint`/`command`. Only the
+    // runner matters — a bespoke sidecar (tau-bench's `harness`, its `bridge`)
+    // is the environment, not the system under test.
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let Ok(text) = fs::read_to_string(dir.join("compose.yaml")) else {
+            continue;
+        };
+        for key in ["entrypoint:", "command:"] {
+            if compose_runner_service(&text)
+                .lines()
+                .any(|l| l.trim_start().starts_with(key))
+            {
+                offenders.push(format!(
+                    "benchmarks/{name}/compose.yaml: the runner's {key} replaces the launcher"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "no surface may replace the framework launcher: the three phases, the edge \
+         bring-up, the timeout and the exit-status record have one home in `run` + \
+         `run-agent` (benchmarks/RULES.md 12). A benchmark whose own harness is the \
+         agent declares `LABEL eval.benchmark.agent=\"native\"` and ships /harness.sh \
+         instead (rule 12a):\n  {}",
+        offenders.join("\n  ")
+    );
+    eprintln!("✓ no preset runnerArgs, no compose runner entrypoint/command");
+}
+
+/// The `runner` service's live (uncommented) lines; empty when there is none.
+fn compose_runner_service(text: &str) -> String {
+    let Some(at) = text.find("\n  runner:") else {
+        return String::new();
+    };
+    let body = &text[at + 1..];
+    let end = body
+        .lines()
+        .skip(1)
+        .position(|l| l.starts_with("  ") && !l.starts_with("   ") && l.trim_end().ends_with(':'))
+        .map(|i| body.lines().take(i + 1).map(|l| l.len() + 1).sum::<usize>())
+        .unwrap_or(body.len());
+    body[..end]
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `LABEL eval.benchmark.agent="native"` (rule 12a); mirrors the CLI's
+/// `benchmark::is_native`, which this crate deliberately does not depend on.
+fn is_native_dockerfile(text: &str) -> bool {
+    text.lines().any(|l| {
+        let t = l.trim_start();
+        t.starts_with("LABEL ") && t.contains(r#"eval.benchmark.agent="native""#)
+    })
+}
+
+/// The native label (rule 12a) and every surface must agree: compose extends
+/// `runner-native.yaml` and names `evals/<b>--native`, the preset pins
+/// `agent: native`, the image ships `/harness.sh` — and no other benchmark
+/// borrows any of them. The marker run-agent keys on has one home too.
+#[test]
+fn native_harness_benchmarks_pin_the_native_agent_on_every_surface() {
+    let agent = fs::read_to_string(repo_root().join("containers/agents/native/Dockerfile"))
+        .expect("missing containers/agents/native/Dockerfile");
+    for needle in ["/opt/agent/native", "exec /harness.sh"] {
+        assert!(
+            agent.contains(needle),
+            "agents/native/Dockerfile must ship `{needle}` — the marker run-agent keys on, \
+             and the exec of the benchmark's harness"
+        );
+    }
+    let run_agent = fs::read_to_string(repo_root().join("containers/core/runner/run-agent"))
+        .expect("missing containers/core/runner/run-agent");
+    assert!(
+        run_agent.contains("/opt/agent/native"),
+        "core/runner/run-agent must key the privileged native launch off /opt/agent/native"
+    );
+
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    let mut issues: Vec<String> = Vec::new();
+    let mut natives = 0;
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let Ok(dockerfile) = fs::read_to_string(dir.join("Dockerfile")) else {
+            continue;
+        };
+        let native = is_native_dockerfile(&dockerfile);
+        let compose = fs::read_to_string(dir.join("compose.yaml")).unwrap_or_default();
+        let preset = fs::read_to_string(presets.join(format!("{name}.yaml"))).unwrap_or_default();
+        let extends_native = compose.contains("compose/runner-native.yaml");
+        let names_native = compose.contains(&format!("/evals/{name}--native:"));
+        let preset_pins = preset.lines().any(|l| l.trim_end() == "agent: native");
+        let preset_sets_agent = preset.lines().any(|l| l.starts_with("agent:"));
+        let ships_harness = dockerfile.contains("/harness.sh");
+        let checks: [(bool, &str); 4] = if native {
+            natives += 1;
+            [
+                (
+                    extends_native,
+                    "compose.yaml must extend compose/runner-native.yaml",
+                ),
+                (names_native, "compose.yaml must name evals/<name>--native"),
+                (
+                    preset_pins,
+                    "_chart/presets/<name>.yaml must pin `agent: native`",
+                ),
+                (
+                    ships_harness,
+                    "Dockerfile must ship the harness at /harness.sh",
+                ),
+            ]
+        } else {
+            [
+                (
+                    !extends_native,
+                    "compose.yaml extends runner-native.yaml without the label",
+                ),
+                (
+                    !names_native,
+                    "compose.yaml names evals/<name>--native without the label",
+                ),
+                (
+                    !preset_sets_agent,
+                    "a preset may not pin the agent axis (rule 24b) — only a native harness does",
+                ),
+                (
+                    !ships_harness,
+                    "Dockerfile ships /harness.sh without the label",
+                ),
+            ]
+        };
+        for (ok, what) in checks {
+            if !ok {
+                issues.push(format!("{name}: {what}"));
+            }
+        }
+    }
+    assert!(issues.is_empty(), "{}", issues.join("\n"));
+    assert!(
+        natives > 0,
+        "expected at least one native-harness benchmark"
+    );
+    eprintln!("✓ {natives} native-harness benchmark(s) pin `native` on every surface");
+}
+
 #[test]
 fn count_reconciliation() {
     let claims = readme_counts();
@@ -1038,6 +1236,65 @@ fn the_per_task_job_pushes_with_the_engine_build_sh_builds_with() {
     );
 }
 
+/// Every per-task `build.sh` MUST stamp `EVAL_INPUT_HASH` as the
+/// `eval.input-hash` label (delivery/RULES.md rule 12). This path has no bake
+/// invocation to `--set` the label on, so the script is the only place it can be
+/// applied — and without it `fleet-tag.sh` cannot read the hash it needs to name
+/// the hash tag rule 18 requires, so `merge` fails the image after a build that
+/// otherwise succeeded (hwe-bench shipped without it and could not be released).
+#[test]
+fn every_per_task_build_script_stamps_the_input_hash() {
+    // The benchmarks the release enumerates as kind=script — the ones that are
+    // handed EVAL_INPUT_HASH today. A per-task benchmark the workflow does not
+    // enumerate yet (swe-bench-pro, swe-lancer) is never passed one, so it is
+    // held to this only once it joins the loop in release-images.yml.
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let mut missing = Vec::new();
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let script = dir.join("build.sh");
+        if !script.is_file() {
+            continue;
+        }
+        let enumerated = wf.contains(&format!("for B in {name} "))
+            || wf.contains(&format!(" {name} "))
+            || wf.contains(&format!("{name}:script"));
+        if !enumerated {
+            continue;
+        }
+        let text = fs::read_to_string(&script).expect("read build.sh");
+        if !text.contains("EVAL_INPUT_HASH") {
+            missing.push(name);
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "per-task build.sh must stamp --label=eval.input-hash from EVAL_INPUT_HASH \
+         (delivery/RULES.md rule 12), else merge cannot name its hash tag: {missing:?}"
+    );
+}
+
+/// The per-task job MUST skip an arch the benchmark's `eval.platforms` excludes,
+/// the way the leaf matrix does. The post-build arch comparison only catches a
+/// base that builds the *wrong* arch; a base with no such arch at all fails its
+/// first `RUN` with "exec format error", which counts as a build failure and
+/// fails the job, so the skip has to happen before the build starts (rule 14).
+#[test]
+fn the_per_task_job_honours_declared_platforms() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  per-task:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  merge:").next())
+        .expect("no `per-task` job in release-images.yml");
+    assert!(
+        job.contains(r#"eval\.platforms"#) && job.contains(r#",linux/$ARCH,"#),
+        "the per-task job must skip an arch outside the benchmark's declared \
+         eval.platforms before building (delivery/RULES.md rule 14)"
+    );
+}
+
 /// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
 /// carries the gateway with one `COPY /opt/gateway`, so a shim outside it fails
 /// `not found` at boot (regression: #269's nginx at /usr/sbin broke every bundle).
@@ -1211,6 +1468,67 @@ fn merge_stitches_per_task_refs_from_the_shards_artifact() {
     );
 }
 
+/// The same rule for the per-task COMBO merge, which #525 fixed for `merge` but
+/// not for its sibling: `merge-pertask-combos` read `.items[]` off the
+/// `pertask_combo_shards` output, which carries only `[{idx}]`, so the loop ran
+/// ZERO times, stitched no manifest list, and still exited 0 — every per-task
+/// combo stayed amd64-only under a `:TAG` that still pointed at a months-old
+/// digest, while the job reported success. A `fails == 0` check cannot catch
+/// that (nothing failed; nothing ran), so the job must also assert it attempted
+/// the whole work list and read the registry back (delivery/RULES.md:14, :17).
+#[test]
+fn merge_pertask_combos_stitches_from_the_shards_artifact() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let job = wf
+        .split("\n  merge-pertask-combos:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  release-gate:").next())
+        .expect("no `merge-pertask-combos` job in release-images.yml");
+    assert!(
+        !job.contains("SHARDS: ${{ needs.enumerate.outputs.pertask_combo_shards }}"),
+        "merge-pertask-combos must not read combo items from the pertask_combo_shards \
+         output — it carries only shard indices, so the merge loop runs zero times"
+    );
+    assert!(
+        job.contains("name: shards")
+            && job.contains(".pertask_combo[] | select(.idx==$i).items")
+            && job.contains("shards.json"),
+        "merge-pertask-combos must download the shards artifact and read \
+         `.pertask_combo[].items` from shards.json"
+    );
+    // One job per shard, like combos-pertask: a single job stitching every
+    // per-task combo (thousands, x 2 variants, 3-10 s each) cannot finish
+    // inside any job timeout, and a re-run starts over from the top.
+    assert!(
+        job.contains("shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}")
+            && job.contains("select(.idx==$i)"),
+        "merge-pertask-combos must fan out one job per pertask_combo shard, each \
+         stitching only its own shard's items"
+    );
+    assert!(
+        job.contains("actions/checkout@"),
+        "merge-pertask-combos runs containers/scripts/fleet-tag.sh, so it must check out \
+         the repository"
+    );
+    assert!(
+        job.contains("merged + skipped"),
+        "merge-pertask-combos must assert it attempted every combo in the work list — a \
+         zero-iteration run passes a `fails == 0` check vacuously (delivery/RULES.md:17)"
+    );
+    // The read-back judges each :TAG against the arches it joined, never a
+    // fixed pair: combos-pertask skips an arch its base lacks and expects the
+    // merge to keep such a combo single-arch (deepswe and hwe-bench declare
+    // `eval.platforms="linux/amd64"`), so requiring both arches failed every
+    // shard that held one of them.
+    assert!(
+        job.contains("lacks [${missing}] after merge") && !job.contains("expected amd64,arm64"),
+        "merge-pertask-combos must read each merged :TAG back and require the arches it \
+         joined — a zero exit is not evidence (delivery/RULES.md:17) — and must not \
+         demand both arches of a combo whose base has one"
+    );
+}
+
 /// The Helm chart rides the same channel as every image (RULES.md principle 9):
 /// a push to `main` publishes `charts/eval`, not only a version tag — publishing
 /// it tag-only is what left the registry with no chart at all (#449, #440). A
@@ -1368,5 +1686,105 @@ fn a_dispatch_runs_in_its_own_lane() {
         ),
         "a workflow_dispatch must get a per-run concurrency group, or it waits for the nightly \
          and evicts other pending dispatches"
+    );
+}
+
+/// A combo job that rebinds `TAG` (the per-task one does, to `$TAG-$ARCH`, so
+/// the combo it PUSHES carries a per-arch tag) MUST pin every base image ref
+/// back to the unrebound tag. `combination.docker-bake.hcl` derives each base
+/// default from `${TAG}` too, so left alone they resolve to per-arch tags
+/// (`core/edge:latest-amd64`) rather than the merged multi-arch manifest — which
+/// bakes a wrong-arch or stale base into the combo. #559 shipped per-task evals
+/// whose `/opt/edge` came from whichever matrix leg pushed last, and those
+/// benchmarks recorded no LLM calls at all; `BENCHMARK_IMAGE`/`AGENT_IMAGE` were
+/// already pinned, every other `*_IMAGE` was not.
+///
+/// Both halves are derived: the required refs from the HCL's `${TAG}`-shaped
+/// defaults, and the jobs to check from which ones bake the combination file and
+/// rebind `TAG`. So a base added to the HCL, or a combo job that starts
+/// rebinding `TAG` (the shared `combos` job does not today), is held to this
+/// without editing the test.
+#[test]
+fn a_tag_rebinding_combo_job_pins_every_base_to_the_multi_arch_tag() {
+    let hcl = fs::read_to_string(repo_root().join("containers/core/combination.docker-bake.hcl"))
+        .expect("read containers/core/combination.docker-bake.hcl");
+    // variable "X_IMAGE" { default = "${REGISTRY}/<dir>:${TAG}" } — a ${TAG}-derived
+    // default is exactly what a TAG rebinding corrupts.
+    let derived: Vec<(String, String)> = hcl
+        .lines()
+        .filter_map(|l| {
+            let rest = l.trim().strip_prefix("variable \"")?;
+            let (var, rest) = rest.split_once('"')?;
+            let (_, rest) = rest.split_once("\"${REGISTRY}/")?;
+            let (dir, _) = rest.split_once(":${TAG}\"")?;
+            Some((var.to_string(), dir.to_string()))
+        })
+        .collect();
+    assert!(
+        derived.iter().any(|(v, _)| v == "EDGE_IMAGE"),
+        "combination.docker-bake.hcl must default EDGE_IMAGE from ${{TAG}} — the pins \
+         this test demands are derived from those defaults"
+    );
+
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    // Split into jobs: a job header is a `  <name>:` line at two-space indent.
+    let is_header = |l: &str| {
+        l.strip_prefix("  ")
+            .and_then(|r| r.strip_suffix(':'))
+            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_alphanumeric() || c == '-'))
+    };
+    let mut jobs: Vec<(String, String)> = Vec::new();
+    for line in wf.lines().skip_while(|l| !l.starts_with("jobs:")) {
+        if is_header(line) {
+            jobs.push((line.trim().trim_end_matches(':').to_string(), String::new()));
+        } else if let Some(last) = jobs.last_mut() {
+            last.1.push_str(line);
+            last.1.push('\n');
+        }
+    }
+    let combo_jobs: Vec<&(String, String)> = jobs
+        .iter()
+        .filter(|(_, body)| {
+            body.contains("core/combination.docker-bake.hcl") && body.contains("export TAG=")
+        })
+        .collect();
+    assert!(
+        combo_jobs.iter().any(|(n, _)| n == "combos-pertask"),
+        "expected `combos-pertask` to bake the combination file with a rebound TAG; \
+         if that job stopped rebinding TAG the pins are moot and this check should be \
+         retired with it (jobs seen: {:?})",
+        jobs.iter().map(|(n, _)| n).collect::<Vec<_>>()
+    );
+
+    for (name, body) in &combo_jobs {
+        // The unrebound tag is saved before the rebinding; require the name the
+        // per-task job already uses, so the pin below is unambiguous.
+        assert!(
+            body.contains("ORIG_TAG=\"$TAG\""),
+            "{name} rebinds TAG; it must first save the original as ORIG_TAG so the \
+             base refs below can be pinned to it"
+        );
+        let missing: Vec<&String> = derived
+            .iter()
+            .filter(|(var, dir)| {
+                !body.contains(&format!(
+                    r#"export {var}="${{REGISTRY}}/{dir}:${{ORIG_TAG}}""#
+                ))
+            })
+            .map(|(var, _)| var)
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "{name} rebinds TAG, so these combination.docker-bake.hcl defaults resolve \
+             to per-arch tags instead of the merged manifest and bake a stale/wrong-arch \
+             base into the combo (#559) — pin each back to $ORIG_TAG the way \
+             BENCHMARK_IMAGE/AGENT_IMAGE are: {missing:?}"
+        );
+    }
+    eprintln!(
+        "✓ {} TAG-rebinding combo job(s) pin all {} combo base refs to the multi-arch tag",
+        combo_jobs.len(),
+        derived.len()
     );
 }

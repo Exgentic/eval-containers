@@ -75,9 +75,9 @@ repos:
     rev: v5.0.0
     hooks:
       - id: trailing-whitespace
-        exclude: '\.(jsonl|lock)$'
+        exclude: '\.(jsonl|lock|patch)$'
       - id: end-of-file-fixer
-        exclude: '\.(jsonl|lock)$'
+        exclude: '\.(jsonl|lock|patch)$'
       - id: check-merge-conflict
       - id: check-added-large-files
         args: [--maxkb=1024]
@@ -106,7 +106,7 @@ repos:
           - --ignore=DL3008
           - --ignore=DL3018
           - --ignore=DL3029
-        exclude: ^containers/benchmarks/(aider-polyglot|aime|automationbench|bfcl|bigcodebench|humaneval|humanevalplus|mbpp|mbppplus|skills-bench)/Dockerfile$
+        exclude: ^containers/benchmarks/(aider-polyglot|aime|automationbench|bfcl|bigcodebench|humaneval|humanevalplus|mbpp|mbppplus|skills-bench|walle)/Dockerfile$
 
   # --- Compose files: schema-validate against the Compose spec (no daemon) ---
   - repo: https://github.com/python-jsonschema/check-jsonschema

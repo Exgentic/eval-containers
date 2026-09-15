@@ -2,14 +2,12 @@
 # image talks to a stub — only the benchmark/agent/verifier run, no real gateway
 # (ReplayMode::Lean in test.rs). Layered as a plain `-f` overlay on the
 # benchmark's own compose.yaml; a human runs the same stack by hand:
-#   REPLAY_FIXTURE=… REPLAY_OUTPUT=… \
+#   REPLAY_FIXTURE=… EVAL_RUN_ID=… \
 #     docker compose -f <benchmark>/compose.yaml -f replay-lean.yaml up
 #
-# Per-run values come from env: REPLAY_FIXTURE (the recorded trajectory) and
-# REPLAY_OUTPUT (host dir the named `output` volume binds to). This overrides the
-# imported `gateway` service (image + healthcheck + fixture mount) — fine on the
-# compose the test/run path uses; the full-stack overlay relies on the same
-# imported-volume rebind.
+# The one per-run value is REPLAY_FIXTURE (the recorded trajectory); results
+# land where every run's do (EVAL_OUTPUT_DIR / EVAL_RUN_ID, runner.yaml). This
+# overrides the imported `gateway` service (image + healthcheck + fixture mount).
 services:
   gateway:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/replay:latest
@@ -19,11 +17,3 @@ services:
       test: ["CMD", "/opt/gateway/server", "health"]
     volumes:
       - ${REPLAY_FIXTURE:?}:/data/traces.jsonl:ro
-
-volumes:
-  output:
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: ${REPLAY_OUTPUT:?}

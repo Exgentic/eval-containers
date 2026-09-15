@@ -18,7 +18,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 
 | Field | Default | CLI flag |
 |---|---|---|
-| `agent` | `claude-code` | `--agent` |
+| `agent` | `claude-code` | `--agent` (a native-harness benchmark's preset pins `native`) |
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
 | `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |

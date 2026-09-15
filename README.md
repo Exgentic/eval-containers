@@ -1,6 +1,6 @@
 # Eval Containers
 
-AI agent evaluations in containers. 105 benchmarks, 25 agents — ready to deploy at massive scale on any cloud.
+AI agent evaluations in containers. 106 benchmarks, 26 agents — ready to deploy at massive scale on any cloud.
 
 *An evaluation is **one benchmark + one agent + one model** — three independent axes, swappable without touching each other.* Our goal is agent evaluations you can trust: fast to run, thin to ship, reliable in any environment, and faithful to what each benchmark really measures.
 
@@ -21,10 +21,10 @@ One URL for every evaluation — benchmark, agent, model, and task are all `EVAL
 ```bash
 echo "OPENAI_API_KEY=sk-..." > .env
 
-EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 \
+EVAL_TASK_ID=0 EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_MODEL_SLUG=openai--gpt-5.4 EVAL_RUN_ID=first \
   docker compose -f oci://ghcr.io/exgentic/eval-aime up -y --abort-on-container-exit
 
-cat output/aime/0/task/result.json
+cat output/aime/codex/openai--gpt-5.4/first/0/task/result.json
 ```
 
 Prefer a CLI? `cargo install eval-containers`, then `eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4` prints and runs that exact Docker command — every command is a reminder of a plain `docker`/`kubectl` one (`--dry-run` to just print it).

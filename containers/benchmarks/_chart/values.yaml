@@ -5,6 +5,7 @@
 # fills these and gets the types right (task stays a quoted string).
 
 # ── Per-run axes (overridden at deploy via --set / the eval-containers CLI) ──
+# A native-harness benchmark's preset pins `agent: native` (benchmarks/RULES.md 12b).
 agent: claude-code
 task: "0"
 # perTask: this benchmark bakes one eval image per task, so the runner image is
@@ -98,6 +99,10 @@ ephemeral: false
 # Optional — a caller that composes its own unique leaf needs nothing here. Any
 # unique string: `$(date -u +%Y%m%d-%H%M%S)-$RANDOM`.
 runId: ""
+# force: true reruns the task even if its directory already holds a complete
+# result, emptying it first. Without it a complete task is skipped and a failed
+# one retried (.agents/output/RULES.md rules 26–29).
+force: false
 
 # ── Sweep model: a dataset eval is ONE Indexed Job ───────────────────────────
 # datasetSize empty → a single-task Job (debug: runs exactly `task`). Set it and
@@ -112,10 +117,14 @@ dataset: false
 # all at once). When Kueue manages the Job the global cap is the ClusterQueue;
 # this stays as a per-run ceiling.
 parallelism: ""
-# Per-example retry (k8s ≥1.29). Empty → whole-Job backoffLimit: 0 (older
-# clusters / OCP <4.16). Set e.g. 2 to retry a flaky example without failing the
-# sweep; maxFailedIndexes then bounds how many examples may stay broken.
-backoffLimitPerIndex: ""
+# Per-example retry (k8s ≥1.29). 0 → no retry, but a failed index still fails
+# ALONE; set e.g. 2 to also retry a flaky example. maxFailedIndexes bounds how
+# many examples may stay broken (empty → the whole dataset, i.e. never give up
+# early). Empty is the opt-out for a cluster older than k8s 1.29 / OCP 4.16,
+# which has neither field: it falls back to a whole-Job backoffLimit: 0, where
+# the first failure deletes every pod still running (#548) — the wrong default
+# everywhere it is not forced.
+backoffLimitPerIndex: 0
 maxFailedIndexes: ""
 # Kueue local-queue name. Empty → no Kueue (runs immediately, capped by
 # parallelism). Set it and the Job starts suspended for Kueue to admit by quota.

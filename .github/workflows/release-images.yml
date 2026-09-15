@@ -65,7 +65,7 @@ on:
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, hwe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -219,6 +219,7 @@ jobs:
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
       has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a channel run with no stale leaf
       dirty: ${{ steps.l.outputs.dirty }}           # channel run: anything at all to publish?
+      maxpar: ${{ steps.l.outputs.maxpar }}         # matrix width, by the clock (see below)
     steps:
       - uses: actions/checkout@v7.0.1
       # The staleness sweeps below read the registry (images + compose artifacts);
@@ -346,13 +347,31 @@ jobs:
               bs="containers/benchmarks/$B/build.sh"; [ -f "$bs" ] || continue
               repo=$(grep -oE 'github\.com/[A-Za-z0-9_./-]+' "$bs" | head -1 | sed -E 's#github\.com/##; s#\.git$##')
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
+              # excluded.txt: ids this benchmark cannot publish (a task whose
+              # upstream base no longer builds). Dropped here so nothing tries,
+              # rather than failing every release for ever.
+              ex="containers/benchmarks/$B/excluded.txt"
+              skip='[]'; [ -f "$ex" ] && skip=$(grep -vE '^\s*(#|$)' "$ex" | jq -Rsc 'split("\n")|map(select(length>0))')
               tks=$(gh api "repos/$repo/contents/tasks?ref=$ref" --paginate \
                 --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
+              tks=$(jq -c --argjson skip "$skip" 'map(select(.task as $t | $skip | index($t) | not))' <<< "$tks")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
-            for B in swe-bench; do
+            # tasks.txt holds the ids: `#` headings and blanks are skipped, since a
+            # heading read as a task id is an image nobody built (the same contract
+            # containers/scripts/fleet-index.py reads these files under). Which
+            # builder runs them is the base image's shape, not the list's:
+            #   kind=bake   swe-bench — FROM the Epoch per-task base, named from
+            #               EVAL_TASK_ID + EVAL_BASE_ARCH, so bake alone suffices.
+            #   kind=script hwe-bench — its per-PR base (ghcr.io/pku-liang/…:pr-N)
+            #               and HF slug are a string transform of the task id that
+            #               only its build.sh knows, so it builds like the three
+            #               above while sourcing ids from the repo.
+            for B in swe-bench:bake hwe-bench:script; do
+              K="${B##*:}"; B="${B%%:*}"
               tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
-              tks=$(jq -Rn --arg B "$B" '[inputs | select(length>0) | {b:$B, task:., kind:"bake"}]' < "$tf")
+              tks=$(jq -Rn --arg B "$B" --arg K "$K" \
+                '[inputs | select(length>0 and (startswith("#") | not)) | {b:$B, task:., kind:$K}]' < "$tf")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             pertask="$acc"
@@ -360,7 +379,10 @@ jobs:
             # passes vacuously); --only alone keeps one task per benchmark as a
             # smoke, not all ~600.
             if [ -n "${TASKS:-}" ]; then
-              pertask=$(printf '%s' "$pertask" | jq -c --arg t " $TASKS " '[.[] | select($t | index(" " + .task + " "))]')
+              # `$t | index(...)` rebinds `.` to the string $t, so `.task` inside it
+              # indexes a string and jq dies "Cannot index string with string". Match
+              # the id against the split allowlist instead — exact tokens, no padding.
+              pertask=$(printf '%s' "$pertask" | jq -c --arg t "$TASKS" '[.[] | select(.task | IN($t | split(" ")[]))]')
               [ "$pertask" != "[]" ] || { echo "::error::tasks= matched no task id of the benchmarks in scope: $TASKS"; exit 1; }
             elif [ -n "${ONLY:-}" ]; then
               pertask=$(printf '%s' "$pertask" | jq -c 'group_by(.b) | map(.[0])')
@@ -414,12 +436,17 @@ jobs:
           combos='[]'; agents='[]'
           if [ -n "$COMBO_AGENTS" ]; then
             read -ra _ag <<< "$COMBO_AGENTS"
-            agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')
+            # A native-harness benchmark pairs with `native` and nothing else
+            # (benchmarks/RULES.md 12b): paired by label below, never from the lineup.
+            agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0 and . != "native"))')
+            nativebench=$(grep -rl 'eval.benchmark.agent="native"' containers/benchmarks/*/Dockerfile \
+              | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#\1#' | sort -u | jq -Rsc 'split("\n")|map(select(length>0))')
             # Large arrays go through stdin, never argv: a per-task combo list is
             # >128KB, which exceeds Linux's MAX_ARG_STRLEN (--argjson would E2BIG).
             # Only the small agents list rides argv.
-            shared=$(printf '%s' "$combo_bench" | jq -c --argjson as "$agents" \
-              '[.[] as $b | $as[] as $a | {b:$b, a:$a, task:"", kind:"shared"}]')
+            shared=$(printf '%s' "$combo_bench" | jq -c --argjson as "$agents" --argjson nb "$nativebench" \
+              '[.[] as $b | (if ($nb | index($b)) != null then ["native"] else $as end)[] as $a
+                | {b:$b, a:$a, task:"", kind:"shared"}]')
             ptc=$(printf '%s' "$pertask_all" | jq -c --argjson as "$agents" \
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
@@ -497,6 +524,16 @@ jobs:
           [ "$((ptn * 2))" -le 256 ] || { echo "::error::pertask_shards = $ptn × 2 arch = $((ptn * 2)) > 256 — raise the per-task chunk size in enumerate"; exit 1; }
           [ "$((pcn * 2))" -le 256 ] || { echo "::error::pertask_combo_shards = $pcn × 2 arch = $((pcn * 2)) > 256 — raise the pertask-combo chunk size in enumerate"; exit 1; }
 
+          # Matrix width by the clock: these matrices are the widest thing this
+          # account runs, so overnight they take everything and in working hours
+          # they leave room for PR checks. A run that drags into the day narrows
+          # itself, since each matrix reads this when it starts. FLEET_MAXPAR
+          # still wins when set.
+          H=$(date -u +%H)
+          if [ "$H" -ge 22 ] || [ "$H" -lt 7 ]; then maxpar=20; else maxpar=6; fi
+          maxpar="${FLEET_MAXPAR:-$maxpar}"
+          echo "matrix width: $maxpar (UTC hour $H)"
+
           has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
           dirty=true
           # `merge` stitches the per-arch tags of leaves AND per-task images, so a
@@ -511,6 +548,7 @@ jobs:
             echo "combo_shards=$(idx "$combo_shards")"
             echo "pertask_combo_shards=$(idx "$pertask_combo_shards")"
             echo "pertask_shards=$(idx "$pertask_shards")"
+            echo "maxpar=$maxpar"
             echo "has_leaves=$has_leaves"
             echo "dirty=$dirty"
           } >> "$GITHUB_OUTPUT"
@@ -533,7 +571,7 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.leaf_shards) }}
         arch: [amd64, arm64]
@@ -639,7 +677,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.pertask_shards) }}
         arch: [amd64, arm64]
@@ -688,6 +726,16 @@ jobs:
             ref="${REGISTRY}/benchmarks/${B}-${tid}:${TAG}"
             cache="${REGISTRY}/buildcache/${B}-${tid}-${ARCH}"
             if [ "$DRY" = "true" ]; then echo "dry-run: $ref ($KIND)"; continue; fi
+            # An arch the benchmark does not declare cannot build (its base lacks
+            # it) — skip, leaving it legitimately single-arch, as the leaf matrix
+            # does. The mismatch check after a script build only catches a base
+            # that builds the WRONG arch; a base with no arm64 at all fails its
+            # first RUN ("exec format error"), which is a build failure, not a
+            # mismatch, so it has to be skipped before the build starts.
+            PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "containers/benchmarks/$B/Dockerfile" | tail -1)
+            if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
+              echo "skipping $ref on $ARCH — declared platforms: $PLATS"; continue
+            fi
             # Per-task build-input hash (delivery/RULES.md rule 12): the raw
             # task id is part of the preimage; build.sh stamps it via
             # EVAL_INPUT_HASH, bake via a per-target label --set.
@@ -718,6 +766,27 @@ jobs:
                 fi
               else echo "::error::per-task build failed: $ref"; fails=$((fails+1)); fi
             else
+              # The base this bake is FROM (benchmarks/swe-bench/Dockerfile). Epoch
+              # publishes it per arch and per task, and for many tasks only x86_64
+              # exists — delivery/RULES.md 14a: the platforms an image is expected
+              # to publish are the ones its inputs can produce, so an arch its base
+              # does not have was never expected and is not a failure. Without this
+              # the same 80 arm64 bakes failed in every release, for ever (#564);
+              # the merge keeps what did build as a single-arch :TAG.
+              base="ghcr.io/epoch-research/swe-bench.eval.${EPOCH_ARCH}.${TASK}:latest"
+              # Through fleet-status, which is where the read discipline lives: it
+              # answers 1 only when the registry says it has never heard of the
+              # ref, and 2 when the read never cleared. A blip must not read as
+              # "upstream has no arm64" and quietly stop building an image that
+              # exists — measured locally, a plain `imagetools inspect` called
+              # three published bases absent when it could not authenticate.
+              rc=0; bash containers/scripts/fleet-status.sh exists "$base" >/dev/null || rc=$?
+              if [ "$rc" -eq 1 ]; then
+                echo "::warning::$ref: upstream publishes no ${EPOCH_ARCH} base ($base) — not built, not failed"
+                continue
+              elif [ "$rc" -ne 0 ]; then
+                echo "::error::$base: unreadable, cannot tell absent from a blip"; fails=$((fails+1)); continue
+              fi
               # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the published entrypoint.
               if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
                    --set "benchmark-${B}.labels.eval.input-hash=${H}" \
@@ -822,7 +891,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         benchmark: ${{ fromJson(needs.enumerate.outputs.benchmarks) }}
     steps:
@@ -863,7 +932,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.combo_shards) }}
     steps:
@@ -907,6 +976,15 @@ jobs:
               echo "carried forward: evals/${eb}--${A}$1:${TAG} <- :latest"
             fi
           }
+          # An agent's eval.agent.* labels don't reach the combo on their own: it is
+          # FROM the benchmark, and a COPY --from stage's labels never propagate.
+          # Read them off the published agent image (what the combo installs) and
+          # stamp them on the lean base; the standalone bundle inherits them.
+          agent_labels() {  # $1=agent image -> eval.labels.eval.agent.<k>=<v> lines
+            docker buildx imagetools inspect "$1" --format '{{json .Image}}' 2>/dev/null \
+              | jq -r '[.. | objects | .Labels? // empty][0] // {} | to_entries[]
+                       | select(.key | startswith("eval.agent.")) | "eval.labels.\(.key)=\(.value)"'
+          }
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A < <(jq -r '[.b,.a]|@tsv' <<< "$it")   # shared combo only: evals/<b>--<a> (per-task combos build in combos-pertask)
@@ -939,11 +1017,14 @@ jobs:
             echo "::group::evals/${eb}--${A}"
             # Pushed under the hash tag itself (rule 18); the :TAG alias follows
             # via fleet-tag, so the hash name always exists first (rule 19).
+            agent_img="${REGISTRY}/agents/${A}:${TAG}"
+            mapfile -t AL < <(agent_labels "$agent_img")
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
-               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${TAG}" \
+               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="$agent_img" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
                  --set "eval.labels.eval.input-hash=${EH}" \
                  --set "eval-standalone.labels.eval.input-hash=${SH}" \
+                 "${AL[@]/#/--set=}" \
                  --set "eval.tags=${REGISTRY}/evals/${eb}--${A}:${EH}" \
                  --set "eval-standalone.tags=${REGISTRY}/evals/${eb}--${A}-standalone:${SH}" \
                  --set "*.platform=${PLAT}" \
@@ -973,7 +1054,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}
         arch: [amd64, arm64]
@@ -1001,8 +1082,19 @@ jobs:
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
           ITEMS=$(jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json)
-          ORIG_TAG="$TAG"             # benchmark/agent image refs stay on the merged multi-arch :TAG
+          ORIG_TAG="$TAG"             # every base image ref stays on the merged multi-arch :TAG
           export TAG="${TAG}-${ARCH}" # this combo's own OUTPUT tag; merge-pertask-combos builds the final :TAG
+          # Rebinding TAG above renames the OUTPUT, but combination.docker-bake.hcl
+          # derives every base default from ${TAG} too, so left alone they would
+          # resolve to per-arch tags (core/edge:latest-amd64) instead of the merged
+          # manifest — a wrong-arch or stale /opt/edge baked into the combo (#559).
+          # Every *_IMAGE the two combo targets consume is therefore pinned back to
+          # $ORIG_TAG explicitly, exactly as BENCHMARK_IMAGE/AGENT_IMAGE are.
+          export EDGE_IMAGE="${REGISTRY}/core/edge:${ORIG_TAG}"
+          export GOSU_IMAGE="${REGISTRY}/core/gosu:${ORIG_TAG}"
+          export OTEL_IMAGE="${REGISTRY}/core/otel:${ORIG_TAG}"
+          export MODEL_IMAGE="${REGISTRY}/models/bifrost:${ORIG_TAG}"
+          export PROCESS_COMPOSE_IMAGE="${REGISTRY}/core/process-compose:${ORIG_TAG}"
           retry() {
             local n=0 max="${BUILD_RETRIES:-4}"
             until "$@"; do
@@ -1021,6 +1113,12 @@ jobs:
                 "${REGISTRY}/evals/${eb}--${A}$1:latest-${ARCH}" || return 1
               echo "carried forward: evals/${eb}--${A}$1:${TAG} <- :latest-${ARCH}"
             fi
+          }
+          # Same as in combos: the agent labels a COPY --from stage never propagates.
+          agent_labels() {  # $1=agent image -> eval.labels.eval.agent.<k>=<v> lines
+            docker buildx imagetools inspect "$1" --format '{{json .Image}}' 2>/dev/null \
+              | jq -r '[.. | objects | .Labels? // empty][0] // {} | to_entries[]
+                       | select(.key | startswith("eval.agent.")) | "eval.labels.\(.key)=\(.value)"'
           }
           fails=0
           while read -r it; do
@@ -1044,11 +1142,14 @@ jobs:
             ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A} (${ARCH})"
+            agent_img="${REGISTRY}/agents/${A}:${ORIG_TAG}"
+            mapfile -t AL < <(agent_labels "$agent_img")
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
-               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="${REGISTRY}/agents/${A}:${ORIG_TAG}" \
+               BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="$agent_img" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
                  --set "eval.labels.eval.input-hash=${EH}" \
                  --set "eval-standalone.labels.eval.input-hash=${SH}" \
+                 "${AL[@]/#/--set=}" \
                  --set "*.platform=linux/${ARCH}" \
                  "${ACT[@]}"; then :; \
             else echo "::error::pertask combo failed: evals/${eb}--${A} (${ARCH})"; fails=$((fails+1)); fi
@@ -1061,18 +1162,36 @@ jobs:
     needs: [combos-pertask, enumerate]
     if: always() && needs.combos-pertask.result == 'success' && needs.enumerate.outputs.pertask_combo_shards != '[]'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      SHARDS: ${{ needs.enumerate.outputs.pertask_combo_shards }}
+    # One job per shard, mirroring combos-pertask: fleet-tag.sh costs 3-10 s per
+    # ref (run 34928071602's merge: 88 refs in 874 s) and a nightly lists
+    # thousands of per-task combos x 2 variants — a single job would need hours
+    # past any timeout, and a re-run starts over from the top. A shard is at most
+    # 80 combos (160 refs), which fits with room to spare.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
+      matrix:
+        shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}
     steps:
+      # checkout: this job runs containers/scripts/fleet-tag.sh.
+      - uses: actions/checkout@v7.0.1
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos)
+      # The shard CONTENTS live in this artifact, never in enumerate's outputs:
+      # those carry `idx` only (the 1 MB job-output cap), so reading them here
+      # yielded ZERO iterations and merged nothing while still exiting 0.
+      - uses: actions/download-artifact@v8
+        with: { name: shards, path: . }
+      - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos, shard ${{ matrix.shard.idx }})
+        env:
+          IDX: ${{ matrix.shard.idx }}
         run: |
+          jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json > items.json
           fails=0; merged=0; skipped=0
           # Process substitution, not a pipe: `jq | while` runs the loop body in a
           # subshell, silently dropping fails/merged/skipped and defeating the exit
@@ -1088,12 +1207,32 @@ jobs:
                 docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
               done
               [ "${#srcs[@]}" -eq 0 ] && { skipped=$((skipped+1)); continue; }
-              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then merged=$((merged+1))
+              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then
+                # Rule 17 (a zero exit is not evidence): read :TAG back and
+                # require every arch just joined. The expected set is what
+                # combos-pertask pushed, not both arches: it skips an arch its
+                # base lacks (deepswe and hwe-bench are amd64-only by label,
+                # upstream-pinned swe-bench tasks by their base) and leaves the
+                # merge to keep such a combo single-arch rather than fail.
+                got=$(docker buildx imagetools inspect "${ref}:${TAG}" --raw 2>/dev/null \
+                  | jq -r '.manifests[]?|select(.platform.os!="unknown")|.platform.architecture')
+                missing=$(comm -23 <(printf '%s\n' "${srcs[@]##*-}" | LC_ALL=C sort) <(LC_ALL=C sort -u <<< "$got") | paste -sd, -)
+                if [ -z "$missing" ]; then merged=$((merged+1))
+                else echo "::error::${ref}:${TAG} lacks [${missing}] after merge"; fails=$((fails+1)); fi
               else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
             done
-          done < <(jq -r '.[]?|.items[]?|"\(.b)\t\(.a)\t\(.task)"' <<< "${SHARDS:-[]}")
+          done < <(jq -r '.[]|"\(.b)\t\(.a)\t\(.task)"' items.json)
           echo "merged=$merged skipped=$skipped fails=$fails"
           [ "$fails" -eq 0 ] || { echo "::error::$fails pertask-combo manifest merge(s) failed"; exit 1; }
+          # Rule 17 (a zero exit is not evidence): the work list is known up
+          # front, so assert every combo was ATTEMPTED. The `fails` check alone
+          # passes vacuously on zero iterations — which is how every per-task
+          # combo shipped amd64-only under a stale :TAG while this job reported
+          # success.
+          want=$(jq length items.json)
+          [ "$want" -gt 0 ] || { echo "::error::shard $IDX lists no per-task combos, but this job was scheduled"; exit 1; }
+          [ "$((merged + skipped))" -eq "$((want * 2))" ] \
+            || { echo "::error::expected $((want * 2)) merge attempts (${want} combos x 2 variants), saw $((merged + skipped))"; exit 1; }
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
   # Runs for real releases (tag / explicit version). The scan covers whatever

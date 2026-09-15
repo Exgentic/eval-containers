@@ -61,11 +61,41 @@ COPY tests /tests
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 # pytest for the grader, installed at build time so grading needs no network.
-# Upstream tests/test.sh fetches pytest via `uvx` at run time; we install it here
-# instead to keep grading offline and reproducible. The task env already provides
-# every other dep the tests import (it is the same env upstream runs the tests in).
-RUN python3 -m pip install --no-cache-dir --break-system-packages pytest==8.4.1 pytest-json-ctrf==0.3.5 \
- || python3 -m pip install --no-cache-dir pytest==8.4.1 pytest-json-ctrf==0.3.5
+#
+# Into the task environment's own interpreter when it has one: the tests import
+# what the task installed (57 of 87 import a third-party package — pyscipopt,
+# shapely, torch), so grading on a separate interpreter cannot see them and a
+# correct solution scores 0. --break-system-packages because a Debian-managed
+# python3 refuses otherwise.
+#
+# Only when the env ships no Python at all — a Lean, JVM or Erlang task, eight of
+# them — fall back to an interpreter of our own. uv either way, same tool and
+# same pinned versions as upstream's tests/test.sh (`uvx --with pytest`), fetched
+# at build time instead of grading time, which is the point of doing it here.
+# The grader reads which to run from /opt/grader/pytest-cmd.
+#
+# Under /opt/grader, root-only and off the agent's PATH, like /tests above: the
+# agent drops to its own uid (core/gosu), so a task that withholds Python still
+# withholds it (benchmarks/RULES.md rule 9) — the fallback interpreter is never
+# on its PATH, and pytest in the env's python is one the task already exposed.
+COPY --from=ghcr.io/astral-sh/uv:0.9.7 /uv /opt/grader/uv
+# Directories come from the environment, not flags: `uv tool install` takes
+# UV_TOOL_DIR / UV_TOOL_BIN_DIR and has no --tool-dir.
+ENV UV_PYTHON_INSTALL_DIR=/opt/grader/python \
+    UV_TOOL_DIR=/opt/grader/tools \
+    UV_TOOL_BIN_DIR=/opt/grader/bin \
+    UV_CACHE_DIR=/tmp/uv-cache
+RUN if P="$(command -v python3)"; then \
+      /opt/grader/uv pip install --python "$P" --break-system-packages \
+        pytest==8.4.1 pytest-json-ctrf==0.3.5 \
+      && printf '%s -m pytest\n' "$P" > /opt/grader/pytest-cmd; \
+    else \
+      /opt/grader/uv python install 3.12 \
+      && /opt/grader/uv tool install --with pytest-json-ctrf==0.3.5 pytest==8.4.1 \
+      && printf '/opt/grader/bin/pytest\n' > /opt/grader/pytest-cmd; \
+    fi \
+ && rm -rf /tmp/uv-cache \
+ && chmod -R 700 /opt/grader && chown -R root:root /opt/grader
 
 # Agent output dirs (tasks write to absolute /root and /output paths).
 RUN mkdir -p /root /output && chmod 777 /root /output
@@ -78,7 +108,8 @@ RUN printf '%s\n' \
   'mkdir -p /logs/verifier/scores' \
   'export PYTHONPATH="/tests/src:${PYTHONPATH:-}"' \
   'cd /root' \
-  'python3 -m pytest --ctrf /logs/verifier/ctrf.json /tests/test_outputs.py -rA -v && ok=1 || ok=0' \
+  'export UV_PYTHON_INSTALL_DIR=/opt/grader/python' \
+  '$(cat /opt/grader/pytest-cmd) --ctrf /logs/verifier/ctrf.json /tests/test_outputs.py -rA -v && ok=1 || ok=0' \
   'if [ -f /logs/verifier/scores/scenario_3.txt ]; then' \
   '  cat /logs/verifier/scores/scenario_3.txt > /logs/verifier/reward.txt' \
   'else' \

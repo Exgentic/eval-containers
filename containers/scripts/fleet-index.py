@@ -105,6 +105,20 @@ def per_task(name: str) -> bool:
         return False
 
 
+def native(name: str) -> bool:
+    """Pairs only with `native`, declared on a LABEL line (benchmarks/RULES.md 12b)."""
+    path = os.path.join(CONTAINERS, "benchmarks", name, "Dockerfile")
+    try:
+        with open(path) as f:
+            return any(
+                line.lstrip().startswith("LABEL ")
+                and 'eval.benchmark.agent="native"' in line
+                for line in f
+            )
+    except OSError:
+        return False
+
+
 def labels(kind: str, name: str) -> dict[str, str]:
     """The component's `eval.*` labels, off its Dockerfile.
 
@@ -140,6 +154,17 @@ def labels(kind: str, name: str) -> dict[str, str]:
     return dict(sorted(out.items()))
 
 
+def _lines(path: str) -> list[str]:
+    """Lowercased ids from a one-per-line file, `#` comments and blanks dropped —
+    a heading read as a task id is an image nobody built."""
+    if not os.path.isfile(path):
+        return []
+    with open(path) as f:
+        return [
+            t for t in (ln.strip().lower() for ln in f) if t and not t.startswith("#")
+        ]
+
+
 def task_ids(family: str) -> list[str]:
     """The task ids a per-task benchmark bakes.
 
@@ -149,14 +174,13 @@ def task_ids(family: str) -> list[str]:
     where terminal-bench, skills-bench and deepswe get theirs.
     """
     d = os.path.join(CONTAINERS, "benchmarks", family)
+    # excluded.txt: ids this benchmark does not publish, because the task cannot
+    # be built at all. Dropped from both lists so the sweep does not go looking
+    # for images nothing builds (release-images.yml drops them too).
+    skip = _lines(os.path.join(d, "excluded.txt"))
     listed = os.path.join(d, "tasks.txt")
     if os.path.isfile(listed):
-        with open(listed) as f:
-            return [
-                t
-                for t in (line.strip().lower() for line in f)
-                if t and not t.startswith("#")
-            ]
+        return [t for t in _lines(listed) if t not in skip]
     build = os.path.join(d, "build.sh")
     if not os.path.isfile(build):
         return []
@@ -187,7 +211,9 @@ def task_ids(family: str) -> list[str]:
     )
     if out.returncode != 0:
         die(f"{family}: upstream task list unreadable: {out.stderr.strip()[:200]}")
-    return sorted({t.lower() for t in out.stdout.split() if t})
+    return sorted(
+        {t.lower() for t in out.stdout.split() if t and t.lower() not in skip}
+    )
 
 
 def candidates(tasks: dict[str, list[str]], agents: list[str]) -> list[str]:
@@ -205,12 +231,13 @@ def candidates(tasks: dict[str, list[str]], agents: list[str]) -> list[str]:
             else [family]
         )
         names += [f"benchmarks/{b}" for b in benchmarks if b != family]
+        pair = ["native"] if native(family) else [a for a in agents if a != "native"]
         for b in benchmarks:
-            names += [f"evals/{b}--{a}" for a in agents]
+            names += [f"evals/{b}--{a}" for a in pair]
             if b == family:
                 # The standalone bundle is a name suffix on the same pair
                 # (src/RULES.md 11), published only for shared-env combos.
-                names += [f"evals/{b}--{a}-standalone" for a in agents]
+                names += [f"evals/{b}--{a}-standalone" for a in pair]
     return sorted(set(names))
 
 

@@ -1,5 +1,9 @@
+# Native harness (benchmarks/RULES.md 12b): the agent axis is the benchmark's;
+# /harness.sh is the pass-through answering the bridge through the edge. The user
+# simulator's LLM goes through `user-gateway` below and is not recorded.
+agent: native
+# A full episode plus the pass-through's 120s idle exit.
 timeout: '1800'
-runnerArgs: python3 /app/agent.py; rc=$?; /usr/local/bin/reap-sidecars; exit $rc
 runnerExtraEnv:
 - name: BRIDGE_URL
   value: http://bridge:8000
@@ -132,7 +136,7 @@ extraManifests:
           - until nc -z bridge 8000 && nc -z user-gateway 4000; do sleep 2; done
         containers:
         - name: harness
-          image: ghcr.io/exgentic/evals/tau-bench--claude-code:latest
+          image: ghcr.io/exgentic/evals/tau-bench--native:latest
           command:
           - bash
           - -c

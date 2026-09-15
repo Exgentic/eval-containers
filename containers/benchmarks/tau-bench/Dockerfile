@@ -3,6 +3,8 @@
 # Interactive benchmark: agent uses domain tools guided by policy documents.
 # Evaluation is state-based (database + output checks), requires the TAU-bench runtime.
 # Externally graded: test writes -1.
+# Native harness (benchmarks/RULES.md 12a): tau-bench's own runtime is the agent;
+# /harness.sh is the runner-side pass-through that answers the bridge via the edge.
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
@@ -13,6 +15,7 @@ LABEL eval.benchmark.name="tau-bench"
 LABEL eval.benchmark.description="TAU-bench - Tool-Agent-User interaction (retail + airline)"
 LABEL eval.benchmark.tasks="165"
 LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.agent="native"
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="59a200c6d575d595120f1cb70fea53cef0632f6b"
@@ -66,6 +69,7 @@ RUN chmod 600 /tasks/all.jsonl
 # Add bridge-mode scripts (pass-through agent + tau-bench runner)
 COPY agent.py /app/agent.py
 COPY run_tau_bench.py /app/run_tau_bench.py
+RUN printf '#!/bin/bash\nexec python3 /app/agent.py\n' > /harness.sh && chmod +x /harness.sh
 
 WORKDIR /app
 ENV EVAL_BENCHMARK=tau-bench
