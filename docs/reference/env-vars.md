@@ -16,6 +16,10 @@ env var.
 | `EVAL_MODEL` | LiteLLM handle `<provider>/<model>` the gateway routes to (e.g. `openai/gpt-5.4`) — **required**, must be `<provider>/<model>` form | — |
 | `EVAL_TASK_ID` | Which task within the benchmark | `0` |
 | `EVAL_GATEWAY` | Which proxy image serves the model | `bifrost` |
+| `EVAL_OUTPUT_DIR` | Output root; a task writes to `<root>/<benchmark>/<agent>/<model slug>/<run-id>/<task>/` | `$PWD/output` |
+| `EVAL_RUN_ID` | Name of the run; rerunning an id skips complete tasks and retries failed ones (**required** with plain `docker compose`; the CLI generates one) | — |
+| `EVAL_MODEL_SLUG` | The model handle as a path segment (`/` → `--`); the CLI sets it | `EVAL_MODEL` |
+| `EVAL_FORCE` | Set → rerun even a complete task, emptying its directory first | — |
 
 Model and gateway are **independent axes** ([gateways/RULES.md](../../.agents/gateways/RULES.md)):
 `EVAL_MODEL` is a *runtime handle, not an image* — any LiteLLM-supported

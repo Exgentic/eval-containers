@@ -25,6 +25,7 @@ This maps to a plain Docker command — print it without running via `--dry-run`
 ```bash
 eval-containers run aime --task-id 0 --agent codex --model openai/gpt-5.4 --local --dry-run
 # → EVAL_BENCHMARK=aime EVAL_AGENT=codex EVAL_MODEL=openai/gpt-5.4 EVAL_TASK_ID=0 \
+#     EVAL_MODEL_SLUG=openai--gpt-5.4 EVAL_RUN_ID=<fresh id> EVAL_OUTPUT_DIR=$PWD/output \
 #     docker compose -f ./containers/benchmarks/aime/compose.yaml up --abort-on-container-exit
 ```
 
@@ -33,8 +34,12 @@ it.
 
 ## 3. Read the result
 
+Every task writes to `output/<benchmark>/<agent>/<model>/<run-id>/<task>/`; the
+run prints the path. Rerunning with the same `--run-id` skips a complete task
+and retries a failed one; `--force` reruns it regardless.
+
 ```bash
-cat output/aime/0/task/result.json
+cat output/aime/codex/openai--gpt-5.4/<run-id>/0/task/result.json
 ```
 
 The primary metric is `reward`; benchmarks may add named fields alongside it
@@ -42,7 +47,7 @@ The primary metric is `reward`; benchmarks may add named fields alongside it
 of the agent at:
 
 ```bash
-cat output/aime/0/model/trajectory.jsonl
+cat output/aime/codex/openai--gpt-5.4/<run-id>/0/model/traces.jsonl
 ```
 
 ## Variations

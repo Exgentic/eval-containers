@@ -1,6 +1,11 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2034  # PUBLISHED_REGISTRY is read by the scripts that source this
 # deploy/_lib.sh — what every deploy wrapper needs, whatever the cluster.
 # Sourced by deploy/<platform>/_lib.sh, which stays each platform's entry point.
+
+# The registry the fleet publishes to: what a launcher pulls unless told
+# otherwise. The dashboard launches these same refs.
+PUBLISHED_REGISTRY="ghcr.io/exgentic"
 
 # Model handle → the results-path segment the dashboard writes and reads back
 # (exgentic-dashboard app/launch.py `_slug`): `/` becomes `--`, every other

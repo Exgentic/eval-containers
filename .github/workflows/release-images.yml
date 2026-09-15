@@ -219,6 +219,7 @@ jobs:
       pertask_shards: ${{ steps.l.outputs.pertask_shards }} # [{idx,items:[{b,task,kind}]}] sharded ≤256
       has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a channel run with no stale leaf
       dirty: ${{ steps.l.outputs.dirty }}           # channel run: anything at all to publish?
+      maxpar: ${{ steps.l.outputs.maxpar }}         # matrix width, by the clock (see below)
     steps:
       - uses: actions/checkout@v7.0.1
       # The staleness sweeps below read the registry (images + compose artifacts);
@@ -346,8 +347,14 @@ jobs:
               bs="containers/benchmarks/$B/build.sh"; [ -f "$bs" ] || continue
               repo=$(grep -oE 'github\.com/[A-Za-z0-9_./-]+' "$bs" | head -1 | sed -E 's#github\.com/##; s#\.git$##')
               ref=$(grep -oE '[0-9a-f]{40}' "$bs" | head -1)
+              # excluded.txt: ids this benchmark cannot publish (a task whose
+              # upstream base no longer builds). Dropped here so nothing tries,
+              # rather than failing every release for ever.
+              ex="containers/benchmarks/$B/excluded.txt"
+              skip='[]'; [ -f "$ex" ] && skip=$(grep -vE '^\s*(#|$)' "$ex" | jq -Rsc 'split("\n")|map(select(length>0))')
               tks=$(gh api "repos/$repo/contents/tasks?ref=$ref" --paginate \
                 --jq "[.[] | select(.type==\"dir\") | {b:\"$B\", task:.name, kind:\"script\"}]" 2>/dev/null || echo '[]')
+              tks=$(jq -c --argjson skip "$skip" 'map(select(.task as $t | $skip | index($t) | not))' <<< "$tks")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
             # tasks.txt holds the ids: `#` headings and blanks are skipped, since a
@@ -512,6 +519,16 @@ jobs:
           [ "$((ptn * 2))" -le 256 ] || { echo "::error::pertask_shards = $ptn × 2 arch = $((ptn * 2)) > 256 — raise the per-task chunk size in enumerate"; exit 1; }
           [ "$((pcn * 2))" -le 256 ] || { echo "::error::pertask_combo_shards = $pcn × 2 arch = $((pcn * 2)) > 256 — raise the pertask-combo chunk size in enumerate"; exit 1; }
 
+          # Matrix width by the clock: these matrices are the widest thing this
+          # account runs, so overnight they take everything and in working hours
+          # they leave room for PR checks. A run that drags into the day narrows
+          # itself, since each matrix reads this when it starts. FLEET_MAXPAR
+          # still wins when set.
+          H=$(date -u +%H)
+          if [ "$H" -ge 22 ] || [ "$H" -lt 7 ]; then maxpar=20; else maxpar=6; fi
+          maxpar="${FLEET_MAXPAR:-$maxpar}"
+          echo "matrix width: $maxpar (UTC hour $H)"
+
           has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
           dirty=true
           # `merge` stitches the per-arch tags of leaves AND per-task images, so a
@@ -526,6 +543,7 @@ jobs:
             echo "combo_shards=$(idx "$combo_shards")"
             echo "pertask_combo_shards=$(idx "$pertask_combo_shards")"
             echo "pertask_shards=$(idx "$pertask_shards")"
+            echo "maxpar=$maxpar"
             echo "has_leaves=$has_leaves"
             echo "dirty=$dirty"
           } >> "$GITHUB_OUTPUT"
@@ -548,7 +566,7 @@ jobs:
     timeout-minutes: 90
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.leaf_shards) }}
         arch: [amd64, arm64]
@@ -654,7 +672,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.pertask_shards) }}
         arch: [amd64, arm64]
@@ -743,6 +761,27 @@ jobs:
                 fi
               else echo "::error::per-task build failed: $ref"; fails=$((fails+1)); fi
             else
+              # The base this bake is FROM (benchmarks/swe-bench/Dockerfile). Epoch
+              # publishes it per arch and per task, and for many tasks only x86_64
+              # exists — delivery/RULES.md 14a: the platforms an image is expected
+              # to publish are the ones its inputs can produce, so an arch its base
+              # does not have was never expected and is not a failure. Without this
+              # the same 80 arm64 bakes failed in every release, for ever (#564);
+              # the merge keeps what did build as a single-arch :TAG.
+              base="ghcr.io/epoch-research/swe-bench.eval.${EPOCH_ARCH}.${TASK}:latest"
+              # Through fleet-status, which is where the read discipline lives: it
+              # answers 1 only when the registry says it has never heard of the
+              # ref, and 2 when the read never cleared. A blip must not read as
+              # "upstream has no arm64" and quietly stop building an image that
+              # exists — measured locally, a plain `imagetools inspect` called
+              # three published bases absent when it could not authenticate.
+              rc=0; bash containers/scripts/fleet-status.sh exists "$base" >/dev/null || rc=$?
+              if [ "$rc" -eq 1 ]; then
+                echo "::warning::$ref: upstream publishes no ${EPOCH_ARCH} base ($base) — not built, not failed"
+                continue
+              elif [ "$rc" -ne 0 ]; then
+                echo "::error::$base: unreadable, cannot tell absent from a blip"; fails=$((fails+1)); continue
+              fi
               # bake: FROM the Epoch per-task base + EVAL_TASK_ID; pull the published entrypoint.
               if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
                    --set "benchmark-${B}.labels.eval.input-hash=${H}" \
@@ -847,7 +886,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         benchmark: ${{ fromJson(needs.enumerate.outputs.benchmarks) }}
     steps:
@@ -888,7 +927,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.combo_shards) }}
     steps:
@@ -998,7 +1037,7 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      max-parallel: ${{ fromJson(vars.FLEET_MAXPAR || '20') }}
+      max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
       matrix:
         shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}
         arch: [amd64, arm64]
@@ -1026,8 +1065,19 @@ jobs:
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
           ITEMS=$(jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json)
-          ORIG_TAG="$TAG"             # benchmark/agent image refs stay on the merged multi-arch :TAG
+          ORIG_TAG="$TAG"             # every base image ref stays on the merged multi-arch :TAG
           export TAG="${TAG}-${ARCH}" # this combo's own OUTPUT tag; merge-pertask-combos builds the final :TAG
+          # Rebinding TAG above renames the OUTPUT, but combination.docker-bake.hcl
+          # derives every base default from ${TAG} too, so left alone they would
+          # resolve to per-arch tags (core/edge:latest-amd64) instead of the merged
+          # manifest — a wrong-arch or stale /opt/edge baked into the combo (#559).
+          # Every *_IMAGE the two combo targets consume is therefore pinned back to
+          # $ORIG_TAG explicitly, exactly as BENCHMARK_IMAGE/AGENT_IMAGE are.
+          export EDGE_IMAGE="${REGISTRY}/core/edge:${ORIG_TAG}"
+          export GOSU_IMAGE="${REGISTRY}/core/gosu:${ORIG_TAG}"
+          export OTEL_IMAGE="${REGISTRY}/core/otel:${ORIG_TAG}"
+          export MODEL_IMAGE="${REGISTRY}/models/bifrost:${ORIG_TAG}"
+          export PROCESS_COMPOSE_IMAGE="${REGISTRY}/core/process-compose:${ORIG_TAG}"
           retry() {
             local n=0 max="${BUILD_RETRIES:-4}"
             until "$@"; do

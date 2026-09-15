@@ -160,9 +160,6 @@ emptyDir: {}
 {{- if .runnerImageRef }}{{ .runnerImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" $ba }}{{ .imageSuffix }}:{{ .runnerTag }}{{ else }}{{ .registry }}/evals/{{ $ba }}:{{ .runnerTag }}{{ end -}}
 {{- end -}}
 
-{{/* The /output mount. In Indexed mode each example gets its own per-index dir
-     via subPathExpr + the k8s-injected $(JOB_COMPLETION_INDEX); otherwise a fixed
-     subPath (or the volume root). Called with the merged values ($v). */}}
 {{/* eval.outputRoot — where this run writes.
 
      The prefix is the caller's. runs/<benchmark>/<agent>/<model> is the shape the
@@ -185,21 +182,25 @@ emptyDir: {}
 {{- join "/" $parts -}}
 {{- end -}}
 
-{{/* eval.outputMount — the run root, plus the one level the chart knows how to
-     fill in: an Indexed run's completion index, or a per-task run's task id. A
-     mount with no path at all is the ephemeral case; there is nothing to keep
-     apart. */}}
-{{- define "eval.outputMount" -}}
-{{- $root := include "eval.outputRoot" . -}}
-{{- if and .datasetSize $root -}}
-- name: output
-  mountPath: /output
-  subPathExpr: {{ $root }}/$(JOB_COMPLETION_INDEX)
-{{- else if and .perTask $root -}}
-- { name: output, mountPath: /output, subPath: {{ $root }}/{{ .task }} }
-{{- else if $root -}}
-- { name: output, mountPath: /output, subPath: {{ $root }} }
-{{- else -}}
-- { name: output, mountPath: /output }
+{{/* eval.outputPath — this task's directory in the volume: the run root plus
+     the one level the chart fills, an Indexed run's completion index or the
+     task id (.agents/output/RULES.md rule 11). Empty when ephemeral. */}}
+{{- define "eval.outputPath" -}}
+{{- with include "eval.outputRoot" . -}}
+{{ . }}/{{ if $.datasetSize }}$(JOB_COMPLETION_INDEX){{ else }}{{ $.task }}{{ end }}
 {{- end -}}
+{{- end -}}
+
+{{/* eval.outputMount — the task directory at /output (the runner) or, with
+     `sub`, one of its halves (otelcol writes traces.jsonl into model/). A mount
+     with no path at all is the ephemeral case; there is nothing to keep apart.
+     Called with (dict "v" $v) or (dict "v" $v "sub" "model"). */}}
+{{- define "eval.outputMount" -}}
+{{- $path := include "eval.outputPath" .v -}}
+{{- if and (not $path) (not .v.ephemeral) -}}
+{{- fail "no outputSubPath or runId: the mount would be the volume root, and the runner empties the directory it is given — every earlier run on the volume would go with it. Pass --set runId=<id>, or --set outputSubPath=<path>, or --set ephemeral=true if the results do not matter." -}}
+{{- end -}}
+{{- $sub := .sub | default "" -}}
+{{- $leaf := compact (list $path $sub) | join "/" -}}
+- { name: output, mountPath: /output{{ with $sub }}/{{ . }}{{ end }}{{ with $leaf }}, subPathExpr: {{ . }}{{ end }} }
 {{- end -}}

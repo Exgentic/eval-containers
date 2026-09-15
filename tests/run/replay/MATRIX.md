@@ -36,6 +36,7 @@ Each row is one replay test with a recorded fixture.
 | gaia | goose | exact-match | gaia-0-goose |
 | hwe-bench | claude-code | custom | hwe-bench-lowrisc__ibex-2232-claude-code |
 | deepswe | opencode | custom | deepswe-csstree-shorthand-expansion-compression-opencode |
+| walle | mock | custom | walle-0-mock |
 
 ## Per-task and sidecar benchmarks (TODO)
 
