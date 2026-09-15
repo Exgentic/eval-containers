@@ -29,7 +29,7 @@ benchmark changed after that commit, so the row is stale.
 | assetopsbench | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | assistantbench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | bbh | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
-| bfcl | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
+| bfcl | ✓ | ✓ | ? | n/a | ✓ | ? | ? | ✗ | 2026-09-09 |
 | bigcodebench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | browsecomp | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | chartqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
@@ -111,4 +111,4 @@ benchmark changed after that commit, so the row is stale.
 | xnli | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | xstory-cloze | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 
-**Totals:** building 64/101 · isolation 0/101 · oracle 64/101 · running 0/101 · traces 0/101 · replicate 0/101 · safety 0/101 · published 1/101
+**Totals:** building 64/101 · isolation 0/101 · oracle 64/101 · running 1/101 · traces 1/101 · replicate 0/101 · safety 0/101 · published 1/101

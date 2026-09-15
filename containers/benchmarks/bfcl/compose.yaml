@@ -2,15 +2,24 @@ include:
   - path: ../../compose/services.yaml
 
 services:
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
   runner:
     extends:
-      file: ../../compose/runner.yaml
+      file: ../../compose/runner-native.yaml
       service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/bfcl--native:latest
     depends_on:
       otelcol:
         condition: service_healthy
       gateway:
         condition: service_healthy
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/bfcl--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: bfcl
+      # Generation + AST evaluation in-process — more wall-clock than the default.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-900}
+      TIMEOUT: ${EVAL_TIMEOUT:-900}
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G

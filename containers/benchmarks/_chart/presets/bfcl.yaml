@@ -1,0 +1,11 @@
+# Native harness (benchmarks/RULES.md 12b): the agent axis is the benchmark's.
+agent: native
+# Generation + AST evaluation in-process — more wall-clock than the default.
+timeout: '900'
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: '2'
+    memory: 4Gi
