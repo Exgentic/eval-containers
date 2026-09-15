@@ -28,7 +28,7 @@ Each row is one replay test with a recorded fixture.
 | healthbench | claude-code | llm-as-judge | healthbench-0-claude-code |
 | kumo | codex | external | kumo-0-codex |
 | gdpval | claude-code | external (HF) | gdpval-0-claude-code |
-| bfcl | claude-code | model-only (AST) | bfcl-0-claude-code |
+| bfcl | native | model-only (AST) | bfcl-0-native |
 | appworld | claude-code | custom | appworld-0-claude-code |
 | arc-agi | claude-code | custom | arc-agi-0-claude-code |
 | mmmu | claude-code | custom | mmmu-0-claude-code |

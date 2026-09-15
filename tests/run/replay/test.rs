@@ -784,7 +784,7 @@ replay_test!(replay_bbh_5208_crush, "bbh", "crush", "5208");
 // bfcl was converted to a model-only native-harness benchmark; the legacy
 // exact-match fixtures no longer describe its flow. This fixture was recorded
 // from a live gateway run of the model-only harness (azure/FW-GLM-5.2).
-replay_test!(replay_bfcl_0_claude_code, "bfcl", "claude-code", "0");
+replay_test!(replay_bfcl_0_native, "bfcl", "native", "0");
 
 replay_test!(replay_bigcodebench_0_codex, "bigcodebench", "codex", "0");
 

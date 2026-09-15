@@ -65,6 +65,26 @@
         "silently summarizes context mid-run, which would make the recorded turn",
         "sequence a summary rather than the real trajectory."
       ]
+    },
+    "bfcl-0-native": {
+      "benchmark": "bfcl",
+      "task_id": "0",
+      "agent": "native",
+      "agent_version": "1.0.0",
+      "model": "azure/FW-GLM-5.2",
+      "gateway": "bifrost",
+      "benchmark_data_revision": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+      "captured_at": "2026-09-09T18:35:45+03:00",
+      "release_tag": null,
+      "capture_method": "out-of-band (RULES.md rule 9)",
+      "platform": "unrecorded",
+      "reward": 1,
+      "passed": true,
+      "notes": [
+        "Recorded by #527's live compose run (tasks 0-9, azure/FW-GLM-5.2) when bfcl",
+        "became a model-only native-harness benchmark; renamed from bfcl-0-claude-code",
+        "with native agent mode (#577): the harness made these calls, not an agent."
+      ]
     }
   }
 }

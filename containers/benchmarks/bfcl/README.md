@@ -1,6 +1,6 @@
 # bfcl
 
-**Status:** Released — model-only native-harness benchmark; a live-run replay fixture (`bfcl-0-claude-code`, azure/FW-GLM-5.2) is recorded and replay-tested (see AUDIT.md).
+**Status:** Released — model-only native-harness benchmark; a live-run replay fixture (`bfcl-0-native`, azure/FW-GLM-5.2) is recorded and replay-tested (see AUDIT.md).
 
 Berkeley Function Calling Leaderboard — native function-calling, AST-checked.
 
@@ -62,5 +62,5 @@ The reward is that category's `accuracy` — for a single task, `0.0` or `1.0`
 
 - `Dockerfile` — installs BFCL (pinned), builds the task index, bakes the runner
 - `run_bfcl.py` — single-task in-process runner (generation + AST evaluation)
-- `compose.yaml` — compose file for `eval-containers run bfcl` (model-only runner)
+- `compose.yaml` — compose file for `eval-containers run bfcl` (extends the shared `compose/runner-native.yaml`)
 - `README.md` — this file

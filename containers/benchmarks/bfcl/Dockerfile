@@ -48,6 +48,7 @@ LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.description="Berkeley Function Calling Leaderboard - native function-calling, AST-checked (non-live single-turn categories)"
 LABEL eval.benchmark.tasks="1150"
 LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.agent="native"
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
@@ -152,7 +153,11 @@ ENV EVAL_BENCHMARK=bfcl
 # generation + AST evaluation in-process against the gateway, and write the
 # reward from the score file.
 COPY run_bfcl.py /app/run_bfcl.py
-RUN chmod 755 /app/run_bfcl.py
+RUN chmod 755 /app/run_bfcl.py \
+ && printf '#!/bin/bash\nexec python3 /app/run_bfcl.py\n' > /harness.sh && chmod +x /harness.sh
+
+RUN printf '#!/bin/bash\n/eval-materialize-task\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
 
 # The runner writes /logs/verifier/reward.txt itself; keep a fail-closed
 # baseline grader so a run that never reaches the writer still scores 0.

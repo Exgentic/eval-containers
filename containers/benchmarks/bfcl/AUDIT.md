@@ -27,18 +27,18 @@ the five recovered tasks producing correct calls all along.
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | building | ✓ | builds locally (podman, arm64): CPU-only torch + `bfcl_eval` + `soundfile`; `bfcl_eval.constants.model_config` imports (175 models), `/app/run_bfcl.py` imports, `/tasks/all.jsonl` = 1150 rows, mode 600 root |
-| running | ✓ | live compose run, tasks 0–9 (`simple_python`), agent `claude-code`, model `azure/FW-GLM-5.2` via the ete gateway: **10/10** graded `reward=1.0` by BFCL's AST checker, runner exit 0 each. With `underscore_to_dot=False` the five dotted-name tasks (1 `math.factorial`, 2 `math.hypot`, 3 `algebra.quadratic_roots`, 8 `geometry.area_circle`, 9 `geometry.calculate_area_circle`) failed on the name only; `underscore_to_dot=True` recovered them → 5/10 → 10/10. |
+| running | ✓ | live compose run, tasks 0–9 (`simple_python`), agent `native`, model `azure/FW-GLM-5.2` via the ete gateway: **10/10** graded `reward=1.0` by BFCL's AST checker, runner exit 0 each. With `underscore_to_dot=False` the five dotted-name tasks (1 `math.factorial`, 2 `math.hypot`, 3 `algebra.quadratic_roots`, 8 `geometry.area_circle`, 9 `geometry.calculate_area_circle`) failed on the name only; `underscore_to_dot=True` recovered them → 5/10 → 10/10. |
 | isolation | ? | not audited per-benchmark |
 | oracle | n/a | grading is intrinsic to the harness run — there is no separate `EXPECTED_ANSWER` a derived oracle can supply; the AST checker is the gold. Determinism is instead evidenced by a live run + the pinned harness/data/checker commit. |
-| traces-reviewed | ✓ | recorded gateway span (`bfcl-0-claude-code.traces.jsonl`) reviewed: input = the task prompt, output = the native tool call the AST checker graded 1.0; secret-scanned clean (gitleaks, `.github/.gitleaks.toml`) |
+| traces-reviewed | ✓ | recorded gateway span (`bfcl-0-native.traces.jsonl`) reviewed: input = the task prompt, output = the native tool call the AST checker graded 1.0; secret-scanned clean (gitleaks, `.github/.gitleaks.toml`) |
 | replicate-official | ? | non-live AST categories only; official leaderboard aggregates more categories |
 
 ## Score
 
 | Run | Agent | Model | Tasks | Correct | Score | Notes |
 |-----|-------|-------|------:|--------:|------:|-------|
-| live compose | claude-code | azure/FW-GLM-5.2 | 10 | 10 | 1.00 | tasks 0–9 (`simple_python`), `underscore_to_dot=True`; every native tool call graded 1.0 by the AST checker; runner exit 0 each |
-| live compose (pre-fix) | claude-code | azure/FW-GLM-5.2 | 10 | 5 | 0.50 | `underscore_to_dot=False`; the 5 dotted-name tasks failed on the sanitized name despite correct arguments |
+| live compose | native | azure/FW-GLM-5.2 | 10 | 10 | 1.00 | tasks 0–9 (`simple_python`), `underscore_to_dot=True`; every native tool call graded 1.0 by the AST checker; runner exit 0 each |
+| live compose (pre-fix) | native | azure/FW-GLM-5.2 | 10 | 5 | 0.50 | `underscore_to_dot=False`; the 5 dotted-name tasks failed on the sanitized name despite correct arguments |
 
 ## Safety — can the run harm us or cheat?
 
@@ -76,4 +76,4 @@ the five recovered tasks producing correct calls all along.
 | Check | Status / Value | Evidence |
 |-------|:--------------:|----------|
 | published | ? | not yet pushed |
-| released | ✓ | model-only replay fixture `bfcl-0-claude-code.traces.jsonl` recorded from a live gateway run (azure/FW-GLM-5.2), registered as `replay_test!(replay_bfcl_0_claude_code, …)`, and `eval.benchmark.released="true"` set. Replaces the removed legacy exact-match fixtures. |
+| released | ✓ | model-only replay fixture `bfcl-0-native.traces.jsonl` recorded from a live gateway run (azure/FW-GLM-5.2), registered as `replay_test!(replay_bfcl_0_native, …)`, and `eval.benchmark.released="true"` set. Replaces the removed legacy exact-match fixtures. |

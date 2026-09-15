@@ -130,26 +130,21 @@ def read_accuracy(category: str) -> float:
 
 
 def main() -> int:
-    # We bypass /usr/local/bin/run, so create the output dirs write-result
-    # expects and record a start time it would otherwise write.
-    for d in ("/output/model", "/output/agent", "/output/task"):
-        os.makedirs(d, exist_ok=True)
-    if not os.path.exists("/output/agent/.started-at"):
-        try:
-            import datetime
-
-            now = datetime.datetime.now(datetime.timezone.utc)
-            with open("/output/agent/.started-at", "w") as f:
-                f.write(now.strftime("%Y-%m-%dT%H:%M:%SZ"))
-        except OSError:
-            pass
-
     # Fail-closed baseline before anything can go wrong.
     write_reward("0")
 
     task_id = int(os.environ.get("EVAL_TASK_ID", os.environ.get("TASK_ID", "0")))
     api_model = os.environ.get("MODEL") or os.environ.get("EVAL_MODEL") or "eval-model"
-    base_url = os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1")
+    # No default: `run` sources /usr/local/bin/start-edge before this runs, which
+    # sets OPENAI_BASE_URL to the edge's own :4100 — an unset var means nothing
+    # is recording, and a gateway fallback would run unrecorded (#558).
+    base_url = os.environ.get("OPENAI_BASE_URL")
+    if not base_url:
+        print(
+            "[runner] OPENAI_BASE_URL is unset — the edge did not come up",
+            file=sys.stderr,
+        )
+        return 1
     temperature = float(os.environ.get("BFCL_TEMPERATURE", "0.001"))
     # A registry key is a filesystem-safe handle BFCL uses for result/score
     # dir names; the API model string (possibly with "/") is sent on the wire.
