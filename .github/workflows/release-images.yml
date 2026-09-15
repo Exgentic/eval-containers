@@ -433,7 +433,7 @@ jobs:
           # ── combos: shared (task="") + per-task, all as {b,a,task,kind} ──
           # Both build via one downstream bake-eval call (per-task just points at the
           # per-task base + a task-suffixed name), so they share one shape + matrix.
-          combos='[]'; agents='[]'
+          combos='[]'; agents='[]'; ptc='[]'
           if [ -n "$COMBO_AGENTS" ]; then
             read -ra _ag <<< "$COMBO_AGENTS"
             agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0))')
@@ -463,6 +463,45 @@ jobs:
                     or (if $p.task == "" then ($sb | index($p.b)) != null
                         else $mv[$p.b + "\t" + $p.task] != null end)) ]')
             echo "channel run -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
+            # The prune above reads only the parents. A pair whose per-arch tags
+            # outran its :latest — pushed by a run that ended before its merge —
+            # has fresh parents and would wait for one to move again (#591), so
+            # every per-task pair's merged :latest is judged as well, as the
+            # task bases are above: one hash pass per (benchmark, agent), one
+            # read per pair. A lagging alias then costs combos-pertask a carry
+            # check per arch and merge-pertask-combos a stitch, never a rebuild.
+            C=$(mktemp -d); : > "$C/pairs"; : > "$C/map"
+            for B in $(jq -r '[.[].b] | unique | .[]' <<< "$pertask_all"); do
+              plat=$(sed -nE 's/.*eval\.platforms="([^"]*)".*/\1/p' "containers/benchmarks/$B/Dockerfile" | head -1)
+              [ -n "$plat" ] || plat="linux/amd64,linux/arm64"
+              tasks=$(jq -r --arg b "$B" '.[] | select(.b==$b) | .task' <<< "$pertask_all")
+              n=$(printf '%s\n' "$tasks" | wc -l)
+              for A in $(jq -r '.[]' <<< "$agents"); do
+                # shellcheck disable=SC2086  # one id per word; ids carry no whitespace
+                bash containers/scripts/fleet-hash.sh combo "$B" "$A" $tasks \
+                  | awk -F'\t' '$1 !~ /-standalone$/' > "$C/rows"
+                # Rows come back in task order, one lean row per id; anything
+                # else means the hash pass died part-way, not a shorter list.
+                [ "$(wc -l < "$C/rows")" -eq "$n" ] \
+                  || { echo "::error::fleet-hash combo $B $A: $(wc -l < "$C/rows") rows for $n tasks"; exit 1; }
+                paste <(printf '%s\n' "$tasks") "$C/rows" | while IFS=$'\t' read -r task name h _; do
+                  printf '%s %s %s\n' "${REGISTRY}/${name}:latest" "$h" "$plat" >> "$C/pairs"
+                  printf '%s\t%s\t%s\t%s\n' "${REGISTRY}/${name}:latest" "$B" "$A" "$task" >> "$C/map"
+                done
+              done
+            done
+            xargs -P "${STATUS_JOBS:-16}" -n3 bash containers/scripts/fleet-status.sh check \
+              < "$C/pairs" > "$C/verdicts" || true
+            asked=$(wc -l < "$C/pairs"); answered=$(wc -l < "$C/verdicts")
+            [ "$answered" -eq "$asked" ] \
+              || { echo "::error::per-task combo freshness sweep answered $answered of $asked refs"; exit 1; }
+            awk -F'\t' 'NR==FNR { if ($2!="fresh") m[$1]; next } $1 in m { print $2 "\t" $3 "\t" $4 }' \
+              "$C/verdicts" "$C/map" | LC_ALL=C sort -u > "$C/keep"
+            lag=$(printf '%s' "$ptc" | jq -c --rawfile keep "$C/keep" '
+              ($keep | split("\n") | map(select(length>0)) | INDEX(.)) as $k
+              | [ .[] | select($k[.b + "\t" + .a + "\t" + .task] != null) ]')
+            combos=$(printf '%s\n%s' "$combos" "$lag" | jq -cs 'add | unique')
+            echo "channel run -> $(printf '%s' "$lag" | jq length) per-task combo pair(s) whose :latest lags"
           fi
 
           # Every per-task combo (swe-bench, terminal-bench, skills-bench, deepswe) is the
