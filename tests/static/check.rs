@@ -1460,10 +1460,16 @@ fn merge_pertask_combos_stitches_from_the_shards_artifact() {
         "merge-pertask-combos must assert it attempted every combo in the work list — a \
          zero-iteration run passes a `fails == 0` check vacuously (delivery/RULES.md:17)"
     );
+    // The read-back judges each :TAG against the arches it joined, never a
+    // fixed pair: combos-pertask skips an arch its base lacks and expects the
+    // merge to keep such a combo single-arch (deepswe and hwe-bench declare
+    // `eval.platforms="linux/amd64"`), so requiring both arches failed every
+    // shard that held one of them.
     assert!(
-        job.contains("expected amd64,arm64"),
-        "merge-pertask-combos must read the published tags back and confirm both arches — \
-         a zero exit is not evidence (delivery/RULES.md:14, :17)"
+        job.contains("lacks [${missing}] after merge") && !job.contains("expected amd64,arm64"),
+        "merge-pertask-combos must read each merged :TAG back and require the arches it \
+         joined — a zero exit is not evidence (delivery/RULES.md:17) — and must not \
+         demand both arches of a combo whose base has one"
     );
 }
 
