@@ -1436,10 +1436,19 @@ fn merge_pertask_combos_stitches_from_the_shards_artifact() {
     );
     assert!(
         job.contains("name: shards")
-            && job.contains(".pertask_combo[]?|.items[]?")
+            && job.contains(".pertask_combo[] | select(.idx==$i).items")
             && job.contains("shards.json"),
         "merge-pertask-combos must download the shards artifact and read \
          `.pertask_combo[].items` from shards.json"
+    );
+    // One job per shard, like combos-pertask: a single job stitching every
+    // per-task combo (thousands, x 2 variants, 3-10 s each) cannot finish
+    // inside any job timeout, and a re-run starts over from the top.
+    assert!(
+        job.contains("shard: ${{ fromJson(needs.enumerate.outputs.pertask_combo_shards) }}")
+            && job.contains("select(.idx==$i)"),
+        "merge-pertask-combos must fan out one job per pertask_combo shard, each \
+         stitching only its own shard's items"
     );
     assert!(
         job.contains("actions/checkout@"),
