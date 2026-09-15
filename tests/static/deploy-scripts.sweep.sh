@@ -150,7 +150,7 @@ got=$(awk '/^  completions:/{print $2; exit}' <<<"$out")
 # reuses the implementation it is checking would agree with any answer.
 for shape in "--task sympy__sympy-24066" "--task 0" "--dataset"; do
   # shellcheck disable=SC2086  # $shape is a deliberate two-word argument
-  out=$(bash "$OC" --benchmark tau-bench --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+  out=$(bash "$OC" --benchmark tau-bench --agent native --model "$HANDLE" --gateway "$GATEWAY" \
           --registry "$REG" $shape --local-chart --dry-run 2>&1)
   said=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$out" | head -1)
   rendered=$(awk '

@@ -228,146 +228,202 @@ fn timeout_override_beats_a_preset() {
     eprintln!("✓ timeoutOverride: helper honours it, values.yaml defaults empty, comment trimmed");
 }
 
-/// Edge capture is unconditional (.agents/edge/RULES.md rules 1, 6, 10): every
-/// model call an agent makes MUST cross the edge and be recorded. The bring-up
-/// that makes that true lives in `/usr/local/bin/start-edge`, sourced by
-/// `/usr/local/bin/run` — so any surface that REPLACES `run` with its own
-/// command has to source it itself, or the edge never starts, nothing listens on
-/// 4100, and the agent's traffic goes straight to the gateway unrecorded.
-///
-/// That is #558: automationbench and tau-bench each replace the launcher (their
-/// harness needs the task identity, which run's agent phase withholds per rule
-/// 7) on BOTH surfaces — the chart's `runnerArgs` and compose's `entrypoint` —
-/// and neither started the edge. The failure is silent: the task still scores,
-/// and only a missing `model/calls.jsonl.zst` gives it away. So this gate is
-/// structural rather than a runtime assertion on the record — it catches the
-/// next bespoke harness at PR time, offline, without a cluster.
-///
-/// The bar is "invokes the launcher OR the edge starter": a command that runs
-/// `run` gets the edge through it, and one that doesn't must source start-edge.
+/// The three phases and the edge bring-up have one home, `run` + `run-agent`
+/// (benchmarks/RULES.md 12, edge rules 1, 6, 10). Bespoke harnesses used to
+/// replace the launcher on both surfaces with their own copy (#558 was one
+/// missing the edge); native mode (rule 12c) removed the reason, so a surface
+/// that replaces it is refused outright.
 #[test]
-fn every_launcher_override_starts_the_edge() {
-    const RUN: &str = "/usr/local/bin/run";
+fn no_surface_replaces_the_launcher() {
     const START_EDGE: &str = "/usr/local/bin/start-edge";
-
-    // `run` is what makes the default path conform, so pin that it still brings
-    // the edge up — via the shared starter, not a second inlined copy.
+    // `run` is what makes every path conform, so pin that it still brings the
+    // edge up via the shared starter, and that the starter lands in the image.
     let run = fs::read_to_string(repo_root().join("containers/core/runner/run"))
         .expect("missing containers/core/runner/run");
     assert!(
         run.contains(START_EDGE),
-        "core/runner/run must source {START_EDGE} — it is the one home for the edge \
-         bring-up that every launcher override also has to reach (edge rules 1, 6, 10)"
+        "core/runner/run must source {START_EDGE} — the one home for the edge bring-up \
+         (edge rules 1, 6, 10)"
     );
-    let starter = repo_root().join("containers/core/runner/start-edge");
     assert!(
-        starter.is_file(),
-        "containers/core/runner/start-edge must exist — `run` and every launcher \
-         override source it to bring the edge up (edge rules 1, 6, 10)"
+        repo_root()
+            .join("containers/core/runner/start-edge")
+            .is_file(),
+        "containers/core/runner/start-edge must exist — `run` sources it"
     );
-    // The starter is only useful if it actually lands in the eval image.
     let combo = fs::read_to_string(repo_root().join("containers/core/combination.Dockerfile"))
         .expect("missing containers/core/combination.Dockerfile");
     assert!(
         combo.contains("runner/start-edge"),
-        "combination.Dockerfile must COPY runner/start-edge — an override that sources \
-         a path the image lacks fails at run time, on the cluster, per task"
+        "combination.Dockerfile must COPY runner/start-edge into the eval image"
     );
 
     let mut offenders: Vec<String> = Vec::new();
 
-    // ── k8s surface: presets that override `runnerArgs`. ──────────────
+    // k8s surface: a preset's `runnerArgs` replaces the runner command.
     let presets = repo_root().join("containers/benchmarks/_chart/presets");
-    let mut preset_files: Vec<PathBuf> = fs::read_dir(&presets)
+    for entry in fs::read_dir(&presets)
         .expect("missing _chart/presets")
         .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "yaml"))
-        .collect();
-    preset_files.sort();
-    for path in &preset_files {
-        let text = fs::read_to_string(path).expect("read preset");
-        // `runnerArgs:` may be a scalar or a `>-` block; take everything from
-        // the key to the next top-level (column-0) key, which is the whole value
-        // either way. Anything the value contains counts as "invoked".
-        let Some(start) = text
-            .find("\nrunnerArgs:")
-            .or_else(|| text.starts_with("runnerArgs:").then_some(0))
-        else {
-            continue; // no override — the default runnerArgs invoke `run`
-        };
-        let rest = &text[start + 1..];
-        let value: String = rest
-            .lines()
-            .enumerate()
-            .take_while(|(i, l)| *i == 0 || l.trim().is_empty() || l.starts_with([' ', '\t', '#']))
-            .map(|(_, l)| l)
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !(value.contains(RUN) || value.contains(START_EDGE)) {
+    {
+        let path = entry.path();
+        if path.extension().is_none_or(|x| x != "yaml") {
+            continue;
+        }
+        let text = fs::read_to_string(&path).expect("read preset");
+        if text.lines().any(|l| l.starts_with("runnerArgs:")) {
             let name = path.file_name().unwrap().to_string_lossy();
             offenders.push(format!(
-                "_chart/presets/{name}: runnerArgs replaces the launcher but invokes neither \
-                 {RUN} nor {START_EDGE}"
+                "_chart/presets/{name}: runnerArgs replaces the launcher"
             ));
         }
     }
 
-    // ── compose surface: benchmarks that override `entrypoint`. ───────
+    // compose surface: the runner service's `entrypoint`/`command`. Only the
+    // runner matters — a bespoke sidecar (tau-bench's `harness`, its `bridge`)
+    // is the environment, not the system under test.
     for (name, dir) in sibling_dirs("benchmarks") {
-        let compose = dir.join("compose.yaml");
-        let Ok(text) = fs::read_to_string(&compose) else {
+        let Ok(text) = fs::read_to_string(dir.join("compose.yaml")) else {
             continue;
         };
-        // Only the `runner` service's entrypoint matters — a bespoke sidecar
-        // (tau-bench's `harness`, its `bridge`) is the environment, not the
-        // system under test, and does not carry the agent's calls. Slice the
-        // runner service out: from its 2-space key to the next one.
-        let Some(at) = text.find("\n  runner:") else {
-            continue;
-        };
-        let body = &text[at + 1..];
-        let end = body
-            .lines()
-            .skip(1)
-            .position(|l| {
-                l.starts_with("  ") && !l.starts_with("   ") && l.trim_end().ends_with(':')
-            })
-            .map(|i| body.lines().take(i + 1).map(|l| l.len() + 1).sum::<usize>())
-            .unwrap_or(body.len());
-        let runner = &body[..end];
-        // Ignore commented-out lines: a comment naming start-edge must not
-        // satisfy the gate, and a commented entrypoint must not trip it.
-        let live: String = runner
-            .lines()
-            .filter(|l| !l.trim_start().starts_with('#'))
-            .collect::<Vec<_>>()
-            .join("\n");
-        if !live.contains("entrypoint:") {
-            continue; // inherits the image CMD, which is `run`
-        }
-        if !(live.contains(RUN) || live.contains(START_EDGE)) {
-            offenders.push(format!(
-                "benchmarks/{name}/compose.yaml: the runner's entrypoint replaces the launcher \
-                 but invokes neither {RUN} nor {START_EDGE}"
-            ));
+        for key in ["entrypoint:", "command:"] {
+            if compose_runner_service(&text)
+                .lines()
+                .any(|l| l.trim_start().starts_with(key))
+            {
+                offenders.push(format!(
+                    "benchmarks/{name}/compose.yaml: the runner's {key} replaces the launcher"
+                ));
+            }
         }
     }
 
     assert!(
         offenders.is_empty(),
-        "every surface that replaces the framework launcher MUST still bring the edge up, \
-         or its model calls bypass the edge and nothing is recorded — silently, since the \
-         task still scores (.agents/edge/RULES.md rules 1, 6, 10; #558). Source \
-         `. {START_EDGE} || exit 1` first (`|| exit 1` because these commands run under \
-         `bash -c` with no `set -e`, which swallows a sourced script's failure):\n  {}",
+        "no surface may replace the framework launcher: the three phases, the edge \
+         bring-up, the timeout and the exit-status record have one home in `run` + \
+         `run-agent` (benchmarks/RULES.md 12). A benchmark whose own harness is the \
+         agent declares `LABEL eval.benchmark.agent=\"native\"` and ships /harness.sh \
+         instead (rule 12a):\n  {}",
         offenders.join("\n  ")
     );
+    eprintln!("✓ no preset runnerArgs, no compose runner entrypoint/command");
+}
 
-    eprintln!(
-        "✓ every launcher override starts the edge ({} preset(s), compose runners checked)",
-        preset_files.len()
+/// The `runner` service's live (uncommented) lines; empty when there is none.
+fn compose_runner_service(text: &str) -> String {
+    let Some(at) = text.find("\n  runner:") else {
+        return String::new();
+    };
+    let body = &text[at + 1..];
+    let end = body
+        .lines()
+        .skip(1)
+        .position(|l| l.starts_with("  ") && !l.starts_with("   ") && l.trim_end().ends_with(':'))
+        .map(|i| body.lines().take(i + 1).map(|l| l.len() + 1).sum::<usize>())
+        .unwrap_or(body.len());
+    body[..end]
+        .lines()
+        .filter(|l| !l.trim_start().starts_with('#'))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// `LABEL eval.benchmark.agent="native"` (rule 12a); mirrors the CLI's
+/// `benchmark::is_native`, which this crate deliberately does not depend on.
+fn is_native_dockerfile(text: &str) -> bool {
+    text.lines().any(|l| {
+        let t = l.trim_start();
+        t.starts_with("LABEL ") && t.contains(r#"eval.benchmark.agent="native""#)
+    })
+}
+
+/// The native label (rule 12a) and every surface must agree: compose extends
+/// `runner-native.yaml` and names `evals/<b>--native`, the preset pins
+/// `agent: native`, the image ships `/harness.sh` — and no other benchmark
+/// borrows any of them. The marker run-agent keys on has one home too.
+#[test]
+fn native_harness_benchmarks_pin_the_native_agent_on_every_surface() {
+    let agent = fs::read_to_string(repo_root().join("containers/agents/native/Dockerfile"))
+        .expect("missing containers/agents/native/Dockerfile");
+    for needle in ["/opt/agent/native", "exec /harness.sh"] {
+        assert!(
+            agent.contains(needle),
+            "agents/native/Dockerfile must ship `{needle}` — the marker run-agent keys on, \
+             and the exec of the benchmark's harness"
+        );
+    }
+    let run_agent = fs::read_to_string(repo_root().join("containers/core/runner/run-agent"))
+        .expect("missing containers/core/runner/run-agent");
+    assert!(
+        run_agent.contains("/opt/agent/native"),
+        "core/runner/run-agent must key the privileged native launch off /opt/agent/native"
     );
+
+    let presets = repo_root().join("containers/benchmarks/_chart/presets");
+    let mut issues: Vec<String> = Vec::new();
+    let mut natives = 0;
+    for (name, dir) in sibling_dirs("benchmarks") {
+        let Ok(dockerfile) = fs::read_to_string(dir.join("Dockerfile")) else {
+            continue;
+        };
+        let native = is_native_dockerfile(&dockerfile);
+        let compose = fs::read_to_string(dir.join("compose.yaml")).unwrap_or_default();
+        let preset = fs::read_to_string(presets.join(format!("{name}.yaml"))).unwrap_or_default();
+        let extends_native = compose.contains("compose/runner-native.yaml");
+        let names_native = compose.contains(&format!("/evals/{name}--native:"));
+        let preset_pins = preset.lines().any(|l| l.trim_end() == "agent: native");
+        let preset_sets_agent = preset.lines().any(|l| l.starts_with("agent:"));
+        let ships_harness = dockerfile.contains("/harness.sh");
+        let checks: [(bool, &str); 4] = if native {
+            natives += 1;
+            [
+                (
+                    extends_native,
+                    "compose.yaml must extend compose/runner-native.yaml",
+                ),
+                (names_native, "compose.yaml must name evals/<name>--native"),
+                (
+                    preset_pins,
+                    "_chart/presets/<name>.yaml must pin `agent: native`",
+                ),
+                (
+                    ships_harness,
+                    "Dockerfile must ship the harness at /harness.sh",
+                ),
+            ]
+        } else {
+            [
+                (
+                    !extends_native,
+                    "compose.yaml extends runner-native.yaml without the label",
+                ),
+                (
+                    !names_native,
+                    "compose.yaml names evals/<name>--native without the label",
+                ),
+                (
+                    !preset_sets_agent,
+                    "a preset may not pin the agent axis (rule 24b) — only a native harness does",
+                ),
+                (
+                    !ships_harness,
+                    "Dockerfile ships /harness.sh without the label",
+                ),
+            ]
+        };
+        for (ok, what) in checks {
+            if !ok {
+                issues.push(format!("{name}: {what}"));
+            }
+        }
+    }
+    assert!(issues.is_empty(), "{}", issues.join("\n"));
+    assert!(
+        natives > 0,
+        "expected at least one native-harness benchmark"
+    );
+    eprintln!("✓ {natives} native-harness benchmark(s) pin `native` on every surface");
 }
 
 #[test]
@@ -1631,85 +1687,6 @@ fn a_dispatch_runs_in_its_own_lane() {
         "a workflow_dispatch must get a per-run concurrency group, or it waits for the nightly \
          and evicts other pending dispatches"
     );
-}
-
-/// Rule 16 requires `agent/result.json` to carry an `exit_code`, and rule 24
-/// requires every surface to produce byte-equivalent results for the same
-/// inputs. Only `run-agent` writes `/output/agent/.exit-code`, so a benchmark
-/// whose preset replaces the standard three-phase pipeline with its own harness
-/// (`runnerArgs`) must record the status itself — otherwise `write-result`
-/// coerces it to JSON null and every task of that benchmark reports an
-/// unrecorded exit status for the rest of time.
-///
-/// automationbench shipped exactly that gap on the k8s surface while its compose
-/// twin recorded the code, so the two surfaces disagreed (a rule 24b lockstep
-/// violation) and a wall-clock kill was indistinguishable from a task that never
-/// started. Rule 29's per-surface checks cannot catch it: each surface renders
-/// fine on its own, and the drift lives in the one per-benchmark command a
-/// preset is still allowed to define.
-#[test]
-fn a_preset_that_replaces_the_agent_phase_records_its_exit_status() {
-    let presets = repo_root().join("containers/benchmarks/_chart/presets");
-    let mut checked = 0;
-    for entry in fs::read_dir(&presets).expect("read presets dir") {
-        let path = entry.expect("dir entry").path();
-        if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-            continue;
-        }
-        let body = fs::read_to_string(&path).expect("read preset");
-        // Only presets that take over the runner command bypass run-agent.
-        if !body.contains("runnerArgs:") {
-            continue;
-        }
-        let name = path.file_stem().unwrap().to_string_lossy().to_string();
-        // Either record the status into the file write-result reads, or hand the
-        // harness's own status back as the container's (tau-bench's `exit $rc`),
-        // which keeps the Job's outcome honest.
-        let records = body.contains("/output/agent/.exit-code") || body.contains("exit $rc");
-        assert!(
-            records,
-            "preset {name}.yaml overrides runnerArgs (so run-agent never writes \
-             /output/agent/.exit-code) but never records an exit status — \
-             write-result will coerce agent/result.json exit_code to null and a \
-             timeout becomes indistinguishable from a task that never ran \
-             (rules 16, 24)"
-        );
-        checked += 1;
-    }
-    assert!(
-        checked > 0,
-        "expected at least one preset defining runnerArgs"
-    );
-    eprintln!("✓ {checked} runnerArgs preset(s) record an exit status (rules 16, 24)");
-}
-
-/// Rule 14: agent execution MUST be bounded by `EVAL_TIMEOUT`. `run-agent`
-/// enforces it with `timeout -k 30 $TIMEOUT`; a preset that runs its own harness
-/// instead of `run-agent` must enforce it too. Without an inner bound the only
-/// limit left is the pod's `activeDeadlineSeconds` (timeout + deadlineGrace),
-/// which SIGKILLs the whole pod — so nothing survives to write `.exit-code`, and
-/// the recorded-status guarantee above silently stops holding at the wall clock.
-#[test]
-fn a_preset_that_replaces_the_agent_phase_bounds_its_harness() {
-    let presets = repo_root().join("containers/benchmarks/_chart/presets");
-    for entry in fs::read_dir(&presets).expect("read presets dir") {
-        let path = entry.expect("dir entry").path();
-        if path.extension().and_then(|e| e.to_str()) != Some("yaml") {
-            continue;
-        }
-        let body = fs::read_to_string(&path).expect("read preset");
-        if !body.contains("/output/agent/.exit-code") {
-            continue; // covered by the sibling test, or defers to run-agent
-        }
-        let name = path.file_stem().unwrap().to_string_lossy().to_string();
-        assert!(
-            body.contains("timeout -k"),
-            "preset {name}.yaml records its own exit status but never bounds the \
-             harness with `timeout -k … $TIMEOUT` (rule 14) — the pod's \
-             activeDeadlineSeconds SIGKILL would then be the only limit, and it \
-             leaves no shell alive to record 124"
-        );
-    }
 }
 
 /// A combo job that rebinds `TAG` (the per-task one does, to `$TAG-$ARCH`, so

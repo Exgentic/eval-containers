@@ -1,0 +1,18 @@
+# `runner` for a native-harness benchmark (benchmarks/RULES.md 12b): the agent
+# axis is the benchmark's, so image, recorded agent and task directory are
+# pinned to `native` instead of read from EVAL_AGENT. Everything else is runner.yaml's.
+services:
+  runner:
+    extends:
+      file: runner.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/${EVAL_BENCHMARK:-walle}--native:latest
+    environment:
+      EVAL_AGENT: native
+      AGENT: native
+    # Replaces runner.yaml's mount (compose merges volumes by target).
+    volumes:
+      - type: bind
+        source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/native/${EVAL_MODEL_SLUG:-no-model}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}
+        target: /output
+        bind: { create_host_path: true }

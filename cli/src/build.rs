@@ -141,6 +141,15 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
     let builder = args.builder.as_deref();
     let dry_run = args.dry_run;
 
+    // Native pairs only with native (benchmarks/RULES.md 12b): refuse before
+    // either builder bakes an eval image nothing can run.
+    if let BuildTarget::Eval {
+        benchmark, agent, ..
+    } = &args.target
+    {
+        eval_containers::benchmark::agent_for(benchmark, Some(agent))?;
+    }
+
     // `--builder oc` is the OpenShift BuildConfig backend (not a buildx
     // builder): build one artifact in-cluster with `oc start-build`. Routed
     // before the buildx path so we don't `buildx inspect` a builder named

@@ -12,7 +12,7 @@ env var.
 | Variable | Meaning | Default |
 |---|---|---|
 | `EVAL_BENCHMARK` | Which benchmark to run | — |
-| `EVAL_AGENT` | Which agent to run | — |
+| `EVAL_AGENT` | Which agent to run (`native` for a benchmark whose own harness is the agent) | — |
 | `EVAL_MODEL` | LiteLLM handle `<provider>/<model>` the gateway routes to (e.g. `openai/gpt-5.4`) — **required**, must be `<provider>/<model>` form | — |
 | `EVAL_TASK_ID` | Which task within the benchmark | `0` |
 | `EVAL_GATEWAY` | Which proxy image serves the model | `bifrost` |

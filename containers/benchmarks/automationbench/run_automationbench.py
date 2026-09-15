@@ -54,20 +54,6 @@ def resolve_task_name(task_id: int) -> str:
 
 
 def main() -> int:
-    # We bypass /usr/local/bin/run, so create the output dirs write-result
-    # expects and record a start time it would otherwise write.
-    for d in ("/output/model", "/output/agent", "/output/task"):
-        os.makedirs(d, exist_ok=True)
-    if not os.path.exists("/output/agent/.started-at"):
-        try:
-            import datetime
-
-            now = datetime.datetime.now(datetime.timezone.utc)
-            with open("/output/agent/.started-at", "w") as f:
-                f.write(now.strftime("%Y-%m-%dT%H:%M:%SZ"))
-        except OSError:
-            pass
-
     # Fail-closed baseline before anything can go wrong.
     write_reward("0")
 
@@ -77,8 +63,8 @@ def main() -> int:
     # ("http://gateway:4000/openai/v1"), which silently reinstated the very
     # bypass #558 is about: every call would skip the edge and go unrecorded
     # (.agents/edge/RULES.md rules 1, 6, 10) while the task still scored, so the
-    # run looked fine and only the missing calls.jsonl.zst gave it away. Both
-    # surfaces source /usr/local/bin/start-edge before this runs, which sets
+    # run looked fine and only the missing calls.jsonl.zst gave it away. `run`
+    # sources /usr/local/bin/start-edge before this runs, which sets
     # OPENAI_BASE_URL to the edge's own :4100 — so an unset var means the
     # bring-up did not happen and there is nothing to record through. Fail loud.
     base_url = os.environ.get("OPENAI_BASE_URL")

@@ -53,7 +53,8 @@ $DRY_RUN  && PASS+=(--dry-run)
 SUBMITTED=0
 for b in "${BENCHMARKS[@]}"; do
   if per_task "$b"; then log "skip $b (per-task: one Job per task, not a dataset sweep)"; continue; fi
-  for a in "${AGENTS[@]}"; do
+  if native "$b"; then pair=(native); else pair=("${AGENTS[@]}"); fi
+  for a in "${pair[@]}"; do
     log "→ $b × $a"
     bash "$RUN" --benchmark "$b" --agent "$a" "${PASS[@]}"
     SUBMITTED=$((SUBMITTED + 1))

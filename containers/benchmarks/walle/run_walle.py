@@ -19,7 +19,6 @@ constrained-decoding-quality question; walle's contract is schema acceptance.
 Fail-closed: any unexpected error leaves reward = 0.
 """
 
-import datetime
 import json
 import os
 import sys
@@ -174,18 +173,6 @@ def check_conforms(content: str | None, schema_obj: dict) -> bool | None:
 
 
 def main() -> int:
-    # We bypass /usr/local/bin/run, so create the output dirs write-result
-    # expects and record a start time it would otherwise write.
-    for d in ("/output/model", "/output/agent", "/output/task"):
-        os.makedirs(d, exist_ok=True)
-    if not os.path.exists("/output/agent/.started-at"):
-        try:
-            now = datetime.datetime.now(datetime.timezone.utc)
-            with open("/output/agent/.started-at", "w") as f:
-                f.write(now.strftime("%Y-%m-%dT%H:%M:%SZ"))
-        except OSError:
-            pass
-
     # Fail-closed baseline before anything can go wrong.
     write_reward("0")
 

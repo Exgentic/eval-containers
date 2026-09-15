@@ -6,7 +6,8 @@ its bespoke topology (sidecars, resources, extra manifests) lives in
 packaged chart needs no external file. Standard benchmarks have no preset —
 `.Files.Get` returns "" → empty overlay → the chart defaults apply unchanged.
 Presets only set structural keys; the per-run axes (agent/task/model/…) come
-from --set and are never in a preset, so preset-wins is safe.
+from --set and are never in a preset, so preset-wins is safe — a native-harness
+benchmark's `agent: native` is structural (benchmarks/RULES.md 12b).
 */}}
 {{- define "eval.values" -}}
 {{- $name := required "benchmark is required (--set benchmark=<x>)" .Values.benchmark -}}

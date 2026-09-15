@@ -29,7 +29,7 @@ commit: (pending)
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | egress-blocked | ? | runner on `internal` network only; the only outbound is the model call to the gateway |
-| agent-nonroot | n/a | no agent phase — the runner is model-only |
+| agent-nonroot | n/a | no agent — the native harness runs privileged in place of one (rule 12c) |
 | secrets-isolated | ? | real key on gateway; runner holds `sk-proxy` placeholder |
 | resource-limited | ? | compose runner limits: 1 CPU / 1G |
 

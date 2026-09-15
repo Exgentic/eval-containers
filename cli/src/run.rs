@@ -246,12 +246,16 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
         return Err(renamed);
     }
 
+    // `--agent`, or the surface's default; a native-harness benchmark resolves
+    // to `native` and refuses any other pairing (benchmarks/RULES.md 12b).
+    let agent = eval_containers::benchmark::agent_for(&benchmark, args.agent.as_deref())?;
+
     // Build the env var set. Every flag maps to EVAL_* per src/RULES.md rule 10.
     let mut envs: Vec<(&str, String)> = vec![
         ("EVAL_REGISTRY", registry.to_string()),
         ("EVAL_BENCHMARK", benchmark.clone()),
     ];
-    if let Some(ref v) = args.agent {
+    if let Some(ref v) = agent {
         envs.push(("EVAL_AGENT", v.clone()));
     }
     if let Some(ref v) = args.model {
@@ -318,15 +322,15 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     // other two run one task here, so this is where its directory is composed —
     // and where the run is held to having produced something.
     if matches!(args.mode, Mode::Job) {
-        return run_job(registry, &benchmark, &args, &envs);
+        return run_job(registry, &benchmark, &args, agent.as_deref());
     }
-    let run = task_dir(&args, &benchmark)?;
+    let run = task_dir(&args, &benchmark, agent.as_deref())?;
     match args.mode {
         Mode::Compose => run_compose(registry, &benchmark, &envs, &run, args.local, args.dry_run)?,
         _ => run_container(
             registry,
             &benchmark,
-            &args.agent,
+            &agent,
             &envs,
             &run,
             args.local,
@@ -358,11 +362,11 @@ struct TaskDir {
     envs: Vec<(&'static str, String)>,
 }
 
-fn task_dir(args: &RunArgs, benchmark: &str) -> Result<TaskDir, String> {
+fn task_dir(args: &RunArgs, benchmark: &str, agent: Option<&str>) -> Result<TaskDir, String> {
     let root = std::env::current_dir()
         .map_err(|e| format!("cwd: {e}"))?
         .join(args.output_dir.as_deref().unwrap_or("./output"));
-    let agent = args.agent.as_deref().unwrap_or("claude-code");
+    let agent = agent.unwrap_or("claude-code");
     let model = args.model.as_deref().unwrap_or(NO_MODEL);
     let slug = eval_containers::naming::model_slug(model);
     let run_id = segment("--run-id", &run_id(args.run_id.as_deref()))?;
@@ -680,9 +684,9 @@ fn run_job(
     registry: &str,
     benchmark: &str,
     args: &RunArgs,
-    _envs: &[(&str, String)],
+    agent: Option<&str>,
 ) -> Result<(), String> {
-    let agent = args.agent.as_deref().unwrap_or("claude-code");
+    let agent = agent.unwrap_or("claude-code");
     let task = args.task_id.as_deref().unwrap_or("0");
 
     // Chart source mirrors compose/container: `--local` renders the in-repo
@@ -890,7 +894,7 @@ mod tests {
             "/out",
         ])
         .unwrap();
-        let run = super::task_dir(&cli.run, "aime").unwrap();
+        let run = super::task_dir(&cli.run, "aime", cli.run.agent.as_deref()).unwrap();
         assert_eq!(
             run.dir,
             std::path::Path::new("/out/aime/codex/openai--gpt-5.4/r1/7")
@@ -914,13 +918,13 @@ mod tests {
             let cli = Cli::try_parse_from(["run", "aime", "--agent", "codex", "--task-id", bad])
                 .expect("parses");
             assert!(
-                super::task_dir(&cli.run, "aime").is_err(),
+                super::task_dir(&cli.run, "aime", Some("codex")).is_err(),
                 "--task-id {bad:?} was allowed to name a directory"
             );
         }
         let ok = Cli::try_parse_from(["run", "aime", "--agent", "codex", "--task-id", "sympy__1"])
             .expect("parses");
-        assert!(super::task_dir(&ok.run, "aime").is_ok());
+        assert!(super::task_dir(&ok.run, "aime", Some("codex")).is_ok());
     }
 
     // A directory is complete only with a graded result and no errored attempt.

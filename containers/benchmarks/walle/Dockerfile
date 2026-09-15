@@ -14,10 +14,11 @@
 # etc. Each task is one schema plus an `expect` verdict (accept | reject).
 #
 # Model-only, native-harness (like automationbench): there is no repo agent.
-# The runner container holds EVAL_TASK_ID + the gateway endpoint, POSTs the
-# schema as `response_format` to the gateway, observes accept (2xx) vs reject
-# (400/422), and writes the reward = 1.0 iff the observed verdict matches the
-# expected one. No LLM judge, no external services.
+# The probe is the benchmark's own harness (/harness.sh, benchmarks/RULES.md 12a):
+# it holds EVAL_TASK_ID + the gateway endpoint, POSTs the schema as
+# `response_format`, observes accept (2xx) vs reject (400/422), and writes the
+# reward = 1.0 iff the observed verdict matches the expected one. No LLM judge,
+# no external services.
 #
 # Upstream: github.com/MoonshotAI/walle  (MIT)  pinned by commit (tag v0.1.10).
 
@@ -38,6 +39,7 @@ LABEL eval.benchmark.name="walle"
 LABEL eval.benchmark.description="walle (MoonshotAI) - JSON-Schema response_format conformance probe: does the stack accept valid schemas and reject invalid ones? Stack-correctness, model-only."
 LABEL eval.benchmark.tasks="395"
 LABEL eval.benchmark.env="shared-env"
+LABEL eval.benchmark.agent="native"
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
@@ -155,7 +157,11 @@ ENV EVAL_BENCHMARK=walle
 # response_format to the gateway, and write reward = (observed verdict ==
 # expected verdict).
 COPY run_walle.py /app/run_walle.py
-RUN chmod 755 /app/run_walle.py
+RUN chmod 755 /app/run_walle.py \
+ && printf '#!/bin/bash\nexec python3 /app/run_walle.py\n' > /harness.sh && chmod +x /harness.sh
+
+RUN printf '#!/bin/bash\n/eval-materialize-task\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
+ENTRYPOINT ["/entrypoint.sh"]
 
 # The runner writes /logs/verifier/reward.txt itself; keep a fail-closed
 # baseline grader so a run that never reaches the writer still scores 0.
