@@ -1,0 +1,13 @@
+diff --git a/tasks/seismic-phase-picking/environment/Dockerfile b/tasks/seismic-phase-picking/environment/Dockerfile
+index 4845d89..4aa26e4 100644
+--- a/tasks/seismic-phase-picking/environment/Dockerfile
++++ b/tasks/seismic-phase-picking/environment/Dockerfile
+@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
+     build-essential \
+     && rm -rf /var/lib/apt/lists/*
+ 
+-RUN pip install --no-cache-dir seisbench==0.10.2 && \
++RUN pip install --no-cache-dir "setuptools<81" seisbench==0.10.2 && \
+     python - <<'PY'
+ import seisbench.models as sbm
+ 

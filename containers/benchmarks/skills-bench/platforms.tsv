@@ -1,0 +1,18 @@
+# Tasks that cannot build on an arch for a reason no base image states.
+# <task-id><TAB><comma-separated platforms>.
+#
+# Expected platforms are derived from the inputs wherever the inputs say so
+# (delivery/RULES.md 14a): build.sh reads every FROM in the task environment and
+# asks the registry what it publishes, which covers every task whose base is
+# arch-pinned or arch-limited. These two are not that — their base is multi-arch
+# and the build then fetches something that exists only for x86_64, so there is
+# nothing to derive from and the claim has to be stated:
+#
+#   multilingual-video-dubbing: torch==2.6.0+cpu — the +cpu wheel index has no
+#     arm64 build, so pip finds no candidate.
+#   python-scala-translation: downloads cs-x86_64-pc-linux, a coursier release
+#     published for x86_64 only.
+#
+# Drop a row when upstream stops fetching an arch-specific artifact.
+multilingual-video-dubbing	linux/amd64
+python-scala-translation	linux/amd64
