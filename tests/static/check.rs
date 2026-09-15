@@ -1384,6 +1384,28 @@ fn a_channel_run_publishes_the_per_task_images_that_moved() {
     );
 }
 
+/// A channel run must also judge each per-task combo's own merged `:latest`:
+/// the parent-based prune never reads it, so a pair whose per-arch tags were
+/// pushed by a run that ended before its merge kept a month-old `:latest`
+/// until a parent happened to move again (#591).
+#[test]
+fn a_channel_run_keeps_the_per_task_combos_whose_latest_lags() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  build:").next())
+        .expect("no `enumerate` job in release-images.yml");
+    assert!(
+        enumerate.contains("fleet-hash.sh combo \"$B\" \"$A\"")
+            && enumerate.contains("per-task combo freshness sweep answered"),
+        "the channel-run combo list must also keep every per-task pair whose merged \
+         :latest is not fresh — the parent prune alone leaves a lagging alias behind \
+         until a parent moves again (delivery/RULES.md:20)"
+    );
+}
+
 /// `merge` must take the per-task refs it stitches from the shards artifact —
 /// the `pertask_shards` job output carries only `[{idx}]` since #478, so reading
 /// items from it yields nothing, no per-task `:TAG` is ever stitched, and the

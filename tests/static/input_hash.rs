@@ -534,6 +534,29 @@ fn real_repo_hashes_every_target() {
         p0.0, ct0["evals/aime-t-0--claude-code-standalone"].0,
         "per-task standalone must differ from its lean variant"
     );
+    // Several ids in one call: the same rows as one call per id, in argument
+    // order, lean then standalone — a whole task list costs one pass.
+    let both = fleet_hash(&root, &["combo", "aime", "claude-code", "T-0", "T-1"]);
+    let names: Vec<&str> = both
+        .lines()
+        .map(|l| l.split('\t').next().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        [
+            "evals/aime-t-0--claude-code",
+            "evals/aime-t-0--claude-code-standalone",
+            "evals/aime-t-1--claude-code",
+            "evals/aime-t-1--claude-code-standalone",
+        ],
+        "multi-task combo rows must follow the argument order"
+    );
+    let both = rows(&both);
+    assert_eq!(both["evals/aime-t-0--claude-code"], *p0);
+    assert_eq!(
+        both["evals/aime-t-1--claude-code"],
+        ct1["evals/aime-t-1--claude-code"]
+    );
 
     // Per-task: sensitive to the task id, sharing the benchmark's components.
     let t0 = rows(&fleet_hash(

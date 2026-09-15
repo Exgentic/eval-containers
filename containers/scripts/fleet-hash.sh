@@ -17,8 +17,9 @@
 #
 # Usage:
 #   fleet-hash.sh                          # every static bake target
-#   fleet-hash.sh combo <bench> <agent> [task]  # eval + eval-standalone rows
-#                                          # (task ⇒ the per-task combo variant)
+#   fleet-hash.sh combo <bench> <agent> [task]… # eval + eval-standalone rows
+#                                          # (task ⇒ the per-task combo variant;
+#                                          # several ids ⇒ one pair of rows each)
 #   fleet-hash.sh per-task <bench> <task>… # per-task image rows (ids may
 #                                          # also arrive on stdin, one per line)
 #   fleet-hash.sh graph                    # target|context|deps — the context
@@ -206,10 +207,9 @@ graph)
   cat "$M/graph"
   ;;
 combo)
-  { [ $# -ge 3 ] && [ $# -le 4 ] && [ -n "$2" ] && [ -n "$3" ]; } \
-    || die "usage: fleet-hash.sh combo <benchmark> <agent> [task]"
-  task="${4:-}"
-  case "$task" in *[[:space:]]*) die "task id must not contain whitespace" ;; esac
+  { [ $# -ge 3 ] && [ -n "$2" ] && [ -n "$3" ]; } \
+    || die "usage: fleet-hash.sh combo <benchmark> <agent> [task]…"
+  bench="$2"; agent="$3"
   b=$(target_for_dir "containers/benchmarks/$2")
   a=$(target_for_dir "containers/agents/$3")
   gosu=$(parent_target GOSU_IMAGE)
@@ -224,23 +224,29 @@ combo)
   LC_ALL=C sort -u "$M/full/$b" "$M/full/$a" "$M/full/$gosu" "$M/full/$edge" \
     > "$M/eval.bases"
   LC_ALL=C sort -u "$M/eval.ctx" "$M/eval.bases" > "$M/eval.full"
-  # A per-task combo mixes the task id into the hash the same way per-task
-  # does, and names its rows with the release's <bench>-<tid> convention.
-  with_task() {
-    if [ -n "$task" ]; then printf '%s %s' "$1" "$task" | sha | cut -d' ' -f1
-    else printf '%s' "$1"; fi
-  }
-  eb="$2"
-  [ -z "$task" ] || eb="$2-$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')"
-  row "evals/$eb--$3" "$(with_task "$(hash_of "$M/eval.full")")" \
-    "$(hash_of "$M/eval.ctx")" "$(hash_of "$M/eval.bases")" "-"
   blobs "$REF:containers/core/standalone.Dockerfile" > "$M/sa.ctx"
   LC_ALL=C sort -u "$M/eval.full" "$M/full/$(parent_target OTEL_IMAGE)" \
     "$M/full/$(parent_target PROCESS_COMPOSE_IMAGE)" \
     "$M/full/$(parent_target MODEL_IMAGE)" > "$M/sa.bases"
   LC_ALL=C sort -u "$M/sa.ctx" "$M/sa.bases" > "$M/sa.full"
-  row "evals/$eb--$3-standalone" "$(with_task "$(hash_of "$M/sa.full")")" \
-    "$(hash_of "$M/sa.ctx")" "$(hash_of "$M/sa.bases")" "-"
+  # A per-task combo mixes the task id into the hash the same way per-task
+  # does, and names its rows with the release's <bench>-<tid> convention.
+  # Every task of one pair shares the pair's closures and differs only by the
+  # id mixed in, so a whole task list costs one pass, not one per task.
+  eh=$(hash_of "$M/eval.full"); ectx=$(hash_of "$M/eval.ctx"); ebases=$(hash_of "$M/eval.bases")
+  sh=$(hash_of "$M/sa.full"); sctx=$(hash_of "$M/sa.ctx"); sbases=$(hash_of "$M/sa.bases")
+  with_task() {  # $1=hash  $2=task ("" = the shared combo)
+    if [ -n "$2" ]; then printf '%s %s' "$1" "$2" | sha | cut -d' ' -f1
+    else printf '%s' "$1"; fi
+  }
+  emit_combo() {  # $1=task ("" = the shared combo)
+    local eb="$bench"
+    case "$1" in *[[:space:]]*) die "task id must not contain whitespace" ;; esac
+    [ -z "$1" ] || eb="$bench-$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+    row "evals/$eb--$agent" "$(with_task "$eh" "$1")" "$ectx" "$ebases" "-"
+    row "evals/$eb--$agent-standalone" "$(with_task "$sh" "$1")" "$sctx" "$sbases" "-"
+  }
+  if [ $# -eq 3 ]; then emit_combo ""; else for task in "${@:4}"; do emit_combo "$task"; done; fi
   ;;
 per-task)
   { [ $# -ge 2 ] && [ -n "$2" ]; } || die "usage: fleet-hash.sh per-task <benchmark> <task-id>… (or ids on stdin)"
