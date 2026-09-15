@@ -1466,6 +1466,8 @@ replay_test!(replay_usaco_183_openhands, "usaco", "openhands", "183");
 
 replay_test!(replay_usaco_61_claude_code, "usaco", "claude-code", "61");
 
+replay_test!(replay_walle_0_mock, "walle", "mock", "0");
+
 replay_test!(replay_webarena_0_gemini_cli, "webarena", "gemini-cli", "0");
 
 replay_test!(replay_webarena_162_codex, "webarena", "codex", "162");

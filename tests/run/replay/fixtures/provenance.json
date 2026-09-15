@@ -11,6 +11,33 @@
     "file is the place it gets paid down rather than a new convention."
   ],
   "fixtures": {
+    "walle-0-mock": {
+      "benchmark": "walle",
+      "task_id": "0",
+      "agent": "mock",
+      "agent_version": "1.0.0",
+      "model": "gpt-4.1-mini",
+      "gateway": "litellm",
+      "benchmark_data_revision": "cc1c6b7dab5496d5184677ecf4c3b95fc1bd1606",
+      "captured_at": "2026-09-14T13:17:17Z",
+      "release_tag": null,
+      "capture_method": "out-of-band (RULES.md rule 9)",
+      "platform": "linux/arm64",
+      "reward": 1,
+      "passed": true,
+      "notes": [
+        "First fixture for the walle structured-output conformance benchmark,",
+        "captured to release it (RULES.md rule 21a). Recorded end-to-end against",
+        "the mock agent driving task 0 (TestAdditionalProperties, expect=accept)",
+        "through the litellm gateway, whose model route pinned to gpt-4.1-mini",
+        "served by Azure via the internal ete-litellm LiteLLM proxy.",
+        "release_tag is null: out-of-band capture between release cycles, which",
+        "rule 9 permits; the next live fleet sweep supersedes it.",
+        "The gateway's recorded api_base pointed at an internal-only host; per",
+        "rule 4a it was scrubbed to litellm.example.invalid before commit. No",
+        "credential was present in the trace (all user_api_key_* fields empty)."
+      ]
+    },
     "deepswe-csstree-shorthand-expansion-compression-opencode": {
       "benchmark": "deepswe",
       "task_id": "csstree-shorthand-expansion-compression",
