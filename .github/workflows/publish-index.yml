@@ -34,7 +34,6 @@ jobs:
 
       - name: build one combo, current flags
         run: |
-          set -x
           build() { # $1=bench image  $2=tag  $3..=extra bake flags
             local b="$1" t="$2"; shift 2
             EVAL_BENCHMARK=probe EVAL_AGENT=codex BENCHMARK_IMAGE="$b" AGENT_IMAGE="$A" \
@@ -43,14 +42,11 @@ jobs:
               --set "*.output=type=registry,registry.insecure=true" \
               "$@" eval
           }
-          echo "### BASELINE combo 1"
-          /usr/bin/time -f "BASELINE_1 %e s" build "$B1" base1 --provenance=mode=max --sbom=true
-          echo "### BASELINE combo 2 (different benchmark, same agent)"
-          /usr/bin/time -f "BASELINE_2 %e s" build "$B2" base2 --provenance=mode=max --sbom=true
+          t0=$SECONDS; build "$B1" base1 --provenance=mode=max --sbom=true; echo "RESULT BASELINE_1 $((SECONDS-t0))s"
+          t0=$SECONDS; build "$B2" base2 --provenance=mode=max --sbom=true; echo "RESULT BASELINE_2 $((SECONDS-t0))s"
 
       - name: patch COPY --link, drop sbom, rebuild the same two
         run: |
-          set -x
           # --link makes a COPY's layer independent of the base underneath it, so
           # the identical agent/edge/gosu bytes are compressed once and then reused
           # (and cross-repo mounted on push) instead of redone per combo.
@@ -65,10 +61,8 @@ jobs:
               --set "*.output=type=registry,registry.insecure=true" \
               "$@" eval
           }
-          echo "### OPTIMISED combo 1"
-          /usr/bin/time -f "OPT_1 %e s" build "$B1" opt1 --provenance=mode=max --sbom=false
-          echo "### OPTIMISED combo 2 (should reuse combo 1's agent/edge layers)"
-          /usr/bin/time -f "OPT_2 %e s" build "$B2" opt2 --provenance=mode=max --sbom=false
+          t0=$SECONDS; build "$B1" opt1 --provenance=mode=max --sbom=false; echo "RESULT OPT_1 $((SECONDS-t0))s"
+          t0=$SECONDS; build "$B2" opt2 --provenance=mode=max --sbom=false; echo "RESULT OPT_2 $((SECONDS-t0))s"
 
       - name: prove no loss — identical contents, labels, entrypoint
         run: |
