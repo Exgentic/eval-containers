@@ -70,7 +70,7 @@ fi
 # `-` for "no pin": a leading empty field would be eaten as whitespace by read.
 while read -r pin img; do
   if [ "${pin}" != "-" ]; then
-    plats="${pin}"
+    plats="${pin}"; why="is pinned --platform=${pin}"
   else
     plats=$(docker buildx imagetools inspect "${img}" \
       --format '{{range .Manifest.Manifests}}{{.Platform.OS}}/{{.Platform.Architecture}} {{end}}' 2>/dev/null) || true
@@ -78,10 +78,11 @@ while read -r pin img; do
       --format '{{.Image.OS}}/{{.Image.Architecture}}' 2>/dev/null) || true
     # Unreadable is not absent: a registry blip must not silently drop a task.
     [ -n "${plats}" ] || { echo "[skills-bench] ${TASK}: cannot read platforms of ${img}" >&2; exit 1; }
+    why="publishes ${plats% }"
   fi
   case " ${plats} " in
     *" linux/${ARCH} "*) ;;
-    *) echo "[skills-bench] ${TASK}: ${img} has no linux/${ARCH} — not built, not failed"; exit 0 ;;
+    *) echo "[skills-bench] ${TASK}: ${img} ${why} — no linux/${ARCH}, not built, not failed"; exit 0 ;;
   esac
 done < <(awk '
   /^ARG[ \t]+[A-Za-z_][A-Za-z0-9_]*=/ {
