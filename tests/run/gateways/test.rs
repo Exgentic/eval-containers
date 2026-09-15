@@ -1062,6 +1062,9 @@ async fn otel_bifrost_env_priced_cost_on_spans() {
         .as_nanos();
     let net = format!("gw-cost-{nanos}");
 
+    // otelcol writes /output/model/traces.jsonl (output/RULES.md rule 12); in an
+    // eval the runner's mount creates model/, here the test does.
+    std::fs::create_dir_all(host_output.join("model")).expect("create model/");
     let _otel = GenericImage::new("ghcr.io/exgentic/core/otel", "latest")
         .with_wait_for(WaitFor::message_on_stderr(
             "Everything is ready. Begin running and processing data.",
