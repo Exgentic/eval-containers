@@ -59,7 +59,12 @@ shared artifact that ignores `EVAL_MODEL`. Both are pull-not-build; see
 | Variable | Meaning | Default |
 |---|---|---|
 | `EVAL_TIMEOUT` | Agent timeout in seconds | `300` |
-| `EVAL_MODEL_MAX_BUDGET` | Hard cap on model spend (USD) for this run | `1` |
+| `EVAL_MODEL_MAX_BUDGET` | Hard cap on model spend (USD) for this run; needs a gateway to enforce it | `1` |
+| `EVAL_WITH_GATEWAY` | Container mode: start the bundle's in-process gateway | unset |
+| `EVAL_WITH_OTEL` | Container mode: start the bundle's in-process collector | unset |
+| `EVAL_UPSTREAM_API_BASE` | The provider the edge forwards to when no gateway is in the path | `$OPENAI_API_BASE` |
+| `EVAL_UPSTREAM_API_KEY` | Credential for that provider; only the edge process ever sees it | `$OPENAI_API_KEY` |
+| `EVAL_GATEWAY_URL` | Set by the orchestrator when a gateway IS in the path; the edge forwards there instead | unset |
 | `EVAL_AGENT_REASONING_EFFORT` | Reasoning effort the agent applies (`low`/`medium`/`high`; some also accept `xhigh`/`max`) | agent default |
 | `EVAL_REGISTRY` | Registry to pull from | `ghcr.io/exgentic` |
 

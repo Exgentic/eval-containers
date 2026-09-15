@@ -41,10 +41,11 @@ struct EvalResult {
     task: Option<TaskResult>,
     agent: Option<AgentResult>,
     model: Option<ModelResult>,
-    /// Whether OTel traces were captured with at least one LLM (gen_ai) span —
-    /// a health signal independent of the task result (empty traces on a
-    /// "passed" run usually means the gateway/collector wiring is broken).
-    traces_ok: bool,
+    /// Whether the edge recorded at least one call — a health signal
+    /// independent of the task result. An empty record on a "passed" run means
+    /// the agent never reached a model, or the edge bring-up was skipped, and
+    /// the score is measuring something other than the model.
+    calls_ok: bool,
 }
 
 pub fn execute(args: ReportArgs) -> Result<(), String> {
@@ -106,16 +107,22 @@ fn load_eval(dir: &Path) -> EvalResult {
         task: read_json(dir.join("task/result.json")),
         agent: read_json(dir.join("agent/result.json")),
         model: read_json(dir.join("model/result.json")),
-        traces_ok: has_gen_ai_traces(dir),
+        calls_ok: has_calls(dir),
     }
 }
 
-/// True if the task dir's traces hold at least one gen_ai (LLM) span.
-/// Substring check — no full OTel parse needed.
-fn has_gen_ai_traces(dir: &Path) -> bool {
-    fs::read_to_string(dir.join("model/traces.jsonl"))
-        .map(|c| c.contains("gen_ai"))
-        .unwrap_or(false)
+/// True if the edge wrote a non-empty call record for this task (edge rules
+/// 6-10). Size only — the record is zstd-framed and can be hundreds of MB, and
+/// "did anything cross the edge" needs no parse. A zero-byte file means the edge
+/// started and recorded nothing, which is the same signal as no file at all.
+fn has_calls(dir: &Path) -> bool {
+    ["model/calls.jsonl.zst", "model/calls.jsonl"]
+        .iter()
+        .any(|n| {
+            fs::metadata(dir.join(n))
+                .map(|m| m.len() > 0)
+                .unwrap_or(false)
+        })
 }
 
 /// How the attempt in this directory ended, from the runner's own record.
@@ -147,7 +154,7 @@ struct Totals {
     reward: f64,
     tokens: u64,
     cost: f64,
-    no_traces: usize,
+    no_calls: usize,
 }
 
 fn totals(results: &[EvalResult]) -> Totals {
@@ -155,8 +162,8 @@ fn totals(results: &[EvalResult]) -> Totals {
     for r in results {
         t.tokens += r.model.as_ref().and_then(|m| m.total_tokens).unwrap_or(0);
         t.cost += r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
-        if !r.traces_ok {
-            t.no_traces += 1;
+        if !r.calls_ok {
+            t.no_calls += 1;
         }
         if failure(r).is_some() {
             t.failed += 1;
@@ -173,7 +180,7 @@ fn totals(results: &[EvalResult]) -> Totals {
 
 fn print_table(results: &[EvalResult]) {
     println!(
-        "{:<20} {:<30} {:<15} {:<30} {:<8} {:<6} {:<10} {:<10} TRACES",
+        "{:<20} {:<30} {:<15} {:<30} {:<8} {:<6} {:<10} {:<10} CALLS",
         "BENCHMARK", "TASK", "AGENT", "MODEL", "REWARD", "PASS", "TOKENS", "COST"
     );
     println!("{}", "-".repeat(140));
@@ -212,9 +219,9 @@ fn print_table(results: &[EvalResult]) {
             (None, false) => "FAIL",
         };
         let cost_str = format!("${cost:.3}");
-        let traces_str = if r.traces_ok { "OK" } else { "NONE" };
+        let calls_str = if r.calls_ok { "OK" } else { "NONE" };
         println!(
-            "{benchmark:<20} {task_id:<30} {agent_name:<15} {model_name:<30} {reward:<8.2} {pass_str:<6} {tokens:<10} {cost_str:<10} {traces_str}"
+            "{benchmark:<20} {task_id:<30} {agent_name:<15} {model_name:<30} {reward:<8.2} {pass_str:<6} {tokens:<10} {cost_str:<10} {calls_str}"
         );
     }
 
@@ -227,10 +234,10 @@ fn print_table(results: &[EvalResult]) {
     } else {
         0.0
     };
-    let traces_summary = if t.no_traces == 0 {
+    let calls_summary = if t.no_calls == 0 {
         "all OK".to_string()
     } else {
-        format!("{} NONE", t.no_traces)
+        format!("{} NONE", t.no_calls)
     };
     println!(
         "{:<20} {:<30} {:<15} {:<30} {:<8.2} {}/{:<4} {:<10} {:<10} {}",
@@ -243,12 +250,12 @@ fn print_table(results: &[EvalResult]) {
         t.scored,
         t.tokens,
         format!("${:.3}", t.cost),
-        traces_summary
+        calls_summary
     );
 }
 
 fn print_csv(results: &[EvalResult]) {
-    println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd,traces_ok,error");
+    println!("benchmark,task_id,agent,model,reward,passed,tokens,cost_usd,calls_ok,error");
     for r in results {
         let task_id = r
             .task
@@ -276,8 +283,8 @@ fn print_csv(results: &[EvalResult]) {
         let cost = r.model.as_ref().and_then(|m| m.cost_usd).unwrap_or(0.0);
 
         println!(
-            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost},{traces_ok},{error}",
-            traces_ok = r.traces_ok,
+            "{benchmark},{task_id},{agent_name},{model_name},{reward},{passed},{tokens},{cost},{calls_ok},{error}",
+            calls_ok = r.calls_ok,
             error = failure(r).unwrap_or("")
         );
     }
@@ -315,8 +322,8 @@ fn print_json(results: &[EvalResult]) {
         let comma = if i < results.len() - 1 { "," } else { "" };
         let error = failure(r).map_or("null".to_string(), |e| format!("{e:?}"));
         println!(
-            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost},\"traces_ok\":{traces_ok},\"error\":{error}}}{comma}",
-            traces_ok = r.traces_ok
+            "  {{\"benchmark\":\"{benchmark}\",\"task_id\":\"{task_id}\",\"agent\":\"{agent_name}\",\"model\":\"{model_name}\",\"reward\":{reward},\"passed\":{passed},\"tokens\":{tokens},\"cost_usd\":{cost},\"calls_ok\":{calls_ok},\"error\":{error}}}{comma}",
+            calls_ok = r.calls_ok
         );
     }
     println!("]");
@@ -383,7 +390,7 @@ mod tests {
                 reward: 1.0,
                 tokens: 0,
                 cost: 0.0,
-                no_traces: 3,
+                no_calls: 3,
             }
         );
         let _ = fs::remove_dir_all(&root);

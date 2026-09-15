@@ -12,11 +12,18 @@
 #
 #     . /usr/local/bin/start-edge || exit 1
 #
-# The edge sits between the agent and the gateway: it pins the model to
-# EVAL_MODEL and records every call verbatim, including the tool definitions the
-# gateway's own traces summarise away (.agents/edge/RULES.md rules 1, 6, 10).
+# The edge is the only proxy a run needs: it pins the model to EVAL_MODEL and
+# records every call verbatim, including the tool definitions a gateway's traces
+# summarise away (.agents/edge/RULES.md rules 1, 6, 10). By default it forwards
+# straight to the provider; a gateway behind it is opt-in, for the cross-wire
+# translation only a gateway does (.agents/gateways/RULES.md rules 8-11). Which
+# of the two is in play is resolved in ONE place, /usr/local/bin/run-edge, which
+# the single-container bundle runs as its own process.
+#
 # One static binary, so it needs no supervisor — start it, wait for its own
-# probe, and point the agent at it instead of at the gateway.
+# probe, and point the agent at it. When a gateway was asked for, the edge's
+# readiness already includes the gateway answering (it waits for its upstream
+# before it serves), which is the gate compose's `depends_on` used to hold.
 #
 # This lives in its own file because the edge must come up on EVERY path that
 # reaches a model, and /usr/local/bin/run is not the only one: benchmarks whose
@@ -27,8 +34,7 @@
 # every task on every agent. A bespoke harness sources this instead of
 # reimplementing the bring-up.
 #
-# Reads:  ANTHROPIC_BASE_URL (the gateway, as the orchestrator set it),
-#         OPENAI_API_BASE    (the gateway, preferred when set)
+# Reads:  EVAL_GATEWAY_URL / EVAL_UPSTREAM_API_BASE + _KEY (see run-edge)
 # Writes: /output/model/edge.log, /output/model/calls.jsonl.zst
 # Exports: ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GOOGLE_GEMINI_BASE_URL → :4100
 #
@@ -42,23 +48,18 @@ _start_edge_health() { /opt/edge/start health >/dev/null 2>&1; }
 
 if ! _start_edge_health; then
   mkdir -p /output/model
-  # Scoped to the edge's own process: OPENAI_API_BASE is the *gateway's*
-  # upstream everywhere else, and exporting it here would repoint whatever else
-  # reads it.
-  _start_edge_upstream="${OPENAI_API_BASE:-$(printf '%s' "${ANTHROPIC_BASE_URL:-}" | sed 's#/anthropic$##')}"
-  if [ -z "$_start_edge_upstream" ]; then
-    echo "start-edge: neither OPENAI_API_BASE nor ANTHROPIC_BASE_URL is set — no gateway to forward to" >&2
-    return 1 2>/dev/null || exit 1
-  fi
-  # .zst: the edge holds one encoder open for the run, so it sees that each
-  # request repeats the previous conversation — ~138x on a real trajectory,
-  # against ~7x for anything that compresses each record alone.
-  OPENAI_API_BASE="$_start_edge_upstream" EDGE_UPSTREAM=gateway \
-    OUT=/output/model/calls.jsonl.zst \
-    /opt/edge/start >> /output/model/edge.log 2>&1 &
+  /usr/local/bin/run-edge >> /output/model/edge.log 2>&1 &
+  _start_edge_pid=$!
+  # Long enough to cover a gateway boot when one was asked for: the edge waits
+  # for its upstream before it serves (EDGE_UPSTREAM_WAIT_SECONDS, default 120),
+  # and this probe must outlast that wait rather than declare failure during it.
   _start_edge_ready=0
-  for _ in $(seq 1 60); do
+  _start_edge_tries=$(( ${EDGE_UPSTREAM_WAIT_SECONDS:-120} * 2 + 60 ))
+  for _ in $(seq 1 "$_start_edge_tries"); do
     if _start_edge_health; then _start_edge_ready=1; break; fi
+    # The bring-up died (bad upstream, unreachable gateway): stop waiting out
+    # the full window for a process that is already gone.
+    if ! kill -0 "$_start_edge_pid" 2>/dev/null; then break; fi
     sleep 0.5
   done
   if [ "$_start_edge_ready" != 1 ]; then
@@ -66,7 +67,7 @@ if ! _start_edge_health; then
     tail -5 /output/model/edge.log >&2 || true
     return 1 2>/dev/null || exit 1
   fi
-  unset _start_edge_upstream _start_edge_ready
+  unset _start_edge_ready _start_edge_tries _start_edge_pid
 fi
 
 # Rule 13's protocol-namespaced prefixes, on the edge's port rather than the

@@ -6,14 +6,14 @@
 # env, and Docker Compose forbids overriding a service that arrived through
 # `include:` ("services.runner conflicts with imported resource"). `extends:`
 # is the merge-friendly path — the benchmark file declares its own `runner`
-# and grafts this template onto it. The rest of the shared topology
-# (`otelcol`, `gateway`, networks) still comes from `services.yaml`
-# via `include:`, since benchmarks never override those.
+# and grafts this template onto it. The networks still come from
+# `services.yaml` via `include:`, since benchmarks never override those.
 #
-# IMPORTANT: `extends:` does NOT carry `depends_on` (Compose spec). Each
-# benchmark `compose.yaml` therefore redeclares
-# `depends_on: {gateway: {condition: service_healthy}}` (plus any sidecar it
-# adds) so the runner still waits for a healthy gateway.
+# IMPORTANT: `extends:` does NOT carry `depends_on` (Compose spec). A benchmark
+# `compose.yaml` therefore redeclares whatever its own sidecars need — but never
+# the gateway or the collector, which are absent from a default project
+# (compose/RULES.md 8a). The opt-in overlays add both the service and the
+# runner's `depends_on` for it.
 services:
   runner:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/${EVAL_BENCHMARK:-aime}--${EVAL_AGENT:-claude-code}:latest
@@ -38,9 +38,14 @@ services:
       # human-readable label, which write-result prefers, so result.json is
       # unchanged.
       EVAL_MODEL: ${EVAL_MODEL}
-      # The edge's upstream: the gateway service, unchanged. The credential
-      # stays on the gateway — the runner only ever holds the placeholder.
-      OPENAI_API_BASE: http://gateway:4000
+      # The edge's upstream: the provider itself, and the credential for it.
+      # Only the edge process ever sees the credential — run-edge passes it as a
+      # scoped assignment, and the agent runs under its own uid with a scrubbed
+      # env (`gosu agent env -i`), so it can neither inherit nor read it (edge
+      # rule 14). Layering compose/gateway.yaml sets EVAL_GATEWAY_URL instead
+      # and the credential stays on the gateway, as before.
+      EVAL_UPSTREAM_API_BASE: ${OPENAI_API_BASE:?}
+      EVAL_UPSTREAM_API_KEY: ${OPENAI_API_KEY:?}
       EVAL_TASK_ID: ${EVAL_TASK_ID:-0}
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-300}
       # EVAL_MODEL_SLUG names the model level: the CLI sets it, and a handle
@@ -63,14 +68,18 @@ services:
       MODEL: ${EVAL_GATEWAY_LABEL:-eval-model}
       TASK_ID: ${EVAL_TASK_ID:-0}
       TIMEOUT: ${EVAL_TIMEOUT:-300}
-      ANTHROPIC_BASE_URL: http://gateway:4000/anthropic
-      OPENAI_BASE_URL: http://gateway:4000/openai/v1
-      GOOGLE_GEMINI_BASE_URL: http://gateway:4000/genai
+      # The agent talks to the edge, which start-edge brings up on 4100 inside
+      # this container and re-exports these three to point at. They are set here
+      # so `run` can tell lean mode from the single-container bundle, and so a
+      # harness that reads them before sourcing start-edge sees the edge, never
+      # a gateway that may not exist.
+      ANTHROPIC_BASE_URL: http://127.0.0.1:4100/anthropic
+      OPENAI_BASE_URL: http://127.0.0.1:4100/openai/v1
+      GOOGLE_GEMINI_BASE_URL: http://127.0.0.1:4100/genai
       GEMINI_API_KEY: sk-proxy
       OPENAI_API_KEY: sk-proxy
       ANTHROPIC_API_KEY: sk-proxy
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otelcol:4318
-    # Same task directory as otelcol's mount in services.yaml (rule 11).
+    # The task directory (rule 11); the otel overlay mounts its model/ half.
     volumes:
       - type: bind
         source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-no-model}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}

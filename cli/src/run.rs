@@ -84,8 +84,23 @@ pub struct RunArgs {
     /// Gateway image that serves the model: a generic proxy (`bifrost`,
     /// `litellm`, `portkey`) or a pinned per-model image (maps to
     /// $EVAL_GATEWAY; chart value `gatewayImage`). Default: `bifrost`.
+    /// Naming one implies --with-gateway.
     #[arg(long)]
     gateway: Option<String>,
+
+    /// Put a gateway between the edge and the provider. Off by default: the
+    /// edge forwards to the provider and records every call, which is what an
+    /// eval needs. Ask for one when the agent's wire differs from the
+    /// upstream's — translation is the thing only a gateway does
+    /// (gateways/RULES.md rules 8-11).
+    #[arg(long)]
+    with_gateway: bool,
+
+    /// Run an OpenTelemetry collector beside the gateway and write its spans to
+    /// model/traces.jsonl. Off by default, and nothing in the framework reads
+    /// them — the edge's model/calls.jsonl.zst is the record of a call.
+    #[arg(long)]
+    with_otel: bool,
 
     /// Agent reasoning effort, e.g. `high` (maps to $EVAL_AGENT_REASONING_EFFORT)
     #[arg(long)]
@@ -287,7 +302,19 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if args.force {
         envs.push(("EVAL_FORCE", "1".into()));
     }
-
+    // Naming a gateway image is asking for a gateway; the two would otherwise be
+    // a trap — `--gateway litellm` with no gateway running looks honoured and
+    // changes nothing (gateways/RULES.md rule 22).
+    let with_gateway = args.with_gateway || args.gateway.is_some();
+    // A cap is enforced by a proxy, and without one there is nothing to enforce
+    // it (models/RULES.md 16a). The chart refuses the same pairing.
+    if args.max_budget.is_some() && !with_gateway {
+        return Err(
+            "--max-budget needs a gateway to enforce it: add --with-gateway, or \
+             drop --max-budget and run uncapped (models/RULES.md rule 16a)"
+                .into(),
+        );
+    }
     // Job-mode-only flags. Silently ignoring one is worse than refusing it: a
     // `--dataset` that did nothing would run a single task and look like a
     // dataset run in every log line.
@@ -306,12 +333,23 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if matches!(args.mode, Mode::Container)
         && (args.gateway.is_some() || args.gateway_tag.is_some())
     {
+        // --with-gateway alone is fine here: it starts the gateway the bundle
+        // already baked. Only CHOOSING a different one is a build-time axis.
         return Err(
             "--gateway/--gateway-tag do not apply to `--mode container`: the \
                     standalone bundle runs its gateway in-process, baked at build time \
                     (`build eval <benchmark> --agent <a> --gateway <name> --standalone`)"
                 .into(),
         );
+    }
+    if matches!(args.mode, Mode::Container) {
+        // The bundle ships both and starts what it is told to (runner/run).
+        if with_gateway {
+            envs.push(("EVAL_WITH_GATEWAY", "1".into()));
+        }
+        if args.with_otel {
+            envs.push(("EVAL_WITH_OTEL", "1".into()));
+        }
     }
 
     // Job hands the results path to the chart, which composes it per pod. The
@@ -322,7 +360,15 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     let run = task_dir(&args, &benchmark)?;
     match args.mode {
-        Mode::Compose => run_compose(registry, &benchmark, &envs, &run, args.local, args.dry_run)?,
+        Mode::Compose => run_compose(
+            registry,
+            &benchmark,
+            &envs,
+            &run,
+            args.local,
+            args.dry_run,
+            &overlays(with_gateway, args.with_otel)?,
+        )?,
         _ => run_container(
             registry,
             &benchmark,
@@ -399,6 +445,37 @@ fn check_task_dir(dir: &Path) -> Result<(), String> {
     ))
 }
 
+/// The opt-in compose overlays for this run, in layering order.
+///
+/// Each overlay carries a service AND the runner wiring that service needs, so
+/// one `-f` is the whole opt-in (compose/RULES.md 8a). They live in the repo, so
+/// a run outside a checkout — the published `oci://` stack — has to layer them
+/// itself; saying so beats a compose error about a file that isn't there.
+fn overlays(with_gateway: bool, with_otel: bool) -> Result<Vec<String>, String> {
+    let mut out = Vec::new();
+    for (asked, file, flag) in [
+        (
+            with_gateway,
+            "containers/compose/gateway.yaml",
+            "--with-gateway",
+        ),
+        (with_otel, "containers/compose/otel.yaml", "--with-otel"),
+    ] {
+        if !asked {
+            continue;
+        }
+        if !std::path::Path::new(file).exists() {
+            return Err(format!(
+                "{flag} needs {file}, which is not here — run from a checkout of \
+                 eval-containers, or layer the overlay yourself: \
+                 `docker compose -f <stack> -f {file} up`"
+            ));
+        }
+        out.push(file.to_string());
+    }
+    Ok(out)
+}
+
 /// `--mode compose` → docker compose -f compose.yaml up
 fn run_compose(
     registry: &str,
@@ -407,6 +484,7 @@ fn run_compose(
     run: &TaskDir,
     local: bool,
     dry_run: bool,
+    overlays: &[String],
 ) -> Result<(), String> {
     // The compose files interpolate the task directory from these; they are
     // not container env (EVAL_OUTPUT_DIR inside a container would mean
@@ -423,14 +501,24 @@ fn run_compose(
         .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<_>>()
         .join(" ");
-    eprintln!("$ {env_str} docker compose -f {compose_ref} up -y --abort-on-container-exit");
+    let overlay_str = overlays
+        .iter()
+        .map(|f| format!(" -f {f}"))
+        .collect::<String>();
+    eprintln!(
+        "$ {env_str} docker compose -f {compose_ref}{overlay_str} up -y --abort-on-container-exit"
+    );
     if dry_run {
         // For compose, dry-run means show the resolved manifest (which
         // includes all `${EVAL_*:-default}` interpolations) and stop.
         // `docker compose config` is the canonical render command.
         eprintln!("(--dry-run: showing resolved compose config, not running)");
         let mut cmd = Command::new("docker");
-        cmd.arg("compose").arg("-f").arg(&compose_ref).arg("config");
+        cmd.arg("compose").arg("-f").arg(&compose_ref);
+        for f in overlays {
+            cmd.arg("-f").arg(f);
+        }
+        cmd.arg("config");
         for (k, v) in envs {
             cmd.env(k, v);
         }
@@ -445,6 +533,9 @@ fn run_compose(
 
     let mut cmd = Command::new("docker");
     cmd.arg("compose").arg("-f").arg(&compose_ref);
+    for f in overlays {
+        cmd.arg("-f").arg(f);
+    }
     // `-y`: a published `oci://` stack prompts to confirm (and echoes) the
     // variables it injects; assume yes so the run stays non-interactive.
     cmd.arg("up").arg("-y").arg("--abort-on-container-exit");
@@ -761,6 +852,13 @@ fn run_job(
     }
     if let Some(g) = &args.gateway {
         sets.push(format!("gatewayImage={g}"));
+    }
+    // Naming a gateway image is asking for a gateway (see the dispatch above).
+    if args.with_gateway || args.gateway.is_some() {
+        sets.push("gateway=true".into());
+    }
+    if args.with_otel {
+        sets.push("otel=true".into());
     }
     if let Some(e) = &args.agent_reasoning_effort {
         sets.push(format!("reasoningEffort={e}"));

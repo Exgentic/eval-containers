@@ -1,24 +1,24 @@
-# Full-stack replay overlay: add the recorded inference engine as the gateway's
-# UPSTREAM, so the real gateway + otelcol run on top of it (ReplayMode::FullStack
-# in test.rs). Layered as a plain `-f` overlay on the benchmark's own
-# compose.yaml — it only ADDS a service, never overrides an imported one, so no
-# flatten is needed (unlike gateway-mode, which swaps the imported gateway and
-# must flatten first).
+# Full-stack replay overlay: add the recorded inference engine as the GATEWAY's
+# upstream, so the real gateway + otelcol run on top of it (ReplayMode::FullStack
+# in test.rs). Layered on top of the benchmark's compose.yaml AND the two opt-in
+# overlays (compose/gateway.yaml, compose/otel.yaml) — this file only points the
+# gateway at the replay engine; the overlays are what bring the gateway and the
+# collector into the project at all (compose/RULES.md 8a).
 #
 # The gateway is pointed at this service purely via the `OPENAI_API_BASE` env the
-# test sets (services.yaml already reads `${OPENAI_API_BASE:?}`) — no gateway
+# test sets (gateway.yaml already reads `${OPENAI_API_BASE:?}`) — no gateway
 # override here. The one per-run value is REPLAY_FIXTURE (the recorded
 # trajectory); results land where every run's do (runner.yaml).
 services:
   upstream:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/replay:latest
     # The real gateway enforces the streaming contract, so the upstream must
-    # stream SSE when asked. Lean (replay in the gateway slot) does NOT set this
-    # — it keeps the non-stream replies that path was verified against.
+    # stream SSE when asked. Lean (replay as the edge's provider) does NOT set
+    # this — it keeps the non-stream replies that path was verified against.
     environment:
       REPLAY_SSE: "1"
     # The distroless replay image has no shell; probe via the binary's own mode
-    # (services.yaml's gateway uses /opt/gateway/health, a script this image lacks).
+    # (gateway.yaml's gateway uses /opt/gateway/health, a script this image lacks).
     healthcheck:
       test: ["CMD", "/opt/gateway/server", "health"]
       interval: 1s

@@ -2,7 +2,8 @@
 
 *Reference · for operators · derives from [`containers/benchmarks/_chart/values.yaml`](../../containers/benchmarks/_chart/values.yaml). That file is authoritative — these are its fields with defaults at the time of writing.*
 
-The shared chart `containers/benchmarks/_chart` renders the otelcol + gateway + runner Job.
+The shared chart `containers/benchmarks/_chart` renders the runner Job; `gateway`
+and `otel` add the sidecars of those names.
 The benchmark is named via `--set benchmark=<x>` (required); a benchmark with
 bespoke topology overrides what differs through an optional `presets/<x>.yaml`
 in the chart. Per-run axes arrive via `--set` (or the CLI). See
@@ -21,14 +22,16 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `agent` | `claude-code` | `--agent` |
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
-| `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
-| `gatewayImage` | `bifrost` | `--gateway` — the proxy backend (`bifrost` / `litellm` / `portkey`, or a pinned per-model image) |
+| `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the edge pins every call to (the runner's clean label is derived from it) |
+| `gateway` | `false` | `--with-gateway` (or naming one with `--gateway`) — add a gateway between the edge and the provider, for cross-wire translation |
+| `otel` | `false` | `--with-otel` — add the collector sidecar; nothing in the framework reads its spans |
+| `gatewayImage` | `bifrost` | `--gateway` — which proxy backend, when `gateway` is on (`bifrost` / `litellm` / `portkey`, or a pinned per-model image) |
 | `gatewayTag` | `latest` | `--gateway-tag` |
 | `runnerTag` | `latest` | `--agent-tag` / `--benchmark-tag` |
 | `benchmarkVersion` | `""` | `--benchmark-version` |
 | `agentVersion` | `""` | `--agent-version` |
 | `litellmVersion` | `""` | `--litellm-version` |
-| `maxBudget` | `""` | `--max-budget` |
+| `maxBudget` | `""` | `--max-budget` — needs `gateway=true`; a cap with no proxy to enforce it is refused |
 | `reasoningEffort` | `""` | `--agent-reasoning-effort` |
 
 ## Knobs a benchmark may override

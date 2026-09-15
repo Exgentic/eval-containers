@@ -99,6 +99,10 @@ var (
 	maxRequest = envInt("EDGE_MAX_REQUEST_BYTES", 64<<20)
 	// Transport failures are retried only before any byte reaches the agent.
 	maxRetries = envInt("EDGE_MAX_RETRIES", 2)
+	// Seconds to wait for a gateway upstream to answer before serving. Only a
+	// gateway is waited for: a provider is somebody else's running service, and
+	// a gateway is a container this run just started. 0 disables the wait.
+	upstreamWait = envInt("EDGE_UPSTREAM_WAIT_SECONDS", 120)
 )
 
 func envOr(k, d string) string {
@@ -385,6 +389,45 @@ func forward(r *http.Request, path, wire string, body []byte) (*http.Response, i
 	return nil, maxRetries, lastErr
 }
 
+// awaitUpstream blocks until the gateway behind the edge answers, so that the
+// edge's own readiness means the whole path is ready.
+//
+// This is the gate compose's `depends_on: {gateway: service_healthy}` used to
+// be. It moved here because a gateway is opt-in (gateways rules 10, 11) and
+// Compose refuses a project whose active service depends on a service in an
+// unselected profile — so the 107 benchmark files cannot carry the edge, and
+// the component that needs the gateway waits for it instead, once, for every
+// mode. k8s gates natively (the sidecar's startupProbe), so there the first
+// probe already succeeds.
+//
+// Any HTTP answer counts, 4xx and 5xx included: this asks whether something is
+// listening, not whether it likes the request. An unreachable gateway is fatal
+// rather than slow — every call would fail, and failing at boot names the cause
+// once instead of once per call (gateways rule 22).
+func awaitUpstream(deadline time.Duration) error {
+	if deadline <= 0 {
+		return nil
+	}
+	start := time.Now()
+	probe := &http.Client{Timeout: 2 * time.Second}
+	for attempt := 0; ; attempt++ {
+		resp, err := probe.Get(base + "/health")
+		if err == nil {
+			resp.Body.Close()
+			return nil
+		}
+		if time.Since(start) >= deadline {
+			return errors.New("upstream " + base + " did not answer within " +
+				deadline.String() + ": " + err.Error())
+		}
+		if attempt == 0 || attempt%10 == 0 {
+			log.Printf("edge: waiting for upstream %s (%s elapsed)", base,
+				time.Since(start).Truncate(time.Second))
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // probeHealth is the readiness probe's exit code: 0 when the edge answers on
 // its own port, 1 otherwise.
 func probeHealth(addr string) int {
@@ -425,6 +468,11 @@ func main() {
 
 	if err := configError(); err != nil {
 		log.Fatal(err)
+	}
+	if upstreamIsGateway {
+		if err := awaitUpstream(time.Duration(upstreamWait) * time.Second); err != nil {
+			log.Fatal(err)
+		}
 	}
 	http.HandleFunc("/", handle)
 	log.Printf("edge recording to %s, upstream %s", out, base)

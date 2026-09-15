@@ -1,19 +1,26 @@
-# Single-container pipeline. Six processes:
-#   otelcol → gateway → edge → agent → verifier → result.
+# Single-container pipeline. Four processes by default:
+#   edge → agent → verifier → result.
+#
+# `gateway` and `otelcol` are defined here too but are NOT started unless asked
+# for: /usr/local/bin/run names the units to bring up, adding them when
+# EVAL_WITH_GATEWAY / EVAL_WITH_OTEL are set (gateways/RULES.md 10-11). Nothing
+# in the default path depends on either, so naming a subset is enough — a
+# dependency on an unstarted process would fail the run, which is the same trap
+# Compose profiles set and the reason no benchmark file may declare one.
 #
 # This is the SINGLE-CONTAINER mode only — the in-process orchestrator for the
-# -standalone bundle, where otelcol + gateway run in-process alongside the eval.
+# -standalone bundle, where the whole pipeline runs inside one container.
 # It ships ONLY in core/standalone.Dockerfile; the lean eval base has neither
-# process-compose nor this file. In compose / k8s, otelcol + gateway are sibling
-# containers/pods the orchestrator started, so /usr/local/bin/run runs the
-# agent → verifier → result sequence directly there — no in-container supervisor.
+# process-compose nor this file. In compose / k8s the same units are separate
+# services/pods, so /usr/local/bin/run runs the agent → verifier → result
+# sequence directly there — no in-container supervisor.
 #
 # URL contract (resolved by /usr/local/bin/run BEFORE process-compose starts, so
 # plain $VAR refs in commands work uniformly):
 #   ANTHROPIC_BASE_URL  http://127.0.0.1:4000/anthropic
 #   OPENAI_BASE_URL     http://127.0.0.1:4000/openai/v1
 #
-# The compose / k8s surfaces mirror the same five units across separate
+# The compose / k8s surfaces mirror the same units across separate
 # services/containers — compose/services.yaml and benchmarks/_chart — with the
 # same dependency edges: command:→image:, readiness_probe:→healthcheck:/probe,
 # 127.0.0.1→service-name DNS / Pod loopback.
@@ -55,21 +62,16 @@ processes:
       restart: "no"
     log_location: /output/model/gateway.log
 
-  # The edge fronts the gateway: the agent talks to 4100, the edge forwards to
-  # the gateway on 4000 and records every call (.agents/edge/RULES.md). Same
-  # shape as compose, where /usr/local/bin/run starts it directly.
+  # The agent talks to 4100 and the edge records every call
+  # (.agents/edge/RULES.md). Its upstream is resolved by run-edge — the provider
+  # by default, the in-process gateway when one was asked for — which is the
+  # same script the compose/k8s path backgrounds, so both modes resolve it once.
+  #
+  # No depends_on gateway: the gateway may not be running at all, and when it is
+  # the edge waits for it itself before reporting ready (EDGE_UPSTREAM_WAIT_
+  # SECONDS), so this readiness probe still covers the whole path.
   edge:
-    command: /opt/edge/start
-    environment:
-      # Its own upstream is the in-process gateway. Set here, on this process
-      # only — the gateway reads OPENAI_API_BASE for the REAL upstream.
-      - "OPENAI_API_BASE=http://127.0.0.1:4000"
-      - "EDGE_UPSTREAM=gateway"
-      # Same compressed record as the compose/k8s path (see runner/run).
-      - "OUT=/output/model/calls.jsonl.zst"
-    depends_on:
-      gateway:
-        condition: process_healthy
+    command: /usr/local/bin/run-edge
     readiness_probe:
       exec:
         command: /opt/edge/start health
@@ -86,8 +88,6 @@ processes:
     # the lean base's runner sequence so rule 7's allow-list has one home.
     command: /usr/local/bin/run-agent
     depends_on:
-      otelcol:
-        condition: process_healthy
       edge:
         condition: process_healthy
     availability:
@@ -110,10 +110,8 @@ processes:
     availability:
       restart: "no"
       # When the result writer finishes, process-compose exits — so the
-      # whole container exits cleanly. Without this, otelcol+gateway
-      # (long-running daemons) would keep the container alive forever
-      # in single-image mode. In compose/k8s modes the gateway+otelcol
-      # are disabled via the overlay file, so this still terminates
-      # correctly there.
+      # whole container exits cleanly. Without this the long-running
+      # daemons (the edge always, gateway/otelcol when asked for) would
+      # keep the container alive forever.
       exit_on_end: true
     log_location: /output/task/result-writer.log

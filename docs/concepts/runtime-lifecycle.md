@@ -103,9 +103,11 @@ always happen; the mode decides where each process lives.
 (process-compose) runs the gateway, agent, grader, and result writer as
 separate processes inside the same container.
 
-**Compose** — three containers (`otelcol`, `gateway`, `runner`). The
-gateway and telemetry collector get their own containers; the runner
-still orchestrates the agent → grade → result chain internally.
+**Compose** — one container (`runner`) by default: the edge inside it
+forwards to the provider and records every call. Layering
+`compose/gateway.yaml` or `compose/otel.yaml` adds those containers when
+a run needs them. The runner still orchestrates the agent → grade →
+result chain internally.
 
 **Kubernetes** — a Helm Job. The gateway and telemetry run as Kubernetes
 sidecars; the runner pod handles agent → grade → result, then tears down

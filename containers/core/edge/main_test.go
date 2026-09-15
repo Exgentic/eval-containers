@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -695,5 +696,87 @@ func TestZstdRecordIsReadableWhileStillBeingWritten(t *testing.T) {
 	}
 	if n != 3 {
 		t.Fatalf("recovered %d of 3 records from an unterminated stream", n)
+	}
+}
+
+// The gate compose's `depends_on: {gateway: service_healthy}` used to hold: the
+// edge does not report ready until the gateway behind it answers.
+func TestAwaitUpstreamBlocksUntilTheGatewayAnswers(t *testing.T) {
+	prev := base
+	defer func() { base = prev }()
+
+	// A listener that refuses until it is switched on, so the wait has something
+	// real to wait for rather than a sleep.
+	var live atomic.Bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if !live.Load() {
+			// A gateway that is booting closes the connection; hijack to do the
+			// same, since an HTTP status would count as "answered".
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Error("test server does not support hijacking")
+				return
+			}
+			conn, _, err := hj.Hijack()
+			if err == nil {
+				conn.Close()
+			}
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+	base = srv.URL
+
+	time.AfterFunc(300*time.Millisecond, func() { live.Store(true) })
+	start := time.Now()
+	if err := awaitUpstream(10 * time.Second); err != nil {
+		t.Fatalf("upstream came up but the wait failed: %v", err)
+	}
+	if time.Since(start) < 300*time.Millisecond {
+		t.Error("returned before the upstream was answering")
+	}
+}
+
+// A 4xx still means something is listening, which is all this asks.
+func TestAwaitUpstreamAcceptsAnErrorStatus(t *testing.T) {
+	prev := base
+	defer func() { base = prev }()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+	base = srv.URL
+
+	if err := awaitUpstream(2 * time.Second); err != nil {
+		t.Errorf("a listening upstream was rejected: %v", err)
+	}
+}
+
+// An upstream that never comes up is fatal, and says so — every call would fail,
+// and naming the cause once beats naming it per call (gateways rule 22).
+func TestAwaitUpstreamGivesUpAndNamesTheUpstream(t *testing.T) {
+	prev := base
+	defer func() { base = prev }()
+	base = "http://127.0.0.1:1"
+
+	err := awaitUpstream(300 * time.Millisecond)
+	if err == nil {
+		t.Fatal("unreachable upstream: want an error")
+	}
+	if !strings.Contains(err.Error(), base) {
+		t.Errorf("error does not name the upstream: %v", err)
+	}
+}
+
+// A provider upstream is not waited for at all: it is somebody else's running
+// service, not a container this run just started.
+func TestAwaitUpstreamIsSkippedWhenDisabled(t *testing.T) {
+	prev := base
+	defer func() { base = prev }()
+	base = "http://127.0.0.1:1"
+
+	if err := awaitUpstream(0); err != nil {
+		t.Errorf("a disabled wait must not probe: %v", err)
 	}
 }

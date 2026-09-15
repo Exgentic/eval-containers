@@ -43,7 +43,9 @@ overrides the env var.
 | `--benchmark <name>` | `EVAL_BENCHMARK` | or positional |
 | `--agent <name>` | `EVAL_AGENT` | |
 | `--model <handle>` | `EVAL_MODEL` | the `<provider>/<model>` upstream the gateway routes to |
-| `--gateway <name>` | `EVAL_GATEWAY` | which proxy serves it (`bifrost` / `litellm` / `portkey`, or a pinned per-model image); default `bifrost` |
+| `--gateway <name>` | `EVAL_GATEWAY` | which proxy, when one is used (`bifrost` / `litellm` / `portkey`, or a pinned per-model image); implies `--with-gateway` |
+| `--with-gateway` | — | put a gateway between the edge and the provider; off by default, for cross-wire translation |
+| `--with-otel` | — | run the collector and write `model/traces.jsonl`; off by default |
 | `--agent-reasoning-effort <level>` | `EVAL_AGENT_REASONING_EFFORT` | the agent applies it; e.g. `high` |
 | `--task-id <id>` | `EVAL_TASK_ID` | default `0` |
 | `--mode <compose\|container\|job>` | — | default `compose` |
@@ -54,7 +56,7 @@ overrides the env var.
 | `--agent-version <v>` | `EVAL_AGENT_VERSION` | upstream CLI version inside the image |
 | `--litellm-version <v>` | `EVAL_LITELLM_VERSION` | LiteLLM version inside the image |
 | `--timeout <secs>` | `EVAL_TIMEOUT` | default `300` |
-| `--max-budget <usd>` | `EVAL_MODEL_MAX_BUDGET` | hard spend cap; default `$1` |
+| `--max-budget <usd>` | `EVAL_MODEL_MAX_BUDGET` | hard spend cap; needs `--with-gateway` (a proxy enforces it), else refused |
 | `--output-dir <dir>` | `EVAL_OUTPUT_DIR` | output root; results at `<dir>/<benchmark>/<agent>/<model>/<run-id>/<task>/`; default `./output` (`job`: `runs`) |
 | `--run-id <id>` | `EVAL_RUN_ID` | name of the run; rerunning an id skips complete tasks and retries failed ones; default: a fresh id |
 | `--force` | `EVAL_FORCE` | rerun even a complete task, emptying its directory first |

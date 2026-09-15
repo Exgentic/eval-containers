@@ -8,6 +8,12 @@
 {{- if and ($v.perTask | default false) $v.datasetSize -}}
 {{- fail "per-task benchmarks bake one eval image per task and cannot use a dataset (Indexed) Job — run one Job per task (omit datasetSize)" -}}
 {{- end -}}
+{{- /* A cap is enforced by a proxy in the call path, and there is none unless a
+       gateway was asked for. Refusing beats running uncapped: the number was
+       given precisely so spend would stop somewhere (models/RULES.md 16a). */ -}}
+{{- if and $v.maxBudget (not $v.gateway) -}}
+{{- fail "maxBudget needs a gateway to enforce it: add --set gateway=true, or drop maxBudget and run uncapped (models/RULES.md rule 16a)" -}}
+{{- end -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -59,9 +65,10 @@ spec:
       {{- with $v.serviceAccountName }}
       serviceAccountName: {{ . }}
       {{- end }}
-      # otelcol + gateway are native sidecars (restartPolicy: Always), so k8s
-      # starts them in order and holds the runner behind both — compose's graph:
-      # otelcol started, then gateway healthy (its startupProbe), then runner.
+      # A default run has neither sidecar: the edge inside the runner forwards
+      # to the provider and records every call (gateways/RULES.md 10-11). When
+      # one IS asked for it is a native sidecar (restartPolicy: Always), so k8s
+      # holds the runner behind its startupProbe.
       initContainers:
         {{- with $v.initContainers }}
         {{- toYaml . | nindent 8 }}
@@ -76,6 +83,7 @@ spec:
             - -c
             - "until{{- range $name, $sc := $v.sidecars }}{{- if has $name $active }} nc -z {{ $name }} {{ $sc.port }} &&{{- end }}{{- end }} true; do echo 'waiting for sidecars'; sleep 2; done"
         {{- end }}
+        {{- if $v.otel }}
         - name: otelcol
           restartPolicy: Always
           image: {{ include "eval.otelImage" $v }}
@@ -92,7 +100,9 @@ spec:
             failureThreshold: 30
           volumeMounts:
             {{- include "eval.outputMount" (dict "v" $v "sub" "model") | nindent 12 }}
+        {{- end }}
 
+        {{- if $v.gateway }}
         - name: gateway
           restartPolicy: Always
           image: {{ include "eval.gatewayImage" $v }}
@@ -112,8 +122,10 @@ spec:
                 secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
             - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
             - { name: HOST,                        value: "127.0.0.1" }
+            {{- if $v.otel }}
             # shareProcessNamespace + sidecar pod model puts otelcol on localhost.
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://localhost:4318" }
+            {{- end }}
             {{- with $v.maxBudget }}
             - { name: EVAL_MODEL_MAX_BUDGET, value: {{ . | quote }} }
             {{- end }}
@@ -127,6 +139,7 @@ spec:
           volumeMounts:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+        {{- end }}
 
       containers:
         - name: runner
@@ -150,10 +163,23 @@ spec:
             - { name: EVAL_BENCHMARK,              value: {{ $v.benchmark | quote }} }
             - { name: EVAL_AGENT,                  value: {{ $v.agent | quote }} }
             # The handle the edge pins to (edge rule 2); MODEL below keeps the
-            # label for result.json. The edge's upstream is the gateway sidecar
-            # on this pod's shared loopback.
+            # label for result.json.
             - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
-            - { name: OPENAI_API_BASE,             value: "http://localhost:4000" }
+            {{- if $v.gateway }}
+            # Declared to run-edge: the edge forwards to the gateway sidecar on
+            # this pod's shared loopback, which holds the credential.
+            - { name: EVAL_GATEWAY_URL,            value: "http://localhost:4000" }
+            {{- else }}
+            # No gateway: the edge is the whole proxy path and presents the
+            # credential itself. Only the edge process sees it — the agent runs
+            # under its own uid with a scrubbed env (edge rule 14).
+            - name: EVAL_UPSTREAM_API_BASE
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
+            - name: EVAL_UPSTREAM_API_KEY
+              valueFrom:
+                secretKeyRef: { name: eval-secrets, key: OPENAI_API_KEY }
+            {{- end }}
             - { name: EVAL_TASK_ID,                value: {{ $v.task | quote }} }
             - { name: EVAL_TIMEOUT,                value: {{ $v.timeout | quote }} }
             - { name: BENCHMARK,                   value: {{ $v.benchmark | quote }} }
@@ -161,13 +187,19 @@ spec:
             - { name: MODEL,                       value: {{ include "eval.modelLabel" $v | quote }} }
             - { name: TASK_ID,                     value: {{ $v.task | quote }} }
             - { name: TIMEOUT,                     value: {{ $v.timeout | quote }} }
-            - { name: ANTHROPIC_BASE_URL,          value: "http://localhost:4000/anthropic" }
-            - { name: OPENAI_BASE_URL,             value: "http://localhost:4000/openai/v1" }
-            - { name: GOOGLE_GEMINI_BASE_URL,      value: "http://localhost:4000/genai" }
+            # The agent talks to the edge, which start-edge brings up on 4100
+            # inside this container and re-exports these three to point at. Set
+            # here so a harness reading them before the bring-up sees the edge,
+            # never a gateway that may not exist.
+            - { name: ANTHROPIC_BASE_URL,          value: "http://127.0.0.1:4100/anthropic" }
+            - { name: OPENAI_BASE_URL,             value: "http://127.0.0.1:4100/openai/v1" }
+            - { name: GOOGLE_GEMINI_BASE_URL,      value: "http://127.0.0.1:4100/genai" }
             - { name: ANTHROPIC_API_KEY,           value: "sk-proxy" }
             - { name: OPENAI_API_KEY,              value: "sk-proxy" }
             - { name: GEMINI_API_KEY,              value: "sk-proxy" }
+            {{- if $v.otel }}
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: "http://localhost:4318" }
+            {{- end }}
             {{- with $v.reasoningEffort }}
             - { name: EVAL_AGENT_REASONING_EFFORT, value: {{ . | quote }} }
             {{- end }}

@@ -10,11 +10,6 @@ services:
     extends:
       file: ../../compose/runner.yaml
       service: runner
-    depends_on:
-      otelcol:
-        condition: service_healthy
-      gateway:
-        condition: service_healthy
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/walle--${EVAL_AGENT:-claude-code}:latest
     # Model-only: source start-edge first so the recording edge (:4100) comes
     # up before any model call (#558), then run the probe directly (it needs
@@ -31,8 +26,6 @@ services:
       - '. /usr/local/bin/start-edge || exit 1; /eval-materialize-task || true; timeout -k 30 "${TIMEOUT:-300}" python3 /app/run_walle.py; printf %s "$?" > /output/agent/.exit-code; /usr/local/bin/write-result'
     environment:
       BENCHMARK: walle
-      # The probe talks to the gateway on the OpenAI-compatible surface.
-      OPENAI_BASE_URL: http://gateway:4000/openai/v1
     deploy:
       resources:
         limits:

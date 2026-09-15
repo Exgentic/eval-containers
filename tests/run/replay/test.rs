@@ -87,17 +87,26 @@ async fn replay_compose(
     // committed overlay. Both overlays layer on the benchmark's own compose.yaml
     // (the same stack the published artifact runs, sidecars and all):
     //   - Lean: `replay-lean.yaml` puts replay in the gateway slot (a stub).
-    //   - Full-stack: `replay-upstream.yaml` adds replay as the real gateway's
-    //     upstream; the gateway is pointed at it by `OPENAI_API_BASE`.
+    //   - Full-stack: the two opt-in overlays bring the gateway + collector,
+    //     then `replay-upstream.yaml` adds replay as the gateway's upstream;
+    //     the gateway is pointed at it by `OPENAI_API_BASE`.
     // A human runs the identical stack: `docker compose -f <compose> -f <overlay>`.
     let compose_file = cwd.join(format!("containers/benchmarks/{benchmark}/compose.yaml"));
     let fixture = cwd.join(format!(
         "tests/run/replay/fixtures/{benchmark}-{task_id}-{agent}.traces.jsonl"
     ));
-    let overlay = cwd.join(match mode {
-        ReplayMode::Lean => "tests/run/replay/replay-lean.yaml",
-        ReplayMode::FullStack => "tests/run/replay/replay-upstream.yaml",
-    });
+    // Lean is the DEFAULT topology (edge → provider), so it layers one file.
+    // Full-stack opts into the gateway and the collector the way any user does —
+    // by layering the two committed overlays — and then points the gateway at
+    // the replay engine (compose/RULES.md 8a).
+    let overlays: Vec<PathBuf> = match mode {
+        ReplayMode::Lean => vec![cwd.join("tests/run/replay/replay-lean.yaml")],
+        ReplayMode::FullStack => vec![
+            cwd.join("containers/compose/gateway.yaml"),
+            cwd.join("containers/compose/otel.yaml"),
+            cwd.join("tests/run/replay/replay-upstream.yaml"),
+        ],
+    };
 
     // Results land at `./output/<b>/<a>/<model>/<run-id>/<task>/` (output/RULES.md
     // rule 11). Clear the task directory unless the test is exercising a rerun,
@@ -122,10 +131,8 @@ async fn replay_compose(
     // Absolute paths: testcontainers' local client cd's into the FIRST file's
     // parent dir before running `docker compose`, so relative `-f` paths would
     // break — and cwd landing in the benchmark dir is right for its `include:`.
-    let files = [
-        compose_file.to_string_lossy().into_owned(),
-        overlay.to_string_lossy().into_owned(),
-    ];
+    let mut files = vec![compose_file.to_string_lossy().into_owned()];
+    files.extend(overlays.iter().map(|o| o.to_string_lossy().into_owned()));
     let file_refs: Vec<&str> = files.iter().map(String::as_str).collect();
     let mut compose = DockerCompose::with_local_client(file_refs.as_slice());
 

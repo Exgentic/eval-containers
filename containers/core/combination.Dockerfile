@@ -91,6 +91,7 @@ RUN grep -q '^agent:' /etc/passwd || echo 'agent:x:1002:0::/home/agent:/bin/bash
 COPY runner/run              /usr/local/bin/run
 COPY runner/run-agent        /usr/local/bin/run-agent
 COPY runner/start-edge       /usr/local/bin/start-edge
+COPY runner/run-edge         /usr/local/bin/run-edge
 COPY runner/write-result     /usr/local/bin/write-result
 COPY entrypoint/eval-materialize-task /usr/local/bin/materialize-task
 COPY entrypoint/reap-sidecars         /usr/local/bin/reap-sidecars
@@ -101,6 +102,7 @@ RUN chmod 0755 /usr/local/bin/gosu \
  && chmod +x /usr/local/bin/run \
               /usr/local/bin/run-agent \
               /usr/local/bin/start-edge \
+              /usr/local/bin/run-edge \
               /usr/local/bin/write-result \
               /usr/local/bin/materialize-task \
               /usr/local/bin/reap-sidecars

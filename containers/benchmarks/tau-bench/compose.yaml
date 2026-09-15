@@ -30,19 +30,10 @@ services:
     environment:
       BENCHMARK: tau-bench
       BRIDGE_URL: http://bridge:8000
-      # NOT what agent.py reads: start-edge overwrites OPENAI_BASE_URL with the
-      # edge's own :4100 first, so this only ever reaches the edge as its
-      # upstream (via the inherited OPENAI_API_BASE).
-      OPENAI_BASE_URL: http://gateway:4000
       OPENAI_API_KEY: sk-proxy
     depends_on:
-      otelcol:
-        condition: service_healthy
-      gateway:
-        condition: service_healthy
       bridge:
         condition: service_healthy
-
   # Bespoke — second gateway for the user simulator's LLM (not logged).
   user-gateway:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/bifrost:latest
@@ -87,8 +78,6 @@ services:
       MODEL_NAME: ${MODEL_NAME:-gpt-4o}
     depends_on:
       bridge:
-        condition: service_healthy
-      gateway:
         condition: service_healthy
       user-gateway:
         condition: service_healthy

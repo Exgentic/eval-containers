@@ -1,0 +1,61 @@
+# Opt-in overlay: put a gateway between the edge and the provider.
+#
+#   docker compose -f containers/benchmarks/<b>/compose.yaml \
+#                  -f containers/compose/gateway.yaml up
+#
+# A gateway is for the one thing only a gateway does: translating an agent's
+# wire to a different upstream wire (gateways/RULES.md rules 8, 9). A run whose
+# agent and upstream already speak the same wire needs none — the edge forwards
+# to the provider directly, which is the default.
+#
+# One file, so the opt-in is atomic: the service AND the runner wiring that
+# points the edge at it. Setting only one of the two is the failure this
+# overlay exists to make impossible — a gateway nothing talks to, or an edge
+# dialing a gateway that was never started.
+services:
+  gateway:
+    # EVAL_GATEWAY picks the proxy image, EVAL_GATEWAY_TAG its version
+    # (gateways/RULES.md rule 2c). One name each: the CLI rejects the pre-2c
+    # spellings by name, so nothing here has to carry a fallback.
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/models/${EVAL_GATEWAY:-bifrost}:${EVAL_GATEWAY_TAG:-latest}
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:?}
+      OPENAI_API_BASE: ${OPENAI_API_BASE:?}
+      # The model authority: a generic gateway pins to this handle. Unset ->
+      # passthrough (client model); a pinned per-model image bakes its own.
+      # The edge in front has already pinned it (edge rule 2); this keeps a
+      # gateway run identical to a gateway-only one.
+      EVAL_MODEL: ${EVAL_MODEL}
+      HOST: 0.0.0.0
+      # Spans go nowhere unless the otel overlay is layered too, which is what
+      # sets this (gateways/RULES.md rule 10 — emission follows the endpoint).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    healthcheck:
+      test: ["CMD", "/opt/gateway/health"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 5s
+    networks:
+      - internal
+      - upstream
+
+  runner:
+    environment:
+      # Declared to run-edge: with this set the edge keeps the protocol
+      # namespace and forwards to the gateway, which holds the real credential.
+      # Unset (the default, no overlay) the edge goes straight to the provider.
+      EVAL_GATEWAY_URL: http://gateway:4000
+      # …and with the gateway holding it, the runner holds nothing. Blanked
+      # rather than left set: run-edge would ignore them here anyway, and a
+      # credential that no component in this container needs should not be in
+      # its environment at all (edge rule 14).
+      EVAL_UPSTREAM_API_BASE: ""
+      EVAL_UPSTREAM_API_KEY: ""
+    # The edge waits for its upstream itself before reporting ready, so this is
+    # belt-and-braces rather than the gate it used to be — but a runner that
+    # starts after the gateway is healthy spends that wait once, here, instead
+    # of inside every run's edge.
+    depends_on:
+      gateway:
+        condition: service_healthy

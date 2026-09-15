@@ -1,0 +1,55 @@
+#!/bin/bash
+# Resolve the edge's upstream and exec it in the foreground.
+#
+# ONE home for "what does the edge talk to", shared by both bring-ups:
+#   - compose/k8s (lean base): /usr/local/bin/start-edge backgrounds this;
+#   - single-container bundle: process-compose.yaml's `edge` process runs it.
+#
+# Two upstreams are possible, and which one is in play is DECLARED by the
+# orchestrator, never sniffed (edge rule 3's spirit — the edge parses nothing):
+#
+#   EVAL_GATEWAY_URL set   → a gateway was asked for and is running beside us.
+#                            It holds the real credential and serves the
+#                            protocol-namespaced paths, so the edge keeps the
+#                            namespace (EDGE_UPSTREAM=gateway) and sends the
+#                            same placeholder every agent sends.
+#   unset                  → the default. The edge forwards straight to the
+#                            provider, strips the namespace, and presents the
+#                            real credential itself (edge rules 4, 12).
+#
+# The credential reaches the edge process and nothing else: it is passed as a
+# scoped assignment on the exec below, so it is never exported into the
+# container environment. The agent could not read it anyway — run-agent hands
+# the agent a scrubbed env under its own uid (`gosu agent env -i`), and this
+# process runs as root, so /proc/<pid>/environ is out of reach (edge rule 14) —
+# but a bespoke harness that skips run-agent gets the same guarantee this way.
+set -euo pipefail
+
+if [ -n "${EVAL_GATEWAY_URL:-}" ]; then
+  _upstream="${EVAL_GATEWAY_URL%/}"
+  _key="sk-proxy"
+  _kind="gateway"
+else
+  # EVAL_UPSTREAM_API_* is the framework's name for the provider behind the
+  # edge. OPENAI_API_* is the fallback so a plain `docker run` of the bundle,
+  # and any caller predating the rename, keeps working unchanged.
+  _upstream="${EVAL_UPSTREAM_API_BASE:-${OPENAI_API_BASE:-}}"
+  _key="${EVAL_UPSTREAM_API_KEY:-${OPENAI_API_KEY:-}}"
+  _kind=""
+fi
+
+if [ -z "$_upstream" ]; then
+  echo "run-edge: no upstream — set EVAL_UPSTREAM_API_BASE (a provider) or EVAL_GATEWAY_URL (a gateway)" >&2
+  exit 1
+fi
+
+# .zst: the edge holds one encoder open for the run, so it sees that each
+# request repeats the previous conversation — ~138x on a real trajectory,
+# against ~7x for anything that compresses each record alone.
+mkdir -p /output/model
+exec env \
+  OPENAI_API_BASE="$_upstream" \
+  OPENAI_API_KEY="$_key" \
+  EDGE_UPSTREAM="$_kind" \
+  OUT="${OUT:-/output/model/calls.jsonl.zst}" \
+  /opt/edge/start

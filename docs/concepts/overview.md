@@ -39,7 +39,10 @@ An evaluation runs three units together:
   `EVAL_MODEL=<provider>/<model>` you set to that provider (any LiteLLM model, no
   per-model build) and records every call, independent of the agent (see
   [Isolation & gateways](isolation-and-gateways.md)).
-- **otelcol** — collects telemetry.
+- **gateway** (optional) — translates the agent's wire to a different upstream
+  wire; a run whose agent and upstream already agree needs none.
+- **otelcol** (optional) — collects the gateway's telemetry. Nothing in the
+  framework reads it; the edge's record is the account of a call.
 
 The result lands as `result.json`, with the primary metric named `reward`.
 
