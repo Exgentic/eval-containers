@@ -50,12 +50,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RETENTION_STATE: ${{ runner.temp }}/retention
+          # Through the environment, never interpolated into the script: an
+          # input spliced into a shell line is a command-injection seam.
+          ONLY: ${{ inputs.only }}
         run: |
           set -o pipefail
-          # shellcheck disable=SC2086  # the globs are deliberately word-split
-          only=""
-          [ -n "${{ inputs.only }}" ] && only="--only ${{ inputs.only }}"
-          python3 containers/scripts/fleet-retention.py $only \
+          # Deliberate word-splitting: ONLY is a space-separated glob list, and
+          # each glob is its own argument. read -ra does that without exposing
+          # the value to the shell as code.
+          read -ra globs <<< "$ONLY"
+          args=()
+          [ "${#globs[@]}" -gt 0 ] && args=(--only "${globs[@]}")
+          python3 containers/scripts/fleet-retention.py "${args[@]}" \
             > retention.json 2> census.log || rc=$?
           cat census.log
           # Exit 3 is "partially enumerated, re-run to continue" — a rate-limit
