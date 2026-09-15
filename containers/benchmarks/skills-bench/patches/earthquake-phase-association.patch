@@ -1,0 +1,12 @@
+diff --git a/tasks/earthquake-phase-association/environment/Dockerfile b/tasks/earthquake-phase-association/environment/Dockerfile
+index 92e86b2..85a2749 100644
+--- a/tasks/earthquake-phase-association/environment/Dockerfile
++++ b/tasks/earthquake-phase-association/environment/Dockerfile
+@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
+     && rm -rf /var/lib/apt/lists/*
+
+ RUN pip install --no-cache-dir \
++    "setuptools<81" \
+     "pandas==2.2.3" \
+     seisbench==0.10.2 \
+     git+https://github.com/AI4EPS/GaMMA.git@f6b1ac7680f50bcc7d5d3928361ba02a7df0f523
