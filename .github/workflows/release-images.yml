@@ -514,6 +514,16 @@ jobs:
           pertask_combo_items=$(printf '%s' "$combos" | jq -c '[.[] | select(.task!="")]')
           combos=$(printf '%s' "$combos" | jq -c '[.[] | select(.task=="")]')
 
+          # Every combo's build-input hash, computed ONCE here and shipped with
+          # the shards: the hash is a pure function of the commit, so one
+          # fleet-hash run over the whole list is exactly one hash per combo
+          # per process — and the ~3 s of bookkeeping that every combo paid
+          # for a fresh process, a tree materialisation and a graph parse.
+          # Rows are name<TAB>hash<TAB>…, the script's own row format.
+          printf '%s\n%s' "$combos" "$pertask_combo_items" | jq -rs 'add[] | "\(.b) \(.a) \(.task // "")"' \
+            | bash containers/scripts/fleet-hash.sh combo > hashes.tsv
+          echo "combo hashes: $(wc -l < hashes.tsv) rows"
+
           # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
           # GitHub caps a matrix at 256 jobs; each shard job loops its items. Chunk
           # combos by 25 (thin overlays) and per-task bases by 10 (heavier builds).
@@ -603,7 +613,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: shards
-          path: shards.json
+          path: |
+            shards.json
+            hashes.tsv
           retention-days: 1
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
@@ -1063,6 +1075,12 @@ jobs:
               | jq -r '[.. | objects | .Labels? // empty][0] // {} | to_entries[]
                        | select(.key | startswith("eval.agent.")) | "eval.labels.\(.key)=\(.value)"'
           }
+          # Hashes come from enumerate's hashes.tsv (one fleet-hash run per release),
+          # inspects and agent labels are read once per image/agent, not per combo.
+          declare -A HASH BASE_RAW AGENT_LABELS
+          while IFS=$'\t' read -r name h _; do HASH["$name"]="$h"; done < hashes.tsv
+          base_raw_of() { [ -n "${BASE_RAW[$1]+x}" ] || BASE_RAW["$1"]=$(docker buildx imagetools inspect "$1" --raw 2>&1 || true); printf '%s' "${BASE_RAW[$1]}"; }
+          labels_of() { [ -n "${AGENT_LABELS[$1]+x}" ] || AGENT_LABELS["$1"]=$(agent_labels "$1"); printf '%s' "${AGENT_LABELS[$1]}"; }
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A < <(jq -r '[.b,.a]|@tsv' <<< "$it")   # shared combo only: evals/<b>--<a> (per-task combos build in combos-pertask)
@@ -1071,16 +1089,17 @@ jobs:
             # are published amd64-only. Intersect {amd64,arm64} with what the
             # base actually carries so the overlay bake matches it (a hardcoded
             # multi-arch PLAT dies "no match for platform" on an amd64-only base).
-            base_raw=$(docker buildx imagetools inspect "$bench_img" --raw 2>&1 || true)
+            base_raw=$(base_raw_of "$bench_img")
             PLAT=""
             printf '%s' "$base_raw" | grep -q '"amd64"' && PLAT="linux/amd64"
             printf '%s' "$base_raw" | grep -q '"arm64"' && PLAT="${PLAT:+$PLAT,}linux/arm64"
             PLAT="${PLAT:-linux/amd64}" # fall back to amd64 if inspect is unreadable
             # Combo build-input hashes (delivery/RULES.md rule 12) — per-target,
             # never `*.labels`: eval and eval-standalone hash differently.
-            HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A") \
-              || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
-            EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
+            EH="${HASH[evals/${eb}--${A}]:-}"; SH="${HASH[evals/${eb}--${A}-standalone]:-}"
+            if [ -z "$EH" ] || [ -z "$SH" ]; then
+              echo "::error::no input-hash for evals/${eb}--${A} in hashes.tsv"; fails=$((fails+1)); continue
+            fi
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
             # once, then layers standalone on it via the eval-base context. The
@@ -1101,7 +1120,7 @@ jobs:
             # Pushed under the hash tag itself (rule 18); the :TAG alias follows
             # via fleet-tag, so the hash name always exists first (rule 19).
             agent_img="${REGISTRY}/agents/${A}:${TAG}"
-            mapfile -t AL < <(agent_labels "$agent_img")
+            mapfile -t AL < <(labels_of "$agent_img")
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="$agent_img" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
@@ -1217,6 +1236,12 @@ jobs:
               | jq -r '[.. | objects | .Labels? // empty][0] // {} | to_entries[]
                        | select(.key | startswith("eval.agent.")) | "eval.labels.\(.key)=\(.value)"'
           }
+          # Hashes come from enumerate's hashes.tsv (one fleet-hash run per release),
+          # inspects and agent labels are read once per image/agent, not per combo.
+          declare -A HASH BASE_RAW AGENT_LABELS
+          while IFS=$'\t' read -r name h _; do HASH["$name"]="$h"; done < hashes.tsv
+          base_raw_of() { [ -n "${BASE_RAW[$1]+x}" ] || BASE_RAW["$1"]=$(docker buildx imagetools inspect "$1" --raw 2>&1 || true); printf '%s' "${BASE_RAW[$1]}"; }
+          labels_of() { [ -n "${AGENT_LABELS[$1]+x}" ] || AGENT_LABELS["$1"]=$(agent_labels "$1"); printf '%s' "${AGENT_LABELS[$1]}"; }
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
@@ -1226,12 +1251,13 @@ jobs:
             # kind=script branch skips pushing an arch it didn't build) has no
             # ${ARCH} platform to build against — skip here too; merge-pertask-combos
             # leaves it single-arch rather than failing on "no match for platform".
-            base_raw=$(docker buildx imagetools inspect "$bench_img" --raw 2>&1 || true)
+            base_raw=$(base_raw_of "$bench_img")
             printf '%s' "$base_raw" | grep -q "\"$ARCH\"" \
               || { echo "::warning::evals/${eb}--${A}: base lacks $ARCH — skipping (merge keeps it single-arch)"; continue; }
-            HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A" "$TASK") \
-              || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
-            EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
+            EH="${HASH[evals/${eb}--${A}]:-}"; SH="${HASH[evals/${eb}--${A}-standalone]:-}"
+            if [ -z "$EH" ] || [ -z "$SH" ]; then
+              echo "::error::no input-hash for evals/${eb}--${A} in hashes.tsv"; fails=$((fails+1)); continue
+            fi
             TGT=()
             carry "" "$EH" || TGT+=(eval)
             [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)
@@ -1245,7 +1271,7 @@ jobs:
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A} (${ARCH})"
             agent_img="${REGISTRY}/agents/${A}:${ORIG_TAG}"
-            mapfile -t AL < <(agent_labels "$agent_img")
+            mapfile -t AL < <(labels_of "$agent_img")
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="$agent_img" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \

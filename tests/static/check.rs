@@ -1470,6 +1470,42 @@ fn merge_stitches_per_task_refs_from_the_shards_artifact() {
     );
 }
 
+/// A combo's build-input hash is a pure function of the commit, so the release
+/// computes every combo's hash ONCE in enumerate and ships the table with the
+/// shards; the combo jobs look their rows up. Per-combo `fleet-hash.sh combo`
+/// calls cost ~3 s each — a process, a tree materialisation and a graph parse
+/// per combo, times ~12k combos a night — for identical answers.
+#[test]
+fn combo_hashes_are_computed_once_and_shipped_with_the_shards() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let enumerate = wf
+        .split("\n  enumerate:\n")
+        .nth(1)
+        .and_then(|s| s.split("\n  bases:").next())
+        .expect("no `enumerate` job");
+    assert!(
+        enumerate.contains("fleet-hash.sh combo > hashes.tsv")
+            && enumerate.contains("hashes.tsv\n"),
+        "enumerate must hash every combo in ONE `fleet-hash.sh combo` call and upload hashes.tsv with the shards"
+    );
+    for job in ["combos", "combos-pertask"] {
+        let body = wf
+            .split(&format!("\n  {job}:\n"))
+            .nth(1)
+            .and_then(|s| s.split("\n  merge").next())
+            .unwrap_or_else(|| panic!("no `{job}` job"));
+        assert!(
+            body.contains("< hashes.tsv"),
+            "{job} must read its combo hashes from enumerate's hashes.tsv"
+        );
+        assert!(
+            !body.contains("fleet-hash.sh combo \"$B\""),
+            "{job} must not run fleet-hash.sh per combo — the table is computed once per release"
+        );
+    }
+}
+
 /// The same rule for the per-task COMBO merge, which #525 fixed for `merge` but
 /// not for its sibling: `merge-pertask-combos` read `.items[]` off the
 /// `pertask_combo_shards` output, which carries only `[{idx}]`, so the loop ran
