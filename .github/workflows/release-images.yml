@@ -1097,8 +1097,9 @@ jobs:
             # Combo build-input hashes (delivery/RULES.md rule 12) — per-target,
             # never `*.labels`: eval and eval-standalone hash differently.
             EH="${HASH[evals/${eb}--${A}]:-}"; SH="${HASH[evals/${eb}--${A}-standalone]:-}"
-            [ -n "$EH" ] && [ -n "$SH" ] \
-              || { echo "::error::no input-hash for evals/${eb}--${A} in hashes.tsv"; fails=$((fails+1)); continue; }
+            if [ -z "$EH" ] || [ -z "$SH" ]; then
+              echo "::error::no input-hash for evals/${eb}--${A} in hashes.tsv"; fails=$((fails+1)); continue
+            fi
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
             # once, then layers standalone on it via the eval-base context. The
@@ -1254,8 +1255,9 @@ jobs:
             printf '%s' "$base_raw" | grep -q "\"$ARCH\"" \
               || { echo "::warning::evals/${eb}--${A}: base lacks $ARCH — skipping (merge keeps it single-arch)"; continue; }
             EH="${HASH[evals/${eb}--${A}]:-}"; SH="${HASH[evals/${eb}--${A}-standalone]:-}"
-            [ -n "$EH" ] && [ -n "$SH" ] \
-              || { echo "::error::no input-hash for evals/${eb}--${A} in hashes.tsv"; fails=$((fails+1)); continue; }
+            if [ -z "$EH" ] || [ -z "$SH" ]; then
+              echo "::error::no input-hash for evals/${eb}--${A} in hashes.tsv"; fails=$((fails+1)); continue
+            fi
             TGT=()
             carry "" "$EH" || TGT+=(eval)
             [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)

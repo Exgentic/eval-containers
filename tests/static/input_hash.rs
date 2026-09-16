@@ -603,21 +603,6 @@ fn per_task_hashes_in_batch_match_the_single_form() {
     );
 }
 
-/// Every in-repo base image the combo targets COPY from MUST be folded into the
-/// combo's closure (delivery/RULES.md rule 11) — including the edge, whose
-/// omission let a changed `containers/core/edge/**` leave every combo hash
-/// unmoved, so `carry()` retagged the previous digest forever and the edge could
-/// never propagate into an otherwise-unchanged eval image (#559: per-task
-/// benchmarks shipped with no `/opt/edge` and recorded zero LLM calls).
-///
-/// The required parent set is DERIVED from the real
-/// `containers/core/combination.docker-bake.hcl` — each target's `args` block
-/// names the `*_IMAGE` variables it consumes, and each variable's default names
-/// the in-repo target it points at — so a parent added tomorrow is held to this
-/// without editing the test. The real HCL and Dockerfile are copied into a
-/// fixture, the one place each parent's context can be mutated and the cascade
-/// observed (the checked-out tree is read-only here).
-#[test]
 /// `combo` with no arguments reads `<benchmark> <agent> [task]` triples on stdin
 /// and must print exactly what the same single calls print, in order: the
 /// release computes every combo's hash in one such call (enumerate ships
@@ -656,6 +641,21 @@ fn combo_stdin_form_matches_the_single_calls() {
     );
 }
 
+/// Every in-repo base image the combo targets COPY from MUST be folded into the
+/// combo's closure (delivery/RULES.md rule 11) — including the edge, whose
+/// omission let a changed `containers/core/edge/**` leave every combo hash
+/// unmoved, so `carry()` retagged the previous digest forever and the edge could
+/// never propagate into an otherwise-unchanged eval image (#559: per-task
+/// benchmarks shipped with no `/opt/edge` and recorded zero LLM calls).
+///
+/// The required parent set is DERIVED from the real
+/// `containers/core/combination.docker-bake.hcl` — each target's `args` block
+/// names the `*_IMAGE` variables it consumes, and each variable's default names
+/// the in-repo target it points at — so a parent added tomorrow is held to this
+/// without editing the test. The real HCL and Dockerfile are copied into a
+/// fixture, the one place each parent's context can be mutated and the cascade
+/// observed (the checked-out tree is read-only here).
+#[test]
 fn combo_closure_folds_in_every_in_repo_base() {
     let root = repo_root();
     let hcl = std::fs::read_to_string(root.join("containers/core/combination.docker-bake.hcl"))
