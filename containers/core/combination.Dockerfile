@@ -55,10 +55,10 @@ FROM ${BENCHMARK_IMAGE}
 ARG AGENT_VERSION
 
 # ─── Agent layer ─────────────────────────────────────────────────────
-COPY --from=agent /opt/agent/install.sh /tmp/agent-install.sh
-COPY --from=agent /opt/agent/ /opt/agent/
+COPY --link --from=agent /opt/agent/install.sh /tmp/agent-install.sh
+COPY --link --from=agent /opt/agent/ /opt/agent/
 # Agent launch script lives at the image root, not under /opt/agent/ — copy it too.
-COPY --from=agent /run.sh /run.sh
+COPY --link --from=agent /run.sh /run.sh
 RUN chmod +x /run.sh
 # Reinstalling agents resolve their version from the agent image's
 # /opt/agent/VERSION (written from the agent's ARG AGENT_VERSION), unless this
@@ -71,11 +71,11 @@ RUN AGENT_VERSION="${AGENT_VERSION:-$(cat /opt/agent/VERSION 2>/dev/null)}" \
 # gosu lets `run`/`run-agent` switch root → agent uid before launching the
 # agent. process-compose is NOT copied here — it is a single-container-only
 # orchestrator and ships only in the -standalone bundle.
-COPY --from=gosu /bundle/bin/gosu /usr/local/bin/gosu
+COPY --link --from=gosu /bundle/bin/gosu /usr/local/bin/gosu
 
 # Root-owned 0700: agent uid 1002 cannot traverse it, so the upstream
 # credential the edge holds is unreadable by the agent (RULES 5).
-COPY --from=edge /opt/edge /opt/edge
+COPY --link --from=edge /opt/edge /opt/edge
 RUN chmod 0700 /opt/edge
 
 # Ensure the agent user (uid 1002) and /home/agent exist so benchmarks that
@@ -88,12 +88,12 @@ RUN grep -q '^agent:' /etc/passwd || echo 'agent:x:1002:0::/home/agent:/bin/bash
  && chmod -R g+rwX /home/agent
 
 # ─── Framework scripts ───────────────────────────────────────────────
-COPY runner/run              /usr/local/bin/run
-COPY runner/run-agent        /usr/local/bin/run-agent
-COPY runner/start-edge       /usr/local/bin/start-edge
-COPY runner/write-result     /usr/local/bin/write-result
-COPY entrypoint/eval-materialize-task /usr/local/bin/materialize-task
-COPY entrypoint/reap-sidecars         /usr/local/bin/reap-sidecars
+COPY --link runner/run              /usr/local/bin/run
+COPY --link runner/run-agent        /usr/local/bin/run-agent
+COPY --link runner/start-edge       /usr/local/bin/start-edge
+COPY --link runner/write-result     /usr/local/bin/write-result
+COPY --link entrypoint/eval-materialize-task /usr/local/bin/materialize-task
+COPY --link entrypoint/reap-sidecars         /usr/local/bin/reap-sidecars
 
 # Tighten perms. /root stays 0700 by default (root-only task data); the helpers
 # are made executable here.

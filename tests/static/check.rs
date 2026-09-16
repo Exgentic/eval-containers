@@ -814,7 +814,9 @@ fn eval_image_launches_the_pipeline() {
          eval image launches the pipeline (rule 12) instead of inheriting `CMD /grade.sh`"
     );
     assert!(
-        combo.contains("COPY --from=agent /run.sh"),
+        // `--link` (or any other COPY flag) may sit between COPY and --from; what
+        // this pins is the SOURCE path, not the flags.
+        combo.contains("--from=agent /run.sh"),
         "combination.Dockerfile must `COPY --from=agent /run.sh` — the agent entrypoint \
          lives at the image root, not under /opt/agent/, so process-compose's `/run.sh` exists"
     );

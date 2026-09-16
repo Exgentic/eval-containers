@@ -18,7 +18,10 @@ name: Release the fleet
 #                         FLEET_MAXPAR / FLEET_RUNNER — tune without editing this.)
 #   * PER-LEAF CACHE    — each leaf has its own registry layer cache (mode=max),
 #                         so editing one Dockerfile rebuilds only that leaf.
-#   * PROVENANCE + SBOM — SLSA provenance + syft SBOM on every pushed image.
+#   * PROVENANCE + SBOM — SLSA provenance on every pushed image; a syft SBOM on
+#                         every image that INSTALLS something (bases, agents,
+#                         benchmarks). A combo only COPYs from those, so its
+#                         package list is theirs and is not regenerated.
 #   * CVE GATE          — trivy scans the shared bases before :latest is promoted.
 #   * MULTI-ARCH        — native-per-arch: bases/leaves/per-task build on amd64
 #                         AND arm64 runners (NOT QEMU — pyarrow segfaults under it),
@@ -1051,7 +1054,12 @@ jobs:
             carry "" "$EH" || TGT+=(eval)
             [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)
             [ "${#TGT[@]}" -gt 0 ] || continue
-            ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
+            # No --sbom on a combo: it installs nothing (its build is COPY/chmod
+            # only), so its package list is exactly the union of the agent's and
+            # the benchmark's, both of which carry their own. Generating it re-scans
+            # the whole benchmark filesystem per combo — measured at 11 s of a 57 s
+            # build, across ~11k combos. Provenance stays: that IS per-combo.
+            ACT=("${TGT[@]}" --provenance=mode=max --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A}"
             # Pushed under the hash tag itself (rule 18); the :TAG alias follows
@@ -1183,7 +1191,12 @@ jobs:
             carry "" "$EH" || TGT+=(eval)
             [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)
             [ "${#TGT[@]}" -gt 0 ] || continue
-            ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
+            # No --sbom on a combo: it installs nothing (its build is COPY/chmod
+            # only), so its package list is exactly the union of the agent's and
+            # the benchmark's, both of which carry their own. Generating it re-scans
+            # the whole benchmark filesystem per combo — measured at 11 s of a 57 s
+            # build, across ~11k combos. Provenance stays: that IS per-combo.
+            ACT=("${TGT[@]}" --provenance=mode=max --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A} (${ARCH})"
             agent_img="${REGISTRY}/agents/${A}:${ORIG_TAG}"
