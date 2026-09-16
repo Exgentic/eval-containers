@@ -66,7 +66,9 @@ RUN chmod -R 700 /tests && chown -R root:root /tests
 # what the task installed (57 of 87 import a third-party package — pyscipopt,
 # shapely, torch), so grading on a separate interpreter cannot see them and a
 # correct solution scores 0. --break-system-packages because a Debian-managed
-# python3 refuses otherwise.
+# python3 refuses otherwise. A version RANGE for pytest, not upstream's exact
+# 8.4.1: that needs Python 3.9, and an ubuntu:20.04 task ships 3.8 — the range
+# gives it 8.3.5 and every newer interpreter still resolves to exactly 8.4.1.
 #
 # Only when the env ships no Python at all — a Lean, JVM or Erlang task, eight of
 # them — fall back to an interpreter of our own. uv either way, same tool and
@@ -85,11 +87,15 @@ ENV UV_PYTHON_INSTALL_DIR=/opt/grader/python \
     UV_TOOL_DIR=/opt/grader/tools \
     UV_TOOL_BIN_DIR=/opt/grader/bin \
     UV_CACHE_DIR=/tmp/uv-cache
-RUN if P="$(command -v python3)"; then \
-      /opt/grader/uv pip install --python "$P" --break-system-packages \
-        pytest==8.4.1 pytest-json-ctrf==0.3.5 \
-      && printf '%s -m pytest\n' "$P" > /opt/grader/pytest-cmd; \
+RUN if P="$(command -v python3)" \
+     && /opt/grader/uv pip install --python "$P" --break-system-packages \
+          "pytest>=8.3.5,<=8.4.1" pytest-json-ctrf==0.3.5; then \
+      printf '%s -m pytest\n' "$P" > /opt/grader/pytest-cmd; \
     else \
+      # No python3, or one uv cannot install into at all. Grading then runs on an
+      # interpreter of our own and cannot import what the task env installed —
+      # say so, loudly, so a 0 from such a task is never a mystery.
+      echo "[skills-bench] grader: no usable env python3 (${P:-none}) — grading on a standalone interpreter" >&2; \
       /opt/grader/uv python install 3.12 \
       && /opt/grader/uv tool install --with pytest-json-ctrf==0.3.5 pytest==8.4.1 \
       && printf '/opt/grader/bin/pytest\n' > /opt/grader/pytest-cmd; \
