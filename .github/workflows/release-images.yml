@@ -71,7 +71,7 @@ on:
       include_standalone:
         description: "Also build single-container -standalone bundles for each combo"
         type: boolean
-        default: true
+        default: false
       dry_run:
         description: "Validate only — bake --print / echo, nothing built or pushed"
         type: boolean
@@ -984,7 +984,12 @@ jobs:
         env:
           IDX: ${{ matrix.shard.idx }}
           DRY: ${{ inputs.dry_run }}
-          STANDALONE: ${{ inputs.include_standalone }}
+          # Empty on a tag or schedule (dispatch inputs are not populated there), and
+          # empty is not "false" — which is how every automatic release built a
+          # standalone bundle for every combo. Default it off: nothing launches one
+          # (no reference in the chart or the dashboard), the per-task ones were not
+          # even in the published index, and a dispatch can still ask for them.
+          STANDALONE: ${{ inputs.include_standalone || 'false' }}
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
           ITEMS=$(jq -c --argjson i "$IDX" '.combo[] | select(.idx==$i).items' shards.json)
@@ -1111,7 +1116,12 @@ jobs:
         env:
           IDX: ${{ matrix.shard.idx }}
           DRY: ${{ inputs.dry_run }}
-          STANDALONE: ${{ inputs.include_standalone }}
+          # Empty on a tag or schedule (dispatch inputs are not populated there), and
+          # empty is not "false" — which is how every automatic release built a
+          # standalone bundle for every combo. Default it off: nothing launches one
+          # (no reference in the chart or the dashboard), the per-task ones were not
+          # even in the published index, and a dispatch can still ask for them.
+          STANDALONE: ${{ inputs.include_standalone || 'false' }}
           ARCH: ${{ matrix.arch }}
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
