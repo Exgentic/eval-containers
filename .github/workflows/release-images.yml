@@ -288,6 +288,15 @@ jobs:
           # Debug: --only restricts every matrix to a handful of named leaf targets.
           if [ -n "${ONLY:-}" ]; then
             leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(tr ' ' '\n' <<< "$ONLY" | sort -u))
+            # A combo COPYs from agents/<a>:TAG, so every agent it will use must be
+            # in scope too — for an unchanged agent that is a seconds-long retag of
+            # :latest, never a build. Left out, the combo asks the registry for a
+            # tag nothing created, and retry burned ~4 min per combo on it.
+            if [ -n "$COMBO_AGENTS" ]; then
+              read -ra _ca <<< "$COMBO_AGENTS"
+              leaf_list=$({ printf '%s\n' "$leaf_list"; printf 'agent-%s\n' "${_ca[@]}"; } \
+                | sort -u | comm -12 - <(printf '%s\n' "$all" | sort -u))
+            fi
             echo "ONLY active -> $(printf '%s\n' "$leaf_list" | grep -c .) leaf target(s)"
           fi
           # Channel run: only stale leaves build (fresh ones are already at :latest).
@@ -679,10 +688,19 @@ jobs:
           # failed layer, and the jittered backoff de-syncs parallel leaves so they
           # stop hammering HF in lockstep. Real failures still surface after max.
           retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; return 1; }
-              echo "::warning::build attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
+            local n=0 max="${BUILD_RETRIES:-4}" out st
+            out=$(mktemp)
+            while :; do
+              "$@" 2>&1 | tee "$out"; st=${PIPESTATUS[0]}
+              [ "$st" -eq 0 ] && { rm -f "$out"; return 0; }
+              # An input the registry does not have will not appear on the next attempt:
+              # fail now rather than spend three back-offs (~4 min) on it.
+              if grep -qE 'failed to resolve source metadata|MANIFEST_UNKNOWN|: not found' "$out"; then
+                echo "::error::input not found — not retrying: $(grep -oE 'failed to resolve source metadata for [^ ]+' "$out" | head -1)"
+                rm -f "$out"; return 1
+              fi
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; rm -f "$out"; return 1; }
+              echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
           # dry_run validates config only (bake --print); else build + attest + push.
@@ -750,9 +768,18 @@ jobs:
           # retry rides out transient HF rate-limiting (swe-bench fetches task
           # metadata from HF) + registry blips; jittered backoff de-syncs the shard.
           retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+            local n=0 max="${BUILD_RETRIES:-4}" out st
+            out=$(mktemp)
+            while :; do
+              "$@" 2>&1 | tee "$out"; st=${PIPESTATUS[0]}
+              [ "$st" -eq 0 ] && { rm -f "$out"; return 0; }
+              # An input the registry does not have will not appear on the next attempt:
+              # fail now rather than spend three back-offs (~4 min) on it.
+              if grep -qE 'failed to resolve source metadata|MANIFEST_UNKNOWN|: not found' "$out"; then
+                echo "::error::input not found — not retrying: $(grep -oE 'failed to resolve source metadata for [^ ]+' "$out" | head -1)"
+                rm -f "$out"; return 1
+              fi
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; rm -f "$out"; return 1; }
               echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
@@ -998,9 +1025,18 @@ jobs:
           ITEMS=$(jq -c --argjson i "$IDX" '.combo[] | select(.idx==$i).items' shards.json)
           # retry rides out transient registry pull/push blips; jittered backoff.
           retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+            local n=0 max="${BUILD_RETRIES:-4}" out st
+            out=$(mktemp)
+            while :; do
+              "$@" 2>&1 | tee "$out"; st=${PIPESTATUS[0]}
+              [ "$st" -eq 0 ] && { rm -f "$out"; return 0; }
+              # An input the registry does not have will not appear on the next attempt:
+              # fail now rather than spend three back-offs (~4 min) on it.
+              if grep -qE 'failed to resolve source metadata|MANIFEST_UNKNOWN|: not found' "$out"; then
+                echo "::error::input not found — not retrying: $(grep -oE 'failed to resolve source metadata for [^ ]+' "$out" | head -1)"
+                rm -f "$out"; return 1
+              fi
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; rm -f "$out"; return 1; }
               echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
@@ -1148,9 +1184,18 @@ jobs:
           export MODEL_IMAGE="${REGISTRY}/models/bifrost:${ORIG_TAG}"
           export PROCESS_COMPOSE_IMAGE="${REGISTRY}/core/process-compose:${ORIG_TAG}"
           retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+            local n=0 max="${BUILD_RETRIES:-4}" out st
+            out=$(mktemp)
+            while :; do
+              "$@" 2>&1 | tee "$out"; st=${PIPESTATUS[0]}
+              [ "$st" -eq 0 ] && { rm -f "$out"; return 0; }
+              # An input the registry does not have will not appear on the next attempt:
+              # fail now rather than spend three back-offs (~4 min) on it.
+              if grep -qE 'failed to resolve source metadata|MANIFEST_UNKNOWN|: not found' "$out"; then
+                echo "::error::input not found — not retrying: $(grep -oE 'failed to resolve source metadata for [^ ]+' "$out" | head -1)"
+                rm -f "$out"; return 1
+              fi
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; rm -f "$out"; return 1; }
               echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
