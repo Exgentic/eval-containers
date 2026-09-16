@@ -206,14 +206,17 @@ graph)
   cat "$M/graph"
   ;;
 combo)
-  { [ $# -ge 3 ] && [ $# -le 4 ] && [ -n "$2" ] && [ -n "$3" ]; } \
-    || die "usage: fleet-hash.sh combo <benchmark> <agent> [task]"
-  task="${4:-}"
-  case "$task" in *[[:space:]]*) die "task id must not contain whitespace" ;; esac
-  b=$(target_for_dir "containers/benchmarks/$2")
-  a=$(target_for_dir "containers/agents/$3")
-  gosu=$(parent_target GOSU_IMAGE)
-  edge=$(parent_target EDGE_IMAGE)
+  # One call, many combos: with no arguments the triples arrive on stdin, one
+  # `<benchmark> <agent> [task]` per line. bash resolves the closures once (the
+  # setup above) and one python process derives every pair and every task from
+  # them — so a whole release's worth of combos costs one materialisation of
+  # the tree, not one process per combo, which is where 3 s of every combo
+  # build went. The arithmetic is byte-for-byte what the shell pipeline did:
+  # LC_ALL=C sort -u unions, sha256 of the resulting file, and for a task
+  # sha256("<pair hash> <task>") — the static tests hold both forms to it.
+  { [ $# -eq 1 ] || { [ $# -ge 3 ] && [ $# -le 4 ] && [ -n "$2" ] && [ -n "$3" ]; }; } \
+    || die "usage: fleet-hash.sh combo <benchmark> <agent> [task]  (or triples on stdin)"
+  if [ $# -ge 3 ]; then printf '%s %s %s\n' "$2" "$3" "${4:-}" > "$M/triples"; else cat > "$M/triples"; fi
   # The combination Dockerfiles COPY from runner/ and entrypoint/ inside the
   # containers/core context, so those trees are combo inputs alongside the
   # Dockerfile + bake-file blobs and the parents' closures.
@@ -221,26 +224,62 @@ combo)
     "$REF:containers/core/combination.docker-bake.hcl" \
     "$REF:containers/core/runner" "$REF:containers/core/entrypoint" \
     | LC_ALL=C sort > "$M/eval.ctx"
-  LC_ALL=C sort -u "$M/full/$b" "$M/full/$a" "$M/full/$gosu" "$M/full/$edge" \
-    > "$M/eval.bases"
-  LC_ALL=C sort -u "$M/eval.ctx" "$M/eval.bases" > "$M/eval.full"
-  # A per-task combo mixes the task id into the hash the same way per-task
-  # does, and names its rows with the release's <bench>-<tid> convention.
-  with_task() {
-    if [ -n "$task" ]; then printf '%s %s' "$1" "$task" | sha | cut -d' ' -f1
-    else printf '%s' "$1"; fi
-  }
-  eb="$2"
-  [ -z "$task" ] || eb="$2-$(printf '%s' "$task" | tr '[:upper:]' '[:lower:]')"
-  row "evals/$eb--$3" "$(with_task "$(hash_of "$M/eval.full")")" \
-    "$(hash_of "$M/eval.ctx")" "$(hash_of "$M/eval.bases")" "-"
   blobs "$REF:containers/core/standalone.Dockerfile" > "$M/sa.ctx"
-  LC_ALL=C sort -u "$M/eval.full" "$M/full/$(parent_target OTEL_IMAGE)" \
-    "$M/full/$(parent_target PROCESS_COMPOSE_IMAGE)" \
-    "$M/full/$(parent_target MODEL_IMAGE)" > "$M/sa.bases"
-  LC_ALL=C sort -u "$M/sa.ctx" "$M/sa.bases" > "$M/sa.full"
-  row "evals/$eb--$3-standalone" "$(with_task "$(hash_of "$M/sa.full")")" \
-    "$(hash_of "$M/sa.ctx")" "$(hash_of "$M/sa.bases")" "-"
+  # Combo parents come from combination.docker-bake.hcl's *_IMAGE defaults.
+  GOSU_T=$(parent_target GOSU_IMAGE) EDGE_T=$(parent_target EDGE_IMAGE) \
+  OTEL_T=$(parent_target OTEL_IMAGE) PC_T=$(parent_target PROCESS_COMPOSE_IMAGE) \
+  MODEL_T=$(parent_target MODEL_IMAGE) M="$M" python3 - <<'PY' || exit 2
+import hashlib, os, sys
+M = os.environ["M"]
+graph = {}                                   # context dir -> target (bake graph)
+for line in open(f"{M}/graph"):
+    t, ctx, _ = line.rstrip("\n").split("|", 2)
+    graph.setdefault(ctx, []).append(t)
+def target_for_dir(d):
+    ts = graph.get(d, [])
+    if not ts: sys.exit(f"fleet-hash: no bake target with context {d}")
+    if len(ts) > 1: sys.exit(f"fleet-hash: multiple targets with context {d}")
+    return ts[0]
+full_cache = {}
+def full(t):                                 # lines of $M/full/<target>
+    if t not in full_cache:
+        full_cache[t] = [l.rstrip("\n") for l in open(f"{M}/full/{t}") if l != "\n"]
+    return full_cache[t]
+def sort_u(*lists):                          # LC_ALL=C sort -u
+    return sorted(set(x for l in lists for x in l), key=lambda x: x.encode())
+def sha_lines(lines):                        # sha256sum < file written by sort -u
+    return hashlib.sha256("".join(x + "\n" for x in lines).encode()).hexdigest()
+def sha_file(path):
+    return hashlib.sha256(open(path, "rb").read()).hexdigest()
+def sha_str(s):                              # printf '%s' ... | sha256sum
+    return hashlib.sha256(s.encode()).hexdigest()
+lower = str.maketrans("ABCDEFGHIJKLMNOPQRSTUVWXYZ", "abcdefghijklmnopqrstuvwxyz")  # tr '[:upper:]' '[:lower:]'
+E = os.environ
+eval_ctx = [l.rstrip("\n") for l in open(f"{M}/eval.ctx") if l != "\n"]
+ctxh, sactxh = sha_file(f"{M}/eval.ctx"), sha_file(f"{M}/sa.ctx")
+parents = [full(E["GOSU_T"]), full(E["EDGE_T"])]
+sa_parents = [full(E["OTEL_T"]), full(E["PC_T"]), full(E["MODEL_T"])]
+pairs = {}
+for line in open(f"{M}/triples"):
+    parts = line.split()
+    if not parts: continue
+    b, a, task = parts[0], parts[1], (parts[2] if len(parts) > 2 else "")
+    if len(parts) > 3: sys.exit("fleet-hash: task id must not contain whitespace")
+    if (b, a) not in pairs:
+        bt, at = target_for_dir(f"containers/benchmarks/{b}"), target_for_dir(f"containers/agents/{a}")
+        eval_bases = sort_u(full(bt), full(at), *parents)
+        eval_full = sort_u(eval_ctx, eval_bases)
+        sa_bases = sort_u(eval_full, *sa_parents)
+        sa_full = sort_u([l.rstrip("\n") for l in open(f"{M}/sa.ctx") if l != "\n"], sa_bases)
+        pairs[(b, a)] = (sha_lines(eval_full), sha_lines(eval_bases), sha_lines(sa_full), sha_lines(sa_bases))
+    ef, ebh, sf, sbh = pairs[(b, a)]
+    eb = b
+    if task:
+        eb = f"{b}-{task.translate(lower)}"
+        ef, sf = sha_str(f"{ef} {task}"), sha_str(f"{sf} {task}")
+    print(f"evals/{eb}--{a}\t{ef}\t{ctxh}\t{ebh}\t-")
+    print(f"evals/{eb}--{a}-standalone\t{sf}\t{sactxh}\t{sbh}\t-")
+PY
   ;;
 per-task)
   { [ $# -ge 2 ] && [ -n "$2" ]; } || die "usage: fleet-hash.sh per-task <benchmark> <task-id>… (or ids on stdin)"
