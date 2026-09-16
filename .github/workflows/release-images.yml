@@ -532,6 +532,15 @@ jobs:
           # would fail the run outright. Double the chunk until it fits: a longer
           # shard is a slower release, a failed enumerate is no release (#452).
           shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
+          # Same shards, dealt round-robin instead of sliced. For per-task bases the
+          # ids are alphabetical and the heavy environments cluster: in run
+          # 35081445749 one shard held energy-*, exceltable, exoplanet, financial
+          # and the two BugSwarm fix-build-* tasks and took 71 min, while the
+          # median shard took 18 and the fastest 9. The phase ends when the
+          # slowest shard does, and merge — plus every combo job behind it — waits
+          # on that one. Dealing the list spreads neighbours across shards.
+          stripe() { jq -c --argjson k "$2" '. as $a | ((($a|length) + $k - 1) / $k | floor) as $n
+                       | [range(0;$n) as $i | {idx:$i, items:[$a | to_entries[] | select(.key % $n == $i) | .value]}]' <<< "$1"; }
           chunk() { local n k; n=$(jq length <<< "$1"); k=$2
                     while [ "$(( (n + k - 1) / k ))" -gt 128 ]; do k=$((k * 2)); done; echo "$k"; }
           # Leaves shard at 1: below the cap every shard holds exactly one leaf,
@@ -559,7 +568,10 @@ jobs:
           # hundred combos amortise it (100 x ~35 s cold-to-warm ≈ 1 h at worst,
           # inside the job's 120 min); chunk still doubles past 128 shards.
           pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 100)")
-          pertask_shards=$(shard "$pertask" "$(chunk "$pertask" 10)")
+          # Per-task bases are dealt (see stripe above). Combo shards stay sliced:
+          # their items are task-major, so the eight agents of a task run
+          # consecutively and the task's base image is pulled once, not eight times.
+          pertask_shards=$(stripe "$pertask" "$(chunk "$pertask" 10)")
           # The shard CONTENTS travel as an artifact, not as job outputs: a job's
           # outputs are capped at 1 MB in total, and once #461 put per-task on the
           # main-push channel these three lists (5.5k per-task combos, 789
