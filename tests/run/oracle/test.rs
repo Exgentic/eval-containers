@@ -36,6 +36,10 @@ const SPECIAL: &[(&str, &str)] = &[
     ),
     // per-task built from source (rule 24g); gold = reverse the bug_reintroduce patch
     ("swe-lancer", "12155_1"),
+    // per-task differential grader; solution.sh copies the root-only gold PoC to
+    // /app/poc, which crashes the pre-patch build and runs clean on the post-patch
+    // build → 1.0. Needs the n132/arvo:10013-{vul,fix} replay images at build time.
+    ("cybergym", "arvo__10013"),
     // per-task; solution.sh writes the correct output for each task. (citation-check
     // omitted — its gold hits rate-limited live APIs, so it can't deterministically pass.)
     ("skills-bench", "bike-rebalance"),

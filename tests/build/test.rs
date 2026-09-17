@@ -80,6 +80,13 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     // the oracle daemon-lane test (tests/oracle), so they are intentionally absent
     // here (and thus skipped). deepswe additionally resolves its base from the task's
     // own task.toml at build time, so there is no static BASE_IMAGE to pin here.
+    //
+    // cybergym is likewise intentionally absent: it builds via a single
+    // `docker build`, but materializing a task fetches from HuggingFace and (for
+    // `arvo`) extracts the differential targets from the `n132/arvo:<id>-{vul,fix}`
+    // replay images — network + large external images that the offline build sweep
+    // cannot provide. Its build+grade is exercised by the oracle daemon lane and by
+    // a manual `eval-containers build bench cybergym --task-id <id>`.
 
     out.remove(benchmark)
 }

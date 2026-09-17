@@ -1,6 +1,7 @@
 [
   "compilebench",
   "cybench",
+  "cybergym",
   "deepswe",
   "hwe-bench",
   "mle-bench",
