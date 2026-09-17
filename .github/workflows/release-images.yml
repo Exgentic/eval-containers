@@ -1361,7 +1361,12 @@ jobs:
                 docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
               done
               if [ "${#srcs[@]}" -eq 0 ]; then echo "skipped ${ref}:${TAG}"; continue; fi
-              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}" >/dev/null; then
+              # fleet-tag's own report ("hash tag current" / "<ref>:<hash> -> :<tag>")
+              # goes to the job log on stderr, not into the status stream stdout
+              # carries — parallelising this must not cost the record of what each
+              # merge actually did, which is the only way to tell a real write from
+              # a manifest that was already correct.
+              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}" >&2; then
                 # Rule 17 (a zero exit is not evidence): read :TAG back and
                 # require every arch just joined. The expected set is what
                 # combos-pertask pushed, not both arches: it skips an arch its
