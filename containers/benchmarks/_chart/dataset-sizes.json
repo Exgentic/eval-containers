@@ -29,6 +29,7 @@
  "compilebench": 15,
  "core-bench": 45,
  "cybench": 40,
+ "cybergym": 1368,
  "deepswe": 113,
  "docvqa": 5349,
  "drop": 9535,
