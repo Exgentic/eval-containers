@@ -1342,13 +1342,17 @@ jobs:
           IDX: ${{ matrix.shard.idx }}
         run: |
           jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json > items.json
-          fails=0; merged=0; skipped=0
-          # Process substitution, not a pipe: `jq | while` runs the loop body in a
-          # subshell, silently dropping fails/merged/skipped and defeating the exit
-          # check below (a real bug caught in a live test run — every merge
-          # succeeded there, but the job printed merged=0 skipped=0 fails=0 and
-          # would have exited 0 even if every merge had failed).
-          while IFS=$'\t' read -r B A TASK; do
+          # One ref at a time made this the release's largest phase: each costs
+          # several registry round-trips (two arch probes, fleet-tag's own hash
+          # read and create, then the read-back), 3-10 s, and swe-bench's 4,000
+          # combos took 772 runner-min to stitch — more than building them.
+          # The refs are independent images in separate repositories, so they
+          # merge in parallel. Each worker prints one status line per variant and
+          # the counts are read back from those lines, so the accounting below is
+          # exactly what the serial loop produced (and still cannot be lost to a
+          # subshell, which is what the process substitution here used to guard).
+          stitch_one() {
+            local B=$1 A=$2 TASK=$3 tid ref srcs a suffix got missing
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             for suffix in "" "-standalone"; do
               ref="${REGISTRY}/evals/${B}-${tid}--${A}${suffix}"
@@ -1356,8 +1360,8 @@ jobs:
               for a in amd64 arm64; do
                 docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
               done
-              [ "${#srcs[@]}" -eq 0 ] && { skipped=$((skipped+1)); continue; }
-              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then
+              if [ "${#srcs[@]}" -eq 0 ]; then echo "skipped ${ref}:${TAG}"; continue; fi
+              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}" >/dev/null; then
                 # Rule 17 (a zero exit is not evidence): read :TAG back and
                 # require every arch just joined. The expected set is what
                 # combos-pertask pushed, not both arches: it skips an arch its
@@ -1367,11 +1371,22 @@ jobs:
                 got=$(docker buildx imagetools inspect "${ref}:${TAG}" --raw 2>/dev/null \
                   | jq -r '.manifests[]?|select(.platform.os!="unknown")|.platform.architecture')
                 missing=$(comm -23 <(printf '%s\n' "${srcs[@]##*-}" | LC_ALL=C sort) <(LC_ALL=C sort -u <<< "$got") | paste -sd, -)
-                if [ -z "$missing" ]; then merged=$((merged+1))
-                else echo "::error::${ref}:${TAG} lacks [${missing}] after merge"; fails=$((fails+1)); fi
-              else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
+                if [ -z "$missing" ]; then echo "merged ${ref}:${TAG}"
+                else echo "failed ${ref}:${TAG} lacks [${missing}] after merge"; fi
+              else echo "failed merge failed: ${ref}:${TAG}"; fi
             done
-          done < <(jq -r '.[]|"\(.b)\t\(.a)\t\(.task)"' items.json)
+          }
+          export -f stitch_one
+          export REGISTRY TAG
+          # One line per field so xargs -n3 regroups them; a task id never
+          # contains whitespace (fleet-hash.sh refuses one that does).
+          # shellcheck disable=SC2016  # $1/$2/$3 belong to the xargs-spawned bash, not this shell
+          jq -r '.[]|"\(.b)\n\(.a)\n\(.task)"' items.json \
+            | xargs -r -P 16 -n 3 bash -c 'stitch_one "$1" "$2" "$3"' _ > stitch.log
+          merged=$(grep -c '^merged ' stitch.log || true)
+          skipped=$(grep -c '^skipped ' stitch.log || true)
+          fails=$(grep -c '^failed ' stitch.log || true)
+          sed -n 's/^failed /::error::/p' stitch.log
           echo "merged=$merged skipped=$skipped fails=$fails"
           [ "$fails" -eq 0 ] || { echo "::error::$fails pertask-combo manifest merge(s) failed"; exit 1; }
           # Rule 17 (a zero exit is not evidence): the work list is known up
