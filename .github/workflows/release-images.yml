@@ -1340,8 +1340,17 @@ jobs:
       - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos, shard ${{ matrix.shard.idx }})
         env:
           IDX: ${{ matrix.shard.idx }}
+          MAXPAR: ${{ needs.enumerate.outputs.maxpar }}
         run: |
           jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json > items.json
+          # Workers per job, bounded so the WHOLE matrix stays under GHCR's write
+          # limit — the number that matters is jobs x workers, not workers. At 16
+          # per job x 20 jobs the stitch of swe-bench's 8,000 refs died with
+          # "toomanyrequests: allowed: 44000/minute" on 9 refs, and fleet-tag's
+          # retries could not recover because every worker was retrying into the
+          # same ceiling. ~120 registry writers in flight is the budget.
+          par=$(( 120 / ${MAXPAR:-20} )); [ "$par" -ge 2 ] || par=2; [ "$par" -le 16 ] || par=16
+          echo "stitch workers: $par per job (matrix width ${MAXPAR:-20})"
           # One ref at a time made this the release's largest phase: each costs
           # several registry round-trips (two arch probes, fleet-tag's own hash
           # read and create, then the read-back), 3-10 s, and swe-bench's 4,000
@@ -1387,7 +1396,7 @@ jobs:
           # contains whitespace (fleet-hash.sh refuses one that does).
           # shellcheck disable=SC2016  # $1/$2/$3 belong to the xargs-spawned bash, not this shell
           jq -r '.[]|"\(.b)\n\(.a)\n\(.task)"' items.json \
-            | xargs -r -P 16 -n 3 bash -c 'stitch_one "$1" "$2" "$3"' _ > stitch.log
+            | xargs -r -P "$par" -n 3 bash -c 'stitch_one "$1" "$2" "$3"' _ > stitch.log
           merged=$(grep -c '^merged ' stitch.log || true)
           skipped=$(grep -c '^skipped ' stitch.log || true)
           fails=$(grep -c '^failed ' stitch.log || true)
