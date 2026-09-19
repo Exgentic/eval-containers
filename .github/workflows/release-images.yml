@@ -18,7 +18,10 @@ name: Release the fleet
 #                         FLEET_MAXPAR / FLEET_RUNNER — tune without editing this.)
 #   * PER-LEAF CACHE    — each leaf has its own registry layer cache (mode=max),
 #                         so editing one Dockerfile rebuilds only that leaf.
-#   * PROVENANCE + SBOM — SLSA provenance + syft SBOM on every pushed image.
+#   * PROVENANCE + SBOM — SLSA provenance on every pushed image; a syft SBOM on
+#                         every image that INSTALLS something (bases, agents,
+#                         benchmarks). A combo only COPYs from those, so its
+#                         package list is theirs and is not regenerated.
 #   * CVE GATE          — trivy scans the shared bases before :latest is promoted.
 #   * MULTI-ARCH        — native-per-arch: bases/leaves/per-task build on amd64
 #                         AND arm64 runners (NOT QEMU — pyarrow segfaults under it),
@@ -71,7 +74,7 @@ on:
       include_standalone:
         description: "Also build single-container -standalone bundles for each combo"
         type: boolean
-        default: true
+        default: false
       dry_run:
         description: "Validate only — bake --print / echo, nothing built or pushed"
         type: boolean
@@ -285,6 +288,15 @@ jobs:
           # Debug: --only restricts every matrix to a handful of named leaf targets.
           if [ -n "${ONLY:-}" ]; then
             leaf_list=$(comm -12 <(printf '%s\n' "$leaf_list" | sort -u) <(tr ' ' '\n' <<< "$ONLY" | sort -u))
+            # A combo COPYs from agents/<a>:TAG, so every agent it will use must be
+            # in scope too — for an unchanged agent that is a seconds-long retag of
+            # :latest, never a build. Left out, the combo asks the registry for a
+            # tag nothing created, and retry burned ~4 min per combo on it.
+            if [ -n "$COMBO_AGENTS" ]; then
+              read -ra _ca <<< "$COMBO_AGENTS"
+              leaf_list=$({ printf '%s\n' "$leaf_list"; printf 'agent-%s\n' "${_ca[@]}"; } \
+                | sort -u | comm -12 - <(printf '%s\n' "$all" | sort -u))
+            fi
             echo "ONLY active -> $(printf '%s\n' "$leaf_list" | grep -c .) leaf target(s)"
           fi
           # Channel run: only stale leaves build (fresh ones are already at :latest).
@@ -298,7 +310,6 @@ jobs:
           # not exceed 128 of them — and at 129 it stopped being able to release
           # at all on a tag or dispatch. They are sharded with every other
           # oversize list below instead.
-          if [ "$n" -le 0 ] && [ "$IS_CHANNEL" != "true" ]; then echo "::error::leaf count 0 — releases and dispatches must name at least one leaf"; exit 1; fi
 
           # Shared-env benchmark names (have a compose.yaml) — for compose + combos.
           # --only mode derives the compose list from the restricted leaves, a
@@ -503,6 +514,16 @@ jobs:
           pertask_combo_items=$(printf '%s' "$combos" | jq -c '[.[] | select(.task!="")]')
           combos=$(printf '%s' "$combos" | jq -c '[.[] | select(.task=="")]')
 
+          # Every combo's build-input hash, computed ONCE here and shipped with
+          # the shards: the hash is a pure function of the commit, so one
+          # fleet-hash run over the whole list is exactly one hash per combo
+          # per process — and the ~3 s of bookkeeping that every combo paid
+          # for a fresh process, a tree materialisation and a graph parse.
+          # Rows are name<TAB>hash<TAB>…, the script's own row format.
+          printf '%s\n%s' "$combos" "$pertask_combo_items" | jq -rs 'add[] | "\(.b) \(.a) \(.task // "")"' \
+            | bash containers/scripts/fleet-hash.sh combo > hashes.tsv
+          echo "combo hashes: $(wc -l < hashes.tsv) rows"
+
           # ── shard oversize lists into ≤256 chunks: [{idx,items}] ──
           # GitHub caps a matrix at 256 jobs; each shard job loops its items. Chunk
           # combos by 25 (thin overlays) and per-task bases by 10 (heavier builds).
@@ -511,15 +532,46 @@ jobs:
           # would fail the run outright. Double the chunk until it fits: a longer
           # shard is a slower release, a failed enumerate is no release (#452).
           shard() { jq -c --argjson k "$2" '[range(0;length;$k) as $i | {idx:($i/$k|floor), items:.[$i:$i+$k]}]' <<< "$1"; }
+          # Same shards, dealt round-robin instead of sliced. For per-task bases the
+          # ids are alphabetical and the heavy environments cluster: in run
+          # 35081445749 one shard held energy-*, exceltable, exoplanet, financial
+          # and the two BugSwarm fix-build-* tasks and took 71 min, while the
+          # median shard took 18 and the fastest 9. The phase ends when the
+          # slowest shard does, and merge — plus every combo job behind it — waits
+          # on that one. Dealing the list spreads neighbours across shards.
+          stripe() { jq -c --argjson k "$2" '. as $a | ((($a|length) + $k - 1) / $k | floor) as $n
+                       | [range(0;$n) as $i | {idx:$i, items:[$a | to_entries[] | select(.key % $n == $i) | .value]}]' <<< "$1"; }
           chunk() { local n k; n=$(jq length <<< "$1"); k=$2
                     while [ "$(( (n + k - 1) / k ))" -gt 128 ]; do k=$((k * 2)); done; echo "$k"; }
           # Leaves shard at 1: below the cap every shard holds exactly one leaf,
           # so the fan-out is what it has always been, and only a fleet past 128
           # starts pairing them up.
+          # A release or dispatch must name at least one thing to BUILD — which is
+          # not the same as one LEAF. `only=` naming a per-task benchmark leaves
+          # zero leaves (its tasks are built by the per-task matrix, not the leaf
+          # one) and a full per-task list, and testing leaves alone rejected that
+          # with "leaf count 0" before the per-task list had even been computed —
+          # so a per-task-only release could not be dispatched at all. Count the
+          # work, and count it once every list is known.
+          if [ "$IS_CHANNEL" != "true" ]; then
+            work=$(( $(jq length <<< "$leaves") + $(jq length <<< "$pertask") + $(jq length <<< "$combos") ))
+            [ "$work" -gt 0 ] \
+              || { echo "::error::nothing to build: 0 leaves, 0 per-task images, 0 combos — check only= / tasks="; exit 1; }
+          fi
           leaf_shards=$(shard "$leaves" "$(chunk "$leaves" 1)")
           combo_shards=$(shard "$combos" 25)
-          pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 10)")
-          pertask_shards=$(shard "$pertask" "$(chunk "$pertask" 10)")
+          # Per-task combos by 100, not 10. A combo job's fixed cost is not the
+          # setup but the agents: every job pulls all eight agent images cold and
+          # uploads each agent's layer once more, whatever it then builds. At 10
+          # combos a job that was most of the job — measured 7.9 min per job, 47 s
+          # per combo, against ~12 s for a combo whose agent is already warm. A
+          # hundred combos amortise it (100 x ~35 s cold-to-warm ≈ 1 h at worst,
+          # inside the job's 120 min); chunk still doubles past 128 shards.
+          pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 100)")
+          # Per-task bases are dealt (see stripe above). Combo shards stay sliced:
+          # their items are task-major, so the eight agents of a task run
+          # consecutively and the task's base image is pulled once, not eight times.
+          pertask_shards=$(stripe "$pertask" "$(chunk "$pertask" 10)")
           # The shard CONTENTS travel as an artifact, not as job outputs: a job's
           # outputs are capped at 1 MB in total, and once #461 put per-task on the
           # main-push channel these three lists (5.5k per-task combos, 789
@@ -547,15 +599,15 @@ jobs:
           [ "$((ptn * 2))" -le 256 ] || { echo "::error::pertask_shards = $ptn × 2 arch = $((ptn * 2)) > 256 — raise the per-task chunk size in enumerate"; exit 1; }
           [ "$((pcn * 2))" -le 256 ] || { echo "::error::pertask_combo_shards = $pcn × 2 arch = $((pcn * 2)) > 256 — raise the pertask-combo chunk size in enumerate"; exit 1; }
 
-          # Matrix width by the clock: these matrices are the widest thing this
-          # account runs, so overnight they take everything and in working hours
-          # they leave room for PR checks. A run that drags into the day narrows
-          # itself, since each matrix reads this when it starts. FLEET_MAXPAR
-          # still wins when set.
-          H=$(date -u +%H)
-          if [ "$H" -ge 22 ] || [ "$H" -lt 7 ]; then maxpar=20; else maxpar=6; fi
-          maxpar="${FLEET_MAXPAR:-$maxpar}"
-          echo "matrix width: $maxpar (UTC hour $H)"
+          # Matrix width. This used to follow the clock (20 at night, 6 by day, to
+          # leave runners for PR checks) — but it is read ONCE, here, so a run
+          # never "narrowed itself"; it only decided whether a deliberate daytime
+          # dispatch crawled 6-wide (an 87-task republish took hours), and whether
+          # the nightly, whose cron already fires ~5 h late, would run 6-wide the
+          # first time it slipped past 07:00. Neither is a throttle anyone asked
+          # for. Full width; FLEET_MAXPAR is the knob when someone wants gentler.
+          maxpar="${FLEET_MAXPAR:-20}"
+          echo "matrix width: $maxpar"
 
           has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
           dirty=true
@@ -580,7 +632,9 @@ jobs:
       - uses: actions/upload-artifact@v7
         with:
           name: shards
-          path: shards.json
+          path: |
+            shards.json
+            hashes.tsv
           retention-days: 1
 
   # ── build every leaf — one job per leaf (max parallelism + isolation) ─────
@@ -665,10 +719,19 @@ jobs:
           # failed layer, and the jittered backoff de-syncs parallel leaves so they
           # stop hammering HF in lockstep. Real failures still surface after max.
           retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; return 1; }
-              echo "::warning::build attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
+            local n=0 max="${BUILD_RETRIES:-4}" out st
+            out=$(mktemp)
+            while :; do
+              "$@" 2>&1 | tee "$out"; st=${PIPESTATUS[0]}
+              [ "$st" -eq 0 ] && { rm -f "$out"; return 0; }
+              # An input the registry does not have will not appear on the next attempt:
+              # fail now rather than spend three back-offs (~4 min) on it.
+              if grep -qE 'failed to resolve source metadata|MANIFEST_UNKNOWN|: not found' "$out"; then
+                echo "::error::input not found — not retrying: $(grep -oE 'failed to resolve source metadata for [^ ]+' "$out" | head -1)"
+                rm -f "$out"; return 1
+              fi
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; rm -f "$out"; return 1; }
+              echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
           # dry_run validates config only (bake --print); else build + attest + push.
@@ -736,9 +799,18 @@ jobs:
           # retry rides out transient HF rate-limiting (swe-bench fetches task
           # metadata from HF) + registry blips; jittered backoff de-syncs the shard.
           retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+            local n=0 max="${BUILD_RETRIES:-4}" out st
+            out=$(mktemp)
+            while :; do
+              "$@" 2>&1 | tee "$out"; st=${PIPESTATUS[0]}
+              [ "$st" -eq 0 ] && { rm -f "$out"; return 0; }
+              # An input the registry does not have will not appear on the next attempt:
+              # fail now rather than spend three back-offs (~4 min) on it.
+              if grep -qE 'failed to resolve source metadata|MANIFEST_UNKNOWN|: not found' "$out"; then
+                echo "::error::input not found — not retrying: $(grep -oE 'failed to resolve source metadata for [^ ]+' "$out" | head -1)"
+                rm -f "$out"; return 1
+              fi
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; rm -f "$out"; return 1; }
               echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
@@ -973,15 +1045,29 @@ jobs:
         env:
           IDX: ${{ matrix.shard.idx }}
           DRY: ${{ inputs.dry_run }}
-          STANDALONE: ${{ inputs.include_standalone }}
+          # Empty on a tag or schedule (dispatch inputs are not populated there), and
+          # empty is not "false" — which is how every automatic release built a
+          # standalone bundle for every combo. Default it off: nothing launches one
+          # (no reference in the chart or the dashboard), the per-task ones were not
+          # even in the published index, and a dispatch can still ask for them.
+          STANDALONE: ${{ inputs.include_standalone || 'false' }}
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
           ITEMS=$(jq -c --argjson i "$IDX" '.combo[] | select(.idx==$i).items' shards.json)
           # retry rides out transient registry pull/push blips; jittered backoff.
           retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+            local n=0 max="${BUILD_RETRIES:-4}" out st
+            out=$(mktemp)
+            while :; do
+              "$@" 2>&1 | tee "$out"; st=${PIPESTATUS[0]}
+              [ "$st" -eq 0 ] && { rm -f "$out"; return 0; }
+              # An input the registry does not have will not appear on the next attempt:
+              # fail now rather than spend three back-offs (~4 min) on it.
+              if grep -qE 'failed to resolve source metadata|MANIFEST_UNKNOWN|: not found' "$out"; then
+                echo "::error::input not found — not retrying: $(grep -oE 'failed to resolve source metadata for [^ ]+' "$out" | head -1)"
+                rm -f "$out"; return 1
+              fi
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; rm -f "$out"; return 1; }
               echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
@@ -1008,6 +1094,12 @@ jobs:
               | jq -r '[.. | objects | .Labels? // empty][0] // {} | to_entries[]
                        | select(.key | startswith("eval.agent.")) | "eval.labels.\(.key)=\(.value)"'
           }
+          # Hashes come from enumerate's hashes.tsv (one fleet-hash run per release),
+          # inspects and agent labels are read once per image/agent, not per combo.
+          declare -A HASH BASE_RAW AGENT_LABELS
+          while IFS=$'\t' read -r name h _; do HASH["$name"]="$h"; done < hashes.tsv
+          base_raw_of() { [ -n "${BASE_RAW[$1]+x}" ] || BASE_RAW["$1"]=$(docker buildx imagetools inspect "$1" --raw 2>&1 || true); printf '%s' "${BASE_RAW[$1]}"; }
+          labels_of() { [ -n "${AGENT_LABELS[$1]+x}" ] || AGENT_LABELS["$1"]=$(agent_labels "$1"); printf '%s' "${AGENT_LABELS[$1]}"; }
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A < <(jq -r '[.b,.a]|@tsv' <<< "$it")   # shared combo only: evals/<b>--<a> (per-task combos build in combos-pertask)
@@ -1016,16 +1108,17 @@ jobs:
             # are published amd64-only. Intersect {amd64,arm64} with what the
             # base actually carries so the overlay bake matches it (a hardcoded
             # multi-arch PLAT dies "no match for platform" on an amd64-only base).
-            base_raw=$(docker buildx imagetools inspect "$bench_img" --raw 2>&1 || true)
+            base_raw=$(base_raw_of "$bench_img")
             PLAT=""
             printf '%s' "$base_raw" | grep -q '"amd64"' && PLAT="linux/amd64"
             printf '%s' "$base_raw" | grep -q '"arm64"' && PLAT="${PLAT:+$PLAT,}linux/arm64"
             PLAT="${PLAT:-linux/amd64}" # fall back to amd64 if inspect is unreadable
             # Combo build-input hashes (delivery/RULES.md rule 12) — per-target,
             # never `*.labels`: eval and eval-standalone hash differently.
-            HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A") \
-              || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
-            EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
+            EH="${HASH[evals/${eb}--${A}]:-}"; SH="${HASH[evals/${eb}--${A}-standalone]:-}"
+            if [ -z "$EH" ] || [ -z "$SH" ]; then
+              echo "::error::no input-hash for evals/${eb}--${A} in hashes.tsv"; fails=$((fails+1)); continue
+            fi
             # eval = lean base (sidecar mode); eval-standalone = single-container
             # bundle (gateway+otelcol+process-compose in-image). bake builds eval
             # once, then layers standalone on it via the eval-base context. The
@@ -1035,13 +1128,18 @@ jobs:
             carry "" "$EH" || TGT+=(eval)
             [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)
             [ "${#TGT[@]}" -gt 0 ] || continue
-            ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
+            # No --sbom on a combo: it installs nothing (its build is COPY/chmod
+            # only), so its package list is exactly the union of the agent's and
+            # the benchmark's, both of which carry their own. Generating it re-scans
+            # the whole benchmark filesystem per combo — measured at 11 s of a 57 s
+            # build, across ~11k combos. Provenance stays: that IS per-combo.
+            ACT=("${TGT[@]}" --provenance=mode=max --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A}"
             # Pushed under the hash tag itself (rule 18); the :TAG alias follows
             # via fleet-tag, so the hash name always exists first (rule 19).
             agent_img="${REGISTRY}/agents/${A}:${TAG}"
-            mapfile -t AL < <(agent_labels "$agent_img")
+            mapfile -t AL < <(labels_of "$agent_img")
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="$agent_img" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
@@ -1100,7 +1198,12 @@ jobs:
         env:
           IDX: ${{ matrix.shard.idx }}
           DRY: ${{ inputs.dry_run }}
-          STANDALONE: ${{ inputs.include_standalone }}
+          # Empty on a tag or schedule (dispatch inputs are not populated there), and
+          # empty is not "false" — which is how every automatic release built a
+          # standalone bundle for every combo. Default it off: nothing launches one
+          # (no reference in the chart or the dashboard), the per-task ones were not
+          # even in the published index, and a dispatch can still ask for them.
+          STANDALONE: ${{ inputs.include_standalone || 'false' }}
           ARCH: ${{ matrix.arch }}
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
@@ -1119,9 +1222,18 @@ jobs:
           export MODEL_IMAGE="${REGISTRY}/models/bifrost:${ORIG_TAG}"
           export PROCESS_COMPOSE_IMAGE="${REGISTRY}/core/process-compose:${ORIG_TAG}"
           retry() {
-            local n=0 max="${BUILD_RETRIES:-4}"
-            until "$@"; do
-              n=$((n+1)); [ "$n" -ge "$max" ] && return 1
+            local n=0 max="${BUILD_RETRIES:-4}" out st
+            out=$(mktemp)
+            while :; do
+              "$@" 2>&1 | tee "$out"; st=${PIPESTATUS[0]}
+              [ "$st" -eq 0 ] && { rm -f "$out"; return 0; }
+              # An input the registry does not have will not appear on the next attempt:
+              # fail now rather than spend three back-offs (~4 min) on it.
+              if grep -qE 'failed to resolve source metadata|MANIFEST_UNKNOWN|: not found' "$out"; then
+                echo "::error::input not found — not retrying: $(grep -oE 'failed to resolve source metadata for [^ ]+' "$out" | head -1)"
+                rm -f "$out"; return 1
+              fi
+              n=$((n+1)); [ "$n" -ge "$max" ] && { echo "::error::failed after $max attempts"; rm -f "$out"; return 1; }
               echo "::warning::attempt $n/$max failed; backing off"; sleep $(( n*30 + (RANDOM % 30) ))
             done
           }
@@ -1143,6 +1255,12 @@ jobs:
               | jq -r '[.. | objects | .Labels? // empty][0] // {} | to_entries[]
                        | select(.key | startswith("eval.agent.")) | "eval.labels.\(.key)=\(.value)"'
           }
+          # Hashes come from enumerate's hashes.tsv (one fleet-hash run per release),
+          # inspects and agent labels are read once per image/agent, not per combo.
+          declare -A HASH BASE_RAW AGENT_LABELS
+          while IFS=$'\t' read -r name h _; do HASH["$name"]="$h"; done < hashes.tsv
+          base_raw_of() { [ -n "${BASE_RAW[$1]+x}" ] || BASE_RAW["$1"]=$(docker buildx imagetools inspect "$1" --raw 2>&1 || true); printf '%s' "${BASE_RAW[$1]}"; }
+          labels_of() { [ -n "${AGENT_LABELS[$1]+x}" ] || AGENT_LABELS["$1"]=$(agent_labels "$1"); printf '%s' "${AGENT_LABELS[$1]}"; }
           fails=0
           while read -r it; do
             IFS=$'\t' read -r B A TASK < <(jq -r '[.b,.a,.task]|@tsv' <<< "$it")
@@ -1152,21 +1270,27 @@ jobs:
             # kind=script branch skips pushing an arch it didn't build) has no
             # ${ARCH} platform to build against — skip here too; merge-pertask-combos
             # leaves it single-arch rather than failing on "no match for platform".
-            base_raw=$(docker buildx imagetools inspect "$bench_img" --raw 2>&1 || true)
+            base_raw=$(base_raw_of "$bench_img")
             printf '%s' "$base_raw" | grep -q "\"$ARCH\"" \
               || { echo "::warning::evals/${eb}--${A}: base lacks $ARCH — skipping (merge keeps it single-arch)"; continue; }
-            HROWS=$(bash containers/scripts/fleet-hash.sh combo "$B" "$A" "$TASK") \
-              || { echo "::error::no input-hash for evals/${eb}--${A}"; fails=$((fails+1)); continue; }
-            EH=$(sed -n 1p <<< "$HROWS" | cut -f2); SH=$(sed -n 2p <<< "$HROWS" | cut -f2)
+            EH="${HASH[evals/${eb}--${A}]:-}"; SH="${HASH[evals/${eb}--${A}-standalone]:-}"
+            if [ -z "$EH" ] || [ -z "$SH" ]; then
+              echo "::error::no input-hash for evals/${eb}--${A} in hashes.tsv"; fails=$((fails+1)); continue
+            fi
             TGT=()
             carry "" "$EH" || TGT+=(eval)
             [ "$STANDALONE" = "false" ] || carry "-standalone" "$SH" || TGT+=(eval-standalone)
             [ "${#TGT[@]}" -gt 0 ] || continue
-            ACT=("${TGT[@]}" --provenance=mode=max --sbom=true --push)
+            # No --sbom on a combo: it installs nothing (its build is COPY/chmod
+            # only), so its package list is exactly the union of the agent's and
+            # the benchmark's, both of which carry their own. Generating it re-scans
+            # the whole benchmark filesystem per combo — measured at 11 s of a 57 s
+            # build, across ~11k combos. Provenance stays: that IS per-combo.
+            ACT=("${TGT[@]}" --provenance=mode=max --push)
             [ "$DRY" = "true" ] && ACT=("${TGT[@]}" --print)
             echo "::group::evals/${eb}--${A} (${ARCH})"
             agent_img="${REGISTRY}/agents/${A}:${ORIG_TAG}"
-            mapfile -t AL < <(agent_labels "$agent_img")
+            mapfile -t AL < <(labels_of "$agent_img")
             if EVAL_BENCHMARK="$eb" EVAL_AGENT="$A" \
                BENCHMARK_IMAGE="$bench_img" AGENT_IMAGE="$agent_img" \
                retry docker buildx bake -f containers/docker-bake.hcl -f containers/core/combination.docker-bake.hcl \
@@ -1216,15 +1340,28 @@ jobs:
       - name: imagetools create :TAG from :TAG-amd64 + :TAG-arm64 (per-task combos, shard ${{ matrix.shard.idx }})
         env:
           IDX: ${{ matrix.shard.idx }}
+          MAXPAR: ${{ needs.enumerate.outputs.maxpar }}
         run: |
           jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json > items.json
-          fails=0; merged=0; skipped=0
-          # Process substitution, not a pipe: `jq | while` runs the loop body in a
-          # subshell, silently dropping fails/merged/skipped and defeating the exit
-          # check below (a real bug caught in a live test run — every merge
-          # succeeded there, but the job printed merged=0 skipped=0 fails=0 and
-          # would have exited 0 even if every merge had failed).
-          while IFS=$'\t' read -r B A TASK; do
+          # Workers per job, bounded so the WHOLE matrix stays under GHCR's write
+          # limit — the number that matters is jobs x workers, not workers. At 16
+          # per job x 20 jobs the stitch of swe-bench's 8,000 refs died with
+          # "toomanyrequests: allowed: 44000/minute" on 9 refs, and fleet-tag's
+          # retries could not recover because every worker was retrying into the
+          # same ceiling. ~120 registry writers in flight is the budget.
+          par=$(( 120 / ${MAXPAR:-20} )); [ "$par" -ge 2 ] || par=2; [ "$par" -le 16 ] || par=16
+          echo "stitch workers: $par per job (matrix width ${MAXPAR:-20})"
+          # One ref at a time made this the release's largest phase: each costs
+          # several registry round-trips (two arch probes, fleet-tag's own hash
+          # read and create, then the read-back), 3-10 s, and swe-bench's 4,000
+          # combos took 772 runner-min to stitch — more than building them.
+          # The refs are independent images in separate repositories, so they
+          # merge in parallel. Each worker prints one status line per variant and
+          # the counts are read back from those lines, so the accounting below is
+          # exactly what the serial loop produced (and still cannot be lost to a
+          # subshell, which is what the process substitution here used to guard).
+          stitch_one() {
+            local B=$1 A=$2 TASK=$3 tid ref srcs a suffix got missing
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
             for suffix in "" "-standalone"; do
               ref="${REGISTRY}/evals/${B}-${tid}--${A}${suffix}"
@@ -1232,8 +1369,13 @@ jobs:
               for a in amd64 arm64; do
                 docker buildx imagetools inspect "${ref}:${TAG}-${a}" >/dev/null 2>&1 && srcs+=("${ref}:${TAG}-${a}")
               done
-              [ "${#srcs[@]}" -eq 0 ] && { skipped=$((skipped+1)); continue; }
-              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}"; then
+              if [ "${#srcs[@]}" -eq 0 ]; then echo "skipped ${ref}:${TAG}"; continue; fi
+              # fleet-tag's own report ("hash tag current" / "<ref>:<hash> -> :<tag>")
+              # goes to the job log on stderr, not into the status stream stdout
+              # carries — parallelising this must not cost the record of what each
+              # merge actually did, which is the only way to tell a real write from
+              # a manifest that was already correct.
+              if bash containers/scripts/fleet-tag.sh "$ref" "$TAG" "${srcs[@]}" >&2; then
                 # Rule 17 (a zero exit is not evidence): read :TAG back and
                 # require every arch just joined. The expected set is what
                 # combos-pertask pushed, not both arches: it skips an arch its
@@ -1243,11 +1385,22 @@ jobs:
                 got=$(docker buildx imagetools inspect "${ref}:${TAG}" --raw 2>/dev/null \
                   | jq -r '.manifests[]?|select(.platform.os!="unknown")|.platform.architecture')
                 missing=$(comm -23 <(printf '%s\n' "${srcs[@]##*-}" | LC_ALL=C sort) <(LC_ALL=C sort -u <<< "$got") | paste -sd, -)
-                if [ -z "$missing" ]; then merged=$((merged+1))
-                else echo "::error::${ref}:${TAG} lacks [${missing}] after merge"; fails=$((fails+1)); fi
-              else echo "::error::merge failed: ${ref}:${TAG}"; fails=$((fails+1)); fi
+                if [ -z "$missing" ]; then echo "merged ${ref}:${TAG}"
+                else echo "failed ${ref}:${TAG} lacks [${missing}] after merge"; fi
+              else echo "failed merge failed: ${ref}:${TAG}"; fi
             done
-          done < <(jq -r '.[]|"\(.b)\t\(.a)\t\(.task)"' items.json)
+          }
+          export -f stitch_one
+          export REGISTRY TAG
+          # One line per field so xargs -n3 regroups them; a task id never
+          # contains whitespace (fleet-hash.sh refuses one that does).
+          # shellcheck disable=SC2016  # $1/$2/$3 belong to the xargs-spawned bash, not this shell
+          jq -r '.[]|"\(.b)\n\(.a)\n\(.task)"' items.json \
+            | xargs -r -P "$par" -n 3 bash -c 'stitch_one "$1" "$2" "$3"' _ > stitch.log
+          merged=$(grep -c '^merged ' stitch.log || true)
+          skipped=$(grep -c '^skipped ' stitch.log || true)
+          fails=$(grep -c '^failed ' stitch.log || true)
+          sed -n 's/^failed /::error::/p' stitch.log
           echo "merged=$merged skipped=$skipped fails=$fails"
           [ "$fails" -eq 0 ] || { echo "::error::$fails pertask-combo manifest merge(s) failed"; exit 1; }
           # Rule 17 (a zero exit is not evidence): the work list is known up

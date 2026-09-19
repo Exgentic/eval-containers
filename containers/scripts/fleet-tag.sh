@@ -29,7 +29,13 @@ plat_digests() {
          | "\(.platform.os)/\(.platform.architecture)\t\(.digest)"' | LC_ALL=C sort
 }
 
-h=$(bash "$HERE/fleet-status.sh" hash "$1") || die "no readable input-hash on $1"
+# Read-after-write: this image was pushed seconds ago, and GHCR can answer with
+# a manifest whose config blob it has not caught up on yet — run 35104442593
+# lost a whole 25-combo shard to "no readable input-hash" on an image that had
+# all 17 of its labels a minute later. Every other registry call in this script
+# already goes through retry; this one did not.
+read_hash() { h=$(bash "$HERE/fleet-status.sh" hash "$1"); }
+retry read_hash "$1" || die "no readable input-hash on $1"
 new=$(docker buildx imagetools create --dry-run "$@" | plat_digests)
 old=""
 if raw=$(docker buildx imagetools inspect "${ref}:${h}" --raw 2>/dev/null); then

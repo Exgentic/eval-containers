@@ -603,6 +603,44 @@ fn per_task_hashes_in_batch_match_the_single_form() {
     );
 }
 
+/// `combo` with no arguments reads `<benchmark> <agent> [task]` triples on stdin
+/// and must print exactly what the same single calls print, in order: the
+/// release computes every combo's hash in one such call (enumerate ships
+/// `hashes.tsv`), so a divergence here would publish an image under a hash no
+/// single call would ever reproduce.
+#[test]
+fn combo_stdin_form_matches_the_single_calls() {
+    let root = repo_root();
+    let singles = [
+        fleet_hash(&root, &["combo", "aime", "claude-code"]),
+        fleet_hash(&root, &["combo", "aime", "codex"]),
+        fleet_hash(
+            &root,
+            &["combo", "skills-bench", "claude-code", "Citation-Check"],
+        ),
+    ]
+    .concat();
+    let piped = Command::new("bash")
+        .arg("-c")
+        .arg(format!(
+            "printf '%s\\n' 'aime claude-code' 'aime codex' 'skills-bench claude-code Citation-Check' | bash {} combo",
+            script().display()
+        ))
+        .current_dir(&root)
+        .output()
+        .expect("run fleet-hash.sh combo via stdin");
+    assert!(
+        piped.status.success(),
+        "stdin form failed:\n{}",
+        String::from_utf8_lossy(&piped.stderr)
+    );
+    assert_eq!(
+        String::from_utf8_lossy(&piped.stdout),
+        singles,
+        "combo stdin form must print exactly the single-call rows, in order"
+    );
+}
+
 /// Every in-repo base image the combo targets COPY from MUST be folded into the
 /// combo's closure (delivery/RULES.md rule 11) — including the edge, whose
 /// omission let a changed `containers/core/edge/**` leave every combo hash

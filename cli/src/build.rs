@@ -571,8 +571,29 @@ fn docker_compose_publish(
     for (k, v) in publish_env {
         cmd.env(k, v);
     }
-    let pub_out = cmd
-        .output()
+    // Compose asks a SECOND question that `-y` does not cover on v2.x — "you are
+    // about to publish bind mounts declaration within your OCI artifact … Are you
+    // ok to publish these bind mount declarations? [y/N]" — reads it from stdin,
+    // and on EOF takes the default N: it declines the stack and still exits 0.
+    // That is why every eval-<b> artifact silently stopped updating on the
+    // runners (compose v2.38.2) while publishing fine from a laptop on v5.
+    // The declarations are the point of the artifact — they tell the consumer
+    // where its own output goes, and only the declaration travels, never the
+    // content — so answer yes, in writing, instead of depending on a default.
+    cmd.stdin(std::process::Stdio::piped());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to run docker compose: {e}"))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| "docker compose stdin unavailable".to_string())?
+        .write_all(b"y\n")
+        .map_err(|e| format!("failed to answer docker compose's prompt: {e}"))?;
+    let pub_out = child
+        .wait_with_output()
         .map_err(|e| format!("failed to run docker compose: {e}"))?;
     let stderr = String::from_utf8_lossy(&pub_out.stderr);
     if !pub_out.status.success() {
@@ -583,6 +604,7 @@ fn docker_compose_publish(
         ));
     }
     eprint!("{stderr}");
+    eprint!("{}", String::from_utf8_lossy(&pub_out.stdout));
 
     // The post-condition: `publish` can decline a stack and still exit 0, so
     // confirm the artifact rather than believing the exit code.
