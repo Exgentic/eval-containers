@@ -57,6 +57,9 @@ benchmark's `agent: native` is structural (benchmarks/RULES.md 12b).
        parse as YAML — an intermediate variable changed how empty string values
        survived the round-trip and broke `helm lint`. */ -}}
 {{- $over := empty .Values.timeoutOverride | ternary dict (dict "timeout" (.Values.timeoutOverride | toString)) -}}
+{{- if not (empty .Values.memoryOverride) -}}
+{{- $over = mergeOverwrite $over (dict "resources" (dict "limits" (dict "memory" (.Values.memoryOverride | toString)))) -}}
+{{- end -}}
 {{- mergeOverwrite (deepCopy .Values) $preset $env $over | toYaml -}}
 {{- end -}}
 
