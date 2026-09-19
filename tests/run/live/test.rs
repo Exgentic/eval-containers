@@ -235,7 +235,9 @@ fn pick_task_ids(b: &Benchmark) -> Vec<String> {
 // ─── Known-broken loader ──────────────────────────────────────────
 
 fn load_known_broken_builds() -> BTreeSet<String> {
-    let Ok(text) = fs::read_to_string("tests/build/known-broken.md") else {
+    let Ok(text) =
+        fs::read_to_string(test_support::repo_root().join("tests/build/known-broken.md"))
+    else {
         return BTreeSet::new();
     };
     let mut out = BTreeSet::new();
@@ -750,8 +752,8 @@ fn write_matrix() {
         DEFAULT_MAX_BUDGET_USD * total_runs as f64,
     ));
 
-    fs::create_dir_all("tests/live").expect("create tests/live");
-    fs::write("tests/run/live/matrix.md", &out).expect("write matrix");
+    let matrix_path = test_support::repo_root().join("tests/run/live/matrix.md");
+    fs::write(&matrix_path, &out).expect("write matrix");
     eprintln!(
         "→ wrote tests/run/live/matrix.md ({} benchmarks, {} runs)",
         benchmarks.len(),
