@@ -69,6 +69,19 @@ timeout: "300"
 # the MODEL, not the benchmark — see presets/deepswe.yaml for measured per-model
 # recommendations. Empty -> the preset (or this default) applies.
 timeoutOverride: ""
+# Overrides a preset's `resources.limits.memory` for this run
+# (`--set memoryOverride=16Gi`). Plain `--set resources.limits.memory=` cannot win,
+# for the same reason `timeout` couldn't: a preset is mergeOverwrite'd on top of
+# .Values, so a benchmark whose preset pins `resources` — 8 of this chart's 11
+# presets do — kept the preset's memory and dropped the override in silence
+# (osworld asked for 16Gi and rendered 8Gi). Like timeoutOverride this lands in the
+# last-merged layer, so it wins for preset and preset-less benchmarks alike, and it
+# merges INTO `resources` rather than replacing it, so the preset's cpu survives.
+# The right limit is a property of the TASK, not the benchmark: upstream
+# terminal-bench declares a per-task `memory_mb` in each task.toml (68 tasks at
+# 2Gi, 13 at 4Gi, 8 at 8Gi), which is why an operator must be able to raise it for
+# one run — e.g. after an OOM kill. Empty -> the preset (or this default) applies.
+memoryOverride: ""
 # Per-task wall clock, set on the pod. Unset -> timeout + deadlineGrace; grace
 # must cover grading (scicode's is 600s).
 deadlineGrace: 600
