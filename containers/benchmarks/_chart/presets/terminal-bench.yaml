@@ -1,0 +1,48 @@
+# Terminal-Bench 2.1 (Harbor) — per-task resources come from upstream's
+# tasks/<task>/task.toml [environment] block, read at the pinned dataset ref
+# (build.sh's REF=c5ee500c185224c97cd6caff7866a990a0057f41) across all 89 tasks:
+#
+#   cpus        1 (83 tasks) · 2 (3) · 4 (3)          -> max 4
+#   memory_mb   2048 (68)    · 4096 (13) · 8192 (8)   -> max 8192 MiB = 8Gi
+#   storage_mb  10240 for all 89 tasks (no variation) -> 10Gi
+#   gpus        0 for all 89 tasks
+#
+# This benchmark bakes ONE image per task, but the chart's `resources` is a single
+# default for whichever task runs — there is no per-task branch here (the per-task
+# knob upstream exposes is read by build.sh only for the wall clock, which the
+# image carries as `LABEL eval.benchmark.timeout`). So the limit has to be the
+# MAXIMUM any task declares, not the modal value: a limit set at the 2Gi mode
+# OOM-kills the 21 tasks above it, and an OOM kill during the agent phase grades
+# as reward 0, indistinguishable from a wrong answer. Sizing to the max costs
+# nothing when unused — `limits` is a ceiling, and `requests` (what the scheduler
+# reserves against the Kueue memory quota) stays at the chart default 512Mi.
+#
+# memory: upstream's max memory_mb (8192 MiB). Note the runner's /tmp is an
+# in-memory emptyDir (`medium: Memory`, 1Gi in job.yaml), so tmpfs pages count
+# against this limit — another reason not to sit at the 2Gi mode.
+#
+# ephemeral-storage: upstream's storage_mb, 10Gi. Every one of the 89 tasks
+# declares exactly 10240 MiB, so the max IS the uniform value. This bounds the
+# writable container layer plus non-Memory emptyDirs; unset, a task that fills
+# the node's disk gets the pod evicted by the kubelet with no limit ever hit.
+# The request is deliberately below the limit (2Gi, as deepswe does): eviction
+# risk is governed by the limit, and a 10Gi request would reserve disk on the
+# node for all 89 tasks when nearly none approach it.
+#
+# Rule 24e: these limits MUST match compose.yaml's `deploy.resources.limits`
+# modulo k8s unit syntax. compose carries the cpu/memory pair (2/8G — Compose has
+# no ephemeral-storage concept, so storage is k8s-only, as in presets/deepswe.yaml).
+# An operator can still raise memory for a single run with `--set memoryOverride=`.
+#
+# cpus stays at the chart default '2' rather than upstream's max of 4: only 3 of
+# 89 tasks ask for 4, CPU is compressible (throttling slows a task, it does not
+# fail it), and raising it would widen the Kueue cpu reservation for every task.
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+    ephemeral-storage: 2Gi
+  limits:
+    cpu: '2'
+    memory: 8Gi
+    ephemeral-storage: 10Gi

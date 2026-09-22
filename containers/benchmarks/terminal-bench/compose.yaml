@@ -24,3 +24,16 @@ services:
     networks:
       - internal
       - upstream
+    # Rule 10 / 24e — matches the chart's preset (2 CPU / 8Gi), taken from the
+    # MAXIMUM each task.toml's [environment] declares across the 89 tasks:
+    # memory_mb is 2048/4096/8192 (68/13/8 tasks), so 8Gi covers every task —
+    # the shared runner default of 2G OOM-kills the 21 above it, and an OOM
+    # during the agent phase grades as reward 0. cpus is 1/2/4 (83/3/3); CPU is
+    # compressible, so it stays at the shared default of 2. Upstream's
+    # storage_mb (10240 for all 89) has no Compose equivalent and is expressed
+    # only in the chart preset's ephemeral-storage, as presets/deepswe.yaml does.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 8G

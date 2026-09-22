@@ -25,7 +25,7 @@ commit: 8be773e
 | egress-blocked | ✓ | `compose.yaml` includes the network-isolated shared runner (`compose/services.yaml`); `LABEL eval.benchmark.internet="false"` |
 | agent-nonroot | ✓ | agent runs via the shared runner (`compose/services.yaml`) as `gosu agent`; the TB image adds no agent/root override |
 | secrets-isolated | ✓ | no secrets in `Dockerfile`/`build.sh` (no `ENV`/`COPY` of credentials); model creds enter via the framework gateway |
-| resource-limited | ? | CPU/memory caps not audited |
+| resource-limited | ✓ | `compose.yaml` `deploy.resources.limits` = 2 CPU / 8G and `_chart/presets/terminal-bench.yaml` `resources.limits` = `'2'` / `8Gi` — matching modulo k8s unit syntax (rule 24e; `docker compose config` renders `8589934592` = 8Gi). Both are the MAXIMUM over the 89 `task.toml` `[environment]` blocks at the pinned ref: `memory_mb` 2048/4096/8192 (68/13/8 tasks), `cpus` 1/2/4 (83/3/3 — left at 2, CPU is compressible), `gpus` 0. The preset adds `ephemeral-storage` 10Gi (limit) / 2Gi (request) from `storage_mb`, which is 10240 for all 89 tasks; Compose has no ephemeral-storage concept, so it is k8s-only (as in `presets/deepswe.yaml`). `--set memoryOverride=` still raises memory for a single run. |
 
 ## Size
 
