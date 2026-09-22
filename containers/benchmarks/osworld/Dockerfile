@@ -1,4 +1,4 @@
-# OSWorld — real desktop environment for computer-use agents.
+# OSWorld (1.0's 369 public tasks) — real desktop for computer-use agents.
 #
 # The agent drives a real Ubuntu desktop (sidecar `desktop`, built from
 # desktop.Dockerfile) through upstream's own control API, and is graded by
@@ -15,6 +15,10 @@ FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="osworld"
 LABEL eval.benchmark.description="OSWorld - real computer environment for multimodal agents"
+# The 369 public example tasks, which are OSWorld 1.0's set. OSWorld 2.0's 108
+# tasks are gated python classes (hf: xlangai/osworld_v2_tasks) that need an
+# accepted licence; when they are available they are a benchmark of their own,
+# `osworld2`, sharing this desktop image — not a bigger number here.
 LABEL eval.benchmark.tasks="369"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="true"

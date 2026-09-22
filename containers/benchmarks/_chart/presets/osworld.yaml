@@ -1,9 +1,15 @@
 # OSWorld's bespoke topology: the agent needs a real desktop to drive.
 #
-# This used to be a QEMU VM booting an 11 GB qcow2 from a hostPath. No cluster
-# we run on exposes /dev/kvm (no privileged SCC, no Kata runtime), and software
+# Upstream boots one per task as a QEMU VM from an 11 GB qcow2. No cluster we
+# run on exposes /dev/kvm (no privileged SCC, no Kata runtime) and software
 # emulation measures 5-24x slower, so the desktop runs as an ordinary container
 # instead: same Ubuntu, same control API, native speed, no hostPath.
+#
+# It is a native sidecar, not a Deployment, because a desktop is per-task state.
+# A shared one would have task B typing into task A's LibreOffice the moment the
+# fan-out runs more than one task, and would outlive every run that used it.
+# In the pod it is also one of the run's own containers: it shows up in the
+# dashboard beside the runner, and it dies with the Job.
 timeout: '1800'
 resources:
   requests:
@@ -14,63 +20,28 @@ resources:
     memory: 4Gi
 runnerExtraEnv:
 - name: DESKTOP_HOST
-  value: desktop
+  value: localhost
 - name: DESKTOP_PORT
   value: '5000'
 initContainers:
-- name: wait-for-desktop
-  image: busybox:1.36
-  command:
-  - sh
-  - -c
-  - until nc -z desktop 5000; do echo waiting for desktop; sleep 2; done
-extraManifests:
-- apiVersion: apps/v1
-  kind: Deployment
-  metadata:
-    name: desktop
-    labels:
-      benchmark: osworld
-      app: desktop
-  spec:
-    replicas: 1
-    selector:
-      matchLabels:
-        app: desktop
-    template:
-      metadata:
-        labels:
-          benchmark: osworld
-          app: desktop
-      spec:
-        containers:
-        - name: desktop
-          image: ghcr.io/exgentic/benchmarks/osworld-desktop:latest
-          ports:
-          - containerPort: 5000
-          readinessProbe:
-            httpGet:
-              path: /platform
-              port: 5000
-            initialDelaySeconds: 10
-            periodSeconds: 3
-            failureThreshold: 60
-          resources:
-            requests:
-              cpu: '1'
-              memory: 2Gi
-            limits:
-              cpu: '4'
-              memory: 4Gi
-- apiVersion: v1
-  kind: Service
-  metadata:
-    name: desktop
-    labels:
-      benchmark: osworld
-  spec:
-    selector:
-      app: desktop
-    ports:
-    - port: 5000
-      targetPort: 5000
+# restartPolicy: Always makes this a native sidecar — started before the runner
+# and kept running beside it. The startupProbe is what holds the runner back
+# until X, the window manager and LibreOffice are actually up.
+- name: desktop
+  image: ghcr.io/exgentic/benchmarks/osworld-desktop:latest
+  restartPolicy: Always
+  ports:
+  - containerPort: 5000
+  startupProbe:
+    httpGet:
+      path: /platform
+      port: 5000
+    periodSeconds: 3
+    failureThreshold: 100
+  resources:
+    requests:
+      cpu: '1'
+      memory: 2Gi
+    limits:
+      cpu: '4'
+      memory: 4Gi

@@ -37,7 +37,17 @@ RUN git clone -q https://github.com/xlang-ai/osworld-server /opt/osworld-server 
  && git -C /opt/osworld-server checkout -q ${OSWORLD_SERVER_COMMIT}
 
 # The tasks address files under /home/user, matching the upstream VM's user.
-RUN mkdir -p /home/user && chmod 777 /home/user
+# OpenShift runs this pod as a random uid whose HOME is `/`, which is not
+# writable: LibreOffice and dconf then fail and /setup/open_file 500s. Point
+# every writable path at /home/user, which is world-writable, so the image
+# works as any uid without needing a privileged service account.
+ENV HOME=/home/user
+ENV XDG_CONFIG_HOME=/home/user/.config
+ENV XDG_CACHE_HOME=/home/user/.cache
+ENV XDG_DATA_HOME=/home/user/.local/share
+ENV XDG_RUNTIME_DIR=/tmp/runtime
+RUN mkdir -p /home/user/.config /home/user/.cache /home/user/.local/share /tmp/runtime \
+ && chmod -R 777 /home/user /tmp/runtime
 
 RUN for m in application/vnd.openxmlformats-officedocument.spreadsheetml.sheet \
              application/vnd.ms-excel text/csv \
