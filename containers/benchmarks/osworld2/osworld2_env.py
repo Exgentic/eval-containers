@@ -71,6 +71,22 @@ de.create_vm_manager_and_provider = lambda *a, **k: (
 )
 
 
+# Setup and grading talk to the real control server; the agent must not. The
+# server listens on a root-only unix socket, so point the controllers at it —
+# `http_server` is the single place either controller builds its URL from.
+def use_socket(env) -> None:
+    sock = os.environ.get("DESKTOP_SOCKET")
+    if not sock:
+        return
+    import requests_unixsocket
+    from urllib.parse import quote
+
+    requests_unixsocket.monkeypatch()
+    url = "http+unix://%s" % quote(sock, safe="")
+    env.controller.http_server = url
+    env.setup_controller.http_server = url
+
+
 def load_task(task_id: str):
     """The task class for `task_017` — one module, one BaseTask subclass."""
     from desktop_env.task_base import BaseTask
@@ -95,6 +111,7 @@ def main():
         force_disable_vnc=True,
         force_disable_recording=True,
     )
+    use_socket(env)
     if mode == "setup":
         env.reset(task_config=task)
         print("setup complete: %s" % task_id)

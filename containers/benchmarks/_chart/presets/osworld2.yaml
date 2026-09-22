@@ -30,12 +30,17 @@ initContainers:
 - name: desktop
   image: ghcr.io/exgentic/core/osworld-desktop:latest
   restartPolicy: Always
+  volumeMounts:
+  - name: desktop-sock
+    mountPath: /run/desktop
   ports:
   - containerPort: 5000
   startupProbe:
-    httpGet:
-      path: /platform
-      port: 5000
+    exec:
+      command:
+      - sh
+      - -c
+      - test -S /run/desktop/desktop.sock && curl -sf -m 2 -o /dev/null http://127.0.0.1:5000/screenshot
     periodSeconds: 3
     failureThreshold: 100
   resources:
@@ -45,3 +50,11 @@ initContainers:
     limits:
       cpu: '4'
       memory: 4Gi
+extraVolumes:
+- name: desktop-sock
+  emptyDir: {}
+runnerExtraVolumeMounts:
+# Setup and grading open the socket here; the agent runs as uid 1002 and the
+# socket is 0600 root, so the same path is useless to it.
+- name: desktop-sock
+  mountPath: /run/desktop

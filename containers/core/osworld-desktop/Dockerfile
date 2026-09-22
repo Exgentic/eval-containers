@@ -101,8 +101,18 @@ setsid /usr/bin/libreoffice --norestore --nologo \
   >/tmp/lo.log 2>&1 < /dev/null &
 sleep 8
 
-cd /opt/osworld-server && exec python3 main.py
+# The real server on a unix socket only root can open: setup and grading use
+# it, and the agent cannot, because it shares the pod's network namespace and a
+# socket is not on the network. The port carries the restricted face instead.
+mkdir -p /run/desktop
+cd /opt/osworld-server
+python3 -m uvicorn src.server:asgi_app --uds /run/desktop/desktop.sock >/tmp/server.log 2>&1 &
+for i in $(seq 1 60); do [ -S /run/desktop/desktop.sock ] && break; sleep 1; done
+chmod 600 /run/desktop/desktop.sock
+exec python3 /opt/agent_face.py
 START
+
+COPY agent_face.py /opt/agent_face.py
 
 EXPOSE 5000
 CMD ["/start-desktop.sh"]

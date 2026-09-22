@@ -37,7 +37,7 @@ RUN pip3 install --no-cache-dir \
       mutagen pyacoustid librosa fastdtw openai \
       rapidfuzz func_timeout psutil tqdm mss PyGetWindow \
       python-dotenv pytz fabric requests-toolbelt tldextract python-gitlab \
-      icalendar recurring-ical-events loguru docker imageio-ffmpeg
+      icalendar recurring-ical-events loguru docker requests-unixsocket imageio-ffmpeg
 
 COPY osworld2_env.py /opt/osworld2_env.py
 
@@ -112,6 +112,8 @@ ENV EVAL_BENCHMARK=osworld2
 ENV OSWORLD_FILE_BASE_URL=/opt/osworld2-assets
 ENV DESKTOP_HOST=desktop
 ENV DESKTOP_PORT=5000
+# Setup and grading reach the real server here; the agent cannot open it.
+ENV DESKTOP_SOCKET=/run/desktop/desktop.sock
 
 RUN cat > /grade.sh <<'GRADE' && chmod +x /grade.sh
 #!/bin/bash
@@ -154,10 +156,11 @@ http://${DESKTOP_HOST}:${DESKTOP_PORT}:
   curl -s -o /tmp/screen.png http://${DESKTOP_HOST}:${DESKTOP_PORT}/screenshot
       saves a 1920x1080 PNG of the screen — read that image file to see it.
 
-  curl -s -X POST http://${DESKTOP_HOST}:${DESKTOP_PORT}/execute \\
-       -H 'Content-Type: application/json' \\
-       -d '{\"command\":[\"python3\",\"-c\",\"import pyautogui; pyautogui.click(x=100, y=200)\"]}'
-      runs pyautogui in the desktop session: click, typewrite, hotkey, press.
+  curl -s -X POST http://${DESKTOP_HOST}:${DESKTOP_PORT}/act \
+       -H 'Content-Type: application/json' \
+       -d '{\"action\":\"pyautogui.click(x=100, y=200)\"}'
+      runs one pyautogui action: click, typewrite, hotkey, press.
+      This is the whole interface — the desktop accepts nothing else.
 
 These are long workflows — work in small steps and take a screenshot after
 each one to check the result before moving on.
