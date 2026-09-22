@@ -24,8 +24,10 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       xfwm4 xfdesktop4 xfce4-settings dbus-x11 \
       xdg-utils shared-mime-info desktop-file-utils file \
       python3 python3-pip python3-tk python3-dev python3-uno python3-pyatspi \
-      at-spi2-core fonts-dejavu git curl ca-certificates \
+      at-spi2-core fonts-dejavu git curl ca-certificates gnupg \
+      xclip jq unzip xz-utils build-essential \
       libreoffice-calc libreoffice-writer libreoffice-impress \
+      thunderbird gimp vlc \
  && ln -sf /usr/bin/python3 /usr/bin/python \
  && rm -rf /var/lib/apt/lists/*
 
@@ -48,6 +50,25 @@ ENV XDG_DATA_HOME=/home/user/.local/share
 ENV XDG_RUNTIME_DIR=/tmp/runtime
 RUN mkdir -p /home/user/.config /home/user/.cache /home/user/.local/share /tmp/runtime \
  && chmod -R 777 /home/user /tmp/runtime
+
+# The desktop this replaces is upstream's Ubuntu 22.04 *desktop* image, and
+# their Ansible is only a delta over it — so the apps the tasks drive
+# (thunderbird, gimp, vlc above; chrome and vs code below) are assumed by every
+# task, not installed by the playbook. A task whose app is absent scores 0 for a
+# reason that has nothing to do with the agent, so they are installed here.
+RUN install -d -m 0755 /etc/apt/keyrings \
+ && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
+      | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg \
+ && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+      > /etc/apt/sources.list.d/google-chrome.list \
+ && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc \
+      | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg \
+ && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" \
+      > /etc/apt/sources.list.d/vscode.list \
+ && apt-get update -qq \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+      google-chrome-stable code \
+ && rm -rf /var/lib/apt/lists/*
 
 RUN for m in application/vnd.openxmlformats-officedocument.spreadsheetml.sheet \
              application/vnd.ms-excel text/csv \
