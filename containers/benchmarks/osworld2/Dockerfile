@@ -66,6 +66,17 @@ snapshot_download(
     token=os.environ.get("HF_TOKEN"),
 )
 
+# The starting state each task needs — Thunderbird profiles, documents, the
+# files the desktop opens. Gated like the classes, and baked for the same
+# reason: a run must not depend on a token, and the fleet already ships
+# datasets this size (livecodebench is 3.4 GB).
+snapshot_download(
+    repo_id="xlangai/osworld_v2_assets_gated",
+    repo_type="dataset",
+    local_dir="/opt/osworld2-assets",
+    token=os.environ.get("HF_TOKEN"),
+)
+
 sys.path.insert(0, "/opt/OSWorld-V2")
 from desktop_env.task_base import BaseTask
 
@@ -91,10 +102,14 @@ PYEOF
 
 # Answers, setup logic and evaluator details, unreadable by the agent (rule 7).
 RUN chmod 600 /tasks/all.jsonl && chmod 600 /opt/OSWorld-V2/task_[0-9]*.py \
+ && chmod -R go-rwx /opt/osworld2-assets \
  && find /opt/OSWorld-V2 -name '__pycache__' -prune -exec rm -rf {} +
 
 WORKDIR /app
 ENV EVAL_BENCHMARK=osworld2
+# Resolve every asset from the baked copy instead of the public dataset, which
+# does not carry them (a task's own files are in the gated set).
+ENV OSWORLD_FILE_BASE_URL=/opt/osworld2-assets
 ENV DESKTOP_HOST=desktop
 ENV DESKTOP_PORT=5000
 
