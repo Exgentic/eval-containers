@@ -60,6 +60,9 @@ benchmark's `agent: native` is structural (benchmarks/RULES.md 12b).
 {{- if not (empty .Values.memoryOverride) -}}
 {{- $over = mergeOverwrite $over (dict "resources" (dict "limits" (dict "memory" (.Values.memoryOverride | toString)))) -}}
 {{- end -}}
+{{- if not (empty .Values.storageOverride) -}}
+{{- $over = mergeOverwrite $over (dict "resources" (dict "limits" (dict "ephemeral-storage" (.Values.storageOverride | toString)))) -}}
+{{- end -}}
 {{- mergeOverwrite (deepCopy .Values) $preset $env $over | toYaml -}}
 {{- end -}}
 
