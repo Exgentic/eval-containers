@@ -92,6 +92,7 @@ COPY --link runner/run              /usr/local/bin/run
 COPY --link runner/run-agent        /usr/local/bin/run-agent
 COPY --link runner/start-edge       /usr/local/bin/start-edge
 COPY --link runner/write-result     /usr/local/bin/write-result
+COPY --link runner/trace-commands.sh /etc/eval-trace.sh
 COPY --link entrypoint/eval-materialize-task /usr/local/bin/materialize-task
 COPY --link entrypoint/reap-sidecars         /usr/local/bin/reap-sidecars
 

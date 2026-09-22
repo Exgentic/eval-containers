@@ -347,3 +347,37 @@ async fn a_run_root_is_refused_before_anything_is_emptied() {
 
     let _ = std::fs::remove_dir_all(&run_dir);
 }
+
+/// The command log records what the agent RAN without changing what it SEES.
+///
+/// The second half is the half that matters: xtrace's default target is stderr,
+/// which an agent's tooling hands back to the model as tool output, so a leak
+/// there makes every traced run incomparable with every untraced one.
+#[tokio::test]
+#[ignore]
+async fn the_commands_the_agent_ran_are_recorded_without_touching_its_streams() {
+    ensure_image();
+    let dir = task_dir("r5");
+    let (code, log) = launch(&dir, &[]).await;
+    assert_eq!(code, 0, "the mock pipeline did not complete:\n{log}");
+
+    let console = read(&dir.join("agent/console.log"));
+    assert!(
+        console.lines().any(|l| l.starts_with("+ ")),
+        "nothing the agent ran was recorded: {console:?}"
+    );
+
+    let stdout = read(&dir.join("agent/stdout.log"));
+    let stderr = read(&dir.join("agent/stderr.log"));
+    for (name, stream) in [("stdout", &stdout), ("stderr", &stderr)] {
+        assert!(
+            !stream.lines().any(|l| l.starts_with("+ ")),
+            "the trace leaked into the agent's {name}, so the model would see it: {stream:?}"
+        );
+    }
+    // And the answer channel still carries the answer (agents/RULES.md 3).
+    assert!(
+        stdout.contains("gateway:"),
+        "the agent's own answer no longer reaches stdout: {stdout:?}"
+    );
+}

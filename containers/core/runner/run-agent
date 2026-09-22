@@ -54,13 +54,21 @@ fi
 # /usr/local/bin/run (single-container) or set by the orchestrator (compose/k8s).
 #
 # Not exec'd: record the exit status for write-result (rule 16). 124 = timeout.
+#
+# console.log is the framework's record of what the agent RAN (/etc/eval-trace.sh).
+# Created here, not there, so the snippet only ever appends and a re-run starts a
+# fresh one (output rule 30); the agent itself still only prints (agents rule 3).
+: > /output/agent/console.log 2>/dev/null || true
+chown agent:agent /output/agent/console.log 2>/dev/null || true
+
 rc=0
 if [ "$native" = true ]; then
-  timeout -k 30 "${TIMEOUT:-300}" \
+  BASH_ENV=/etc/eval-trace.sh timeout -k 30 "${TIMEOUT:-300}" \
     /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log || rc=$?
 else
   timeout -k 30 "${TIMEOUT:-300}" gosu agent env -i \
     PATH=/usr/local/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin \
+    BASH_ENV=/etc/eval-trace.sh \
     HOME=/home/agent USER=agent LANG=C.UTF-8 \
     TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
     EVAL_AGENT_REASONING_EFFORT="${EVAL_AGENT_REASONING_EFFORT:-}" \
