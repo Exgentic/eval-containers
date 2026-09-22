@@ -1,13 +1,13 @@
 # OSWorld (1.0's 369 public tasks) — real desktop for computer-use agents.
 #
 # The agent drives a real Ubuntu desktop (sidecar `desktop`, built from
-# desktop.Dockerfile) through upstream's own control API, and is graded by
+# core/osworld-desktop/Dockerfile) through upstream's own control API, and is graded by
 # upstream's own execution-based evaluators — the reward is a real score, not
 # the hard-coded -1 this benchmark used to return.
 #
 # No VM: upstream ships the desktop as a qcow2 booted under QEMU/KVM, but the
 # guest is plain Ubuntu x86_64, so it runs as a container at native speed.
-# See desktop.Dockerfile for why emulation is not an option here.
+# See core/osworld-desktop/Dockerfile for why emulation is not an option here.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest

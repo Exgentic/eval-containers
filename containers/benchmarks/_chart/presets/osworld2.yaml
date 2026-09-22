@@ -10,7 +10,7 @@
 # fan-out runs more than one task, and would outlive every run that used it.
 # In the pod it is also one of the run's own containers: it shows up in the
 # dashboard beside the runner, and it dies with the Job.
-timeout: '1800'
+timeout: '3600'
 resources:
   requests:
     cpu: 500m
