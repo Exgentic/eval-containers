@@ -56,7 +56,12 @@ RUN mkdir -p /home/user/.config /home/user/.cache /home/user/.local/share /tmp/r
 # (thunderbird, gimp, vlc above; chrome and vs code below) are assumed by every
 # task, not installed by the playbook. A task whose app is absent scores 0 for a
 # reason that has nothing to do with the agent, so they are installed here.
-RUN install -d -m 0755 /etc/apt/keyrings \
+# Chrome and VS Code ship amd64 debs only, and the fleet builds this image for
+# both arches. The cluster is amd64, so they are installed there and skipped on
+# arm64 (a Mac dev build), rather than failing the whole release.
+ARG TARGETARCH
+RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
+    install -d -m 0755 /etc/apt/keyrings \
  && curl -fsSL https://dl.google.com/linux/linux_signing_key.pub \
       | gpg --dearmor -o /etc/apt/keyrings/google-chrome.gpg \
  && echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
