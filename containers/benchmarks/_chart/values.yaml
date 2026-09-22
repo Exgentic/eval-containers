@@ -82,6 +82,23 @@ timeoutOverride: ""
 # 2Gi, 13 at 4Gi, 8 at 8Gi), which is why an operator must be able to raise it for
 # one run — e.g. after an OOM kill. Empty -> the preset (or this default) applies.
 memoryOverride: ""
+# Overrides a preset's `resources.limits.ephemeral-storage` for this run
+# (`--set storageOverride=24Gi`). The memory story again, for the scratch DISK:
+# `--set resources.limits.ephemeral-storage=` loses to any preset that pins
+# `resources`, so it would be dropped in silence for the benchmarks that have one.
+# Lands in the last-merged layer beside memoryOverride, so it wins for preset and
+# preset-less benchmarks alike, and merges INTO `resources`, so the preset's cpu and
+# memory survive.
+# Worth its own knob because the failure is invisible and expensive: ephemeral
+# storage has no kernel enforcement, so a container over its limit is not killed at
+# the moment it crosses — the kubelet polls, then EVICTS the whole pod, which takes
+# the runner's sidecars with it and leaves no exit code and no result to grade. A
+# benchmark with no preset falls to the namespace LimitRange default (4Gi on
+# exgentic-ns), which is far too small for a task that unpacks a dataset or builds a
+# toolchain on scratch: terminal-bench's caffe-cifar-10, build-pov-ray and
+# build-cython-ext all outgrew it, and the run page could only call them
+# `incomplete`. Empty -> the preset (or this default) applies.
+storageOverride: ""
 # Per-task wall clock, set on the pod. Unset -> timeout + deadlineGrace; grace
 # must cover grading (scicode's is 600s).
 deadlineGrace: 600
