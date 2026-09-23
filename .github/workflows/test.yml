@@ -353,8 +353,9 @@ jobs:
           # From source, not from the last release: the bundle composes FROM the
           # published core/edge, so without this the step boots whatever edge was
           # released and this repo's change to it is untested here.
+          # Both files: the per-target one has no REGISTRY/TAG of its own.
           REGISTRY=local/ec TAG=from-source docker buildx bake --load \
-            -f containers/core/edge/docker-bake.hcl edge
+            -f containers/docker-bake.hcl -f containers/core/edge/docker-bake.hcl edge
           export EDGE_IMAGE=local/ec/core/edge:from-source
           cargo run -q -- build eval agents-smoke --agent mock --standalone --no-pull 2>&1 | tail -3
           img=ghcr.io/exgentic/evals/agents-smoke--mock-standalone:latest
