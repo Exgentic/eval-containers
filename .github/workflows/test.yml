@@ -350,7 +350,13 @@ jobs:
       - name: Standalone bundle brings up its edge
         run: |
           set -eo pipefail
-          cargo run -q -- build eval agents-smoke --agent mock --standalone 2>&1 | tail -3
+          # From source, not from the last release: the bundle composes FROM the
+          # published core/edge, so without this the step boots whatever edge was
+          # released and this repo's change to it is untested here.
+          REGISTRY=local/ec TAG=from-source docker buildx bake --load \
+            -f containers/core/edge/docker-bake.hcl edge
+          export EDGE_IMAGE=local/ec/core/edge:from-source
+          cargo run -q -- build eval agents-smoke --agent mock --standalone --no-pull 2>&1 | tail -3
           img=ghcr.io/exgentic/evals/agents-smoke--mock-standalone:latest
 
           mapped=$(docker run --rm -e EVAL_MODEL=azure/gpt-5.4 -e EVAL_MAX_TOKENS=1000000 \
