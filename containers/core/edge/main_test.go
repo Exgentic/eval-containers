@@ -697,3 +697,67 @@ func TestZstdRecordIsReadableWhileStillBeingWritten(t *testing.T) {
 		t.Fatalf("recovered %d of 3 records from an unterminated stream", n)
 	}
 }
+
+// /output is s3fs, which uploads a dirty file on fsync or close and never while
+// it sits open and quiet — so flushing the encoder left a running task's record
+// inside its container (measured: 8.7MB local, no object at all). These fail
+// without the sync; `syncFile` is the seam, an fsync being unobservable here.
+
+func recorderInTempDir(t *testing.T) {
+	t.Helper()
+	out = filepath.Join(t.TempDir(), "calls.jsonl.zst")
+	real := syncFile
+	mu.Lock()
+	lastSync = time.Time{}
+	mu.Unlock()
+	t.Cleanup(func() {
+		mu.Lock()
+		defer mu.Unlock()
+		if recZstd != nil {
+			recZstd.Close()
+			recZstd = nil
+		}
+		if recFile != nil {
+			recFile.Close()
+			recFile = nil
+		}
+		recPath, syncFile, lastSync = "", real, time.Time{}
+	})
+}
+
+func TestTheRecordIsSyncedOnceAWindowSoAReaderSeesARunningTask(t *testing.T) {
+	recorderInTempDir(t)
+	var synced int
+	syncFile = func(*os.File) error { synced++; return nil }
+
+	for range 5 {
+		record(call{Path: "/v1/messages", Wire: "anthropic", Status: 200})
+	}
+	if synced != 1 {
+		t.Fatalf("synced %d times for 5 records, want 1: 0 means the object store "+
+			"holds nothing until the task ends, >1 re-uploads the whole object", synced)
+	}
+
+	mu.Lock()
+	lastSync = time.Now().Add(-2 * syncEvery)
+	mu.Unlock()
+	record(call{Path: "/v1/messages", Wire: "anthropic", Status: 200})
+	if synced != 2 {
+		t.Fatalf("synced %d times after the window elapsed, want 2", synced)
+	}
+}
+
+func TestRepointingOUTSyncsTheNewFileImmediately(t *testing.T) {
+	recorderInTempDir(t)
+	var synced int
+	syncFile = func(*os.File) error { synced++; return nil }
+
+	record(call{Path: "/v1/messages", Wire: "anthropic", Status: 200})
+	// A new file must not wait out the window the previous one just used.
+	out = filepath.Join(t.TempDir(), "calls-2.jsonl.zst")
+	record(call{Path: "/v1/messages", Wire: "anthropic", Status: 200})
+
+	if synced != 2 {
+		t.Fatalf("synced %d times across two files, want 2", synced)
+	}
+}

@@ -208,6 +208,7 @@ func record(c call) {
 			return
 		}
 		recFile, recPath = f, out
+		lastSync = time.Time{} // a new file is pushed on its first record
 		if strings.HasSuffix(out, ".zst") {
 			enc, err := zstd.NewWriter(f,
 				zstd.WithEncoderLevel(zstd.SpeedBetterCompression))
@@ -239,6 +240,29 @@ func record(c call) {
 			log.Println("record:", err)
 		}
 	}
+	// Flushing reaches the FILE and stops there; /output is s3fs, which uploads a
+	// dirty file on fsync or close and never while it sits open and quiet.
+	syncRecord()
+}
+
+// Not per record: on s3fs an fsync re-uploads the WHOLE object, so an 8MB record
+// over 200 calls would push gigabytes. A reader is then one window behind.
+const syncEvery = 15 * time.Second
+
+var (
+	lastSync time.Time
+	syncFile = (*os.File).Sync // a seam: an fsync is otherwise unobservable in a test
+)
+
+// Caller holds mu.
+func syncRecord() {
+	if recFile == nil || time.Since(lastSync) < syncEvery {
+		return
+	}
+	if err := syncFile(recFile); err != nil {
+		log.Println("record: sync:", err)
+	}
+	lastSync = time.Now()
 }
 
 func handle(w http.ResponseWriter, r *http.Request) {
