@@ -1420,31 +1420,40 @@ func TestEveryWireIsRefusedOnceACapIsCrossed(t *testing.T) {
 	}
 }
 
-func TestTheUpstreamNeverSeesARefusedCall(t *testing.T) {
-	calls := 0
-	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
-		calls++
-		_, _ = w.Write([]byte(wireCases[0].resp))
-	})
-	maxTokens = 1
-	for i := 0; i < 3; i++ {
-		post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil).Body.Close()
-	}
-	if calls != 1 {
-		t.Errorf("upstream saw %d calls, want only the one that crossed the cap", calls)
+func TestNoWireLetsARefusedCallReachTheUpstream(t *testing.T) {
+	for _, c := range wireCases {
+		t.Run(c.name, func(t *testing.T) {
+			calls := 0
+			edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+				calls++
+				_, _ = w.Write([]byte(c.resp))
+			})
+			maxTokens = 1
+			for i := 0; i < 3; i++ {
+				post(t, edge.URL+c.path, c.req, nil).Body.Close()
+				awaitRecords(t, i+1)
+			}
+			if calls != 1 {
+				t.Errorf("upstream saw %d calls, want only the one that crossed the cap", calls)
+			}
+		})
 	}
 }
 
-func TestNothingIsRefusedWithoutACap(t *testing.T) {
-	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(wireCases[0].resp))
-	})
-	for i := 0; i < 3; i++ {
-		resp := post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil)
-		resp.Body.Close()
-		if resp.StatusCode != http.StatusOK {
-			t.Fatalf("call %d got %d with no cap configured", i, resp.StatusCode)
-		}
+func TestNoWireIsRefusedWithoutACap(t *testing.T) {
+	for _, c := range wireCases {
+		t.Run(c.name, func(t *testing.T) {
+			edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(c.resp))
+			})
+			for i := 0; i < 3; i++ {
+				resp := post(t, edge.URL+c.path, c.req, nil)
+				resp.Body.Close()
+				if resp.StatusCode != http.StatusOK {
+					t.Fatalf("call %d got %d with no cap configured", i, resp.StatusCode)
+				}
+			}
+		})
 	}
 }
 
@@ -1490,21 +1499,23 @@ func TestOpenAIStreamsAreAskedForUsageOnlyWhenACapNeedsIt(t *testing.T) {
 // EDGE_ON_LIMIT=kill stops the container. The run loses its grade with it,
 // which is why refusing is the default and this is the operator's choice.
 func TestTheRunIsStoppedOnlyWhenTheOperatorAsked(t *testing.T) {
-	for _, c := range []struct {
-		limit   string
+	for _, limit := range []struct {
+		name    string
 		stopped bool
 	}{{"refuse", false}, {"kill", true}} {
-		t.Run(c.limit, func(t *testing.T) {
-			edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
-				_, _ = w.Write([]byte(wireCases[0].resp))
-			})
-			stops := make(chan struct{}, 4)
-			terminate = func() { stops <- struct{}{} }
-			onLimit, maxTokens = c.limit, fixtureIn+fixtureOut
+		for _, c := range wireCases {
+			t.Run(limit.name+"/"+c.name, func(t *testing.T) {
+				edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+					_, _ = w.Write([]byte(c.resp))
+				})
+				stops := make(chan struct{}, 4)
+				terminate = func() { stops <- struct{}{} }
+				onLimit, maxTokens = limit.name, fixtureIn+fixtureOut
 
-			post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil).Body.Close()
-			assertStopped(t, stops, c.stopped)
-		})
+				post(t, edge.URL+c.path, c.req, nil).Body.Close()
+				assertStopped(t, stops, limit.stopped)
+			})
+		}
 	}
 }
 
