@@ -18,6 +18,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -75,8 +76,14 @@ var (
 	// protocol-namespaced ones (gateways rule 5). Declared, never sniffed.
 	upstreamIsGateway = os.Getenv("EDGE_UPSTREAM") == "gateway"
 
-	// No client timeout: an agent turn legitimately runs for minutes.
-	client = &http.Client{}
+	// No client timeout: an agent turn legitimately runs for minutes. Redirects
+	// are returned, never followed: Go re-sends the credential to the redirect
+	// target (it strips only `authorization`, and only across domains), so one
+	// open redirect upstream would hand an agent the key it must never see
+	// (rule 14). A proxy has no business chasing them on the caller's behalf.
+	client = &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 
 	// Gemini names the model in the URL rather than the body.
 	geminiModel = regexp.MustCompile(`/models/[^:/]+(:|$)`)
@@ -116,6 +123,35 @@ func envInt(k string, d int) int {
 }
 
 func msSince(t time.Time) float64 { return float64(time.Since(t).Microseconds()) / 1000 }
+
+// relativeToUpstream rewrites a redirect that points back at the upstream into
+// a relative one, the way any reverse proxy does: the agent is sent back
+// through the edge instead of being handed the address behind it. A redirect
+// somewhere else is the upstream's business and passes through untouched.
+func relativeToUpstream(loc string) string {
+	u, err := url.Parse(loc)
+	if err != nil || u.Host == "" {
+		return loc
+	}
+	if b, err := url.Parse(base); err == nil && strings.EqualFold(u.Host, b.Host) {
+		return u.RequestURI()
+	}
+	return loc
+}
+
+// hideUpstream removes the upstream address from anything an agent can reach:
+// the error bodies it is served, and the record and log it can read beside its
+// own output (rule 18). The address is the other half of the credential: an
+// agent with both can call the provider directly, off the record. Go's
+// transport errors quote the whole URL, so the base and its bare host both go.
+func hideUpstream(s string) string {
+	s = strings.ReplaceAll(s, base, "upstream")
+	if u, err := url.Parse(base); err == nil && u.Hostname() != "" {
+		s = strings.ReplaceAll(s, u.Host, "upstream")
+		s = strings.ReplaceAll(s, u.Hostname(), "upstream")
+	}
+	return s
+}
 
 // wireFor maps an inbound path onto its protocol namespace, returning the
 // wire and the path with the namespace stripped.
@@ -298,7 +334,8 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	resp, retries, err := forward(r, upstreamPath, wire, upstreamBody)
 	c.Retries = retries
 	if err != nil {
-		http.Error(w, `{"error":{"type":"upstream_unreachable","message":"`+err.Error()+`"}}`, http.StatusBadGateway)
+		msg, _ := json.Marshal(hideUpstream(err.Error())) // quoting the error by hand made a body no client could parse
+		http.Error(w, `{"error":{"type":"upstream_unreachable","message":`+string(msg)+`}}`, http.StatusBadGateway)
 		c.Status, c.TotalMs = http.StatusBadGateway, msSince(start)
 		record(c)
 		return
@@ -310,9 +347,12 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, v := range vs {
+			if strings.EqualFold(k, "location") {
+				v = relativeToUpstream(v)
+			}
 			w.Header().Add(k, v)
 		}
-		c.RespHead[k] = vs[0]
+		c.RespHead[k] = w.Header().Get(k)
 	}
 	w.WriteHeader(resp.StatusCode)
 	c.Status = resp.StatusCode
@@ -451,6 +491,6 @@ func main() {
 		log.Fatal(err)
 	}
 	http.HandleFunc("/", handle)
-	log.Printf("edge recording to %s, upstream %s", out, base)
+	log.Printf("edge recording to %s", out) // never the upstream: the log sits in /output, which the agent can read
 	log.Fatal(http.ListenAndServe(listen, nil))
 }

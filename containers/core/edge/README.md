@@ -36,6 +36,11 @@ Environment variables only, no flags:
 | `EDGE_MAX_RECORD_BYTES` | no | 8MiB | Per-exchange bytes kept in a record before truncating |
 | `EDGE_MAX_RETRIES` | no | 2 | Transport-failure retries before any byte reaches the caller |
 
+A redirect from upstream is handed back, never followed: Go would re-send the
+credential to wherever it points. One that points back at the upstream is made
+relative first, so the address stays the edge's (rule 18) — as does the one an
+unreachable upstream would otherwise quote in its error.
+
 Serves `/anthropic`, `/openai`, `/genai` (namespaced per
 [`gateways/RULES.md`](../../../.agents/gateways/RULES.md) rule 5) plus
 `/health`; any other path forwards on the `openai` wire. `edge health` exits
