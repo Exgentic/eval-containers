@@ -6,10 +6,11 @@
 # lets the agent start too early and find nothing there — which is exactly the
 # bug a real gateway's health contract exists to prevent.
 #
-# Served at BOTH /v1/models and /openai/v1/models: the edge declares this a
-# gateway upstream (EDGE_UPSTREAM=gateway), so it forwards the protocol
-# namespace intact — a stub that answers only the bare path 404s every agent
-# call, which reports no usage and makes a spend cap unreachable.
+# The same payload on every path, via httpd's E404: the edge declares this a
+# gateway upstream (EDGE_UPSTREAM=gateway) and so forwards the protocol
+# namespace intact, and an SDK joins its base URL as it pleases — mock asks for
+# /openai/v1/v1/models. A stub that answers only the paths someone predicted
+# 404s the rest, reports no usage, and quietly makes a spend cap unreachable.
 #
 # It reports `usage` the way a provider does, which is not decoration: the edge
 # counts a call from what the response says, so a stub that reports nothing makes
@@ -24,5 +25,6 @@ RUN mkdir -p /opt/gateway /www/v1 /www/openai/v1 \
  && printf '#!/bin/sh\nwget -qO- http://127.0.0.1:4000/v1/models >/dev/null\n' > /opt/gateway/health \
  && chmod +x /opt/gateway/health \
  && printf '{"object":"list","data":[{"id":"stub","object":"model"}],"usage":{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14}}\n' > /www/v1/models \
- && cp /www/v1/models /www/openai/v1/models
+ && cp /www/v1/models /www/openai/v1/models \
+ && printf 'E404:/v1/models\n' > /www/httpd.conf
 CMD ["httpd", "-f", "-p", "4000", "-h", "/www"]
