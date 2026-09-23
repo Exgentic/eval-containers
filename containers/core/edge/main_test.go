@@ -1404,6 +1404,9 @@ func TestEveryWireIsRefusedOnceACapIsCrossed(t *testing.T) {
 				if got := recs[1].Status; got != http.StatusPaymentRequired {
 					t.Errorf("recorded refusal status = %d", got)
 				}
+				if !strings.Contains(recs[1].Response, "budget_exceeded") {
+					t.Errorf("the record does not say why the call was refused: %q", recs[1].Response)
+				}
 			})
 		}
 	}

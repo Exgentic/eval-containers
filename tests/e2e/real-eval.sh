@@ -189,6 +189,47 @@ case "$(onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null)" in
      onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
 esac
 
+# ── a run that actually crosses its cap ─────────────────────────────────────
+# Above proves the cap ARRIVES. This proves it BITES, which is a different
+# thing and the only one that matters on a bill: a second Job, capped at one
+# token, whose second model call must come back 402 and never reach the
+# upstream. (The first always goes through — the cap is checked before a call,
+# not during one.) EVAL_ON_LIMIT=kill rides along, so the one path that signals
+# PID 1 is exercised where PID 1 is real: the pod ends without a grade, which
+# is exactly what that setting trades away.
+step "a capped run refuses its next call and stops"
+CAPSUB=runs/agents-smoke/mock/capped
+helm template capped "$CHART" \
+  --set benchmark=agents-smoke --set agent=mock --set task=0 \
+  --set nameSuffix=-capped \
+  --set otelImage=eval-e2e/otel:stub \
+  --set gatewayImageRef=eval-e2e/gateway:stub \
+  --set runnerImageRef=eval-e2e/eval:latest \
+  --set outputVolume.hostPath.path="$OUT" \
+  --set outputVolume.hostPath.type=DirectoryOrCreate \
+  --set outputSubPath="$CAPSUB" --set runId="$RUN" \
+  --set-string maxTokens=1 \
+  --set-json 'runnerExtraEnv=[{"name":"EVAL_ON_LIMIT","value":"kill"}]' |
+  kubectl apply -f - >/dev/null || { bad "capped apply failed"; }
+
+settle agents-smoke-mock-task-0-capped 180 >/dev/null
+caprec="$OUT/$CAPSUB/$RUN/0/model/calls.jsonl.zst"
+if ! onnode test -s "$caprec"; then
+  bad "the capped run recorded nothing"
+  onnode cat "$OUT/$CAPSUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5
+else
+  raw=$(mktemp); onnode cat "$caprec" > "$raw"
+  dec=$(zstd -dc "$raw" 2>/dev/null || true)
+  rm -f "$raw"
+  case "$dec" in
+    *budget_exceeded*|*'"status":402'*)
+      echo "  the second call was refused, and the record says why" ;;
+    *) bad "a run capped at 1 token made its calls anyway: $(printf '%s' "$dec" | grep -c '\"path\"') record(s), no 402"
+       printf '%s\n' "$dec" | head -2 | cut -c1-200
+       onnode cat "$OUT/$CAPSUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
+  esac
+fi
+
 # ── the launcher people actually use ────────────────────────────────────────
 # Everything above renders the chart the way this test wants it. deploy/kind/run.sh
 # is what a person runs, and nothing has ever executed it: it resolves the image

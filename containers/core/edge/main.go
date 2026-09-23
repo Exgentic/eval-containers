@@ -662,11 +662,14 @@ func handle(w http.ResponseWriter, r *http.Request) {
 // stopped making them.
 func refuse(w http.ResponseWriter, start time.Time, wire string, r *http.Request, crossed string) {
 	msg, _ := json.Marshal(crossed)
-	http.Error(w, `{"error":{"type":"budget_exceeded","message":`+string(msg)+`}}`, http.StatusPaymentRequired)
+	body := `{"error":{"type":"budget_exceeded","message":` + string(msg) + `}}`
+	http.Error(w, body, http.StatusPaymentRequired)
+	// Recorded with its body: a bare 402 in the record leaves whoever reads it
+	// later — a person, or the dashboard — to guess why the run went quiet.
 	record(call{
 		Path: r.URL.Path, Wire: wire, StartUnix: float64(start.UnixNano()) / 1e9,
 		Model: model, Headers: safeHeaders(r.Header), RespHead: map[string]string{},
-		Status: http.StatusPaymentRequired, TotalMs: msSince(start),
+		Status: http.StatusPaymentRequired, Response: body, TotalMs: msSince(start),
 	})
 }
 
