@@ -135,6 +135,10 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
 # KiCad 10 PPA by hand and that PPA's OCCT replaces the one FreeCAD needs (a
 # pod runs one task, so the collision never happens); and Logisim, whose task
 # downloads its own jar and only needs a JRE here.
+#
+# amd64 only, like the app set above: an arm64 build is a Mac dev build
+# that already has no chrome, vs code or WPS, so no task it could run
+# needs these.
 RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
     set -eux; \
     apt-get update -qq \

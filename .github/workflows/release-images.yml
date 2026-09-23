@@ -199,7 +199,15 @@ jobs:
           done
           [ "${#BUILD[@]}" -gt 0 ] || { echo "All ${#DEPS[@]} bases fresh — nothing to build."; exit 0; }
           echo "Building ${#BUILD[@]}/${#DEPS[@]} shared deps (${ARCH}): ${BUILD[*]}"
-          ACT=(--provenance=mode=max --sbom=true "${BUILD[@]}" --push)
+          # BuildKit refuses an attestation over 40 MB, and osworld-desktop is
+          # past it: the image is a whole Ubuntu desktop (chrome, vs code,
+          # libreoffice, blender, freecad, gimp, …), not a runtime base.
+          # Its SBOM alone is dropped — provenance still applies to it, and
+          # every other base still gets one. The `--sbom` flag would beat a
+          # per-target setting, so the fleet-wide default is a --set as well.
+          ATTEST=(--set "*.attest=type=sbom"
+                  --set "osworld-desktop.attest=type=sbom,disabled=true")
+          ACT=(--provenance=mode=max "${ATTEST[@]}" "${BUILD[@]}" --push)
           [ "${{ inputs.dry_run }}" = "true" ] && ACT=("${BUILD[@]}" --print)
           docker buildx bake "${FARGS[@]}" "${LBL[@]}" \
             --set "*.args.REGISTRY=${REGISTRY}" \
