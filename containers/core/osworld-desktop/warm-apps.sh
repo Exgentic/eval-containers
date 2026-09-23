@@ -11,6 +11,11 @@
 # can write (OpenShift assigns a random one).
 set -eu
 export HOME=/home/user DISPLAY=:99
+# Not the image's /tmp/runtime: the XDG spec says a runtime dir is 0700 and
+# owned by its user, so the first GTK app here would lock it to root and the
+# pod's own uid would lose it. Warm in a throwaway one instead.
+export XDG_RUNTIME_DIR=/tmp/warm-runtime
+mkdir -p "$XDG_RUNTIME_DIR"
 : "${WARM_SECONDS:=25}"
 
 Xvfb :99 -screen 0 1920x1080x24 -nolisten tcp >/dev/null 2>&1 &
@@ -66,3 +71,4 @@ echo "warm-apps: state written"
 
 # Written by root; the runtime uid is random and must still own its own desktop.
 chmod -R 777 /home/user
+rm -rf "$XDG_RUNTIME_DIR"
