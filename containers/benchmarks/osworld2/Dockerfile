@@ -79,8 +79,25 @@ snapshot_download(
 
 sys.path.insert(0, "/opt/OSWorld-V2")
 from desktop_env.task_base import BaseTask
+import ast
+
+
+def needs_a_site(path):
+    """Whether this task drives one of the self-hosted websites.
+
+    Read off the task's own code — it imports or calls the website helpers —
+    rather than kept as a list beside it, which would drift the first time
+    upstream re-points a task."""
+    tree = ast.parse(open(path, encoding="utf-8").read())
+    helpers = {"build_website_url", "prepare_stateful_website_urls"}
+    return any(
+        (isinstance(n, ast.ImportFrom) and n.module == "desktop_env.controllers.website")
+        or (isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in helpers)
+        for n in ast.walk(tree))
+
 
 os.makedirs("/tasks", exist_ok=True)
+subsets = {"web": [], "apps": [], "all": []}
 count = 0
 with open("/tasks/all.jsonl", "w") as out:
     for path in sorted(glob.glob("/opt/OSWorld-V2/task_[0-9]*.py")):
@@ -92,16 +109,22 @@ with open("/tasks/all.jsonl", "w") as out:
                      and getattr(module, a) is not BaseTask), None)
         if task is None:
             raise SystemExit("%s declares no BaseTask subclass" % name)
+        subset = "web" if needs_a_site(path) else "apps"
+        subsets[subset].append(str(count))
+        subsets["all"].append(str(count))
         out.write(json.dumps({"id": str(count), "upstream_id": name,
+                              "subset": subset,
                               "problem": task.instruction}) + "\n")
         count += 1
 if count != 108:
     raise SystemExit("osworld2: expected 108 tasks, got %d" % count)
-print("Extracted %d tasks" % count)
+json.dump(subsets, open("/tasks/subsets.json", "w"))
+print("Extracted %d tasks: %d web, %d apps"
+      % (count, len(subsets["web"]), len(subsets["apps"])))
 PYEOF
 
 # Answers, setup logic and evaluator details, unreadable by the agent (rule 7).
-RUN chmod 600 /tasks/all.jsonl && chmod 600 /opt/OSWorld-V2/task_[0-9]*.py \
+RUN chmod 600 /tasks/all.jsonl /tasks/subsets.json && chmod 600 /opt/OSWorld-V2/task_[0-9]*.py \
  && chmod -R go-rwx /opt/osworld2-assets \
  && find /opt/OSWorld-V2 -name '__pycache__' -prune -exec rm -rf {} +
 
