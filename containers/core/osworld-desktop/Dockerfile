@@ -22,7 +22,7 @@ ENV DISPLAY=:0
 RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       xvfb x11-utils xdotool wmctrl scrot \
       xfwm4 xfdesktop4 xfce4-settings dbus-x11 \
-      xdg-utils shared-mime-info desktop-file-utils file \
+      xdg-utils shared-mime-info desktop-file-utils file sudo \
       python3 python3-pip python3-tk python3-dev python3-uno python3-pyatspi \
       at-spi2-core fonts-dejavu git curl ca-certificates gnupg \
       xclip jq unzip xz-utils build-essential \
@@ -43,6 +43,12 @@ RUN git clone -q https://github.com/xlang-ai/osworld-server /opt/osworld-server 
 # writable: LibreOffice and dconf then fail and /setup/open_file 500s. Point
 # every writable path at /home/user, which is world-writable, so the image
 # works as any uid without needing a privileged service account.
+# Task setup shells out to `sudo` (upstream's VM has a user that can), and
+# without it a task dies before the agent starts. Nothing is widened by this:
+# the agent never reaches a shell here, only screenshots and pyautogui.
+RUN echo "ALL ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/osworld \
+ && chmod 440 /etc/sudoers.d/osworld
+
 ENV HOME=/home/user
 ENV XDG_CONFIG_HOME=/home/user/.config
 ENV XDG_CACHE_HOME=/home/user/.cache
