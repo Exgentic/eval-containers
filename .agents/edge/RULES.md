@@ -86,6 +86,20 @@ written account of one call.
 18. **Upstream anonymity.** An agent **MUST NOT** be able to learn the upstream
     address from the edge.
 
+### Budget
+
+19. **Spend bounds.** The edge **MUST** refuse every call after a configured
+    token or cost cap is crossed.
+
+20. **Usage from the wire.** The edge **MUST** count a call's usage from the
+    response of the wire it arrived on, whether streamed or whole.
+
+21. **Stated prices.** The edge **MUST** price a cost cap only from its
+    configuration.
+
+22. **Opt-in bounds.** The edge **MUST NOT** refuse a call or end a run for
+    spend that has no configured cap.
+
 ## References
 
 - [Project rules](../RULES.md) — principle 5, independent observation: the
@@ -102,6 +116,7 @@ written account of one call.
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Added rules 19-22 (Budget): the single crossing is where a run's spend can actually be bounded. litellm's `EVAL_MODEL_MAX_BUDGET` (models 16) needs that gateway and its price map, counts dollars only, and sees nothing when the edge fronts a provider directly. Prices are stated rather than inferred, since rule 3 forbids identifying the model. |
 | 2026-09-23 | Added rule 18: the upstream address is as much the edge's to keep as the credential — an agent that has both can call the provider directly, off the record. Found by test: the 502 an unreachable upstream produced quoted the whole URL back to the caller. |
 | 2026-08-18 | Scoped to what the component actually is: an addition in front of the gateway, not a replacement for it. Capture rules (6-10) stand on their own; gateways keep translation, routing and OTel emission, and only model authority moves. An earlier draft superseded those too, which turned a small fix into a fleet-wide migration. |
 | 2026-08-12 | Pre-merge review, while Draft. Rule 5 now requires refusing to start rather than answering each call with an error, matching how the gateway `start` scripts reject bad env — and what the implementation does. Rule 13 binds to gateways 5 and 7 instead of restating the namespace and port, which mirrored a rule that already has a home (meta 4). |
