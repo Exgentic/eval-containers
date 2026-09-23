@@ -250,7 +250,10 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
         "MAX_TOKENS",
         "MAX_COST_USD",
         "PRICE_IN",
+        "PRICE_CACHE_READ",
+        "PRICE_CACHE_WRITE",
         "PRICE_OUT",
+        "COST_HEADER",
         "ON_LIMIT",
     ] {
         assert!(

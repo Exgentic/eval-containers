@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -149,9 +150,10 @@ func edgeAgainst(t *testing.T, h http.HandlerFunc) (*httptest.Server, *[]*http.R
 		// Back to unconfigured, not to what the last test left: a cap that
 		// leaks into the next test refuses a call it never set a budget for.
 		maxTokens, maxCost, priceIn, priceOut = 0, 0, 0, 0
+		priceCacheRead, priceCacheWrite, costHeader = -1, -1, ""
 		onLimit, terminate = "refuse", prevTerminate
 		spendMu.Lock()
-		tokensIn, tokensOut = 0, 0 // the totals are one run's; each test is a run
+		spent, spentUSD = usage{}, 0 // the totals are one run's; each test is a run
 		spendMu.Unlock()
 	})
 	base, model = up.URL, "azure/gpt-5.4"
@@ -1288,10 +1290,10 @@ func TestEveryWireReportsItsUsage(t *testing.T) {
 				"whole":    c.resp,
 				"streamed": strings.Join(c.sse, ""),
 			} {
-				in, out := usageOf(body)
-				if in != fixtureIn || out != fixtureOut {
+				u := usageOf(body)
+				if u.in != fixtureIn || u.out != fixtureOut {
 					t.Errorf("%s %s response: usage = %d in / %d out, want %d / %d",
-						c.name, what, in, out, fixtureIn, fixtureOut)
+						c.name, what, u.in, u.out, fixtureIn, fixtureOut)
 				}
 			}
 		})
@@ -1302,19 +1304,21 @@ func TestUsageOfIgnoresWhatIsNotAToken(t *testing.T) {
 	// `max_tokens` is a request field, `total_tokens` double-counts the two it
 	// sums, and OpenAI's and Gemini's cached counts are already inside their
 	// prompt counts — reading any of them inflates the cap.
-	in, out := usageOf(`{"max_tokens":4096,"usage":{"prompt_tokens":11,"prompt_tokens_details":{"cached_tokens":9},"completion_tokens":3,"total_tokens":14}}`)
-	if in != 11 || out != 3 {
-		t.Errorf("usage = %d/%d, want 11/3", in, out)
+	u := usageOf(`{"max_tokens":4096,"usage":{"prompt_tokens":11,"prompt_tokens_details":{"cached_tokens":9},"completion_tokens":3,"total_tokens":14}}`)
+	// OpenAI's prompt count INCLUDES its cached tokens: 11 is 9 cached + 2 fresh.
+	if u.in != 2 || u.cacheRead != 9 || u.out != 3 || u.total() != 14 {
+		t.Errorf("openai usage = %+v, want 2 fresh / 9 cached / 3 out", u)
 	}
 	// Anthropic bills cache writes and reads on TOP of input_tokens.
-	in, _ = usageOf(`{"usage":{"input_tokens":11,"cache_creation_input_tokens":100,"cache_read_input_tokens":20,"output_tokens":3}}`)
-	if in != 131 {
-		t.Errorf("anthropic input = %d, want 11+100+20", in)
+	u = usageOf(`{"usage":{"input_tokens":11,"cache_creation_input_tokens":100,"cache_read_input_tokens":20,"output_tokens":3}}`)
+	if u.in != 11 || u.cacheWrite != 100 || u.cacheRead != 20 || u.total() != 134 {
+		t.Errorf("anthropic usage = %+v, want 11 fresh / 100 written / 20 read", u)
 	}
-	// Gemini reports thinking apart from the candidates; both are output.
-	_, out = usageOf(`{"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":3,"thoughtsTokenCount":40,"totalTokenCount":54}}`)
-	if out != 43 {
-		t.Errorf("gemini output = %d, want 3+40", out)
+	// Gemini reports thinking apart from the candidates; both are output. Its
+	// cached count, like OpenAI's, is inside the prompt count.
+	u = usageOf(`{"usageMetadata":{"promptTokenCount":11,"cachedContentTokenCount":8,"candidatesTokenCount":3,"thoughtsTokenCount":40,"totalTokenCount":54}}`)
+	if u.in != 3 || u.cacheRead != 8 || u.out != 43 {
+		t.Errorf("gemini usage = %+v, want 3 fresh / 8 cached / 43 out", u)
 	}
 }
 
@@ -1349,10 +1353,10 @@ func TestEveryWireCountsItsCallTowardTheCap(t *testing.T) {
 				maxTokens = 1 << 20 // capped, but far from crossing
 				spendOneCall(t, c, stream)
 				spendMu.Lock()
-				in, out := tokensIn, tokensOut
+				got := spent
 				spendMu.Unlock()
-				if in != fixtureIn || out != fixtureOut {
-					t.Errorf("run totals = %d in / %d out, want %d / %d", in, out, fixtureIn, fixtureOut)
+				if got.in != fixtureIn || got.out != fixtureOut {
+					t.Errorf("run totals = %+v, want %d in / %d out", got, fixtureIn, fixtureOut)
 				}
 			})
 		}
@@ -1581,5 +1585,104 @@ func TestTheStartupLineSaysWhatBoundsTheRun(t *testing.T) {
 		if got := capNotice(); got != c.want {
 			t.Errorf("capNotice() = %q, want %q", got, c.want)
 		}
+	}
+}
+
+// ── Pricing (rule 21) ───────────────────────────────────────────────
+
+func TestEachCategoryIsPricedOnItsOwn(t *testing.T) {
+	prev := [4]float64{priceIn, priceCacheRead, priceCacheWrite, priceOut}
+	defer func() {
+		priceIn, priceCacheRead, priceCacheWrite, priceOut = prev[0], prev[1], prev[2], prev[3]
+	}()
+	// A cached read at a tenth of fresh input, a write at a quarter more: the
+	// shape of every provider that caches, and the reason one input price is
+	// not enough — this call is $0.0006, against $0.0041 priced flat.
+	priceIn, priceCacheRead, priceCacheWrite, priceOut = 3, 0.3, 3.75, 15
+	u := usage{in: 100, cacheRead: 39000, cacheWrite: 269, out: 200}
+
+	got := u.cost()
+	want := (100*3 + 39000*0.3 + 269*3.75 + 200*15) / 1e6
+	if math.Abs(got-want) > 1e-12 {
+		t.Errorf("cost = %v, want %v", got, want)
+	}
+	// Unset cache prices fall back to the input price — the arithmetic before
+	// the categories existed, which overstates a cached run rather than
+	// understating it. A cap is better early than late.
+	priceCacheRead, priceCacheWrite = -1, -1
+	flat := (100*3 + 39000*3 + 269*3 + 200*15) / 1e6
+	if got := u.cost(); math.Abs(got-flat) > 1e-12 {
+		t.Errorf("unpriced cache cost = %v, want the input price applied: %v", got, flat)
+	}
+}
+
+// When something upstream actually billed the call, its number beats one
+// derived from stated prices.
+func TestAReportedCostWinsOverTheStatedPrices(t *testing.T) {
+	for _, c := range []struct {
+		name, header string
+		want         float64
+	}{
+		{"reported", "0.25", 0.25},
+		// litellm reports 0.0 on most streamed calls; taking that at face value
+		// would count a run as free.
+		{"reported as zero", "0.0", 14e-6},
+		{"not reported", "", 14e-6},
+		{"not a number", "n/a", 14e-6},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+				if c.header != "" {
+					w.Header().Set("x-upstream-cost", c.header)
+				}
+				_, _ = w.Write([]byte(wireCases[0].resp))
+			})
+			costHeader, priceIn, priceOut = "x-upstream-cost", 1, 1 // $1/Mtok both sides
+			maxCost = 1000                                          // priced, nowhere near crossing
+
+			post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil).Body.Close()
+
+			rec := records(t)[0]
+			if math.Abs(rec.CostUSD-c.want) > 1e-9 {
+				t.Errorf("recorded cost = %v, want %v", rec.CostUSD, c.want)
+			}
+			spendMu.Lock()
+			total := spentUSD
+			spendMu.Unlock()
+			if math.Abs(total-c.want) > 1e-9 {
+				t.Errorf("run total = %v, want %v", total, c.want)
+			}
+		})
+	}
+}
+
+// The cost belongs in the record, not in a header on the way back: a response's
+// headers are on the wire before its first chunk is read.
+func TestAnUnpricedRunRecordsNoCostAndParsesNothing(t *testing.T) {
+	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(wireCases[0].resp))
+	})
+	post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil).Body.Close()
+
+	if got := records(t)[0].CostUSD; got != 0 {
+		t.Errorf("cost_usd = %v on a run that priced nothing", got)
+	}
+	raw, _ := os.ReadFile(out)
+	if strings.Contains(string(raw), "cost_usd") {
+		t.Errorf("an unpriced run wrote a cost field: %s", raw)
+	}
+}
+
+func TestACostCapCanBePricedByTheUpstreamAlone(t *testing.T) {
+	prevBase, prevCost := base, maxCost
+	defer func() { base, maxCost, costHeader = prevBase, prevCost, "" }()
+	base, maxCost = "http://upstream", 5
+
+	if err := configError(); err == nil || !strings.Contains(err.Error(), "EDGE_COST_HEADER") {
+		t.Fatalf("a cost cap with nothing to price it by gave %v", err)
+	}
+	costHeader = "x-upstream-cost"
+	if err := configError(); err != nil {
+		t.Errorf("a cost cap priced by the upstream was refused: %v", err)
 	}
 }

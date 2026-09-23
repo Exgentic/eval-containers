@@ -49,6 +49,10 @@ type call struct {
 	Chunks    [][2]float64      `json:"chunks"` // [ms since request start, bytes]
 	Truncated bool              `json:"truncated,omitempty"`
 	Retries   int               `json:"retries,omitempty"`
+	// What this call cost, when anything knew: the upstream's own figure if it
+	// reported one, else the tokens at the configured prices. The tokens are in
+	// the response already — this is the one number that is not.
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 var (
@@ -117,9 +121,20 @@ var (
 	// handle (rule 3) and so cannot know a price on its own.
 	maxTokens = envInt("EDGE_MAX_TOKENS", 0)
 	maxCost   = envFloat("EDGE_MAX_COST_USD", 0)
-	priceIn   = envFloat("EDGE_PRICE_IN", 0)  // USD per million input tokens
-	priceOut  = envFloat("EDGE_PRICE_OUT", 0) // USD per million output tokens
-	onLimit   = envOr("EDGE_ON_LIMIT", "refuse")
+	// USD per million tokens, per category, because every wire reports the
+	// categories apart and they are billed apart: a cached read is a tenth of
+	// fresh input on some providers, a cache write a quarter more. Unset cache
+	// prices fall back to the input price — the old arithmetic, which overstates
+	// a cached run rather than understating it, and a cap is better early.
+	priceIn         = envFloat("EDGE_PRICE_IN", 0)
+	priceCacheRead  = envFloat("EDGE_PRICE_CACHE_READ", -1)
+	priceCacheWrite = envFloat("EDGE_PRICE_CACHE_WRITE", -1)
+	priceOut        = envFloat("EDGE_PRICE_OUT", 0)
+	// A response header carrying what the upstream charged for that call, when
+	// something upstream knows better than a stated price. Named rather than
+	// sniffed: which header, if any, is the operator's to say.
+	costHeader = os.Getenv("EDGE_COST_HEADER")
+	onLimit    = envOr("EDGE_ON_LIMIT", "refuse")
 )
 
 func envOr(k, d string) string {
@@ -133,7 +148,7 @@ func envFloat(k string, d float64) float64 {
 	if v, err := strconv.ParseFloat(os.Getenv(k), 64); err == nil && v >= 0 {
 		return v
 	}
-	return d
+	return d // -1 from a caller means "unset", which is not the same as free
 }
 
 func envInt(k string, d int) int {
@@ -237,32 +252,59 @@ func pinGemini(path, to string) string {
 // The run's usage so far, as the providers reported it. Guarded by spendMu,
 // not mu: recording a call must never wait on the arithmetic, or vice versa.
 var (
-	spendMu   sync.Mutex
-	tokensIn  int
-	tokensOut int
+	spendMu  sync.Mutex
+	spent    usage   // tokens, by category, for the run so far
+	spentUSD float64 // what the upstream said those calls cost, where it said
 )
 
-// Token fields, by the name each wire reports them under. Anthropic bills
-// cache writes and reads as input on top of `input_tokens`; OpenAI and Gemini
-// fold their cached tokens INTO the prompt count, so counting those again here
-// would double them. Gemini reports thinking separately from the candidates.
-var (
-	inputTokenField = map[string]bool{
-		"prompt_tokens": true, "input_tokens": true, "promptTokenCount": true,
-		"cache_creation_input_tokens": true, "cache_read_input_tokens": true,
+// One call's tokens, split the way they are billed. `in` is fresh input only:
+// the wires that fold cached tokens into their prompt count have them taken
+// back out here, so the four never double-count each other.
+type usage struct{ in, cacheRead, cacheWrite, out int }
+
+func (u usage) add(o usage) usage {
+	return usage{u.in + o.in, u.cacheRead + o.cacheRead, u.cacheWrite + o.cacheWrite, u.out + o.out}
+}
+
+func (u usage) total() int { return u.in + u.cacheRead + u.cacheWrite + u.out }
+
+// priceOr is how an unset cache price falls back to the input price.
+func priceOr(p, fallback float64) float64 {
+	if p < 0 {
+		return fallback
 	}
-	outputTokenField = map[string]bool{
-		"completion_tokens": true, "output_tokens": true,
-		"candidatesTokenCount": true, "thoughtsTokenCount": true,
-	}
-)
+	return p
+}
+
+func (u usage) cost() float64 {
+	return (float64(u.in)*priceIn +
+		float64(u.cacheRead)*priceOr(priceCacheRead, priceIn) +
+		float64(u.cacheWrite)*priceOr(priceCacheWrite, priceIn) +
+		float64(u.out)*priceOut) / 1e6
+}
+
+// The fields each wire reports, grouped by what they mean rather than by who
+// sends them — no wire sends another's names, so one table reads all three.
+var tokenField = map[string]bool{
+	// A prompt count. Anthropic's excludes its cached tokens; OpenAI's and
+	// Gemini's include theirs, which is why `inclusiveCache` exists below.
+	"prompt_tokens": true, "input_tokens": true, "promptTokenCount": true,
+	// Cached input, read back.
+	"cache_read_input_tokens": true, "cached_tokens": true, "cachedContentTokenCount": true,
+	// Cached input, written. Only Anthropic charges for the write.
+	"cache_creation_input_tokens": true,
+	// Output. Gemini reports thinking apart from the candidates; the other two
+	// fold theirs into the count below.
+	"completion_tokens": true, "output_tokens": true,
+	"candidatesTokenCount": true, "thoughtsTokenCount": true,
+}
 
 // usageOf reads the tokens a response reports, on any wire, streamed or not. It
 // takes the LARGEST value seen for each field rather than the last or the sum,
 // which is what lets one function serve all three: a whole body reports each
 // field once; Anthropic splits input across `message_start` and output across
 // `message_delta`; Gemini repeats a running total on every chunk.
-func usageOf(body string) (in, out int) {
+func usageOf(body string) usage {
 	seen := map[string]int{}
 	for _, line := range strings.Split(body, "\n") {
 		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
@@ -275,17 +317,20 @@ func usageOf(body string) (in, out int) {
 		}
 		walkTokens(v, seen)
 	}
-	// Largest per field, then summed: the fields of one wire are distinct
-	// charges that add up, while the repeats of one field across a stream are
-	// the same charge restated.
-	for field, n := range seen {
-		if inputTokenField[field] {
-			in += n
-		} else {
-			out += n
-		}
+	// Largest per field, then combined: repeats of one field across a stream
+	// are the same charge restated, while different fields are charges that add
+	// up — except a prompt count and the cached tokens inside it, which are the
+	// same tokens twice.
+	prompt := max(seen["prompt_tokens"], seen["input_tokens"], seen["promptTokenCount"])
+	inclusiveCache := seen["cached_tokens"] + seen["cachedContentTokenCount"]
+	u := usage{
+		in:         max(prompt-inclusiveCache, 0),
+		cacheRead:  seen["cache_read_input_tokens"] + inclusiveCache,
+		cacheWrite: seen["cache_creation_input_tokens"],
+		out: max(seen["completion_tokens"], seen["output_tokens"]) +
+			seen["candidatesTokenCount"] + seen["thoughtsTokenCount"],
 	}
-	return in, out
+	return u
 }
 
 func walkTokens(v any, seen map[string]int) {
@@ -293,7 +338,7 @@ func walkTokens(v any, seen map[string]int) {
 	case map[string]any:
 		for k, child := range t {
 			if n, ok := child.(float64); ok {
-				if inputTokenField[k] || outputTokenField[k] {
+				if tokenField[k] {
 					seen[k] = max(seen[k], int(n))
 				}
 				continue
@@ -307,16 +352,39 @@ func walkTokens(v any, seen map[string]int) {
 	}
 }
 
-func costOf(in, out int) float64 {
-	return (float64(in)*priceIn + float64(out)*priceOut) / 1e6
-}
-
-// spend adds one exchange to the run's totals.
-func spend(body string) {
-	in, out := usageOf(body)
+// spend adds one exchange to the run's totals and returns what it cost.
+// `charged` is what the upstream said, in USD, or 0 when it said nothing: a
+// number from whoever actually billed the call beats one derived from stated
+// prices, so it wins where it exists.
+//
+// There is no cost header on the way back, deliberately: the response's headers
+// are already on the wire before its first chunk is read, which is why an
+// upstream that reports a cost reports $0 on every streamed call. The record is
+// where a number that is only known at the end belongs.
+func spend(body string, charged float64) float64 {
+	u := usageOf(body)
+	cost := charged
+	if cost == 0 {
+		cost = u.cost()
+	}
 	spendMu.Lock()
 	defer spendMu.Unlock()
-	tokensIn, tokensOut = tokensIn+in, tokensOut+out
+	spent = spent.add(u)
+	spentUSD += cost
+	return cost
+}
+
+// chargedFor reads the per-call cost the upstream reported, if the operator
+// named a header for it and this response carried a usable one.
+func chargedFor(h http.Header) float64 {
+	if costHeader == "" {
+		return 0
+	}
+	v, err := strconv.ParseFloat(strings.TrimSpace(h.Get(costHeader)), 64)
+	if err != nil || v <= 0 {
+		return 0 // absent, unparsable, or a zero that would silently undercount
+	}
+	return v
 }
 
 // overCap reports the cap the run has already crossed, empty while it is under
@@ -325,13 +393,11 @@ func spend(body string) {
 func overCap() string {
 	spendMu.Lock()
 	defer spendMu.Unlock()
-	if maxTokens > 0 && tokensIn+tokensOut >= maxTokens {
-		return fmt.Sprintf("token cap reached: %d of %d", tokensIn+tokensOut, maxTokens)
+	if maxTokens > 0 && spent.total() >= maxTokens {
+		return fmt.Sprintf("token cap reached: %d of %d", spent.total(), maxTokens)
 	}
-	if maxCost > 0 {
-		if spent := costOf(tokensIn, tokensOut); spent >= maxCost {
-			return fmt.Sprintf("cost cap reached: $%.4f of $%.2f", spent, maxCost)
-		}
+	if maxCost > 0 && spentUSD >= maxCost {
+		return fmt.Sprintf("cost cap reached: $%.4f of $%.2f", spentUSD, maxCost)
 	}
 	return ""
 }
@@ -372,6 +438,9 @@ func includeUsage(body []byte, path string) []byte {
 }
 
 func capped() bool { return maxTokens > 0 || maxCost > 0 }
+
+// priced reports whether this run can put a number on a call at all.
+func priced() bool { return priceIn > 0 || priceOut > 0 || costHeader != "" }
 
 // capNotice says what the run is bounded by, for the log line at startup. A cap
 // that did not reach the edge is otherwise indistinguishable from no cap until
@@ -570,8 +639,10 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 	c.Response = body.String()
 	c.TotalMs = msSince(start)
-	if capped() {
-		spend(c.Response)
+	// Only when something asked for it: reading usage means parsing the whole
+	// response, which a run that priced nothing and capped nothing need not pay.
+	if capped() || priced() {
+		c.CostUSD = spend(c.Response, chargedFor(resp.Header))
 	}
 	record(c)
 	if crossed := overCap(); capped() && crossed != "" {
@@ -678,8 +749,8 @@ func configError() error {
 	if base == "" {
 		return errors.New("EDGE_API_BASE is required")
 	}
-	if maxCost > 0 && priceIn == 0 && priceOut == 0 {
-		return errors.New("EDGE_MAX_COST_USD is set without EDGE_PRICE_IN/EDGE_PRICE_OUT: the edge cannot price a model it must not identify")
+	if maxCost > 0 && priceIn == 0 && priceOut == 0 && costHeader == "" {
+		return errors.New("EDGE_MAX_COST_USD is set with nothing to price it by: give EDGE_PRICE_IN/EDGE_PRICE_OUT, or EDGE_COST_HEADER if the upstream reports what it charged")
 	}
 	if onLimit != "refuse" && onLimit != "kill" {
 		return errors.New("EDGE_ON_LIMIT must be refuse or kill")

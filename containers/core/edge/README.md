@@ -37,17 +37,20 @@ framework with an axis of its own translates into these once, at bring-up:
 | `EDGE_MAX_RETRIES` | no | 2 | Transport-failure retries before any byte reaches the caller |
 | `EDGE_MAX_TOKENS` | no | 0 (none) | Tokens the run may spend, input + output, before calls are refused |
 | `EDGE_MAX_COST_USD` | no | 0 (none) | Dollars the run may spend before calls are refused; needs the prices below |
-| `EDGE_PRICE_IN` | for a cost cap | — | Input price, USD per million tokens |
+| `EDGE_PRICE_IN` | for a cost cap | — | Fresh input price, USD per million tokens |
+| `EDGE_PRICE_CACHE_READ` | no | `EDGE_PRICE_IN` | Cached input price, USD per million tokens |
+| `EDGE_PRICE_CACHE_WRITE` | no | `EDGE_PRICE_IN` | Cache-write price, USD per million tokens |
 | `EDGE_PRICE_OUT` | for a cost cap | — | Output price, USD per million tokens |
+| `EDGE_COST_HEADER` | no | — | Response header carrying what the upstream charged for the call; its figure wins over the prices above |
 | `EDGE_ON_LIMIT` | no | `refuse` | What crossing a cap does: `refuse` every later call, or `kill` the container |
 
 ## Caps
 
 With `EDGE_MAX_TOKENS` or `EDGE_MAX_COST_USD` set, the edge counts what every
-call reports — `prompt_tokens`/`completion_tokens`, `input_tokens`/
-`output_tokens` (plus Anthropic's cache tokens, which bill as input),
-`promptTokenCount`/`candidatesTokenCount`/`thoughtsTokenCount` — streamed or
-not. Once a cap is crossed, every later call is answered `402` with a
+call reports, streamed or not, split into the four categories every wire bills
+apart: fresh input, cached read, cache write, and output. Anthropic reports its
+cache tokens on top of `input_tokens`; OpenAI and Gemini fold theirs into the
+prompt count, so those are taken back out rather than counted twice. Once a cap is crossed, every later call is answered `402` with a
 `budget_exceeded` body and never reaches the upstream; the call in flight is
 not cut. Cost needs prices because the edge must not identify the model behind
 the handle. `EDGE_ON_LIMIT=kill` additionally stops the container, which also
