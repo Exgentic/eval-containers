@@ -130,6 +130,12 @@ pub struct RunArgs {
     #[arg(long)]
     max_budget: Option<f64>,
 
+    /// Hard cap on the tokens (input + output) this run may spend. The edge
+    /// counts what every response reports, on any wire, and refuses further
+    /// calls once the cap is crossed. Default: no cap.
+    #[arg(long)]
+    max_tokens: Option<u64>,
+
     /// Use the in-repo `containers/benchmarks/<name>/` artifacts instead of the
     /// published registry artifact. For development.
     #[arg(long)]
@@ -287,6 +293,11 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(budget) = args.max_budget {
         envs.push(("EVAL_MODEL_MAX_BUDGET", budget.to_string()));
+    }
+    // The edge takes its configuration in its own namespace; the translation
+    // belongs here and in the chart, not in anyone's launch command.
+    if let Some(tokens) = args.max_tokens {
+        envs.push(("EDGE_MAX_TOKENS", tokens.to_string()));
     }
     if args.force {
         envs.push(("EVAL_FORCE", "1".into()));
@@ -782,6 +793,9 @@ fn run_job(
     }
     if let Some(b) = args.max_budget {
         sets.push(format!("maxBudget={b}"));
+    }
+    if let Some(t) = args.max_tokens {
+        sets.push(format!("maxTokens={t}"));
     }
     for s in &sets {
         helm.push("--set".into());

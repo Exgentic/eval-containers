@@ -60,6 +60,11 @@ benchmarkVersion: ""
 agentVersion: ""
 litellmVersion: ""
 maxBudget: ""
+# Tokens (input + output) this run may spend before the edge refuses further
+# calls (`--max-tokens`). Empty = no cap, which is the default. Unlike
+# maxBudget, which is the gateway's dollar cap and needs its price map, this
+# is counted from what each response reports, on any wire.
+maxTokens: ""
 
 # ── Knobs a benchmark MAY override in its values.yaml ────────────────────────
 timeout: "300"
