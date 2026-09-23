@@ -66,13 +66,6 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
  && sed -i 's#^Exec=/usr/bin/google-chrome-stable#Exec=/usr/local/bin/google-chrome#' \
       /usr/share/applications/google-chrome.desktop || true
 
-# VS Code refuses as root too, and wants its data directory named explicitly
-# when it does. The path is the one it would pick anyway, so the wrapper
-# changes nothing for a non-root run.
-RUN printf '#!/bin/sh\nexec /usr/bin/code --no-sandbox \\\n  --user-data-dir="${HOME:-/home/user}/.config/Code" "$@"\n' \
-      > /usr/local/bin/code \
- && chmod +x /usr/local/bin/code
-
 RUN echo "ALL ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/osworld \
  && chmod 440 /etc/sudoers.d/osworld
 
@@ -89,6 +82,10 @@ RUN mkdir -p /home/user/.config /home/user/.cache /home/user/.local/share /tmp/r
 # (thunderbird, gimp, vlc above; chrome and vs code below) are assumed by every
 # task, not installed by the playbook. A task whose app is absent scores 0 for a
 # reason that has nothing to do with the agent, so they are installed here.
+# VS Code refuses to start as root as well, and wants its data directory named
+# explicitly when it does, so it gets a wrapper like Chrome's — written after
+# its own deb, which removes one written before it. The path is the one VS Code
+# would pick anyway, so a non-root run is unchanged.
 # Chrome and VS Code ship amd64 debs only, and the fleet builds this image for
 # both arches. The cluster is amd64, so they are installed there and skipped on
 # arm64 (a Mac dev build), rather than failing the whole release.
@@ -106,7 +103,11 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
  && apt-get update -qq \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
       google-chrome-stable code \
- && rm -rf /var/lib/apt/lists/*
+ && rm -rf /var/lib/apt/lists/* \
+ && printf '#!/bin/sh\nexec /usr/bin/code --no-sandbox \\\n  --user-data-dir="${HOME:-/home/user}/.config/Code" "$@"\n' \
+      > /usr/local/bin/code \
+ && chmod +x /usr/local/bin/code \
+ && [ "$(command -v code)" = /usr/local/bin/code ]
 
 # The apps the tasks name in their own `snapshot` field — the VM state
 # upstream restores before the task runs. There is no snapshot here, so a

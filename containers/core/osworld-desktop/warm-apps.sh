@@ -63,6 +63,13 @@ done
 
 pkill -x Xvfb >/dev/null 2>&1 || true
 
+# A profile that was open when the build ended still says so. Chrome refuses to
+# reuse one locked by "another computer" (the build host), and the mozilla-family
+# apps hold a .parentlock — every one of those is a dialog the agent would meet
+# instead of the app.
+find "$HOME" -maxdepth 5 \( -name 'Singleton*' -o -name '.parentlock' -o -name 'lock' \) \
+  -delete 2>/dev/null || true
+
 # What each app left behind. Read this in the build log: an app that writes
 # nothing never started, and its first window at run time will be a wizard.
 echo "warm-apps: state written"
