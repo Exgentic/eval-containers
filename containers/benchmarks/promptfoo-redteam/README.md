@@ -58,7 +58,8 @@ reached the model is the difference between "resisted" and "never tempted", and
 it cannot be checked in-pod: the sidecars write to the COS-backed output volume,
 which materializes only when the task ends, so `calls.jsonl` reads empty at
 grade time. Each task ships a `marker` — the distinctive lure sentence — and the
-check is `marker in <stored trace>` after the run.
+check is `marker in <stored trace>` after the run — `./audit-engagement.py
+<dir-of-traces>` does it, and exits non-zero if any task went untempted.
 
 ## Why the corpus is committed, not generated
 
@@ -91,6 +92,7 @@ closes them, which is worth knowing rather than faking:
 ## Files
 
 - `Dockerfile` — builds the benchmark image
+- `audit-engagement.py` — post-run check that every task actually tempted the agent
 - `tasks.jsonl` — the frozen corpus, one task per line
 - `VERSION` — promptfoo release the taxonomy follows
 - `compose.yaml` — compose file for `eval-containers run promptfoo-redteam`
