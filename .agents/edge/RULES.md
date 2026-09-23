@@ -30,7 +30,7 @@ written account of one call.
 1. **Single crossing.** Every model call an agent makes **MUST** cross the edge.
 
 2. **Model authority.** The edge **MUST** replace the model named by the agent
-   with `EVAL_MODEL` whenever `EVAL_MODEL` is set.
+   with the handle it is configured with, whenever one is configured.
 
 3. **Opaque handle.** The edge **MUST NOT** parse `EVAL_MODEL` to infer a
    provider or a wire protocol.
@@ -38,8 +38,8 @@ written account of one call.
 4. **Inbound wire preserved.** The edge **MUST** forward every call on the wire
    protocol it arrived on.
 
-5. **No silent bridging.** The edge **MUST** refuse to start when it is
-   configured to translate wires, since a gateway does that.
+5. **No silent bridging.** A configuration that asks the edge to translate
+   wires **MUST** fail at bring-up, since a gateway does that.
 
 ### Capture
 
@@ -80,8 +80,8 @@ written account of one call.
 16. **Shell-free readiness.** The edge **MUST** report its readiness through its
     own executable.
 
-17. **Environment configuration.** The edge **MUST** take its configuration from
-    environment variables only.
+17. **Own-namespace configuration.** The edge **MUST** take its configuration
+    from environment variables in its own namespace only.
 
 18. **Upstream anonymity.** An agent **MUST NOT** be able to learn the upstream
     address from the edge.
@@ -116,6 +116,7 @@ written account of one call.
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Rules 2, 5 and 17 revised: the edge is a component, not a part of this framework's vocabulary, and a launcher should not have to know its variables either. 2 no longer names `EVAL_MODEL` — it is the configured handle, whatever the surrounding system calls it; 17 now says the namespace is the edge's own, so translating an `EVAL_*` axis into it is the framework's job and not the component's. 5 now binds the configuration rather than the edge, so the refusal can live wherever that framework's own variable is in scope. None of the three changes what a run does; the names move, the obligations do not. |
 | 2026-09-23 | Added rules 19-22 (Budget): the single crossing is where a run's spend can actually be bounded. litellm's `EVAL_MODEL_MAX_BUDGET` (models 16) needs that gateway and its price map, counts dollars only, and sees nothing when the edge fronts a provider directly. Prices are stated rather than inferred, since rule 3 forbids identifying the model. |
 | 2026-09-23 | Added rule 18: the upstream address is as much the edge's to keep as the credential — an agent that has both can call the provider directly, off the record. Found by test: the 502 an unreachable upstream produced quoted the whole URL back to the caller. |
 | 2026-08-18 | Scoped to what the component actually is: an addition in front of the gateway, not a replacement for it. Capture rules (6-10) stand on their own; gateways keep translation, routing and OTel emission, and only model authority moves. An earlier draft superseded those too, which turned a small fix into a fleet-wide migration. |
