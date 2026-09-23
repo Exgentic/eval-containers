@@ -47,6 +47,14 @@ imagePullPolicy: IfNotPresent
 # internal registry instead of the nested registry path. The oc/ tooling sets
 # this; ghcr/kind users leave it false. Per-image *ImageRef overrides still win.
 flatImages: false
+# otelEnabled: run the otelcol sidecar. Off drops the traces.jsonl half of the
+# model record; the edge's calls.jsonl.zst still holds every request and
+# response, so cost and usage are unaffected.
+# gatewayEnabled: run the gateway sidecar. Off, the edge forwards straight to
+# the upstream instead — it already pins the model, injects the credential and
+# keeps it out of the record. Only cross-protocol translation is lost.
+gatewayEnabled: true
+otelEnabled: true
 otelImage: ""
 gatewayImageRef: ""
 runnerImageRef: ""
