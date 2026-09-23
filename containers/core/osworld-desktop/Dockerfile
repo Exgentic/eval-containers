@@ -174,7 +174,7 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
  && add-apt-repository -y "$KICAD_PPA" \
  && apt-get update -qq \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
-      nautilus evince eog mpv imagemagick \
+      nautilus evince eog mpv imagemagick libdbus-glib-1-2 \
       blender solvespace darktable kicad \
       default-jre-headless libosmesa6 \
  && rm -rf /var/lib/apt/lists/*; \

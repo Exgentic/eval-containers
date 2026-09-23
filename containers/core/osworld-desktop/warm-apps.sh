@@ -23,9 +23,13 @@ xfwm4 --daemon >/dev/null 2>&1 || true
 # enough to catch them is wide enough to kill the build step.
 warm() {  # warm <command>...
   echo "warm: $1"
-  setsid "$@" >/dev/null 2>&1 &
+  setsid "$@" >/tmp/warm.log 2>&1 &
   local pid=$!          # setsid makes the child a session leader: pid == pgid
   sleep "$WARM_SECONDS"
+  # An app that is already gone never drew a window. Zotero spent a release
+  # like that — its libxul could not find libdbus-glib and it died in a
+  # second, while the build and every `command -v` stayed happy.
+  kill -0 "$pid" 2>/dev/null || sed 's/^/    died: /' /tmp/warm.log | head -5
   kill -TERM -"$pid" 2>/dev/null || true
   sleep 2
   kill -KILL -"$pid" 2>/dev/null || true
