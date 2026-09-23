@@ -109,6 +109,17 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
 # REMOVED it — the image shipped for weeks with no WPS at all and its eight
 # tasks failing on `No such file or directory: 'wps'`. Hence the check at the
 # end: a missing app must fail the build, not the task.
+# Every app check runs as a foreign uid, because that is what the pod gets: the
+# Obsidian AppImage extracted 0700 and root's `command -v` was happy while the
+# agent's uid could not even traverse the directory.
+RUN cat > /usr/local/bin/check-apps <<'CHECK' && chmod +x /usr/local/bin/check-apps
+#!/bin/sh
+for b in "$@"; do
+  setpriv --reuid=12345 --regid=0 --clear-groups sh -c "command -v '$b' >/dev/null" \
+    || { echo "osworld-desktop: $b is not usable by the pod's uid"; exit 1; }
+done
+CHECK
+
 ARG WPS_DEB=https://wdl1.pcfg.cache.wpscdn.com/wpsdl/wpsoffice/download/linux/11723/wps-office_11.1.0.11723.XA_amd64.deb
 ARG SHOTCUT_APPIMAGE=https://downloads.sourceforge.net/project/shotcut/v26.2.26/shotcut-linux-x86_64-26.2.26.AppImage
 ARG MUSESCORE_APPIMAGE=https://github.com/musescore/MuseScore/releases/download/v4.6.0/MuseScore-Studio-4.6.0.252730944-x86_64.AppImage
@@ -132,9 +143,8 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
       && mkdir -p /opt/zotero && tar -xjf /tmp/zotero.tar.bz2 -C /opt/zotero --strip-components=1 \
       && ln -sf /opt/zotero/zotero /usr/local/bin/zotero && rm /tmp/zotero.tar.bz2; \
     rm -rf /var/lib/apt/lists/*; \
-    for b in wps et wpp shotcut musescore zotero google-chrome code; do \
-      command -v "$b" >/dev/null || { echo "osworld-desktop: $b did not install"; exit 1; }; \
-    done
+    chmod -R a+rX /opt/appimages /opt/zotero /opt/kingsoft; \
+    /usr/local/bin/check-apps wps et wpp shotcut musescore zotero google-chrome code
 
 # The long tail: 15 of the 68 apps-subset tasks drive an app beyond the set
 # above, one or two tasks each. Most of them try to install it first — that is
@@ -168,10 +178,8 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
       blender solvespace darktable kicad \
       default-jre-headless libosmesa6 \
  && rm -rf /var/lib/apt/lists/*; \
-    for b in nautilus evince eog mpv convert blender solvespace darktable \
-             kicad kicad-cli eeschema pcbnew java; do \
-      command -v "$b" >/dev/null || { echo "osworld-desktop: $b did not install"; exit 1; }; \
-    done
+    /usr/local/bin/check-apps nautilus evince eog mpv convert blender solvespace \
+      darktable kicad kicad-cli eeschema pcbnew java
 
 ARG OBSIDIAN_APPIMAGE=https://github.com/obsidianmd/obsidian-releases/releases/download/v1.13.7/Obsidian-1.13.7.AppImage
 ARG FREECAD_APPIMAGE=https://github.com/FreeCAD/FreeCAD/releases/download/1.1.3/FreeCAD_1.1.3-Linux-x86_64-py311.AppImage
@@ -184,9 +192,8 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
         && mv squashfs-root "$n"); \
       ln -sf "/opt/appimages/$n/AppRun" "/usr/local/bin/$n"; rm /tmp/app.AppImage; \
     done; \
-    for b in obsidian freecad; do \
-      command -v "$b" >/dev/null || { echo "osworld-desktop: $b did not install"; exit 1; }; \
-    done
+    chmod -R a+rX /opt/appimages; \
+    /usr/local/bin/check-apps obsidian freecad
 
 # Several tasks start their app with `snap run` and read its files back out of
 # the snap's data directory; one checks `snap list` before it will proceed.
@@ -225,7 +232,7 @@ SNAP
 
 RUN mkdir -p /home/user/snap/zotero-snap/common /home/user/Zotero \
  && ln -sfn /home/user/Zotero /home/user/snap/zotero-snap/common/Zotero \
- && chmod -R 777 /home/user/snap
+ && chmod -R 777 /home/user/snap /home/user/Zotero
 
 # The other half of what upstream's snapshot carries: a home directory the apps
 # have already run in. See warm-apps.sh.
