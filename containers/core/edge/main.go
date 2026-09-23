@@ -1,6 +1,6 @@
 // The edge: the one component every model call crosses (.agents/edge/RULES.md).
 //
-// Recording (default): pin the model to EVAL_MODEL (rule 2), forward on the
+// Recording (default): pin the model to EDGE_MODEL (rule 2), forward on the
 // wire the call arrived on (rule 4), stream the response back unbuffered
 // (rule 11), and write the exchange as the agent sent it (rules 6-8). The
 // injected upstream credential never enters a record (rule 9).
@@ -64,15 +64,16 @@ var (
 	recFile *os.File
 	recZstd *zstd.Encoder
 	recPath string // what recFile was opened for; reopen if OUT is repointed
-	out     = envOr("OUT", "/output/model/calls.jsonl")
+	out     = envOr("EDGE_OUT", "/output/model/calls.jsonl")
 	// 4100, not 4000: a gateway owns 4000, and in k8s it shares this pod's
 	// network namespace (edge rule 13).
-	listen = envOr("LISTEN", ":4100")
-	// EVAL_MODEL is the in-framework name; EDGE_MODEL is the same knob for
-	// standalone use outside eval-containers (rule 3: still never parsed).
-	model  = envOr("EVAL_MODEL", os.Getenv("EDGE_MODEL"))
-	base   = strings.TrimSuffix(os.Getenv("OPENAI_API_BASE"), "/")
-	apiKey = os.Getenv("OPENAI_API_KEY")
+	listen = envOr("EDGE_LISTEN", ":4100")
+	// Every knob is the edge's own (rule 17). A framework with an axis of its
+	// own translates into these once, at bring-up; the component has no opinion
+	// about what that axis is called.
+	model  = os.Getenv("EDGE_MODEL")
+	base   = strings.TrimSuffix(os.Getenv("EDGE_API_BASE"), "/")
+	apiKey = os.Getenv("EDGE_API_KEY")
 
 	// A provider serves its own native paths; a gateway serves the framework's
 	// protocol-namespaced ones (gateways rule 5). Declared, never sniffed.
@@ -116,8 +117,8 @@ var (
 	// handle (rule 3) and so cannot know a price on its own.
 	maxTokens = envInt("EDGE_MAX_TOKENS", 0)
 	maxCost   = envFloat("EDGE_MAX_COST_USD", 0)
-	priceIn   = envFloat("EDGE_PRICE_IN_USD_PER_MTOK", 0)
-	priceOut  = envFloat("EDGE_PRICE_OUT_USD_PER_MTOK", 0)
+	priceIn   = envFloat("EDGE_PRICE_IN", 0)  // USD per million input tokens
+	priceOut  = envFloat("EDGE_PRICE_OUT", 0) // USD per million output tokens
 	onLimit   = envOr("EDGE_ON_LIMIT", "refuse")
 )
 
@@ -203,7 +204,7 @@ func upstreamPathFor(inbound, stripped string) string {
 	return stripped
 }
 
-// pin replaces the model the agent named with EVAL_MODEL. The field is
+// pin replaces the model the agent named with the configured handle. The field is
 // top-level JSON on every body-carrying wire, so no per-wire knowledge is
 // needed — and the handle is never parsed (rule 3).
 func pin(body []byte, to string) []byte {
@@ -670,18 +671,15 @@ func probeHealth(addr string) int {
 	return 0
 }
 
-// configError reports why the edge must not start. Translation is a gateway's
-// job, and an operator who asked for it here has misconfigured the stack: fail
-// at boot rather than at every call.
+// configError reports why the edge must not start. A stack that asked for
+// protocol translation is refused too, but by whoever owns that variable
+// (rule 5): it is not in this component's namespace, so it is not its to read.
 func configError() error {
-	if os.Getenv("EVAL_MODEL_API") != "" {
-		return errors.New("EVAL_MODEL_API is set: the edge does not translate protocols — route through a gateway, which does")
-	}
 	if base == "" {
-		return errors.New("OPENAI_API_BASE is required")
+		return errors.New("EDGE_API_BASE is required")
 	}
 	if maxCost > 0 && priceIn == 0 && priceOut == 0 {
-		return errors.New("EDGE_MAX_COST_USD is set without EDGE_PRICE_IN_USD_PER_MTOK/EDGE_PRICE_OUT_USD_PER_MTOK: the edge cannot price a model it must not identify")
+		return errors.New("EDGE_MAX_COST_USD is set without EDGE_PRICE_IN/EDGE_PRICE_OUT: the edge cannot price a model it must not identify")
 	}
 	if onLimit != "refuse" && onLimit != "kill" {
 		return errors.New("EDGE_ON_LIMIT must be refuse or kill")

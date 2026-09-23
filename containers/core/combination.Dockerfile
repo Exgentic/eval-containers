@@ -90,6 +90,7 @@ RUN grep -q '^agent:' /etc/passwd || echo 'agent:x:1002:0::/home/agent:/bin/bash
 # ─── Framework scripts ───────────────────────────────────────────────
 COPY --link runner/run              /usr/local/bin/run
 COPY --link runner/run-agent        /usr/local/bin/run-agent
+COPY --link runner/edge-env         /usr/local/bin/edge-env
 COPY --link runner/start-edge       /usr/local/bin/start-edge
 COPY --link runner/write-result     /usr/local/bin/write-result
 COPY --link entrypoint/eval-materialize-task /usr/local/bin/materialize-task

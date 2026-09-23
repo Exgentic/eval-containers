@@ -55,7 +55,7 @@ overrides the env var.
 | `--litellm-version <v>` | `EVAL_LITELLM_VERSION` | LiteLLM version inside the image |
 | `--timeout <secs>` | `EVAL_TIMEOUT` | default `300` |
 | `--max-budget <usd>` | `EVAL_MODEL_MAX_BUDGET` | hard spend cap, enforced by the gateway; default `$1` |
-| `--max-tokens <n>` | `EVAL_MAX_TOKENS` | hard cap on input + output tokens, enforced by the edge; default none |
+| `--max-tokens <n>` | `EVAL_MAX_TOKENS` | hard cap on input + output tokens, enforced by the edge (which reads it as `EDGE_MAX_TOKENS`, mapped by `runner/edge-env`); default none |
 | `--output-dir <dir>` | `EVAL_OUTPUT_DIR` | output root; results at `<dir>/<benchmark>/<agent>/<model>/<run-id>/<task>/`; default `./output` (`job`: `runs`) |
 | `--run-id <id>` | `EVAL_RUN_ID` | name of the run; rerunning an id skips complete tasks and retries failed ones; default: a fresh id |
 | `--force` | `EVAL_FORCE` | rerun even a complete task, emptying its directory first |

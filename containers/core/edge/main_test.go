@@ -559,27 +559,12 @@ func TestEmptyResponseStillRecords(t *testing.T) {
 
 // ── Startup and readiness (main's decisions) ────────────────────────
 
-func TestConfigErrorRefusesTranslationAtBoot(t *testing.T) {
-	prev := base
-	base = "http://upstream"
-	defer func() { base = prev }()
-
-	t.Setenv("EVAL_MODEL_API", "openai")
-	err := configError()
-	if err == nil {
-		t.Fatal("EVAL_MODEL_API set: want a refusal to start")
-	}
-	if !strings.Contains(err.Error(), "translate") {
-		t.Errorf("refusal does not say why: %v", err)
-	}
-}
-
 func TestConfigErrorRequiresAnUpstream(t *testing.T) {
 	prev := base
 	base = ""
 	defer func() { base = prev }()
 
-	if err := configError(); err == nil || !strings.Contains(err.Error(), "OPENAI_API_BASE") {
+	if err := configError(); err == nil || !strings.Contains(err.Error(), "EDGE_API_BASE") {
 		t.Errorf("missing upstream gave %v, want a named refusal", err)
 	}
 }
@@ -945,7 +930,7 @@ func TestEveryWireForwardsTheAgentsOwnModelWhenNothingIsPinned(t *testing.T) {
 			edge, reqs, bods := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
 				_, _ = w.Write([]byte(c.resp))
 			})
-			model = "" // EVAL_MODEL/EDGE_MODEL unset: the agent chooses (rule 2)
+			model = "" // EDGE_MODEL unset: the agent chooses (rule 2)
 			post(t, edge.URL+c.path, c.req, nil).Body.Close()
 
 			if got := string((*bods)[0]); got != c.req {
@@ -1557,7 +1542,7 @@ func TestConfigErrorRefusesACostCapItCannotPrice(t *testing.T) {
 	base, maxCost = "http://upstream", 5
 
 	err := configError()
-	if err == nil || !strings.Contains(err.Error(), "EDGE_PRICE_IN_USD_PER_MTOK") {
+	if err == nil || !strings.Contains(err.Error(), "EDGE_PRICE_IN") {
 		t.Fatalf("a cost cap with no prices gave %v, want a named refusal", err)
 	}
 	priceOut = 3 // one side of the price is enough to bound the spend

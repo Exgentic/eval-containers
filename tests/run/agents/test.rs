@@ -317,7 +317,7 @@ async fn await_first_call(replay: &ContainerAsync<GenericImage>, timeout: Durati
 }
 
 /// The record the edge actually writes: `runner/run` (and
-/// `runner/process-compose.yaml`) hand it `OUT=/output/model/calls.jsonl.zst`,
+/// `runner/process-compose.yaml`) hand it `EDGE_OUT=/output/model/calls.jsonl.zst`,
 /// so the name is fixed by the launcher, not overridable from the test's env.
 const RECORD_PATH: &str = "model/calls.jsonl.zst";
 

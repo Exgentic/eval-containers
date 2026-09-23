@@ -234,34 +234,44 @@ fn timeout_override_beats_a_preset() {
 /// missing the edge); native mode (rule 12c) removed the reason, so a surface
 /// that replaces it is refused outright.
 /// A launch configures the framework's EVAL_* axis; the edge reads its own
-/// EDGE_* one (edge rule 17). `start-edge` is the only place the two meet, so a
-/// knob that appears on one side and not the other is a cap nobody can set, or
-/// one set under a name no launcher should have to know.
+/// EDGE_* one (edge rules 2, 17). `runner/edge-env` is the only place the two
+/// meet, so a knob that appears on one side and not the other is a setting
+/// nobody can reach — or one reachable only under a name no launcher should
+/// have to know.
 #[test]
-fn spend_caps_are_wired_without_naming_the_edge() {
+fn the_framework_axis_is_mapped_onto_the_edges_own() {
     let read =
         |p: &str| fs::read_to_string(repo_root().join(p)).unwrap_or_else(|_| panic!("missing {p}"));
-    let starter = read("containers/core/runner/start-edge");
+    let map = read("containers/core/runner/edge-env");
     let edge = read("containers/core/edge/main.go");
 
     for knob in [
+        "MODEL",
         "MAX_TOKENS",
         "MAX_COST_USD",
-        "PRICE_IN_USD_PER_MTOK",
-        "PRICE_OUT_USD_PER_MTOK",
+        "PRICE_IN",
+        "PRICE_OUT",
         "ON_LIMIT",
     ] {
         assert!(
-            starter.contains(knob),
-            "start-edge must translate EVAL_{knob} into EDGE_{knob} — otherwise no launch can set it"
+            map.contains(knob),
+            "runner/edge-env must map EVAL_{knob} onto EDGE_{knob} — otherwise no launch can set it"
         );
         assert!(
             edge.contains(&format!("EDGE_{knob}")),
-            "the edge does not read EDGE_{knob}, so start-edge translates into nothing"
+            "the edge does not read EDGE_{knob}, so runner/edge-env maps into nothing"
         );
     }
 
-    // The launcher-facing surfaces speak EVAL_*; EDGE_* stops at start-edge.
+    // The component keeps no foreign names, and no launcher-facing surface
+    // speaks the component's.
+    for foreign in ["EVAL_", "OPENAI_"] {
+        assert!(
+            !edge.contains(foreign),
+            "containers/core/edge/main.go reads a {foreign}* variable — rule 17 makes the \
+             namespace the edge's own, and the mapping runner/edge-env's"
+        );
+    }
     let job = read("containers/benchmarks/_chart/templates/job.yaml");
     assert!(
         job.contains("EVAL_MAX_TOKENS") && !job.contains("EDGE_"),
@@ -274,6 +284,27 @@ fn spend_caps_are_wired_without_naming_the_edge() {
     assert!(
         read("containers/benchmarks/_chart/values.yaml").contains("maxTokens: \"\""),
         "_chart/values.yaml must ship `maxTokens: \"\"` — no cap unless a run asks for one"
+    );
+
+    // Both callers of the mapping, and the image that has to carry it.
+    for (path, why) in [
+        (
+            "containers/core/runner/start-edge",
+            "brings the edge up on every path that reaches a model",
+        ),
+        (
+            "containers/core/runner/run",
+            "hands the bundle to process-compose, which starts the edge itself",
+        ),
+    ] {
+        assert!(
+            read(path).contains("/usr/local/bin/edge-env"),
+            "{path} must source /usr/local/bin/edge-env — it {why}"
+        );
+    }
+    assert!(
+        read("containers/core/combination.Dockerfile").contains("runner/edge-env"),
+        "combination.Dockerfile must COPY runner/edge-env into the eval image"
     );
 }
 

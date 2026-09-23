@@ -63,10 +63,10 @@ processes:
     environment:
       # Its own upstream is the in-process gateway. Set here, on this process
       # only — the gateway reads OPENAI_API_BASE for the REAL upstream.
-      - "OPENAI_API_BASE=http://127.0.0.1:4000"
+      - "EDGE_API_BASE=http://127.0.0.1:4000"
       - "EDGE_UPSTREAM=gateway"
       # Same compressed record as the compose/k8s path (see runner/run).
-      - "OUT=/output/model/calls.jsonl.zst"
+      - "EDGE_OUT=/output/model/calls.jsonl.zst"
     depends_on:
       gateway:
         condition: process_healthy
