@@ -91,9 +91,9 @@ def use_socket(env) -> None:
     import requests_unixsocket
 
     requests_unixsocket.monkeypatch()
-    url = "http+unix://%s" % quote(sock, safe="")
-    env.controller.http_server = url
-    env.setup_controller.http_server = url
+    sock_url = "http+unix://%s" % quote(sock, safe="")
+    env.controller.http_server = sock_url
+    env.setup_controller.http_server = sock_url
 
     port = os.environ.get("DESKTOP_PORT", "5000")
     prefixes = tuple(
@@ -102,13 +102,14 @@ def use_socket(env) -> None:
     )
     original = requests.Session.request
 
-    def over_socket(self, method, target, *a, **k):
-        if isinstance(target, str):
+    def over_socket(self, method, url=None, *a, **k):
+        # requests passes `url` as a keyword, so this must accept one.
+        if isinstance(url, str):
             for p in prefixes:
-                if target.startswith(p):
-                    target = url + target[len(p) :]
+                if url.startswith(p):
+                    url = sock_url + url[len(p) :]
                     break
-        return original(self, method, target, *a, **k)
+        return original(self, method, url, *a, **k)
 
     requests.Session.request = over_socket
 
