@@ -50,16 +50,28 @@ RUN git clone -q https://github.com/xlang-ai/osworld-server /opt/osworld-server 
 # to 9222), so Chrome has to expose it however it is started — a task that
 # opens the browser by clicking would otherwise be ungradeable. Safe Browsing
 # is off to match upstream's managed policy, which interferes with test pages.
+# --no-sandbox because an eval pod runs as root (the chart's anyuid service
+# account) and Chrome refuses to start as root without it — upstream's VM runs
+# it as an ordinary user, so the flag is this container's problem, not theirs.
+# Nothing is weakened that the pod does not already have: the agent reaches
+# Chrome only through pyautogui on a screen.
 RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
     mkdir -p /etc/opt/chrome/policies/managed \
  && printf '{"SafeBrowsingProtectionLevel":0,"SafeBrowsingEnabled":false}\n' \
       > /etc/opt/chrome/policies/managed/osworld-safe-browsing.json \
- && printf '#!/bin/sh\nexec /opt/google/chrome/google-chrome \\\n  --remote-debugging-port=9222 --remote-allow-origins=* \\\n  --no-first-run --no-default-browser-check "$@"\n' \
+ && printf '#!/bin/sh\nexec /opt/google/chrome/google-chrome \\\n  --remote-debugging-port=9222 --remote-allow-origins=* --no-sandbox \\\n  --no-first-run --no-default-browser-check "$@"\n' \
       > /usr/local/bin/google-chrome \
  && chmod +x /usr/local/bin/google-chrome \
  && ln -sf /usr/local/bin/google-chrome /usr/local/bin/google-chrome-stable \
  && sed -i 's#^Exec=/usr/bin/google-chrome-stable#Exec=/usr/local/bin/google-chrome#' \
       /usr/share/applications/google-chrome.desktop || true
+
+# VS Code refuses as root too, and wants its data directory named explicitly
+# when it does. The path is the one it would pick anyway, so the wrapper
+# changes nothing for a non-root run.
+RUN printf '#!/bin/sh\nexec /usr/bin/code --no-sandbox \\\n  --user-data-dir="${HOME:-/home/user}/.config/Code" "$@"\n' \
+      > /usr/local/bin/code \
+ && chmod +x /usr/local/bin/code
 
 RUN echo "ALL ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/osworld \
  && chmod 440 /etc/sudoers.d/osworld

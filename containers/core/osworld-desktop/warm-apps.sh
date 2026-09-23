@@ -48,12 +48,12 @@ warm() {  # warm <command>...
 soffice --headless --terminate_after_init >/dev/null 2>&1 || true
 gimp -i -b '(gimp-quit 0)' >/dev/null 2>&1 || true
 thunderbird -CreateProfile default >/dev/null 2>&1 || true
-code --no-sandbox --list-extensions >/dev/null 2>&1 || true
+code --list-extensions >/dev/null 2>&1 || true
 
 for app in "soffice --writer" \
            "thunderbird" \
            "google-chrome --no-first-run --no-default-browser-check about:blank" \
-           "code --no-sandbox --disable-gpu" \
+           "code --disable-gpu" \
            "zotero" "wps" "et" "wpp" "shotcut" "musescore" "obsidian" \
            "freecad" "kicad" "blender" "nautilus" "evince" "eog"; do
   # The flags above are meant to split into separate arguments.
