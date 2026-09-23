@@ -75,6 +75,36 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
       google-chrome-stable code \
  && rm -rf /var/lib/apt/lists/*
 
+# The rest of upstream's app set, at the versions their Ansible pins. WPS,
+# Shotcut, MuseScore and Zotero are what the apps-subset tasks start in
+# (snapshot = wps/shotcut/musescore/zotero), and a missing one scores 0 for a
+# reason that has nothing to do with the agent.
+#
+# AppImages are extracted rather than run: mounting one needs FUSE, which a
+# container does not have. Zotero comes from the tarball because upstream
+# installs it as a snap and snapd does not run in a container.
+ARG WPS_DEB=https://wdl1.pcfg.cache.wpscdn.com/wpsdl/wpsoffice/download/linux/11723/wps-office_11.1.0.11723.XA_amd64.deb
+ARG SHOTCUT_APPIMAGE=https://downloads.sourceforge.net/project/shotcut/v26.2.26/shotcut-linux-x86_64-26.2.26.AppImage
+ARG MUSESCORE_APPIMAGE=https://github.com/musescore/MuseScore/releases/download/v4.6.0/MuseScore-Studio-4.6.0.252730944-x86_64.AppImage
+ARG ZOTERO_TARBALL=https://download.zotero.org/client/release/7.0.11/Zotero-7.0.11_linux-x86_64.tar.bz2
+RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
+    set -eux; mkdir -p /opt/appimages; \
+    curl -fsSL -o /tmp/wps.deb "$WPS_DEB" \
+      && (dpkg -i /tmp/wps.deb \
+          || apt-get install -y -qq --no-install-recommends -f) \
+      && rm /tmp/wps.deb; \
+    for a in "$SHOTCUT_APPIMAGE" "$MUSESCORE_APPIMAGE"; do \
+      n=$(basename "$a" | cut -d- -f1 | tr 'A-Z' 'a-z'); \
+      curl -fsSL -o /tmp/app.AppImage "$a" && chmod +x /tmp/app.AppImage; \
+      (cd /opt/appimages && /tmp/app.AppImage --appimage-extract >/dev/null \
+        && mv squashfs-root "$n"); \
+      ln -sf "/opt/appimages/$n/AppRun" "/usr/local/bin/$n"; rm /tmp/app.AppImage; \
+    done; \
+    curl -fsSL -o /tmp/zotero.tar.bz2 "$ZOTERO_TARBALL" \
+      && mkdir -p /opt/zotero && tar -xjf /tmp/zotero.tar.bz2 -C /opt/zotero --strip-components=1 \
+      && ln -sf /opt/zotero/zotero /usr/local/bin/zotero && rm /tmp/zotero.tar.bz2; \
+    rm -rf /var/lib/apt/lists/*
+
 RUN for m in application/vnd.openxmlformats-officedocument.spreadsheetml.sheet \
              application/vnd.ms-excel text/csv \
              application/vnd.oasis.opendocument.spreadsheet \
