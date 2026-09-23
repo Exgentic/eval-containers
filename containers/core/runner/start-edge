@@ -57,8 +57,14 @@ if ! _start_edge_health; then
   # .zst: the edge holds one encoder open for the run, so it sees that each
   # request repeats the previous conversation — ~138x on a real trajectory,
   # against ~7x for anything that compresses each record alone.
-  EDGE_API_BASE="$_start_edge_upstream" \
-    EDGE_UPSTREAM=gateway EDGE_OUT=/output/model/calls.jsonl.zst \
+  # Both spellings, for one release. The eval image is built FROM the published
+  # core/edge, so this script reaches an edge older than itself until that image
+  # is republished — and an edge that finds no upstream refuses to start, which
+  # would fail every run in the fleet. Drop the OPENAI_API_BASE/OUT pair once the
+  # published edge reads the EDGE_* names.
+  EDGE_API_BASE="$_start_edge_upstream" OPENAI_API_BASE="$_start_edge_upstream" \
+    EDGE_UPSTREAM=gateway \
+    EDGE_OUT=/output/model/calls.jsonl.zst OUT=/output/model/calls.jsonl.zst \
     /opt/edge/start >> /output/model/edge.log 2>&1 &
   _start_edge_ready=0
   for _ in $(seq 1 60); do

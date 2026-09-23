@@ -792,12 +792,16 @@ fn run_job(
     if let Some(b) = args.max_budget {
         sets.push(format!("maxBudget={b}"));
     }
-    if let Some(t) = args.max_tokens {
-        sets.push(format!("maxTokens={t}"));
-    }
     for s in &sets {
         helm.push("--set".into());
         helm.push(s.clone());
+    }
+    // --set-string, not --set: helm parses a bare 1000000 as a float and
+    // renders it "1e+06" — a token count the edge cannot read, and a run that
+    // asked to be capped going uncapped.
+    if let Some(t) = args.max_tokens {
+        helm.push("--set-string".into());
+        helm.push(format!("maxTokens={t}"));
     }
 
     // kubectl apply [-n ns] [--dry-run=server] -f -

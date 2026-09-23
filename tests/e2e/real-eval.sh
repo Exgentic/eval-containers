@@ -64,7 +64,7 @@ helm template real "$CHART" \
   --set outputVolume.hostPath.path="$OUT" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
   --set outputSubPath="$SUB" --set runId="$RUN" \
-  --set maxTokens=1000000 \
+  --set-string maxTokens=1000000 \
   --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' |
   kubectl apply -f - >/dev/null || { echo "apply failed"; exit 1; }
 

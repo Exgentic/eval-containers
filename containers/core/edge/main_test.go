@@ -1686,3 +1686,32 @@ func TestACostCapCanBePricedByTheUpstreamAlone(t *testing.T) {
 		t.Errorf("a cost cap priced by the upstream was refused: %v", err)
 	}
 }
+
+// A cap the edge cannot read is a cap nobody gets: helm renders a bare
+// `--set maxTokens=1000000` as "1e+06", and the run that asked to be bounded
+// ran unbounded with nothing said. Caught in a real cluster run, fixed at the
+// launcher — and here, so it can never be silent again.
+func TestAnUnreadableNumberIsRefusedAtBoot(t *testing.T) {
+	prev := base
+	base = "http://upstream"
+	defer func() { base = prev }()
+
+	for _, k := range []string{"EDGE_MAX_TOKENS", "EDGE_MAX_COST_USD", "EDGE_PRICE_IN", "EDGE_MAX_RETRIES"} {
+		t.Run(k, func(t *testing.T) {
+			t.Setenv(k, "1e+06 tokens please")
+			err := configError()
+			if err == nil || !strings.Contains(err.Error(), k) {
+				t.Errorf("%s set to nonsense gave %v, want a refusal naming it", k, err)
+			}
+		})
+	}
+	// "1e+06" itself is a number, whatever spelled it that way: read, not
+	// refused, and not quietly dropped either.
+	t.Setenv("EDGE_MAX_TOKENS", "1e+06")
+	if err := configError(); err != nil {
+		t.Errorf("a float-shaped token cap was refused: %v", err)
+	}
+	if got := envInt("EDGE_MAX_TOKENS", 0); got != 1000000 {
+		t.Errorf("EDGE_MAX_TOKENS=1e+06 read as %d — a cap that was asked for and not applied", got)
+	}
+}

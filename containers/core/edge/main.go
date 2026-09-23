@@ -151,9 +151,12 @@ func envFloat(k string, d float64) float64 {
 	return d // -1 from a caller means "unset", which is not the same as free
 }
 
+// Float-shaped too: a templating layer between the operator and here may have
+// turned 1000000 into "1e+06", and a cap silently ignored is worse than a cap
+// read from an ugly spelling. configError refuses what neither form can read.
 func envInt(k string, d int) int {
-	if v, err := strconv.Atoi(os.Getenv(k)); err == nil && v >= 0 {
-		return v
+	if v, err := strconv.ParseFloat(os.Getenv(k), 64); err == nil && v >= 0 {
+		return int(v)
 	}
 	return d
 }
@@ -754,6 +757,20 @@ func configError() error {
 	}
 	if onLimit != "refuse" && onLimit != "kill" {
 		return errors.New("EDGE_ON_LIMIT must be refuse or kill")
+	}
+	// A bound nobody can read is a bound nobody gets: helm renders a bare
+	// 1000000 as "1e+06", and the run that asked to be capped went uncapped
+	// without a word. Say so at boot rather than at the invoice.
+	for _, k := range []string{
+		"EDGE_MAX_TOKENS", "EDGE_MAX_COST_USD", "EDGE_MAX_REQUEST_BYTES",
+		"EDGE_MAX_RECORD_BYTES", "EDGE_MAX_RETRIES",
+		"EDGE_PRICE_IN", "EDGE_PRICE_CACHE_READ", "EDGE_PRICE_CACHE_WRITE", "EDGE_PRICE_OUT",
+	} {
+		if v := os.Getenv(k); v != "" {
+			if _, err := strconv.ParseFloat(v, 64); err != nil {
+				return fmt.Errorf("%s=%q is not a number", k, v)
+			}
+		}
 	}
 	return nil
 }

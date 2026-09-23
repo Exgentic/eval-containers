@@ -289,6 +289,17 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
         "_chart/values.yaml must ship `maxTokens: \"\"` — no cap unless a run asks for one"
     );
 
+    // The edge an eval image carries is the PUBLISHED one until it is
+    // republished, so the bring-up speaks both spellings for a release. This
+    // pins that the transition is deliberate and documented where it lives.
+    let starter = read("containers/core/runner/start-edge");
+    assert!(
+        starter.contains("OPENAI_API_BASE=\"$_start_edge_upstream\"")
+            == starter.contains("republished"),
+        "start-edge still passes the pre-rename names without saying why — drop them once \
+         the published core/edge reads EDGE_API_BASE, or keep the note that says it cannot yet"
+    );
+
     // Both callers of the mapping, and the image that has to carry it.
     for (path, why) in [
         (
