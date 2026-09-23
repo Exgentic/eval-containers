@@ -64,6 +64,7 @@ helm template real "$CHART" \
   --set outputVolume.hostPath.path="$OUT" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
   --set outputSubPath="$SUB" --set runId="$RUN" \
+  --set maxTokens=1000000 \
   --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' |
   kubectl apply -f - >/dev/null || { echo "apply failed"; exit 1; }
 
@@ -173,6 +174,20 @@ else
   esac
   rm -f "$raw"
 fi
+
+# The cap a launch asked for has to have reached the edge, which is three hops
+# away from the chart value that set it: EVAL_MAX_TOKENS in the runner's env,
+# start-edge translating it into the edge's own namespace, and the edge reading
+# it. Nothing else in the run distinguishes "bounded at a million tokens" from
+# "bounded by nothing", and the value above is far too high for this eval to
+# cross — deliberately, since what is under test is the wiring, not the refusal
+# (containers/core/edge covers that on every wire).
+step "the run's token cap reached the edge"
+case "$(onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null)" in
+  *"cap 1000000 tokens"*) echo "  edge.log: cap in force" ;;
+  *) bad "the edge never saw EVAL_MAX_TOKENS — chart value, start-edge, or the edge itself dropped it"
+     onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
+esac
 
 # ── the launcher people actually use ────────────────────────────────────────
 # Everything above renders the chart the way this test wants it. deploy/kind/run.sh

@@ -1576,3 +1576,25 @@ func TestConfigErrorRefusesAnUnknownLimitAction(t *testing.T) {
 		t.Errorf("EDGE_ON_LIMIT=shrug gave %v, want a refusal", err)
 	}
 }
+
+// The startup line is the only place a run says whether a cap reached the edge
+// at all — the difference between "bounded" and "nobody noticed" (rule 22).
+func TestTheStartupLineSaysWhatBoundsTheRun(t *testing.T) {
+	prevTokens, prevCost := maxTokens, maxCost
+	defer func() { maxTokens, maxCost = prevTokens, prevCost }()
+	for _, c := range []struct {
+		tokens int
+		cost   float64
+		want   string
+	}{
+		{0, 0, ", no cap"},
+		{500000, 0, ", cap 500000 tokens"},
+		{0, 2.5, ", cap $2.50"},
+		{500000, 2.5, ", cap 500000 tokens / $2.50"},
+	} {
+		maxTokens, maxCost = c.tokens, c.cost
+		if got := capNotice(); got != c.want {
+			t.Errorf("capNotice() = %q, want %q", got, c.want)
+		}
+	}
+}

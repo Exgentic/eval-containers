@@ -372,6 +372,21 @@ func includeUsage(body []byte, path string) []byte {
 
 func capped() bool { return maxTokens > 0 || maxCost > 0 }
 
+// capNotice says what the run is bounded by, for the log line at startup. A cap
+// that did not reach the edge is otherwise indistinguishable from no cap until
+// the spend nobody bounded shows up on a bill.
+func capNotice() string {
+	switch {
+	case maxTokens > 0 && maxCost > 0:
+		return fmt.Sprintf(", cap %d tokens / $%.2f", maxTokens, maxCost)
+	case maxTokens > 0:
+		return fmt.Sprintf(", cap %d tokens", maxTokens)
+	case maxCost > 0:
+		return fmt.Sprintf(", cap $%.2f", maxCost)
+	}
+	return ", no cap"
+}
+
 func clip(b []byte) (string, bool) {
 	if len(b) > maxRecord {
 		return string(b[:maxRecord]), true
@@ -689,6 +704,7 @@ func main() {
 		log.Fatal(err)
 	}
 	http.HandleFunc("/", handle)
-	log.Printf("edge recording to %s", out) // never the upstream: the log sits in /output, which the agent can read
+	// Never the upstream: the log sits in /output, which the agent can read.
+	log.Printf("edge recording to %s%s", out, capNotice())
 	log.Fatal(http.ListenAndServe(listen, nil))
 }
