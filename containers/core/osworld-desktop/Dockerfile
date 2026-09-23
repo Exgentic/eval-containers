@@ -227,6 +227,12 @@ RUN mkdir -p /home/user/snap/zotero-snap/common /home/user/Zotero \
  && ln -sfn /home/user/Zotero /home/user/snap/zotero-snap/common/Zotero \
  && chmod -R 777 /home/user/snap
 
+# The other half of what upstream's snapshot carries: a home directory the apps
+# have already run in. See warm-apps.sh.
+COPY warm-apps.sh /usr/local/bin/warm-apps.sh
+RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
+    /usr/local/bin/warm-apps.sh
+
 RUN for m in application/vnd.openxmlformats-officedocument.spreadsheetml.sheet \
              application/vnd.ms-excel text/csv \
              application/vnd.oasis.opendocument.spreadsheet \
