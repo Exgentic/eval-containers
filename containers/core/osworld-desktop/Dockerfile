@@ -46,6 +46,21 @@ RUN git clone -q https://github.com/xlang-ai/osworld-server /opt/osworld-server 
 # Task setup shells out to `sudo` (upstream's VM has a user that can), and
 # without it a task dies before the agent starts. Nothing is widened by this:
 # the agent never reaches a shell here, only screenshots and pyautogui.
+# The harness inspects pages over Chrome's DevTools port (Playwright connects
+# to 9222), so Chrome has to expose it however it is started — a task that
+# opens the browser by clicking would otherwise be ungradeable. Safe Browsing
+# is off to match upstream's managed policy, which interferes with test pages.
+RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
+    mkdir -p /etc/opt/chrome/policies/managed \
+ && printf '{"SafeBrowsingProtectionLevel":0,"SafeBrowsingEnabled":false}\n' \
+      > /etc/opt/chrome/policies/managed/osworld-safe-browsing.json \
+ && printf '#!/bin/sh\nexec /opt/google/chrome/google-chrome \\\n  --remote-debugging-port=9222 --remote-allow-origins=* \\\n  --no-first-run --no-default-browser-check "$@"\n' \
+      > /usr/local/bin/google-chrome \
+ && chmod +x /usr/local/bin/google-chrome \
+ && ln -sf /usr/local/bin/google-chrome /usr/local/bin/google-chrome-stable \
+ && sed -i 's#^Exec=/usr/bin/google-chrome-stable#Exec=/usr/local/bin/google-chrome#' \
+      /usr/share/applications/google-chrome.desktop || true
+
 RUN echo "ALL ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/osworld \
  && chmod 440 /etc/sudoers.d/osworld
 
