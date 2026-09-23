@@ -25,7 +25,7 @@ RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends \
       xdg-utils shared-mime-info desktop-file-utils file sudo \
       python3 python3-pip python3-tk python3-dev python3-uno python3-pyatspi \
       at-spi2-core fonts-dejavu git curl ca-certificates gnupg \
-      xclip jq unzip xz-utils build-essential \
+      xclip jq unzip xz-utils build-essential socat \
       libreoffice-calc libreoffice-writer libreoffice-impress \
       thunderbird gimp vlc \
  && ln -sf /usr/bin/python3 /usr/bin/python \
@@ -96,10 +96,9 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
       google-chrome-stable code \
  && rm -rf /var/lib/apt/lists/*
 
-# The rest of upstream's app set, at the versions their Ansible pins. WPS,
-# Shotcut, MuseScore and Zotero are what the apps-subset tasks start in
-# (snapshot = wps/shotcut/musescore/zotero), and a missing one scores 0 for a
-# reason that has nothing to do with the agent.
+# The apps the tasks name in their own `snapshot` field — the VM state
+# upstream restores before the task runs. There is no snapshot here, so a
+# missing one scores 0 for a reason that has nothing to do with the agent.
 #
 # AppImages are extracted rather than run: mounting one needs FUSE, which a
 # container does not have. Zotero comes from the tarball because upstream
@@ -125,6 +124,73 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
       && mkdir -p /opt/zotero && tar -xjf /tmp/zotero.tar.bz2 -C /opt/zotero --strip-components=1 \
       && ln -sf /opt/zotero/zotero /usr/local/bin/zotero && rm /tmp/zotero.tar.bz2; \
     rm -rf /var/lib/apt/lists/*
+
+# The long tail: 15 of the 68 apps-subset tasks drive an app beyond the set
+# above, one or two tasks each. Most of them try to install it first — that is
+# how upstream copes with a snapshot that does not carry everything — but the
+# apt ones would spend minutes of the task's own clock on it every run, so they
+# are baked from the source the task itself reaches for.
+#
+# Two are deliberately left to the task: KiCad, because its tasks add the
+# KiCad 10 PPA by hand and that PPA's OCCT replaces the one FreeCAD needs (a
+# pod runs one task, so the collision never happens); and Logisim, whose task
+# downloads its own jar and only needs a JRE here.
+RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
+    set -eux; \
+    apt-get update -qq \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+      nautilus evince eog mpv imagemagick \
+      blender freecad solvespace darktable \
+      default-jre-headless libosmesa6 software-properties-common \
+ && rm -rf /var/lib/apt/lists/*
+
+ARG OBSIDIAN_APPIMAGE=https://github.com/obsidianmd/obsidian-releases/releases/download/v1.13.7/Obsidian-1.13.7.AppImage
+RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
+    set -eux; \
+    curl -fsSL -o /tmp/obsidian.AppImage "$OBSIDIAN_APPIMAGE" && chmod +x /tmp/obsidian.AppImage; \
+    (cd /opt/appimages && /tmp/obsidian.AppImage --appimage-extract >/dev/null \
+      && mv squashfs-root obsidian); \
+    ln -sf /opt/appimages/obsidian/AppRun /usr/local/bin/obsidian; \
+    rm /tmp/obsidian.AppImage
+
+# Several tasks start their app with `snap run` and read its files back out of
+# the snap's data directory; one checks `snap list` before it will proceed.
+# snapd cannot run in a container, so the calls are answered rather than
+# emulated: `run` execs the binary that is actually installed, `list` reports
+# exactly those, and the snap data directories are the real ones under the name
+# the task expects. Everything reports `strict`, which is also what the tasks'
+# own sandbox-bypass guard compares before and after the agent's turn — it
+# penalises a snap that appears as `devmode` or `classic`, and none can here.
+RUN cat > /usr/local/bin/snap <<'SNAP' && chmod +x /usr/local/bin/snap
+#!/bin/sh
+# snap name -> the binary it is installed as here
+resolve() {
+  case "$1" in
+    zotero-snap) echo zotero ;;
+    *) echo "$1" ;;
+  esac
+}
+case "$1" in
+  run)   shift; app=$(resolve "$1"); shift; exec "$app" "$@" ;;
+  list)  shift
+         echo "Name  Version  Rev  Tracking  Publisher  Notes"
+         found=
+         for s in zotero-snap obsidian; do
+           case "$1" in ""|--all) ;; "$s") ;; *) continue ;; esac
+           command -v "$(resolve "$s")" >/dev/null 2>&1 || continue
+           echo "$s  -  -  latest/stable  -  strict"; found=1
+         done
+         # `snap list <name>` fails for a snap that is not installed, and a
+         # task branches on that to decide whether to install it.
+         case "$1" in ""|--all) ;; *) [ -n "$found" ] || {
+           echo "error: no matching snaps installed" >&2; exit 1; } ;; esac ;;
+  *)     echo "snap: $1 is not available in this environment" >&2; exit 1 ;;
+esac
+SNAP
+
+RUN mkdir -p /home/user/snap/zotero-snap/common /home/user/Zotero \
+ && ln -sfn /home/user/Zotero /home/user/snap/zotero-snap/common/Zotero \
+ && chmod -R 777 /home/user/snap
 
 RUN for m in application/vnd.openxmlformats-officedocument.spreadsheetml.sheet \
              application/vnd.ms-excel text/csv \

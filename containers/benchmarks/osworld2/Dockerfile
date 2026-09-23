@@ -39,6 +39,16 @@ RUN pip3 install --no-cache-dir \
       python-dotenv pytz fabric requests-toolbelt tldextract python-gitlab \
       icalendar recurring-ical-events loguru docker requests-unixsocket imageio-ffmpeg
 
+# The two CAD tasks grade a .step export by importing FreeCAD's own Python
+# modules here, in the runner — not on the desktop, which has the GUI the agent
+# drives. They look for them at Debian's path under Debian's interpreter
+# (/usr/lib/freecad/lib, /usr/bin/python3), so that is what this installs; the
+# image's own python is untouched.
+RUN apt-get update -qq \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+      freecad-python3 python3-numpy python3-scipy \
+ && rm -rf /var/lib/apt/lists/*
+
 COPY osworld2_env.py /opt/osworld2_env.py
 
 # Gated task classes + the task list. The instruction is the only part that may
