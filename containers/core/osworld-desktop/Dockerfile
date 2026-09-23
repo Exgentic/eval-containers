@@ -131,31 +131,44 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
 # apt ones would spend minutes of the task's own clock on it every run, so they
 # are baked from the source the task itself reaches for.
 #
-# Two are deliberately left to the task: KiCad, because its tasks add the
-# KiCad 10 PPA by hand and that PPA's OCCT replaces the one FreeCAD needs (a
-# pod runs one task, so the collision never happens); and Logisim, whose task
-# downloads its own jar and only needs a JRE here.
+# Logisim is the one left to its task, which downloads its own jar and only
+# needs a JRE here.
+#
+# KiCad comes from the PPA its own tasks add by hand — jammy ships 6.0, which
+# cannot open their KiCad 10 projects, and one of the two tasks launches
+# `kicad` without installing anything. That PPA's OCCT displaces the one
+# Ubuntu's FreeCAD needs, so FreeCAD comes from its AppImage below instead,
+# which carries its own. (The runner's FreeCAD, which grades the .step, is
+# apt in a different image and unaffected.)
 #
 # amd64 only, like the app set above: an arm64 build is a Mac dev build
 # that already has no chrome, vs code or WPS, so no task it could run
 # needs these.
+ARG KICAD_PPA=ppa:kicad/kicad-10.0-releases
 RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
     set -eux; \
     apt-get update -qq \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
+      software-properties-common \
+ && add-apt-repository -y "$KICAD_PPA" \
+ && apt-get update -qq \
+ && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends \
       nautilus evince eog mpv imagemagick \
-      blender freecad solvespace darktable \
-      default-jre-headless libosmesa6 software-properties-common \
+      blender solvespace darktable kicad \
+      default-jre-headless libosmesa6 \
  && rm -rf /var/lib/apt/lists/*
 
 ARG OBSIDIAN_APPIMAGE=https://github.com/obsidianmd/obsidian-releases/releases/download/v1.13.7/Obsidian-1.13.7.AppImage
+ARG FREECAD_APPIMAGE=https://github.com/FreeCAD/FreeCAD/releases/download/1.1.3/FreeCAD_1.1.3-Linux-x86_64-py311.AppImage
 RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
     set -eux; \
-    curl -fsSL -o /tmp/obsidian.AppImage "$OBSIDIAN_APPIMAGE" && chmod +x /tmp/obsidian.AppImage; \
-    (cd /opt/appimages && /tmp/obsidian.AppImage --appimage-extract >/dev/null \
-      && mv squashfs-root obsidian); \
-    ln -sf /opt/appimages/obsidian/AppRun /usr/local/bin/obsidian; \
-    rm /tmp/obsidian.AppImage
+    for a in "$OBSIDIAN_APPIMAGE" "$FREECAD_APPIMAGE"; do \
+      n=$(basename "$a" | cut -d- -f1 | cut -d_ -f1 | tr 'A-Z' 'a-z'); \
+      curl -fsSL -o /tmp/app.AppImage "$a" && chmod +x /tmp/app.AppImage; \
+      (cd /opt/appimages && /tmp/app.AppImage --appimage-extract >/dev/null \
+        && mv squashfs-root "$n"); \
+      ln -sf "/opt/appimages/$n/AppRun" "/usr/local/bin/$n"; rm /tmp/app.AppImage; \
+    done
 
 # Several tasks start their app with `snap run` and read its files back out of
 # the snap's data directory; one checks `snap list` before it will proceed.
