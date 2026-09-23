@@ -142,9 +142,17 @@ func edgeAgainst(t *testing.T, h http.HandlerFunc) (*httptest.Server, *[]*http.R
 
 	prevBase, prevOut, prevModel, prevKey := base, out, model, apiKey
 	prevGw, prevRetries := upstreamIsGateway, maxRetries
+	prevTerminate := terminate
 	t.Cleanup(func() {
 		base, out, model, apiKey = prevBase, prevOut, prevModel, prevKey // pragma: allowlist secret — restoring test globals
 		upstreamIsGateway, maxRetries = prevGw, prevRetries
+		// Back to unconfigured, not to what the last test left: a cap that
+		// leaks into the next test refuses a call it never set a budget for.
+		maxTokens, maxCost, priceIn, priceOut = 0, 0, 0, 0
+		onLimit, terminate = "refuse", prevTerminate
+		spendMu.Lock()
+		tokensIn, tokensOut = 0, 0 // the totals are one run's; each test is a run
+		spendMu.Unlock()
 	})
 	base, model = up.URL, "azure/gpt-5.4"
 	apiKey = upstreamCredential // pragma: allowlist secret — test constant
@@ -811,6 +819,9 @@ var wireCases = []wireCase{{
 	sse: []string{
 		`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"role":"assistant"}}]}` + "\n\n",
 		`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"delta":{"content":"hello"}}]}` + "\n\n",
+		// What `stream_options.include_usage` buys: without it this wire ends
+		// a stream without ever saying what it cost.
+		`data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":11,"completion_tokens":3,"total_tokens":14}}` + "\n\n",
 		"data: [DONE]\n\n",
 	},
 	auth: "authorization",
@@ -824,7 +835,7 @@ var wireCases = []wireCase{{
 	resp:     `{"id":"resp_1","object":"response","model":"gpt-5.4","output":[{"type":"message","content":[{"type":"output_text","text":"hello"}]}],"usage":{"input_tokens":11,"output_tokens":3}}`,
 	sse: []string{
 		"event: response.output_text.delta\ndata: {\"delta\":\"hey\"}\n\n",
-		"event: response.completed\ndata: {\"response\":{\"id\":\"resp_1\"}}\n\n",
+		"event: response.completed\ndata: {\"response\":{\"id\":\"resp_1\",\"usage\":{\"input_tokens\":11,\"output_tokens\":3}}}\n\n",
 	},
 	auth: "authorization",
 }, {
@@ -851,7 +862,7 @@ var wireCases = []wireCase{{
 	resp:     `{"candidates":[{"content":{"role":"model","parts":[{"text":"hello"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":3,"totalTokenCount":14}}`,
 	sse: []string{
 		`data: {"candidates":[{"content":{"parts":[{"text":"hello"}]}}]}` + "\n\n",
-		`data: {"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"totalTokenCount":14}}` + "\n\n",
+		`data: {"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":3,"totalTokenCount":14}}` + "\n\n",
 	},
 	stream: "/genai/v1beta/models/gemini-3-flash:streamGenerateContent?alt=sse",
 	auth:   "x-goog-api-key",
@@ -1269,5 +1280,288 @@ func TestAnAbsoluteRequestURICannotRetargetTheUpstream(t *testing.T) {
 	}
 	if got := (*reqs)[0].Host; strings.Contains(got, "elsewhere.example") {
 		t.Errorf("the call went to %q — the agent chose the upstream", got)
+	}
+}
+
+// ── Spend caps (rules 19-21), per format ────────────────────────────
+//
+// Every wire reports its usage under different names, in a different shape,
+// and — streamed — at a different moment. A cap that reads only one of them
+// counts zero on the other two and lets a run spend without limit, which is
+// the failure the cap exists to prevent. Each fixture above bills the same
+// 11 input + 3 output tokens, so one expectation covers all four.
+
+const (
+	fixtureIn  = 11
+	fixtureOut = 3
+)
+
+func TestEveryWireReportsItsUsage(t *testing.T) {
+	for _, c := range wireCases {
+		t.Run(c.name, func(t *testing.T) {
+			for what, body := range map[string]string{
+				"whole":    c.resp,
+				"streamed": strings.Join(c.sse, ""),
+			} {
+				in, out := usageOf(body)
+				if in != fixtureIn || out != fixtureOut {
+					t.Errorf("%s %s response: usage = %d in / %d out, want %d / %d",
+						c.name, what, in, out, fixtureIn, fixtureOut)
+				}
+			}
+		})
+	}
+}
+
+func TestUsageOfIgnoresWhatIsNotAToken(t *testing.T) {
+	// `max_tokens` is a request field, `total_tokens` double-counts the two it
+	// sums, and OpenAI's and Gemini's cached counts are already inside their
+	// prompt counts — reading any of them inflates the cap.
+	in, out := usageOf(`{"max_tokens":4096,"usage":{"prompt_tokens":11,"prompt_tokens_details":{"cached_tokens":9},"completion_tokens":3,"total_tokens":14}}`)
+	if in != 11 || out != 3 {
+		t.Errorf("usage = %d/%d, want 11/3", in, out)
+	}
+	// Anthropic bills cache writes and reads on TOP of input_tokens.
+	in, _ = usageOf(`{"usage":{"input_tokens":11,"cache_creation_input_tokens":100,"cache_read_input_tokens":20,"output_tokens":3}}`)
+	if in != 131 {
+		t.Errorf("anthropic input = %d, want 11+100+20", in)
+	}
+	// Gemini reports thinking apart from the candidates; both are output.
+	_, out = usageOf(`{"usageMetadata":{"promptTokenCount":11,"candidatesTokenCount":3,"thoughtsTokenCount":40,"totalTokenCount":54}}`)
+	if out != 43 {
+		t.Errorf("gemini output = %d, want 3+40", out)
+	}
+}
+
+// capped runs one call on each wire and returns the edge, so the next call is
+// the one the cap has to catch.
+func spendOneCall(t *testing.T, c wireCase, stream bool) *httptest.Server {
+	t.Helper()
+	upstream := func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(c.resp)) }
+	if stream {
+		upstream = serveSSE(c.sse)
+	}
+	edge, _, _ := edgeAgainst(t, upstream)
+	path := c.path
+	if stream {
+		path = c.streamPath()
+	}
+	resp := post(t, edge.URL+path, c.req, nil)
+	_, _ = io.Copy(io.Discard, resp.Body)
+	resp.Body.Close()
+	awaitRecords(t, 1) // the totals are added once the record is written
+	return edge
+}
+
+func TestEveryWireCountsItsCallTowardTheCap(t *testing.T) {
+	for _, c := range wireCases {
+		for _, stream := range []bool{false, true} {
+			name := c.name
+			if stream {
+				name += "-streamed"
+			}
+			t.Run(name, func(t *testing.T) {
+				maxTokens = 1 << 20 // capped, but far from crossing
+				spendOneCall(t, c, stream)
+				spendMu.Lock()
+				in, out := tokensIn, tokensOut
+				spendMu.Unlock()
+				if in != fixtureIn || out != fixtureOut {
+					t.Errorf("run totals = %d in / %d out, want %d / %d", in, out, fixtureIn, fixtureOut)
+				}
+			})
+		}
+	}
+}
+
+func TestEveryWireIsRefusedOnceACapIsCrossed(t *testing.T) {
+	for _, bound := range []struct {
+		name  string
+		apply func()
+	}{
+		{"token", func() { maxTokens = fixtureIn + fixtureOut }},
+		// $0.001/Mtok on 14 tokens is far under a $1 cap, so only the second
+		// call can cross it — set a cap those same 14 tokens reach exactly.
+		{"cost", func() {
+			priceIn, priceOut = 1e6, 1e6 // $1 per token, to keep the arithmetic in sight
+			maxCost = float64(fixtureIn + fixtureOut)
+		}},
+	} {
+		for _, c := range wireCases {
+			t.Run(bound.name+"/"+c.name, func(t *testing.T) {
+				bound.apply()
+				edge := spendOneCall(t, c, false)
+
+				resp := post(t, edge.URL+c.path, c.req, nil)
+				served, _ := io.ReadAll(resp.Body)
+				resp.Body.Close()
+
+				if resp.StatusCode != http.StatusPaymentRequired {
+					t.Fatalf("status = %d, want 402 — a 429 is retried until the agent's timeout", resp.StatusCode)
+				}
+				var body map[string]map[string]string
+				if err := json.Unmarshal(served, &body); err != nil {
+					t.Fatalf("the refusal is not valid JSON (%v): %s", err, served)
+				}
+				if body["error"]["type"] != "budget_exceeded" {
+					t.Errorf("refusal body = %s", served)
+				}
+				if !strings.Contains(body["error"]["message"], bound.name+" cap") {
+					t.Errorf("the refusal does not say which cap: %s", served)
+				}
+				// The refusal is a call the run made: the record has to say the
+				// run stopped on its cap, not that it simply went quiet.
+				recs := awaitRecords(t, 2)
+				if got := recs[1].Status; got != http.StatusPaymentRequired {
+					t.Errorf("recorded refusal status = %d", got)
+				}
+			})
+		}
+	}
+}
+
+func TestTheUpstreamNeverSeesARefusedCall(t *testing.T) {
+	calls := 0
+	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = w.Write([]byte(wireCases[0].resp))
+	})
+	maxTokens = 1
+	for i := 0; i < 3; i++ {
+		post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil).Body.Close()
+	}
+	if calls != 1 {
+		t.Errorf("upstream saw %d calls, want only the one that crossed the cap", calls)
+	}
+}
+
+func TestNothingIsRefusedWithoutACap(t *testing.T) {
+	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(wireCases[0].resp))
+	})
+	for i := 0; i < 3; i++ {
+		resp := post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil)
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("call %d got %d with no cap configured", i, resp.StatusCode)
+		}
+	}
+}
+
+// OpenAI is the one wire that ends a stream without reporting usage unless the
+// request asked for it — so a cap there would count zero on every streamed
+// call. The edge asks, and only where asking is valid and needed.
+func TestOpenAIStreamsAreAskedForUsageOnlyWhenACapNeedsIt(t *testing.T) {
+	cases := []struct {
+		name, path, req string
+		cap             bool
+		want            bool
+	}{
+		{"capped stream", "/openai/v1/chat/completions", `{"model":"p","stream":true}`, true, true},
+		{"uncapped stream", "/openai/v1/chat/completions", `{"model":"p","stream":true}`, false, false},
+		{"capped non-stream", "/openai/v1/chat/completions", `{"model":"p"}`, true, false},
+		// The Responses API reports usage on its own and rejects the option.
+		{"capped responses", "/openai/v1/responses", `{"model":"p","stream":true}`, true, false},
+		{"agent said it itself", "/openai/v1/chat/completions", `{"model":"p","stream":true,"stream_options":{"include_usage":false}}`, true, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			edge, _, bods := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(`{}`))
+			})
+			if c.cap {
+				maxTokens = 1 << 20
+			}
+			post(t, edge.URL+c.path, c.req, nil).Body.Close()
+
+			sent := string((*bods)[0])
+			if got := strings.Contains(sent, `"include_usage":true`); got != c.want {
+				t.Errorf("include_usage asked = %v, want %v: %s", got, c.want, sent)
+			}
+			// Whatever the edge asks the provider, the record is the agent's
+			// own request (rule 6).
+			if rec := records(t)[0]; rec.Request != c.req {
+				t.Errorf("record is not the agent's request: %s", rec.Request)
+			}
+		})
+	}
+}
+
+// EDGE_ON_LIMIT=kill stops the container. The run loses its grade with it,
+// which is why refusing is the default and this is the operator's choice.
+func TestTheRunIsStoppedOnlyWhenTheOperatorAsked(t *testing.T) {
+	for _, c := range []struct {
+		limit   string
+		stopped bool
+	}{{"refuse", false}, {"kill", true}} {
+		t.Run(c.limit, func(t *testing.T) {
+			edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(wireCases[0].resp))
+			})
+			stops := make(chan struct{}, 4)
+			terminate = func() { stops <- struct{}{} }
+			onLimit, maxTokens = c.limit, fixtureIn+fixtureOut
+
+			post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil).Body.Close()
+			assertStopped(t, stops, c.stopped)
+		})
+	}
+}
+
+func TestTheRunIsNotStoppedBeforeTheCapIsCrossed(t *testing.T) {
+	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(wireCases[0].resp))
+	})
+	stops := make(chan struct{}, 4)
+	terminate = func() { stops <- struct{}{} }
+	onLimit, maxTokens = "kill", 1<<20
+
+	post(t, edge.URL+wireCases[0].path, wireCases[0].req, nil).Body.Close()
+	assertStopped(t, stops, false)
+}
+
+// The stop happens on the handler's goroutine, after the call it accounts for:
+// worth waiting seconds to see one, only a moment to be sure of none.
+func assertStopped(t *testing.T, stops chan struct{}, want bool) {
+	t.Helper()
+	grace := 300 * time.Millisecond
+	if want {
+		grace = 2 * time.Second
+	}
+	select {
+	case <-stops:
+		if !want {
+			t.Error("the run was stopped with no cap crossed, or with EDGE_ON_LIMIT=refuse")
+		}
+	case <-time.After(grace):
+		if want {
+			t.Error("the cap was crossed with EDGE_ON_LIMIT=kill and the run was not stopped")
+		}
+	}
+}
+
+func TestConfigErrorRefusesACostCapItCannotPrice(t *testing.T) {
+	prevBase, prevCost := base, maxCost
+	defer func() { base, maxCost = prevBase, prevCost }()
+	base, maxCost = "http://upstream", 5
+
+	err := configError()
+	if err == nil || !strings.Contains(err.Error(), "EDGE_PRICE_IN_USD_PER_MTOK") {
+		t.Fatalf("a cost cap with no prices gave %v, want a named refusal", err)
+	}
+	priceOut = 3 // one side of the price is enough to bound the spend
+	defer func() { priceOut = 0 }()
+	if err := configError(); err != nil {
+		t.Errorf("a priced cost cap was refused: %v", err)
+	}
+}
+
+func TestConfigErrorRefusesAnUnknownLimitAction(t *testing.T) {
+	prevBase, prevLimit := base, onLimit
+	defer func() { base, onLimit = prevBase, prevLimit }()
+	base, onLimit = "http://upstream", "shrug"
+
+	if err := configError(); err == nil || !strings.Contains(err.Error(), "EDGE_ON_LIMIT") {
+		t.Errorf("EDGE_ON_LIMIT=shrug gave %v, want a refusal", err)
 	}
 }

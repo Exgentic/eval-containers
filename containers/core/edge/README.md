@@ -35,6 +35,23 @@ Environment variables only, no flags:
 | `EDGE_MAX_REQUEST_BYTES` | no | 64MiB | Request size the edge will parse to pin the model; larger requests are refused |
 | `EDGE_MAX_RECORD_BYTES` | no | 8MiB | Per-exchange bytes kept in a record before truncating |
 | `EDGE_MAX_RETRIES` | no | 2 | Transport-failure retries before any byte reaches the caller |
+| `EDGE_MAX_TOKENS` | no | 0 (none) | Tokens the run may spend, input + output, before calls are refused |
+| `EDGE_MAX_COST_USD` | no | 0 (none) | Dollars the run may spend before calls are refused; needs the prices below |
+| `EDGE_PRICE_IN_USD_PER_MTOK` | for a cost cap | — | Input price, USD per million tokens |
+| `EDGE_PRICE_OUT_USD_PER_MTOK` | for a cost cap | — | Output price, USD per million tokens |
+| `EDGE_ON_LIMIT` | no | `refuse` | What crossing a cap does: `refuse` every later call, or `kill` the container |
+
+## Caps
+
+With `EDGE_MAX_TOKENS` or `EDGE_MAX_COST_USD` set, the edge counts what every
+call reports — `prompt_tokens`/`completion_tokens`, `input_tokens`/
+`output_tokens` (plus Anthropic's cache tokens, which bill as input),
+`promptTokenCount`/`candidatesTokenCount`/`thoughtsTokenCount` — streamed or
+not. Once a cap is crossed, every later call is answered `402` with a
+`budget_exceeded` body and never reaches the upstream; the call in flight is
+not cut. Cost needs prices because the edge must not identify the model behind
+the handle. `EDGE_ON_LIMIT=kill` additionally stops the container, which also
+ends the grading that would have followed the agent — so it is opt-in.
 
 A redirect from upstream is handed back, never followed: Go would re-send the
 credential to wherever it points. One that points back at the upstream is made
