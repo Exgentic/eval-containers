@@ -223,6 +223,7 @@ jobs:
       has_leaves: ${{ steps.l.outputs.has_leaves }} # 'false' only on a channel run with no stale leaf
       dirty: ${{ steps.l.outputs.dirty }}           # channel run: anything at all to publish?
       maxpar: ${{ steps.l.outputs.maxpar }}         # matrix width, by the clock (see below)
+      edge_hash: ${{ steps.l.outputs.edge_hash }}   # core/edge input-hash: the combos pull the edge by it, never by :TAG
     steps:
       - uses: actions/checkout@v7.0.1
       # The staleness sweeps below read the registry (images + compose artifacts);
@@ -608,6 +609,15 @@ jobs:
           # for. Full width; FLEET_MAXPAR is the knob when someone wants gentler.
           maxpar="${FLEET_MAXPAR:-20}"
           echo "matrix width: $maxpar"
+          # The combos COPY /opt/edge out of core/edge. They used to pull it at
+          # :TAG, which any concurrent run re-aliases — a dispatch from a branch
+          # that predates an edge change repointed core/edge:latest mid-release
+          # and every combo built after that carried the old edge under a label
+          # that said otherwise (2026-09-23). A hash tag is never repointed
+          # (rule 19), so the combos pull the edge their own hash was computed
+          # from, and a build that cannot find it fails instead of lying.
+          EDGE_HASH=$(bash containers/scripts/fleet-hash.sh all | awk -F'\t' '$1=="edge"{print $2}')
+          [ -n "$EDGE_HASH" ] || { echo "::error::fleet-hash gave no hash for target edge"; exit 1; }
 
           has_leaves=true; [ "$n" -gt 0 ] || has_leaves=false
           dirty=true
@@ -624,6 +634,7 @@ jobs:
             echo "pertask_combo_shards=$(idx "$pertask_combo_shards")"
             echo "pertask_shards=$(idx "$pertask_shards")"
             echo "maxpar=$maxpar"
+            echo "edge_hash=$EDGE_HASH"
             echo "has_leaves=$has_leaves"
             echo "dirty=$dirty"
           } >> "$GITHUB_OUTPUT"
@@ -1051,9 +1062,12 @@ jobs:
           # (no reference in the chart or the dashboard), the per-task ones were not
           # even in the published index, and a dispatch can still ask for them.
           STANDALONE: ${{ inputs.include_standalone || 'false' }}
+          EDGE_HASH: ${{ needs.enumerate.outputs.edge_hash }}
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
           ITEMS=$(jq -c --argjson i "$IDX" '.combo[] | select(.idx==$i).items' shards.json)
+          # The edge by its hash tag, not :TAG (see enumerate).
+          export EDGE_IMAGE="${REGISTRY}/core/edge:${EDGE_HASH}"
           # retry rides out transient registry pull/push blips; jittered backoff.
           retry() {
             local n=0 max="${BUILD_RETRIES:-4}" out st
@@ -1204,6 +1218,7 @@ jobs:
           # (no reference in the chart or the dashboard), the per-task ones were not
           # even in the published index, and a dispatch can still ask for them.
           STANDALONE: ${{ inputs.include_standalone || 'false' }}
+          EDGE_HASH: ${{ needs.enumerate.outputs.edge_hash }}
           ARCH: ${{ matrix.arch }}
         run: |
           # The shard list is an artifact, not a job output (1 MB cap).
@@ -1215,8 +1230,9 @@ jobs:
           # resolve to per-arch tags (core/edge:latest-amd64) instead of the merged
           # manifest — a wrong-arch or stale /opt/edge baked into the combo (#559).
           # Every *_IMAGE the two combo targets consume is therefore pinned back to
-          # $ORIG_TAG explicitly, exactly as BENCHMARK_IMAGE/AGENT_IMAGE are.
-          export EDGE_IMAGE="${REGISTRY}/core/edge:${ORIG_TAG}"
+          # $ORIG_TAG explicitly, exactly as BENCHMARK_IMAGE/AGENT_IMAGE are — except
+          # the edge, pinned to its hash tag (see enumerate).
+          export EDGE_IMAGE="${REGISTRY}/core/edge:${EDGE_HASH}"
           export GOSU_IMAGE="${REGISTRY}/core/gosu:${ORIG_TAG}"
           export OTEL_IMAGE="${REGISTRY}/core/otel:${ORIG_TAG}"
           export MODEL_IMAGE="${REGISTRY}/models/bifrost:${ORIG_TAG}"
