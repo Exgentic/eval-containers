@@ -233,6 +233,50 @@ fn timeout_override_beats_a_preset() {
 /// replace the launcher on both surfaces with their own copy (#558 was one
 /// missing the edge); native mode (rule 12c) removed the reason, so a surface
 /// that replaces it is refused outright.
+/// A launch configures the framework's EVAL_* axis; the edge reads its own
+/// EDGE_* one (edge rule 17). `start-edge` is the only place the two meet, so a
+/// knob that appears on one side and not the other is a cap nobody can set, or
+/// one set under a name no launcher should have to know.
+#[test]
+fn spend_caps_are_wired_without_naming_the_edge() {
+    let read =
+        |p: &str| fs::read_to_string(repo_root().join(p)).unwrap_or_else(|_| panic!("missing {p}"));
+    let starter = read("containers/core/runner/start-edge");
+    let edge = read("containers/core/edge/main.go");
+
+    for knob in [
+        "MAX_TOKENS",
+        "MAX_COST_USD",
+        "PRICE_IN_USD_PER_MTOK",
+        "PRICE_OUT_USD_PER_MTOK",
+        "ON_LIMIT",
+    ] {
+        assert!(
+            starter.contains(knob),
+            "start-edge must translate EVAL_{knob} into EDGE_{knob} — otherwise no launch can set it"
+        );
+        assert!(
+            edge.contains(&format!("EDGE_{knob}")),
+            "the edge does not read EDGE_{knob}, so start-edge translates into nothing"
+        );
+    }
+
+    // The launcher-facing surfaces speak EVAL_*; EDGE_* stops at start-edge.
+    let job = read("containers/benchmarks/_chart/templates/job.yaml");
+    assert!(
+        job.contains("EVAL_MAX_TOKENS") && !job.contains("EDGE_"),
+        "the chart must set EVAL_MAX_TOKENS, never an EDGE_* name"
+    );
+    assert!(
+        !read("cli/src/run.rs").contains("EDGE_"),
+        "the CLI must set EVAL_* names only"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("maxTokens: \"\""),
+        "_chart/values.yaml must ship `maxTokens: \"\"` — no cap unless a run asks for one"
+    );
+}
+
 #[test]
 fn no_surface_replaces_the_launcher() {
     const START_EDGE: &str = "/usr/local/bin/start-edge";

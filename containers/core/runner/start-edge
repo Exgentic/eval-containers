@@ -50,10 +50,22 @@ if ! _start_edge_health; then
     echo "start-edge: neither OPENAI_API_BASE nor ANTHROPIC_BASE_URL is set — no gateway to forward to" >&2
     return 1 2>/dev/null || exit 1
   fi
+  # Spend caps are configured on the framework's EVAL_* axis and read on the
+  # edge's own EDGE_* one (rule 17). Here is where both are in scope, and every
+  # path to the edge comes through this file — so a launch sets EVAL_MAX_TOKENS,
+  # by chart value or by any extra env it passes, and never names the component.
+  _start_edge_caps=()
+  for _start_edge_knob in MAX_TOKENS MAX_COST_USD PRICE_IN_USD_PER_MTOK PRICE_OUT_USD_PER_MTOK ON_LIMIT; do
+    _start_edge_src="EVAL_$_start_edge_knob"
+    if [ -n "${!_start_edge_src:-}" ]; then
+      _start_edge_caps+=("EDGE_$_start_edge_knob=${!_start_edge_src}")
+    fi
+  done
   # .zst: the edge holds one encoder open for the run, so it sees that each
   # request repeats the previous conversation — ~138x on a real trajectory,
   # against ~7x for anything that compresses each record alone.
-  OPENAI_API_BASE="$_start_edge_upstream" EDGE_UPSTREAM=gateway \
+  env ${_start_edge_caps[@]+"${_start_edge_caps[@]}"} \
+    OPENAI_API_BASE="$_start_edge_upstream" EDGE_UPSTREAM=gateway \
     OUT=/output/model/calls.jsonl.zst \
     /opt/edge/start >> /output/model/edge.log 2>&1 &
   _start_edge_ready=0
@@ -66,7 +78,7 @@ if ! _start_edge_health; then
     tail -5 /output/model/edge.log >&2 || true
     return 1 2>/dev/null || exit 1
   fi
-  unset _start_edge_upstream _start_edge_ready
+  unset _start_edge_upstream _start_edge_ready _start_edge_caps _start_edge_knob _start_edge_src
 fi
 
 # Rule 13's protocol-namespaced prefixes, on the edge's port rather than the

@@ -174,10 +174,7 @@ spec:
             - { name: EVAL_FORCE, value: "1" }
             {{- end }}
             {{- with $v.maxTokens }}
-            {{- /* The edge reads its own EDGE_* namespace only; translating the
-                   framework's axis into it is this chart's job, so nobody
-                   launching a run has to know the component's variable. */}}
-            - { name: EDGE_MAX_TOKENS, value: {{ . | quote }} }
+            - { name: EVAL_MAX_TOKENS, value: {{ . | quote }} }
             {{- end }}
             {{- with $v.benchmarkVersion }}
             - { name: EVAL_BENCHMARK_VERSION, value: {{ . | quote }} }
