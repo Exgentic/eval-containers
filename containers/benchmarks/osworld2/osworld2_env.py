@@ -75,16 +75,42 @@ de.create_vm_manager_and_provider = lambda *a, **k: (
 # server listens on a root-only unix socket, so point the controllers at it —
 # `http_server` is the single place either controller builds its URL from.
 def use_socket(env) -> None:
+    """Send this process's desktop traffic over the root-only socket.
+
+    Patching the controllers is not enough: a task's own setup builds its own
+    `http://localhost:5000/...` and would hit the restricted face the agent
+    uses, so rewrite at the transport instead — every desktop URL this process
+    emits, whoever composed it.
+    """
     sock = os.environ.get("DESKTOP_SOCKET")
     if not sock:
         return
-    import requests_unixsocket
     from urllib.parse import quote
+
+    import requests
+    import requests_unixsocket
 
     requests_unixsocket.monkeypatch()
     url = "http+unix://%s" % quote(sock, safe="")
     env.controller.http_server = url
     env.setup_controller.http_server = url
+
+    port = os.environ.get("DESKTOP_PORT", "5000")
+    prefixes = tuple(
+        "http://%s:%s" % (h, port)
+        for h in (os.environ.get("DESKTOP_HOST", "desktop"), "localhost", "127.0.0.1")
+    )
+    original = requests.Session.request
+
+    def over_socket(self, method, target, *a, **k):
+        if isinstance(target, str):
+            for p in prefixes:
+                if target.startswith(p):
+                    target = url + target[len(p) :]
+                    break
+        return original(self, method, target, *a, **k)
+
+    requests.Session.request = over_socket
 
 
 def load_task(task_id: str):
