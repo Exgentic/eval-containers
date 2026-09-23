@@ -352,17 +352,20 @@ jobs:
           cargo run -q -- build eval agents-smoke --agent mock --standalone 2>&1 | tail -3
           img=ghcr.io/exgentic/evals/agents-smoke--mock-standalone:latest
           out=$(mktemp -d); chmod 0777 "$out"
+          # NOT under $out: the runner empties the output directory it is given.
+          console=$(mktemp)
           # The gateway wants a credential shaped thing; the upstream below is a
           # dead port, so any string does.
           placeholder=stub
           docker run --rm -v "$out:/output" -e OPENAI_API_KEY="$placeholder" \
             -e EVAL_MODEL=x -e OPENAI_API_BASE=http://127.0.0.1:9 \
             -e EVAL_MAX_TOKENS=1000000 -e EVAL_TASK_ID=0 -e TASK="say hi" \
-            -e EXPECTED_ANSWER=hi -e TIMEOUT=60 "$img" >"$out/console.log" 2>&1 || true
+            -e EXPECTED_ANSWER=hi -e TIMEOUT=60 "$img" >"$console" 2>&1 || true
           if ! grep -q "cap 1000000 tokens" "$out/model/edge.log" 2>/dev/null; then
             echo "::error::the bundle's edge never saw EVAL_MAX_TOKENS (run → edge-env → process-compose)"
-            tail -20 "$out/model/edge.log" 2>/dev/null || tail -30 "$out/console.log"; exit 1
+            echo "--- edge.log ---"; tail -20 "$out/model/edge.log" 2>/dev/null || echo "(none)"
+            echo "--- console ---"; tail -40 "$console"; find "$out" | head -20; exit 1
           fi
           test -s "$out/model/calls.jsonl.zst" || {
-            echo "::error::the bundle's edge recorded nothing"; tail -20 "$out/model/edge.log"; exit 1; }
+            echo "::error::the bundle's edge recorded nothing"; tail -20 "$out/model/edge.log"; tail -40 "$console"; exit 1; }
           echo "bundle edge: capped and recording ($(wc -c <"$out/model/calls.jsonl.zst") bytes)"
