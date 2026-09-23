@@ -280,9 +280,12 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
         job.contains("EVAL_MAX_TOKENS") && !job.contains("EDGE_"),
         "the chart must set EVAL_MAX_TOKENS, never an EDGE_* name"
     );
+    let cli = read("cli/src/run.rs");
+    assert!(!cli.contains("EDGE_"), "the CLI must set EVAL_* names only");
     assert!(
-        !read("cli/src/run.rs").contains("EDGE_"),
-        "the CLI must set EVAL_* names only"
+        cli.contains("--set-string") && cli.contains("maxTokens={t}"),
+        "--max-tokens must reach helm with --set-string: a bare --set makes 1000000 a float, \
+         renders \"1e+06\", and the run that asked to be capped runs uncapped"
     );
     assert!(
         read("containers/benchmarks/_chart/values.yaml").contains("maxTokens: \"\""),
