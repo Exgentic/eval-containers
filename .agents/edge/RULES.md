@@ -83,6 +83,9 @@ written account of one call.
 17. **Environment configuration.** The edge **MUST** take its configuration from
     environment variables only.
 
+18. **Upstream anonymity.** An agent **MUST NOT** be able to learn the upstream
+    address from the edge.
+
 ## References
 
 - [Project rules](../RULES.md) — principle 5, independent observation: the
@@ -99,6 +102,7 @@ written account of one call.
 
 | Date | Change |
 |------|--------|
+| 2026-09-23 | Added rule 18: the upstream address is as much the edge's to keep as the credential — an agent that has both can call the provider directly, off the record. Found by test: the 502 an unreachable upstream produced quoted the whole URL back to the caller. |
 | 2026-08-18 | Scoped to what the component actually is: an addition in front of the gateway, not a replacement for it. Capture rules (6-10) stand on their own; gateways keep translation, routing and OTel emission, and only model authority moves. An earlier draft superseded those too, which turned a small fix into a fleet-wide migration. |
 | 2026-08-12 | Pre-merge review, while Draft. Rule 5 now requires refusing to start rather than answering each call with an error, matching how the gateway `start` scripts reject bad env — and what the implementation does. Rule 13 binds to gateways 5 and 7 instead of restating the namespace and port, which mirrored a rule that already has a home (meta 4). |
 | 2026-08-11 | Initial version. Lifts model authority out of the gateway (superseding `gateways/RULES.md` 2b), makes call capture a property of one component rather than a per-gateway obligation (superseding 10 and 11 there), and removes the need for the path-rewriting shim (6). Translation and its declaration (8, 9) stay with gateways, which remain OPTIONAL and are needed only for cross-wire work. Status is Draft until the component lands and the verification suite covers it. |
