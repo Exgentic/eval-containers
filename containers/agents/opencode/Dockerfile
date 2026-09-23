@@ -16,6 +16,15 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo 
 #!/bin/bash
 set -euo pipefail
 for b in node npm npx opencode; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
+# opencode's search tool shells out to ripgrep and most benchmark bases don't ship
+# it, so its codebase search dies on `rg: command not found` (seen on deepswe).
+# Best-effort, unlike ra-aid's: opencode still runs without rg, just search-blind,
+# and install.sh has to work on any base (rule 11) — so a base without apt-get, or
+# an offline build, must not fail the combination image.
+if ! command -v rg >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  apt-get update && apt-get install -y --no-install-recommends ripgrep \
+    && rm -rf /var/lib/apt/lists/* || echo "install.sh: ripgrep unavailable; opencode search will be degraded" >&2
+fi
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
