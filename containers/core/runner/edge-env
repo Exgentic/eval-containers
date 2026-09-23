@@ -14,7 +14,7 @@
 # model, and by `run` before it hands the single-container bundle to
 # process-compose, which starts the edge as a supervised process instead.
 #
-# Reads:  EVAL_MODEL, EVAL_MAX_TOKENS, EVAL_MAX_COST_USD, EVAL_PRICE_IN,
+# Reads:  OPENAI_API_KEY, EVAL_MODEL, EVAL_MAX_TOKENS, EVAL_MAX_COST_USD, EVAL_PRICE_IN,
 #         EVAL_PRICE_CACHE_READ, EVAL_PRICE_CACHE_WRITE, EVAL_PRICE_OUT,
 #         EVAL_COST_HEADER, EVAL_ON_LIMIT, EVAL_MODEL_API
 # Writes: the matching EDGE_* for each one that is set
@@ -33,3 +33,11 @@ for _edge_env_knob in MODEL MAX_TOKENS MAX_COST_USD PRICE_IN PRICE_CACHE_READ PR
   fi
 done
 unset _edge_env_knob _edge_env_src
+
+# The credential the orchestrator holds, under the name the edge reads. Same
+# translation, one vendor's variable instead of this framework's: in k8s it is
+# the placeholder the gateway swaps out, in the bundle the real key the
+# in-process gateway wants back.
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+  export EDGE_API_KEY="$OPENAI_API_KEY"
+fi

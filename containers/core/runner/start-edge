@@ -29,8 +29,7 @@
 #
 # Reads:  ANTHROPIC_BASE_URL (the gateway, as the orchestrator set it),
 #         OPENAI_API_BASE    (the gateway, preferred when set),
-#         OPENAI_API_KEY     (what the gateway wants, handed on as EDGE_API_KEY),
-#         and via edge-env the framework's EVAL_* axis
+#         and via edge-env: OPENAI_API_KEY and the framework's EVAL_* axis
 # Writes: /output/model/edge.log, /output/model/calls.jsonl.zst
 # Exports: ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GOOGLE_GEMINI_BASE_URL → :4100
 #
@@ -58,7 +57,7 @@ if ! _start_edge_health; then
   # .zst: the edge holds one encoder open for the run, so it sees that each
   # request repeats the previous conversation — ~138x on a real trajectory,
   # against ~7x for anything that compresses each record alone.
-  EDGE_API_BASE="$_start_edge_upstream" EDGE_API_KEY="${OPENAI_API_KEY:-}" \
+  EDGE_API_BASE="$_start_edge_upstream" \
     EDGE_UPSTREAM=gateway EDGE_OUT=/output/model/calls.jsonl.zst \
     /opt/edge/start >> /output/model/edge.log 2>&1 &
   _start_edge_ready=0
