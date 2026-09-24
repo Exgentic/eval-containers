@@ -168,19 +168,25 @@ def _lines(path: str) -> list[str]:
 def task_ids(family: str) -> list[str]:
     """The task ids a per-task benchmark bakes.
 
-    From its own tasks.txt when it has one — `#` headings and blanks skipped,
-    since a heading read as a task id is an image nobody built — and otherwise
-    from the `tasks/` directory of the upstream repo its build.sh pins, which is
-    where terminal-bench, skills-bench and deepswe get theirs.
+    From publish.txt when it has one (the SHIPPED subset — a benchmark may be
+    gradable on more tasks than it prebuilds; cybergym grades 1368 arvo tasks but
+    publishes a curated few, each base being ~9 GB), else its tasks.txt — `#`
+    headings and blanks skipped, since a heading read as a task id is an image
+    nobody built — and otherwise from the `tasks/` directory of the upstream repo
+    its build.sh pins, which is where terminal-bench, skills-bench and deepswe get
+    theirs. release-images.yml reads publish.txt the same way, so the sweep only
+    probes what the workflow actually builds.
     """
     d = os.path.join(CONTAINERS, "benchmarks", family)
     # excluded.txt: ids this benchmark does not publish, because the task cannot
     # be built at all. Dropped from both lists so the sweep does not go looking
     # for images nothing builds (release-images.yml drops them too).
     skip = _lines(os.path.join(d, "excluded.txt"))
+    published = os.path.join(d, "publish.txt")
     listed = os.path.join(d, "tasks.txt")
-    if os.path.isfile(listed):
-        return [t for t in _lines(listed) if t not in skip]
+    src = published if os.path.isfile(published) else listed
+    if os.path.isfile(src):
+        return [t for t in _lines(src) if t not in skip]
     build = os.path.join(d, "build.sh")
     if not os.path.isfile(build):
         return []
