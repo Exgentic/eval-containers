@@ -1,0 +1,8 @@
+# Task ids published as prebuilt images — a curated subset of the 1368-task
+# gradable universe in tasks.txt. Both .github/workflows/release-images.yml and
+# containers/scripts/fleet-index.py read this when present (mirroring
+# excluded.txt): the release workflow builds/pushes only these, and the index
+# probes/indexes only these. Every task in tasks.txt is still gradable via
+# `--task-id`; this is just the shipped set. Add ids here to publish more.
+# See README "Scope".
+10013
