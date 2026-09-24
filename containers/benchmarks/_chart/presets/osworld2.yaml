@@ -10,7 +10,14 @@
 # fan-out runs more than one task, and would outlive every run that used it.
 # In the pod it is also one of the run's own containers: it shows up in the
 # dashboard beside the runner, and it dies with the Job.
-timeout: '3600'
+# Upstream's own Claude Code runner allows 23 hours a task
+# (timeout_sec=82800 in hybrid_agents/claude_code/agent.py, with a 30-minute
+# idle timeout) — these are long-horizon workflows, and an hour scores them
+# as failures for running out of clock. Two hours is the compromise: enough
+# for most of them, and it keeps the 68-task apps subset inside a day of
+# cluster time. A score here is a lower bound on what the same agent would
+# get under upstream's budget.
+timeout: '7200'
 resources:
   requests:
     cpu: 500m
