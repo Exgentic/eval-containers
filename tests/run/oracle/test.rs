@@ -36,6 +36,12 @@ const SPECIAL: &[(&str, &str)] = &[
     ),
     // per-task built from source (rule 24g); gold = reverse the bug_reintroduce patch
     ("swe-lancer", "12155_1"),
+    // per-task differential grader; solution.sh copies the root-only gold PoC to
+    // /app/poc, which crashes the pre-patch build and runs clean on the post-patch
+    // build → 1.0. Per-task upstream base (swe-bench style, no build.sh): the
+    // Dockerfile's `FROM docker.io/n132/arvo:${EVAL_TASK_ID}-{vul,fix}` pulls this
+    // task's replay images at build time, so the target/PoC extraction is real.
+    ("cybergym", "10013"),
     // per-task; solution.sh writes the correct output for each task. (citation-check
     // omitted — its gold hits rate-limited live APIs, so it can't deterministically pass.)
     ("skills-bench", "bike-rebalance"),

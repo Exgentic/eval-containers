@@ -76,10 +76,18 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     out.insert("mle-bench", mle);
 
     // swe-bench-pro, terminal-bench, swe-lancer and deepswe build per-task via
-    // build.sh (rule 24g), not a single `docker build`; their builds are exercised by
-    // the oracle daemon-lane test (tests/oracle), so they are intentionally absent
-    // here (and thus skipped). deepswe additionally resolves its base from the task's
-    // own task.toml at build time, so there is no static BASE_IMAGE to pin here.
+    // build.sh (rule 24g), not a single `docker build`; their builds are exercised
+    // by the oracle daemon-lane test (tests/oracle), so they are intentionally
+    // absent here (and thus skipped). deepswe additionally resolves its base from
+    // the task's own task.toml at build time, so there is no static BASE_IMAGE to
+    // pin here.
+    //
+    // cybergym is a per-task-upstream-base benchmark (swe-bench style, no build.sh):
+    // its Dockerfile does `FROM docker.io/n132/arvo:${EVAL_TASK_ID}-{vul,fix}`, so a
+    // plain `docker build --build-arg EVAL_TASK_ID=<num>` builds it. It is absent
+    // here (and thus skipped) on purpose — each arvo replay base is a ~9 GB external
+    // image the offline sweep cannot pull. Its build+grade is exercised by the
+    // oracle daemon lane and by `eval-containers build bench cybergym --task-id <id>`.
 
     out.remove(benchmark)
 }
