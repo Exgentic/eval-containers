@@ -59,7 +59,16 @@ RUN [ "${TARGETARCH:-amd64}" = "amd64" ] || exit 0; \
     mkdir -p /etc/opt/chrome/policies/managed \
  && printf '{"SafeBrowsingProtectionLevel":0,"SafeBrowsingEnabled":false}\n' \
       > /etc/opt/chrome/policies/managed/osworld-safe-browsing.json \
- && printf '#!/bin/sh\nexec /opt/google/chrome/google-chrome \\\n  --remote-debugging-port=9222 --remote-allow-origins=* --no-sandbox \\\n  --no-first-run --no-default-browser-check "$@"\n' \
+ && printf '%s\n' \
+      '#!/bin/sh' \
+      '# Only default the port when the caller did not ask for one: Chrome' \
+      '# honours the FIRST --remote-debugging-port, so forcing ours here' \
+      '# silently ignored a task that asked for its own and bridged to it.' \
+      'case " $* " in' \
+      '  *" --remote-debugging-port="*) p= ;;' \
+      '  *) p=--remote-debugging-port=9222 ;;' \
+      'esac' \
+      'exec /opt/google/chrome/google-chrome $p --remote-allow-origins=* --no-sandbox --no-first-run --no-default-browser-check "$@"' \
       > /usr/local/bin/google-chrome \
  && chmod +x /usr/local/bin/google-chrome \
  && ln -sf /usr/local/bin/google-chrome /usr/local/bin/google-chrome-stable \
