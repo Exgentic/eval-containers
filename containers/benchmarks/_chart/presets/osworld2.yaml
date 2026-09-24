@@ -18,6 +18,13 @@
 # cluster time. A score here is a lower bound on what the same agent would
 # get under upstream's budget.
 timeout: '7200'
+# The pod's deadline covers everything, pulling included, and these images are
+# big: 13.9 GB of runner (the gated assets) took 15 minutes to pull on a cold
+# node, and task setup can spend ten more opening Chrome and Zotero. The
+# default 600s grace left the CAD task killed mid-grade at 130 minutes, with
+# no result written at all. Forty minutes covers a cold pull, setup, and the
+# grader.
+deadlineGrace: 2400
 resources:
   requests:
     cpu: 500m
