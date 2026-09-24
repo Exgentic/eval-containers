@@ -43,6 +43,14 @@ warm() {  # warm <command>...
   wait "$pid" 2>/dev/null || true
 }
 
+# WPS opens a modal EULA on first run — "Kingsoft Office Software License
+# Agreement and Privacy Policy" — and nothing behind it is reachable: a task
+# that opens a spreadsheet gets the dialog, the control server never finds the
+# document's window, and setup fails with a 500. Accepting it by hand writes
+# exactly one key, so write that key instead.
+mkdir -p "$HOME/.config/Kingsoft"
+printf '[6.0]\ncommon\\AcceptedEULA=true\n' > "$HOME/.config/Kingsoft/Office.conf"
+
 # LibreOffice and GIMP have a batch mode that writes the profile without a
 # window, which is faster and cannot hang on a dialog.
 soffice --headless --terminate_after_init >/dev/null 2>&1 || true
