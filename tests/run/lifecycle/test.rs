@@ -54,9 +54,12 @@ fn ensure_image() {
         common::build_eval_classic(BENCH, AGENT, &reg);
         return;
     }
+    // The eval is composed FROM the published edge unless told otherwise, and
+    // this suite is one of the two that would notice a broken one.
     let status = std::process::Command::new("cargo")
         .args(["run", "--quiet", "--"])
-        .args(["build", "eval", BENCH, "--agent", AGENT])
+        .args(["build", "eval", BENCH, "--agent", AGENT, "--no-pull"])
+        .env("EDGE_IMAGE", common::edge_image_from_source())
         .status()
         .expect("cargo run -- build eval");
     assert!(status.success(), "building the carrier eval image failed");

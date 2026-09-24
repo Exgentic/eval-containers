@@ -64,6 +64,7 @@ helm template real "$CHART" \
   --set outputVolume.hostPath.path="$OUT" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
   --set outputSubPath="$SUB" --set runId="$RUN" \
+  --set-string maxTokens=1000000 \
   --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' |
   kubectl apply -f - >/dev/null || { echo "apply failed"; exit 1; }
 
@@ -173,6 +174,78 @@ else
   esac
   rm -f "$raw"
 fi
+
+# The cap a launch asked for has to have reached the edge, which is three hops
+# away from the chart value that set it: EVAL_MAX_TOKENS in the runner's env,
+# start-edge translating it into the edge's own namespace, and the edge reading
+# it. Nothing else in the run distinguishes "bounded at a million tokens" from
+# "bounded by nothing", and the value above is far too high for this eval to
+# cross — deliberately, since what is under test is the wiring, not the refusal
+# (containers/core/edge covers that on every wire).
+step "the run's token cap reached the edge"
+case "$(onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null)" in
+  *"cap 1000000 tokens"*) echo "  edge.log: cap in force" ;;
+  *) bad "the edge never saw EVAL_MAX_TOKENS — chart value, start-edge, or the edge itself dropped it"
+     onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
+esac
+
+# ── a run that actually crosses its cap ─────────────────────────────────────
+# Above proves the cap ARRIVES. These prove what it DOES, which is the part a
+# bill depends on. Both Jobs are capped at one token — the first call always
+# goes through, since the cap is checked before a call and not during one — so
+# the second is the one under test.
+capped_job() { # <suffix> <subpath> <extra runnerExtraEnv json>
+  helm template "capped$1" "$CHART" \
+    --set benchmark=agents-smoke --set agent=mock --set task=0 \
+    --set nameSuffix="$1" \
+    --set otelImage=eval-e2e/otel:stub \
+    --set gatewayImageRef=eval-e2e/gateway:stub \
+    --set runnerImageRef=eval-e2e/eval:latest \
+    --set outputVolume.hostPath.path="$OUT" \
+    --set outputVolume.hostPath.type=DirectoryOrCreate \
+    --set outputSubPath="$2" --set runId="$RUN" \
+    --set-string maxTokens=1 \
+    --set-json "runnerExtraEnv=$3" |
+    kubectl apply -f - >/dev/null
+}
+
+# decode <subpath> — the run's record, or empty if it wrote none.
+decode() {
+  local rec="$OUT/$1/$RUN/0/model/calls.jsonl.zst" raw dec
+  onnode test -s "$rec" || return 1
+  raw=$(mktemp); onnode cat "$rec" > "$raw"
+  dec=$(zstd -dc "$raw" 2>/dev/null || true); rm -f "$raw"
+  printf '%s' "$dec"
+}
+
+step "a capped run refuses its next call"
+REFUSESUB=runs/agents-smoke/mock/capped-refuse
+capped_job -refuse "$REFUSESUB" '[]' || bad "capped apply failed"
+settle agents-smoke-mock-task-0-refuse 180 >/dev/null
+if ! dec=$(decode "$REFUSESUB"); then
+  bad "the capped run recorded nothing"
+  onnode cat "$OUT/$REFUSESUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5
+else
+  case "$dec" in
+    *budget_exceeded*) echo "  refused, and the record says why" ;;
+    *) bad "a run capped at 1 token made its calls anyway: $(printf '%s' "$dec" | grep -c '\"path\"') record(s), no refusal"
+       printf '%s' "$dec" | grep -o '"status":[0-9]*' | sort | uniq -c | sed 's/^/    /'
+       onnode cat "$OUT/$REFUSESUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
+  esac
+fi
+
+# EVAL_ON_LIMIT=kill signals PID 1, which is a container's whole life: the Job
+# fails and the grading that would have followed the agent never runs. That is
+# the trade the setting names, and this is the only place PID 1 is real.
+step "EVAL_ON_LIMIT=kill stops the run"
+KILLSUB=runs/agents-smoke/mock/capped-kill
+capped_job -kill "$KILLSUB" '[{"name":"EVAL_ON_LIMIT","value":"kill"}]' || bad "kill apply failed"
+case "$(settle agents-smoke-mock-task-0-kill 180)" in
+  *Failed*) echo "  the pod was stopped on its cap, and the run has no grade — as documented" ;;
+  *Complete*) bad "EVAL_ON_LIMIT=kill ran to completion: the cap never stopped anything"
+              onnode cat "$OUT/$KILLSUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
+  *) bad "the kill run neither completed nor failed within 180s"; diagnose agents-smoke-mock-task-0-kill ;;
+esac
 
 # ── the launcher people actually use ────────────────────────────────────────
 # Everything above renders the chart the way this test wants it. deploy/kind/run.sh

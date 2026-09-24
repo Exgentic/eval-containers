@@ -61,6 +61,10 @@ P
   fi
 }
 if probe; then gw=up; elif [ $? = 2 ]; then gw=unprobed; else gw=down; fi
+# A second, identical call. Nothing here needs it — a spend cap does: it is
+# checked BEFORE a call, so the first one always goes through and only a second
+# can be refused. One probe made every cap untestable end to end.
+probe >/dev/null 2>&1 || true
 echo "mock agent, task: ${EVAL_TASK_ID:-?}, gateway: $gw at ${base:-<unset>}" >&2
 echo "gateway:$gw"
 echo "${EXPECTED_ANSWER:-OK}"

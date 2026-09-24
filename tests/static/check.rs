@@ -233,6 +233,111 @@ fn timeout_override_beats_a_preset() {
 /// replace the launcher on both surfaces with their own copy (#558 was one
 /// missing the edge); native mode (rule 12c) removed the reason, so a surface
 /// that replaces it is refused outright.
+/// A launch configures the framework's EVAL_* axis; the edge reads its own
+/// EDGE_* one (edge rules 2, 17). `runner/edge-env` is the only place the two
+/// meet, so a knob that appears on one side and not the other is a setting
+/// nobody can reach — or one reachable only under a name no launcher should
+/// have to know.
+#[test]
+fn the_framework_axis_is_mapped_onto_the_edges_own() {
+    let read =
+        |p: &str| fs::read_to_string(repo_root().join(p)).unwrap_or_else(|_| panic!("missing {p}"));
+    let map = read("containers/core/runner/edge-env");
+    let edge = read("containers/core/edge/main.go");
+
+    for knob in [
+        "MODEL",
+        "MAX_TOKENS",
+        "MAX_COST_USD",
+        "PRICE_IN",
+        "PRICE_CACHE_READ",
+        "PRICE_CACHE_WRITE",
+        "PRICE_OUT",
+        "COST_HEADER",
+        "ON_LIMIT",
+    ] {
+        assert!(
+            map.contains(knob),
+            "runner/edge-env must map EVAL_{knob} onto EDGE_{knob} — otherwise no launch can set it"
+        );
+        assert!(
+            edge.contains(&format!("EDGE_{knob}")),
+            "the edge does not read EDGE_{knob}, so runner/edge-env maps into nothing"
+        );
+    }
+
+    // The component keeps no foreign names, and no launcher-facing surface
+    // speaks the component's.
+    for foreign in ["EVAL_", "OPENAI_"] {
+        assert!(
+            !edge.contains(foreign),
+            "containers/core/edge/main.go reads a {foreign}* variable — rule 17 makes the \
+             namespace the edge's own, and the mapping runner/edge-env's"
+        );
+    }
+    // EDGE_UPSTREAM is the one name the chart says itself, and deliberately: it
+    // states whether a gateway runs beside the runner, which is the chart's own
+    // topology and not a launch knob anyone types.
+    let job = read("containers/benchmarks/_chart/templates/job.yaml");
+    let chart_edge_names: Vec<&str> = job
+        .match_indices("EDGE_")
+        .map(|(i, _)| {
+            job[i..]
+                .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .next()
+                .unwrap_or("")
+        })
+        .filter(|n| *n != "EDGE_UPSTREAM")
+        .collect();
+    assert!(
+        job.contains("EVAL_MAX_TOKENS") && chart_edge_names.is_empty(),
+        "the chart must set EVAL_* names (EDGE_UPSTREAM excepted): found {chart_edge_names:?}"
+    );
+    let cli = read("cli/src/run.rs");
+    assert!(!cli.contains("EDGE_"), "the CLI must set EVAL_* names only");
+    assert!(
+        cli.contains("--set-string") && cli.contains("maxTokens={t}"),
+        "--max-tokens must reach helm with --set-string: a bare --set makes 1000000 a float, \
+         renders \"1e+06\", and the run that asked to be capped runs uncapped"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("maxTokens: \"\""),
+        "_chart/values.yaml must ship `maxTokens: \"\"` — no cap unless a run asks for one"
+    );
+
+    // The edge an eval image carries is the PUBLISHED one until it is
+    // republished, so the bring-up speaks both spellings for a release. This
+    // pins that the transition is deliberate and documented where it lives.
+    let starter = read("containers/core/runner/start-edge");
+    assert!(
+        starter.contains("OPENAI_API_BASE=\"$_start_edge_upstream\"")
+            == starter.contains("republished"),
+        "start-edge still passes the pre-rename names without saying why — drop them once \
+         the published core/edge reads EDGE_API_BASE, or keep the note that says it cannot yet"
+    );
+
+    // Both callers of the mapping, and the image that has to carry it.
+    for (path, why) in [
+        (
+            "containers/core/runner/start-edge",
+            "brings the edge up on every path that reaches a model",
+        ),
+        (
+            "containers/core/runner/run",
+            "hands the bundle to process-compose, which starts the edge itself",
+        ),
+    ] {
+        assert!(
+            read(path).contains("/usr/local/bin/edge-env"),
+            "{path} must source /usr/local/bin/edge-env — it {why}"
+        );
+    }
+    assert!(
+        read("containers/core/combination.Dockerfile").contains("runner/edge-env"),
+        "combination.Dockerfile must COPY runner/edge-env into the eval image"
+    );
+}
+
 #[test]
 fn no_surface_replaces_the_launcher() {
     const START_EDGE: &str = "/usr/local/bin/start-edge";

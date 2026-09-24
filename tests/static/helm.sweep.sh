@@ -72,6 +72,24 @@ for name in "${names[@]}"; do
   grep -q '^kind: Job$' "$OUT/$name.yaml" || { echo "FAIL $name: render produced no Job"; fail=$((fail + 1)); }
 done
 
+# 2b. values a component has to PARSE, rendered the way a person types them.
+# `--set maxTokens=1000000` is a float to helm, and rendering it "1e+06" left the
+# edge unable to read its own cap — a bounded run going unbounded with nothing
+# said. Rendering is where that is cheap to catch; the cluster is where it was
+# caught instead.
+probe=${names[0]}
+if ! helm template probe "$CHART" --set "benchmark=$probe" --set ephemeral=true \
+     --set maxTokens=1000000 >"$OUT/.numeric.yaml" 2>"$OUT/.numeric.err"; then
+  echo "FAIL numeric value render failed:"; sed 's/^/  /' "$OUT/.numeric.err"; fail=$((fail + 1))
+else
+  got=$(grep -o 'name: EVAL_MAX_TOKENS, value: "[^"]*"' "$OUT/.numeric.yaml" | head -1 | sed 's/.*value: "\(.*\)"/\1/')
+  case "$got" in
+    1000000) ;;
+    *) echo "FAIL EVAL_MAX_TOKENS rendered as \"$got\" — the edge parses this value, and cannot read that"
+       fail=$((fail + 1)) ;;
+  esac
+fi
+
 # 3. one schema validation over all renders (kubeconform's native -n parallelism).
 if ! kc=$(kubeconform -strict -n "$JOBS" "$OUT"/*.yaml 2>&1); then
   echo "kubeconform: schema-invalid documents:"

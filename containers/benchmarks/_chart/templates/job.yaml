@@ -196,6 +196,12 @@ spec:
             {{- if $v.force }}
             - { name: EVAL_FORCE, value: "1" }
             {{- end }}
+            {{- with $v.maxTokens }}
+            {{- /* int64, because `--set maxTokens=1000000` reaches here as a
+                   float and renders "1e+06" — which the edge could not read, so
+                   a run that asked to be capped ran uncapped in silence. */}}
+            - { name: EVAL_MAX_TOKENS, value: {{ . | int64 | quote }} }
+            {{- end }}
             {{- with $v.benchmarkVersion }}
             - { name: EVAL_BENCHMARK_VERSION, value: {{ . | quote }} }
             {{- end }}

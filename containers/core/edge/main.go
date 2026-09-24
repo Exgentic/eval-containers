@@ -1,6 +1,6 @@
 // The edge: the one component every model call crosses (.agents/edge/RULES.md).
 //
-// Recording (default): pin the model to EVAL_MODEL (rule 2), forward on the
+// Recording (default): pin the model to EDGE_MODEL (rule 2), forward on the
 // wire the call arrived on (rule 4), stream the response back unbuffered
 // (rule 11), and write the exchange as the agent sent it (rules 6-8). The
 // injected upstream credential never enters a record (rule 9).
@@ -15,15 +15,18 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -46,6 +49,10 @@ type call struct {
 	Chunks    [][2]float64      `json:"chunks"` // [ms since request start, bytes]
 	Truncated bool              `json:"truncated,omitempty"`
 	Retries   int               `json:"retries,omitempty"`
+	// What this call cost, when anything knew: the upstream's own figure if it
+	// reported one, else the tokens at the configured prices. The tokens are in
+	// the response already — this is the one number that is not.
+	CostUSD float64 `json:"cost_usd,omitempty"`
 }
 
 var (
@@ -61,22 +68,29 @@ var (
 	recFile *os.File
 	recZstd *zstd.Encoder
 	recPath string // what recFile was opened for; reopen if OUT is repointed
-	out     = envOr("OUT", "/output/model/calls.jsonl")
+	out     = envOr("EDGE_OUT", "/output/model/calls.jsonl")
 	// 4100, not 4000: a gateway owns 4000, and in k8s it shares this pod's
 	// network namespace (edge rule 13).
-	listen = envOr("LISTEN", ":4100")
-	// EVAL_MODEL is the in-framework name; EDGE_MODEL is the same knob for
-	// standalone use outside eval-containers (rule 3: still never parsed).
-	model  = envOr("EVAL_MODEL", os.Getenv("EDGE_MODEL"))
-	base   = strings.TrimSuffix(os.Getenv("OPENAI_API_BASE"), "/")
-	apiKey = os.Getenv("OPENAI_API_KEY")
+	listen = envOr("EDGE_LISTEN", ":4100")
+	// Every knob is the edge's own (rule 17). A framework with an axis of its
+	// own translates into these once, at bring-up; the component has no opinion
+	// about what that axis is called.
+	model  = os.Getenv("EDGE_MODEL")
+	base   = strings.TrimSuffix(os.Getenv("EDGE_API_BASE"), "/")
+	apiKey = os.Getenv("EDGE_API_KEY")
 
 	// A provider serves its own native paths; a gateway serves the framework's
 	// protocol-namespaced ones (gateways rule 5). Declared, never sniffed.
 	upstreamIsGateway = os.Getenv("EDGE_UPSTREAM") == "gateway"
 
-	// No client timeout: an agent turn legitimately runs for minutes.
-	client = &http.Client{}
+	// No client timeout: an agent turn legitimately runs for minutes. Redirects
+	// are returned, never followed: Go re-sends the credential to the redirect
+	// target (it strips only `authorization`, and only across domains), so one
+	// open redirect upstream would hand an agent the key it must never see
+	// (rule 14). A proxy has no business chasing them on the caller's behalf.
+	client = &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
 
 	// Gemini names the model in the URL rather than the body.
 	geminiModel = regexp.MustCompile(`/models/[^:/]+(:|$)`)
@@ -99,6 +113,28 @@ var (
 	maxRequest = envInt("EDGE_MAX_REQUEST_BYTES", 64<<20)
 	// Transport failures are retried only before any byte reaches the agent.
 	maxRetries = envInt("EDGE_MAX_RETRIES", 2)
+
+	// Spend bounds. Zero is no cap, which is the default: a cap the operator
+	// did not ask for would end runs nobody budgeted. Tokens are counted from
+	// what the provider reports; cost is those tokens at the prices the
+	// operator states, since the edge must not infer a provider from the model
+	// handle (rule 3) and so cannot know a price on its own.
+	maxTokens = envInt("EDGE_MAX_TOKENS", 0)
+	maxCost   = envFloat("EDGE_MAX_COST_USD", 0)
+	// USD per million tokens, per category, because every wire reports the
+	// categories apart and they are billed apart: a cached read is a tenth of
+	// fresh input on some providers, a cache write a quarter more. Unset cache
+	// prices fall back to the input price — the old arithmetic, which overstates
+	// a cached run rather than understating it, and a cap is better early.
+	priceIn         = envFloat("EDGE_PRICE_IN", 0)
+	priceCacheRead  = envFloat("EDGE_PRICE_CACHE_READ", -1)
+	priceCacheWrite = envFloat("EDGE_PRICE_CACHE_WRITE", -1)
+	priceOut        = envFloat("EDGE_PRICE_OUT", 0)
+	// A response header carrying what the upstream charged for that call, when
+	// something upstream knows better than a stated price. Named rather than
+	// sniffed: which header, if any, is the operator's to say.
+	costHeader = os.Getenv("EDGE_COST_HEADER")
+	onLimit    = envOr("EDGE_ON_LIMIT", "refuse")
 )
 
 func envOr(k, d string) string {
@@ -108,14 +144,53 @@ func envOr(k, d string) string {
 	return d
 }
 
-func envInt(k string, d int) int {
-	if v, err := strconv.Atoi(os.Getenv(k)); err == nil && v >= 0 {
+func envFloat(k string, d float64) float64 {
+	if v, err := strconv.ParseFloat(os.Getenv(k), 64); err == nil && v >= 0 {
 		return v
+	}
+	return d // -1 from a caller means "unset", which is not the same as free
+}
+
+// Float-shaped too: a templating layer between the operator and here may have
+// turned 1000000 into "1e+06", and a cap silently ignored is worse than a cap
+// read from an ugly spelling. configError refuses what neither form can read.
+func envInt(k string, d int) int {
+	if v, err := strconv.ParseFloat(os.Getenv(k), 64); err == nil && v >= 0 {
+		return int(v)
 	}
 	return d
 }
 
 func msSince(t time.Time) float64 { return float64(time.Since(t).Microseconds()) / 1000 }
+
+// relativeToUpstream rewrites a redirect that points back at the upstream into
+// a relative one, the way any reverse proxy does: the agent is sent back
+// through the edge instead of being handed the address behind it. A redirect
+// somewhere else is the upstream's business and passes through untouched.
+func relativeToUpstream(loc string) string {
+	u, err := url.Parse(loc)
+	if err != nil || u.Host == "" {
+		return loc
+	}
+	if b, err := url.Parse(base); err == nil && strings.EqualFold(u.Host, b.Host) {
+		return u.RequestURI()
+	}
+	return loc
+}
+
+// hideUpstream removes the upstream address from anything an agent can reach:
+// the error bodies it is served, and the record and log it can read beside its
+// own output (rule 18). The address is the other half of the credential: an
+// agent with both can call the provider directly, off the record. Go's
+// transport errors quote the whole URL, so the base and its bare host both go.
+func hideUpstream(s string) string {
+	s = strings.ReplaceAll(s, base, "upstream")
+	if u, err := url.Parse(base); err == nil && u.Hostname() != "" {
+		s = strings.ReplaceAll(s, u.Host, "upstream")
+		s = strings.ReplaceAll(s, u.Hostname(), "upstream")
+	}
+	return s
+}
 
 // wireFor maps an inbound path onto its protocol namespace, returning the
 // wire and the path with the namespace stripped.
@@ -147,7 +222,7 @@ func upstreamPathFor(inbound, stripped string) string {
 	return stripped
 }
 
-// pin replaces the model the agent named with EVAL_MODEL. The field is
+// pin replaces the model the agent named with the configured handle. The field is
 // top-level JSON on every body-carrying wire, so no per-wire knowledge is
 // needed — and the handle is never parsed (rule 3).
 func pin(body []byte, to string) []byte {
@@ -173,6 +248,216 @@ func pinGemini(path, to string) string {
 		return path
 	}
 	return geminiModel.ReplaceAllString(path, "/models/"+to+"$1")
+}
+
+// ── Spend (rules 19-21) ─────────────────────────────────────────────
+
+// The run's usage so far, as the providers reported it. Guarded by spendMu,
+// not mu: recording a call must never wait on the arithmetic, or vice versa.
+var (
+	spendMu  sync.Mutex
+	spent    usage   // tokens, by category, for the run so far
+	spentUSD float64 // what the upstream said those calls cost, where it said
+)
+
+// One call's tokens, split the way they are billed. `in` is fresh input only:
+// the wires that fold cached tokens into their prompt count have them taken
+// back out here, so the four never double-count each other.
+type usage struct{ in, cacheRead, cacheWrite, out int }
+
+func (u usage) add(o usage) usage {
+	return usage{u.in + o.in, u.cacheRead + o.cacheRead, u.cacheWrite + o.cacheWrite, u.out + o.out}
+}
+
+func (u usage) total() int { return u.in + u.cacheRead + u.cacheWrite + u.out }
+
+// priceOr is how an unset cache price falls back to the input price.
+func priceOr(p, fallback float64) float64 {
+	if p < 0 {
+		return fallback
+	}
+	return p
+}
+
+func (u usage) cost() float64 {
+	return (float64(u.in)*priceIn +
+		float64(u.cacheRead)*priceOr(priceCacheRead, priceIn) +
+		float64(u.cacheWrite)*priceOr(priceCacheWrite, priceIn) +
+		float64(u.out)*priceOut) / 1e6
+}
+
+// The fields each wire reports, grouped by what they mean rather than by who
+// sends them — no wire sends another's names, so one table reads all three.
+var tokenField = map[string]bool{
+	// A prompt count. Anthropic's excludes its cached tokens; OpenAI's and
+	// Gemini's include theirs, which is why `inclusiveCache` exists below.
+	"prompt_tokens": true, "input_tokens": true, "promptTokenCount": true,
+	// Cached input, read back.
+	"cache_read_input_tokens": true, "cached_tokens": true, "cachedContentTokenCount": true,
+	// Cached input, written. Only Anthropic charges for the write.
+	"cache_creation_input_tokens": true,
+	// Output. Gemini reports thinking apart from the candidates; the other two
+	// fold theirs into the count below.
+	"completion_tokens": true, "output_tokens": true,
+	"candidatesTokenCount": true, "thoughtsTokenCount": true,
+}
+
+// usageOf reads the tokens a response reports, on any wire, streamed or not. It
+// takes the LARGEST value seen for each field rather than the last or the sum,
+// which is what lets one function serve all three: a whole body reports each
+// field once; Anthropic splits input across `message_start` and output across
+// `message_delta`; Gemini repeats a running total on every chunk.
+func usageOf(body string) usage {
+	seen := map[string]int{}
+	for _, line := range strings.Split(body, "\n") {
+		line = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "data:"))
+		if !strings.HasPrefix(line, "{") {
+			continue
+		}
+		var v any
+		if json.Unmarshal([]byte(line), &v) != nil {
+			continue
+		}
+		walkTokens(v, seen)
+	}
+	// Largest per field, then combined: repeats of one field across a stream
+	// are the same charge restated, while different fields are charges that add
+	// up — except a prompt count and the cached tokens inside it, which are the
+	// same tokens twice.
+	prompt := max(seen["prompt_tokens"], seen["input_tokens"], seen["promptTokenCount"])
+	inclusiveCache := seen["cached_tokens"] + seen["cachedContentTokenCount"]
+	u := usage{
+		in:         max(prompt-inclusiveCache, 0),
+		cacheRead:  seen["cache_read_input_tokens"] + inclusiveCache,
+		cacheWrite: seen["cache_creation_input_tokens"],
+		out: max(seen["completion_tokens"], seen["output_tokens"]) +
+			seen["candidatesTokenCount"] + seen["thoughtsTokenCount"],
+	}
+	return u
+}
+
+func walkTokens(v any, seen map[string]int) {
+	switch t := v.(type) {
+	case map[string]any:
+		for k, child := range t {
+			if n, ok := child.(float64); ok {
+				if tokenField[k] {
+					seen[k] = max(seen[k], int(n))
+				}
+				continue
+			}
+			walkTokens(child, seen)
+		}
+	case []any:
+		for _, child := range t {
+			walkTokens(child, seen)
+		}
+	}
+}
+
+// spend adds one exchange to the run's totals and returns what it cost.
+// `charged` is what the upstream said, in USD, or 0 when it said nothing: a
+// number from whoever actually billed the call beats one derived from stated
+// prices, so it wins where it exists.
+//
+// There is no cost header on the way back, deliberately: the response's headers
+// are already on the wire before its first chunk is read, which is why an
+// upstream that reports a cost reports $0 on every streamed call. The record is
+// where a number that is only known at the end belongs.
+func spend(body string, charged float64) float64 {
+	u := usageOf(body)
+	cost := charged
+	if cost == 0 {
+		cost = u.cost()
+	}
+	spendMu.Lock()
+	defer spendMu.Unlock()
+	spent = spent.add(u)
+	spentUSD += cost
+	return cost
+}
+
+// chargedFor reads the per-call cost the upstream reported, if the operator
+// named a header for it and this response carried a usable one.
+func chargedFor(h http.Header) float64 {
+	if costHeader == "" {
+		return 0
+	}
+	v, err := strconv.ParseFloat(strings.TrimSpace(h.Get(costHeader)), 64)
+	if err != nil || v <= 0 {
+		return 0 // absent, unparsable, or a zero that would silently undercount
+	}
+	return v
+}
+
+// overCap reports the cap the run has already crossed, empty while it is under
+// both. Checked before a call, never mid-call: the edge bounds what it starts,
+// it does not cut a response the agent is already reading.
+func overCap() string {
+	spendMu.Lock()
+	defer spendMu.Unlock()
+	if maxTokens > 0 && spent.total() >= maxTokens {
+		return fmt.Sprintf("token cap reached: %d of %d", spent.total(), maxTokens)
+	}
+	if maxCost > 0 && spentUSD >= maxCost {
+		return fmt.Sprintf("cost cap reached: $%.4f of $%.2f", spentUSD, maxCost)
+	}
+	return ""
+}
+
+// terminate ends the run when EDGE_ON_LIMIT=kill. PID 1 is the container's
+// entrypoint, so this stops the container — the agent, and the grading that
+// would have followed it. A seam, so a test can observe the kill without
+// taking the test binary down with it.
+var terminate = func() {
+	if p, err := os.FindProcess(1); err == nil {
+		_ = p.Signal(syscall.SIGTERM)
+	}
+}
+
+// includeUsage asks OpenAI to report usage on a stream it would otherwise end
+// silently — the one wire that reports nothing unless asked, and so the one
+// where a cap would quietly count zero. Only on chat/completions: the Responses
+// API reports usage on its own and rejects the option.
+func includeUsage(body []byte, path string) []byte {
+	if !strings.HasSuffix(path, "/chat/completions") {
+		return body
+	}
+	var m map[string]any
+	if json.Unmarshal(body, &m) != nil {
+		return body
+	}
+	if stream, _ := m["stream"].(bool); !stream {
+		return body
+	}
+	if _, ok := m["stream_options"]; ok {
+		return body // the agent stated its own; leave it alone
+	}
+	m["stream_options"] = map[string]any{"include_usage": true}
+	if withUsage, err := json.Marshal(m); err == nil {
+		return withUsage
+	}
+	return body
+}
+
+func capped() bool { return maxTokens > 0 || maxCost > 0 }
+
+// priced reports whether this run can put a number on a call at all.
+func priced() bool { return priceIn > 0 || priceOut > 0 || costHeader != "" }
+
+// capNotice says what the run is bounded by, for the log line at startup. A cap
+// that did not reach the edge is otherwise indistinguishable from no cap until
+// the spend nobody bounded shows up on a bill.
+func capNotice() string {
+	switch {
+	case maxTokens > 0 && maxCost > 0:
+		return fmt.Sprintf(", cap %d tokens / $%.2f", maxTokens, maxCost)
+	case maxTokens > 0:
+		return fmt.Sprintf(", cap %d tokens", maxTokens)
+	case maxCost > 0:
+		return fmt.Sprintf(", cap $%.2f", maxCost)
+	}
+	return ", no cap"
 }
 
 func clip(b []byte) (string, bool) {
@@ -282,11 +567,19 @@ func handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if crossed := overCap(); capped() && crossed != "" {
+		refuse(w, start, wire, r, crossed)
+		return
+	}
+
 	upstreamBody, upstreamPath := agentBody, upstreamPathFor(r.URL.Path, path)
 	if wire == "gemini" {
 		upstreamPath = pinGemini(upstreamPath, model)
 	} else {
 		upstreamBody = pin(agentBody, model)
+		if capped() && wire == "openai" {
+			upstreamBody = includeUsage(upstreamBody, path)
+		}
 	}
 
 	c := call{
@@ -298,7 +591,8 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	resp, retries, err := forward(r, upstreamPath, wire, upstreamBody)
 	c.Retries = retries
 	if err != nil {
-		http.Error(w, `{"error":{"type":"upstream_unreachable","message":"`+err.Error()+`"}}`, http.StatusBadGateway)
+		msg, _ := json.Marshal(hideUpstream(err.Error())) // quoting the error by hand made a body no client could parse
+		http.Error(w, `{"error":{"type":"upstream_unreachable","message":`+string(msg)+`}}`, http.StatusBadGateway)
 		c.Status, c.TotalMs = http.StatusBadGateway, msSince(start)
 		record(c)
 		return
@@ -310,9 +604,12 @@ func handle(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		for _, v := range vs {
+			if strings.EqualFold(k, "location") {
+				v = relativeToUpstream(v)
+			}
 			w.Header().Add(k, v)
 		}
-		c.RespHead[k] = vs[0]
+		c.RespHead[k] = w.Header().Get(k)
 	}
 	w.WriteHeader(resp.StatusCode)
 	c.Status = resp.StatusCode
@@ -345,7 +642,35 @@ func handle(w http.ResponseWriter, r *http.Request) {
 
 	c.Response = body.String()
 	c.TotalMs = msSince(start)
+	// Only when something asked for it: reading usage means parsing the whole
+	// response, which a run that priced nothing and capped nothing need not pay.
+	if capped() || priced() {
+		c.CostUSD = spend(c.Response, chargedFor(resp.Header))
+	}
 	record(c)
+	if crossed := overCap(); capped() && crossed != "" {
+		log.Println("spend:", crossed)
+		if onLimit == "kill" {
+			terminate()
+		}
+	}
+}
+
+// refuse answers a call the run can no longer afford. 402, not 429: an SDK
+// retries a 429 until the agent's timeout, and there is nothing to wait for.
+// The refusal is recorded like any other call, so the record says why the run
+// stopped making them.
+func refuse(w http.ResponseWriter, start time.Time, wire string, r *http.Request, crossed string) {
+	msg, _ := json.Marshal(crossed)
+	body := `{"error":{"type":"budget_exceeded","message":` + string(msg) + `}}`
+	http.Error(w, body, http.StatusPaymentRequired)
+	// Recorded with its body: a bare 402 in the record leaves whoever reads it
+	// later — a person, or the dashboard — to guess why the run went quiet.
+	record(call{
+		Path: r.URL.Path, Wire: wire, StartUnix: float64(start.UnixNano()) / 1e9,
+		Model: model, Headers: safeHeaders(r.Header), RespHead: map[string]string{},
+		Status: http.StatusPaymentRequired, Response: body, TotalMs: msSince(start),
+	})
 }
 
 func safeHeaders(h http.Header) map[string]string {
@@ -423,15 +748,32 @@ func probeHealth(addr string) int {
 	return 0
 }
 
-// configError reports why the edge must not start. Translation is a gateway's
-// job, and an operator who asked for it here has misconfigured the stack: fail
-// at boot rather than at every call.
+// configError reports why the edge must not start. A stack that asked for
+// protocol translation is refused too, but by whoever owns that variable
+// (rule 5): it is not in this component's namespace, so it is not its to read.
 func configError() error {
-	if os.Getenv("EVAL_MODEL_API") != "" {
-		return errors.New("EVAL_MODEL_API is set: the edge does not translate protocols — route through a gateway, which does")
-	}
 	if base == "" {
-		return errors.New("OPENAI_API_BASE is required")
+		return errors.New("EDGE_API_BASE is required")
+	}
+	if maxCost > 0 && priceIn == 0 && priceOut == 0 && costHeader == "" {
+		return errors.New("EDGE_MAX_COST_USD is set with nothing to price it by: give EDGE_PRICE_IN/EDGE_PRICE_OUT, or EDGE_COST_HEADER if the upstream reports what it charged")
+	}
+	if onLimit != "refuse" && onLimit != "kill" {
+		return errors.New("EDGE_ON_LIMIT must be refuse or kill")
+	}
+	// A bound nobody can read is a bound nobody gets: helm renders a bare
+	// 1000000 as "1e+06", and the run that asked to be capped went uncapped
+	// without a word. Say so at boot rather than at the invoice.
+	for _, k := range []string{
+		"EDGE_MAX_TOKENS", "EDGE_MAX_COST_USD", "EDGE_MAX_REQUEST_BYTES",
+		"EDGE_MAX_RECORD_BYTES", "EDGE_MAX_RETRIES",
+		"EDGE_PRICE_IN", "EDGE_PRICE_CACHE_READ", "EDGE_PRICE_CACHE_WRITE", "EDGE_PRICE_OUT",
+	} {
+		if v := os.Getenv(k); v != "" {
+			if _, err := strconv.ParseFloat(v, 64); err != nil {
+				return fmt.Errorf("%s=%q is not a number", k, v)
+			}
+		}
 	}
 	return nil
 }
@@ -451,6 +793,7 @@ func main() {
 		log.Fatal(err)
 	}
 	http.HandleFunc("/", handle)
-	log.Printf("edge recording to %s, upstream %s", out, base)
+	// Never the upstream: the log sits in /output, which the agent can read.
+	log.Printf("edge recording to %s%s", out, capNotice())
 	log.Fatal(http.ListenAndServe(listen, nil))
 }

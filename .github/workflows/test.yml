@@ -338,3 +338,48 @@ jobs:
             sleep 2
           done
           docker rm -f "$cid" >/dev/null
+
+      # The bundle's OTHER half: process-compose starts the edge itself here, not
+      # runner/start-edge, so no k8s gate touches the mapping `run` does before
+      # handing over to the supervisor. Assert that half inside the real bundle
+      # image: the mapping file ships and maps, the supervisor asks for the
+      # edge's own names, and the edge in that image boots on them and answers
+      # its probe. (Driving the whole pipeline here instead would be a test of
+      # how fast bifrost starts — it needs ~60s in CI, past process-compose's
+      # readiness window, and the agent never runs.)
+      - name: Standalone bundle brings up its edge
+        run: |
+          set -eo pipefail
+          # From source, not from the last release: the bundle composes FROM the
+          # published core/edge, so without this the step boots whatever edge was
+          # released and this repo's change to it is untested here.
+          # Both files: the per-target one has no REGISTRY/TAG of its own.
+          REGISTRY=local/ec TAG=from-source docker buildx bake --load \
+            -f containers/docker-bake.hcl -f containers/core/edge/docker-bake.hcl edge
+          export EDGE_IMAGE=local/ec/core/edge:from-source
+          cargo run -q -- build eval agents-smoke --agent mock --standalone --no-pull 2>&1 | tail -3
+          img=ghcr.io/exgentic/evals/agents-smoke--mock-standalone:latest
+
+          mapped=$(docker run --rm -e EVAL_MODEL=azure/gpt-5.4 -e EVAL_MAX_TOKENS=1000000 \
+            -e EVAL_ON_LIMIT=kill --entrypoint /bin/bash "$img" \
+            -c '. /usr/local/bin/edge-env && env | grep ^EDGE_ | sort | tr "\n" " "')
+          case "$mapped" in
+            *EDGE_MAX_TOKENS=1000000*EDGE_MODEL=azure/gpt-5.4*EDGE_ON_LIMIT=kill*) echo "  mapped: $mapped" ;;
+            *) echo "::error::edge-env did not map the framework's axis in the bundle: $mapped"; exit 1 ;;
+          esac
+
+          docker run --rm --entrypoint grep "$img" -q EDGE_API_BASE /etc/process-compose.yaml || {
+            echo "::error::the bundle's supervisor does not hand the edge its own names"; exit 1; }
+
+          cid=$(docker run -d -e EDGE_API_BASE=http://127.0.0.1:9 -e EDGE_MAX_TOKENS=1000000 \
+            --entrypoint /opt/edge/start "$img")
+          deadline=$((SECONDS + 60))
+          until docker exec "$cid" /opt/edge/start health >/dev/null 2>&1; do
+            [ "$SECONDS" -lt "$deadline" ] || {
+              echo "::error::the bundle's edge never answered its probe"; docker logs "$cid"; exit 1; }
+            sleep 2
+          done
+          docker logs "$cid" 2>&1 | grep -q "cap 1000000 tokens" || {
+            echo "::error::the bundle's edge did not take its cap"; docker logs "$cid"; exit 1; }
+          docker rm -f "$cid" >/dev/null
+          echo "bundle edge: mapped, capped, answering"

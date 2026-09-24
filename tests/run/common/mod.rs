@@ -64,6 +64,22 @@ pub fn classic_registry() -> String {
     std::env::var("EVAL_REGISTRY").unwrap_or_else(|_| LOCAL_REGISTRY.to_string())
 }
 
+/// Build the edge from the working tree and return the tag to point an eval
+/// build at, via the `EDGE_IMAGE` the bake variable and the CLI's
+/// `core_image_arg` both read from the environment.
+///
+/// An eval image is composed FROM the PUBLISHED `core/edge`, so a suite that
+/// builds only the benchmark and the agent runs whatever edge was last
+/// released — and a change under `containers/core/edge` is invisible to it.
+/// That is not hypothetical: renaming the edge's env surface passed every
+/// suite here and failed in a real cluster run, because the published binary
+/// still wanted the old names. Built under the local-only registry so nothing
+/// can force-pull over it; callers pass `--no-pull` for the same reason.
+pub fn edge_image_from_source() -> String {
+    build_target_classic("edge", &[], &[("REGISTRY", LOCAL_REGISTRY)]);
+    format!("{LOCAL_REGISTRY}/core/edge:latest")
+}
+
 /// Build one shared-env eval image on the classic path: the benchmark, the
 /// agent, then the lean eval combining them. The two `eval.args.*` overrides are
 /// the CLI's Eval arm; `EVAL_BENCHMARK`/`EVAL_AGENT` drive its tag. A per-task

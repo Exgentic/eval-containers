@@ -12,8 +12,8 @@
 #
 #     . /usr/local/bin/start-edge || exit 1
 #
-# The edge sits between the agent and the gateway: it pins the model to
-# EVAL_MODEL and records every call verbatim, including the tool definitions the
+# The edge sits between the agent and the gateway: it pins the model to the
+# handle the framework selected and records every call verbatim, including the tool definitions the
 # gateway's own traces summarise away (.agents/edge/RULES.md rules 1, 6, 10).
 # One static binary, so it needs no supervisor — start it, wait for its own
 # probe, and point the agent at it instead of at the gateway.
@@ -28,7 +28,8 @@
 # reimplementing the bring-up.
 #
 # Reads:  ANTHROPIC_BASE_URL (the gateway, as the orchestrator set it),
-#         OPENAI_API_BASE    (the gateway, preferred when set)
+#         OPENAI_API_BASE    (the gateway, preferred when set),
+#         and via edge-env: OPENAI_API_KEY and the framework's EVAL_* axis
 # Writes: /output/model/edge.log, /output/model/calls.jsonl.zst
 # Exports: ANTHROPIC_BASE_URL, OPENAI_BASE_URL, GOOGLE_GEMINI_BASE_URL → :4100
 #
@@ -50,13 +51,23 @@ if ! _start_edge_health; then
     echo "start-edge: neither OPENAI_API_BASE nor ANTHROPIC_BASE_URL is set — no gateway to forward to" >&2
     return 1 2>/dev/null || exit 1
   fi
+  # The model handle and the spend caps come from the framework's own axis; one
+  # file maps that onto the edge's namespace, for this path and for the bundle's.
+  . /usr/local/bin/edge-env || return 1 2>/dev/null || exit 1
   # .zst: the edge holds one encoder open for the run, so it sees that each
   # request repeats the previous conversation — ~138x on a real trajectory,
   # against ~7x for anything that compresses each record alone.
+  # Both spellings, for one release. The eval image is built FROM the published
+  # core/edge, so this script reaches an edge older than itself until that image
+  # is republished — and an edge that finds no upstream refuses to start, which
+  # would fail every run in the fleet. Drop the OPENAI_API_BASE/OUT pair once the
+  # published edge reads the EDGE_* names.
+  #
   # EDGE_UPSTREAM is the chart's to say: "provider" when no gateway runs, in
   # which case the edge strips the protocol namespace the gateway serves.
-  OPENAI_API_BASE="$_start_edge_upstream" EDGE_UPSTREAM="${EDGE_UPSTREAM:-gateway}" \
-    OUT=/output/model/calls.jsonl.zst \
+  EDGE_API_BASE="$_start_edge_upstream" OPENAI_API_BASE="$_start_edge_upstream" \
+    EDGE_UPSTREAM="${EDGE_UPSTREAM:-gateway}" \
+    EDGE_OUT=/output/model/calls.jsonl.zst OUT=/output/model/calls.jsonl.zst \
     /opt/edge/start >> /output/model/edge.log 2>&1 &
   _start_edge_ready=0
   for _ in $(seq 1 60); do

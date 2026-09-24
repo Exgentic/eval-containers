@@ -1,0 +1,43 @@
+#!/bin/bash
+# The framework's axis, mapped onto the edge's own namespace (edge rule 17).
+#
+# SOURCE this, don't execute it: the exports must land in the caller's
+# environment. `. /usr/local/bin/edge-env`.
+#
+# The edge is a component, not a part of this framework: it reads EDGE_* and has
+# no opinion about what anything around it is called (edge rules 2, 17). This is
+# the one place the two vocabularies meet, so a launch sets EVAL_MODEL,
+# EVAL_MAX_TOKENS or any of the rest — by chart value, by the extra env a
+# dashboard launch passes, by compose — and never has to name the component.
+#
+# Sourced by start-edge, which brings the edge up on every path that reaches a
+# model, and by `run` before it hands the single-container bundle to
+# process-compose, which starts the edge as a supervised process instead.
+#
+# Reads:  OPENAI_API_KEY, EVAL_MODEL, EVAL_MAX_TOKENS, EVAL_MAX_COST_USD, EVAL_PRICE_IN,
+#         EVAL_PRICE_CACHE_READ, EVAL_PRICE_CACHE_WRITE, EVAL_PRICE_OUT,
+#         EVAL_COST_HEADER, EVAL_ON_LIMIT, EVAL_MODEL_API
+# Writes: the matching EDGE_* for each one that is set
+
+# Rule 5: a stack configured for protocol translation must fail at bring-up, and
+# this is where that variable is in scope — the edge no longer reads it.
+if [ -n "${EVAL_MODEL_API:-}" ]; then
+  echo "edge-env: EVAL_MODEL_API is set — the edge does not translate protocols; route through a gateway, which does" >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+for _edge_env_knob in MODEL MAX_TOKENS MAX_COST_USD PRICE_IN PRICE_CACHE_READ PRICE_CACHE_WRITE PRICE_OUT COST_HEADER ON_LIMIT; do
+  _edge_env_src="EVAL_$_edge_env_knob"
+  if [ -n "${!_edge_env_src:-}" ]; then
+    export "EDGE_$_edge_env_knob=${!_edge_env_src}"
+  fi
+done
+unset _edge_env_knob _edge_env_src
+
+# The credential the orchestrator holds, under the name the edge reads. Same
+# translation, one vendor's variable instead of this framework's: in k8s it is
+# the placeholder the gateway swaps out, in the bundle the real key the
+# in-process gateway wants back.
+if [ -n "${OPENAI_API_KEY:-}" ]; then
+  export EDGE_API_KEY="$OPENAI_API_KEY"
+fi

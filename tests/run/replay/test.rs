@@ -426,6 +426,7 @@ async fn ensure_images(benchmark: &str, agent: &str, task_id: &str, mode: Replay
                     "--no-pull",
                 ])
                 .env("EVAL_REGISTRY", &reg)
+                .env("EDGE_IMAGE", common::edge_image_from_source())
                 .status()
                 .unwrap_or_else(|e| panic!("failed to run cargo run -- build eval --task-id: {e}"));
             assert!(
@@ -478,6 +479,7 @@ async fn ensure_images(benchmark: &str, agent: &str, task_id: &str, mode: Replay
                 task_id,
                 "--no-pull",
             ])
+            .env("EDGE_IMAGE", common::edge_image_from_source())
             .status()
             .expect("failed to run cargo run -- build eval --task-id");
         assert!(
@@ -507,6 +509,7 @@ async fn ensure_images(benchmark: &str, agent: &str, task_id: &str, mode: Replay
             agent,
             "--no-pull",
         ])
+        .env("EDGE_IMAGE", common::edge_image_from_source())
         .status()
         .expect("failed to run cargo run -- build eval");
     assert!(

@@ -130,6 +130,12 @@ pub struct RunArgs {
     #[arg(long)]
     max_budget: Option<f64>,
 
+    /// Hard cap on the tokens (input + output) this run may spend. The edge
+    /// counts what every response reports, on any wire, and refuses further
+    /// calls once the cap is crossed. Default: no cap.
+    #[arg(long)]
+    max_tokens: Option<u64>,
+
     /// Use the in-repo `containers/benchmarks/<name>/` artifacts instead of the
     /// published registry artifact. For development.
     #[arg(long)]
@@ -287,6 +293,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(budget) = args.max_budget {
         envs.push(("EVAL_MODEL_MAX_BUDGET", budget.to_string()));
+    }
+    if let Some(tokens) = args.max_tokens {
+        envs.push(("EVAL_MAX_TOKENS", tokens.to_string()));
     }
     if args.force {
         envs.push(("EVAL_FORCE", "1".into()));
@@ -786,6 +795,13 @@ fn run_job(
     for s in &sets {
         helm.push("--set".into());
         helm.push(s.clone());
+    }
+    // --set-string, not --set: helm parses a bare 1000000 as a float and
+    // renders it "1e+06" — a token count the edge cannot read, and a run that
+    // asked to be capped going uncapped.
+    if let Some(t) = args.max_tokens {
+        helm.push("--set-string".into());
+        helm.push(format!("maxTokens={t}"));
     }
 
     // kubectl apply [-n ns] [--dry-run=server] -f -
