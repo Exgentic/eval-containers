@@ -62,8 +62,11 @@ if ! _start_edge_health; then
   # is republished — and an edge that finds no upstream refuses to start, which
   # would fail every run in the fleet. Drop the OPENAI_API_BASE/OUT pair once the
   # published edge reads the EDGE_* names.
+  #
+  # EDGE_UPSTREAM is the chart's to say: "provider" when no gateway runs, in
+  # which case the edge strips the protocol namespace the gateway serves.
   EDGE_API_BASE="$_start_edge_upstream" OPENAI_API_BASE="$_start_edge_upstream" \
-    EDGE_UPSTREAM=gateway \
+    EDGE_UPSTREAM="${EDGE_UPSTREAM:-gateway}" \
     EDGE_OUT=/output/model/calls.jsonl.zst OUT=/output/model/calls.jsonl.zst \
     /opt/edge/start >> /output/model/edge.log 2>&1 &
   _start_edge_ready=0

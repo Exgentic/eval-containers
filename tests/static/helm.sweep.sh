@@ -104,6 +104,20 @@ if ! cf=$(conftest test "$OUT"/*.yaml --policy "$POLICY" 2>&1); then
   fail=$((fail + 1))
 fi
 
+# 4b. the sidecars are optional: off, neither container renders, and the edge is
+# handed the real upstream instead of the gateway's loopback.
+thin=$(helm template thin "$CHART" --set benchmark="${names[0]}" --set ephemeral=true \
+  --set gatewayEnabled=false --set otelEnabled=false 2>&1)
+for pattern in "name: gateway" "name: otelcol" "OTEL_EXPORTER_OTLP_ENDPOINT"; do
+  case "$thin" in
+    *"$pattern"*) echo "FAIL thin render still has \`$pattern\`"; fail=$((fail + 1)) ;;
+  esac
+done
+case "$thin" in
+  *'EDGE_UPSTREAM'*) ;;
+  *) echo "FAIL thin render does not tell the edge to forward to the provider"; fail=$((fail + 1)) ;;
+esac
+
 # 5. the pod backstop must track --timeout, not a fixed constant: a larger
 # --timeout must not be killed early by a stale activeDeadlineSeconds (the
 # derivation regression — see containers/benchmarks/_chart/values.yaml).

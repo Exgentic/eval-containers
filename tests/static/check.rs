@@ -1911,9 +1911,14 @@ fn a_tag_rebinding_combo_job_pins_every_base_to_the_multi_arch_tag() {
         let missing: Vec<&String> = derived
             .iter()
             .filter(|(var, dir)| {
-                !body.contains(&format!(
-                    r#"export {var}="${{REGISTRY}}/{dir}:${{ORIG_TAG}}""#
-                ))
+                // The edge is the one base pinned to its hash tag, not $ORIG_TAG:
+                // :TAG can be re-aliased under a running release, a hash tag cannot.
+                let pin = if var == "EDGE_IMAGE" {
+                    format!(r#"export {var}="${{REGISTRY}}/{dir}:${{EDGE_HASH}}""#)
+                } else {
+                    format!(r#"export {var}="${{REGISTRY}}/{dir}:${{ORIG_TAG}}""#)
+                };
+                !body.contains(&pin)
             })
             .map(|(var, _)| var)
             .collect();
@@ -1925,6 +1930,23 @@ fn a_tag_rebinding_combo_job_pins_every_base_to_the_multi_arch_tag() {
              BENCHMARK_IMAGE/AGENT_IMAGE are: {missing:?}"
         );
     }
+    // The shared combos job never rebinds TAG, so it is not in `combo_jobs` — but it
+    // bakes the same file and must pull the same hash-pinned edge.
+    let shared = jobs
+        .iter()
+        .find(|(n, _)| n == "combos")
+        .expect("release-images.yml has a `combos` job");
+    assert!(
+        shared
+            .1
+            .contains(r#"export EDGE_IMAGE="${REGISTRY}/core/edge:${EDGE_HASH}""#)
+            && shared
+                .1
+                .contains("EDGE_HASH: ${{ needs.enumerate.outputs.edge_hash }}"),
+        "the `combos` job must pin EDGE_IMAGE to core/edge:${{EDGE_HASH}} from enumerate's \
+         edge_hash output — pulled at :TAG, a concurrent run's re-alias swaps the edge \
+         under the build (2026-09-23)"
+    );
     eprintln!(
         "✓ {} TAG-rebinding combo job(s) pin all {} combo base refs to the multi-arch tag",
         combo_jobs.len(),
