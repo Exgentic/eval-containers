@@ -275,10 +275,23 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
              namespace the edge's own, and the mapping runner/edge-env's"
         );
     }
+    // EDGE_UPSTREAM is the one name the chart says itself, and deliberately: it
+    // states whether a gateway runs beside the runner, which is the chart's own
+    // topology and not a launch knob anyone types.
     let job = read("containers/benchmarks/_chart/templates/job.yaml");
+    let chart_edge_names: Vec<&str> = job
+        .match_indices("EDGE_")
+        .map(|(i, _)| {
+            job[i..]
+                .split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .next()
+                .unwrap_or("")
+        })
+        .filter(|n| *n != "EDGE_UPSTREAM")
+        .collect();
     assert!(
-        job.contains("EVAL_MAX_TOKENS") && !job.contains("EDGE_"),
-        "the chart must set EVAL_MAX_TOKENS, never an EDGE_* name"
+        job.contains("EVAL_MAX_TOKENS") && chart_edge_names.is_empty(),
+        "the chart must set EVAL_* names (EDGE_UPSTREAM excepted): found {chart_edge_names:?}"
     );
     let cli = read("cli/src/run.rs");
     assert!(!cli.contains("EDGE_"), "the CLI must set EVAL_* names only");
