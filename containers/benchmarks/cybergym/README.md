@@ -17,6 +17,8 @@ Per-task vulnerability-reproduction benchmark ([UC Berkeley / sunblaze-ucb](http
 
 CyberGym ships **1507** tasks: **1368 `arvo`** + **139 `oss-fuzz`**. Only the `arvo` tasks carry a reproducible pre/post-patch replay image ([`n132/arvo:<id>-{vul,fix}`](https://github.com/n132/ARVO)), which is what a self-contained **local** differential grader needs. The 139 `oss-fuzz` tasks have no such image and could only be "graded" by collecting the PoC and emitting `-1` — never a real pass/fail. This port is therefore **scoped to the 1368 `arvo` tasks**, so every task here is genuinely, locally gradable. `tasks.txt` lists the bare ARVO numbers, and the Dockerfile's target extraction hard-fails on a non-ARVO base.
 
+**Prebuilt images vs. gradable tasks.** All 1368 tasks are buildable/gradable on demand (`--task-id <id>`), but each pulls a ~9 GB ARVO replay base, so the fleet publishes prebuilt `benchmarks/cybergym-<id>` images only for a **curated subset** — the ids in [`publish.txt`](publish.txt) (currently `10013`). Both the release workflow and the fleet index read `publish.txt`, so that is the single knob for what ships; add ids there to publish more.
+
 ## Agent contract
 
 - The masked vulnerable source is extracted at **`/app/repo`** (agent-readable).

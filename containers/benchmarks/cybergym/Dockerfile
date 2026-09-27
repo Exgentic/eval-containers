@@ -113,6 +113,10 @@ LABEL eval.benchmark.name="cybergym"
 LABEL eval.benchmark.description="CyberGym - reproduce real OSS vulnerabilities by generating a proof-of-concept"
 LABEL eval.benchmark.tasks="1368"
 LABEL eval.benchmark.env="per-task"
+# docker.io/n132/arvo replay images are x86_64-only, so the per-task build (and
+# the release shard) is amd64-only; without this the shard would attempt arm64
+# and fail its first RUN on an amd64 base.
+LABEL eval.platforms="linux/amd64"
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
