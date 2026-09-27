@@ -14,3 +14,19 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/hwe-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: hwe-bench
+    # Rule 10 / 24e — matches the chart's preset (4 CPU / 16Gi), taken from
+    # upstream's Harbor adapter template
+    # (hwe_bench/harness/harbor/templates/task.toml.j2), which hardcodes
+    # `cpus = 4` and `memory_mb = 16384` for every one of the 169 cases — the
+    # template is parameterized only by instance_id and image_name, so this is
+    # upstream's figure per task, not a max over a distribution. The shared
+    # runner default of 2G is far too small: grading runs a Verilator build+sim,
+    # and the Chisel repos (rocket-chip, XiangShan) first elaborate Scala to
+    # Verilog under Mill/JVM. An OOM during the agent phase grades as reward 0,
+    # indistinguishable from a failed fix. Upstream declares no storage_mb, so
+    # there is no ephemeral-storage counterpart (which Compose lacks anyway).
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 16G

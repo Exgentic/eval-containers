@@ -1,0 +1,56 @@
+# HWE-Bench (pku-liang/hwe-bench, 169 RTL bug-repair cases) — resources come from
+# upstream's own Harbor adapter, which is the only place hwe-bench states what a
+# task needs. At the dataset revision this benchmark pins (build.sh's
+# HWE_REV=82a42e0a05719366a326e09ddc668ea0d46c91f6), the adapter renders one
+# task.toml per case from a single template,
+# `hwe_bench/harness/harbor/templates/task.toml.j2`:
+#
+#   cpus              4
+#   memory_mb         16384 MiB = 16Gi
+#   build_timeout_sec 600
+#   (no storage_mb declared)
+#
+# Unlike terminal-bench (presets/terminal-bench.yaml), where each task.toml is
+# checked in and memory_mb varies 2048/4096/8192 across 89 tasks, here the
+# template takes only `instance_id` and `image_name` as parameters
+# (`harness/harbor/adapter.py`) — cpus and memory_mb are literals in the
+# template. So this is upstream's figure for EVERY one of the 169 cases, not a
+# maximum chosen over a distribution: there is no modal value to trade against,
+# and nothing to size down to.
+#
+# Why the chart default of 2Gi is wrong here: grading is a hardware-simulation
+# build, not a test run. `grade.sh` resets to the base commit, applies the
+# candidate diff and runs the case's `tb_script`, which per project means a
+# Verilator build + sim, Spike for cva6, or — for the Chisel repos (rocket-chip,
+# XiangShan) — a full Mill/Scala elaboration to Verilog before Verilator even
+# starts. A JVM elaborating XiangShan does not fit in 2Gi. An OOM kill during the
+# agent phase grades as reward 0, indistinguishable from the agent simply failing
+# to fix the bug, so an undersized limit silently deflates the score rather than
+# erroring. Sizing to upstream's figure costs nothing when unused: `limits` is a
+# ceiling, and `requests` (what the scheduler reserves against the Kueue memory
+# quota) stays at the chart default 512Mi.
+#
+# cpus follows upstream's 4 here — and this is the one place this preset differs
+# in reasoning from terminal-bench's, which stayed at the chart default of 2
+# because only 3 of its 89 tasks asked for 4. Upstream asks for 4 on every
+# hwe-bench case, and Verilator/Mill builds are the parallel-compile workload
+# that actually uses them. CPU is compressible, so the cost of the wider Kueue
+# cpu reservation buys real wall-clock back on a 2-4 min (ibex) to
+# many-minute (Chisel) grade.
+#
+# ephemeral-storage is deliberately ABSENT: upstream declares no storage_mb for
+# hwe-bench (terminal-bench's 10Gi came from its task.tomls actually stating it),
+# and the design repo plus simulation build products live in the per-task base
+# image's own layers. Inventing a limit here would be a number with no source —
+# an operator who hits eviction can set one per run with `--set storageOverride=`.
+#
+# Rule 24e: these limits MUST match compose.yaml's `deploy.resources.limits`
+# modulo k8s unit syntax (4 CPU / 16G there, '4' / 16Gi here). An operator can
+# still raise memory for a single run with `--set memoryOverride=`.
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: '4'
+    memory: 16Gi
