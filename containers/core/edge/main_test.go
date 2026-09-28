@@ -1,14 +1,18 @@
 package main
 
 import (
+	"crypto/x509"
 	"encoding/json"
+	"fmt"
 	"io"
 	"math"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -1716,5 +1720,35 @@ func TestAnUnreadableNumberIsRefusedAtBoot(t *testing.T) {
 	}
 	if got := envInt("EDGE_MAX_TOKENS", 0); got != 1000000 {
 		t.Errorf("EDGE_MAX_TOKENS=1e+06 read as %d — a cap that was asked for and not applied", got)
+	}
+}
+
+// The edge makes the HTTPS call itself when no gateway fronts it, from inside
+// whatever image the benchmark ships — and terminal-bench's per-task Ubuntu ships
+// no CA store at all, so every call failed to verify the proxy's (public) cert.
+// The binary carries public roots for exactly that host. Checked in a child
+// process, because a process loads its root store once: this one's is already
+// the developer's.
+func TestTheEdgeTrustsPublicCertsOnAHostWithNoCAStore(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("the edge runs on Linux; macOS verifies through its keychain and never falls back")
+	}
+	if os.Getenv("EDGE_ROOTS_CHILD") == "1" {
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil || len(pool.Subjects()) == 0 { //nolint:staticcheck // Subjects is fine for a count
+			fmt.Println("no roots")
+			os.Exit(1)
+		}
+		fmt.Println("roots", len(pool.Subjects())) //nolint:staticcheck
+		os.Exit(0)
+	}
+	empty := t.TempDir()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestTheEdgeTrustsPublicCertsOnAHostWithNoCAStore$")
+	cmd.Env = append(os.Environ(), "EDGE_ROOTS_CHILD=1",
+		"SSL_CERT_FILE="+filepath.Join(empty, "none.pem"), "SSL_CERT_DIR="+empty)
+	out, err := cmd.CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "roots ") {
+		t.Fatalf("with no CA store on the host the edge trusts nothing, so every HTTPS "+
+			"upstream fails to verify: %v\n%s", err, out)
 	}
 }
