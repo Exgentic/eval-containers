@@ -7,7 +7,7 @@
 //
 // One static binary with no runtime dependency (rule 15): the same file is a
 // scratch image and a process inside every eval image. Stdlib apart from
-// klauspost/compress, which is pure Go — it links statically and costs 256 KB on
+// x/crypto's fallback roots and klauspost/compress, both pure Go — it links statically and costs 256 KB on
 // a 6.4 MB binary, for a record that compresses ~138x instead of gzip's ~4x.
 package main
 
@@ -30,6 +30,9 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	// Public roots for an image with no CA store (terminal-bench ships none);
+	// a host with its own keeps using them (rule 15).
+	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
 // One recorded call. Headers exclude every credential-bearing one, so rule 9
