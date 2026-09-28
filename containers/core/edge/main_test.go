@@ -1723,12 +1723,8 @@ func TestAnUnreadableNumberIsRefusedAtBoot(t *testing.T) {
 	}
 }
 
-// The edge makes the HTTPS call itself when no gateway fronts it, from inside
-// whatever image the benchmark ships — and terminal-bench's per-task Ubuntu ships
-// no CA store at all, so every call failed to verify the proxy's (public) cert.
-// The binary carries public roots for exactly that host. Checked in a child
-// process, because a process loads its root store once: this one's is already
-// the developer's.
+// An image with no CA store must still verify a public upstream. Checked in a
+// child process, since a process loads its root store once.
 func TestTheEdgeTrustsPublicCertsOnAHostWithNoCAStore(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("the edge runs on Linux; macOS verifies through its keychain and never falls back")

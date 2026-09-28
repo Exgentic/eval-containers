@@ -30,11 +30,8 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-	// Public root certificates, used only when the host has none. The edge runs
-	// inside whatever image a benchmark ships, and some ship no CA store at all
-	// (terminal-bench's per-task Ubuntu), so with no gateway doing TLS for it every
-	// HTTPS call failed to verify — a runtime dependency rule 15 says it must not
-	// have. A host that does have roots keeps using its own.
+	// Public roots for an image with no CA store (terminal-bench ships none);
+	// a host with its own keeps using them (rule 15).
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
 
