@@ -260,7 +260,7 @@ jobs:
           # below intersects with it. Safe to prune here — unchanged images are
           # already at :latest, the target tag — but NEVER on a version tag, where
           # every image must gain the new tag (the full matrix carries them).
-          STALE_TARGETS=""; BASES_DIRTY=false; CANARY_DIRTY=false
+          STALE_TARGETS=""; BASES_DIRTY=false
           if [ "$IS_CHANNEL" = "true" ]; then
             STATUS=$(bash containers/scripts/fleet-status.sh latest)
             GRAPHMAP=$(bash containers/scripts/fleet-hash.sh graph)
@@ -271,12 +271,6 @@ jobs:
               -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
             comm -12 <(printf '%s\n' "$STALE_TARGETS" | sort -u) <(printf '%s\n' "$deps_now") \
               | grep -q . && BASES_DIRTY=true
-            # Combo-global inputs (combination files, runner/, entrypoint/, core
-            # parents) dirty EVERY combo but no benchmark/agent leaf — a canary
-            # combo detects them; parent-specific staleness is caught per combo.
-            ch=$(bash containers/scripts/fleet-hash.sh combo aime claude-code | head -1 | cut -f2)
-            bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/aime--claude-code:latest" "$ch" >/dev/null \
-              || CANARY_DIRTY=true
           fi
           all=$(find containers -name docker-bake.hcl -not -name 'combination*' \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
@@ -498,10 +492,18 @@ jobs:
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
           fi
-          # Channel run: keep only combos with a stale parent — unless a combo-global
-          # input moved (canary), which dirties every pair. The combos job still
-          # judges each pair itself (carry), so over-inclusion here only costs time.
-          if [ "$IS_CHANNEL" = "true" ] && [ "$CANARY_DIRTY" != "true" ]; then
+          # Channel run: keep the combos that moved. Two ways a pair moves:
+          #  - a parent moved (below) — the only way a never-published pair is
+          #    built, since whether to publish one is a lineup decision;
+          #  - its OWN published :latest is behind its input hash (after), read per
+          #    combo, so a change to runner/, the edge or the combination files is
+          #    caught wherever it has not landed yet. A single canary combo used to
+          #    stand in for that, and a scoped dispatch that refreshed the canary
+          #    hid 5,788 stale combos from every night after it.
+          # The combos job still judges each pair itself (carry), so over-inclusion
+          # here only costs time.
+          if [ "$IS_CHANNEL" = "true" ]; then
+            all_combos="$combos"
             sb=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^benchmark-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
             sa=$(printf '%s\n' "$STALE_TARGETS" | sed -n 's/^agent-//p' | jq -Rsc 'split("\n")|map(select(length>0))')
             # A per-task pair's benchmark side is its own task base, not `sb`: a
@@ -515,6 +517,16 @@ jobs:
                     or (if $p.task == "" then ($sb | index($p.b)) != null
                         else $mv[$p.b + "\t" + $p.task] != null end)) ]')
             echo "channel run -> $(printf '%s' "$combos" | jq length) combo pair(s) with stale parents"
+            behind=$(mktemp)
+            printf '%s' "$all_combos" | jq -r '.[] | "\(.b) \(.a) \(.task // "")"' \
+              | bash containers/scripts/combo-freshness.sh > "$behind" \
+              || { echo "::error::combo freshness sweep failed"; exit 1; }
+            echo "channel run -> $(grep -c . "$behind") published combo(s) behind their input hash"
+            combos=$(printf '%s\n%s' "$combos" "$all_combos" | jq -cs --rawfile behind "$behind" '
+              ($behind | split("\n") | map(select(length>0)) | INDEX(.)) as $b
+              | (.[0] + [ .[1][] | select($b[(if .task == "" then .b else .b + "-" + (.task | ascii_downcase) end)
+                                          + "--" + .a] != null) ])
+              | unique_by([.b, .a, .task])')
           fi
 
           # Every per-task combo (swe-bench, terminal-bench, skills-bench, deepswe) is the
