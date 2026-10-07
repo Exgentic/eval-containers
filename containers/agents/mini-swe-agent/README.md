@@ -1,27 +1,27 @@
 # mini-swe-agent
 
-Mini-SWE-agent: lightweight SWE coding agent from the Princeton SWE-agent team.
+Mini-SWE-agent: lightweight SWE coding agent from the SWE-agent team.
 
 ## At a glance
 
 | Field | Value |
 |-------|-------|
-| Upstream | [princeton-nlp/SWE-agent](https://github.com/princeton-nlp/SWE-agent) |
-| Version | `2.2.8` |
-| Install mechanism | pip (`mini-swe-agent`, into `/opt/swe-agent-venv`) |
+| Upstream | [SWE-agent/mini-swe-agent](https://github.com/SWE-agent/mini-swe-agent) |
+| Version | `2.4.6` |
+| Install mechanism | pip (`mini-swe-agent`, into `/opt/mini-venv`) |
 | Language runtime | Python |
 
 ## What it does
 
-Mini-SWE-agent is the stripped-down, single-binary-ish version of the full SWE-agent: a software-engineering agent that reads, edits, and runs code against a local workspace. It uses LiteLLM under the hood, so any OpenAI-compatible endpoint works — including the Eval Containers proxy.
+Mini-SWE-agent is the minimal sibling of the full SWE-agent: a single bash tool, a linear message history, and no custom editing commands. It reads, edits, and runs code in its working directory until it submits with `echo COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT`. It uses LiteLLM under the hood, so any OpenAI-compatible endpoint works — including the Eval Containers gateway.
 
 ## How Eval Containers runs it
 
-The entrypoint activates the venv, sets `OPENAI_API_KEY` and `OPENAI_BASE_URL` (pointing at `http://model:4000`), and runs `mini --model "openai/$EVAL_MODEL" --yolo --task "$TASK"`. `--yolo` auto-approves actions. The agent prints its answer and trajectory to stdout.
+The entrypoint runs `mini --model "openai/$MODEL" --yolo --exit-immediately --cost-limit 0 --task "$TASK"` against `OPENAI_BASE_URL`. `--yolo` auto-approves actions; `--exit-immediately` skips the post-submit confirmation prompt. Mini's own cost tracking is set to ignore unknown models and its cost cap is disabled — the gateway is the cost authority and `run-agent` enforces the timeout. Its config and trajectory go to `/tmp/mini-swe-agent`. The agent's messages stream to stdout.
 
 ## Version
 
-Pinned to `2.2.8` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
+Pinned to `2.4.6` via `ARG AGENT_VERSION`. Override at build time with `build agent --agent-version <x>` — see [agents/RULES.md](../../../.agents/agents/RULES.md) rule 13.
 
 ## Files
 
