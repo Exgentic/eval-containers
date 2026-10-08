@@ -1,0 +1,4 @@
+# Wall-clock budget per task, matching compose.yaml's EVAL_TIMEOUT default
+# (3600s, the paper's 1 hour of agent wall-clock, rule 14). Without this preset
+# the chart's 300s default applied on the cluster.
+timeout: '3600'
