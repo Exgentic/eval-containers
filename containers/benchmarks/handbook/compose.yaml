@@ -2,8 +2,9 @@
 #
 # Single-service topology: the MCP proxy (all 6 servers, 82 tools) runs INSIDE
 # the runner on localhost:8000 — HANDBOOK's native co-located design, and file
-# permissions over extra containers (RULES.md rule 6). No sidecar, no preset, no
-# task-profiles: one image serves all 65 tasks, graded locally by /grade.sh.
+# permissions over extra containers (RULES.md rule 6). No sidecar, no
+# task-profiles (the chart preset only carries the 3600s timeout): one image
+# serves all 65 tasks, graded locally by /grade.sh.
 #
 # Task selection is the shared template's `EVAL_TASK_ID` (rule 24c):
 #   EVAL_TASK_ID=42 EVAL_AGENT=openclaw docker compose -f compose.yaml up --abort-on-container-exit
