@@ -1,0 +1,5 @@
+# Wall-clock budget per task, matching compose.yaml's EVAL_TIMEOUT default
+# (15000s = 250 min, the CyberGym leaderboard's Claude Code CLI budget — see
+# README). Without this preset the chart's 300s default applied on the cluster,
+# so cluster runs got 1/50th of the budget a local run gets.
+timeout: '15000'
