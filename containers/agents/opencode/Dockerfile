@@ -58,6 +58,8 @@ export OPENCODE_DISABLE_MODELS_FETCH=1
 # was a source of anomalous results in the 113-task sweep. Keep the window
 # honest: fail loud on overflow rather than quietly rewriting history.
 export OPENCODE_DISABLE_AUTOCOMPACT=1
+# opencode's own cap is 32000, and a turn cut there ends the session with exit 0.
+export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=128000
 # `--`: end-of-options. A task whose text begins with "-" is otherwise parsed as
 # a flag — `opencode run` then prints its usage and exits 1 WITHOUT running, which
 # scores as reward 0 and is indistinguishable from a wrong answer (observed on

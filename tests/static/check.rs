@@ -1070,6 +1070,16 @@ fn internet_policy_wired_through_to_agents() {
     eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based warn-not-fail");
 }
 
+#[test]
+fn opencode_reply_cap_is_raised() {
+    let dockerfile = repo_root().join("containers/agents/opencode/Dockerfile");
+    assert!(
+        fs::read_to_string(dockerfile)
+            .unwrap()
+            .contains("export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=128000")
+    );
+}
+
 // The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
 // (benchmarks/RULES.md 21c) is artifact-shaped Dockerfile structure, so per
 // this file's own module doc it lives in conftest, not here — see
