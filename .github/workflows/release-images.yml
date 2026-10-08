@@ -241,6 +241,7 @@ jobs:
           INCLUDE_PER_TASK: ${{ inputs.include_per_task }}
           ONLY: ${{ inputs.only }}
           TASKS: ${{ inputs.tasks }}
+          STANDALONE: ${{ inputs.include_standalone || 'false' }}
           IS_DISPATCH: ${{ github.event_name == 'workflow_dispatch' }}
           IS_CHANNEL: ${{ github.event_name == 'schedule' }}
         run: |
@@ -592,7 +593,12 @@ jobs:
           # per combo, against ~12 s for a combo whose agent is already warm. A
           # hundred combos amortise it (100 x ~35 s cold-to-warm ≈ 1 h at worst,
           # inside the job's 120 min); chunk still doubles past 128 shards.
-          pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" 100)")
+          # Standalone doubles the work per item (each combo also builds its
+          # -standalone bundle): deepswe x mini-swe-agent with standalone measured
+          # ~74 s per item and its 100-item shard was cancelled at 120 min after 97.
+          # Halve the chunk so a shard stays near an hour.
+          pc_chunk=100; [ "$STANDALONE" != "true" ] || pc_chunk=50
+          pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" "$pc_chunk")")
           # Per-task bases are dealt (see stripe above). Combo shards stay sliced:
           # their items are task-major, so the eight agents of a task run
           # consecutively and the task's base image is pulled once, not eight times.
