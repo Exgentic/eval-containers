@@ -31,6 +31,8 @@ export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
+# A backgrounded command outlives the Bash time cap; the agent can wait on it until EVAL_TIMEOUT.
+export CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1
 # Web tools are gated on the benchmark's declared internet policy: when the
 # benchmark sets EVAL_INTERNET=false (mirrors its eval.benchmark.internet label),
 # deny WebSearch/WebFetch so the fix comes from the agent, not a search — some

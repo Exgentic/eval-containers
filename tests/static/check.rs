@@ -1017,6 +1017,16 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
+#[test]
+fn claude_code_runs_without_background_tasks() {
+    let dockerfile = repo_root().join("containers/agents/claude-code/Dockerfile");
+    assert!(
+        fs::read_to_string(dockerfile)
+            .unwrap()
+            .contains("export CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1")
+    );
+}
+
 /// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —
 /// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
 /// run-agent forwards it and WARNS (does not fail) for an agent whose /run.sh
