@@ -44,7 +44,7 @@ EVAL_TASK_ID=0 EVAL_AGENT=openclaw EVAL_MODEL=anthropic/claude-opus-4-8 \
 # → output/handbook/0/task/{result.json,verifier_report.json}
 ```
 
-**k8s** (shared chart, no preset needed):
+**k8s** (shared chart; its preset only sets the 3600s timeout):
 ```bash
 helm template containers/benchmarks/_chart \
   --set benchmark=handbook --set agent=openclaw --set task=0 | kubectl apply -f -
