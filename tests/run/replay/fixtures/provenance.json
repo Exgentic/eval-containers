@@ -101,8 +101,7 @@
       "reward": 1.0,
       "passed": true,
       "notes": [
-        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both.",
-        "Run 20260922-141704, model slug claude-opus-5."
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
       ]
     },
     "promptfoo-redteam-5-claude-code": {
@@ -120,8 +119,7 @@
       "reward": 1,
       "passed": true,
       "notes": [
-        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both.",
-        "Run pfrt-20260923-112127, model slug aws--claude-sonnet-4-6."
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
       ]
     },
     "aime-14-pi": {
@@ -139,8 +137,7 @@
       "reward": 1,
       "passed": true,
       "notes": [
-        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both.",
-        "Run 20260909-125103-768d, model slug azure--FW-GLM-5.2."
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
       ]
     },
     "aime-12-opencode": {
@@ -158,8 +155,7 @@
       "reward": 1,
       "passed": true,
       "notes": [
-        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both.",
-        "Run 20260909-115250-f15a, model slug azure--FW-GLM-5.2."
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
       ]
     },
     "bfcl-3-claude-code": {
@@ -177,8 +173,7 @@
       "reward": 0,
       "passed": false,
       "notes": [
-        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both.",
-        "Run 20260908-162704-133d, model slug azure--FW-GLM-5.2."
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
       ]
     },
     "gsm8k-2-pi": {
@@ -196,8 +191,7 @@
       "reward": 0,
       "passed": false,
       "notes": [
-        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both.",
-        "Run 20260915-152044-48c9, model slug Azure--gpt-4.1-mini."
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
       ]
     }
   }
