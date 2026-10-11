@@ -392,7 +392,13 @@ fn fold_anthropic_sse(events: &[Value], t: &mut Turn) {
 }
 
 /// Fold OpenAI chat-completions streaming deltas into one turn.
+///
+/// Tool calls arrive as fragments keyed by `index` — the id and name on the
+/// first, the arguments a character or two at a time after it — so they are
+/// merged by that index. Appending each fragment instead turns one call into
+/// hundreds of malformed ones: a recorded pi turn replayed as 349.
 fn fold_openai_sse(events: &[Value], t: &mut Turn) {
+    let mut by_index: Vec<(u64, Value, Value, String)> = Vec::new();
     for e in events {
         let Some(choice) = e.get("choices").and_then(Value::as_array).and_then(|c| c.first())
         else {
@@ -410,11 +416,39 @@ fn fold_openai_sse(events: &[Value], t: &mut Turn) {
             .and_then(|d| d.get("tool_calls"))
             .and_then(Value::as_array)
         {
-            t.tool_calls.extend(tcs.iter().cloned());
+            for tc in tcs {
+                let idx = tc.get("index").and_then(Value::as_u64).unwrap_or(0);
+                let slot = match by_index.iter().position(|(i, ..)| *i == idx) {
+                    Some(pos) => &mut by_index[pos],
+                    None => {
+                        by_index.push((idx, json!(null), json!(null), String::new()));
+                        by_index.last_mut().expect("just pushed")
+                    }
+                };
+                if let Some(id) = tc.get("id").filter(|v| !v.is_null()) {
+                    slot.1 = id.clone();
+                }
+                let func = tc.get("function");
+                if let Some(n) = func.and_then(|f| f.get("name")).filter(|v| !v.is_null()) {
+                    slot.2 = n.clone();
+                }
+                if let Some(a) = func
+                    .and_then(|f| f.get("arguments"))
+                    .and_then(Value::as_str)
+                {
+                    slot.3.push_str(a);
+                }
+            }
         }
         if let Some(fr) = choice.get("finish_reason").and_then(Value::as_str) {
             t.finish_reason = fr.into();
         }
+    }
+    by_index.sort_by_key(|(i, ..)| *i);
+    for (_, id, name, args) in by_index {
+        let args = if args.is_empty() { "{}".into() } else { args };
+        t.tool_calls
+            .push(json!({"id": id, "name": name, "arguments": args}));
     }
 }
 
@@ -1058,6 +1092,24 @@ mod tests {
         let turns = parse_calls(&raw);
         assert_eq!(turns.len(), 1, "only the crossing that carried an answer is a turn");
         assert_eq!(turns[0].text, "hi");
+    }
+
+    /// OpenAI streams a tool call as fragments keyed by index: the id and
+    /// name once, then the arguments a piece at a time.
+    #[test]
+    fn calls_merge_streamed_tool_call_fragments_by_index() {
+        let frames = [
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c1","function":{"name":"run","arguments":"{\"a\":"}}]}}]}"#,
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]}}]}"#,
+            r#"{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"c2","function":{"name":"stop","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}"#,
+        ];
+        let body: String = frames.iter().map(|f| format!("data: {f}\n")).collect();
+        let rec = json!({"status": 200, "wire": "openai", "response": body});
+        let turns = parse_calls(&rec.to_string());
+        assert_eq!(turns[0].tool_calls.len(), 2, "two calls, not one per fragment");
+        let (id, name, args) = tool_parts(&turns[0].tool_calls[0], "x");
+        assert_eq!((id, name), (json!("c1"), json!("run")));
+        assert_eq!(parse_args(Some(&args)), json!({"a": 1}), "fragments reassemble");
     }
 
     /// A non-streamed Anthropic body, and the finish-reason default: text only
