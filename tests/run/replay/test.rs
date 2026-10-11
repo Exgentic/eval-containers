@@ -93,8 +93,11 @@ async fn replay_compose(
     let compose_file = cwd.join(format!("containers/benchmarks/{benchmark}/compose.yaml"));
     // Calls win over traces: the bytes that crossed, not a summary.
     let fixtures = cwd.join("tests/run/replay/fixtures");
+    let zst = fixtures.join(format!("{benchmark}-{task_id}-{agent}.calls.jsonl.zst"));
     let calls = fixtures.join(format!("{benchmark}-{task_id}-{agent}.calls.jsonl"));
-    let (fixture, mount) = if calls.exists() {
+    let (fixture, mount) = if zst.exists() {
+        (zst, "/data/calls.jsonl.zst")
+    } else if calls.exists() {
         (calls, "/data/calls.jsonl")
     } else {
         (

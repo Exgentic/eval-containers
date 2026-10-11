@@ -49,7 +49,7 @@ Parent: [../RULES.md](../RULES.md)
    trust-the-tree allowlist once blinded this scan and let a live HF token, a
    LiteLLM key, and Google OAuth tokens through.
 
-5. **Filename convention.** `{benchmark}-{task-id}-{agent}.calls.jsonl`, or
+5. **Filename convention.** `{benchmark}-{task-id}-{agent}.calls.jsonl.zst`, or
    `.traces.jsonl` for a fixture recorded before the calls record existed. One
    fixture per (benchmark, task, agent) combination; the model is fixed per
    release and recorded in `fixtures/provenance.json`.
@@ -65,8 +65,10 @@ Parent: [../RULES.md](../RULES.md)
    need no per-gateway decoding — litellm and bifrost encode span output
    differently, the wire does not. The replay model reads whichever is
    mounted and prefers calls; existing `.traces.jsonl` fixtures stay valid
-   until re-recorded (uncompressed, so the replay model keeps its two
-   dependencies).
+   until re-recorded. A calls fixture is committed zstd-compressed
+   (`.calls.jsonl.zst`) — 17x smaller, 50x for the largest — and the capture
+   step MUST recompress into a complete frame, because the edge leaves its own
+   frame unfinalized and no streaming decoder will read that.
 
 6. **Provenance record.** `fixtures/provenance.json` MUST record, for
    every fixture: the model name and version, the agent version, the
