@@ -68,7 +68,7 @@ on:
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, hwe-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, swe-bench-multimodal, hwe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -374,23 +374,27 @@ jobs:
             #               and HF slug are a string transform of the task id that
             #               only its build.sh knows, so it builds like the three
             #               above while sourcing ids from the repo.
-            for B in swe-bench:bake hwe-bench:script; do
+            #   kind=plain  swe-bench-multimodal — its Dockerfile's own FROM names
+            #               the per-task base (docker.io/swebench/sweb.eval.x86_64.<id>,
+            #               amd64-only) from EVAL_TASK_ID alone: no arch to probe,
+            #               no context to bind.
+            for B in swe-bench:bake hwe-bench:script swe-bench-multimodal:plain; do
               K="${B##*:}"; B="${B%%:*}"
               tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
               tks=$(jq -Rn --arg B "$B" --arg K "$K" \
                 '[inputs | select(length>0 and (startswith("#") | not)) | {b:$B, task:., kind:$K}]' < "$tf")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             done
-            #   kind=arvo   cybergym — FROM docker.io/n132/arvo:<id>-{vul,fix}
-            #               (Docker Hub, amd64-only, two FROM stages): its own
-            #               kind so the swe-bench Epoch-base branch above does not
+            #   kind=plain  cybergym — FROM docker.io/n132/arvo:<id>-{vul,fix}
+            #               (Docker Hub, amd64-only, two FROM stages), so the
+            #               swe-bench Epoch-base branch above does not
             #               apply. Its ids come from publish.txt — the SHIPPED
             #               subset, not the full 1368-task gradable universe in
             #               tasks.txt (each arvo base is ~9 GB; publish.txt is the
             #               allowlist fleet-index.py reads too). Absent -> nothing.
             pf="containers/benchmarks/cybergym/publish.txt"
             if [ -f "$pf" ]; then
-              tks=$(jq -Rn '[inputs | select(length>0 and (startswith("#") | not)) | {b:"cybergym", task:., kind:"arvo"}]' < "$pf")
+              tks=$(jq -Rn '[inputs | select(length>0 and (startswith("#") | not)) | {b:"cybergym", task:., kind:"plain"}]' < "$pf")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
             fi
             pertask="$acc"
@@ -901,14 +905,15 @@ jobs:
                   echo "::warning::$ref built $built != $ARCH (upstream arch-pinned) — skipping push; merge keeps it single-arch"
                 fi
               else echo "::error::per-task build failed: $ref"; fails=$((fails+1)); fi
-            elif [ "$KIND" = "arvo" ]; then
-              # cybergym: FROM docker.io/n132/arvo:<task>-{vul,fix} keyed on
-              # EVAL_TASK_ID (two build stages). Unlike swe-bench there is no Epoch
-              # per-arch base to probe and no EVAL_BASE_ARCH — the arvo images are
+            elif [ "$KIND" = "plain" ]; then
+              # The Dockerfile's own FROM names the per-task base from EVAL_TASK_ID
+              # (cybergym: docker.io/n132/arvo:<task>-{vul,fix}; swe-bench-multimodal:
+              # docker.io/swebench/sweb.eval.x86_64.<task>). Unlike swe-bench there is
+              # no Epoch per-arch base to probe and no EVAL_BASE_ARCH — these bases are
               # amd64-only (declared LABEL eval.platforms="linux/amd64"), so arm64
               # was already skipped by the PLATS check above and this branch only
-              # runs on amd64. The final stage is FROM benchmark-base-external, not
-              # core/entrypoint, so no entrypoint context is set.
+              # runs on amd64. Neither binds a core context: their in-repo base is
+              # pulled at :latest like any other image.
               if retry docker buildx bake -f containers/docker-bake.hcl -f "containers/benchmarks/$B/docker-bake.hcl" \
                    --set "benchmark-${B}.labels.eval.input-hash=${H}" \
                    --set "benchmark-${B}.args.EVAL_TASK_ID=${TASK}" \
@@ -916,7 +921,7 @@ jobs:
                    --set "benchmark-${B}.cache-to=type=registry,ref=${cache},mode=max" \
                    --set "benchmark-${B}.cache-from=type=registry,ref=${cache}" \
                    --provenance=mode=max --sbom=true "benchmark-${B}" --push; then :; \
-              else echo "::error::per-task arvo bake failed: $ref"; fails=$((fails+1)); fi
+              else echo "::error::per-task plain bake failed: $ref"; fails=$((fails+1)); fi
             else
               # The base this bake is FROM (benchmarks/swe-bench/Dockerfile). Epoch
               # publishes it per arch and per task, and for many tasks only x86_64
