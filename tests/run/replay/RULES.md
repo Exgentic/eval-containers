@@ -29,14 +29,14 @@ Parent: [../RULES.md](../RULES.md)
 ## Fixture lifecycle
 
 4. **Fixtures are immutable ground truth.** Files under
-   `tests/run/replay/fixtures/*.traces.jsonl` are PRODUCED by release
+   `tests/run/replay/fixtures/*.{calls,traces}.jsonl` are PRODUCED by release
    verification's live fleet sweep. Contributors MUST NOT hand-edit
    fixtures; the fixture is the record of what a specific
    (benchmark, task, agent, model) combination actually produced
    under a specific release tag.
 
-4a. **No live secrets or internal endpoints in a fixture.** A
-   `*.traces.jsonl` MUST NOT contain a live credential (API key, token,
+4a. **No live secrets or internal endpoints in a fixture.** A fixture
+   MUST NOT contain a live credential (API key, token,
    OAuth token, password) or an internal-only endpoint (e.g. a
    `*.vpc-int.res.ibm.com` gateway host). The live sweep (rule 4) captures the
    eval container's environment, so it MUST redact these at capture. The secret
@@ -49,12 +49,24 @@ Parent: [../RULES.md](../RULES.md)
    trust-the-tree allowlist once blinded this scan and let a live HF token, a
    LiteLLM key, and Google OAuth tokens through.
 
-5. **Filename convention.** `{benchmark}-{task-id}-{agent}.traces.jsonl`.
-   One fixture per (benchmark, task, agent) combination, stored as native
-   OTLP/JSON — OpenTelemetry `gen_ai` semconv spans, one
-   `ExportTraceServiceRequest` per line (what an otelcol `file` exporter
-   writes). The model is fixed per release and recorded in
-   `fixtures/provenance.json`.
+5. **Filename convention.** `{benchmark}-{task-id}-{agent}.calls.jsonl`, or
+   `.traces.jsonl` for a fixture recorded before the calls record existed. One
+   fixture per (benchmark, task, agent) combination; the model is fixed per
+   release and recorded in `fixtures/provenance.json`.
+
+5a. **Record calls, not traces.** A new fixture MUST be the edge's
+   `calls.jsonl` — one object per crossing, carrying `wire`, `path`, `status`
+   and the response exactly as it came back, SSE frames included. A trace file
+   holds only what a gateway chose to put in a span attribute, and that is not
+   always the answer: every OSWorld run recorded through bifrost carried
+   `gen_ai.input.messages` with no `gen_ai.output.messages` at all, so the
+   trace was unreplayable while the calls record of the same run yielded nine
+   turns, 558 characters of assistant text and eight tool calls. Calls also
+   need no per-gateway decoding — litellm and bifrost encode span output
+   differently, the wire does not. The replay model reads whichever is
+   mounted and prefers calls; existing `.traces.jsonl` fixtures stay valid
+   until re-recorded (uncompressed, so the replay model keeps its two
+   dependencies).
 
 6. **Provenance record.** `fixtures/provenance.json` MUST record, for
    every fixture: the model name and version, the agent version, the

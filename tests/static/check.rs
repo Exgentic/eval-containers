@@ -595,8 +595,9 @@ fn fixture_benchmarks() -> Vec<String> {
     let Ok(entries) = fs::read_dir(repo_root().join("tests/run/replay/fixtures")) else {
         return out;
     };
-    // Filename convention: <benchmark>-<task-id>-<agent>.traces.jsonl (rule 5,
-    // tests/run/replay/RULES.md). Task ids are free-form and may themselves
+    // Filename convention: <benchmark>-<task-id>-<agent>.{calls,traces}.jsonl
+    // (rule 5, tests/run/replay/RULES.md) — a fixture is one or the other, and
+    // calls is what new ones are recorded as. Task ids are free-form and may themselves
     // contain "-<digits>-" (e.g. hwe-bench's "lowrisc__ibex-2232"), so the
     // benchmark name can't be recovered from the filename alone — match it
     // against the known benchmark directories instead, picking the longest
@@ -607,10 +608,12 @@ fn fixture_benchmarks() -> Vec<String> {
         .collect();
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
-        if !name.ends_with(".traces.jsonl") {
+        let Some(stem) = name
+            .strip_suffix(".calls.jsonl")
+            .or_else(|| name.strip_suffix(".traces.jsonl"))
+        else {
             continue;
-        }
-        let stem = name.trim_end_matches(".traces.jsonl");
+        };
         let bench = known
             .iter()
             .filter(|b| stem.starts_with(b.as_str()) && stem[b.len()..].starts_with('-'))

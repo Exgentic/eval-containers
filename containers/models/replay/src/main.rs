@@ -1,8 +1,10 @@
 //! Replay model server — serves recorded LLM responses for deterministic tests.
 //!
-//! Reads an OpenTelemetry trace file (OTLP/JSON, one ExportTraceServiceRequest
-//! per line — what an otelcol `file` exporter writes) and serves the recorded
-//! gen_ai responses in order. Indistinguishable to the eval container from a
+//! Reads the edge's `calls.jsonl` — one object per crossing, carrying the
+//! response exactly as it came back — or, for a fixture recorded before that
+//! existed, an OpenTelemetry trace file (OTLP/JSON, one
+//! ExportTraceServiceRequest per line, what an otelcol `file` exporter writes).
+//! Either way it serves the recorded responses in order. Indistinguishable to the eval container from a
 //! real proxy (models/RULES.md rule 17); needs no API keys.
 //!
 //! Both gateways encode `gen_ai.output.messages` as a JSON string, differently:
@@ -26,7 +28,8 @@
 //! GET  /health, GET|HEAD /                                  -> ok
 //! ```
 //!
-//! Env: REPLAY_TRACES (default /data/traces.jsonl), PORT (default 4000).
+//! Env: REPLAY_CALLS (default /data/calls.jsonl, preferred when present),
+//! REPLAY_TRACES (default /data/traces.jsonl), PORT (default 4000).
 //! `replay-server health` probes localhost:PORT/health and exits 0/1 — the
 //! distroless image has no shell or curl for a HEALTHCHECK.
 
@@ -54,9 +57,8 @@ fn main() {
         std::process::exit(health_probe());
     }
     let port = env_port();
-    let path = std::env::var("REPLAY_TRACES").unwrap_or_else(|_| "/data/traces.jsonl".into());
-    let turns = load_turns(&path);
-    eprintln!("[replay] loaded {} gen_ai turns from {path}", turns.len());
+    let (path, turns) = load_source();
+    eprintln!("[replay] loaded {} turns from {path}", turns.len());
     serve(port, turns);
 }
 
@@ -231,6 +233,20 @@ fn span_start_ns(span: &Value) -> u128 {
 }
 
 /// Parse an OTLP/JSON trace file into ordered, deduped canonical turns.
+/// The calls record if the fixture has one, else the trace file. Calls are the
+/// better source — they are the bytes that crossed, not a gateway's summary of
+/// them — so they win when both are present.
+fn load_source() -> (String, Vec<Turn>) {
+    let calls = std::env::var("REPLAY_CALLS").unwrap_or_else(|_| "/data/calls.jsonl".into());
+    if std::path::Path::new(&calls).exists() {
+        let raw = std::fs::read_to_string(&calls).unwrap_or_default();
+        return (calls, parse_calls(&raw));
+    }
+    let traces = std::env::var("REPLAY_TRACES").unwrap_or_else(|_| "/data/traces.jsonl".into());
+    let turns = load_turns(&traces);
+    (traces, turns)
+}
+
 fn load_turns(path: &str) -> Vec<Turn> {
     let raw = match std::fs::read_to_string(path) {
         Ok(r) => r,
@@ -298,6 +314,219 @@ fn parse_turns(raw: &str) -> Vec<Turn> {
 }
 
 // ── emitters: canonical turn -> provider wire format ────────────────
+
+// ─── calls source ───────────────────────────────────────────────────────────
+//
+// The edge's `calls.jsonl` is a verbatim record of every crossing: one JSON
+// object per call with `wire`, `path`, `status` and the response exactly as it
+// came back — SSE frames and all. The traces file only ever held what a gateway
+// chose to put in a span attribute, which is why a bifrost-recorded run could
+// carry `gen_ai.input.messages` and no `gen_ai.output.messages` at all: the
+// answers were on the wire, just never in the span.
+//
+// Calls are decoded into the same `Turn` the span path produces, so routing,
+// re-emission into another provider's shape and SSE all behave identically —
+// only where the turn came from changes.
+
+/// Every `data:` payload of an SSE body, in order. A non-SSE body yields none.
+fn sse_payloads(body: &str) -> Vec<Value> {
+    body.lines()
+        .filter_map(|l| l.strip_prefix("data:"))
+        .map(str::trim)
+        .filter(|d| !d.is_empty() && *d != "[DONE]")
+        .filter_map(|d| serde_json::from_str::<Value>(d).ok())
+        .collect()
+}
+
+/// Fold Anthropic's streaming events into one turn's text, tool calls and stop
+/// reason. `input_json_delta` arrives as fragments of a JSON string, so the
+/// arguments are accumulated as text and parsed by `parse_args` downstream.
+fn fold_anthropic_sse(events: &[Value], t: &mut Turn) {
+    let mut open: Option<(Value, Value, String)> = None;
+    for e in events {
+        match e.get("type").and_then(Value::as_str) {
+            Some("content_block_start") => {
+                let b = e.get("content_block");
+                if b.and_then(|b| b.get("type")).and_then(Value::as_str) == Some("tool_use") {
+                    let id = b.and_then(|b| b.get("id")).cloned().unwrap_or(json!(""));
+                    let name = b.and_then(|b| b.get("name")).cloned().unwrap_or(json!(""));
+                    open = Some((id, name, String::new()));
+                }
+            }
+            Some("content_block_delta") => {
+                let d = e.get("delta");
+                match d.and_then(|d| d.get("type")).and_then(Value::as_str) {
+                    Some("text_delta") => {
+                        if let Some(s) = d.and_then(|d| d.get("text")).and_then(Value::as_str) {
+                            t.text.push_str(s);
+                        }
+                    }
+                    Some("input_json_delta") => {
+                        if let (Some(o), Some(s)) = (
+                            open.as_mut(),
+                            d.and_then(|d| d.get("partial_json")).and_then(Value::as_str),
+                        ) {
+                            o.2.push_str(s);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Some("content_block_stop") => {
+                if let Some((id, name, args)) = open.take() {
+                    let args = if args.is_empty() { "{}".into() } else { args };
+                    t.tool_calls
+                        .push(json!({"id": id, "name": name, "arguments": args}));
+                }
+            }
+            Some("message_delta") => {
+                if e.get("delta").and_then(|d| d.get("stop_reason")).and_then(Value::as_str)
+                    == Some("tool_use")
+                {
+                    t.finish_reason = "tool_calls".into();
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Fold OpenAI chat-completions streaming deltas into one turn.
+fn fold_openai_sse(events: &[Value], t: &mut Turn) {
+    for e in events {
+        let Some(choice) = e.get("choices").and_then(Value::as_array).and_then(|c| c.first())
+        else {
+            continue;
+        };
+        if let Some(s) = choice
+            .get("delta")
+            .and_then(|d| d.get("content"))
+            .and_then(Value::as_str)
+        {
+            t.text.push_str(s);
+        }
+        if let Some(tcs) = choice
+            .get("delta")
+            .and_then(|d| d.get("tool_calls"))
+            .and_then(Value::as_array)
+        {
+            t.tool_calls.extend(tcs.iter().cloned());
+        }
+        if let Some(fr) = choice.get("finish_reason").and_then(Value::as_str) {
+            t.finish_reason = fr.into();
+        }
+    }
+}
+
+/// A non-streamed body, in whichever provider shape the call used.
+fn fold_json_body(body: &Value, t: &mut Turn) {
+    // Anthropic: content blocks.
+    if let Some(blocks) = body.get("content").and_then(Value::as_array) {
+        for b in blocks {
+            match b.get("type").and_then(Value::as_str) {
+                Some("text") => {
+                    if let Some(s) = b.get("text").and_then(Value::as_str) {
+                        t.text.push_str(s);
+                    }
+                }
+                Some("tool_use") => t.tool_calls.push(json!({
+                    "id": b.get("id").cloned().unwrap_or(json!("")),
+                    "name": b.get("name").cloned().unwrap_or(json!("")),
+                    "arguments": b.get("input").cloned().unwrap_or(json!({})),
+                })),
+                _ => {}
+            }
+        }
+        if body.get("stop_reason").and_then(Value::as_str) == Some("tool_use") {
+            t.finish_reason = "tool_calls".into();
+        }
+        return;
+    }
+    // OpenAI chat.
+    if let Some(choice) = body.get("choices").and_then(Value::as_array).and_then(|c| c.first()) {
+        let msg = choice.get("message");
+        if let Some(s) = msg.and_then(|m| m.get("content")).and_then(Value::as_str) {
+            t.text.push_str(s);
+        }
+        if let Some(tcs) = msg.and_then(|m| m.get("tool_calls")).and_then(Value::as_array) {
+            t.tool_calls.extend(tcs.iter().cloned());
+        }
+        if let Some(fr) = choice.get("finish_reason").and_then(Value::as_str) {
+            t.finish_reason = fr.into();
+        }
+        return;
+    }
+    // Gemini.
+    if let Some(parts) = body
+        .get("candidates")
+        .and_then(Value::as_array)
+        .and_then(|c| c.first())
+        .and_then(|c| c.get("content"))
+        .and_then(|c| c.get("parts"))
+        .and_then(Value::as_array)
+    {
+        for p in parts {
+            if let Some(s) = p.get("text").and_then(Value::as_str) {
+                t.text.push_str(s);
+            }
+            if let Some(fc) = p.get("functionCall") {
+                t.tool_calls.push(json!({
+                    "name": fc.get("name").cloned().unwrap_or(json!("")),
+                    "arguments": fc.get("args").cloned().unwrap_or(json!({})),
+                }));
+            }
+        }
+    }
+}
+
+/// One `Turn` per recorded call, in file order. A call the upstream refused
+/// (non-2xx) is not a turn — the agent retried it, and replaying the error
+/// would make the replay diverge from the run that was recorded.
+fn parse_calls(raw: &str) -> Vec<Turn> {
+    let mut turns = Vec::new();
+    for line in raw.lines().filter(|l| !l.trim().is_empty()) {
+        let Ok(rec) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if !(200..300).contains(&rec.get("status").and_then(Value::as_u64).unwrap_or(0)) {
+            continue;
+        }
+        let mut t = Turn {
+            text: String::new(),
+            tool_calls: Vec::new(),
+            finish_reason: String::new(),
+            model: rec
+                .get("model")
+                .and_then(Value::as_str)
+                .unwrap_or("replay")
+                .to_string(),
+        };
+        match rec.get("response") {
+            // The edge records a streamed response as its raw SSE text.
+            Some(Value::String(body)) => {
+                let events = sse_payloads(body);
+                if events.is_empty() {
+                    if let Ok(v) = serde_json::from_str::<Value>(body) {
+                        fold_json_body(&v, &mut t);
+                    }
+                } else if rec.get("wire").and_then(Value::as_str) == Some("anthropic") {
+                    fold_anthropic_sse(&events, &mut t);
+                } else {
+                    fold_openai_sse(&events, &mut t);
+                }
+            }
+            Some(v) => fold_json_body(v, &mut t),
+            None => continue,
+        }
+        if t.finish_reason.is_empty() {
+            // Same rule the span path uses: a turn with tool calls must signal
+            // tool-use or the client stops and never runs the tool.
+            t.finish_reason = if t.tool_calls.is_empty() { "stop" } else { "tool_calls" }.into();
+        }
+        turns.push(t);
+    }
+    turns
+}
 
 fn parse_args(arguments: Option<&Value>) -> Value {
     match arguments {
@@ -779,6 +1008,54 @@ fn health_probe() -> i32 {
 
 #[cfg(test)]
 mod tests {
+
+    /// An Anthropic streamed call: text and a tool call arrive as SSE frames,
+    /// and the stop reason lives on `message_delta`.
+    #[test]
+    fn calls_fold_anthropic_sse_into_a_turn() {
+        let body = concat!(
+            "event: content_block_delta\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"hi \"}}\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"there\"}}\n",
+            "data: {\"type\":\"content_block_start\",\"content_block\":{\"type\":\"tool_use\",\"id\":\"t1\",\"name\":\"bash\"}}\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"cmd\\\":\"}}\n",
+            "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"\\\"ls\\\"}\"}}\n",
+            "data: {\"type\":\"content_block_stop\"}\n",
+            "data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"tool_use\"}}\n",
+        );
+        let rec = json!({"status": 200, "wire": "anthropic", "model": "claude-opus-5",
+                         "response": body});
+        let turns = parse_calls(&rec.to_string());
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].text, "hi there");
+        assert_eq!(turns[0].finish_reason, "tool_calls");
+        let (id, name, args) = tool_parts(&turns[0].tool_calls[0], "x");
+        assert_eq!((id, name), (json!("t1"), json!("bash")));
+        assert_eq!(parse_args(Some(&args)), json!({"cmd": "ls"}));
+    }
+
+    /// A non-streamed Anthropic body, and the finish-reason default: text only
+    /// stops, tool calls signal tool-use.
+    #[test]
+    fn calls_read_a_plain_json_body() {
+        let rec = json!({"status": 200, "wire": "anthropic", "model": "m",
+                         "response": {"content": [{"type": "text", "text": "done"}]}});
+        let turns = parse_calls(&rec.to_string());
+        assert_eq!((turns[0].text.as_str(), turns[0].finish_reason.as_str()), ("done", "stop"));
+    }
+
+    /// An OpenAI streamed call, and a refused one: a non-2xx is not a turn, or
+    /// the replay would serve an error the recorded run retried past.
+    #[test]
+    fn calls_fold_openai_sse_and_skip_refusals() {
+        let ok = json!({"status": 200, "wire": "openai", "model": "gpt",
+            "response": "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\ndata: [DONE]\n"});
+        let refused = json!({"status": 429, "wire": "openai", "response": "{}"});
+        let raw = format!("{}\n{}\n", refused, ok);
+        let turns = parse_calls(&raw);
+        assert_eq!(turns.len(), 1, "only the call that was answered is a turn");
+        assert_eq!(turns[0].text, "ok");
+    }
     use super::*;
 
     fn one_line(span_attrs: Value, status_code: i64, start: &str) -> String {
