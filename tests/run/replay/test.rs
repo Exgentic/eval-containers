@@ -91,9 +91,18 @@ async fn replay_compose(
     //     upstream; the gateway is pointed at it by `OPENAI_API_BASE`.
     // A human runs the identical stack: `docker compose -f <compose> -f <overlay>`.
     let compose_file = cwd.join(format!("containers/benchmarks/{benchmark}/compose.yaml"));
-    let fixture = cwd.join(format!(
-        "tests/run/replay/fixtures/{benchmark}-{task_id}-{agent}.traces.jsonl"
-    ));
+    // A fixture is a calls record or a trace file; calls wins when both exist,
+    // being the bytes that crossed rather than a gateway's summary of them.
+    let fixtures = cwd.join("tests/run/replay/fixtures");
+    let calls = fixtures.join(format!("{benchmark}-{task_id}-{agent}.calls.jsonl"));
+    let (fixture, mount) = if calls.exists() {
+        (calls, "/data/calls.jsonl")
+    } else {
+        (
+            fixtures.join(format!("{benchmark}-{task_id}-{agent}.traces.jsonl")),
+            "/data/traces.jsonl",
+        )
+    };
     let overlay = cwd.join(match mode {
         ReplayMode::Lean => "tests/run/replay/replay-lean.yaml",
         ReplayMode::FullStack => "tests/run/replay/replay-upstream.yaml",
@@ -151,6 +160,7 @@ async fn replay_compose(
         ("OPENAI_API_KEY", "sk-replay-test"),
         ("OPENAI_API_BASE", api_base),
         ("REPLAY_FIXTURE", fixture_str.as_str()),
+        ("REPLAY_MOUNT", mount),
     ] {
         compose = compose.with_env(key, val);
     }

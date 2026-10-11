@@ -16,4 +16,6 @@ services:
     healthcheck:
       test: ["CMD", "/opt/gateway/server", "health"]
     volumes:
-      - ${REPLAY_FIXTURE:?}:/data/traces.jsonl:ro
+      # A calls fixture mounts as /data/calls.jsonl, which the replay model
+      # prefers; REPLAY_MOUNT is set by whoever picked the fixture.
+      - ${REPLAY_FIXTURE:?}:${REPLAY_MOUNT:-/data/traces.jsonl}:ro
