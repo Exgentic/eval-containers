@@ -1,0 +1,64 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/osworld-verified--${EVAL_AGENT:-claude-code}:latest
+    volumes:
+      - desktop-sock:/run/desktop
+    environment:
+      BENCHMARK: osworld-verified
+      TIMEOUT: "1800"
+      EVAL_TIMEOUT: "1800"
+      DESKTOP_HOST: desktop
+      DESKTOP_PORT: "5000"
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+      desktop:
+        condition: service_healthy
+    # The task's own config steps download its files (from the public
+    # xlangai/ubuntu_osworld_file_cache) and upload them into the desktop, and
+    # that download happens runner-side, so the runner needs egress.
+    # OPEN QUESTION: baking the file cache into the benchmark image at build
+    # time would keep the runner on `internal` only, which is the stronger
+    # guarantee that every model call goes through the gateway.
+    networks:
+      - internal
+      - upstream
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+
+  # The desktop upstream ships as a qcow2 booted under QEMU/KVM. Same OS, run
+  # as a container: no /dev/kvm, no privileged mode, native speed.
+  desktop:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/osworld-desktop:${EVAL_TAG:-latest}
+    # Setup and grading reach the control server here, as they do in the chart.
+    # Without it the runner rewrites every desktop call to a socket that is not
+    # there and every task scores 0.
+    volumes:
+      - desktop-sock:/run/desktop
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-m", "10", "-o", "/dev/null", "http://127.0.0.1:5000/screenshot"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+      start_period: 10s
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+
+volumes:
+  desktop-sock:
