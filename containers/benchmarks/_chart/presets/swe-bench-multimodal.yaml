@@ -4,8 +4,9 @@
 # chart default of 2Gi would kill the verifier, and a killed verifier grades a
 # correct fix 0.
 timeout: '1800'
-# Grading runs after the agent; 1800s is the official harness's own test timeout.
-deadlineGrace: 1800
+# Grading runs after the agent: grade.sh gives the tests the official harness's
+# own 1800s, and the pod must outlive that to write the result.
+deadlineGrace: 2100
 resources:
   requests:
     cpu: 500m
