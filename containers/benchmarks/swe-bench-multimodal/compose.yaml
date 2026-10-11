@@ -1,0 +1,27 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/swe-bench-multimodal-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: swe-bench-multimodal
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
+      TIMEOUT: ${EVAL_TIMEOUT:-1800}
+    # Rule 10 / 24e — matches the chart preset (2 CPU / 12Gi). Grading runs the
+    # project's own test suite, which peaked at 7.0 GB (carbon's jest) and 4.5 GB
+    # (openlayers' headless-Chrome rendering tests); the shared 2G default would
+    # kill it, and a killed verifier grades a correct fix 0.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 12G

@@ -38,6 +38,11 @@ allowlist := [
 		"reason": "per-task: upstream publishes one image per EVAL_TASK_ID, so there is no single pinnable tag (rule 24g)",
 	},
 	{
+		"dir": "swe-bench-multimodal",
+		"image": "docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest",
+		"reason": "per-task: upstream publishes one image per EVAL_TASK_ID, and the pinned dataset's own `image` column names :latest — the only tag that matches it (v1/v2 are older builds)",
+	},
+	{
 		"dir": "mle-bench",
 		"image": "mlebench-env:latest",
 		"reason": "locally-built base (build.sh from openai/mle-bench) — not a registry image to pin",

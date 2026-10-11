@@ -183,6 +183,7 @@ fn extract_task_count(dockerfile: &str) -> Option<u32> {
 fn per_task_representative(name: &str) -> Option<&'static str> {
     match name {
         "swe-bench" => Some("sympy__sympy-24066"),
+        "swe-bench-multimodal" => Some("googlechrome_1776_lighthouse-10176"),
         "compilebench" => Some("curl"),
         "cybench" => Some("LosFuzzys/GlacierCTF2023_writeups/intro/skilift"),
         "mle-bench" => Some("spaceship-titanic"),

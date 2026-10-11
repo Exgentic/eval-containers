@@ -59,6 +59,14 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     swe_bench.insert("EVAL_TASK_ID".into(), "sympy_1776_sympy-24066".into());
     out.insert("swe-bench", swe_bench);
 
+    // The task id is the tag upstream publishes the instance's image under.
+    let mut swe_bench_multimodal = HashMap::new();
+    swe_bench_multimodal.insert(
+        "EVAL_TASK_ID".into(),
+        "googlechrome_1776_lighthouse-10176".into(),
+    );
+    out.insert("swe-bench-multimodal", swe_bench_multimodal);
+
     let mut compile = HashMap::new();
     compile.insert("EVAL_TASK_ID".into(), "curl".into());
     compile.insert("BASE_IMAGE".into(), "ubuntu:22.04".into());

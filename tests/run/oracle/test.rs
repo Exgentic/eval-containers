@@ -26,6 +26,23 @@ mod common;
 /// answer matches itself (substring / token-recall / normalized).
 const SPECIAL: &[(&str, &str)] = &[
     ("swe-bench", "sympy__sympy-24066"), // per-task state grader (apply gold patch to /testbed)
+    // One per way a project is tested or its fix applied: swe-bench-multimodal is
+    // 11 JavaScript projects behind one name. Each id below scored gold=1 / no-op=0.
+    ("swe-bench-multimodal", "googlechrome_1776_lighthouse-10176"), // jest
+    ("swe-bench-multimodal", "prismjs_1776_prism-1500"),            // mocha on Node 4
+    // karma + headless Chrome, run as another user; graded fail_only
+    ("swe-bench-multimodal", "bpmn-io_1776_bpmn-js-1011"),
+    // puppeteer rendering tests against binary baselines the build bakes
+    ("swe-bench-multimodal", "openlayers_1776_openlayers-13823"),
+    // the gold only applies through the harness's fallback chain (the image's
+    // tree already differs from base), and it changes package.json
+    ("swe-bench-multimodal", "alibaba-fusion_1776_next-101"),
+    // jest at 7 GB, a log that is not valid UTF-8, and tests that need the
+    // network (IBM's accessibility checker downloads its rules)
+    (
+        "swe-bench-multimodal",
+        "carbon-design-system_1776_carbon-10188",
+    ),
     // terminal-bench (build-cython-ext) omitted — its gold runs legacy pyknotid 0.5.3's
     // own test suite, whose unpinned deps (vispy, networkx, …) have drifted past it, so
     // the gold can't deterministically score 1.0 through no fault of our grader.
