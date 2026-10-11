@@ -1,21 +1,20 @@
 #!/bin/bash
-# Hand the repo to the agent and seed TASK from the baked issue.
+# Hand the repo to the agent and seed TASK from the baked issue. Around the
+# issue the prompt states facts the agent cannot find out, never how to work.
 chown -R agent:agent /testbed 2>/dev/null || true
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   # A container reports its host's CPUs, and jest and friends size their worker
   # pools from that: on a 96-core node one test run started 95 workers under a
-  # 2-CPU, 12 GB limit and the whole task was OOM-killed. Say what the limit is.
+  # 2-CPU, 12 GB limit and the whole task was OOM-killed.
   cpus=$(awk '$1 != "max" {printf "%d", ($1 + $2 - 1) / $2}' /sys/fs/cgroup/cpu.max 2>/dev/null)
   mem=$(awk '$1 != "max" {printf "%d", $1 / 1073741824}' /sys/fs/cgroup/memory.max 2>/dev/null)
   limits=""
   if [ -n "$cpus" ] && [ -n "$mem" ]; then
-    limits=" This container is limited to $cpus CPUs and $mem GB of memory, whatever it reports: cap the parallelism of any test or build you run (for example \`--maxWorkers=$cpus\`), or the task is killed."
+    limits=" This container is limited to $cpus CPUs and $mem GB of memory, whatever it reports, and going over the memory limit kills the whole task."
   fi
   TASK="Fix this GitHub issue in the repository at /testbed. Edit the source code to resolve the bug. Do NOT modify any test files.
 
-The issue's screenshots are image files under /problem_assets/, named in the issue text where each one appears. Open and look at every one of them before you change any code. To see what your change renders, Chrome is installed: \`google-chrome --headless --no-sandbox --screenshot=/tmp/shot.png <file or URL>\` writes an image you can open.
-
-The repository's own Node.js is not on your PATH: run \`source /usr/local/nvm/nvm.sh\` before any project command.$limits
+The issue's screenshots are image files under /problem_assets/; the issue text gives each one's path where it appears. The repository's own Node.js is not on your PATH: \`source /usr/local/nvm/nvm.sh\` loads it. Chrome is installed as \`google-chrome\`.$limits
 
 $(cat /tasks/0/problem.txt)"
   export TASK
