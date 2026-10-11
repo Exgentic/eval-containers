@@ -6,7 +6,7 @@
 #
 # EVAL_TASK_ID is that image's instance tag — the instance id lowercased, with
 # "__" spelled "_1776_" (e.g. "openlayers_1776_openlayers-12683"; tasks.txt lists
-# all of them). It is a valid image name on every surface as it stands, and the
+# the ones that ship). It is a valid image name on every surface as it stands, and the
 # dataset row is found by its `image` column, so nothing maps one id to another.
 
 ARG EVAL_TASK_ID
@@ -34,7 +34,7 @@ LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="swe-bench-multimodal"
 LABEL eval.benchmark.upstream_base="docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest"
 LABEL eval.benchmark.description="SWE-bench Multimodal - fixing visual front-end bugs from issues with screenshots"
-LABEL eval.benchmark.tasks="480"
+LABEL eval.benchmark.tasks="395"
 LABEL eval.benchmark.env="per-task"
 LABEL eval.benchmark.modality="multimodal"
 LABEL eval.benchmark.internet="false"

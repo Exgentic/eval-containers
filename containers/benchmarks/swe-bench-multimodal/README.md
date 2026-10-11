@@ -6,7 +6,7 @@ SWE-bench Multimodal - fixing visual front-end bugs from issues with screenshots
 
 | Field | Value |
 |-------|-------|
-| Tasks | 480 (the `test` split) |
+| Tasks | 395 of the 480 in the `test` split ([which ones](#which-tasks-ship)) |
 | Environment | per-task |
 | Platform | linux/amd64 only |
 | Internet required | false |
@@ -19,15 +19,34 @@ SWE-bench Multimodal - fixing visual front-end bugs from issues with screenshots
 Real GitHub issues from 11 JavaScript projects whose bugs are visual — UI
 component libraries (carbon, next, grommet), map and diagram rendering
 (openlayers, bpmn-js), syntax highlighting (prism, highlight.js), and tooling
-around them (lighthouse, eslint, prettier, scratch-gui). 434 of the 480 issues
-embed at least one screenshot.
+around them (lighthouse, eslint, prettier, scratch-gui). 386 of the 395 issues
+that ship embed at least one screenshot.
 
 ## Task ids
 
 A task id is the tag upstream publishes that instance's image under: the
 instance id lowercased, with `__` spelled `_1776_`. `openlayers__openlayers-12683`
-is task `openlayers_1776_openlayers-12683`. [`tasks.txt`](tasks.txt) lists all 480;
-`/tasks/0/id.txt` in each image holds the original instance id.
+is task `openlayers_1776_openlayers-12683`. [`tasks.txt`](tasks.txt) lists the
+395 that ship; `/tasks/0/id.txt` in each image holds the original instance id.
+
+## Which tasks ship
+
+A task ships only if, on native amd64, its reference fix scores 1 **and** the
+unchanged repository scores 0. Every one of the 480 was run both ways; 395
+pass.
+
+59 are left out because the unchanged repository already scores 1 — a
+task anyone solves by doing nothing. All 59 are openlayers. Most list a
+`FAIL_TO_PASS` test that their own test patch does not touch and that passes
+before the fix (`icon-opacity`, `full-build`); under the instance's `fail_only`
+grading that resolves the task with no change, under the official harness too.
+
+26 more, all carbon, are left out because their tests call an IBM endpoint that no longer
+answers as it did. The test command crashes on the reply, and the reference fix
+scores 0, or 1 on one run and 0 on the next; a task whose log shows that crash is
+left out even where the score held.
+
+The ids and the per-project counts are in [`AUDIT.md`](AUDIT.md).
 
 ## What the agent sees
 
@@ -101,21 +120,21 @@ eval-containers oracle swe-bench-multimodal --task-id googlechrome_1776_lighthou
 
 Evidence for each is in [`AUDIT.md`](AUDIT.md).
 
-- **Some tests need the network while grading.** carbon's accessibility tests
-  download IBM's rule archive when they run, and the eval script re-installs
-  dependencies when a change touches `package.json` (15 gold patches do). The
-  verifier has a route on Kubernetes and in the standalone bundle; under
-  `compose` the runner has none, so there a correct carbon fix can grade 0 and a
-  `package.json` change waits out a 15-minute install timeout first.
-- **An unchanged tree scored 1 on two of five openlayers tasks**, both under
-  amd64 emulation on Apple Silicon. On one, Chrome has no WebGL there, the suite
-  aborts at a WebGL test, and `fail_only` grading counts the tests that never ran
-  as not failing. On the other the suite ran to the end and the listed
-  `FAIL_TO_PASS` test simply passes before the fix — as it would for 45 more
-  openlayers tasks that list the same test. Neither is checked on a native amd64
-  host yet.
-- **Not run with a live agent yet**, and not published: the release workflow does
-  not enumerate this benchmark.
+- **Grading needs a network route for some tasks.** carbon's accessibility tests
+  download IBM's rule archive while they run, and the eval script re-installs
+  dependencies when a change touches `package.json`. The verifier has a route on
+  Kubernetes and in the standalone bundle, where every task above was checked.
+  Under `compose` the runner sits on the internal network and has none:
+  there a correct fix scores 0 on 13 of the 52 carbon tasks checked, and a tree whose `package.json` differs from `HEAD` waits out a 15-minute install timeout first.
+- **Chrome has no WebGL.** Not under emulation and not on native amd64, with or
+  without the sandbox, so an agent cannot render a WebGL layer to look at it.
+  Grading is unaffected for the tasks that ship: each was checked with the
+  reference fix and without it.
+- **An unfixed tree can hang the tests.** On 3 of the tasks that ship the tests never finish while the bug is there (`openlayers-13020`, `openlayers-13212`, `openlayers-15271`). The verifier stops the
+  tests after 30 minutes — the official harness's own limit — and scores 0.
+- **A task that fails rarely may remain.** The check ran each reference fix
+  once, and a second time on 60 of the 395 tasks. The second run is
+  what exposed the carbon tasks above that score 1 on one run and 0 on the next.
 
 ## Files
 
@@ -124,5 +143,5 @@ Evidence for each is in [`AUDIT.md`](AUDIT.md).
 - `grade.sh`, `grade.py` — the verifier
 - `entrypoint.sh` — hands the repo to the agent and builds `TASK`
 - `solution.sh` — the oracle's gold solution
-- `tasks.txt` — the 480 task ids
+- `tasks.txt` — the 395 task ids that ship
 - `compose.yaml` — compose file for `eval-containers run swe-bench-multimodal`
