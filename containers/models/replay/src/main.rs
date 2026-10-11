@@ -233,12 +233,35 @@ fn span_start_ns(span: &Value) -> u128 {
 }
 
 /// Parse an OTLP/JSON trace file into ordered, deduped canonical turns.
+/// A fixture stays zstd-compressed: 17x smaller, and 50x for the largest. The
+/// capture step recompresses into a complete frame — the edge leaves its own
+/// frame unfinalized and no streaming decoder will read that.
+fn read_maybe_zst(path: &str) -> String {
+    let bytes = std::fs::read(path).unwrap_or_default();
+    if !path.ends_with(".zst") {
+        return String::from_utf8_lossy(&bytes).into_owned();
+    }
+    let mut out = Vec::new();
+    match ruzstd::decoding::StreamingDecoder::new(bytes.as_slice()) {
+        // The edge leaves the final frame unfinalized, so a short read is the
+        // normal end of a record, not a failure — keep what decoded.
+        Ok(mut d) => {
+            if let Err(e) = std::io::Read::read_to_end(&mut d, &mut out) {
+                eprintln!("[replay] {path}: {e} after {} bytes", out.len());
+            }
+        }
+        Err(e) => eprintln!("[replay] {path}: {e}"),
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Calls win over traces: they are the bytes that crossed, not a summary.
 fn load_source() -> (String, Vec<Turn>) {
     let calls = std::env::var("REPLAY_CALLS").unwrap_or_else(|_| "/data/calls.jsonl".into());
-    if std::path::Path::new(&calls).exists() {
-        let raw = std::fs::read_to_string(&calls).unwrap_or_default();
-        return (calls, parse_calls(&raw));
+    for path in [format!("{calls}.zst"), calls.clone()] {
+        if std::path::Path::new(&path).exists() {
+            return (path.clone(), parse_calls(&read_maybe_zst(&path)));
+        }
     }
     let traces = std::env::var("REPLAY_TRACES").unwrap_or_else(|_| "/data/traces.jsonl".into());
     let turns = load_turns(&traces);
@@ -1086,6 +1109,30 @@ mod tests {
         let (id, name, args) = tool_parts(&turns[0].tool_calls[0], "x");
         assert_eq!((id, name), (json!("c1"), json!("run")));
         assert_eq!(parse_args(Some(&args)), json!({"a": 1}), "fragments reassemble");
+    }
+
+    /// A compressed fixture decodes with the pure-Rust reader. The bytes are a
+    /// complete zstd frame holding one call record — what the capture step
+    /// writes, not the edge's unfinalized frame, which no streaming decoder
+    /// reads.
+    #[test]
+    fn a_compressed_fixture_decodes() {
+        const FRAME: &[u8] = &[
+            0x28, 0xb5, 0x2f, 0xfd, 0x20, 0x57, 0x3d, 0x02, 0x00, 0x12, 0x85, 0x0f, 0x11, 0xa0,
+            0xed, 0xe0, 0x76, 0x55, 0x4d, 0x08, 0x84, 0xd4, 0x58, 0x15, 0x64, 0x65, 0x3c, 0xaa,
+            0xe2, 0x61, 0x60, 0xce, 0x32, 0x9f, 0xd0, 0x35, 0xbc, 0xe1, 0xf6, 0xf5, 0xbb, 0x62,
+            0x5f, 0x12, 0x7d, 0xf3, 0x36, 0xab, 0x73, 0xa9, 0xdf, 0xc6, 0x6a, 0xb5, 0x65, 0x0f,
+            0x3f, 0x69, 0x29, 0x86, 0x9a, 0xcd, 0xf5, 0xcb, 0xd2, 0x7b, 0x10, 0x62, 0xe8, 0x9b,
+            0x6b, 0xd3, 0xed, 0x32, 0x01, 0x00, 0x87, 0x86, 0x12, 0x05,
+        ];
+        let dir = std::env::temp_dir().join(format!("replay-zst-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("temp dir");
+        let path = dir.join("calls.jsonl.zst");
+        std::fs::write(&path, FRAME).expect("write frame");
+        let turns = parse_calls(&read_maybe_zst(&path.to_string_lossy()));
+        std::fs::remove_dir_all(&dir).ok();
+        assert_eq!(turns.len(), 1);
+        assert_eq!(turns[0].text, "hi");
     }
 
     /// A non-streamed Anthropic body, and the finish-reason default: text only

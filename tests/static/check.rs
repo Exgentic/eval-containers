@@ -609,7 +609,8 @@ fn fixture_benchmarks() -> Vec<String> {
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_string();
         let Some(stem) = name
-            .strip_suffix(".calls.jsonl")
+            .strip_suffix(".calls.jsonl.zst")
+            .or_else(|| name.strip_suffix(".calls.jsonl"))
             .or_else(|| name.strip_suffix(".traces.jsonl"))
         else {
             continue;
