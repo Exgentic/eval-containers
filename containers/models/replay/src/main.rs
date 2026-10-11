@@ -502,6 +502,11 @@ fn parse_calls(raw: &str) -> Vec<Turn> {
                 .to_string(),
         };
         match rec.get("response") {
+            // A crossing with no body is not a turn: the probe the agent's SDK
+            // makes before its first real call is recorded like any other, and
+            // counting it serves the agent an empty answer for a prompt it
+            // actually asked.
+            Some(Value::String(body)) if body.trim().is_empty() => continue,
             // The edge records a streamed response as its raw SSE text.
             Some(Value::String(body)) => {
                 let events = sse_payloads(body);
@@ -517,6 +522,12 @@ fn parse_calls(raw: &str) -> Vec<Turn> {
             }
             Some(v) => fold_json_body(v, &mut t),
             None => continue,
+        }
+        // Nothing decoded: an unrecognised body shape, or a response that
+        // really was empty. Either way it cannot answer a call, and serving it
+        // would silently blank one turn of the recorded run.
+        if t.text.is_empty() && t.tool_calls.is_empty() {
+            continue;
         }
         if t.finish_reason.is_empty() {
             // Same rule the span path uses: a turn with tool calls must signal
@@ -1032,6 +1043,21 @@ mod tests {
         let (id, name, args) = tool_parts(&turns[0].tool_calls[0], "x");
         assert_eq!((id, name), (json!("t1"), json!("bash")));
         assert_eq!(parse_args(Some(&args)), json!({"cmd": "ls"}));
+    }
+
+    /// The probe an SDK makes before its first real call is recorded like any
+    /// other crossing, with an empty body — counting it would serve one turn
+    /// of the recorded run as silence.
+    #[test]
+    fn calls_skip_bodyless_and_undecodable_records() {
+        let probe = json!({"status": 200, "wire": "anthropic", "response": ""});
+        let unknown = json!({"status": 200, "wire": "openai", "response": {"object": "list"}});
+        let real = json!({"status": 200, "wire": "anthropic",
+                          "response": {"content": [{"type": "text", "text": "hi"}]}});
+        let raw = format!("{probe}\n{unknown}\n{real}\n");
+        let turns = parse_calls(&raw);
+        assert_eq!(turns.len(), 1, "only the crossing that carried an answer is a turn");
+        assert_eq!(turns[0].text, "hi");
     }
 
     /// A non-streamed Anthropic body, and the finish-reason default: text only
