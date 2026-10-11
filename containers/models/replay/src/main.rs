@@ -233,9 +233,7 @@ fn span_start_ns(span: &Value) -> u128 {
 }
 
 /// Parse an OTLP/JSON trace file into ordered, deduped canonical turns.
-/// The calls record if the fixture has one, else the trace file. Calls are the
-/// better source — they are the bytes that crossed, not a gateway's summary of
-/// them — so they win when both are present.
+/// Calls win over traces: they are the bytes that crossed, not a summary.
 fn load_source() -> (String, Vec<Turn>) {
     let calls = std::env::var("REPLAY_CALLS").unwrap_or_else(|_| "/data/calls.jsonl".into());
     if std::path::Path::new(&calls).exists() {
@@ -317,18 +315,12 @@ fn parse_turns(raw: &str) -> Vec<Turn> {
 
 // ─── calls source ───────────────────────────────────────────────────────────
 //
-// The edge's `calls.jsonl` is a verbatim record of every crossing: one JSON
-// object per call with `wire`, `path`, `status` and the response exactly as it
-// came back — SSE frames and all. The traces file only ever held what a gateway
-// chose to put in a span attribute, which is why a bifrost-recorded run could
-// carry `gen_ai.input.messages` and no `gen_ai.output.messages` at all: the
-// answers were on the wire, just never in the span.
-//
-// Calls are decoded into the same `Turn` the span path produces, so routing,
-// re-emission into another provider's shape and SSE all behave identically —
-// only where the turn came from changes.
+// A gateway span holds only what the gateway chose to put in it — bifrost
+// records input messages and no output ones at all — so turns come from the
+// edge's verbatim record instead. Decoded into the same `Turn` the span path
+// produces, leaving routing, re-emission and SSE untouched.
 
-/// Every `data:` payload of an SSE body, in order. A non-SSE body yields none.
+/// Every `data:` payload of an SSE body; none for a non-SSE body.
 fn sse_payloads(body: &str) -> Vec<Value> {
     body.lines()
         .filter_map(|l| l.strip_prefix("data:"))
@@ -338,9 +330,8 @@ fn sse_payloads(body: &str) -> Vec<Value> {
         .collect()
 }
 
-/// Fold Anthropic's streaming events into one turn's text, tool calls and stop
-/// reason. `input_json_delta` arrives as fragments of a JSON string, so the
-/// arguments are accumulated as text and parsed by `parse_args` downstream.
+/// `input_json_delta` carries fragments of a JSON string, so arguments
+/// accumulate as text and `parse_args` parses them downstream.
 fn fold_anthropic_sse(events: &[Value], t: &mut Turn) {
     let mut open: Option<(Value, Value, String)> = None;
     for e in events {
@@ -391,12 +382,8 @@ fn fold_anthropic_sse(events: &[Value], t: &mut Turn) {
     }
 }
 
-/// Fold OpenAI chat-completions streaming deltas into one turn.
-///
-/// Tool calls arrive as fragments keyed by `index` — the id and name on the
-/// first, the arguments a character or two at a time after it — so they are
-/// merged by that index. Appending each fragment instead turns one call into
-/// hundreds of malformed ones: a recorded pi turn replayed as 349.
+/// Tool calls arrive as fragments keyed by `index`, so they merge by it:
+/// appending each fragment replayed one recorded `bash` call as 349.
 fn fold_openai_sse(events: &[Value], t: &mut Turn) {
     let mut by_index: Vec<(u64, Value, Value, String)> = Vec::new();
     for e in events {
@@ -454,7 +441,6 @@ fn fold_openai_sse(events: &[Value], t: &mut Turn) {
 
 /// A non-streamed body, in whichever provider shape the call used.
 fn fold_json_body(body: &Value, t: &mut Turn) {
-    // Anthropic: content blocks.
     if let Some(blocks) = body.get("content").and_then(Value::as_array) {
         for b in blocks {
             match b.get("type").and_then(Value::as_str) {
@@ -476,7 +462,6 @@ fn fold_json_body(body: &Value, t: &mut Turn) {
         }
         return;
     }
-    // OpenAI chat.
     if let Some(choice) = body.get("choices").and_then(Value::as_array).and_then(|c| c.first()) {
         let msg = choice.get("message");
         if let Some(s) = msg.and_then(|m| m.get("content")).and_then(Value::as_str) {
@@ -490,7 +475,6 @@ fn fold_json_body(body: &Value, t: &mut Turn) {
         }
         return;
     }
-    // Gemini.
     if let Some(parts) = body
         .get("candidates")
         .and_then(Value::as_array)
@@ -513,9 +497,8 @@ fn fold_json_body(body: &Value, t: &mut Turn) {
     }
 }
 
-/// One `Turn` per recorded call, in file order. A call the upstream refused
-/// (non-2xx) is not a turn — the agent retried it, and replaying the error
-/// would make the replay diverge from the run that was recorded.
+/// One `Turn` per answered call, in file order. A refused call is not a turn:
+/// the recorded run retried past it.
 fn parse_calls(raw: &str) -> Vec<Turn> {
     let mut turns = Vec::new();
     for line in raw.lines().filter(|l| !l.trim().is_empty()) {
@@ -536,12 +519,8 @@ fn parse_calls(raw: &str) -> Vec<Turn> {
                 .to_string(),
         };
         match rec.get("response") {
-            // A crossing with no body is not a turn: the probe the agent's SDK
-            // makes before its first real call is recorded like any other, and
-            // counting it serves the agent an empty answer for a prompt it
-            // actually asked.
+            // The SDK's pre-flight probe is recorded like any other call.
             Some(Value::String(body)) if body.trim().is_empty() => continue,
-            // The edge records a streamed response as its raw SSE text.
             Some(Value::String(body)) => {
                 let events = sse_payloads(body);
                 if events.is_empty() {
@@ -557,15 +536,12 @@ fn parse_calls(raw: &str) -> Vec<Turn> {
             Some(v) => fold_json_body(v, &mut t),
             None => continue,
         }
-        // Nothing decoded: an unrecognised body shape, or a response that
-        // really was empty. Either way it cannot answer a call, and serving it
-        // would silently blank one turn of the recorded run.
+        // An unrecognised shape would otherwise blank a turn of the run.
         if t.text.is_empty() && t.tool_calls.is_empty() {
             continue;
         }
         if t.finish_reason.is_empty() {
-            // Same rule the span path uses: a turn with tool calls must signal
-            // tool-use or the client stops and never runs the tool.
+            // A tool turn must signal tool-use or the client never runs it.
             t.finish_reason = if t.tool_calls.is_empty() { "stop" } else { "tool_calls" }.into();
         }
         turns.push(t);

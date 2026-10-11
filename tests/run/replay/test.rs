@@ -91,8 +91,7 @@ async fn replay_compose(
     //     upstream; the gateway is pointed at it by `OPENAI_API_BASE`.
     // A human runs the identical stack: `docker compose -f <compose> -f <overlay>`.
     let compose_file = cwd.join(format!("containers/benchmarks/{benchmark}/compose.yaml"));
-    // A fixture is a calls record or a trace file; calls wins when both exist,
-    // being the bytes that crossed rather than a gateway's summary of them.
+    // Calls win over traces: the bytes that crossed, not a summary.
     let fixtures = cwd.join("tests/run/replay/fixtures");
     let calls = fixtures.join(format!("{benchmark}-{task_id}-{agent}.calls.jsonl"));
     let (fixture, mount) = if calls.exists() {
