@@ -15,19 +15,15 @@ ARG BENCHMARK_VERSION=4e6662d51c48e475f7f346e4fa09a6f8b31fcaa5
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 
-# Built apart from the testbed, into which nothing is installed: the grader's own
-# runtime (a relocatable Python and the official harness — upstream's images do
-# not all have pip to install it with), then this task's record. The runtime is
-# the same for every task, so their images share its layer.
-FROM --platform=linux/amd64 ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS build
+# The grader's own runtime — a relocatable Python and the official harness —
+# built apart from the testbed, into which nothing is installed: upstream's
+# images do not all have pip to install it with. It is the same for every task,
+# so their images share its layer.
+FROM --platform=linux/amd64 ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS grader
 RUN UV_PYTHON_INSTALL_DIR=/opt uv python install 3.12.8 \
  && mv /opt/cpython-3.12.8-linux-x86_64-gnu /tests/python \
  && uv pip install --python /tests/python/bin/python3 --target /tests/deps swebench==5.0.2
-COPY grade.py /tests/
-ARG EVAL_TASK_ID
-ARG BENCHMARK_VERSION
-COPY materialize.py /
-RUN python3 /materialize.py "${BENCHMARK_VERSION}" "swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest"
+COPY grade.py materialize.py /tests/
 
 FROM --platform=linux/amd64 docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest
 
@@ -51,8 +47,8 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.03859"
 ENV EVAL_BENCHMARK=swe-bench-multimodal
 ENV EVAL_TASK_ID=${EVAL_TASK_ID}
 
-COPY --link --from=build /tests /tests
-COPY --from=build /tasks /tasks
+COPY --link --from=grader /tests /tests
+RUN /tests/python/bin/python3 /tests/materialize.py "${BENCHMARK_VERSION}" "swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest"
 COPY --chmod=755 grade.sh entrypoint.sh /
 # Root-only: the grader, the task record (gold patch, tests, baselines), and
 # upstream's own copy of the baselines, which it ships world-readable.

@@ -2,6 +2,7 @@
 
 Usage: materialize.py <dataset-revision> <upstream-image-ref>
 
+Runs inside the task's own image, where it can see what upstream archived.
 Writes /tasks/0: the dataset row, the issue text, the eval script, and the
 binary test baselines that script restores.
 """
@@ -11,6 +12,7 @@ import json
 import os
 import sys
 import urllib.request
+from urllib.parse import urlparse
 
 sys.path.insert(0, "/tests/deps")
 import pyarrow.parquet as pq  # noqa: E402
@@ -23,10 +25,19 @@ DATASET = (
     f"{REVISION}/data/test-00000-of-00001.parquet"
 )
 
-# The base image's sitecustomize retries urlopen on transient failures.
 rows = pq.read_table(io.BytesIO(urllib.request.urlopen(DATASET).read())).to_pylist()
 row = next(r for r in rows if r["image"] == IMAGE)
 spec = make_test_spec(row)
+
+# The agent has no internet, so the issue's image links are dead to it. Upstream
+# archives each as /problem_assets/<n>-<file name>; put that path where the link
+# was, so the issue itself says which file shows what. An agent told only that a
+# folder of images exists listed it and moved on (5 of 6 live runs).
+problem = row["problem_statement"]
+for number, url in enumerate(spec.image_assets.get("problem_statement") or []):
+    local = f"/problem_assets/{number}-{os.path.basename(urlparse(url).path)}"
+    if os.path.exists(local):
+        problem = problem.replace(url, local)
 
 # Binary baselines a text test_patch cannot carry. The official harness fetches
 # and stages them when it grades; here they are baked and restored by the same
@@ -53,4 +64,4 @@ for name, key in (
     ("base_commit", "base_commit"),
 ):
     with open(f"/tasks/0/{name}.txt", "w") as out:
-        out.write(row[key])
+        out.write(problem if name == "problem" else row[key])
