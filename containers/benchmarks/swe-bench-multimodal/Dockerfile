@@ -40,6 +40,7 @@ LABEL eval.benchmark.modality="multimodal"
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
+LABEL eval.benchmark.released="true"
 LABEL eval.platforms="linux/amd64"
 LABEL eval.benchmark.url="https://github.com/SWE-bench/SWE-bench"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2410.03859"

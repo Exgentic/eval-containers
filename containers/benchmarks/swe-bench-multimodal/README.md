@@ -10,7 +10,7 @@ SWE-bench Multimodal - fixing visual front-end bugs from issues with screenshots
 | Environment | per-task |
 | Platform | linux/amd64 only |
 | Internet required | false |
-| Released | no |
+| Released | yes |
 | Upstream | [https://github.com/SWE-bench/SWE-bench](https://github.com/SWE-bench/SWE-bench) |
 | Dataset | [SWE-bench/SWE-bench_Multimodal](https://huggingface.co/datasets/SWE-bench/SWE-bench_Multimodal) |
 | Paper | [paper](https://arxiv.org/abs/2410.03859) |
@@ -32,18 +32,28 @@ is task `openlayers_1776_openlayers-12683`. [`tasks.txt`](tasks.txt) lists all 4
 ## What the agent sees
 
 "Fix this GitHub issue in the repository at /testbed. Edit the source code to
-resolve the bug. Do NOT modify any test files.", followed by the issue text, in
-the `TASK` environment variable.
+resolve the bug. Do NOT modify any test files.", then the issue text, in the
+`TASK` environment variable.
 
-Two things the prompt adds, because the agent could not find them otherwise:
+Upstream ships no prompt, only the issue, so every line around it is ours. It
+states facts the agent cannot find out for itself and nothing about how to
+work:
 
-- **The screenshots are files.** The agent has no internet, so the issue's image
+- **Where the screenshots are.** The agent has no internet, so the issue's image
   links are dead to it. Upstream archives what each issue links to inside the
-  image, at `/problem_assets/`, and the prompt says so.
-- **The project's Node.js is not on `PATH`.** The agent runs with a scrubbed
+  image, under `/problem_assets/`; each image link in the issue text is replaced
+  by the path of its archived file, so the issue itself says which file shows
+  what.
+- **How to load the project's Node.js.** The agent runs with a scrubbed
   environment, and a Node-based agent brings its own `node`, which is rarely the
-  version the project needs (they range from v4 to v21). The prompt names the
-  one command that loads the right one: `source /usr/local/nvm/nvm.sh`.
+  version the project needs (they range from v4 to v21):
+  `source /usr/local/nvm/nvm.sh`.
+- **That Chrome is installed** (`google-chrome`), which is how a change can be
+  looked at.
+- **The container's real CPU and memory limit**, read from its cgroup. A
+  container reports its host's CPUs, and tools such as jest size their worker
+  pools from that: on a 96-core node one test run started 95 workers under a
+  2-CPU, 12 GB limit and the whole task was OOM-killed.
 
 ## How it's graded
 
@@ -110,7 +120,7 @@ Evidence for each is in [`AUDIT.md`](AUDIT.md).
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `materialize.py` — build time: writes the task record from the pinned dataset
+- `materialize.py` — build time, in the task's image: writes the task record from the pinned dataset
 - `grade.sh`, `grade.py` — the verifier
 - `entrypoint.sh` — hands the repo to the agent and builds `TASK`
 - `solution.sh` — the oracle's gold solution

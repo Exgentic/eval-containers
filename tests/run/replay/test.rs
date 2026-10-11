@@ -1411,6 +1411,13 @@ replay_test!(
 );
 
 replay_test!(
+    replay_swe_bench_multimodal_highlightjs_1776_highlight_js_2684_claude_code,
+    "swe-bench-multimodal",
+    "claude-code",
+    "highlightjs_1776_highlight.js-2684"
+);
+
+replay_test!(
     replay_swe_gym_1462_copilot_cli,
     "swe-gym",
     "copilot-cli",
