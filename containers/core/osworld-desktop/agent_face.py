@@ -6,10 +6,10 @@ write a task's expected files instead of doing the work on screen, and score
 full marks for it. Upstream never has to think about this: their agent is a
 model loop outside the VM emitting pyautogui, not a process with a shell.
 
-So the real server listens on a unix socket that only root can open (setup and
-grading use it), and this is what listens on the port: screenshot in, pyautogui
-out, nothing else. The agent shares the pod's network namespace, so being
-unreachable is the only guarantee that holds — not being undocumented.
+So the real server listens on a unix socket the agent's uid cannot reach (setup
+and grading open it as root), and this is what listens on the port: screenshot
+in, pyautogui out, nothing else. The agent shares the pod's network namespace,
+so being unreachable is the only guarantee that holds — not being undocumented.
 
 `/act` takes pyautogui source, which is Python source: concatenating it into a
 script and running it is `/execute` with a prefix. So the action is parsed and
@@ -134,7 +134,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(
                 400, json.dumps({"error": str(exc)}).encode(), "application/json"
             )
-        script = "import pyautogui, time\n" + action
+        # The prefix upstream's own controller runs every action under.
+        script = "import pyautogui, time\npyautogui.FAILSAFE = False\n" + action
         status, body = call(
             "POST",
             "/execute",

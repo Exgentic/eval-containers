@@ -5,14 +5,9 @@
 # evaluators as the original; 117 of the task definitions carry fixes, so a
 # score against the original is not comparable to one against this.
 #
-# The agent drives a real Ubuntu desktop (sidecar `desktop`, built from
-# core/osworld-desktop/Dockerfile) through upstream's own control API, and is
-# graded by upstream's own evaluators — the reward is a real score, not the
-# hard-coded -1 this benchmark used to return.
-#
-# No VM: upstream ships the desktop as a qcow2 booted under QEMU/KVM, but the
-# guest is plain Ubuntu x86_64, so it runs as a container at native speed.
-# See core/osworld-desktop/Dockerfile for why emulation is not an option here.
+# The agent drives upstream's own desktop — the sidecar `desktop` is the root
+# filesystem of the VM disk OSWorld publishes, run as a container (see
+# core/osworld-desktop/Dockerfile) — and is graded by upstream's own evaluators.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
@@ -20,13 +15,14 @@ FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-external:latest
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="osworld-verified"
 LABEL eval.benchmark.description="OSWorld-Verified - the repaired OSWorld suite on a real desktop"
-# 343, not the suite's 369: upstream's own test_infeasible.json names 26 tasks
-# whose correct answer is to report the task impossible, and grading here runs
-# in a fresh process with no action_history, which is the only thing upstream
-# rewards them on. Scoring them 0 would understate every agent by 7%, so they
-# are left out and the number says so. OSWorld 2.0's 108 gated tasks are a
-# benchmark of their own, sharing this desktop image.
-LABEL eval.benchmark.tasks="343"
+# 335, not the suite's 369, by upstream's own two lists. test_infeasible.json
+# names 26 tasks whose right answer is to report the task impossible: upstream
+# rewards them on the agent's last action, and grading here runs in a fresh
+# process that never sees it. test_nogdrive.json is the suite without the 8
+# tasks that need a Google account's OAuth client, which cannot ship in an
+# image; upstream accepts results on that list. Scoring either group 0 would
+# understate every agent, so they are left out and the number says so.
+LABEL eval.benchmark.tasks="335"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="true"
 ENV EVAL_INTERNET=true
@@ -41,20 +37,27 @@ LABEL eval.benchmark.data_revision="b138d348256078fa634fc3b73567a7337c793e6b"
 RUN git clone -q https://github.com/xlang-ai/OSWorld /opt/OSWorld-V2 \
  && git -C /opt/OSWorld-V2 checkout -q ${OSWORLD_COMMIT}
 
-# The harness pulls in ~82 dependencies, most for cloud providers no task here
-# touches (aws/azure/gcp/aliyun SDKs). This is the set `import
-# desktop_env.desktop_env` plus the evaluators actually reach, resolved by
-# importing until it stopped failing — several are named differently from
-# their module (cv2 -> opencv-python-headless, acoustid -> pyacoustid).
-RUN pip3 install --no-cache-dir \
+# The harness declares ~80 dependencies, most for agents and cloud providers no
+# task here touches. This is the set `import desktop_env.desktop_env` and the
+# evaluators reach, at the versions upstream's own lock resolves — a grader on
+# another numpy or OpenCV is a different grader. The import fails the build
+# when upstream adds one, and loading the OCR reader fetches its weights here
+# so grading never downloads.
+RUN pip3 install --no-cache-dir uv==0.13.0 \
+ && uv export -q --project /opt/OSWorld-V2 --frozen --no-hashes --no-emit-local -o /tmp/upstream.txt \
+ && uv pip install --system --no-cache -c /tmp/upstream.txt \
+      --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match \
       requests gymnasium playwright pydrive websockets \
       openpyxl pandas lxml cssselect xmltodict beautifulsoup4 odfpy formulas \
       python-docx python-pptx pypdf PyPDF2 pymupdf pdfplumber borb \
-      Pillow imagehash scikit-image opencv-python-headless \
+      Pillow imagehash scikit-image opencv-python-headless easyocr torch torchvision \
       mutagen pyacoustid librosa fastdtw openai \
       rapidfuzz func_timeout psutil tqdm mss PyGetWindow \
       python-dotenv pytz fabric requests-toolbelt tldextract python-gitlab \
-      icalendar recurring-ical-events loguru docker requests-unixsocket
+      icalendar recurring-ical-events loguru docker requests-unixsocket \
+ && rm /tmp/upstream.txt \
+ && cd /opt/OSWorld-V2 \
+ && python3 -c "import desktop_env.desktop_env; from desktop_env.evaluators import metrics, getters; import easyocr; easyocr.Reader(['en'], gpu=False)"
 
 COPY osworld_env.py /opt/osworld_env.py
 
@@ -65,18 +68,21 @@ RUN python3 <<'PYEOF'
 import json, glob, os
 
 root = '/opt/OSWorld-V2/evaluation_examples'
-# The 26 whose right answer is "this cannot be done": upstream rewards them only
-# when the agent's last action was FAIL, and grading here runs in a fresh
-# process that never sees it. Keeping them would mark a correct refusal wrong.
-infeasible = {i for v in json.load(open(root + '/test_infeasible.json')).values() for i in v}
+def listed(name):
+    return {i for v in json.load(open('%s/%s' % (root, name))).values() for i in v}
+graded = listed('test_nogdrive.json') - listed('test_infeasible.json')
 
+# `id` is the line's position because that is the shared contract: the runner's
+# eval-materialize-task reads EVAL_TASK_ID as a line number, and a dataset run
+# is an Indexed Job whose task id IS the completion index. So the task's own id
+# rides along in `upstream_id`, and results keyed by position do not survive a
+# change to the set.
 os.makedirs('/tasks', exist_ok=True)
-count = skipped = 0
+count = 0
 with open('/tasks/all.jsonl', 'w') as out:
     for path in sorted(glob.glob(root + '/examples/*/*.json')):
         task = json.load(open(path))
-        if task['id'] in infeasible:
-            skipped += 1
+        if task['id'] not in graded:
             continue
         out.write(json.dumps({
             'id': str(count),
@@ -86,10 +92,9 @@ with open('/tasks/all.jsonl', 'w') as out:
             'task': json.dumps(task),
         }) + '\n')
         count += 1
-if (count, skipped) != (343, 26):
-    raise SystemExit('osworld-verified: expected 343 tasks and 26 infeasible, got %d and %d'
-                     % (count, skipped))
-print('Extracted %d tasks (%d infeasible left out)' % (count, skipped))
+if count != 335:
+    raise SystemExit('osworld-verified: expected 335 tasks, got %d' % count)
+print('Extracted %d tasks' % count)
 PYEOF
 
 RUN chmod 600 /tasks/all.jsonl
@@ -130,8 +135,8 @@ if [ -n "$EVAL_TASK_ID" ] && [ -f /tasks/$EVAL_TASK_ID/task.txt ]; then
   chmod 600 /tasks/$EVAL_TASK_ID/task.json
 fi
 
-# The desktop sidecar boots X, a window manager and LibreOffice before it
-# serves; without this the task's own setup would race it.
+# The desktop sidecar starts its session before it serves; without this the
+# task's own setup would race it.
 for i in $(seq 1 120); do
   curl -sf -m 10 -o /dev/null "http://${DESKTOP_HOST}:${DESKTOP_PORT}/screenshot" && break
   sleep 2
@@ -143,8 +148,8 @@ python3 /opt/osworld_env.py setup /tasks/$EVAL_TASK_ID/task.json || \
 
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
   export TASK="You are a computer-use agent driving a real Ubuntu desktop.
-The files you need are already open on it. You cannot see the screen directly —
-use the desktop's HTTP API at http://${DESKTOP_HOST}:${DESKTOP_PORT}:
+You cannot see the screen directly — use the desktop's HTTP API at
+http://${DESKTOP_HOST}:${DESKTOP_PORT}:
 
   curl -s -o /tmp/screen.png http://${DESKTOP_HOST}:${DESKTOP_PORT}/screenshot
       saves a 1920x1080 PNG of the screen — read that image file to see it.
@@ -152,13 +157,12 @@ use the desktop's HTTP API at http://${DESKTOP_HOST}:${DESKTOP_PORT}:
   curl -s -X POST http://${DESKTOP_HOST}:${DESKTOP_PORT}/act \
        -H 'Content-Type: application/json' \
        -d '{\"action\":\"pyautogui.click(x=100, y=200)\"}'
-      runs one pyautogui action: click, typewrite, hotkey, press.
-      Arguments must be literals. This is the whole interface — the
-      desktop accepts nothing else.
+      runs pyautogui calls (click, typewrite, hotkey, press, ...) and
+      time.sleep, one per line. Arguments must be literals. This is the
+      whole interface — the desktop accepts nothing else.
 
 Work in small steps and take a screenshot after each one to check the result.
-In LibreOffice, the Name Box (top left) jumps to a cell. Save with
-ctrl+s and keep the current format if asked.
+The computer's password is 'password'; use it when you need sudo rights.
 
 Task: $(cat /tasks/$EVAL_TASK_ID/problem.txt)"
 fi

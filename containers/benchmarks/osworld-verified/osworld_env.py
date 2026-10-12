@@ -125,8 +125,9 @@ def make_env():
         action_space="pyautogui",
         headless=True,
         os_type="Ubuntu",
-        force_disable_vnc=True,
-        force_disable_recording=True,
+        # reset() returns an observation nobody reads here; without this it
+        # also dumps the desktop's whole accessibility tree.
+        require_a11y_tree=False,
     )
 
 
@@ -137,10 +138,15 @@ def main():
     use_socket(env)
     if mode == "setup":
         env.reset(task_config=cfg)
+        # reset() retries a failed setup and then carries on regardless; this
+        # is the flag it raises only when the task's own steps went through.
+        if cfg.get("config") and not env.is_environment_used:
+            raise SystemExit("setup failed: %s" % cfg["id"])
         print("setup complete: %s" % cfg["id"])
     elif mode == "grade":
         env._set_task_info(cfg)
-        print("%s" % env.evaluate())
+        # A metric may answer True/False; grade.sh takes a number.
+        print(float(env.evaluate()))
     else:
         raise SystemExit("usage: osworld_env.py setup|grade <task.json>")
 
