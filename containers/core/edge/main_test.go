@@ -1043,13 +1043,19 @@ func TestEveryWireSavesIntoTheCompressedRecord(t *testing.T) {
 	for _, c := range wireCases {
 		post(t, edge.URL+c.path, c.req, nil).Body.Close()
 	}
-	got := awaitZstdRecords(t, len(wireCases))
-	for i, c := range wireCases {
-		if got[i].Request != c.req {
-			t.Errorf("%s: compressed record is not verbatim:\n got %s\nwant %s", c.name, got[i].Request, c.req)
+	// Records land in the order calls finish, not the order they were sent.
+	got := map[string]call{}
+	for _, rec := range awaitZstdRecords(t, len(wireCases)) {
+		got[rec.Request] = rec
+	}
+	for _, c := range wireCases {
+		rec, ok := got[c.req]
+		if !ok {
+			t.Errorf("%s: no compressed record holds the request verbatim:\nwant %s", c.name, c.req)
+			continue
 		}
-		if got[i].Model != "azure/gpt-5.4" {
-			t.Errorf("%s: compressed record model = %q", c.name, got[i].Model)
+		if rec.Model != "azure/gpt-5.4" {
+			t.Errorf("%s: compressed record model = %q", c.name, rec.Model)
 		}
 	}
 }
