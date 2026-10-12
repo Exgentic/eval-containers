@@ -24,6 +24,9 @@ LABEL eval.benchmark.description="OSWorld-Verified - the repaired OSWorld suite 
 # understate every agent, so they are left out and the number says so.
 LABEL eval.benchmark.tasks="335"
 LABEL eval.benchmark.env="shared-env"
+# x86_64 only, as its desktop is; upstream's lock does not install on arm64
+# without a compiler either.
+LABEL eval.platforms="linux/amd64"
 LABEL eval.benchmark.internet="true"
 ENV EVAL_INTERNET=true
 LABEL eval.benchmark.url="https://github.com/xlang-ai/OSWorld"
