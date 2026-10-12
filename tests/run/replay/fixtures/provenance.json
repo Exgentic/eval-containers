@@ -6,7 +6,7 @@
     "timestamp, and the release tag of the sweep that produced it.",
     "",
     "This file starts with the fixtures captured out-of-band under rule 9. The 243",
-    "fixtures that predate it have no entry yet — that backfill is tracked as its",
+    "fixtures that predate it have no entry yet \u2014 that backfill is tracked as its",
     "own task (issue #483), and rule 6 calls an entry-less fixture drift, so this",
     "file is the place it gets paid down rather than a new convention."
   ],
@@ -84,6 +84,114 @@
         "Recorded by #527's live compose run (tasks 0-9, azure/FW-GLM-5.2) when bfcl",
         "became a model-only native-harness benchmark; renamed from bfcl-0-claude-code",
         "with native agent mode (#577): the harness made these calls, not an agent."
+      ]
+    },
+    "osworld-72-claude-code": {
+      "benchmark": "osworld",
+      "task_id": "72",
+      "agent": "claude-code",
+      "agent_version": null,
+      "model": "claude-opus-5",
+      "gateway": "bifrost",
+      "benchmark_data_revision": null,
+      "captured_at": "2026-09-22T14:18:46Z",
+      "release_tag": null,
+      "capture_method": "production run (RULES.md rule 5a)",
+      "platform": "linux/amd64",
+      "reward": 1.0,
+      "passed": true,
+      "notes": [
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
+      ]
+    },
+    "promptfoo-redteam-5-claude-code": {
+      "benchmark": "promptfoo",
+      "task_id": "redteam-5",
+      "agent": "claude-code",
+      "agent_version": null,
+      "model": "claude-sonnet-4-6",
+      "gateway": "bifrost",
+      "benchmark_data_revision": null,
+      "captured_at": "2026-09-23T11:24:00Z",
+      "release_tag": null,
+      "capture_method": "production run (RULES.md rule 5a)",
+      "platform": "linux/amd64",
+      "reward": 1,
+      "passed": true,
+      "notes": [
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
+      ]
+    },
+    "aime-14-pi": {
+      "benchmark": "aime",
+      "task_id": "14",
+      "agent": "pi",
+      "agent_version": null,
+      "model": "FW-GLM-5.2",
+      "gateway": "bifrost",
+      "benchmark_data_revision": null,
+      "captured_at": "2026-09-09T12:52:03Z",
+      "release_tag": null,
+      "capture_method": "production run (RULES.md rule 5a)",
+      "platform": "linux/amd64",
+      "reward": 1,
+      "passed": true,
+      "notes": [
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
+      ]
+    },
+    "aime-12-opencode": {
+      "benchmark": "aime",
+      "task_id": "12",
+      "agent": "opencode",
+      "agent_version": null,
+      "model": "FW-GLM-5.2",
+      "gateway": "bifrost",
+      "benchmark_data_revision": null,
+      "captured_at": "2026-09-09T11:53:53Z",
+      "release_tag": null,
+      "capture_method": "production run (RULES.md rule 5a)",
+      "platform": "linux/amd64",
+      "reward": 1,
+      "passed": true,
+      "notes": [
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
+      ]
+    },
+    "bfcl-3-claude-code": {
+      "benchmark": "bfcl",
+      "task_id": "3",
+      "agent": "claude-code",
+      "agent_version": null,
+      "model": "FW-GLM-5.2",
+      "gateway": "bifrost",
+      "benchmark_data_revision": null,
+      "captured_at": "2026-09-08T16:28:18Z",
+      "release_tag": null,
+      "capture_method": "production run (RULES.md rule 5a)",
+      "platform": "linux/amd64",
+      "reward": 0,
+      "passed": false,
+      "notes": [
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
+      ]
+    },
+    "gsm8k-2-pi": {
+      "benchmark": "gsm8k",
+      "task_id": "2",
+      "agent": "pi",
+      "agent_version": null,
+      "model": "gpt-4.1-mini",
+      "gateway": "bifrost",
+      "benchmark_data_revision": null,
+      "captured_at": "2026-09-15T15:38:00Z",
+      "release_tag": null,
+      "capture_method": "production run (RULES.md rule 5a)",
+      "platform": "linux/amd64",
+      "reward": 0,
+      "passed": false,
+      "notes": [
+        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
       ]
     }
   }

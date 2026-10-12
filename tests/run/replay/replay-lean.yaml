@@ -16,4 +16,5 @@ services:
     healthcheck:
       test: ["CMD", "/opt/gateway/server", "health"]
     volumes:
-      - ${REPLAY_FIXTURE:?}:/data/traces.jsonl:ro
+      # A calls fixture mounts as /data/calls.jsonl instead.
+      - ${REPLAY_FIXTURE:?}:${REPLAY_MOUNT:-/data/traces.jsonl}:ro
