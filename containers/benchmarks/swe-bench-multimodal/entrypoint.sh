@@ -3,9 +3,8 @@
 # issue the prompt states facts the agent cannot find out, never how to work.
 chown -R agent:agent /testbed 2>/dev/null || true
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  # A container reports its host's CPUs, and jest and friends size their worker
-  # pools from that: on a 96-core node one test run started 95 workers under a
-  # 2-CPU, 12 GB limit and the whole task was OOM-killed.
+  # A container reports its host's CPUs, and jest sizes its worker pool from
+  # that: 95 workers under a 2-CPU, 12 GB limit got a whole task OOM-killed.
   cpus=$(awk '$1 != "max" {printf "%d", ($1 + $2 - 1) / $2}' /sys/fs/cgroup/cpu.max 2>/dev/null)
   mem=$(awk '$1 != "max" {printf "%d", $1 / 1073741824}' /sys/fs/cgroup/memory.max 2>/dev/null)
   limits=""

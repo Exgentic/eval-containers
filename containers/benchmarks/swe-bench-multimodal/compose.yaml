@@ -16,10 +16,8 @@ services:
       BENCHMARK: swe-bench-multimodal
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
       TIMEOUT: ${EVAL_TIMEOUT:-1800}
-    # Rule 10 / 24e — matches the chart preset (2 CPU / 12Gi). Grading runs the
-    # project's own test suite, which peaked at 7.0 GB (carbon's jest) and 4.5 GB
-    # (openlayers' headless-Chrome rendering tests); the shared 2G default would
-    # kill it, and a killed verifier grades a correct fix 0.
+    # Rule 10 / 24e — matches the chart preset. Grading carbon's jest suite needs
+    # 6-7 GB; the shared 2G default would kill the verifier, which grades 0.
     deploy:
       resources:
         limits:

@@ -1,11 +1,7 @@
-# Matches compose.yaml: the agent budget swe-bench uses, and the memory the
-# projects' own test suites need (rule 24e). Measured while grading: 7.0 GB peak
-# for carbon's jest, 4.5 GB for openlayers' headless-Chrome rendering tests — the
-# chart default of 2Gi would kill the verifier, and a killed verifier grades a
-# correct fix 0.
+# Matches compose.yaml (rule 24e). Grading carbon's jest suite needs 6-7 GB; the
+# chart default of 2Gi would kill the verifier, which grades a correct fix 0.
 timeout: '1800'
-# Grading runs after the agent: grade.sh gives the tests the official harness's
-# own 1800s, and the pod must outlive that to write the result.
+# grade.sh gives the tests the harness's own 1800 s; the pod must outlive that.
 deadlineGrace: 2100
 resources:
   requests:

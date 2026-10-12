@@ -1,6 +1,7 @@
 ---
 benchmark: swe-bench-multimodal
-host: exgentic-ns (ROKS, native linux/amd64 pods at 2 CPU / 12 GiB); GitHub amd64 runners for CI
+host: exgentic-ns (ROKS, native linux/amd64 pods at 2 CPU / 12 GiB); GitHub
+amd64 runners for CI
 commit: feat/swe-bench-multimodal
 ---
 # Audit — swe-bench-multimodal (SWE-bench/SWE-bench_Multimodal, test split: 395 of 480 tasks ship / 11 projects)
@@ -32,7 +33,10 @@ in 2-CPU / 12 GiB pods on native amd64:
 The upstream-image path came first and stopped at 200 tasks: Docker Hub limits
 anonymous pulls to about 100 per node per 6 hours. It scored 7 tasks 0 / 0 that
 score 1 / 0 in their published image (a log cut short in transfer, a patch that
-harness did not apply), so no verdict of 0 from it is used. 157 tasks rest on it alone, each with a 1 / 0 or a 1 / 1: both logs of every one carry the eval script's closing marker and were size-checked after transfer. 43 more that were later run in their published image as well came out the same.
+harness did not apply), so no verdict of 0 from it is used. 157 tasks rest on it
+alone, each with a 1 / 0 or a 1 / 1: both logs of every one carry the eval
+script's closing marker and were size-checked after transfer. 43 more that were
+later run in their published image as well came out the same.
 
 ### Result by project
 
@@ -69,19 +73,44 @@ failing, and a test that is absent from the log is not seen failing.
 Both are properties of the dataset and of upstream's image, so the official
 harness scores these the same way.
 
-Rendering case (42), `openlayers-` and: `12194`, `12373`, `12683`, `12962`, `12965`, `13013`, `13069`, `13119`, `13150`, `13155`, `13198`, `13226`, `13269`, `13333`, `13509`, `13547`, `13648`, `13654`, `13669`, `13974`, `13975`, `13981`, `14015`, `14051`, `14066`, `14332`, `14414`, `14619`, `14659`, `14719`, `14932`, `15114`, `15229`, `15234`, `15365`, `15466`, `15484`, `15614`, `15685`, `15787`, `15796`, `15825`.
+Rendering case (42), `openlayers-` and: `12194`, `12373`, `12683`, `12962`,
+`12965`, `13013`, `13069`, `13119`, `13150`, `13155`, `13198`, `13226`, `13269`,
+`13333`, `13509`, `13547`, `13648`, `13654`, `13669`, `13974`, `13975`, `13981`,
+`14015`, `14051`, `14066`, `14332`, `14414`, `14619`, `14659`, `14719`, `14932`,
+`15114`, `15229`, `15234`, `15365`, `15466`, `15484`, `15614`, `15685`, `15787`,
+`15796`, `15825`.
 
-Unit tests (17), `openlayers-` and: `7554`, `8515`, `9083`, `9307`, `10478`, `10694`, `10982`, `11088`, `11377`, `11401`, `11649`, `12141`, `12172`, `12695`, `14100`, `14483`, `14599`.
+Unit tests (17), `openlayers-` and: `7554`, `8515`, `9083`, `9307`, `10478`,
+`10694`, `10982`, `11088`, `11377`, `11401`, `11649`, `12141`, `12172`, `12695`,
+`14100`, `14483`, `14599`.
 
 **The reference fix does not hold a 1 (26, all carbon).**
 
-32 carbon tasks, opened between November 2019 and November 2020, depend on `@ibma/aat`, the accessibility tool carbon used then. It fetches its configuration from an IBM server that now answers with an HTML page, and `JSON.parse` throws in `AATConfigLoader.js`. What that does to the score depends on the task:
+32 carbon tasks, opened between November 2019 and November 2020, depend on
+`@ibma/aat`, the accessibility tool carbon used then. It fetches its
+configuration from an IBM server that now answers with an HTML page, and
+`JSON.parse` throws in `AATConfigLoader.js`. What that does to the score depends
+on the task:
 
-- **0 on every run (6)**: `carbon-4741`, `carbon-4952`, `carbon-4999`, `carbon-5035`, `carbon-5156`, `carbon-5173`. The last test command runs a single test file; the throw comes after the results and the command exits 1 although every test passed (`PASS …/Tile-test.js`, 41 of 41, on `carbon-5156`). swebench 5.0.2 rejects a log whose command failed while no test did.
-- **1 on one run, 0 on another (2)**: `carbon-4820`, `carbon-4834`. The command runs several files, the throw is printed among the workers' results, and the exit status varies — same fix, same image.
-- **1 on every run, with the throw in the log each time (18)**: `carbon-4862`, `carbon-4891`, `carbon-4991`, `carbon-5330`, `carbon-5485`, `carbon-6410`, `carbon-6442`, `carbon-6520`, `carbon-6691`, `carbon-6726`, `carbon-6949`, `carbon-6960`, `carbon-6964`, `carbon-7012`, `carbon-7046`, `carbon-7063`, `carbon-7212`, `carbon-7288`. Left out with the rest: the same crash is in their test run, and on the two above it decided the score.
+- **0 on every run (6)**: `carbon-4741`, `carbon-4952`, `carbon-4999`,
+  `carbon-5035`, `carbon-5156`, `carbon-5173`. The last test command runs a
+  single test file; the throw comes after the results and the command exits 1
+  although every test passed (`PASS …/Tile-test.js`, 41 of 41, on
+  `carbon-5156`). swebench 5.0.2 rejects a log whose command failed while no
+  test did.
+- **1 on one run, 0 on another (2)**: `carbon-4820`, `carbon-4834`. The command
+  runs several files, the throw is printed among the workers' results, and the
+  exit status varies — same fix, same image.
+- **1 on every run, with the throw in the log each time (18)**: `carbon-4862`,
+  `carbon-4891`, `carbon-4991`, `carbon-5330`, `carbon-5485`, `carbon-6410`,
+  `carbon-6442`, `carbon-6520`, `carbon-6691`, `carbon-6726`, `carbon-6949`,
+  `carbon-6960`, `carbon-6964`, `carbon-7012`, `carbon-7046`, `carbon-7063`,
+  `carbon-7212`, `carbon-7288`. Left out with the rest: the same crash is in
+  their test run, and on the two above it decided the score.
 
-Each of the 32 was run again with the throws counted, twice where the log stayed clean. The 6 whose tests never load the tool ship. The official harness is exposed to the same server.
+Each of the 32 was run again with the throws counted, twice where the log stayed
+clean. The 6 whose tests never load the tool ship. The official harness is
+exposed to the same server.
 
 ### Live runs
 
@@ -130,9 +159,16 @@ a test runs, and the eval script re-installs dependencies whenever
 route on Kubernetes (rule 24d: no per-container firewall) and in the standalone
 bundle (the firewall is on the agent's uid) — the two surfaces every result
 above comes from. Under `compose` the runner sits on the internal network and
-has none. With name resolution cut inside the pod — what that network looks like to the tests — the reference fix was graded again on 52 of the 107 carbon tasks that ship: 39 still score 1 and 13 score 0. Fifteen tasks of the other ten projects, run with `--network none` under emulation, all scored 1; those whose `package.json` differs from `HEAD` first wait out the install's 900 s timeout (`scratch-gui-2778`: 922 s).
+has none. With name resolution cut inside the pod — what that network looks like
+to the tests — the reference fix was graded again on 52 of the 107 carbon tasks
+that ship: 39 still score 1 and 13 score 0. Fifteen tasks of the other ten
+projects, run with `--network none` under emulation, all scored 1; those whose
+`package.json` differs from `HEAD` first wait out the install's 900 s timeout
+(`scratch-gui-2778`: 922 s).
 
-Carbon tasks that need the route: `carbon-7270`, `carbon-7350`, `carbon-7353`, `carbon-7478`, `carbon-7619`, `carbon-7687`, `carbon-7908`, `carbon-8720`, `carbon-9189`, `carbon-9700`, `carbon-10188`, `carbon-10214`, `carbon-10225`.
+Carbon tasks that need the route: `carbon-7270`, `carbon-7350`, `carbon-7353`,
+`carbon-7478`, `carbon-7619`, `carbon-7687`, `carbon-7908`, `carbon-8720`,
+`carbon-9189`, `carbon-9700`, `carbon-10188`, `carbon-10214`, `carbon-10225`.
 
 **Chrome has no WebGL.** `gl.getSupportedExtensions()` is undefined in upstream's
 Chrome 151 under amd64 emulation and in native pods alike, with or without
@@ -141,7 +177,13 @@ harness grants its containers; whether WebGL works there was not checked. For
 grading it no longer matters — a task ships only with gold=1 and no-op=0 — but
 an agent cannot render a WebGL layer to look at its own change.
 
-**An unfixed tree can hang.** On 3 of the tasks that ship (`openlayers-13020`, `openlayers-13212`, `openlayers-15271`) the tests on the unchanged tree never finish. `grade.sh` stops them after 1800 s, the official harness's own limit, and the score is 0; the reference fix scores 1 there, run alone in a fresh pod (on `openlayers-13020` it scored 0 when run in the pod the hung tests had just been killed in, which a real run never does). The preset's `deadlineGrace` (2100 s) covers the wait.
+**An unfixed tree can hang.** On 3 of the tasks that ship (`openlayers-13020`,
+`openlayers-13212`, `openlayers-15271`) the tests on the unchanged tree never
+finish. `grade.sh` stops them after 1800 s, the official harness's own limit,
+and the score is 0; the reference fix scores 1 there, run alone in a fresh pod
+(on `openlayers-13020` it scored 0 when run in the pod the hung tests had just
+been killed in, which a real run never does). The preset's `deadlineGrace` (2100
+s) covers the wait.
 
 ## Safety — can the run harm us or cheat?
 

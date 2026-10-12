@@ -6,8 +6,9 @@
 #
 # EVAL_TASK_ID is that image's instance tag — the instance id lowercased, with
 # "__" spelled "_1776_" (e.g. "openlayers_1776_openlayers-12683"; tasks.txt lists
-# the ones that ship). It is a valid image name on every surface as it stands, and the
-# dataset row is found by its `image` column, so nothing maps one id to another.
+# the ones that ship). It is a valid image name on every surface as it stands,
+# and the dataset row is found by its `image` column, so nothing maps one id to
+# another.
 
 ARG EVAL_TASK_ID
 # Rule 4: one ARG drives both the dataset fetch and the data_revision label.

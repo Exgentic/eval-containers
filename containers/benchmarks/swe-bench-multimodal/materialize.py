@@ -31,8 +31,7 @@ spec = make_test_spec(row)
 
 # The agent has no internet, so the issue's image links are dead to it. Upstream
 # archives each as /problem_assets/<n>-<file name>; put that path where the link
-# was, so the issue itself says which file shows what. An agent told only that a
-# folder of images exists listed it and moved on (5 of 6 live runs).
+# was, so the issue itself says which file shows what.
 problem = row["problem_statement"]
 for number, url in enumerate(spec.image_assets.get("problem_statement") or []):
     local = f"/problem_assets/{number}-{os.path.basename(urlparse(url).path)}"
@@ -58,10 +57,10 @@ with open("/tasks/0/eval.sh", "w") as out:
     out.write(_inject_asset_restore(spec.eval_script, restore))
 with open("/tasks/0/config.json", "w") as out:
     json.dump(row, out, default=str)
-for name, key in (
-    ("problem", "problem_statement"),
-    ("id", "instance_id"),
-    ("base_commit", "base_commit"),
+for name, text in (
+    ("problem", problem),
+    ("id", row["instance_id"]),
+    ("base_commit", row["base_commit"]),
 ):
     with open(f"/tasks/0/{name}.txt", "w") as out:
-        out.write(problem if name == "problem" else row[key])
+        out.write(text)

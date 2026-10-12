@@ -41,7 +41,8 @@ task anyone solves by doing nothing. All 59 are openlayers. Most list a
 before the fix (`icon-opacity`, `full-build`); under the instance's `fail_only`
 grading that resolves the task with no change, under the official harness too.
 
-26 more, all carbon, are left out because their tests call an IBM endpoint that no longer
+26 more, all carbon, are left out because their tests call an IBM endpoint that
+no longer
 answers as it did. The test command crashes on the reply, and the reference fix
 scores 0, or 1 on one run and 0 on the next; a task whose log shows that crash is
 left out even where the score held.
@@ -112,8 +113,10 @@ own copy of the test baselines, which its images ship world-readable.
 `docker.io/swebench/sweb.eval.x86_64.${EVAL_TASK_ID}:latest`.
 
 ```bash
-eval-containers build bench swe-bench-multimodal --task-id googlechrome_1776_lighthouse-10176
-eval-containers oracle swe-bench-multimodal --task-id googlechrome_1776_lighthouse-10176 --platform linux/amd64
+eval-containers build bench swe-bench-multimodal --task-id
+googlechrome_1776_lighthouse-10176
+eval-containers oracle swe-bench-multimodal --task-id
+googlechrome_1776_lighthouse-10176 --platform linux/amd64
 ```
 
 ## Known limitations
@@ -125,12 +128,16 @@ Evidence for each is in [`AUDIT.md`](AUDIT.md).
   dependencies when a change touches `package.json`. The verifier has a route on
   Kubernetes and in the standalone bundle, where every task above was checked.
   Under `compose` the runner sits on the internal network and has none:
-  there a correct fix scores 0 on 13 of the 52 carbon tasks checked, and a tree whose `package.json` differs from `HEAD` waits out a 15-minute install timeout first.
+  there a correct fix scores 0 on 13 of the 52 carbon tasks checked, and a tree
+  whose `package.json` differs from `HEAD` waits out a 15-minute install timeout
+  first.
 - **Chrome has no WebGL.** Not under emulation and not on native amd64, with or
   without the sandbox, so an agent cannot render a WebGL layer to look at it.
   Grading is unaffected for the tasks that ship: each was checked with the
   reference fix and without it.
-- **An unfixed tree can hang the tests.** On 3 of the tasks that ship the tests never finish while the bug is there (`openlayers-13020`, `openlayers-13212`, `openlayers-15271`). The verifier stops the
+- **An unfixed tree can hang the tests.** On 3 of the tasks that ship the tests
+  never finish while the bug is there (`openlayers-13020`, `openlayers-13212`,
+  `openlayers-15271`). The verifier stops the
   tests after 30 minutes — the official harness's own limit — and scores 0.
 - **A task that fails rarely may remain.** The check ran each reference fix
   once, and a second time on 60 of the 395 tasks. The second run is
@@ -139,7 +146,8 @@ Evidence for each is in [`AUDIT.md`](AUDIT.md).
 ## Files
 
 - `Dockerfile` — builds the benchmark image
-- `materialize.py` — build time, in the task's image: writes the task record from the pinned dataset
+- `materialize.py` — build time, in the task's image: writes the task record
+  from the pinned dataset
 - `grade.sh`, `grade.py` — the verifier
 - `entrypoint.sh` — hands the repo to the agent and builds `TASK`
 - `solution.sh` — the oracle's gold solution
