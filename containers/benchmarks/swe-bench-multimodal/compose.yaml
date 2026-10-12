@@ -1,0 +1,25 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/swe-bench-multimodal-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: swe-bench-multimodal
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
+      TIMEOUT: ${EVAL_TIMEOUT:-1800}
+    # Rule 10 / 24e — matches the chart preset. Grading carbon's jest suite needs
+    # 6-7 GB; the shared 2G default would kill the verifier, which grades 0.
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 12G

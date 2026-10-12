@@ -1,0 +1,12 @@
+# Matches compose.yaml (rule 24e). Grading carbon's jest suite needs 6-7 GB; the
+# chart default of 2Gi would kill the verifier, which grades a correct fix 0.
+timeout: '1800'
+# grade.sh gives the tests the harness's own 1800 s; the pod must outlive that.
+deadlineGrace: 2100
+resources:
+  requests:
+    cpu: 500m
+    memory: 512Mi
+  limits:
+    cpu: '2'
+    memory: 12Gi

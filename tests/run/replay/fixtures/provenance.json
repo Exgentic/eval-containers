@@ -193,6 +193,26 @@
       "notes": [
         "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
       ]
+    },
+    "swe-bench-multimodal-highlightjs_1776_highlight.js-2684-claude-code": {
+      "benchmark": "swe-bench-multimodal",
+      "task_id": "highlightjs_1776_highlight.js-2684",
+      "agent": "claude-code",
+      "agent_version": "2.1.104",
+      "model": "claude-opus-5-5",
+      "gateway": null,
+      "benchmark_data_revision": "4e6662d51c48e475f7f346e4fa09a6f8b31fcaa5",
+      "captured_at": "2026-10-11T15:12:38Z",
+      "release_tag": null,
+      "capture_method": "cluster run of the pull request's test images (RULES.md rules 5a, 9)",
+      "platform": "linux/amd64",
+      "reward": 1,
+      "passed": true,
+      "notes": [
+        "The edge's calls record for a real run of this (benchmark, task, agent) on the exgentic-ns cluster, with no gateway: the edge called the provider directly. Recompressed into a complete zstd frame at capture (RULES.md rule 5a).",
+        "Redacted at capture (rule 4a): the provider proxy's Set-Cookie and X-Litellm-* response headers. No credential or internal host is present \u2014 the tree is scanned for both.",
+        "The agent opened one of the issue's screenshots, so the record carries an image block."
+      ]
     }
   }
 }
