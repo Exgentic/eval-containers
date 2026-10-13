@@ -44,19 +44,24 @@ RUN install -d -m 700 /opt/OSWorld \
  && curl -fsSL https://github.com/xlang-ai/OSWorld/archive/${BENCHMARK_VERSION}.tar.gz \
   | tar -xz --strip-components=1 -C /opt/OSWorld
 
-# What the harness and its evaluators import, at the versions upstream's own
-# lock resolves — a grader on another numpy or OpenCV is a different grader.
-# Upstream declares about twice as many, for agents and cloud providers no task
-# here touches; the last two are this image's own, for the task files below and
-# the desktop's socket. Loading the OCR reader fetches its weights now, not at
-# grading.
+# The OCR check asks `file` what an image is before it reads it, and scores 0
+# without it.
+RUN apt-get update && apt-get install -y --no-install-recommends file \
+ && rm -rf /var/lib/apt/lists/*
+
+# What the harness, its evaluators and the tasks' own test suites import, at the
+# versions upstream's own lock resolves — a grader on another numpy or OpenCV
+# is a different grader. Upstream declares about twice as many, for agents and
+# cloud providers no task here touches; the last two are this image's own, for
+# the task files below and the desktop's socket. Loading the OCR reader fetches
+# its weights now, not at grading.
 RUN pip install --no-cache-dir uv==0.5.14 \
  && uv export -q --project /opt/OSWorld --frozen --no-hashes --no-emit-project --no-emit-package agp-client -o /tmp/upstream.txt \
  && uv pip install --system --no-cache -c /tmp/upstream.txt \
       --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match \
       beautifulsoup4 borb cssselect easyocr fastdtw formulas gymnasium ImageHash librosa \
       lxml mutagen numpy odfpy opencv-python-headless openpyxl pandas pdfplumber Pillow \
-      playwright pyacoustid pydrive pymupdf pypdf PyPDF2 python-docx python-dotenv \
+      playwright pyacoustid pydrive pygame pymupdf pypdf PyPDF2 python-docx python-dotenv \
       python-pptx pytz PyYAML rapidfuzz requests requests-toolbelt scikit-image scipy \
       tldextract xmltodict huggingface_hub requests-unixsocket==0.4.1 \
  && pip uninstall -q -y uv && rm /tmp/upstream.txt \
@@ -75,9 +80,11 @@ COPY osworld_env.py /opt/osworld_env.py
 # definition rides along in `task`, so entrypoint and grader both work from the
 # task's own config and evaluator.
 RUN python3 <<'PYEOF'
-import glob, json, os
+import ast, glob, importlib.util, json, os
+from urllib.parse import unquote
 
 root = '/opt/OSWorld/evaluation_examples'
+files = 'https://huggingface.co/datasets/xlangai/ubuntu_osworld_file_cache/resolve/main/'
 def listed(name):
     return {i for v in json.load(open('%s/%s' % (root, name))).values() for i in v}
 graded = listed('test_nogdrive.json') - listed('test_infeasible.json')
@@ -89,6 +96,17 @@ with open('/tasks/all.jsonl', 'w') as out:
         task = json.load(open(path))
         if task['id'] not in graded:
             continue
+        # A task graded by its own test suite has it run in this interpreter:
+        # what the suite imports beyond the task's own files must be here.
+        grader = task['evaluator']
+        if grader.get('func') == 'check_python_file_by_test_suite':
+            suite = ast.parse(open('/opt/OSWorld/files/' + unquote(grader['expected']['path'][len(files):])).read())
+            wanted = {a.name for n in suite.body if isinstance(n, ast.Import) for a in n.names}
+            wanted |= {n.module for n in suite.body if isinstance(n, ast.ImportFrom) and n.module}
+            missing = [m for m in wanted - {d[:-3] for d in grader['result']['dest']}
+                       if not importlib.util.find_spec(m.split('.')[0])]
+            if missing:
+                raise SystemExit('osworld-verified: %s is graded by a test suite that imports %s' % (task['id'], missing))
         out.write(json.dumps({
             'id': task['id'],
             'category': os.path.basename(os.path.dirname(path)),
