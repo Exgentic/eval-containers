@@ -1,7 +1,7 @@
 target "benchmark-osworld-verified" {
   context = "containers/benchmarks/osworld-verified"
   contexts = {
-    "${REGISTRY}/core/benchmark-base-github" = "target:benchmark-base-github"
+    "${REGISTRY}/core/osworld-harness" = "target:osworld-harness"
   }
   tags = ["${REGISTRY}/benchmarks/osworld-verified:${TAG}"]
 }
