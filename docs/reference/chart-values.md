@@ -53,13 +53,13 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 
 ## Composition hooks — *for benchmarks with bespoke topology*
 
-Standard benchmarks leave these empty; the bespoke few (osworld, tau-bench,
+Standard benchmarks leave these empty; the bespoke few (osworld-verified, tau-bench,
 visualwebarena, webarena) use them to add sidecars, Deployments, and Services.
 
 | Field | Default | Example use |
 |---|---|---|
 | `initContainers` | `[]` | a wait-for-`<service>` gate |
-| `runnerExtraEnv` | `[]` | `DESKTOP_URL` for osworld |
+| `runnerExtraEnv` | `[]` | `EVAL_DESKTOP_HOST` for osworld-verified |
 | `gatewayExtraEnv` | `[]` | |
 | `runnerExtraVolumeMounts` | `[]` | |
 | `extraVolumes` | `[]` | |

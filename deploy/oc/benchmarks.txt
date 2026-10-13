@@ -67,7 +67,7 @@ niah
 ocrbench
 olympiad-bench
 openbookqa
-osworld
+osworld-verified
 piqa
 pubmedqa
 realworldqa

@@ -128,7 +128,7 @@ image id against the node's cached id and, when they differ, does `crictl rmi`
 then `kind load`; when they match it skips the (expensive) reload. So unchanged
 components are skipped and a changed one always reloads.
 
-**Preset sidecars.** Some benchmarks (`tau-bench`, `osworld`, `webarena`, …) add
+**Preset sidecars.** Some benchmarks (`tau-bench`, `osworld-verified`, `webarena`, …) add
 sidecar images in `containers/benchmarks/_chart/presets/<benchmark>.yaml`:
 
 - **Public third-party images** (`mitmproxy`, `busybox`, `am1n3e/*`,
