@@ -80,9 +80,10 @@ change what a number here means:
 - **Three tasks pass with no action** (39, 231, 270). They are upstream's
   setups and graders and are graded as upstream grades them.
 - **49 tasks browse the live web, and upstream recommends a residential proxy
-  for them.** Here the desktop goes out directly. From a datacenter address at
-  least four cannot be passed, because the site refuses the first page (6, 26,
-  36, 40), and one task's start page no longer exists (15).
+  for them.** Here the desktop goes out directly. Four are refused at their
+  first page: two because of the cluster's address (6, 26), two because the
+  desktop's Chrome is two years old (36, 40), as it is in upstream's VM. One
+  task's start page no longer exists (15).
 - **Upstream publishes no reference solutions.** Ten tasks have been passed
   here; nothing shows the other 325 can be.
 

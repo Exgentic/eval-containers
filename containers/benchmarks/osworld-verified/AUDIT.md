@@ -61,26 +61,32 @@ carries up to three unearned points.
 Upstream marks 49 of the 335 tasks `proxy` and recommends a residential proxy
 for them — whether one is needed "depends on the strength of website defenses
 against your network location" — and 19 of its 35 run scripts enable it. Here
-the desktop goes out directly, from a datacenter address.
+the desktop goes out directly, from the cluster's own address.
 
 42 of the 49 open a start page. Each was loaded in the desktop's own Chrome
 from the cluster, and the ones that failed were loaded again twenty minutes
-later from a fresh desktop:
+later from a fresh desktop. The four refused both times were then loaded from
+the same address with a current Chrome (155) in place of the desktop's 130:
 
-| Task | Upstream id | Start page | Result |
-|-----:|-------------|-----------|--------|
-| 6 | `2888b4e6` | macys.com | "Access Denied", both times |
-| 26 | `9f3f70fc` | nba.com | 403, both times |
-| 36 | `cabb3bae` | kohls.com | 403, both times |
-| 40 | `f3b19d1e` | premier.ticketek.com.au | 403, both times |
-| 33 | `b7895e80` | tripadvisor.com | 403, then loaded |
-| 15 | `59155008` | babycenter.com/child | 404: the page is gone; the site's front page loads |
+| Task | Upstream id | Start page | Chrome 130 | Chrome 155 | Why |
+|-----:|-------------|-----------|------------|------------|-----|
+| 6 | `2888b4e6` | macys.com | refused | refused | the address: refused as Linux, macOS and Windows alike |
+| 26 | `9f3f70fc` | nba.com | refused | refused | the address, likewise. Loads from a home network |
+| 36 | `cabb3bae` | kohls.com | refused | loads | the desktop's browser is two years old |
+| 40 | `f3b19d1e` | premier.ticketek.com.au | refused | loads | the same |
+| 33 | `b7895e80` | tripadvisor.com | refused once in four | loads | intermittent |
+| 15 | `59155008` | babycenter.com/child | 404 | — | the page is gone, from a home network too; the site's front page loads |
 
 The other 36 loaded, as did the four start pages of tasks upstream does not
 mark. A front page that loads says nothing of the pages behind it, so this is a
-floor: at least four tasks cannot be passed from this network, whatever the
-agent does. Seventeen of the first 30 tasks are marked `proxy`; tasks 6, 15 and
-26 are among them.
+floor. Seventeen of the first 30 tasks are marked `proxy`; tasks 6, 15 and 26
+are among them.
+
+Two causes, then, and a proxy answers only the first. The second is upstream's
+own: its VM disk carries Chrome 130, and a current Chrome cannot stand in for
+it — since Chrome 136 the debugging port does not open on the default profile,
+which every Chrome task's setup launches (tried: with 155 the setup waits out
+its 120 seconds and fails).
 
 ### The browser's debugging port
 
