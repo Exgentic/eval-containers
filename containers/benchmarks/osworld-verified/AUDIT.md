@@ -80,7 +80,9 @@ the same address with a current Chrome (155) in place of the desktop's 130:
 The other 36 loaded, as did the four start pages of tasks upstream does not
 mark. A front page that loads says nothing of the pages behind it, so this is a
 floor. Seventeen of the first 30 tasks are marked `proxy`; tasks 6, 15 and 26
-are among them, so two of the first 30 cannot be passed from this network.
+are among them, so two of the first 30 start on a page this network is refused.
+Whether an agent can get round that — task 26's listings are on another host —
+was not tried.
 
 Two causes, then, and a proxy answers only the first. The second is upstream's
 own: its VM disk carries Chrome 130, and a current Chrome cannot stand in for
