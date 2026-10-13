@@ -110,7 +110,9 @@ the page.
 ### The offline subset
 
 251 of the 335 tasks need nothing from the internet: not to be set up, not to
-be done, not to be graded. A task is left out for any one of four reasons:
+be done, not to be graded. They are their own benchmark,
+`osworld-verified-offline`, numbered there by rank among the 251; the numbers
+below are this benchmark's. A task is left out for any one of four reasons:
 
 | Why | Tasks | How it is known |
 |-----|------:|-----------------|

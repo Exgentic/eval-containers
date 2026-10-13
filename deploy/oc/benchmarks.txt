@@ -68,6 +68,7 @@ ocrbench
 olympiad-bench
 openbookqa
 osworld-verified
+osworld-verified-offline
 piqa
 pubmedqa
 realworldqa

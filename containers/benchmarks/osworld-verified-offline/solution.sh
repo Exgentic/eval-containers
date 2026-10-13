@@ -1,0 +1,1 @@
+../osworld-verified/solution.sh
