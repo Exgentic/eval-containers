@@ -30,10 +30,17 @@ script that starts the session. It is x86_64 only, as the disk is.
 
 That desktop, through one HTTP face the sidecar serves on port 5000:
 `GET /screenshot` returns a 1920x1080 PNG, `POST /act` runs pyautogui calls.
-Nothing else — upstream's control server, which can run commands in the
-session, listens on a unix socket that only setup and grading can open, and
-`/act` parses the action and rejects anything that is not a pyautogui call on
-literal arguments. The problem text is read from
+Upstream's control server, which can run commands in the session, listens on a
+unix socket that only setup and grading can open, and `/act` parses the action
+and rejects anything that is not a pyautogui call on literal arguments.
+
+One thing escapes that. 71 tasks start Chrome with a debugging port: the
+task's setup opens its pages through it, and 22 graders read the browser
+through it. The runner shares the desktop's network, so the agent can reach
+that port too and script the browser instead of clicking. Upstream's agents can
+do as much — their actions are Python run inside the VM.
+
+The problem text is read from
 `/tasks/$EVAL_TASK_ID/problem.txt` and passed in via the `TASK` environment
 variable, with upstream's own note that the computer's password is `password`.
 
@@ -65,10 +72,25 @@ action was `FAIL`, and grading here runs in a fresh process that never sees it.
 account's OAuth client, which cannot ship in an image, and upstream accepts
 results on that list. Scoring either group 0 would understate every agent.
 
+## Before reading a score
+
+`AUDIT.md` holds what has been checked and the evidence. Three things in it
+change what a number here means:
+
+- **Three tasks pass with no action** (39, 231, 270). They are upstream's
+  setups and graders and are graded as upstream grades them.
+- **49 tasks browse the live web, and upstream recommends a residential proxy
+  for them.** Here the desktop goes out directly. From a datacenter address at
+  least four cannot be passed, because the site refuses the first page (6, 26,
+  36, 40), and one task's start page no longer exists (15).
+- **Upstream publishes no reference solutions.** Ten tasks have been passed
+  here; nothing shows the other 325 can be.
+
 ## Files
 
 - `Dockerfile` — names the benchmark on top of `core/osworld-harness`, which holds the harness, the task files and the scripts that set a task up and grade it
 - `solution.sh`, `solutions/`, `solution-from-calls.py` — the oracle's gold solutions; never in the image
 - `compose.yaml` — compose file for `eval-containers run osworld-verified`
 - `benchmarks/_chart/presets/osworld-verified.yaml` — this benchmark's bespoke k8s topology (sidecars/Deployments/Services), overlaid on the shared chart when rendered with `--set benchmark=osworld-verified`
+- `AUDIT.md` — what has been checked about this benchmark, and what has not
 - `README.md` — this file
