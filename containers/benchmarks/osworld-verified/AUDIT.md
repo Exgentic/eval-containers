@@ -107,6 +107,48 @@ Grading through the port works: on a fresh desktop, task 17's grader read the
 active tab's address off the accessibility tree, attached to Chrome and parsed
 the page.
 
+### The offline subset
+
+251 of the 335 tasks need nothing from the internet: not to be set up, not to
+be done, not to be graded. A task is left out for any one of four reasons:
+
+| Why | Tasks | How it is known |
+|-----|------:|-----------------|
+| upstream marks it `proxy` | 49 | its definition |
+| it names a website in its setup, its grader or its instruction | 12 | its definition |
+| a command of its own setup or grading fails without the internet | 7 | measured |
+| its instruction asks for something that is not on the machine | 16 | read |
+
+**Measured.** Each of the 274 tasks the first two rows leave was run on a fresh
+desktop in a pod whose name lookups were cut — in every pod a lookup of
+github.com failed and a fetch of example.com got no answer — its own setup,
+then its own grading, with upstream's logging on. All 274 setups completed.
+Seven tasks had a command fail on the network: 24, 185 and 216 install `jq`,
+`sysstat` and `xsel` at setup, 186 installs `pygame`, 331 a VS Code extension,
+and at grading 234 installs `pysrt` and 275 `expect`. The eight tasks of the
+251 that logged a failed command or ended without a score were run again with
+the internet on and logged the same thing either way: that is a grader finding
+nothing done, not the network. Three of the seven, run again the same way, lost
+their failure.
+
+**Read.** Sixteen instructions ask for a download, an install from a store, an
+online account or a fact that is not on the machine: 196, 201, 204, 213, 215,
+222, 226, 241, 246, 248, 255, 258, 265, 280, 289, 325.
+
+**Solved offline.** The recorded actions of four passing runs — tasks 49,
+109, 176 and 304, in four apps — were replayed in such pods, and each scored
+1.0.
+
+What this does not show: a pod with lookups cut can still reach an address
+given as numbers; no agent has run offline, because its model is reached by
+name; and three of the 251 score without the work — 231 and 270 pass with no
+action, 189 earns 0.11.
+
+The other two rows, for the record. Marked `proxy`: 1–2, 4–6, 10–12, 15, 17–22,
+26, 29, 31, 33, 35–43, 179, 184, 187, 193, 197–198, 200, 208–209, 212, 217,
+249, 252–254, 256–257, 259, 266, 319, 333. Naming a website: 9, 13, 27–28, 32,
+203, 214, 219, 237–239, 311.
+
 ## Safety — can the run harm us or cheat?
 
 | Check | Status | Evidence |
