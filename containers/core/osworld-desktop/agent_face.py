@@ -25,18 +25,26 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 SOCKET = "/run/desktop/desktop.sock"
 PORT = 5000
 
+# pyautogui's input functions. Not `screenshot`: its result never comes back
+# through `/act`, so all it could do here is write an image where a task
+# expects one.
 ALLOWED = {
     "pyautogui": {
         "click",
+        "leftClick",
         "doubleClick",
+        "tripleClick",
         "rightClick",
         "middleClick",
         "moveTo",
         "moveRel",
+        "move",
         "dragTo",
         "dragRel",
+        "drag",
         "scroll",
         "hscroll",
+        "vscroll",
         "mouseDown",
         "mouseUp",
         "write",
@@ -45,10 +53,19 @@ ALLOWED = {
         "keyDown",
         "keyUp",
         "hotkey",
-        "screenshot",
     },
     "time": {"sleep"},
 }
+
+
+def literal(node: ast.expr) -> bool:
+    """A constant, a negated one (`-5` parses as an operation), or a list of them."""
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        node = node.operand
+    # A list of keys is how `press` and `write` take a sequence.
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return all(literal(x) for x in node.elts)
+    return isinstance(node, ast.Constant)
 
 
 def checked(action: str) -> str:
@@ -70,11 +87,8 @@ def checked(action: str) -> str:
             or func.attr not in ALLOWED.get(func.value.id, ())
         ):
             raise ValueError("not an allowed call")
-        for arg in [*call.args, *(k.value for k in call.keywords)]:
-            # A list of keys is how `press` and `write` take a sequence.
-            parts = arg.elts if isinstance(arg, (ast.List, ast.Tuple)) else [arg]
-            if not all(isinstance(x, ast.Constant) for x in parts):
-                raise ValueError("arguments must be literals")
+        if not all(map(literal, [*call.args, *(k.value for k in call.keywords)])):
+            raise ValueError("arguments must be literals")
     return action
 
 

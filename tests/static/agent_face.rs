@@ -33,6 +33,10 @@ fn pyautogui_on_literals_is_admitted() {
         // A list of keys is how `press` and `write` take a sequence.
         "pyautogui.press(['tab', 'tab', 'enter'])",
         "pyautogui.typewrite('=SUM(A1:A9)', interval=0.05)\ntime.sleep(0.5)",
+        // Down is negative, and `-5` parses as a negation, not a constant: the
+        // door refused both and an agent could not scroll down.
+        "pyautogui.scroll(-5)\npyautogui.moveRel(-40, 0)",
+        "pyautogui.tripleClick(x=708, y=378)\npyautogui.vscroll(-20)",
     ] {
         assert!(admits(action), "refused a plain pyautogui action: {action}");
     }
@@ -49,6 +53,8 @@ fn anything_richer_is_refused() {
         "pyautogui.__class__",
         "pyautogui.run('id')",
         "pyautogui.screenshot().save('/home/user/answer.png')",
+        "pyautogui.screenshot('/home/user/answer.png')",
+        "pyautogui.scroll(-len(open('/etc/passwd').read()))",
         "pyautogui.click(x=len(open('/etc/passwd').read()))",
         "pyautogui.write([open(p).read() for p in ['/etc/passwd']])",
         "pyautogui.write(f'{open}')",
