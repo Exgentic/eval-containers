@@ -40,7 +40,8 @@ variable, with upstream's own note that the computer's password is `password`.
 ## How it's graded
 
 `/grade.sh` runs the task's own postconfig and then upstream's
-execution-based evaluator against the desktop, through `osworld_env.py`. The
+execution-based evaluator against the desktop, through the harness image's
+`osworld_env.py`. The
 reward is that evaluator's score. A grader crash, a missing task file or a
 non-numeric score all become 0 — never an abort, never an unearned score.
 
@@ -66,8 +67,7 @@ results on that list. Scoring either group 0 would understate every agent.
 
 ## Files
 
-- `Dockerfile` — builds the benchmark image
-- `osworld_env.py` — points upstream's harness at the sidecar instead of a VM
+- `Dockerfile` — names the benchmark on top of `core/osworld-harness`, which holds the harness, the task files and the scripts that set a task up and grade it
 - `solution.sh`, `solutions/`, `solution-from-calls.py` — the oracle's gold solutions; never in the image
 - `compose.yaml` — compose file for `eval-containers run osworld-verified`
 - `benchmarks/_chart/presets/osworld-verified.yaml` — this benchmark's bespoke k8s topology (sidecars/Deployments/Services), overlaid on the shared chart when rendered with `--set benchmark=osworld-verified`
