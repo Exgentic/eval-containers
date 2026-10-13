@@ -16,6 +16,17 @@ RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo 
 #!/bin/bash
 set -euo pipefail
 for b in node npm npx opencode; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
+# opencode's search tools use a system `rg`; with none they download ripgrep at
+# first use, which a run with no internet cannot do. Only 13 or newer: opencode
+# passes a flag older ones reject. Best-effort: install.sh must work on any base
+# (rule 11), offline or without apt-get.
+if ! command -v rg >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
+  { apt-get update \
+      && dpkg --compare-versions "$(apt-cache policy ripgrep | sed -n 's/ *Candidate: //p')" ge 13 \
+      && apt-get install -y --no-install-recommends ripgrep; } \
+    || echo "install.sh: no ripgrep >= 13 to install; opencode will have to download it at run time" >&2
+  rm -rf /var/lib/apt/lists/*
+fi
 I
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
