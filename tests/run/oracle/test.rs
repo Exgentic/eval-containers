@@ -90,6 +90,12 @@ const SPECIAL: &[(&str, &str)] = &[
     // Byte-sensitive answer graders — solution.sh emits the raw gold file.
     ("mrcr", "0"),      // SequenceMatcher on the raw bytes
     ("longbench", "0"), // gold is a member of answers_json; emit it verbatim
+    // Upstream ships no reference solutions: each gold is the actions one
+    // passing agent run sent, replayed on a fresh desktop the oracle starts
+    // beside the benchmark. Two apps that never touch the network: a Chrome
+    // recording that replays where it was made scored 0 on a hosted runner.
+    ("osworld-verified", "49"),  // GIMP: a preference
+    ("osworld-verified", "109"), // Impress: edit and save a .pptx
     // One per source project: hwe-bench is five HW repos and three sim
     // toolchains behind one name; the grader runs each case's self-contained
     // tb_script through that repo's own flow. Every id below oracle-proven
@@ -220,8 +226,9 @@ async fn benchmarks_are_oracle_solvable() {
 }
 
 /// Daemon-free per-PR gate: a `benchmarks/<name>/solution.sh` is a SOURCE file
-/// mounted at oracle time — it MUST NOT be `COPY`'d into the image the agent
-/// runs in (that would re-introduce the gold-solution leak this design removes).
+/// mounted at oracle time, as is a `solutions/` beside it — neither may be
+/// `COPY`'d into the image the agent runs in (that would re-introduce the
+/// gold-solution leak this design removes).
 #[test]
 fn oracle_solutions_are_never_baked() {
     let mut leaked = Vec::new();
@@ -238,7 +245,11 @@ fn oracle_solutions_are_never_baked() {
         };
         let baked = dockerfile.lines().any(|l| {
             let l = l.trim_start();
-            (l.starts_with("COPY") || l.starts_with("ADD")) && l.contains("solution.sh")
+            (l.starts_with("COPY") || l.starts_with("ADD"))
+                && l.split_whitespace().any(|w| {
+                    let w = w.trim_end_matches('/').rsplit('/').next().unwrap_or(w);
+                    w == "solution.sh" || w == "solutions"
+                })
         });
         if baked {
             leaked.push(dir.file_name().unwrap().to_string_lossy().to_string());

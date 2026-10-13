@@ -44,6 +44,13 @@ execution-based evaluator against the desktop, through `osworld_env.py`. The
 reward is that evaluator's score. A grader crash, a missing task file or a
 non-numeric score all become 0 — never an abort, never an unearned score.
 
+The grader is checked by the oracle (`eval-containers oracle osworld-verified
+--task-id <n>`): a gold solution must score 1 and a no-op less. Upstream
+publishes no reference solutions, so a task's gold is the actions one passing
+agent run sent to the desktop, replayed at that run's own pace on a fresh one —
+`solutions/<upstream id>.jsonl`, written from a run's call record by
+`solution-from-calls.py`. A task has one once an agent has solved it.
+
 The harness, the task definitions and each task's files — what its setup opens
 and what its grader compares against — are in the image, root-only, at pinned
 revisions; upstream fetches the files from `xlangai/ubuntu_osworld_file_cache`
@@ -61,6 +68,7 @@ results on that list. Scoring either group 0 would understate every agent.
 
 - `Dockerfile` — builds the benchmark image
 - `osworld_env.py` — points upstream's harness at the sidecar instead of a VM
+- `solution.sh`, `solutions/`, `solution-from-calls.py` — the oracle's gold solutions; never in the image
 - `compose.yaml` — compose file for `eval-containers run osworld-verified`
 - `benchmarks/_chart/presets/osworld-verified.yaml` — this benchmark's bespoke k8s topology (sidecars/Deployments/Services), overlaid on the shared chart when rendered with `--set benchmark=osworld-verified`
 - `README.md` — this file
