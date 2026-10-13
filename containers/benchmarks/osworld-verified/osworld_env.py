@@ -12,6 +12,7 @@ grade must not call reset(): that would re-run setup and wipe the agent's work.
 
 import json
 import os
+import socket
 import sys
 import time
 from urllib.parse import quote, unquote
@@ -25,7 +26,10 @@ sys.path.insert(0, ROOT)
 from desktop_env.providers.base import Provider, VMManager  # noqa: E402
 import desktop_env.desktop_env as de  # noqa: E402
 
-HOST = os.environ.get("EVAL_DESKTOP_HOST", "desktop")
+# An address, as every upstream provider reports, never a name: Chrome's
+# debugging port refuses a request whose Host is a name other than localhost,
+# and under compose the desktop has one.
+HOST = socket.gethostbyname(os.environ.get("EVAL_DESKTOP_HOST", "desktop"))
 SOCKET = "http+unix://" + quote("/run/desktop/desktop.sock", safe="")
 FILES = (
     "https://huggingface.co/datasets/xlangai/ubuntu_osworld_file_cache/resolve/main/"
