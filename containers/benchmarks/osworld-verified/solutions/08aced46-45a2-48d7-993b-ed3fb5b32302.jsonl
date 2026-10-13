@@ -1,0 +1,10 @@
+{"wait": 23.3, "action": "pyautogui.click(x=1497, y=187)"}
+{"wait": 1.0, "action": "pyautogui.click(x=1497, y=191)"}
+{"wait": 16.4, "action": "pyautogui.click(x=176, y=393)"}
+{"wait": 11.3, "action": "pyautogui.tripleClick(x=880, y=287)"}
+{"wait": 12.7, "action": "pyautogui.typewrite(\"Note\")"}
+{"wait": 13.9, "action": "pyautogui.hotkey(\"ctrl\",\"a\")\ntime.sleep(0.5)\npyautogui.hotkey(\"ctrl\",\"r\")"}
+{"wait": 10.9, "action": "pyautogui.press(\"escape\")\ntime.sleep(0.3)\npyautogui.press(\"escape\")\ntime.sleep(0.5)\npyautogui.hotkey(\"ctrl\",\"s\")"}
+{"wait": 28.0, "action": "pyautogui.hotkey(\"ctrl\",\"s\")"}
+{"wait": 71.0, "action": "pyautogui.click(x=880, y=990)\ntime.sleep(0.3)\npyautogui.press(\"escape\")\ntime.sleep(0.3)\npyautogui.press(\"tab\")"}
+{"wait": 15.2, "action": "pyautogui.press(\"escape\")"}

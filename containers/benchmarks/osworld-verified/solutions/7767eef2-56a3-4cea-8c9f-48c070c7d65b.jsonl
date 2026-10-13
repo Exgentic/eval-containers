@@ -1,0 +1,8 @@
+{"wait": 28.6, "action": "pyautogui.click(x=124, y=76)"}
+{"wait": 21.3, "action": "pyautogui.click(x=180, y=647)"}
+{"wait": 14.7, "action": "pyautogui.click(x=162, y=678)"}
+{"wait": 18.6, "action": "pyautogui.click(x=450, y=631)"}
+{"wait": 17.3, "action": "pyautogui.click(x=827, y=872)"}
+{"wait": 29.3, "action": "pyautogui.click(x=124, y=76)\ntime.sleep(1)\npyautogui.click(x=180, y=647)\ntime.sleep(3)"}
+{"wait": 16.0, "action": "pyautogui.click(x=162, y=678)\ntime.sleep(2)"}
+{"wait": 12.3, "action": "pyautogui.click(x=736, y=872)\ntime.sleep(2)"}

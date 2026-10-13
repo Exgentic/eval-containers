@@ -48,6 +48,20 @@ oracle supplies it at run time:
   The benchmark image ships **no** reference solution; the oracle fetches it as
   root, with network the agent lacks.
 
+## A benchmark with sidecars, or a solution per task
+
+A benchmark whose tasks need another container — a desktop, a site — is run on
+its own stack: the oracle starts every service its `compose.yaml` adds to the
+shared three, runs the benchmark image as that stack's `runner`, and removes the
+stack again, once for the gold run and once for the no-op, because a gold run
+changes the sidecar. The sidecar is the published image, not a local build.
+
+Where the gold is one script a task, they go in
+`containers/benchmarks/<name>/solutions/`, mounted read-only at
+`/oracle-solutions` beside `solution.sh`, which picks the task's own.
+*Example: osworld-verified*, whose upstream publishes no reference solutions:
+each gold is the actions one passing agent run sent to the desktop, replayed.
+
 ## Why it is privileged
 
 The oracle runs the solution **outside** the agent sandbox — as root, with
