@@ -83,7 +83,7 @@ change what a number here means:
   for them.** Here the desktop goes out directly. Four are refused at their
   first page: two because of the cluster's address (6, 26), two because the
   desktop's Chrome is two years old (36, 40), as it is in upstream's VM. One
-  task's start page no longer exists (15).
+  task's start page no longer exists (15); the page it is graded on does.
 - **Upstream publishes no reference solutions.** Ten tasks have been passed
   here; nothing shows the other 325 can be.
 
