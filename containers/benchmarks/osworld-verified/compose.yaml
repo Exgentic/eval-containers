@@ -11,8 +11,8 @@ services:
       - desktop-sock:/run/desktop
     environment:
       BENCHMARK: osworld-verified
-      TIMEOUT: "1800"
-      EVAL_TIMEOUT: "1800"
+      TIMEOUT: "3600"
+      EVAL_TIMEOUT: "3600"
       DESKTOP_HOST: desktop
       DESKTOP_PORT: "5000"
     depends_on:
