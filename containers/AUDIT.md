@@ -80,7 +80,7 @@ benchmark changed after that commit, so the row is stale.
 | ocrbench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | olympiad-bench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | openbookqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
-| osworld | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
+| osworld-verified | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | piqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | pubmedqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | realworldqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |

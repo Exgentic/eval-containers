@@ -1452,7 +1452,7 @@ mod tests {
 
     #[test]
     fn only_a_top_level_declaration_declines_publish() {
-        // The declaration, as osworld and tau-bench carry it.
+        // The declaration, as tau-bench carries it.
         assert!(
             declines_publish(&compose(
                 "declared",

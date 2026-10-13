@@ -356,9 +356,7 @@ esac
         "a stack whose flatten fails must not read fresh either"
     );
     // tau-bench declares `x-eval-publish: false` — it has no artifact, so it
-    // must not be scheduled for publishing on every push. (osworld-verified used
-    // to be here: its desktop bind-mounted a host qcow2. The desktop is an ordinary
-    // image now, so the stack is publishable like any other.)
+    // must not be scheduled for publishing on every push.
     assert_eq!(
         verdict("tau-bench").0,
         "declined",

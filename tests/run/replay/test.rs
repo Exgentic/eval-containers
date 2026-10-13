@@ -188,11 +188,11 @@ async fn replay_compose(
     // (300s, set by compose/services.yaml). Add 180s of slack after that
     // for verifier + write-result so the runner exits cleanly inside the
     // budget. Sidecar-heavy benchmarks (webarena = 7 web servers + proxy,
-    // osworld = QEMU VM boot, tau-bench = mock services, enterpriseops-gym =
+    // tau-bench = mock services, enterpriseops-gym =
     // seven MCP sidecars pulled from Docker Hub) need 10–15 min cold-start
     // before the runner can even begin work.
     let timeout_secs = match benchmark {
-        "webarena" | "visualwebarena" | "osworld" | "tau-bench" | "enterpriseops-gym" => 900,
+        "webarena" | "visualwebarena" | "tau-bench" | "enterpriseops-gym" => 900,
         _ => 480,
     };
     let up_result =

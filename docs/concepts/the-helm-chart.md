@@ -14,7 +14,7 @@ containers/benchmarks/
     Chart.yaml
     values.yaml           # defaults for every benchmark
     presets/              # optional per-benchmark topology, bundled in the chart
-      osworld.yaml        #   adds sidecars/Deployments via composition hooks
+      osworld-verified.yaml  # adds sidecars/Deployments via composition hooks
       tau-bench.yaml
     templates/job.yaml
   aime/                   # standard benchmark — no preset; just --set benchmark=aime
@@ -33,7 +33,7 @@ Kustomize overlays did reuse + composition but couldn't interpolate variables.)
 Most benchmarks override nothing — naming one with `--set benchmark=aime` is
 enough, and the chart's `values.yaml` supplies everything else (image tags,
 resources, timeout). The per-run axes — agent, task, model — arrive at deploy
-time via `--set` (or the CLI). The bespoke benchmarks (osworld, tau-bench,
+time via `--set` (or the CLI). The bespoke benchmarks (osworld-verified, tau-bench,
 visualwebarena, webarena) ship a `presets/<name>.yaml` in the chart that adds
 sidecars/Deployments through composition hooks (`initContainers`,
 `runnerExtraEnv`, `extraManifests`, …); the chart overlays it automatically when
