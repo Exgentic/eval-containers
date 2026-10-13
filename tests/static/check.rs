@@ -1395,25 +1395,28 @@ fn every_per_task_build_script_stamps_the_input_hash() {
     );
 }
 
-/// The per-task job MUST skip an arch the benchmark's `eval.platforms` excludes,
-/// the way the leaf matrix does. The post-build arch comparison only catches a
-/// base that builds the *wrong* arch; a base with no such arch at all fails its
-/// first `RUN` with "exec format error", which counts as a build failure and
-/// fails the job, so the skip has to happen before the build starts (rule 14).
+/// A job that builds one arch at a time MUST skip an arch the image's
+/// `eval.platforms` excludes, the way the leaf matrix does. The post-build arch
+/// comparison only catches a base that builds the *wrong* arch; a base with no
+/// such arch at all fails its first `RUN` with "exec format error", which counts
+/// as a build failure and fails the job, so the skip has to happen before the
+/// build starts (rule 14).
 #[test]
-fn the_per_task_job_honours_declared_platforms() {
+fn per_arch_jobs_honour_declared_platforms() {
     let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");
-    let job = wf
-        .split("\n  per-task:\n")
-        .nth(1)
-        .and_then(|s| s.split("\n  merge:").next())
-        .expect("no `per-task` job in release-images.yml");
-    assert!(
-        job.contains(r#"eval\.platforms"#) && job.contains(r#",linux/$ARCH,"#),
-        "the per-task job must skip an arch outside the benchmark's declared \
-         eval.platforms before building (delivery/RULES.md rule 14)"
-    );
+    for (job, next) in [("bases", "enumerate"), ("per-task", "merge")] {
+        let body = wf
+            .split(&format!("\n  {job}:\n"))
+            .nth(1)
+            .and_then(|s| s.split(&format!("\n  {next}:")).next())
+            .unwrap_or_else(|| panic!("no `{job}` job in release-images.yml"));
+        assert!(
+            body.contains(r#"eval\.platforms"#) && body.contains(r#",linux/$ARCH,"#),
+            "the {job} job must skip an arch outside the image's declared \
+             eval.platforms before building (delivery/RULES.md rule 14)"
+        );
+    }
 }
 
 /// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle

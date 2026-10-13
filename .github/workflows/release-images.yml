@@ -186,6 +186,12 @@ jobs:
             h=$(awk -F'\t' -v t="$d" '$1==t{print $2}' <<< "$HASHES")
             [ -n "$h" ] || { echo "::error::no input-hash for $d"; exit 1; }
             ref="${REGISTRY}/$(awk -F'|' -v t="$d" '$1==t{print $2}' <<< "$GRAPH" | sed 's|^containers/||')"
+            # An arch the image does not declare cannot build — skip, leaving it
+            # legitimately single-arch.
+            PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "containers/${ref#"${REGISTRY}/"}/Dockerfile" | tail -1)
+            if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
+              echo "skipping $d on $ARCH — declared platforms: $PLATS"; continue
+            fi
             if [ "${{ inputs.dry_run }}" != "true" ] && \
                bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$h" >/dev/null; then
               if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
