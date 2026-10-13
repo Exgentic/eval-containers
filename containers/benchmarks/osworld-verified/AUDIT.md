@@ -1,7 +1,7 @@
 ---
 benchmark: osworld-verified
 host: OpenShift, native linux/amd64 pods (runner 2 CPU / 4 GiB, desktop 4 CPU / 4 GiB); GitHub amd64 runners for CI
-commit: aaad3efc
+commit: 03629302
 ---
 # Audit — osworld-verified (xlang-ai/OSWorld at `b138d348`: 335 of 369 tasks)
 
@@ -18,7 +18,7 @@ upstream's.
 | running | ✓ | claude-code with claude-opus-5: 14 runs over 10 tasks in eight apps, each graded 1.0 (table below). One of them through the published chart and the published images, pinned by digest. All in pods: under `compose` only the oracle's two tasks have run, and no browser task could be set up there before #677 |
 | isolation | ✓ | read off a live pod: the agent is uid 1002; `/opt/OSWorld` (harness, task definitions, every task's files) is `0700 root`, `/tasks/<n>` and `/tasks/all.jsonl` are root-only, and the control server's socket sits in a directory only the desktop's own user can enter. Two agents ran `find / -name` for their task's file and found nothing |
 | interface | ✗ | the agent is meant to have a screenshot and `/act` and nothing else. On the 71 tasks whose own setup starts Chrome with a debugging port, that port answers from the agent's container (below) |
-| oracle | ✗ | **no-op:** all 335 tasks through the chart with the `mock` agent — 331 score 0, one scores 0.11, three score 1.0 (below). **gold:** upstream publishes none, so a gold is the actions of a passing run replayed on a fresh desktop. Eight tasks were replayed on the cluster and each scored 1.0. On a GitHub runner tasks 49 and 109 pass the fleet's oracle, gold 1.0 / no-op 0.0 ([run 38423164770](https://github.com/Exgentic/eval-containers/actions/runs/38423164770), the check #670 adds), and task 12, a Chrome task, replayed to 0.0 for a reason not yet found. 325 tasks have never been passed by anything |
+| oracle | ✗ | **no-op:** all 335 tasks through the chart with the `mock` agent — 331 score 0, one scores 0.11, three score 1.0 (below). **gold:** upstream publishes none, so a gold is the actions of a passing run replayed on a fresh desktop. Eight tasks were replayed on the cluster and each scored 1.0. Tasks 49 and 109 are in the fleet's oracle, which CI runs under `compose` whenever what the image is built from changes: gold 1.0 / no-op 0.0 ([run 38482130142](https://github.com/Exgentic/eval-containers/actions/runs/38482130142), this commit's own check). Task 12, a Chrome task, replayed to 0.0 on a GitHub runner for a reason not yet found. 325 tasks have never been passed by anything |
 | traces-reviewed | ✓ | the call record of all 14 runs was read: 570 tool calls, none reaching for the debugging port, the control socket or a root-only path. The first five runs had two kinds of action refused that should not have been — a negative scroll amount, `tripleClick` — and the filter was fixed before the image was published; since then one refusal, of `tripleclick`, which pyautogui does not have |
 | replicate-official | ? | no run of the suite. Ten tasks chosen by hand, all passed, is not a sample of anything |
 
@@ -140,9 +140,10 @@ online account or a fact that is not on the machine: 196, 201, 204, 213, 215,
 1.0.
 
 What this does not show: a pod with lookups cut can still reach an address
-given as numbers; no agent has run offline, because its model is reached by
-name; and three of the 251 score without the work — 231 and 270 pass with no
-action, 189 earns 0.11.
+given as numbers, and no agent ran in one, because its model is reached by
+name. One agent run has been made with the pod's network shut to everything but
+name lookups and the model: task 49, scored 1.0. And three of the 251 score
+without the work — 231 and 270 pass with no action, 189 earns 0.11.
 
 The other two rows, for the record. Marked `proxy`: 1–2, 4–6, 10–12, 15, 17–22,
 26, 29, 31, 33, 35–43, 179, 184, 187, 193, 197–198, 200, 208–209, 212, 217,
@@ -162,7 +163,7 @@ The other two rows, for the record. Marked `proxy`: 1–2, 4–6, 10–12, 15, 1
 
 | Metric | Value |
 |--------|-------|
-| image | 1.90 GB compressed (18 layers, read from the registry), one image for all 335 tasks: upstream's tree, its grader's dependencies and 1.17 GB of task files |
+| image | 1.90 GB compressed (18 layers, read from the registry), one image for all 335 tasks: upstream's tree, its grader's dependencies and 1.17 GB of task files. That is the published build; built at this commit it is 1.95 GB, all 18 layers `core/osworld-harness`'s |
 | desktop sidecar | 2.65 GB compressed (5 layers): the root filesystem of upstream's VM disk |
 | per-task multiplier | n/a — shared environment |
 
@@ -185,6 +186,6 @@ The other two rows, for the record. Marked `proxy`: 1–2, 4–6, 10–12, 15, 1
 
 | Check | Status / Value | Evidence |
 |-------|:--------------:|----------|
-| published | ✓ | `ghcr.io/exgentic/benchmarks/osworld-verified:latest` resolves, amd64 only, with `core/osworld-desktop:latest` and eight `evals/osworld-verified--<agent>:latest` beside it |
+| published | ✓ | `ghcr.io/exgentic/benchmarks/osworld-verified:latest` resolves, amd64 only, with `core/osworld-desktop:latest` and eight `evals/osworld-verified--<agent>:latest` beside it. All built before #672, so on the published image tasks 177 and 186 still cannot be passed |
 | pull size | 1.90 GB | sum of the amd64 manifest's layers; the sidecar is 2.65 GB more |
 | released | ✗ | no replay fixture, so no `eval.benchmark.released` label (rule 21a). A run recorded in the pod addresses the desktop as `localhost`; under `compose`, where replay runs, it is `desktop`, so that record's actions would reach nothing |
