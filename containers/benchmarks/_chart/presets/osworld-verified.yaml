@@ -21,10 +21,8 @@ resources:
     cpu: '2'
     memory: 4Gi
 runnerExtraEnv:
-- name: DESKTOP_HOST
+- name: EVAL_DESKTOP_HOST
   value: localhost
-- name: DESKTOP_PORT
-  value: '5000'
 initContainers:
 # The probe is a real screenshot — a 1920x1080 PNG off a cold desktop can
 # take seconds, and a 2s timeout flaps.

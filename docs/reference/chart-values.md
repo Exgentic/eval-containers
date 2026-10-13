@@ -59,7 +59,7 @@ visualwebarena, webarena) use them to add sidecars, Deployments, and Services.
 | Field | Default | Example use |
 |---|---|---|
 | `initContainers` | `[]` | a wait-for-`<service>` gate |
-| `runnerExtraEnv` | `[]` | `DESKTOP_HOST`/`DESKTOP_PORT` for osworld |
+| `runnerExtraEnv` | `[]` | `EVAL_DESKTOP_HOST` for osworld-verified |
 | `gatewayExtraEnv` | `[]` | |
 | `runnerExtraVolumeMounts` | `[]` | |
 | `extraVolumes` | `[]` | |

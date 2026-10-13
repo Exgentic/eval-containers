@@ -1,29 +1,35 @@
-"""Point upstream's DesktopEnv at a desktop container instead of a VM.
+"""Point upstream's DesktopEnv at the desktop sidecar instead of a VM.
 
-Every upstream provider boots and snapshots a VM. The desktop here is an
-ordinary sibling container that is already running, so the provider collapses
-to "report where it is" and no-ops; setup, postconfig and grading stay
-upstream's code, untouched.
+Every upstream provider boots and snapshots a VM. The desktop here is a sibling
+container that is already running, so the provider collapses to "report where
+it is"; setup, postconfig and grading stay upstream's code, untouched.
 
-Two entry points, deliberately separate processes:
   setup <task.json>   run the task's own config steps (entrypoint)
   grade <task.json>   run postconfig + the evaluator, print the reward (grader)
 
-grade must NOT call reset(): that would re-run setup and wipe the agent's work.
-It populates the task info the same way reset() does, then evaluates.
+grade must not call reset(): that would re-run setup and wipe the agent's work.
 """
 
 import json
 import os
 import sys
+import time
+from urllib.parse import quote, unquote
 
-sys.path.insert(0, "/opt/OSWorld-V2")
+import requests
+import requests_unixsocket
+
+ROOT = "/opt/OSWorld"
+sys.path.insert(0, ROOT)
 
 from desktop_env.providers.base import Provider, VMManager  # noqa: E402
 import desktop_env.desktop_env as de  # noqa: E402
 
-DESKTOP_HOST = os.environ.get("DESKTOP_HOST", "desktop")
-SERVER_PORT = os.environ.get("DESKTOP_PORT", "5000")
+HOST = os.environ.get("EVAL_DESKTOP_HOST", "desktop")
+SOCKET = "http+unix://" + quote("/run/desktop/desktop.sock", safe="")
+FILES = (
+    "https://huggingface.co/datasets/xlangai/ubuntu_osworld_file_cache/resolve/main/"
+)
 
 
 class ContainerProvider(Provider):
@@ -32,7 +38,7 @@ class ContainerProvider(Provider):
 
     def get_ip_address(self, path_to_vm):
         # ip:server:chromium:vnc:vlc — the shape the docker provider returns
-        return "%s:%s:9222:5910:8080" % (DESKTOP_HOST, SERVER_PORT)
+        return "%s:5000:9222:5910:8080" % HOST
 
     def save_state(self, path_to_vm, snapshot_name):
         return None
@@ -73,58 +79,47 @@ de.create_vm_manager_and_provider = lambda *a, **k: (
 )
 
 
-# Setup and grading talk to the real control server; the agent must not. The
-# server listens on a root-only unix socket, so point the controllers at it —
-# `http_server` is the single place either controller builds its URL from.
-def use_socket(env) -> None:
-    """Send this process's desktop traffic over the root-only socket.
+def route() -> None:
+    """Answer this process's requests from where the image keeps the answer.
 
-    Patching the controllers is not enough: a task's own setup builds its own
-    `http://localhost:5000/...` and would hit the restricted face the agent
-    uses, so rewrite at the transport instead — every desktop URL this process
-    emits, whoever composed it.
+    The control server listens on a socket the agent cannot open, and its port
+    carries only the agent's restricted face. So every desktop URL goes to the
+    socket, whoever composed it — upstream's controllers or a task's own getter.
+    A task's files are in the image, so their URLs are answered from disk.
     """
-    sock = os.environ.get("DESKTOP_SOCKET")
-    if not sock:
-        return
-    from urllib.parse import quote
-
-    import requests
-    import requests_unixsocket
-
     requests_unixsocket.monkeypatch()
-    sock_url = "http+unix://%s" % quote(sock, safe="")
-    env.controller.http_server = sock_url
-    env.setup_controller.http_server = sock_url
+    desktop = tuple("http://%s:5000" % h for h in (HOST, "localhost", "127.0.0.1"))
+    send = requests.Session.request
 
-    port = os.environ.get("DESKTOP_PORT", "5000")
-    prefixes = tuple(
-        "http://%s:%s" % (h, port)
-        for h in (os.environ.get("DESKTOP_HOST", "desktop"), "localhost", "127.0.0.1")
-    )
-    original = requests.Session.request
-
-    def over_socket(self, method, url=None, *a, **k):
+    def request(self, method, url=None, *a, **k):
         # requests passes `url` as a keyword, so this must accept one.
         if isinstance(url, str):
-            for p in prefixes:
-                if url.startswith(p):
-                    url = sock_url + url[len(p) :]
+            if url.startswith(FILES):
+                response = requests.Response()
+                response.status_code, response.url = 200, url
+                path = unquote(url[len(FILES) :].split("?")[0])
+                response.raw = open("%s/files/%s" % (ROOT, path), "rb")
+                return response
+            for prefix in desktop:
+                if url.startswith(prefix):
+                    url = SOCKET + url[len(prefix) :]
                     break
-        return original(self, method, url, *a, **k)
+        return send(self, method, url, *a, **k)
 
-    requests.Session.request = over_socket
+    requests.Session.request = request
 
 
 def make_env():
     # provider_name is validated against a fixed set; "docker" selects the
-    # ip:ports code path the shim above mimics.
+    # ip:ports code path the provider above mimics.
     return de.DesktopEnv(
         provider_name="docker",
         path_to_vm="container",
         action_space="pyautogui",
         headless=True,
         os_type="Ubuntu",
+        # Upstream's default is the working directory, which the agent reads.
+        cache_dir=ROOT + "/cache",
         # reset() returns an observation nobody reads here; without this it
         # also dumps the desktop's whole accessibility tree.
         require_a11y_tree=False,
@@ -134,8 +129,8 @@ def make_env():
 def main():
     mode, task_path = sys.argv[1], sys.argv[2]
     cfg = json.load(open(task_path))
+    route()
     env = make_env()
-    use_socket(env)
     if mode == "setup":
         env.reset(task_config=cfg)
         # reset() retries a failed setup and then carries on regardless; this
@@ -145,6 +140,8 @@ def main():
         print("setup complete: %s" % cfg["id"])
     elif mode == "grade":
         env._set_task_info(cfg)
+        # Upstream's runner gives the desktop this long to settle first.
+        time.sleep(20)
         # A metric may answer True/False; grade.sh takes a number.
         print(float(env.evaluate()))
     else:

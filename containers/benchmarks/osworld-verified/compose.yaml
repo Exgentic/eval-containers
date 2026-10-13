@@ -13,8 +13,6 @@ services:
       BENCHMARK: osworld-verified
       TIMEOUT: "3600"
       EVAL_TIMEOUT: "3600"
-      DESKTOP_HOST: desktop
-      DESKTOP_PORT: "5000"
     depends_on:
       otelcol:
         condition: service_healthy
@@ -22,12 +20,8 @@ services:
         condition: service_healthy
       desktop:
         condition: service_healthy
-    # The task's own config steps download its files (from the public
-    # xlangai/ubuntu_osworld_file_cache) and upload them into the desktop, and
-    # that download happens runner-side, so the runner needs egress.
-    # OPEN QUESTION: baking the file cache into the benchmark image at build
-    # time would keep the runner on `internal` only, which is the stronger
-    # guarantee that every model call goes through the gateway.
+    # Some graders ask the open internet — a connectivity check, the caller's
+    # time zone — so the runner needs egress as well as the desktop.
     networks:
       - internal
       - upstream

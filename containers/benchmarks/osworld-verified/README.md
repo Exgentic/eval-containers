@@ -44,6 +44,11 @@ execution-based evaluator against the desktop, through `osworld_env.py`. The
 reward is that evaluator's score. A grader crash, a missing task file or a
 non-numeric score all become 0 — never an abort, never an unearned score.
 
+The harness, the task definitions and each task's files — what its setup opens
+and what its grader compares against — are in the image, root-only, at pinned
+revisions; upstream fetches the files from `xlangai/ubuntu_osworld_file_cache`
+as it goes, and here those requests are answered from disk.
+
 Upstream's own two lists decide what is graded, which is why the count is 335
 and not 369. `test_infeasible.json` names 26 tasks whose correct answer is to
 report the task impossible; upstream rewards that only when the agent's last

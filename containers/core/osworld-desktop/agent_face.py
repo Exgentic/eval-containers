@@ -18,13 +18,12 @@ every call checked against the allowlist below before anything runs.
 
 import ast
 import json
-import os
 import socket
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-SOCKET = os.environ.get("DESKTOP_SOCKET", "/run/desktop/desktop.sock")
-PORT = int(os.environ.get("DESKTOP_AGENT_PORT", "5000"))
+SOCKET = "/run/desktop/desktop.sock"
+PORT = 5000
 
 ALLOWED = {
     "pyautogui": {
