@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"crypto/x509"
 	"encoding/json"
 	"fmt"
@@ -216,6 +217,9 @@ func awaitRecords(t *testing.T, n int) []call {
 		cs = cs[:0]
 		raw, err := os.ReadFile(out)
 		if err == nil {
+			// A read can catch the edge mid-append: a line is a record only once
+			// its newline has landed, and the tail is left for the next read.
+			raw = raw[:bytes.LastIndexByte(raw, '\n')+1]
 			for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 				if line == "" {
 					continue
