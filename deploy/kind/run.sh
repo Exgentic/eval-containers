@@ -31,7 +31,7 @@ Required:
   --model <m>           upstream <provider>/<model> handle (e.g. openai/gpt-5.4)
 
 Selection:
-  --gateway <g>         proxy image that serves the model (default: bifrost)
+  --gateway <g>         run a gateway sidecar with this proxy image (default: none)
   --task <id>           single-task run (default: 0)
   --dataset             run the whole dataset as an Indexed Job
   --dataset-size <n>    run the first n examples as an Indexed Job
@@ -62,11 +62,11 @@ EOF
 BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY=""
 NAMESPACE="" REGISTRY="$REGISTRY_DEFAULT" CLUSTER="$CLUSTER_DEFAULT"
 OUTPUT_PATH="$OUTPUT_HOSTPATH"
-DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false RERUN=false
+GATEWAY_ON=false DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false RERUN=false
 WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
-  --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; shift 2;;
+  --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; GATEWAY_ON=true; shift 2;;
   --task) TASK="$2"; shift 2;;
   --dataset) DATASET_MODE=true; shift;; --dataset-size) DATASET="$2"; DATASET_MODE=true; shift 2;;
   --parallelism) PARALLELISM="$2"; shift 2;; --retry) RETRY="$2"; shift 2;;
@@ -210,6 +210,8 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "runId=$RUN_ID")
 # Rerun a task the run id already holds a result for, instead of skipping it.
 ${FORCE_RUN:-false} && SET+=(--set "force=true")
+# The chart runs no gateway sidecar unless asked; naming one with --gateway asks.
+$GATEWAY_ON && SET+=(--set "gatewayEnabled=true")
 # Per-task benchmarks render the task-aware runner (evals/<b>-<task>--<a>) — the
 # chart needs perTask=true to match the image built + loaded above.
 $PER_TASK && SET+=(--set "perTask=true")

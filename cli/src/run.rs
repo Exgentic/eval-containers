@@ -83,7 +83,8 @@ pub struct RunArgs {
 
     /// Gateway image that serves the model: a generic proxy (`bifrost`,
     /// `litellm`, `portkey`) or a pinned per-model image (maps to
-    /// $EVAL_GATEWAY; chart value `gatewayImage`). Default: `bifrost`.
+    /// $EVAL_GATEWAY; chart value `gatewayImage`). Default: `bifrost`. In job
+    /// mode no gateway runs unless this or `--gateway-tag` is given.
     #[arg(long)]
     gateway: Option<String>,
 
@@ -688,6 +689,22 @@ fn output_sets(args: &RunArgs, benchmark: &str, agent: &str) -> Result<Vec<Strin
     ])
 }
 
+/// Chart values for the gateway sidecar, which the chart runs only on request:
+/// naming a gateway or its tag is that request.
+fn gateway_sets(args: &RunArgs) -> Vec<String> {
+    let mut sets: Vec<String> = Vec::new();
+    if let Some(g) = &args.gateway {
+        sets.push(format!("gatewayImage={g}"));
+    }
+    if let Some(t) = &args.gateway_tag {
+        sets.push(format!("gatewayTag={t}"));
+    }
+    if !sets.is_empty() {
+        sets.push("gatewayEnabled=true".into());
+    }
+    sets
+}
+
 /// Cluster `eval-secrets` Secret still provides upstream credentials.
 fn run_job(
     registry: &str,
@@ -772,17 +789,12 @@ fn run_job(
     if let Some(m) = &args.model {
         sets.push(format!("model={m}"));
     }
-    if let Some(g) = &args.gateway {
-        sets.push(format!("gatewayImage={g}"));
-    }
+    sets.extend(gateway_sets(args));
     if let Some(e) = &args.agent_reasoning_effort {
         sets.push(format!("reasoningEffort={e}"));
     }
     if let Some(t) = args.timeout {
         sets.push(format!("timeout={t}"));
-    }
-    if let Some(t) = &args.gateway_tag {
-        sets.push(format!("gatewayTag={t}"));
     }
     // The combined runner image is produced per-agent, so --agent-tag wins over
     // --benchmark-tag when both are set.
@@ -962,6 +974,25 @@ mod tests {
     // and then the index or task (output/RULES.md rule 11). The model segment is
     // the slugged handle — the Job's `model` label is only its last segment, so
     // two models behind one gateway would otherwise share a directory (#428).
+    #[test]
+    fn job_mode_runs_a_gateway_only_when_one_is_named() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            let mut argv = vec!["run", "aime", "--mode", "job", "--agent", "codex"];
+            argv.extend_from_slice(extra);
+            Cli::try_parse_from(argv).unwrap().run
+        };
+        assert!(super::gateway_sets(&parse(&[])).is_empty());
+        assert_eq!(
+            super::gateway_sets(&parse(&["--gateway", "litellm"])),
+            ["gatewayImage=litellm", "gatewayEnabled=true"]
+        );
+        assert_eq!(
+            super::gateway_sets(&parse(&["--gateway-tag", "1.2.3"])),
+            ["gatewayTag=1.2.3", "gatewayEnabled=true"]
+        );
+    }
+
     #[test]
     fn job_mode_names_the_run_and_keys_it_by_the_whole_handle() {
         use clap::Parser;
