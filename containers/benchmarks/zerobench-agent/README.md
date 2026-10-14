@@ -17,6 +17,8 @@ model-only harness. Maps to the leaderboard's externally-reported
 | Internet required | false |
 | Released | no |
 | Upstream | [HF dataset](https://huggingface.co/datasets/jonathan-roberts1/zerobench) · [code (MIT)](https://github.com/jonathan-roberts1/zerobench) |
+| Paper | [arXiv:2502.09696](https://arxiv.org/abs/2502.09696) |
+| Leaderboard | [zerobench.github.io](https://zerobench.github.io/#leaderboards) |
 | Dataset revision | `8fcdfd9138c802cac52b774b36946e70f738f500` |
 
 ## Model-only vs agent — two benchmarks, one scorer
