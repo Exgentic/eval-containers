@@ -87,7 +87,7 @@ fn mismatch_scores_zero() {
     assert_eq!(grade("mismatch", Some("43"), "42"), "0");
 }
 
-// ─── the shared ZeroBench grader (core/test-braced-match) ────
+// ─── the shared ZeroBench grader (core/test-answer-match) ────
 //
 // Same fail-closed contract as exact-match above, plus the transcript problem
 // specific to it: the agent's stdout is a whole session, so tool echoes and code
@@ -111,21 +111,21 @@ fn grade_sentinel(case: &str, stdout: Option<&str>, expected: &str) -> String {
     }
 
     let sb = sandbox.to_str().unwrap();
-    let src = repo_root().join("containers/core/test-braced-match");
+    let src = repo_root().join("containers/core/test-answer-match");
     // The scorer hardcodes /logs and /output/agent/stdout.log; the wrapper
     // hardcodes /logs and the scorer's path. Re-root both into the sandbox. A
     // rename upstream makes a substitution a no-op → reward.txt lands outside
     // the sandbox → the read below panics (fails loud, never silent).
-    let scorer = std::fs::read_to_string(src.join("score_braced.py"))
+    let scorer = std::fs::read_to_string(src.join("score_answer.py"))
         .unwrap()
         .replace("/logs", &format!("{sb}/logs"))
         .replace("/output", &format!("{sb}/output"));
-    std::fs::write(sandbox.join("score_braced.py"), scorer).unwrap();
+    std::fs::write(sandbox.join("score_answer.py"), scorer).unwrap();
 
     let wrapper = std::fs::read_to_string(src.join("test.sh"))
         .unwrap()
         .replace("/logs", &format!("{sb}/logs"))
-        .replace("/score_braced.py", &format!("{sb}/score_braced.py"));
+        .replace("/score_answer.py", &format!("{sb}/score_answer.py"));
     let script_path = sandbox.join("grade.sh");
     std::fs::write(&script_path, wrapper).unwrap();
 
