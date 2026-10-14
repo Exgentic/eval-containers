@@ -37,20 +37,20 @@ INSTRUCTION = (
     "\n\n\nLet's think step by step and give the final answer in curly "
     "braces, like this: {final answer}"
 )
-# Shared scorer — single source of truth (core/test-braced-match/score_braced.py),
+# Shared scorer — single source of truth (core/test-answer-match/score_answer.py),
 # COPY'd to /app in-container; the repo path is the fallback for out-of-container
 # use (e.g. a sweep script importing this module).
 for _cand in (
     "/app",
     os.path.dirname(os.path.abspath(__file__)),
     os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "../../core/test-braced-match"
+        os.path.dirname(os.path.abspath(__file__)), "../../core/test-answer-match"
     ),
 ):
-    if os.path.exists(os.path.join(_cand, "score_braced.py")):
+    if os.path.exists(os.path.join(_cand, "score_answer.py")):
         sys.path.insert(0, _cand)
         break
-from score_braced import extract_answer, is_correct  # noqa: E402
+from score_answer import extract_answer, is_correct  # noqa: E402
 
 
 def write_reward(value: str) -> None:

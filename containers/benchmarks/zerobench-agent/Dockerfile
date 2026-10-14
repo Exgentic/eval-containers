@@ -14,7 +14,7 @@
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-braced-match:latest AS braced
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-answer-match:latest AS braced
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 RUN pip install --no-cache-dir huggingface_hub==0.26.2
 RUN --mount=type=secret,id=HF_TOKEN \
@@ -65,9 +65,9 @@ ENV EVAL_BENCHMARK=zerobench-agent
 # Grader: the SHARED scorer (same file + is_correct() as the native harness),
 # but using its TRANSCRIPT extractor — the LAST `FINAL ANSWER:` sentinel line,
 # not the native "last {...}" (which is correct only for a single completion,
-# not an agent transcript). /test.sh runs /score_braced.py's CLI.
+# not an agent transcript). /test.sh runs /score_answer.py's CLI.
 COPY --from=braced /test.sh /grade.sh
-COPY --from=braced /score_braced.py /score_braced.py
+COPY --from=braced /score_answer.py /score_answer.py
 RUN chmod +x /grade.sh
 
 RUN cat > /entrypoint.sh <<'ENTRY'

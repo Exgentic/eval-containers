@@ -17,7 +17,7 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-braced-match:latest AS braced
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}test-answer-match:latest AS braced
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 
 # The loader runs pyarrow (base64-encodes the decoded images inline), so it stays
@@ -112,7 +112,7 @@ WORKDIR /app
 # N times via the gateway, score the braced answer, write reward + export.
 # Shared scorer (single source of truth) — the harness imports extract_answer/
 # is_correct from it; the agent-facing zerobench-agent uses the same file's CLI.
-COPY --from=braced /score_braced.py /app/score_braced.py
+COPY --from=braced /score_answer.py /app/score_answer.py
 COPY run_zerobench.py /app/run_zerobench.py
 RUN chmod 755 /app/run_zerobench.py \
  && printf '#!/bin/bash\nexec python3 /app/run_zerobench.py\n' > /harness.sh && chmod +x /harness.sh

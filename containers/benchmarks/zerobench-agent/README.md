@@ -26,8 +26,8 @@ model-only harness. Maps to the leaderboard's externally-reported
   1–3 image files in `/app` and prints a deliberate final line
   `FINAL ANSWER: <answer>`.
 
-Both score through the **same shared module** `core/test-braced-match`
-(`score_braced.py`) — one `is_correct` (case-insensitive match), with
+Both score through the **same shared module** `core/test-answer-match`
+(`score_answer.py`) — one `is_correct` (case-insensitive match), with
 **surface-appropriate extraction**: the native path takes the last `{...}` from a
 single model completion (upstream's protocol); the agent path takes the last
 `FINAL ANSWER:` sentinel line, because an agent *transcript* has incidental

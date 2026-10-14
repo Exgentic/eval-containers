@@ -13,7 +13,7 @@ commit: feat/add-zerobench
 |-------|:------:|----------|
 | building | ✓ | benchmark image builds (gated HF fetch via HF_TOKEN secret) |
 | running | ? | agent sweep in progress (Claude Code × Opus 5); not finalized |
-| grader-shared | ✓ | uses `core/test-braced-match` (same scorer the native `zerobench` imports) — module + CLI unit-tested, fail-closed |
+| grader-shared | ✓ | uses `core/test-answer-match` (same scorer the native `zerobench` imports) — module + CLI unit-tested, fail-closed |
 | isolation | ? | not audited per-benchmark |
 | oracle | ? | agent-graded (`FINAL ANSWER:` sentinel extraction); no gold-solution oracle |
 | replicate-official | ? | pending vs the leaderboard's tool-assisted entries |
