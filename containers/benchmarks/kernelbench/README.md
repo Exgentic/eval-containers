@@ -51,6 +51,9 @@ Read the numbers with these limits in mind:
 
 - **Speedup depends on the GPU.** Compare runs only on the same GPU model; the
   verdict records which one.
+- **Some tasks need an 80 GB GPU.** Level 1's elementwise tasks use 6.4 GB
+  tensors, and upstream's correctness check holds several at once: task 24 runs
+  out of memory on a 40 GB A100.
 - **A speedup near 1.0 is noise.** A model that does the reference's work
   times at about 1.0, so timing jitter alone can pass it. Upstream's static check
   only warns about PyTorch passthrough, because the prompt allows leaving

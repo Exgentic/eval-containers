@@ -59,8 +59,8 @@ else:
             result.update(
                 compiled=r.compiled,
                 correct=r.correctness,
-                runtime_us=r.runtime,
-                ref_runtime_us=r.ref_runtime,
+                runtime_ms=r.runtime,
+                ref_runtime_ms=r.ref_runtime,
                 speedup=speedup,
                 metadata=r.metadata,
             )
