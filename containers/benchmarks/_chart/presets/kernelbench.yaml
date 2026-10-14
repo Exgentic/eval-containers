@@ -1,0 +1,10 @@
+# One GPU per task: the agent builds and runs its kernels on it, then the grader
+# times them against PyTorch on the same device. The memory covers level 1's
+# largest inputs (a 6.4 GB tensor, held on the host before it moves to the GPU);
+# the cpus are for nvcc. Matches compose.yaml (rule 24e).
+resources:
+  requests: { cpu: "2", memory: "16Gi", ephemeral-storage: "4Gi" }
+  limits:   { cpu: "8", memory: "32Gi", ephemeral-storage: "20Gi", nvidia.com/gpu: 1 }
+# Grading compiles the kernel and times 100 runs of each model: /grade.sh gives
+# it 900s, so the default 600s of grace would cut it short.
+deadlineGrace: 1200
