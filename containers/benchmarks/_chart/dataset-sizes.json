@@ -50,6 +50,7 @@
  "hwe-bench": 169,
  "ifeval": 541,
  "itbench": 10,
+ "kernelbench": 250,
  "kumo": 250,
  "legalbench": 19000,
  "livecodebench": 880,

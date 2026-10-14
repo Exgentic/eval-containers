@@ -46,6 +46,8 @@ const SPECIAL: &[(&str, &str)] = &[
     // terminal-bench (build-cython-ext) omitted — its gold runs legacy pyknotid 0.5.3's
     // own test suite, whose unpinned deps (vispy, networkx, …) have drifted past it, so
     // the gold can't deterministically score 1.0 through no fault of our grader.
+    // kernelbench (task 24) omitted — its grader times kernels on a GPU, which these
+    // runners lack; its entrypoint refuses to start without one (its README).
     // per-task pull + own grader (run_script.sh/parser.py); resolve = fail_to_pass+pass_to_pass all PASS
     (
         "swe-bench-pro",
