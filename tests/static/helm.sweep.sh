@@ -40,8 +40,10 @@ render_one() {
   local name=$1
   # ephemeral=true: these renders exist to be inspected, never applied, so they
   # name no output volume — which the chart otherwise refuses (eval.outputVolume).
+  # gatewayEnabled=true: the readiness policy below gates the gateway sidecar,
+  # which the chart no longer renders by default.
   if ! helm template "$name" "$CHART" --set "benchmark=$name" --set ephemeral=true \
-    >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
+    --set gatewayEnabled=true >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
     echo "$name"
   fi
 }
@@ -104,10 +106,11 @@ if ! cf=$(conftest test "$OUT"/*.yaml --policy "$POLICY" 2>&1); then
   fail=$((fail + 1))
 fi
 
-# 4b. the sidecars are optional: off, neither container renders, and the edge is
-# handed the real upstream instead of the gateway's loopback.
+# 4b. the sidecars are optional, and the gateway is off by default: off, neither
+# container renders, and the edge is handed the real upstream instead of the
+# gateway's loopback.
 thin=$(helm template thin "$CHART" --set benchmark="${names[0]}" --set ephemeral=true \
-  --set gatewayEnabled=false --set otelEnabled=false 2>&1)
+  --set otelEnabled=false 2>&1)
 for pattern in "name: gateway" "name: otelcol" "OTEL_EXPORTER_OTLP_ENDPOINT"; do
   case "$thin" in
     *"$pattern"*) echo "FAIL thin render still has \`$pattern\`"; fail=$((fail + 1)) ;;

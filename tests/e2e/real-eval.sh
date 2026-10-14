@@ -59,7 +59,7 @@ step "run the eval"
 helm template real "$CHART" \
   --set benchmark=agents-smoke --set agent=mock --set task=0 \
   --set otelImage=eval-e2e/otel:stub \
-  --set gatewayImageRef=eval-e2e/gateway:stub \
+  --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
   --set runnerImageRef=eval-e2e/eval:latest \
   --set outputVolume.hostPath.path="$OUT" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
@@ -199,7 +199,7 @@ capped_job() { # <suffix> <subpath> <extra runnerExtraEnv json>
     --set benchmark=agents-smoke --set agent=mock --set task=0 \
     --set nameSuffix="$1" \
     --set otelImage=eval-e2e/otel:stub \
-    --set gatewayImageRef=eval-e2e/gateway:stub \
+    --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
     --set runnerImageRef=eval-e2e/eval:latest \
     --set outputVolume.hostPath.path="$OUT" \
     --set outputVolume.hostPath.type=DirectoryOrCreate \
