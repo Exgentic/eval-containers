@@ -77,8 +77,8 @@ image still checks:
 Everything after that — correctness, timing, the reward — needs the GPU. So the
 oracle (`solution.sh`) is not in the CI oracle gate, whose runners have no GPU.
 Run it on a GPU host instead: its gold is a fused Swish kernel for task 24 (the
-only task with a gold here), which is about 2.5x faster than the two-kernel
-reference, so it should score 1.0 while the no-op scores 0.0.
+only task with a gold here). On a CCC A100 80 GB it scored 1.0 twice (1.95x and
+2.30x faster than the reference), and the no-op 0.0.
 
 ## Files
 
