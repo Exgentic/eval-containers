@@ -37,15 +37,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir --index-url https://download.pytorch.org/whl/cu128 torch==2.9.1 \
  && pip3 install --no-cache-dir numpy==2.2.6
 
-# The evaluator, root and grader only. Its LLM-client imports (openai, litellm)
-# serve upstream's generation scripts and are never called while grading, so
-# they get stand-ins instead of litellm's hundred dependencies.
+# The evaluator, root and grader only. Copied, not pip-installed: jammy's pip 22
+# builds it as `UNKNOWN-0.0.0` with no module in it. Its LLM-client imports
+# (openai, litellm) serve upstream's generation scripts and are never called
+# while grading, so they get stand-ins instead of litellm's hundred dependencies.
 ARG BENCHMARK_VERSION=423217d9fda91e0c2d67e4a43bf62f96f6d104f1
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
 RUN curl -sfL "https://github.com/ScalingIntelligence/KernelBench/archive/${BENCHMARK_VERSION}.tar.gz" \
       | tar xz -C /tmp \
  && mv "/tmp/KernelBench-${BENCHMARK_VERSION}" /tmp/kb \
- && pip3 install --no-cache-dir --no-deps --target /tests/deps /tmp/kb \
+ && mkdir -p /tests/deps && cp -r /tmp/kb/src/kernelbench /tests/deps/ \
  && pip3 install --no-cache-dir --target /tests/deps \
       pydantic==2.11.7 requests==2.32.4 tqdm==4.67.1 python-dotenv==1.1.1 tomli==2.2.1 \
  && printf 'OpenAI = None\n' > /tests/deps/openai.py \
@@ -59,10 +60,13 @@ RUN mkdir -p /tasks \
  && PYTHONPATH=/tmp/kb/src:/tests/deps python3 /tmp/build-tasks.py /tmp/kb /tasks/all.jsonl \
  && chmod 600 /tasks/all.jsonl && chmod 711 /tasks
 
-# What this image can prove without a GPU: nvcc builds and torch loads
-# upstream's one-shot example kernel. The arch list stands in for the device
-# nvcc would otherwise query; at grade time torch reads the real one.
-RUN cd /tmp && TORCH_CUDA_ARCH_LIST=8.0 TORCH_EXTENSIONS_DIR=/tmp/ext \
+# What this image can prove without a GPU: the grader's imports resolve, and
+# nvcc builds and torch loads upstream's one-shot example kernel. The arch list
+# stands in for the device nvcc would otherwise query; at grade time torch
+# reads the real one.
+RUN cd /tmp && PYTHONPATH=/tests/deps python3 -c \
+      "import kernelbench.eval, kernelbench.kernel_static_checker" \
+ && TORCH_CUDA_ARCH_LIST=8.0 TORCH_EXTENSIONS_DIR=/tmp/ext \
       python3 /tmp/kb/src/kernelbench/prompts/model_new_ex_add.py \
  && rm -rf /tmp/ext /tmp/kb /tmp/build-tasks.py /root/.cache
 
