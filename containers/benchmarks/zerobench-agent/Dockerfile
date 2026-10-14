@@ -5,8 +5,9 @@
 # an AGENT (e.g. Claude Code) solves each question with tools, rather than the
 # model-only native harness. Maps to the leaderboard's externally-reported
 # "Claude Code harness tools" (tool-assisted) entries. The agent sees the
-# question + its 1-3 images in /app and must end with the answer in {braces};
-# /grade.sh extracts the last {...} and matches it case-insensitively to gold.
+# question + its 1-3 images in /app and prints a deliberate final line
+# `FINAL ANSWER: <answer>`; /grade.sh anchors to the LAST such line (robust to a
+# transcript's incidental braces + trailing tool output) and matches gold.
 #
 # Data: HuggingFace jonathan-roberts1/zerobench (gated) via ephemeral HF_TOKEN
 # secret (benchmarks/RULES.md 8a).
@@ -60,10 +61,10 @@ LABEL eval.benchmark.license="MIT"
 COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=zerobench-agent
 
-# Grader: the SHARED braced-answer scorer (single source of truth with the
-# native zerobench harness) — extract the last {...}, case-insensitive match to
-# gold. /test.sh runs /score_braced.py; both are the same files the native
-# harness imports.
+# Grader: the SHARED scorer (same file + is_correct() as the native harness),
+# but using its TRANSCRIPT extractor — the LAST `FINAL ANSWER:` sentinel line,
+# not the native "last {...}" (which is correct only for a single completion,
+# not an agent transcript). /test.sh runs /score_braced.py's CLI.
 COPY --from=braced /test.sh /grade.sh
 COPY --from=braced /score_braced.py /score_braced.py
 RUN chmod +x /grade.sh
@@ -90,7 +91,11 @@ if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
 
 The image(s) for this question are files you must open and look at: $(echo $IMGS | tr '\n' ' ')"
   PROBLEM=$(cat /tasks/$EVAL_TASK_ID/problem.txt)
-  export TASK="You are solving a hard visual reasoning question. Open and carefully examine the provided image file(s), reason step by step, and then give your final answer enclosed in curly braces like {final answer} as the very last thing you print.
+  export TASK="You are solving a hard visual reasoning question. Open and carefully examine the provided image file(s) and reason step by step, using tools as needed. When you are done, print your final answer on its own line in EXACTLY this form:
+
+FINAL ANSWER: <your answer>
+
+Print just the bare answer after the marker (a number, letter, or short phrase) — no surrounding braces or quotes. Grading reads the LAST line that begins with 'FINAL ANSWER:', so emit that line once you are certain; any tool output after it is ignored.
 
 Question: ${PROBLEM}${LINE}"
   export EXPECTED_ANSWER=$(cat /tasks/$EVAL_TASK_ID/answer.txt)
