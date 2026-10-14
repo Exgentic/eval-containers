@@ -56,6 +56,7 @@ LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="8fcdfd9138c802cac52b774b36946e70f738f500"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/jonathan-roberts1/zerobench"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.09696"
 LABEL eval.benchmark.license="MIT"
 
 COPY --from=data /tasks /tasks
