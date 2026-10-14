@@ -108,5 +108,7 @@
  "writingbench": 1000,
  "xcopa": 5500,
  "xnli": 75150,
- "xstory-cloze": 16621
+ "xstory-cloze": 16621,
+ "zerobench": 100,
+ "zerobench-agent": 100
 }

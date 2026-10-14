@@ -12,8 +12,9 @@ This list is tracked by commit. Update the status snapshot below with every rele
    - https://huggingface.co/datasets/cais/hle
    - https://huggingface.co/datasets/gaia-benchmark/GAIA
    - https://huggingface.co/datasets/openlanguagedata/flores_plus  (flores200 now reads from here)
+   - https://huggingface.co/datasets/jonathan-roberts1/zerobench  (zerobench + zerobench-agent)
 
-With all three in place, the HuggingFace-gated benchmarks below (`flores200`, `gaia`, `hle`) build green locally.
+With all four in place, the HuggingFace-gated benchmarks below (`flores200`, `gaia`, `hle`, `zerobench`, `zerobench-agent`) build green locally.
 
 ## Current status
 
@@ -31,7 +32,7 @@ Docker runs them reliably at higher concurrency. See
 
 ## Upstream data-reachability failures
 
-These benchmarks need credentials or network paths the local host doesn't have. With the `HF_TOKEN` + accepted licenses described above, all 7 become runnable.
+These benchmarks need credentials or network paths the local host doesn't have. With the `HF_TOKEN` + accepted licenses described above, all 9 become runnable.
 
 | Benchmark | Upstream | Gate | HF_TOKEN fixes? |
 |---|---|---|---|
@@ -42,6 +43,8 @@ These benchmarks need credentials or network paths the local host doesn't have. 
 | `osworld` | `raw.githubusercontent.com/xlang-ai/OSWorld/...` | Open — transient packaging issue only, URL is live | n/a |
 | `realworldqa` | `huggingface.co/datasets/xai-org/RealworldQA` (parquet convert branch) | Anonymous via convert/parquet branch — no HF_TOKEN needed | n/a |
 | `workarena` | upstream GitHub raw | Task-id paths fixed + retry loop added at v0.5.3 | n/a |
+| `zerobench` | `huggingface.co/datasets/jonathan-roberts1/zerobench` | License-gated dataset (fetched via HF_TOKEN secret mount) | yes |
+| `zerobench-agent` | `huggingface.co/datasets/jonathan-roberts1/zerobench` | License-gated dataset (fetched via HF_TOKEN secret mount) | yes |
 
 ## Per-task-build benchmarks
 

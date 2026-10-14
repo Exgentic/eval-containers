@@ -1,0 +1,10 @@
+target "benchmark-zerobench-agent" {
+  context = "containers/benchmarks/zerobench-agent"
+  contexts = {
+    "${REGISTRY}/core/benchmark-base-hf" = "target:benchmark-base-hf"
+    "${REGISTRY}/core/benchmark-base-python-slim" = "target:benchmark-base-python-slim"
+    "${REGISTRY}/core/test-braced-match" = "target:test-braced-match"
+  }
+  secret = ["id=HF_TOKEN,env=HF_TOKEN"]
+  tags = ["${REGISTRY}/benchmarks/zerobench-agent:${TAG}"]
+}
