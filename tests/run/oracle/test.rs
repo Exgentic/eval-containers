@@ -96,6 +96,10 @@ const SPECIAL: &[(&str, &str)] = &[
     // recording that replays where it was made scored 0 on a hosted runner.
     ("osworld-verified", "49"),  // GIMP: a preference
     ("osworld-verified", "109"), // Impress: edit and save a .pptx
+    // The same two tasks under the offline variant's numbers, on a stack with
+    // no route out.
+    ("osworld-verified-offline", "15"),
+    ("osworld-verified-offline", "75"),
     // One per source project: hwe-bench is five HW repos and three sim
     // toolchains behind one name; the grader runs each case's self-contained
     // tb_script through that repo's own flow. Every id below oracle-proven

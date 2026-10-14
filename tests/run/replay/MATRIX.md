@@ -63,6 +63,7 @@ arm64 host fails at image pull, not in the test.
 | terminal-bench | — | per-task (upstream) | needs Harbor image auth |
 | webarena | — | sidecar | needs multi-sidecar support |
 | osworld-verified | — | sidecar | needs a fixture recorded from the published images |
+| osworld-verified-offline | — | sidecar | needs a fixture recorded from the published images |
 | tau-bench | — | bridge | needs two-model replay |
 
 ## Replay modes

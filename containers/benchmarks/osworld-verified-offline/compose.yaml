@@ -1,0 +1,59 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/osworld-verified-offline--${EVAL_AGENT:-claude-code}:latest
+    volumes:
+      - desktop-sock:/run/desktop
+    environment:
+      BENCHMARK: osworld-verified-offline
+      TIMEOUT: "3600"
+      EVAL_TIMEOUT: "3600"
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+      desktop:
+        condition: service_healthy
+    # No `upstream` here or on the desktop: these tasks need nothing from the
+    # internet, and on the internal network alone nothing can reach it.
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 4G
+
+  # Upstream's own VM disk, run as a container: no /dev/kvm, no privileged
+  # mode, native speed.
+  desktop:
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/core/osworld-desktop:latest
+    # The VM's /dev/shm is half its 4 GB of memory; Docker's default is 64 MB.
+    shm_size: 2gb
+    # Setup and grading reach the control server here, as they do in the chart.
+    # Without it the runner rewrites every desktop call to a socket that is not
+    # there and every task scores 0.
+    volumes:
+      - desktop-sock:/run/desktop
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-m", "10", "-o", "/dev/null", "http://127.0.0.1:5000/screenshot"]
+      interval: 2s
+      timeout: 3s
+      retries: 90
+      start_period: 10s
+    networks:
+      - internal
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 4G
+
+volumes:
+  desktop-sock:
