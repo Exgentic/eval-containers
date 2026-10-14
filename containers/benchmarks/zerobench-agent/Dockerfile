@@ -57,6 +57,7 @@ ENV EVAL_INTERNET=false
 LABEL eval.benchmark.data_revision="8fcdfd9138c802cac52b774b36946e70f738f500"
 LABEL eval.benchmark.url="https://huggingface.co/datasets/jonathan-roberts1/zerobench"
 LABEL eval.benchmark.license="MIT"
+LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.09696"
 
 COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=zerobench-agent
@@ -80,13 +81,22 @@ raw=open(f'/tasks/{tid}/images_b64.txt').read().strip()
 try: imgs=json.loads(raw) if raw else []
 except json.JSONDecodeError: imgs=[]
 os.makedirs('/app',exist_ok=True)
+def ext(b):
+    # Name the file for what it actually is — ZeroBench ships mostly JPEG, and a
+    # .png name on JPEG bytes trips readers that trust the extension.
+    if b[:3]==b'\xff\xd8\xff': return 'jpg'
+    if b[:8]==b'\x89PNG\r\n\x1a\n': return 'png'
+    if b[:4]==b'RIFF' and b[8:12]==b'WEBP': return 'webp'
+    if b[:6] in (b'GIF87a',b'GIF89a'): return 'gif'
+    return 'jpg'
 for n,b in enumerate(imgs,1):
-    open(f'/app/image_{n}.png','wb').write(base64.b64decode(b))
+    raw_img=base64.b64decode(b)
+    open(f'/app/image_{n}.{ext(raw_img)}','wb').write(raw_img)
 PY
   rm -f /tasks/$EVAL_TASK_ID/images_b64.txt
 fi
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  IMGS=$(ls /app/image_*.png 2>/dev/null | sort -V); for f in $IMGS; do chmod 0644 "$f"; done
+  IMGS=$(ls /app/image_*.* 2>/dev/null | sort -V); for f in $IMGS; do chmod 0644 "$f"; done
   LINE=""; [ -n "$IMGS" ] && LINE="
 
 The image(s) for this question are files you must open and look at: $(echo $IMGS | tr '\n' ' ')"
