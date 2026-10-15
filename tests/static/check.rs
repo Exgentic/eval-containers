@@ -1689,6 +1689,13 @@ fn merge_pertask_combos_stitches_from_the_shards_artifact() {
         "merge-pertask-combos must assert it attempted every combo in the work list — a \
          zero-iteration run passes a `fails == 0` check vacuously (delivery/RULES.md:17)"
     );
+    // Stitching both variants unconditionally re-pushed old swe-bench -standalone
+    // bundles from their leftover per-arch tags every night.
+    assert!(
+        job.contains("STANDALONE: ${{ inputs.include_standalone || 'false' }}")
+            && !job.contains(r#"for suffix in "" "-standalone""#),
+        "merge-pertask-combos must stitch -standalone only when include_standalone built it"
+    );
     // The read-back judges each :TAG against the arches it joined, never a
     // fixed pair: combos-pertask skips an arch its base lacks and expects the
     // merge to keep such a combo single-arch (deepswe and hwe-bench declare
