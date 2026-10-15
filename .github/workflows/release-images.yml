@@ -1414,8 +1414,13 @@ jobs:
         env:
           IDX: ${{ matrix.shard.idx }}
           MAXPAR: ${{ needs.enumerate.outputs.maxpar }}
+          STANDALONE: ${{ inputs.include_standalone || 'false' }}
         run: |
           jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json > items.json
+          # -standalone only when this release built it: otherwise every nightly
+          # re-stitched and re-pushed old swe-bench bundles from their leftover
+          # per-arch tags.
+          variants=1; [ "$STANDALONE" != "true" ] || variants=2
           # Workers per job, bounded so the WHOLE matrix stays under GHCR's write
           # limit — the number that matters is jobs x workers, not workers. At 16
           # per job x 20 jobs the stitch of swe-bench's 8,000 refs died with
@@ -1436,7 +1441,7 @@ jobs:
           stitch_one() {
             local B=$1 A=$2 TASK=$3 tid ref srcs a suffix got missing
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
-            for suffix in "" "-standalone"; do
+            for suffix in "" $([ "$STANDALONE" != "true" ] || echo -standalone); do
               ref="${REGISTRY}/evals/${B}-${tid}--${A}${suffix}"
               srcs=()
               for a in amd64 arm64; do
@@ -1464,7 +1469,7 @@ jobs:
             done
           }
           export -f stitch_one
-          export REGISTRY TAG
+          export REGISTRY TAG STANDALONE
           # One line per field so xargs -n3 regroups them; a task id never
           # contains whitespace (fleet-hash.sh refuses one that does).
           # shellcheck disable=SC2016  # $1/$2/$3 belong to the xargs-spawned bash, not this shell
@@ -1483,8 +1488,8 @@ jobs:
           # success.
           want=$(jq length items.json)
           [ "$want" -gt 0 ] || { echo "::error::shard $IDX lists no per-task combos, but this job was scheduled"; exit 1; }
-          [ "$((merged + skipped))" -eq "$((want * 2))" ] \
-            || { echo "::error::expected $((want * 2)) merge attempts (${want} combos x 2 variants), saw $((merged + skipped))"; exit 1; }
+          [ "$((merged + skipped))" -eq "$((want * variants))" ] \
+            || { echo "::error::expected $((want * variants)) merge attempts (${want} combos x ${variants} variants), saw $((merged + skipped))"; exit 1; }
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
   # Runs for real releases (tag / explicit version). The scan covers whatever

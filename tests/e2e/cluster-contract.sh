@@ -55,7 +55,7 @@ render() {
   helm template "$name" "$CHART" \
     --set benchmark=humaneval --set agent=stub \
     --set otelImage=eval-e2e/otel:stub \
-    --set gatewayImageRef=eval-e2e/gateway:stub \
+    --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
     --set runnerImageRef=eval-e2e/runner:stub \
     --set outputVolume.hostPath.path="$OUT" \
     --set outputVolume.hostPath.type=DirectoryOrCreate \
@@ -219,7 +219,7 @@ F_ARGS=$(argsfile 'mkdir -p /output/task &&
 helm template pvc "$CHART" \
   --set benchmark=humaneval --set agent=stub --set task=0 \
   --set otelImage=eval-e2e/otel:stub \
-  --set gatewayImageRef=eval-e2e/gateway:stub \
+  --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
   --set runnerImageRef=eval-e2e/runner:stub \
   --set outputVolume.persistentVolumeClaim.claimName=eval-e2e-output \
   --set outputSubPath="$ROOT_F" --set runId=onpvc --set nameSuffix=-pvc \
