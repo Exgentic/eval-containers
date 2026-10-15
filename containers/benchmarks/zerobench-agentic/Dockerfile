@@ -1,10 +1,17 @@
 # syntax=docker/dockerfile:1
 # ZeroBench — AGENTIC variant (sibling of the model-only `zerobench`).
 #
-# The `-agentic` suffix marks the variant an EXTERNAL agent drives. Note the
-# plain `zerobench` is the one labelled eval.benchmark.agent="native" — "native"
-# meaning it ships its own agent scaffold and calls the model itself (RULES.md
-# 12a) — so the suffix says which side supplies the agent, not which one has one.
+# The `-agentic` suffix marks the variant an EXTERNAL agent drives. The plain
+# `zerobench` is the one carrying the native agent label (RULES.md 12a) —
+# "native" meaning it ships its own agent scaffold and calls the model itself —
+# so the suffix says which side supplies the agent, not which one has one.
+#
+# NB: do not write that label's literal `name="value"` text anywhere in this
+# file, not even in a comment. release-images.yml finds native-harness
+# benchmarks with `grep -rl` over whole Dockerfiles, so a mention in prose is
+# indistinguishable from the real LABEL: it made this benchmark pair with the
+# `native` agent instead of the lineup, publishing evals/zerobench-agentic--native
+# and silently skipping --claude-code.
 #
 # Same 100-question main set, but packaged as a normal agent-facing benchmark so
 # an AGENT (e.g. Claude Code) solves each question with tools, rather than the
