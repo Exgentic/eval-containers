@@ -111,5 +111,5 @@
  "xnli": 75150,
  "xstory-cloze": 16621,
  "zerobench": 100,
- "zerobench-agent": 100
+ "zerobench-agentic": 100
 }

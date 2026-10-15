@@ -1,5 +1,10 @@
 # syntax=docker/dockerfile:1
-# ZeroBench — AGENT variant (experiment sibling of the model-only `zerobench`).
+# ZeroBench — AGENTIC variant (sibling of the model-only `zerobench`).
+#
+# The `-agentic` suffix marks the variant an EXTERNAL agent drives. Note the
+# plain `zerobench` is the one labelled eval.benchmark.agent="native" — "native"
+# meaning it ships its own agent scaffold and calls the model itself (RULES.md
+# 12a) — so the suffix says which side supplies the agent, not which one has one.
 #
 # Same 100-question main set, but packaged as a normal agent-facing benchmark so
 # an AGENT (e.g. Claude Code) solves each question with tools, rather than the
@@ -46,9 +51,9 @@ RUN chmod 600 /tasks/all.jsonl
 
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 LABEL eval.type="benchmark"
-LABEL eval.benchmark.name="zerobench-agent"
+LABEL eval.benchmark.name="zerobench-agentic"
 LABEL eval.benchmark.released="false"
-LABEL eval.benchmark.description="ZeroBench (agent variant) - impossible visual reasoning solved by a tool-using agent"
+LABEL eval.benchmark.description="ZeroBench, agentic - impossible visual reasoning solved by an external tool-using agent (pair with claude-code etc.; the plain zerobench runs the upstream model-only harness instead)"
 LABEL eval.benchmark.tasks="100"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.modality="multimodal"
@@ -61,7 +66,7 @@ LABEL eval.benchmark.license="MIT"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2502.09696"
 
 COPY --from=data /tasks /tasks
-ENV EVAL_BENCHMARK=zerobench-agent
+ENV EVAL_BENCHMARK=zerobench-agentic
 
 # Grader: the SHARED scorer (same file + is_correct() as the native harness),
 # but using its TRANSCRIPT extractor — the LAST `FINAL ANSWER:` sentinel line,
