@@ -14,7 +14,7 @@ This list is tracked by commit. Update the status snapshot below with every rele
    - https://huggingface.co/datasets/openlanguagedata/flores_plus  (flores200 now reads from here)
    - https://huggingface.co/datasets/jonathan-roberts1/zerobench  (zerobench + zerobench-agent)
 
-With all four in place, the HuggingFace-gated benchmarks below (`flores200`, `gaia`, `hle`, `zerobench`, `zerobench-agent`) build green locally.
+With all four in place, the HuggingFace-gated benchmarks below (`flores200`, `gaia`, `hle`) build green locally. `zerobench` and `zerobench-agent` need gate 4 accepted and are no longer listed below — they build green with it (verified 2026-10-14).
 
 ## Current status
 
@@ -32,7 +32,7 @@ Docker runs them reliably at higher concurrency. See
 
 ## Upstream data-reachability failures
 
-These benchmarks need credentials or network paths the local host doesn't have. With the `HF_TOKEN` + accepted licenses described above, all 9 become runnable.
+These benchmarks need credentials or network paths the local host doesn't have. With the `HF_TOKEN` + accepted licenses described above, all 7 become runnable.
 
 | Benchmark | Upstream | Gate | HF_TOKEN fixes? |
 |---|---|---|---|
@@ -43,8 +43,6 @@ These benchmarks need credentials or network paths the local host doesn't have. 
 | `osworld` | `raw.githubusercontent.com/xlang-ai/OSWorld/...` | Open — transient packaging issue only, URL is live | n/a |
 | `realworldqa` | `huggingface.co/datasets/xai-org/RealworldQA` (parquet convert branch) | Anonymous via convert/parquet branch — no HF_TOKEN needed | n/a |
 | `workarena` | upstream GitHub raw | Task-id paths fixed + retry loop added at v0.5.3 | n/a |
-| `zerobench` | `huggingface.co/datasets/jonathan-roberts1/zerobench` | License-gated dataset (fetched via HF_TOKEN secret mount) | yes |
-| `zerobench-agent` | `huggingface.co/datasets/jonathan-roberts1/zerobench` | License-gated dataset (fetched via HF_TOKEN secret mount) | yes |
 
 ## Per-task-build benchmarks
 
@@ -80,6 +78,8 @@ ahead-of-time mirror in the release registry. See release runbook.
 |---|---|---|
 | `appworld` | we were running under qemu-user-static; pyarrow segfaulted | Enable Rosetta on podman machine (see [running tests locally](../../docs/guides/running-tests-locally.md)) |
 | `swe-bench` | `swebench==3.0.18` was yanked from PyPI; package jumps 3.0.17 → 4.0.0 | Bumped pin to `swebench==3.0.17` |
+| `zerobench` | Dataset gate on `jonathan-roberts1/zerobench` was not accepted for the local token, so the `HF_TOKEN` secret mount got `403 … not in the authorized list` | Gate accepted on the token's HF account; builds green via the ephemeral secret mount (verified locally 2026-10-14, podman + Rosetta) |
+| `zerobench-agent` | Same gate as `zerobench` | Same fix; builds green (verified locally 2026-10-14) |
 
 Both verified locally. Deleting from the "failures" section above once the next round confirms green.
 
