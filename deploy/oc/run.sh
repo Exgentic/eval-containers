@@ -14,10 +14,10 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
 BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
 NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" FLAT_IMAGES=""
-FORCE=false DATASET_MODE=false BUILD=false LOCAL_CHART=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
+GATEWAY_ON=false FORCE=false DATASET_MODE=false BUILD=false LOCAL_CHART=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
-  --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; shift 2;;
+  --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; GATEWAY_ON=true; shift 2;;
   --task) TASK="$2"; shift 2;;
   --dataset) DATASET_MODE=true; shift;; --dataset-size) DATASET="$2"; DATASET_MODE=true; shift 2;;
   --parallelism) PARALLELISM="$2"; shift 2;; --retry) RETRY="$2"; shift 2;;
@@ -126,6 +126,8 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
 [[ -n "$SUFFIX" ]] && { $BUILD && SET+=(--set "imageSuffix=$SUFFIX"); SET+=(--set "nameSuffix=$SUFFIX"); }
 # Rerun a task the run id already holds a result for, instead of skipping it.
 $FORCE && SET+=(--set "force=true")
+# The chart runs no gateway sidecar unless asked; naming one with --gateway asks.
+$GATEWAY_ON && SET+=(--set "gatewayEnabled=true")
 # --dataset with no --dataset-size: the chart sizes it from its own
 # dataset-sizes.json, so a dry run renders the real Indexed Job and a grid of
 # differently-sized benchmarks self-sizes without a flag.
