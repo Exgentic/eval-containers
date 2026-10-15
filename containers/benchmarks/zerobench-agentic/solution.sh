@@ -1,5 +1,5 @@
 #!/bin/bash
-# Oracle for zerobench-agent: emit the gold answer behind the `FINAL ANSWER:`
+# Oracle for zerobench-agentic: emit the gold answer behind the `FINAL ANSWER:`
 # sentinel the transcript extractor anchors to. The default
 # `printf '%s' "$EXPECTED_ANSWER"` emits a bare answer with no sentinel line,
 # which extract_sentinel() maps to "" (fail-closed), scoring 0.0 on a correct

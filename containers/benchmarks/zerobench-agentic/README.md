@@ -1,10 +1,16 @@
-# zerobench-agent
+# zerobench-agentic
 
-ZeroBench (agent variant) — the **with-agent** configuration of ZeroBench (ICML
-2026). Same 100-question main set as the model-only [`zerobench`](../zerobench/),
-but solved by a tool-using **agent** (e.g. Claude Code) instead of the native
-model-only harness. Maps to the leaderboard's externally-reported
-"Claude Code harness tools" (tool-assisted) entries.
+ZeroBench solved by an **external tool-using agent** (e.g. Claude Code) — the
+tool-assisted configuration of ZeroBench (ICML 2026). Same 100-question main set
+as [`zerobench`](../zerobench/), which instead runs the upstream model-only
+harness and makes its own LLM calls. Maps to the leaderboard's
+externally-reported "Claude Code harness tools" (tool-assisted) entries.
+
+**On the names:** `-agentic` marks the variant an *external agent* drives. It is
+the plain `zerobench` that is `eval.benchmark.agent="native"` — "native" meaning
+the benchmark ships its own agent scaffold (`benchmarks/RULES.md` 12a) and calls
+the model itself. So the suffix marks which side supplies the agent, not which
+one has an agent at all.
 
 ## At a glance
 
@@ -24,7 +30,7 @@ model-only harness. Maps to the leaderboard's externally-reported
 ## Model-only vs agent — two benchmarks, one scorer
 
 - **`zerobench`** (native harness) — model-only, "no agent" (the `native` agent).
-- **`zerobench-agent`** (this) — agent-facing; the agent sees the question + its
+- **`zerobench-agentic`** (this) — agent-facing; the agent sees the question + its
   1–3 image files in `/app` and prints a deliberate final line
   `FINAL ANSWER: <answer>`.
 
@@ -46,6 +52,6 @@ See [`tests/build/known-broken.md`](../../../tests/build/known-broken.md).
 ## Files
 
 - `Dockerfile` — gated fetch → agent-facing task (images in `/app`) + shared grader
-- `compose.yaml` — compose runner for `eval-containers run zerobench-agent`
-- `docker-bake.hcl` — bake target `benchmark-zerobench-agent`
+- `compose.yaml` — compose runner for `eval-containers run zerobench-agentic`
+- `docker-bake.hcl` — bake target `benchmark-zerobench-agentic`
 - `README.md` / `AUDIT.md`

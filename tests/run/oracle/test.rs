@@ -113,7 +113,7 @@ const SPECIAL: &[(&str, &str)] = &[
     ("hwe-bench", "chipsalliance__caliptra-rtl-963"), // SystemVerilog / Verilator
     ("hwe-bench", "chipsalliance__rocket-chip-3526"), // Chisel -> Verilog / Mill + Verilator
     ("hwe-bench", "openxiangshan__xiangshan-39"), // Chisel -> Verilog / Mill + Verilator
-    // zerobench-agent grades through `core/test-answer-match`, not
+    // zerobench-agentic grades through `core/test-answer-match`, not
     // test-exact-match, so the auto-coverage above skips it; and the default gold
     // (`printf '%s' "$EXPECTED_ANSWER"`) emits a bare answer, which the
     // transcript extractor fail-closes to "" — 0.0 on a correct answer. So it
@@ -126,7 +126,7 @@ const SPECIAL: &[(&str, &str)] = &[
     // the harness run_zerobench.py performs the inference and writes the reward
     // itself — so there is nothing for a gold solution to feed, and gold and
     // no-op are indistinguishable by construction.
-    ("zerobench-agent", "0"),
+    ("zerobench-agentic", "0"),
 ];
 
 fn oracle(args: &[&str]) -> bool {

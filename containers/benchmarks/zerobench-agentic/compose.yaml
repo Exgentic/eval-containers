@@ -11,6 +11,6 @@ services:
         condition: service_healthy
       gateway:
         condition: service_healthy
-    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/zerobench-agent--${EVAL_AGENT:-claude-code}:latest
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/zerobench-agentic--${EVAL_AGENT:-claude-code}:latest
     environment:
-      BENCHMARK: zerobench-agent
+      BENCHMARK: zerobench-agentic

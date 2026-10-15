@@ -88,7 +88,7 @@ FROM python:3.12-slim
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="zerobench"
 LABEL eval.benchmark.released="false"
-LABEL eval.benchmark.description="ZeroBench - impossible visual reasoning benchmark for large multimodal models (ICML 2026), model-only native harness (pass@1/pass@5/pass^5)"
+LABEL eval.benchmark.description="ZeroBench - impossible visual reasoning for large multimodal models (ICML 2026); the upstream model-only harness, which makes its own LLM calls and needs no external agent (pass@1/pass@5/pass^5). For the tool-assisted variant see zerobench-agentic"
 LABEL eval.benchmark.tasks="100"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.agent="native"
@@ -111,7 +111,7 @@ WORKDIR /app
 # The native harness: resolve EVAL_TASK_ID -> question + images, sample the model
 # N times via the gateway, score the braced answer, write reward + export.
 # Shared scorer (single source of truth) — the harness imports extract_answer/
-# is_correct from it; the agent-facing zerobench-agent uses the same file's CLI.
+# is_correct from it; the agent-facing zerobench-agentic uses the same file's CLI.
 COPY --from=braced /score_answer.py /app/score_answer.py
 COPY run_zerobench.py /app/run_zerobench.py
 RUN chmod 755 /app/run_zerobench.py \
