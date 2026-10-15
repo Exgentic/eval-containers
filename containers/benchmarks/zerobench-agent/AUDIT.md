@@ -15,7 +15,7 @@ commit: feat/add-zerobench
 | running | ? | agent sweep in progress (Claude Code × Opus 5); not finalized |
 | grader-shared | ✓ | uses `core/test-answer-match` (same scorer the native `zerobench` imports) — module + CLI unit-tested, fail-closed |
 | isolation | ? | not audited per-benchmark |
-| oracle | ? | agent-graded (`FINAL ANSWER:` sentinel extraction); no gold-solution oracle |
+| oracle | ✓ | `solution.sh` emits the gold behind the `FINAL ANSWER:` sentinel; `eval-containers oracle zerobench-agent --task-id 0 --local` scores gold=1.0, no-op=0.0 (so the grader accepts a correct answer and rejects an absent one) |
 | replicate-official | ? | pending vs the leaderboard's tool-assisted entries |
 
 ## Safety — can the run harm us or cheat?

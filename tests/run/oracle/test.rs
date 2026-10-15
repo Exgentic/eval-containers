@@ -113,6 +113,20 @@ const SPECIAL: &[(&str, &str)] = &[
     ("hwe-bench", "chipsalliance__caliptra-rtl-963"), // SystemVerilog / Verilator
     ("hwe-bench", "chipsalliance__rocket-chip-3526"), // Chisel -> Verilog / Mill + Verilator
     ("hwe-bench", "openxiangshan__xiangshan-39"), // Chisel -> Verilog / Mill + Verilator
+    // zerobench-agent grades through `core/test-answer-match`, not
+    // test-exact-match, so the auto-coverage above skips it; and the default gold
+    // (`printf '%s' "$EXPECTED_ANSWER"`) emits a bare answer, which the
+    // transcript extractor fail-closes to "" — 0.0 on a correct answer. So it
+    // ships its own solution.sh emitting the `FINAL ANSWER:` sentinel line the
+    // grader anchors to. Shared-env, so task 0 is representative.
+    //
+    // zerobench (model-only, eval.benchmark.agent="native") is deliberately
+    // uncovered, like every other native-harness benchmark (automationbench,
+    // bfcl, tau-bench, walle): its /grade.sh does not read the agent's stdout —
+    // the harness run_zerobench.py performs the inference and writes the reward
+    // itself — so there is nothing for a gold solution to feed, and gold and
+    // no-op are indistinguishable by construction.
+    ("zerobench-agent", "0"),
 ];
 
 fn oracle(args: &[&str]) -> bool {
