@@ -14,9 +14,7 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/hwe-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: hwe-bench
-      # 6h agent wall-clock: the shared 300s default leaves no room for a fix
-      # whose every check is a Verilator build+sim (minutes on ibex, longer on
-      # the Mill/Scala-elaborated Chisel repos). Mirrored in presets/hwe-bench.yaml.
+      # 6h: each check is a Verilator build+sim. Mirrored in presets/hwe-bench.yaml.
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-21600}
       TIMEOUT: ${EVAL_TIMEOUT:-21600}
     # Rule 10 / 24e — matches the chart's preset (4 CPU / 16Gi), taken from
