@@ -21,7 +21,7 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2507.15887"
 LABEL eval.benchmark.harbor_impl="https://github.com/harbor-framework/harbor/tree/main/adapters/algotune"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential ca-certificates curl jq procps \
+    build-essential ca-certificates curl git jq procps \
   && rm -rf /var/lib/apt/lists/*
 
 # Upstream's own pinned environment, minus the LLM clients its agent uses and the
