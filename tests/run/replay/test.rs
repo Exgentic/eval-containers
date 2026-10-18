@@ -1601,6 +1601,12 @@ replay_test!(
     "9972"
 );
 
+// zerobench is a model-only native-harness benchmark (benchmarks/RULES.md 12a):
+// the upstream harness is its own agent scaffold and calls the model itself, so
+// the fixture pairs with the `native` agent, as bfcl's and walle's do. Recorded
+// from a live gateway run; the trace names its own model (live/RULES.md 5).
+replay_test!(replay_zerobench_0_native, "zerobench", "native", "0");
+
 // ── Bifrost-recorded fixtures (real gpt-5.4 via the bifrost gateway) ──────
 replay_test!(replay_aime_0_claude_code, "aime", "claude-code", "0");
 replay_test!(replay_aime_0_codex, "aime", "codex", "0");
