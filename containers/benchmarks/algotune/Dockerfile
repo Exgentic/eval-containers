@@ -25,12 +25,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
   && rm -rf /var/lib/apt/lists/*
 
 # Upstream's own pinned environment, minus the LLM clients its agent uses and the
-# CUDA wheels; torch comes from the CPU index at the same version.
+# CUDA wheels; torch comes from the CPU index at the same version. Upstream pins
+# pot 1.0.0, which PyPI does not have: its newest, 0.9.7.post1, is what Harbor gets.
 ARG BENCHMARK_VERSION=dff9914c10800c7a031c9e8c3d4d1c8cd1b38906
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
 RUN curl -sfL "https://github.com/oripress/AlgoTune/archive/${BENCHMARK_VERSION}.tar.gz" | tar xz -C /tmp \
  && mv "/tmp/AlgoTune-${BENCHMARK_VERSION}" /tmp/at \
- && grep -vE '^(nvidia-|triton|torch==|litellm|openai|google-)' /tmp/at/requirements.txt > /tmp/requirements.txt \
+ && grep -vE '^(nvidia-|triton|torch==|litellm|openai|google-)' /tmp/at/requirements.txt \
+      | sed 's/^pot==1.0.0$/pot==0.9.7.post1/' > /tmp/requirements.txt \
  && pip install --no-cache-dir --no-deps --index-url https://download.pytorch.org/whl/cpu \
       "$(grep -E '^torch==' /tmp/at/requirements.txt)" \
  && pip install --no-cache-dir --no-deps -r /tmp/requirements.txt
