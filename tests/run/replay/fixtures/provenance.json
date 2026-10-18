@@ -195,6 +195,29 @@
         "Redacted at capture (rule 4a): the provider proxy's Set-Cookie and X-Litellm-* response headers. No credential or internal host is present \u2014 the tree is scanned for both.",
         "The agent opened one of the issue's screenshots, so the record carries an image block."
       ]
+    },
+    "zerobench-0-native": {
+      "benchmark": "zerobench",
+      "task_id": "0",
+      "agent": "native",
+      "agent_version": "1.0.0",
+      "model": "gpt-5.5",
+      "gateway": "bifrost",
+      "benchmark_data_revision": "8fcdfd9138c802cac52b774b36946e70f738f500",
+      "captured_at": "2026-10-18T10:21:25Z",
+      "release_tag": null,
+      "capture_method": "out-of-band (RULES.md rule 9)",
+      "platform": "linux/arm64",
+      "reward": 0,
+      "passed": false,
+      "notes": [
+        "First fixture for zerobench, captured to release it (RULES.md rule 21a).",
+        "Model-only native harness (benchmarks/RULES.md 12a): the upstream harness is its own agent scaffold and calls the model itself, so this pairs with the native agent as bfcl's and walle's fixtures do.",
+        "reward=0 is the EXPECTED outcome, not a bad capture: ZeroBench's main set is built so frontier models score ~0. The harness answered and was wrong, which is a valid trajectory; a refusal or truncation would not be (live RULES.md rule 9). Not listed in broken.json for that reason.",
+        "Inspection findings are yellow only (high_turn_count, retry_storm), which live RULES.md rule 32 promotes with annotation; it adds nothing to the gate's red list.",
+        "release_tag is null: out-of-band capture between release cycles, which rule 9 permits; the next live fleet sweep supersedes it.",
+        "No credential and no internal-only endpoint in the trace (rule 4a, verified); the trace names its own model via gen_ai.request.model, so it states what produced it (live RULES.md rule 5)."
+      ]
     }
   }
 }

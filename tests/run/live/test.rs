@@ -1,7 +1,7 @@
 //! Live fleet sweep — VERIFY.md step 16a.
 //!
 //! Runs every buildable benchmark × 3 tasks × rotating agent against
-//! a real model (gpt-5.4 by default), captures the full output
+//! a real model (whichever the runner's credentials serve), captures the full output
 //! directory per run, and promotes clean trajectories to replay
 //! fixtures. This is the gate that answers "does every benchmark
 //! actually produce a real trajectory end-to-end?" — which builds
@@ -37,7 +37,37 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // ─── Configuration ────────────────────────────────────────────────
 
-const MODEL: &str = "gpt-5.4";
+/// The model the release runner supplies. Rule 5 forbids pinning one: the
+/// runner's credentials decide what is available, and the promoted trajectory
+/// records what actually ran via `gen_ai.request.model` on its spans. The
+/// default is only a convenience for a runner that sets nothing.
+const DEFAULT_MODEL: &str = "gpt-5.5";
+
+/// Rule 28's remedy for a timeout-killed run is "raise `EVAL_TIMEOUT`", but the
+/// sweep hardcoded one wall clock for the whole fleet, so there was no way to
+/// act on it: a benchmark whose tasks legitimately need longer than the default
+/// recorded a red rule-28 finding on every sweep.
+///
+/// Same variable the run itself uses — the sweep passes this through as
+/// `--timeout`, and `run-agent` enforces it with `timeout -k`. Reproducing a
+/// run outside the sweep therefore sets the identical knob.
+fn timeout_secs() -> u32 {
+    timeout_secs_from(std::env::var("EVAL_TIMEOUT").ok().as_deref())
+}
+
+fn timeout_secs_from(raw: Option<&str>) -> u32 {
+    raw.and_then(|s| s.trim().parse::<u32>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_TIMEOUT_SECS)
+}
+
+fn model() -> String {
+    std::env::var("EVAL_MODEL")
+        .ok()
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string())
+}
 // 6-agent rotation: every benchmark runs once against EACH agent, so
 // the full sweep covers 88 × 6 = 528 (benchmark, agent) pairs. Every
 // agent sees every benchmark, every benchmark sees every agent — the
@@ -81,13 +111,74 @@ struct Benchmark {
     native: bool,
 }
 
+/// The cumulative spend ceiling for the whole sweep, in USD: rule 7's
+/// `EVAL_LIVE_BUDGET_USD`. Unset keeps the historical safety valve (10x the
+/// per-run cap x the rotation x 30). The sweep halts as soon as recorded spend
+/// crosses it, so budget is never burned on a run the operator did not intend.
+fn budget_cap_usd(rotation_len: usize) -> f64 {
+    budget_cap_from(
+        std::env::var("EVAL_LIVE_BUDGET_USD").ok().as_deref(),
+        rotation_len,
+    )
+}
+
+/// The pure core of [`budget_cap_usd`], so the fallbacks are testable without
+/// mutating process env (unsafe in Rust 2024, and shared across test threads).
+fn budget_cap_from(raw: Option<&str>, rotation_len: usize) -> f64 {
+    let default = 10.0 * DEFAULT_MAX_BUDGET_USD * (rotation_len as f64) * 30.0;
+    raw.and_then(|s| s.trim().parse::<f64>().ok())
+        .filter(|v| *v > 0.0)
+        .unwrap_or(default)
+}
+
+/// The agent rotation for this sweep: `AGENTS`, or the subset named by
+/// `EVAL_LIVE_AGENTS=claude-code,codex,...` — the agent-axis sibling of
+/// `EVAL_LIVE_FILTER`. Narrowing it is how a scoped run records one fixture
+/// (release gate 21a needs ≥1 agent) without paying for the whole rotation,
+/// which also builds one eval image per agent locally. Names not in `AGENTS`
+/// are rejected rather than silently dropped: a typo that quietly shrank the
+/// rotation would look like a passing sweep with missing fixtures.
+fn rotation() -> Vec<&'static str> {
+    rotation_from(std::env::var("EVAL_LIVE_AGENTS").ok().as_deref())
+}
+
+/// The pure core of [`rotation`], testable without mutating process env.
+fn rotation_from(raw: Option<&str>) -> Vec<&'static str> {
+    let Some(raw) = raw else {
+        return AGENTS.to_vec();
+    };
+    let want: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+    if want.is_empty() {
+        return AGENTS.to_vec();
+    }
+    let unknown: Vec<&String> = want
+        .iter()
+        .filter(|w| !AGENTS.contains(&w.as_str()))
+        .collect();
+    assert!(
+        unknown.is_empty(),
+        "EVAL_LIVE_AGENTS names agents outside the rotation: {unknown:?} — \
+         valid: {AGENTS:?}"
+    );
+    AGENTS
+        .iter()
+        .copied()
+        .filter(|a| want.iter().any(|w| w == a))
+        .collect()
+}
+
 /// The agent for the i-th chosen task: the rotation, or `native` for a
 /// native-harness benchmark (which has exactly one).
 fn agent_for(b: &Benchmark, i: usize) -> &'static str {
     if b.native {
         "native"
     } else {
-        AGENTS[i % AGENTS.len()]
+        let r = rotation();
+        r[i % r.len()]
     }
 }
 
@@ -206,7 +297,7 @@ fn per_task_representative(name: &str) -> Option<&'static str> {
 /// spaced intermediates. For very small benchmarks (N < K) we cycle
 /// back to 0 — one task id may be repeated across agents.
 fn pick_task_ids(b: &Benchmark) -> Vec<String> {
-    let k = AGENTS.len();
+    let k = rotation().len();
     if b.native {
         // One agent, so one task: the rotation would rerun the same pairing.
         return vec!["0".into()];
@@ -224,6 +315,12 @@ fn pick_task_ids(b: &Benchmark) -> Vec<String> {
     }
     if n == 1 {
         return vec!["0".into(); k];
+    }
+    // A single-agent rotation (EVAL_LIVE_AGENTS=<one>) has no span to spread
+    // across, and `(k - 1)` would divide by zero. Task 0 is the representative,
+    // matching the native path above.
+    if k == 1 {
+        return vec!["0".into()];
     }
     let mut out = Vec::with_capacity(k);
     for i in 0..k {
@@ -374,7 +471,7 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     let cwd_output = PathBuf::from("output")
         .join(benchmark)
         .join(agent)
-        .join(eval_containers::naming::model_slug(MODEL))
+        .join(eval_containers::naming::model_slug(&model()))
         .join("live")
         .join(task_id);
     let _ = fs::remove_dir_all(&cwd_output);
@@ -389,9 +486,14 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     // For per-task-build benchmarks the bench image FROM line depends on
     // the task id, so pass --task-id through to `eval-containers build eval`.
     let is_per_task_build = per_task_representative(benchmark).is_some();
+    // `-p eval-containers`: this test's package is `tests/run`, so cargo's CWD
+    // is tests/run/, where a bare `cargo run` finds no bin target and fails with
+    // "a bin target must be available for `cargo run`" before any build starts.
     let mut build_args: Vec<String> = vec![
         "run".into(),
         "--quiet".into(),
+        "-p".into(),
+        "eval-containers".into(),
         "--".into(),
         "build".into(),
         "eval".into(),
@@ -421,13 +523,15 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
         .args([
             "run",
             "--quiet",
+            "-p",
+            "eval-containers",
             "--",
             "run",
             benchmark,
             "--agent",
             agent,
             "--model",
-            MODEL,
+            &model(),
             "--task-id",
             task_id,
             "--run-id",
@@ -437,7 +541,7 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
         ])
         .arg(DEFAULT_MAX_BUDGET_USD.to_string())
         .arg("--timeout")
-        .arg(DEFAULT_TIMEOUT_SECS.to_string())
+        .arg(timeout_secs().to_string())
         .status();
 
     let duration_ms = started.elapsed().as_millis();
@@ -556,8 +660,10 @@ fn render_report(records: &[RunRecord], started: SystemTime) -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    let model = model();
+    let timeout = timeout_secs();
     out.push_str(&format!(
-        "# Live Fleet Sweep — {ts}\n\nModel: `{MODEL}` | Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run | Timeout: {DEFAULT_TIMEOUT_SECS}s\n\n"
+        "# Live Fleet Sweep — {ts}\n\nModel: `{model}` | Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run | Timeout: {timeout}s\n\n"
     ));
 
     let green = records
@@ -660,10 +766,12 @@ fn live_fleet_sweep() {
             let report_path = format!("tests/run/live/report-{}.md", std::process::id());
             fs::write(&report_path, &report).expect("write report");
 
-            // Safety valve: halt if cumulative spend exceeds 10x the
-            // per-run cap, regardless of individual run enforcement.
-            if total_cost > 10.0 * DEFAULT_MAX_BUDGET_USD * (AGENTS.len() as f64) * 30.0 {
-                eprintln!("▶ cumulative spend ${total_cost:.2} over safety cap — halting");
+            // Safety valve: halt once cumulative spend crosses the cap
+            // (rule 7's EVAL_LIVE_BUDGET_USD, else the default valve),
+            // regardless of individual run enforcement.
+            if total_cost > budget_cap_usd(rotation().len()) {
+                let cap = budget_cap_usd(rotation().len());
+                eprintln!("▶ cumulative spend ${total_cost:.2} over cap ${cap:.2} — halting");
                 break 'outer;
             }
         }
@@ -705,10 +813,12 @@ fn live_fleet_sweep() {
 fn write_matrix() {
     let benchmarks = list_benchmarks();
     let mut out = String::new();
+    let model = model();
+    let timeout = timeout_secs();
     out.push_str(&format!(
-        "# Live fleet sweep matrix\n\nModel: `{MODEL}`  ·  Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run  ·  Timeout: {DEFAULT_TIMEOUT_SECS}s\n\nAgent rotation: task[i] → AGENTS[i % {}] where AGENTS = {:?}.\n\nThis file is regenerated on every `cargo test --test live`. It is the authoritative plan the `live_fleet_sweep` test will execute.\n\n",
-        AGENTS.len(),
-        AGENTS
+        "# Live fleet sweep matrix\n\nModel: `{model}`  ·  Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run  ·  Timeout: {timeout}s\n\nAgent rotation: task[i] → AGENTS[i % {}] where AGENTS = {:?}.\n\nThis file is regenerated on every `cargo test --test live`. It is the authoritative plan the `live_fleet_sweep` test will execute.\n\n",
+        rotation().len(),
+        rotation()
     ));
 
     let mut total_runs = 0usize;
@@ -783,9 +893,13 @@ fn pick_task_ids_spreads_across_agents() {
         native: false,
     };
     let ids = pick_task_ids(&b);
-    assert_eq!(ids.len(), AGENTS.len());
+    assert_eq!(ids.len(), rotation().len());
     assert_eq!(ids[0], "0");
-    assert_eq!(ids[ids.len() - 1], "99");
+    // The span to N-1 exists only when the rotation has something to spread
+    // across; a single-agent rotation (EVAL_LIVE_AGENTS=<one>) runs task 0.
+    if rotation().len() > 1 {
+        assert_eq!(ids[ids.len() - 1], "99");
+    }
 }
 
 #[test]
@@ -800,9 +914,11 @@ fn pick_task_ids_handles_small_count() {
         native: false,
     };
     let ids = pick_task_ids(&b);
-    assert_eq!(ids.len(), AGENTS.len());
+    assert_eq!(ids.len(), rotation().len());
     assert_eq!(ids[0], "0");
-    assert_eq!(ids[ids.len() - 1], "1");
+    if rotation().len() > 1 {
+        assert_eq!(ids[ids.len() - 1], "1");
+    }
 }
 
 #[test]
@@ -816,7 +932,7 @@ fn pick_task_ids_handles_single_task() {
         native: false,
     };
     let ids = pick_task_ids(&b);
-    assert_eq!(ids.len(), AGENTS.len());
+    assert_eq!(ids.len(), rotation().len());
     assert!(ids.iter().all(|t| t == "0"));
 }
 
@@ -830,7 +946,7 @@ fn pick_task_ids_per_task_build_reuses_representative() {
         native: false,
     };
     let ids = pick_task_ids(&b);
-    assert_eq!(ids.len(), AGENTS.len());
+    assert_eq!(ids.len(), rotation().len());
     assert!(ids.iter().all(|t| t == "sympy__sympy-24066"));
 }
 
@@ -846,3 +962,63 @@ LABEL eval.benchmark.tasks="589764"
 // Silence unused warnings in unit-test-only builds.
 #[allow(dead_code)]
 const _: Duration = Duration::from_secs(0);
+
+/// `EVAL_LIVE_AGENTS` narrows the rotation, and an unknown name is a hard
+/// error. A typo that silently shrank the rotation would read as a passing
+/// sweep whose fixtures are quietly missing — the same class of failure as the
+/// unanchored label grep that published the wrong combo for this benchmark.
+#[test]
+fn live_agents_filters_the_rotation() {
+    assert_eq!(
+        rotation_from(None),
+        AGENTS.to_vec(),
+        "unset = full rotation"
+    );
+    assert_eq!(rotation_from(Some("claude-code")), vec!["claude-code"]);
+    // Order follows AGENTS, not the env var, so task spreading stays stable.
+    assert_eq!(
+        rotation_from(Some("codex, claude-code")),
+        vec!["claude-code", "codex"]
+    );
+    // Empty/whitespace falls back rather than yielding a zero-length rotation,
+    // which would divide by zero in agent_for.
+    assert_eq!(rotation_from(Some(" , ")), AGENTS.to_vec());
+    assert_eq!(rotation_from(Some("")), AGENTS.to_vec());
+}
+
+#[test]
+#[should_panic(expected = "outside the rotation")]
+fn live_agents_rejects_an_unknown_agent() {
+    rotation_from(Some("claude-code,clade-code"));
+}
+
+/// Rule 7: the sweep MUST accept `EVAL_LIVE_BUDGET_USD` and halt past it.
+#[test]
+fn budget_cap_honours_the_env_var() {
+    let default_cap = budget_cap_from(None, 20);
+    assert!(default_cap > 0.0);
+    assert_eq!(budget_cap_from(Some("3.50"), 20), 3.50);
+    assert_eq!(budget_cap_from(Some(" 2 "), 20), 2.0);
+    for bad in ["", "abc", "0", "-5"] {
+        assert_eq!(
+            budget_cap_from(Some(bad), 20),
+            default_cap,
+            "bad value {bad:?} must fall back"
+        );
+    }
+}
+
+/// Rule 28's remedy ("raise `EVAL_TIMEOUT`") needs a knob the sweep honours.
+#[test]
+fn timeout_honours_the_env_var() {
+    assert_eq!(timeout_secs_from(None), DEFAULT_TIMEOUT_SECS);
+    assert_eq!(timeout_secs_from(Some("2700")), 2700);
+    assert_eq!(timeout_secs_from(Some(" 1800 ")), 1800);
+    for bad in ["", "abc", "0", "-5", "1.5"] {
+        assert_eq!(
+            timeout_secs_from(Some(bad)),
+            DEFAULT_TIMEOUT_SECS,
+            "bad value {bad:?} must fall back"
+        );
+    }
+}

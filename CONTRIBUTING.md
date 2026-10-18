@@ -99,8 +99,9 @@ A typical change flows through five steps:
    [template](.github/PULL_REQUEST_TEMPLATE.md) and state which rules you
    checked.
 
-A pull request changes **either** rules **or** code — not both in one PR. Don't
-edit [`CHANGELOG.md`](CHANGELOG.md); it is release-curated. The complete release
+A pull request leaves **every rule obeyed**, including any rule it changes
+itself — so a rule amendment travels with the code that satisfies it, in one PR.
+Don't edit [`CHANGELOG.md`](CHANGELOG.md); it is release-curated. The complete release
 walk is [`.agents/verification/verify/SKILL.md`](.agents/verification/verify/SKILL.md).
 
 ## Proposing a rule change

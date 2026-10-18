@@ -29,10 +29,14 @@ Parent: [../RULES.md](../RULES.md)
    tasks catches indexing bugs, JSONL-row-off-by-one errors, and
    materialize-helper edge cases that a single task 0 run misses.
 
-5. **Model of record: gpt-5.4.** Selected for price/speed/reliability.
-   Changing the model of record MUST be a documented decision in the
-   top-level `RULES.md` changelog — it invalidates every existing
-   fixture.
+5. **No fixed model; the trajectory records the one used.** The sweep
+   MUST NOT pin a particular model — the release runner supplies
+   whichever model its credentials are entitled to, chosen for
+   price/speed/reliability. What a fixture MUST do is say what produced
+   it: every promoted trajectory carries the model on its spans
+   (`gen_ai.request.model`), so provenance is read off the fixture
+   rather than assumed from this rule. A fixture is therefore never
+   invalidated by the runner changing model.
 
 6. **Agent: claude-code.** The reference agent. Adding agents to the
    live sweep multiplies runs by N_agents; each additional agent MUST
@@ -186,7 +190,16 @@ human or agent judgment until we get more mechanical coverage.
     grace-period force-kill for an agent that ignores SIGTERM — see
     `runner/run-agent`'s `timeout -k`). Either means a timeout-killed
     run is red — raise `EVAL_TIMEOUT` or investigate why the agent
-    looped.
+    looped. Distinguish the two before raising it: a loop repeats the
+    same call, whereas a benchmark that legitimately needs longer
+    shows distinct calls and a growing context. `EVAL_TIMEOUT`
+    (default 600s) is one knob at both layers — the sweep passes it
+    through as each run's `--timeout`, and `run-agent` enforces it
+    with `timeout -k`, so it is also what produced the 124 or 137.
+    Reproducing a run outside the sweep sets the same variable. A
+    benchmark whose tasks cannot finish inside the default MUST record
+    the value it needs in its `AUDIT.md`, so the next sweep can
+    reproduce the run rather than rediscover the timeout.
 
 29. **Version axis recorded.** `task/version.json` and
     `agent/version.json` exist and have the pinned default values
