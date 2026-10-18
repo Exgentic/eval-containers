@@ -48,6 +48,8 @@ const SPECIAL: &[(&str, &str)] = &[
     // the gold can't deterministically score 1.0 through no fault of our grader.
     // kernelbench (task 24) omitted — its grader times kernels on a GPU, which these
     // runners lack; its entrypoint refuses to start without one (its README).
+    // algotune omitted — its reward is 1 - 1/speedup, so a correct gold scores below
+    // 1.0 by design; its README covers the manual oracle check.
     // per-task pull + own grader (run_script.sh/parser.py); resolve = fail_to_pass+pass_to_pass all PASS
     (
         "swe-bench-pro",

@@ -1,0 +1,8 @@
+# Harbor's resources for AlgoTune: 8 CPUs and 16 GB. Solvers and the reference
+# use every thread they are given, and the timing is the score, so the request
+# keeps the pod off crowded nodes. Matches compose.yaml (rule 24e).
+resources:
+  requests: { cpu: "2", memory: "4Gi" }
+  limits:   { cpu: "8", memory: "16Gi" }
+# Grading runs up to 3600 s (grade.sh), as Harbor's verifier allows.
+deadlineGrace: 3900
