@@ -18,6 +18,7 @@ commit: feat/add-zerobench
 | isolation | ? | not audited per-benchmark |
 | oracle | n/a | model-only native harness (no gold solution to replay; grader is the probe) |
 | replicate-official | ? | pending the full 100×5 sweep vs the leaderboard |
+| live-trajectory | ✓ | task 0, agent `native`, model `gpt-5.5` (2026-10-18): exit 0, complete `result.json`, 5 model calls (16,580 in / 13,035 out), `reward=0.0` — the expected outcome for ZeroBench's main set, where frontier models score ~0. Promoted to `tests/run/replay/fixtures/zerobench-0-native.traces.jsonl`; yellow annotations only (`high_turn_count`, `retry_storm` — live/RULES.md rule 32), no red findings. Trace records its own model via `gen_ai.request.model` (rule 5), and no credential or internal endpoint (replay rule 4a). Default sweep wall clock (600s) is sufficient for this variant. |
 
 ## Safety — can the run harm us or cheat?
 

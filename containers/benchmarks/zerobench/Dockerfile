@@ -87,7 +87,7 @@ FROM python:3.12-slim
 
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="zerobench"
-LABEL eval.benchmark.released="false"
+LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.description="ZeroBench - impossible visual reasoning for large multimodal models (ICML 2026); the upstream model-only harness, which makes its own LLM calls and needs no external agent (pass@1/pass@5/pass^5). For the tool-assisted variant see zerobench-agentic"
 LABEL eval.benchmark.tasks="100"
 LABEL eval.benchmark.env="shared-env"
