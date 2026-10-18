@@ -1084,6 +1084,22 @@ fn opencode_reply_cap_is_raised() {
     );
 }
 
+#[test]
+fn pi_reply_cap_is_raised() {
+    let dockerfile = repo_root().join("containers/agents/pi/Dockerfile");
+    assert!(
+        fs::read_to_string(dockerfile)
+            .unwrap()
+            .contains(r#""maxTokens":${PI_MAX_TOKENS:-128000}"#)
+    );
+    let run_agent = repo_root().join("containers/core/runner/run-agent");
+    assert!(
+        fs::read_to_string(run_agent)
+            .unwrap()
+            .contains(r#"PI_MAX_TOKENS="${PI_MAX_TOKENS:-}""#)
+    );
+}
+
 // The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
 // (benchmarks/RULES.md 21c) is artifact-shaped Dockerfile structure, so per
 // this file's own module doc it lives in conftest, not here — see

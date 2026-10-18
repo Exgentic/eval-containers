@@ -26,8 +26,10 @@ export PI_CODING_AGENT_DIR="${HOME:-/app}/.pi/agent"
 export PI_OFFLINE=1
 mkdir -p "$PI_CODING_AGENT_DIR"
 # models.json takes baseUrl as a literal (no env expansion) — interpolate here.
+# maxTokens is the per-reply output cap. pi's own default for a custom model is
+# 16384, and a reasoning model that spends it all thinking ends the run with exit 0.
 cat > "$PI_CODING_AGENT_DIR/models.json" <<CONF
-{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000/openai/v1}","api":"openai-completions","apiKey":"${OPENAI_API_KEY:-sk-proxy}","models":[{"id":"${MODEL}","name":"${MODEL}"}]}}}
+{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000/openai/v1}","api":"openai-completions","apiKey":"${OPENAI_API_KEY:-sk-proxy}","models":[{"id":"${MODEL}","name":"${MODEL}","maxTokens":${PI_MAX_TOKENS:-128000}}]}}}
 CONF
 exec pi --no-session -p --model "eval-containers/${MODEL}" "$TASK"
 E
