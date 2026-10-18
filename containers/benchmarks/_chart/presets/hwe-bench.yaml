@@ -54,6 +54,5 @@ resources:
   limits:
     cpu: '4'
     memory: 16Gi
-# Wall-clock budget per task, matching compose.yaml's EVAL_TIMEOUT default
-# (21600s = 6h). Without it the chart's 300s default applies on the cluster.
+# 6h, matching compose.yaml's EVAL_TIMEOUT default.
 timeout: '21600'
