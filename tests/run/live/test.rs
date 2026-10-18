@@ -1,7 +1,7 @@
 //! Live fleet sweep — VERIFY.md step 16a.
 //!
 //! Runs every buildable benchmark × 3 tasks × rotating agent against
-//! a real model (gpt-5.4 by default), captures the full output
+//! a real model (whichever the runner's credentials serve), captures the full output
 //! directory per run, and promotes clean trajectories to replay
 //! fixtures. This is the gate that answers "does every benchmark
 //! actually produce a real trajectory end-to-end?" — which builds
@@ -37,7 +37,34 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 // ─── Configuration ────────────────────────────────────────────────
 
-const MODEL: &str = "gpt-5.4";
+/// The model the release runner supplies. Rule 5 forbids pinning one: the
+/// runner's credentials decide what is available, and the promoted trajectory
+/// records what actually ran via `gen_ai.request.model` on its spans. The
+/// default is only a convenience for a runner that sets nothing.
+const DEFAULT_MODEL: &str = "gpt-5.5";
+
+/// Rule 28's remedy for a timeout-killed run is "raise `EVAL_TIMEOUT`", but the
+/// sweep hardcoded one wall clock for the whole fleet, so there was no way to
+/// act on it. A benchmark whose tasks legitimately need longer than the default
+/// — zerobench-agentic re-sends a growing multi-image context and wants ~45min
+/// per task — would otherwise record a red rule-28 finding on every sweep.
+fn timeout_secs() -> u32 {
+    timeout_secs_from(std::env::var("EVAL_LIVE_TIMEOUT_SECS").ok().as_deref())
+}
+
+fn timeout_secs_from(raw: Option<&str>) -> u32 {
+    raw.and_then(|s| s.trim().parse::<u32>().ok())
+        .filter(|v| *v > 0)
+        .unwrap_or(DEFAULT_TIMEOUT_SECS)
+}
+
+fn model() -> String {
+    std::env::var("EVAL_MODEL")
+        .ok()
+        .map(|m| m.trim().to_string())
+        .filter(|m| !m.is_empty())
+        .unwrap_or_else(|| DEFAULT_MODEL.to_string())
+}
 // 6-agent rotation: every benchmark runs once against EACH agent, so
 // the full sweep covers 88 × 6 = 528 (benchmark, agent) pairs. Every
 // agent sees every benchmark, every benchmark sees every agent — the
@@ -441,7 +468,7 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     let cwd_output = PathBuf::from("output")
         .join(benchmark)
         .join(agent)
-        .join(eval_containers::naming::model_slug(MODEL))
+        .join(eval_containers::naming::model_slug(&model()))
         .join("live")
         .join(task_id);
     let _ = fs::remove_dir_all(&cwd_output);
@@ -456,9 +483,14 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
     // For per-task-build benchmarks the bench image FROM line depends on
     // the task id, so pass --task-id through to `eval-containers build eval`.
     let is_per_task_build = per_task_representative(benchmark).is_some();
+    // `-p eval-containers`: this test's package is `tests/run`, so cargo's CWD
+    // is tests/run/, where a bare `cargo run` finds no bin target and fails with
+    // "a bin target must be available for `cargo run`" before any build starts.
     let mut build_args: Vec<String> = vec![
         "run".into(),
         "--quiet".into(),
+        "-p".into(),
+        "eval-containers".into(),
         "--".into(),
         "build".into(),
         "eval".into(),
@@ -488,13 +520,15 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
         .args([
             "run",
             "--quiet",
+            "-p",
+            "eval-containers",
             "--",
             "run",
             benchmark,
             "--agent",
             agent,
             "--model",
-            MODEL,
+            &model(),
             "--task-id",
             task_id,
             "--run-id",
@@ -504,7 +538,7 @@ fn run_one(benchmark: &str, task_id: &str, agent: &str) -> RunRecord {
         ])
         .arg(DEFAULT_MAX_BUDGET_USD.to_string())
         .arg("--timeout")
-        .arg(DEFAULT_TIMEOUT_SECS.to_string())
+        .arg(timeout_secs().to_string())
         .status();
 
     let duration_ms = started.elapsed().as_millis();
@@ -623,8 +657,10 @@ fn render_report(records: &[RunRecord], started: SystemTime) -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    let model = model();
+    let timeout = timeout_secs();
     out.push_str(&format!(
-        "# Live Fleet Sweep — {ts}\n\nModel: `{MODEL}` | Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run | Timeout: {DEFAULT_TIMEOUT_SECS}s\n\n"
+        "# Live Fleet Sweep — {ts}\n\nModel: `{model}` | Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run | Timeout: {timeout}s\n\n"
     ));
 
     let green = records
@@ -774,8 +810,10 @@ fn live_fleet_sweep() {
 fn write_matrix() {
     let benchmarks = list_benchmarks();
     let mut out = String::new();
+    let model = model();
+    let timeout = timeout_secs();
     out.push_str(&format!(
-        "# Live fleet sweep matrix\n\nModel: `{MODEL}`  ·  Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run  ·  Timeout: {DEFAULT_TIMEOUT_SECS}s\n\nAgent rotation: task[i] → AGENTS[i % {}] where AGENTS = {:?}.\n\nThis file is regenerated on every `cargo test --test live`. It is the authoritative plan the `live_fleet_sweep` test will execute.\n\n",
+        "# Live fleet sweep matrix\n\nModel: `{model}`  ·  Budget cap: ${DEFAULT_MAX_BUDGET_USD}/run  ·  Timeout: {timeout}s\n\nAgent rotation: task[i] → AGENTS[i % {}] where AGENTS = {:?}.\n\nThis file is regenerated on every `cargo test --test live`. It is the authoritative plan the `live_fleet_sweep` test will execute.\n\n",
         rotation().len(),
         rotation()
     ));
@@ -962,6 +1000,21 @@ fn budget_cap_honours_the_env_var() {
         assert_eq!(
             budget_cap_from(Some(bad), 20),
             default_cap,
+            "bad value {bad:?} must fall back"
+        );
+    }
+}
+
+/// Rule 28's remedy ("raise `EVAL_TIMEOUT`") needs a knob the sweep honours.
+#[test]
+fn timeout_honours_the_env_var() {
+    assert_eq!(timeout_secs_from(None), DEFAULT_TIMEOUT_SECS);
+    assert_eq!(timeout_secs_from(Some("2700")), 2700);
+    assert_eq!(timeout_secs_from(Some(" 1800 ")), 1800);
+    for bad in ["", "abc", "0", "-5", "1.5"] {
+        assert_eq!(
+            timeout_secs_from(Some(bad)),
+            DEFAULT_TIMEOUT_SECS,
             "bad value {bad:?} must fall back"
         );
     }

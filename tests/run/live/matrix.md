@@ -1,6 +1,6 @@
 # Live fleet sweep matrix
 
-Model: `gpt-5.4`  ·  Budget cap: $1/run  ·  Timeout: 600s
+Model: `gpt-5.5`  ·  Budget cap: $1/run  ·  Timeout: 600s
 
 Agent rotation: task[i] → AGENTS[i % 20] where AGENTS = ["claude-code", "codex", "aider", "goose", "openhands", "gemini-cli", "cline", "open-interpreter", "continue-cli", "opencode", "openclaw", "crush", "qwen-code", "plandex", "copilot-cli", "bob", "swe-agent", "mini-swe-agent", "ra-aid", "terminus-2"].
 
