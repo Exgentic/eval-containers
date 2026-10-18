@@ -189,14 +189,17 @@ human or agent judgment until we get more mechanical coverage.
     neither 124 (GNU `timeout`'s own exit) nor 137 (SIGKILL, the
     grace-period force-kill for an agent that ignores SIGTERM — see
     `runner/run-agent`'s `timeout -k`). Either means a timeout-killed
-    run is red — raise the wall clock or investigate why the agent
+    run is red — raise `EVAL_TIMEOUT` or investigate why the agent
     looped. Distinguish the two before raising it: a loop repeats the
     same call, whereas a benchmark that legitimately needs longer
-    shows distinct calls and a growing context. The sweep's wall clock
-    is `EVAL_LIVE_TIMEOUT_SECS` (default 600s); a benchmark whose
-    tasks cannot finish inside the default MUST record the value it
-    needs in its `AUDIT.md`, so the next sweep can reproduce the run
-    rather than rediscover the timeout.
+    shows distinct calls and a growing context. `EVAL_TIMEOUT`
+    (default 600s) is one knob at both layers — the sweep passes it
+    through as each run's `--timeout`, and `run-agent` enforces it
+    with `timeout -k`, so it is also what produced the 124 or 137.
+    Reproducing a run outside the sweep sets the same variable. A
+    benchmark whose tasks cannot finish inside the default MUST record
+    the value it needs in its `AUDIT.md`, so the next sweep can
+    reproduce the run rather than rediscover the timeout.
 
 29. **Version axis recorded.** `task/version.json` and
     `agent/version.json` exist and have the pinned default values

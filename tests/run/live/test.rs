@@ -45,11 +45,14 @@ const DEFAULT_MODEL: &str = "gpt-5.5";
 
 /// Rule 28's remedy for a timeout-killed run is "raise `EVAL_TIMEOUT`", but the
 /// sweep hardcoded one wall clock for the whole fleet, so there was no way to
-/// act on it. A benchmark whose tasks legitimately need longer than the default
-/// — zerobench-agentic re-sends a growing multi-image context and wants ~45min
-/// per task — would otherwise record a red rule-28 finding on every sweep.
+/// act on it: a benchmark whose tasks legitimately need longer than the default
+/// recorded a red rule-28 finding on every sweep.
+///
+/// Same variable the run itself uses — the sweep passes this through as
+/// `--timeout`, and `run-agent` enforces it with `timeout -k`. Reproducing a
+/// run outside the sweep therefore sets the identical knob.
 fn timeout_secs() -> u32 {
-    timeout_secs_from(std::env::var("EVAL_LIVE_TIMEOUT_SECS").ok().as_deref())
+    timeout_secs_from(std::env::var("EVAL_TIMEOUT").ok().as_deref())
 }
 
 fn timeout_secs_from(raw: Option<&str>) -> u32 {
