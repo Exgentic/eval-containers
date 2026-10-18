@@ -9,7 +9,7 @@ AlgoTune - make numerical and algorithmic functions faster than their reference
 | Tasks | 154 |
 | Environment | shared-env |
 | Internet required | false |
-| Hardware | CPU (8 cores, 16 GB, as Harbor) |
+| Hardware | CPU (1 core, 16 GB, as upstream's jobs) |
 | Released | no |
 | Upstream | [https://github.com/oripress/AlgoTune](https://github.com/oripress/AlgoTune) |
 | Paper | [paper](https://arxiv.org/abs/2507.15887) |
@@ -30,18 +30,34 @@ with torch from the CPU index.
 ## How it's graded
 
 `/grade.sh` runs `/tests/grade.py` as a separate uid (1004; the agent is 1002 and
-`/tests` is closed to it) because grading executes the agent's code. It is
-Harbor's protocol (`tests/test_outputs.py`): 100 problems at size `n` with seeds
-0–99; per problem one warm-up of each function with the solver's output checked
-by `is_solution`, then 10 interleaved timings keeping the minimum. The speedup is
-the summed reference minimum over the summed solver minimum, and AlgoTune's score
-is 1.0 when the solver is invalid or slower.
+`/tests` is closed to it) because grading executes the agent's code. The grader
+is upstream's own evaluator (`AlgoTuner`, the code behind
+`reports/agent_summary.json`), called as upstream's final test evaluation calls it:
+
+- **Problems:** upstream's test split. Its published dataset (Hugging Face
+  `oripress/AlgoTune`, 328 GB with the train split) is too large to bake, so
+  upstream's own loader regenerates it with Hugging Face disabled: size `n`, seeds
+  142 on (all 154 published test sets use exactly the seeds this produces), written
+  and read back through upstream's dataset encoding.
+- **Timing:** 10 runs per problem, each in a fresh process with single-threaded
+  math libraries; a run warms up on the next problem, then times this one, and the
+  minimum counts. The reference is timed the same way, before the solver. This is
+  what makes a solver that remembers its last answer gain nothing.
+- **Score:** the mean over the 100 problems of reference time over solver time,
+  valid only if every timed output passes `is_solution`; AlgoTune counts an
+  invalid or slower task as 1.0.
 
 The reward is **1 − 1/score**: 0 at the floor, approaching 1 as the speedup
 grows. A run's mean reward converts back exactly to AlgoTune's headline number,
-the harmonic-mean speedup: **1 / (1 − mean reward)**. The verdict (score, raw
-speedup, validity, `n`) goes to `task/algotune.json`, next to the graded
-`solver.py` and the grader's log.
+the harmonic-mean speedup: **1 / (1 − mean reward)**. Upstream's aggregate
+metrics (speedups, validity counts, times) go to `task/algotune.json`, next to the
+graded `solver.py` and the grader's log.
+
+Grading takes minutes for most tasks and up to about two hours for those whose
+reference imports cvxpy, because every one of the 2,000 timed runs is a new
+process (upstream's design). The four largest tasks (aes_gcm_encryption,
+chacha_encryption, sha256_hashing, base64_encoding) write 20–60 GB of problems to
+scratch, as upstream's own copy of the dataset needs.
 
 ## Oracle
 

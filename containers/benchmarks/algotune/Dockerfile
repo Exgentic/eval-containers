@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # AlgoTune (Press et al., NeurIPS 2025)
 # 154 tasks: make a numerical or algorithmic function faster than its reference
-# while keeping its output valid. CPU only, graded as Harbor's adapter does.
+# while keeping its output valid. CPU only, graded by upstream's own evaluator.
 # Rationale: README.md.
 
 ARG REGISTRY=ghcr.io/exgentic
@@ -37,15 +37,13 @@ RUN curl -sfL "https://github.com/oripress/AlgoTune/archive/${BENCHMARK_VERSION}
       "$(grep -E '^torch==' /tmp/at/requirements.txt)" \
  && pip install --no-cache-dir --no-deps -r /tmp/requirements.txt
 
-# Task N is line N: the tasks sorted by name. The task classes go to /tests,
-# root and grader only, under a stub base like Harbor's.
+# Task N is line N: the tasks sorted by name. Upstream's task classes and its
+# evaluator go to /tests, root and grader only.
 COPY build-tasks.py /tmp/build-tasks.py
-RUN mkdir -p /tasks /tests/AlgoTuneTasks \
+RUN mkdir -p /tasks /tests/upstream \
  && python3 /tmp/build-tasks.py /tmp/at /tasks/all.jsonl \
  && chmod 600 /tasks/all.jsonl && chmod 711 /tasks \
- && cd /tmp/at/AlgoTuneTasks && for d in */; do cp -r "$d" /tests/AlgoTuneTasks/; done \
- && printf 'class Task:\n    def __init__(self, **kwargs):\n        pass\n\n\ndef register_task(*args, **kwargs):\n    return lambda cls: cls\n' > /tests/AlgoTuneTasks/base.py \
- && touch /tests/AlgoTuneTasks/__init__.py \
+ && cp -r /tmp/at/AlgoTuner /tmp/at/AlgoTuneTasks /tests/upstream/ \
  && rm -rf /tmp/at /tmp/build-tasks.py /tmp/requirements.txt /root/.cache
 
 RUN groupadd -g 1004 grader && useradd -u 1004 -g 1004 -M -s /usr/sbin/nologin grader \

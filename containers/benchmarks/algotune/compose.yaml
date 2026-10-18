@@ -14,9 +14,9 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/algotune--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: algotune
-    # Matches presets/algotune.yaml (rule 24e): Harbor's 8 CPUs and 16 GB.
+    # Matches presets/algotune.yaml (rule 24e): upstream's 1 CPU and 16 GB.
     deploy:
       resources:
         limits:
-          cpus: "8"
+          cpus: "1"
           memory: 16G

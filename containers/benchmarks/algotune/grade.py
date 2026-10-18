@@ -1,59 +1,51 @@
-"""Grade one AlgoTune task with Harbor's protocol (tests/test_outputs.py); README.md.
+"""Grade one AlgoTune task with upstream's own evaluator (AlgoTuner); README.md.
 
-usage: grade.py <dir> <task> <n>   (reads <dir>/solver.py, writes <dir>/result.json)
+usage: grade.py <dir> <task> <n>   (times <dir>/solver/solver.py, writes <dir>/result.json)
 """
 
-import importlib
-import importlib.util
 import json
+import os
 import sys
-import time
 from pathlib import Path
 
 work, name, n = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
-module = importlib.import_module(f"AlgoTuneTasks.{name}.{name}")
-task = next(
-    c
-    for c in vars(module).values()
-    if isinstance(c, type)
-    and c.__module__ == module.__name__
-    and hasattr(c, "generate_problem")
-)()
+os.environ.update(
+    AGENT_MODE="1",
+    CODE_DIR=str(work / "solver"),
+    DATA_DIR=str(work / "data"),
+    ALGOTUNE_HF_DISABLE="1",
+)
 
 
-def timed(fn, problem):
-    start = time.perf_counter_ns()
-    fn(problem)
-    return time.perf_counter_ns() - start
+def main():
+    from AlgoTuneTasks.factory import TaskFactory
+    from AlgoTuner.utils.evaluator.baseline_manager import BaselineManager
+    from AlgoTuner.utils.evaluator.main import (
+        _calculate_aggregate_metrics,
+        evaluate_code_on_dataset,
+    )
+
+    # Upstream's test split, made by the generator its published dataset came
+    # from: size n, seeds 142 on. Its own loader writes it, then reads it back.
+    task = TaskFactory(name, oracle_time_limit=100)
+    task.k = n
+    (work / "data" / name).mkdir(parents=True)
+    _, test = task.load_dataset()
+    results = evaluate_code_on_dataset(
+        task_obj=task,
+        dataset_iterable=test,
+        baseline_manager=BaselineManager(task),
+        data_subset="test",
+        default_num_eval_runs=10,
+    )
+    metrics = {} if isinstance(results, dict) else _calculate_aggregate_metrics(results)
+    speedup = metrics.get("mean_speedup")
+    # AlgoTune's score counts a task with any invalid problem, or a slower one, as 1.
+    score = speedup if speedup is not None and speedup >= 1 else 1.0
+    result = {"reward": 1 - 1 / score, "score": score, "n": n, **metrics}
+    (work / "result.json").write_text(json.dumps(result, indent=2, default=float))
+    print(json.dumps(result, default=float))
 
 
-solver_time = reference_time = 0
-valid = True
-try:
-    spec = importlib.util.spec_from_file_location("solver", work / "solver.py")
-    solver_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(solver_module)
-    solve = solver_module.Solver().solve
-    for problem in [task.generate_problem(n=n, random_seed=i) for i in range(100)]:
-        task.solve(problem)
-        if not task.is_solution(problem, solve(problem)):
-            valid = False
-            break
-        times = [(timed(task.solve, problem), timed(solve, problem)) for _ in range(10)]
-        reference_time += min(r for r, _ in times)
-        solver_time += min(s for _, s in times)
-except Exception as e:  # noqa: BLE001 - any failure of the agent's code is an invalid solver
-    print(f"solver failed: {e!r}")
-    valid = False
-
-speedup = reference_time / solver_time if valid and solver_time else 0.0
-score = speedup if valid and speedup >= 1.0 else 1.0
-result = {
-    "reward": 1 - 1 / score,
-    "score": score,
-    "speedup": speedup,
-    "valid": valid,
-    "n": n,
-}
-(work / "result.json").write_text(json.dumps(result, indent=2))
-print(json.dumps(result))
+if __name__ == "__main__":
+    main()
