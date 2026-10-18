@@ -17,6 +17,7 @@ commit: feat/add-zerobench
 | isolation | ? | not audited per-benchmark |
 | oracle | ✓ | `solution.sh` emits the gold behind the `FINAL ANSWER:` sentinel; `eval-containers oracle zerobench-agentic --task-id 0 --local` scores gold=1.0, no-op=0.0 (so the grader accepts a correct answer and rejects an absent one) |
 | replicate-official | ? | pending vs the leaderboard's tool-assisted entries |
+| live-trajectory | ✗ | **blocks release.** Task 0, agent `claude-code`, model `gpt-5.5` (2026-10-18): the agent hangs. Two attempts, 900s and 2700s, both exit 124 (live/RULES.md rule 28 red). The longer ceiling did not help — in the 2700s run the agent started 10:19:22, made ~5 model calls (101,232 in / 1,761 out), its last call completed 10:20:13, then produced nothing for ~44min until the kill. `agent/stdout.log` and `agent/stderr.log` are both 0 bytes and `agent/launch.json` is `[]`, so it is not a slow task but a stall in the launch/startup path — note this benchmark's entrypoint rewrites `/app` images and `TASK` before `exec "$@"`. No promotable trajectory exists, so `released` stays `"false"` (RULES.md 21a). Investigate before retrying: a third run at a higher ceiling is not justified. |
 
 ## Safety — can the run harm us or cheat?
 
