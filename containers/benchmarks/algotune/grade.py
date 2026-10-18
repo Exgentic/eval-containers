@@ -1,32 +1,14 @@
-"""Grade one AlgoTune task as Harbor's adapter does (tests/test_outputs.py).
+"""Grade one AlgoTune task with Harbor's protocol (tests/test_outputs.py); README.md.
 
 usage: grade.py <dir> <task> <n>   (reads <dir>/solver.py, writes <dir>/result.json)
-
-Runs as the grader uid because it executes the agent's code. 100 problems at
-size n with seeds 0-99; per problem one warm-up of each function, the solver's
-output checked with is_solution, then 10 interleaved timings, keeping the
-minimum. Speedup is the summed reference minimum over the summed solver minimum,
-and AlgoTune's score is 1.0 when the solver is invalid or slower. The reward,
-1 - 1/score, is 0 at the floor and rises toward 1; a run's mean reward converts
-back to AlgoTune's harmonic-mean score as 1 / (1 - mean).
 """
 
-import os
-
-for var in (
-    "OMP_NUM_THREADS",
-    "OPENBLAS_NUM_THREADS",
-    "MKL_NUM_THREADS",
-    "NUMEXPR_NUM_THREADS",
-):
-    os.environ.setdefault(var, "8")
-
-import importlib  # noqa: E402
-import importlib.util  # noqa: E402
-import json  # noqa: E402
-import sys  # noqa: E402
-import time  # noqa: E402
-from pathlib import Path  # noqa: E402
+import importlib
+import importlib.util
+import json
+import sys
+import time
+from pathlib import Path
 
 work, name, n = Path(sys.argv[1]), sys.argv[2], int(sys.argv[3])
 module = importlib.import_module(f"AlgoTuneTasks.{name}.{name}")

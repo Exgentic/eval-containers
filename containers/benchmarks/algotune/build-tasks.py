@@ -1,10 +1,6 @@
-"""Write AlgoTune's 154 tasks as /tasks/all.jsonl, one task per line.
+"""Write AlgoTune's 154 tasks, sorted by name, as /tasks/all.jsonl with Harbor's prompt.
 
 usage: build-tasks.py <upstream source tree> <out.jsonl>
-
-Task N is line N, tasks sorted by name. `n` is the problem size upstream picked
-for each task (reports/generation.json). The prompt is the one Harbor's adapter
-builds from AlgoTune's system prompt, pointing at /app/solver.py.
 """
 
 import ast

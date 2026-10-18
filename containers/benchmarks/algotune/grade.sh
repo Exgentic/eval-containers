@@ -13,6 +13,8 @@ setpriv --reuid=1002 --regid=1002 --clear-groups cat /app/solver.py > "$WORK/sol
 cp "$WORK/solver.py" /output/task/solver.py
 mkdir "$WORK/tmp" && chown -R 1004:1004 "$WORK"
 
+# Harbor caps the numerical libraries at the pod's 8 cores.
+export OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8 NUMEXPR_NUM_THREADS=8
 HOME="$WORK" TMPDIR="$WORK/tmp" PYTHONPATH=/tests timeout 3600 \
   setpriv --reuid=1004 --regid=1004 --clear-groups python3 /tests/grade.py "$WORK" \
   "$(cat "/tasks/$EVAL_TASK_ID/id.txt")" "$(cat "/tasks/$EVAL_TASK_ID/n.txt")" \
