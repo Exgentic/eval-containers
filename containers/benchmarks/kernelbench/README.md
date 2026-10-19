@@ -36,9 +36,7 @@ the GPU the grader uses, so it can build and time its kernels while it works.
 grader is upstream's: `validate_kernel_static` first, then
 `eval_kernel_against_ref` with upstream's defaults — 5 correctness trials at the
 fp32 tolerance (1e-4), 100 timed runs with CUDA events, and the PyTorch reference
-timed in the same process on the same GPU. One change: the input seed is drawn
-fresh per grading instead of upstream's fixed 42, so outputs precomputed for
-known inputs cannot pass.
+timed in the same process on the same GPU, with upstream's input seed (42).
 
 The reward is upstream's headline **fast_1**: `1.0` when the code passes the
 static check, compiles, is correct, and is faster than the reference
