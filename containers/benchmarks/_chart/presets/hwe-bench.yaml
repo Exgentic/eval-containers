@@ -54,3 +54,5 @@ resources:
   limits:
     cpu: '4'
     memory: 16Gi
+# 6h, matching compose.yaml's EVAL_TIMEOUT default.
+timeout: '21600'

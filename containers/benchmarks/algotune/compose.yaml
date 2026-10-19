@@ -1,0 +1,22 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/algotune--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: algotune
+    # Matches presets/algotune.yaml (rule 24e): upstream's 1 CPU and 16 GB.
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 16G

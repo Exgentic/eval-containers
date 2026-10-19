@@ -14,6 +14,9 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/hwe-bench-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: hwe-bench
+      # 6h: each check is a Verilator build+sim. Mirrored in presets/hwe-bench.yaml.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-21600}
+      TIMEOUT: ${EVAL_TIMEOUT:-21600}
     # Rule 10 / 24e — matches the chart's preset (4 CPU / 16Gi), taken from
     # upstream's Harbor adapter template
     # (hwe_bench/harness/harbor/templates/task.toml.j2), which hardcodes
