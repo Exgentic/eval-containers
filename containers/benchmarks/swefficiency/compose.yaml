@@ -1,0 +1,25 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/swefficiency-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
+    platform: linux/amd64
+    environment:
+      BENCHMARK: swefficiency
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-10800}
+      TIMEOUT: ${EVAL_TIMEOUT:-10800}
+    # Matches presets/swefficiency.yaml (rule 24e): upstream's 4 vCPUs and 16 GB per task.
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 16G

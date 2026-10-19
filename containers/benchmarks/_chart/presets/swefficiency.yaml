@@ -1,0 +1,11 @@
+# Upstream's resources per task: 4 vCPUs and 16 GB (its leaderboard VM gives each
+# worker 2 whole cores). Matches compose.yaml (rule 24e). Scratch holds a copy of
+# the repository and its 3.5 GB conda env, restored before each graded run.
+resources:
+  requests: { cpu: "4", memory: "8Gi", ephemeral-storage: "12Gi" }
+  limits:   { cpu: "4", memory: "16Gi", ephemeral-storage: "24Gi" }
+# Upstream's agent budget is 3 hours; grading runs up to 8 (grade.sh): two timed
+# runs, each a rebuild and 25 isolated repeats before and after the patch, plus
+# the covering tests.
+timeout: "10800"
+deadlineGrace: 29100

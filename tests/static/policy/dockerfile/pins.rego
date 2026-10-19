@@ -43,6 +43,11 @@ allowlist := [
 		"reason": "per-task: upstream publishes one image per EVAL_TASK_ID, and the pinned dataset's own `image` column names :latest — the only tag that matches it (v1/v2 are older builds)",
 	},
 	{
+		"dir": "swefficiency",
+		"image": "ghcr.io/swefficiency/swefficiency-images:${EVAL_TASK_ID}",
+		"reason": "per-task: upstream publishes one image per instance, tagged with its instance id",
+	},
+	{
 		"dir": "mle-bench",
 		"image": "mlebench-env:latest",
 		"reason": "locally-built base (build.sh from openai/mle-bench) — not a registry image to pin",
