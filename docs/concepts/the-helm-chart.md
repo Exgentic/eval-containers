@@ -4,7 +4,8 @@
 
 In `job` mode, every benchmark deploys through **one shared Helm chart**,
 `containers/benchmarks/_chart`. A benchmark is selected by name (`--set benchmark=<x>`);
-the chart renders the otelcol + gateway + runner Job. A benchmark with bespoke
+the chart renders the runner Job with an otelcol sidecar, plus a gateway sidecar
+when `--gateway` asks for one. A benchmark with bespoke
 topology adds an optional preset file inside the chart — standard benchmarks
 contribute nothing, so the published chart is self-contained.
 
@@ -14,7 +15,7 @@ containers/benchmarks/
     Chart.yaml
     values.yaml           # defaults for every benchmark
     presets/              # optional per-benchmark topology, bundled in the chart
-      osworld.yaml        #   adds sidecars/Deployments via composition hooks
+      osworld-verified.yaml  # adds sidecars/Deployments via composition hooks
       tau-bench.yaml
     templates/job.yaml
   aime/                   # standard benchmark — no preset; just --set benchmark=aime
@@ -33,7 +34,7 @@ Kustomize overlays did reuse + composition but couldn't interpolate variables.)
 Most benchmarks override nothing — naming one with `--set benchmark=aime` is
 enough, and the chart's `values.yaml` supplies everything else (image tags,
 resources, timeout). The per-run axes — agent, task, model — arrive at deploy
-time via `--set` (or the CLI). The bespoke benchmarks (osworld, tau-bench,
+time via `--set` (or the CLI). The bespoke benchmarks (osworld-verified, tau-bench,
 visualwebarena, webarena) ship a `presets/<name>.yaml` in the chart that adds
 sidecars/Deployments through composition hooks (`initContainers`,
 `runnerExtraEnv`, `extraManifests`, …); the chart overlays it automatically when

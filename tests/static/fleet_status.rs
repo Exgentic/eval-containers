@@ -183,7 +183,7 @@ esac
         arc_json = r#"{"image":{"linux/amd64":{"config":{"Labels":{"other":"x"}}}},"manifest":{"manifests":[{"platform":{"os":"linux","architecture":"amd64"}}]}}"#,
     ));
     let rows = fleet_status(&stub);
-    assert_eq!(rows.len(), 164, "one row per static bake target");
+    assert_eq!(rows.len(), 172, "one row per static bake target");
 
     let (v, want, got, plats) = &rows["ghcr.io/exgentic/benchmarks/aime:latest"];
     assert_eq!((v.as_str(), got), ("fresh", want));
@@ -355,13 +355,11 @@ esac
         "unflattenable",
         "a stack whose flatten fails must not read fresh either"
     );
-    // osworld / tau-bench declare `x-eval-publish: false` — they have no
-    // artifact, so they must not be scheduled for publishing on every push.
-    for b in ["osworld", "tau-bench"] {
-        assert_eq!(
-            verdict(b).0,
-            "declined",
-            "{b} declares x-eval-publish: false"
-        );
-    }
+    // tau-bench declares `x-eval-publish: false` — it has no artifact, so it
+    // must not be scheduled for publishing on every push.
+    assert_eq!(
+        verdict("tau-bench").0,
+        "declined",
+        "tau-bench declares x-eval-publish: false"
+    );
 }

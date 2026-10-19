@@ -86,24 +86,6 @@
         "with native agent mode (#577): the harness made these calls, not an agent."
       ]
     },
-    "osworld-72-claude-code": {
-      "benchmark": "osworld",
-      "task_id": "72",
-      "agent": "claude-code",
-      "agent_version": null,
-      "model": "claude-opus-5",
-      "gateway": "bifrost",
-      "benchmark_data_revision": null,
-      "captured_at": "2026-09-22T14:18:46Z",
-      "release_tag": null,
-      "capture_method": "production run (RULES.md rule 5a)",
-      "platform": "linux/amd64",
-      "reward": 1.0,
-      "passed": true,
-      "notes": [
-        "Recorded in production, not by a sweep: this is the edge's calls record for a real run of this (benchmark, task, agent), recompressed into a complete zstd frame at capture (RULES.md rule 5a). No credential or internal host is present \u2014 the tree is scanned for both."
-      ]
-    },
     "promptfoo-redteam-5-claude-code": {
       "benchmark": "promptfoo",
       "task_id": "redteam-5",

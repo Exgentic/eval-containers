@@ -1,0 +1,9 @@
+# Upstream's resources for an AlgoTune job: 1 CPU and 16 GB (its SLURM and AWS
+# Batch jobs). The timing is the score, so a solver gets no cores upstream's did
+# not. Matches compose.yaml (rule 24e). The dataset upstream's evaluator writes
+# is up to 60 GB for the largest tasks.
+resources:
+  requests: { cpu: "1", memory: "4Gi", ephemeral-storage: "2Gi" }
+  limits:   { cpu: "1", memory: "16Gi", ephemeral-storage: "64Gi" }
+# Grading runs up to 7200 s (grade.sh): 2,000 timed runs, each a new process.
+deadlineGrace: 7500

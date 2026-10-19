@@ -1,0 +1,69 @@
+# OSWorld-Verified's bespoke topology: the agent needs a real desktop to drive.
+#
+# Upstream boots one per task as a QEMU VM. No cluster we run on exposes
+# /dev/kvm (no privileged SCC, no Kata runtime) and software emulation measures
+# 5-24x slower, so the same disk runs as an ordinary container instead: the
+# desktop image is that VM's root filesystem.
+#
+# It is a native sidecar, not a Deployment, because a desktop is per-task state.
+# A shared one would have task B typing into task A's LibreOffice the moment the
+# fan-out runs more than one task, and would outlive every run that used it.
+# In the pod it is also one of the run's own containers: it shows up in the
+# dashboard beside the runner, and it dies with the Job.
+# Upstream budgets steps, not minutes. An hour keeps a slow model endpoint from
+# deciding the score: runs that pass take 15 to 55 calls.
+timeout: '3600'
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: '2'
+    memory: 4Gi
+runnerExtraEnv:
+- name: EVAL_DESKTOP_HOST
+  value: localhost
+initContainers:
+# The probe is a real screenshot — a 1920x1080 PNG off a cold desktop can
+# take seconds, and a 2s timeout flaps.
+# restartPolicy: Always makes this a native sidecar — started before the runner
+# and kept running beside it. The startupProbe is what holds the runner back
+# until the session is actually up.
+- name: desktop
+  image: ghcr.io/exgentic/core/osworld-desktop:latest
+  restartPolicy: Always
+  volumeMounts:
+  - name: desktop-sock
+    mountPath: /run/desktop
+  - name: desktop-shm
+    mountPath: /dev/shm
+  ports:
+  - containerPort: 5000
+  startupProbe:
+    exec:
+      command:
+      - sh
+      - -c
+      - test -S /run/desktop/desktop.sock && curl -sf -m 10 -o /dev/null http://127.0.0.1:5000/screenshot
+    periodSeconds: 3
+    failureThreshold: 100
+  resources:
+    requests:
+      cpu: '1'
+      memory: 2Gi
+    limits:
+      cpu: '4'
+      memory: 4Gi
+extraVolumes:
+- name: desktop-sock
+  emptyDir: {}
+# The VM's /dev/shm is half its 4 GB of memory; a pod's default is 64 MB.
+- name: desktop-shm
+  emptyDir:
+    medium: Memory
+    sizeLimit: 2Gi
+runnerExtraVolumeMounts:
+# Setup and grading open the socket here as root; it is 0600 and owned by the
+# desktop's own user, so the same path is useless to the agent's uid.
+- name: desktop-sock
+  mountPath: /run/desktop

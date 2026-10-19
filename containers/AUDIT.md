@@ -80,7 +80,8 @@ benchmark changed after that commit, so the row is stale.
 | ocrbench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | olympiad-bench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | openbookqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
-| osworld | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
+| osworld-verified | ✓ | ✓ | ✓ | ✗ | ✓ | ? | ? | ✓ | 2026-10-14 |
+| osworld-verified-offline | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | piqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | pubmedqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | realworldqa | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
@@ -111,4 +112,4 @@ benchmark changed after that commit, so the row is stale.
 | xnli | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | xstory-cloze | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 
-**Totals:** building 64/101 · isolation 0/101 · oracle 64/101 · running 1/101 · traces 1/101 · replicate 0/101 · safety 0/101 · published 1/101
+**Totals:** building 65/101 · isolation 1/101 · oracle 63/101 · running 2/101 · traces 2/101 · replicate 0/101 · safety 0/101 · published 2/101

@@ -62,7 +62,8 @@ arm64 host fails at image pull, not in the test.
 | compilebench | — | per-task | needs build-arg handling |
 | terminal-bench | — | per-task (upstream) | needs Harbor image auth |
 | webarena | — | sidecar | needs multi-sidecar support |
-| osworld | — | sidecar | needs VM image (11GB) |
+| osworld-verified | — | sidecar | needs a fixture recorded from the published images |
+| osworld-verified-offline | — | sidecar | needs a fixture recorded from the published images |
 | tau-bench | — | bridge | needs two-model replay |
 
 ## Replay modes

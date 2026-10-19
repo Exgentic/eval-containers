@@ -186,6 +186,12 @@ jobs:
             h=$(awk -F'\t' -v t="$d" '$1==t{print $2}' <<< "$HASHES")
             [ -n "$h" ] || { echo "::error::no input-hash for $d"; exit 1; }
             ref="${REGISTRY}/$(awk -F'|' -v t="$d" '$1==t{print $2}' <<< "$GRAPH" | sed 's|^containers/||')"
+            # An arch the image does not declare cannot build — skip, leaving it
+            # legitimately single-arch.
+            PLATS=$(sed -n 's/^LABEL eval\.platforms="\([^"]*\)".*/\1/p' "containers/${ref#"${REGISTRY}/"}/Dockerfile" | tail -1)
+            if [ -n "$PLATS" ] && [[ ",$PLATS," != *",linux/$ARCH,"* ]]; then
+              echo "skipping $d on $ARCH — declared platforms: $PLATS"; continue
+            fi
             if [ "${{ inputs.dry_run }}" != "true" ] && \
                bash containers/scripts/fleet-status.sh check "${ref}:latest-${ARCH}" "$h" >/dev/null; then
               if [ "$TAG" = "latest-${ARCH}" ]; then echo "fresh: ${ref}:${TAG} (unchanged; kept)"
@@ -277,7 +283,7 @@ jobs:
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
           deps=$(find containers/core containers/gateways -name docker-bake.hcl \
             -exec grep -hoE '^target "[^"]+"' {} + | sed -E 's/^target "([^"]+)"/\1/' | sort -u)
-          pertaskdirs=$(grep -rl 'eval.benchmark.env="per-task"' containers/benchmarks/*/Dockerfile \
+          pertaskdirs=$(grep -rlE '^[[:space:]]*LABEL[[:space:]].*eval\.benchmark\.env="per-task"' containers/benchmarks/*/Dockerfile \
             | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#benchmark-\1#' | sort -u)
           # Leaves = everything minus shared deps minus per-task (those build below).
           leaf_list=$(comm -23 <(printf '%s\n' "$all") <(printf '%s\n' "$deps" "$pertaskdirs" | sort -u))
@@ -484,8 +490,17 @@ jobs:
             read -ra _ag <<< "$COMBO_AGENTS"
             # A native-harness benchmark pairs with `native` and nothing else
             # (benchmarks/RULES.md 12b): paired by label below, never from the lineup.
+            #
+            # The grep MUST anchor on a LABEL line, matching cli/src/benchmark.rs
+            # `is_native` (which asserts a comment does not count) and
+            # fleet-index.py `native`. A bare substring search also matches prose:
+            # zerobench-agentic documents, in a comment, that it is NOT the native
+            # variant, and that mention alone classified it as native — so it was
+            # paired with `native` and its real `--claude-code` combo was silently
+            # skipped, with the run still reporting success. Each `.` is escaped
+            # for the same reason: unescaped it is a regex wildcard.
             agents=$(printf '%s\n' "${_ag[@]}" | jq -Rsc 'split("\n")|map(select(length>0 and . != "native"))')
-            nativebench=$(grep -rl 'eval.benchmark.agent="native"' containers/benchmarks/*/Dockerfile \
+            nativebench=$(grep -rlE '^[[:space:]]*LABEL[[:space:]].*eval\.benchmark\.agent="native"' containers/benchmarks/*/Dockerfile \
               | sed -E 's#.*/benchmarks/([^/]+)/Dockerfile#\1#' | sort -u | jq -Rsc 'split("\n")|map(select(length>0))')
             # Large arrays go through stdin, never argv: a per-task combo list is
             # >128KB, which exceeds Linux's MAX_ARG_STRLEN (--argjson would E2BIG).
@@ -1408,8 +1423,13 @@ jobs:
         env:
           IDX: ${{ matrix.shard.idx }}
           MAXPAR: ${{ needs.enumerate.outputs.maxpar }}
+          STANDALONE: ${{ inputs.include_standalone || 'false' }}
         run: |
           jq -c --argjson i "$IDX" '.pertask_combo[] | select(.idx==$i).items' shards.json > items.json
+          # -standalone only when this release built it: otherwise every nightly
+          # re-stitched and re-pushed old swe-bench bundles from their leftover
+          # per-arch tags.
+          variants=1; [ "$STANDALONE" != "true" ] || variants=2
           # Workers per job, bounded so the WHOLE matrix stays under GHCR's write
           # limit — the number that matters is jobs x workers, not workers. At 16
           # per job x 20 jobs the stitch of swe-bench's 8,000 refs died with
@@ -1430,7 +1450,7 @@ jobs:
           stitch_one() {
             local B=$1 A=$2 TASK=$3 tid ref srcs a suffix got missing
             tid=$(printf '%s' "$TASK" | tr '[:upper:]' '[:lower:]')
-            for suffix in "" "-standalone"; do
+            for suffix in "" $([ "$STANDALONE" != "true" ] || echo -standalone); do
               ref="${REGISTRY}/evals/${B}-${tid}--${A}${suffix}"
               srcs=()
               for a in amd64 arm64; do
@@ -1458,7 +1478,7 @@ jobs:
             done
           }
           export -f stitch_one
-          export REGISTRY TAG
+          export REGISTRY TAG STANDALONE
           # One line per field so xargs -n3 regroups them; a task id never
           # contains whitespace (fleet-hash.sh refuses one that does).
           # shellcheck disable=SC2016  # $1/$2/$3 belong to the xargs-spawned bash, not this shell
@@ -1477,8 +1497,8 @@ jobs:
           # success.
           want=$(jq length items.json)
           [ "$want" -gt 0 ] || { echo "::error::shard $IDX lists no per-task combos, but this job was scheduled"; exit 1; }
-          [ "$((merged + skipped))" -eq "$((want * 2))" ] \
-            || { echo "::error::expected $((want * 2)) merge attempts (${want} combos x 2 variants), saw $((merged + skipped))"; exit 1; }
+          [ "$((merged + skipped))" -eq "$((want * variants))" ] \
+            || { echo "::error::expected $((want * variants)) merge attempts (${want} combos x ${variants} variants), saw $((merged + skipped))"; exit 1; }
 
   # ── CVE gate on the shared bases, then promote :TAG -> :latest ────────────
   # Runs for real releases (tag / explicit version). The scan covers whatever
@@ -1517,7 +1537,7 @@ jobs:
             for d in containers/"$kind"/*/; do
               name=$(basename "$d"); case $name in _*) continue ;; esac
               [ -f "${d}docker-bake.hcl" ] || continue
-              grep -qE 'eval.benchmark.env="per-task"' "${d}Dockerfile" 2>/dev/null && continue
+              grep -qE '^[[:space:]]*LABEL[[:space:]].*eval\.benchmark\.env="per-task"' "${d}Dockerfile" 2>/dev/null && continue
               ref="${REGISTRY}/${kind}/${name}"
               docker buildx imagetools inspect "${ref}:${TAG}" >/dev/null 2>&1 || continue
               docker buildx imagetools create --tag "${ref}:latest" "${ref}:${TAG}"

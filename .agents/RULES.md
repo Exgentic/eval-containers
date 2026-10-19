@@ -39,7 +39,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 10. **Image hygiene.** Eval Containers ships ~100+ images. Image thinness is not optional — it's what makes `docker pull` fast and the fleet build affordable. Every Dockerfile MUST follow these rules, and reviewers MUST enforce them:
 
-    a. **Slim bases.** Prefer `python:3.12-slim` over `python:3.12`. Prefer `debian:12-slim` or `ubuntu:24.04` over their full variants. Avoid `alpine` for Python workloads (musl wheels missing). `FROM scratch` only for static binaries.
+    a. **Slim bases.** Prefer `python:3.12-slim` over `python:3.12`. Prefer `debian:12-slim` or `ubuntu:24.04` over their full variants. Avoid `alpine` for Python workloads (musl wheels missing). `FROM scratch` only for static binaries, or for a root filesystem imported whole from upstream.
 
     b. **Clean up in the same layer.** `apt-get install` MUST be followed by `rm -rf /var/lib/apt/lists/*` in the same `RUN`. `pip install` MUST use `--no-cache-dir`. Cleanup in a separate `RUN` does nothing — the prior layer still holds the files.
 
@@ -162,3 +162,4 @@ not as issues. The issue tracker is for tracked work only.
 | 2026-08-09 | Principle 9: a release tag MAY carry forward an earlier release's digest when the image's build inputs are unchanged. Refines — does not repeal — "different tag, different pull, different bits": that phrase constrains what a *different* tag means, not how many tags one digest may carry; carrying the byte-identical digest forward is stricter immutability than a non-reproducible rebuild. Mechanics in [delivery/RULES.md](delivery/RULES.md) rules 11–15. |
 | 2026-09-02 | Principle 9: the third container-version knob is `EVAL_GATEWAY_TAG`, renamed from `EVAL_MODEL_TAG` — it has always tagged the gateway image, and the model is a runtime handle with no image of its own. Breaking `EVAL_*` change (major bump). Selector doctrine: [gateways/RULES.md](gateways/RULES.md) rule 2c. |
 | 2026-09-08 | Principle 9: the immutable container version is the build-input-hash tag; `latest` and the release SemVer are aliases of hash-tagged digests, `EVAL_*_TAG` accepts either, and every run record names the hash tag of each image it used — so any run is reproducible without a release having been cut. Mechanics: [delivery/RULES.md](delivery/RULES.md) rules 18–22. |
+| 2026-10-12 | Principle 10.a: `FROM scratch` is also allowed for a root filesystem imported whole from upstream. An image whose content is upstream's own machine has no base to be slim about, and a base placed under it would leave that base's files beneath upstream's. |

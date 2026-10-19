@@ -46,6 +46,10 @@ const SPECIAL: &[(&str, &str)] = &[
     // terminal-bench (build-cython-ext) omitted — its gold runs legacy pyknotid 0.5.3's
     // own test suite, whose unpinned deps (vispy, networkx, …) have drifted past it, so
     // the gold can't deterministically score 1.0 through no fault of our grader.
+    // kernelbench (task 24) omitted — its grader times kernels on a GPU, which these
+    // runners lack; its entrypoint refuses to start without one (its README).
+    // algotune omitted — its reward is 1 - 1/speedup, so a correct gold scores below
+    // 1.0 by design; its README covers the manual oracle check.
     // per-task pull + own grader (run_script.sh/parser.py); resolve = fail_to_pass+pass_to_pass all PASS
     (
         "swe-bench-pro",
@@ -90,6 +94,16 @@ const SPECIAL: &[(&str, &str)] = &[
     // Byte-sensitive answer graders — solution.sh emits the raw gold file.
     ("mrcr", "0"),      // SequenceMatcher on the raw bytes
     ("longbench", "0"), // gold is a member of answers_json; emit it verbatim
+    // Upstream ships no reference solutions: each gold is the actions one
+    // passing agent run sent, replayed on a fresh desktop the oracle starts
+    // beside the benchmark. Two apps that never touch the network: a Chrome
+    // recording that replays where it was made scored 0 on a hosted runner.
+    ("osworld-verified", "49"),  // GIMP: a preference
+    ("osworld-verified", "109"), // Impress: edit and save a .pptx
+    // The same two tasks under the offline variant's numbers, on a stack with
+    // no route out.
+    ("osworld-verified-offline", "15"),
+    ("osworld-verified-offline", "75"),
     // One per source project: hwe-bench is five HW repos and three sim
     // toolchains behind one name; the grader runs each case's self-contained
     // tb_script through that repo's own flow. Every id below oracle-proven
@@ -101,6 +115,20 @@ const SPECIAL: &[(&str, &str)] = &[
     ("hwe-bench", "chipsalliance__caliptra-rtl-963"), // SystemVerilog / Verilator
     ("hwe-bench", "chipsalliance__rocket-chip-3526"), // Chisel -> Verilog / Mill + Verilator
     ("hwe-bench", "openxiangshan__xiangshan-39"), // Chisel -> Verilog / Mill + Verilator
+    // zerobench-agentic grades through `core/test-answer-match`, not
+    // test-exact-match, so the auto-coverage above skips it; and the default gold
+    // (`printf '%s' "$EXPECTED_ANSWER"`) emits a bare answer, which the
+    // transcript extractor fail-closes to "" — 0.0 on a correct answer. So it
+    // ships its own solution.sh emitting the `FINAL ANSWER:` sentinel line the
+    // grader anchors to. Shared-env, so task 0 is representative.
+    //
+    // zerobench (model-only, eval.benchmark.agent="native") is deliberately
+    // uncovered, like every other native-harness benchmark (automationbench,
+    // bfcl, tau-bench, walle): its /grade.sh does not read the agent's stdout —
+    // the harness run_zerobench.py performs the inference and writes the reward
+    // itself — so there is nothing for a gold solution to feed, and gold and
+    // no-op are indistinguishable by construction.
+    ("zerobench-agentic", "0"),
 ];
 
 fn oracle(args: &[&str]) -> bool {
@@ -220,8 +248,9 @@ async fn benchmarks_are_oracle_solvable() {
 }
 
 /// Daemon-free per-PR gate: a `benchmarks/<name>/solution.sh` is a SOURCE file
-/// mounted at oracle time — it MUST NOT be `COPY`'d into the image the agent
-/// runs in (that would re-introduce the gold-solution leak this design removes).
+/// mounted at oracle time, as is a `solutions/` beside it — neither may be
+/// `COPY`'d into the image the agent runs in (that would re-introduce the
+/// gold-solution leak this design removes).
 #[test]
 fn oracle_solutions_are_never_baked() {
     let mut leaked = Vec::new();
@@ -238,7 +267,11 @@ fn oracle_solutions_are_never_baked() {
         };
         let baked = dockerfile.lines().any(|l| {
             let l = l.trim_start();
-            (l.starts_with("COPY") || l.starts_with("ADD")) && l.contains("solution.sh")
+            (l.starts_with("COPY") || l.starts_with("ADD"))
+                && l.split_whitespace().any(|w| {
+                    let w = w.trim_end_matches('/').rsplit('/').next().unwrap_or(w);
+                    w == "solution.sh" || w == "solutions"
+                })
         });
         if baked {
             leaked.push(dir.file_name().unwrap().to_string_lossy().to_string());

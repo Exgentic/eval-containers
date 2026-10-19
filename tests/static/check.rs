@@ -1395,25 +1395,28 @@ fn every_per_task_build_script_stamps_the_input_hash() {
     );
 }
 
-/// The per-task job MUST skip an arch the benchmark's `eval.platforms` excludes,
-/// the way the leaf matrix does. The post-build arch comparison only catches a
-/// base that builds the *wrong* arch; a base with no such arch at all fails its
-/// first `RUN` with "exec format error", which counts as a build failure and
-/// fails the job, so the skip has to happen before the build starts (rule 14).
+/// A job that builds one arch at a time MUST skip an arch the image's
+/// `eval.platforms` excludes, the way the leaf matrix does. The post-build arch
+/// comparison only catches a base that builds the *wrong* arch; a base with no
+/// such arch at all fails its first `RUN` with "exec format error", which counts
+/// as a build failure and fails the job, so the skip has to happen before the
+/// build starts (rule 14).
 #[test]
-fn the_per_task_job_honours_declared_platforms() {
+fn per_arch_jobs_honour_declared_platforms() {
     let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");
-    let job = wf
-        .split("\n  per-task:\n")
-        .nth(1)
-        .and_then(|s| s.split("\n  merge:").next())
-        .expect("no `per-task` job in release-images.yml");
-    assert!(
-        job.contains(r#"eval\.platforms"#) && job.contains(r#",linux/$ARCH,"#),
-        "the per-task job must skip an arch outside the benchmark's declared \
-         eval.platforms before building (delivery/RULES.md rule 14)"
-    );
+    for (job, next) in [("bases", "enumerate"), ("per-task", "merge")] {
+        let body = wf
+            .split(&format!("\n  {job}:\n"))
+            .nth(1)
+            .and_then(|s| s.split(&format!("\n  {next}:")).next())
+            .unwrap_or_else(|| panic!("no `{job}` job in release-images.yml"));
+        assert!(
+            body.contains(r#"eval\.platforms"#) && body.contains(r#",linux/$ARCH,"#),
+            "the {job} job must skip an arch outside the image's declared \
+             eval.platforms before building (delivery/RULES.md rule 14)"
+        );
+    }
 }
 
 /// A gateway's shim MUST live under /opt/gateway (rule 6): the `-standalone` bundle
@@ -1685,6 +1688,13 @@ fn merge_pertask_combos_stitches_from_the_shards_artifact() {
         job.contains("merged + skipped"),
         "merge-pertask-combos must assert it attempted every combo in the work list — a \
          zero-iteration run passes a `fails == 0` check vacuously (delivery/RULES.md:17)"
+    );
+    // Stitching both variants unconditionally re-pushed old swe-bench -standalone
+    // bundles from their leftover per-arch tags every night.
+    assert!(
+        job.contains("STANDALONE: ${{ inputs.include_standalone || 'false' }}")
+            && !job.contains(r#"for suffix in "" "-standalone""#),
+        "merge-pertask-combos must stitch -standalone only when include_standalone built it"
     );
     // The read-back judges each :TAG against the arches it joined, never a
     // fixed pair: combos-pertask skips an arch its base lacks and expects the
@@ -1978,5 +1988,49 @@ fn a_tag_rebinding_combo_job_pins_every_base_to_the_multi_arch_tag() {
         "✓ {} TAG-rebinding combo job(s) pin all {} combo base refs to the multi-arch tag",
         combo_jobs.len(),
         derived.len()
+    );
+}
+
+/// Every label probe in `release-images.yml` MUST key off a LABEL line, never a
+/// bare substring. Classification decides what gets built: the combo enumerator
+/// pairs a native-harness benchmark with `native` *instead of* the agent lineup
+/// (benchmarks/RULES.md 12b), and the per-task probes route a benchmark down a
+/// different build path entirely. A substring search also matches prose, so a
+/// Dockerfile that merely *mentions* a label in a comment is misclassified — and
+/// the run still reports success, having quietly built the wrong image.
+///
+/// Regression: `zerobench-agentic` documents in a comment that it is NOT the
+/// native variant; that mention classified it as native, so it was published as
+/// `evals/zerobench-agentic--native` and its real `--claude-code` combo was
+/// never built. `cli/src/benchmark.rs::is_native` and `fleet-index.py::native`
+/// already anchor on `LABEL `; this keeps the workflow's shell agreeing with them.
+#[test]
+fn workflow_label_probes_anchor_on_the_label_line() {
+    let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
+        .expect("read .github/workflows/release-images.yml");
+    let mut unanchored = Vec::new();
+    for (n, line) in wf.lines().enumerate() {
+        let t = line.trim_start();
+        // Only the probes: a `grep` for an eval.benchmark.* label value.
+        if !t.starts_with("grep") && !t.contains("=$(grep") {
+            continue;
+        }
+        if !t.contains("eval.benchmark.") && !t.contains(r"eval\.benchmark\.") {
+            continue;
+        }
+        if !t.contains(r#"="#) {
+            continue;
+        }
+        // Anchored means: the pattern requires a LABEL line.
+        if !t.contains("LABEL") {
+            unanchored.push(format!("  line {}: {}", n + 1, t));
+        }
+    }
+    assert!(
+        unanchored.is_empty(),
+        "release-images.yml classifies benchmarks with an unanchored label grep — \
+         a comment mentioning the label is enough to misclassify, silently building \
+         the wrong image. Require a LABEL line, as cli/src/benchmark.rs does:\n{}",
+        unanchored.join("\n")
     );
 }

@@ -9,6 +9,7 @@
  "ai2d": 3088,
  "aider-polyglot": 225,
  "aime": 90,
+ "algotune": 154,
  "alpaca-eval": 805,
  "apps": 5000,
  "appworld": 732,
@@ -50,6 +51,7 @@
  "hwe-bench": 169,
  "ifeval": 541,
  "itbench": 10,
+ "kernelbench": 250,
  "kumo": 250,
  "legalbench": 19000,
  "livecodebench": 880,
@@ -75,7 +77,8 @@
  "ocrbench": 1000,
  "olympiad-bench": 910,
  "openbookqa": 500,
- "osworld": 369,
+ "osworld-verified": 335,
+ "osworld-verified-offline": 251,
  "piqa": 1838,
  "pubmedqa": 1000,
  "realworldqa": 765,
@@ -107,5 +110,7 @@
  "writingbench": 1000,
  "xcopa": 5500,
  "xnli": 75150,
- "xstory-cloze": 16621
+ "xstory-cloze": 16621,
+ "zerobench": 100,
+ "zerobench-agentic": 100
 }

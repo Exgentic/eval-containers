@@ -2,7 +2,7 @@
 
 *Reference · for operators · derives from [`containers/benchmarks/_chart/values.yaml`](../../containers/benchmarks/_chart/values.yaml). That file is authoritative — these are its fields with defaults at the time of writing.*
 
-The shared chart `containers/benchmarks/_chart` renders the otelcol + gateway + runner Job.
+The shared chart `containers/benchmarks/_chart` renders the runner Job, with an otelcol sidecar and an opt-in gateway sidecar.
 The benchmark is named via `--set benchmark=<x>` (required); a benchmark with
 bespoke topology overrides what differs through an optional `presets/<x>.yaml`
 in the chart. Per-run axes arrive via `--set` (or the CLI). See
@@ -22,6 +22,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
 | `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
+| `gatewayEnabled` | `false` | set by `--gateway` / `--gateway-tag` — run the gateway sidecar; off, the edge forwards straight to the upstream |
 | `gatewayImage` | `bifrost` | `--gateway` — the proxy backend (`bifrost` / `litellm` / `portkey`, or a pinned per-model image) |
 | `gatewayTag` | `latest` | `--gateway-tag` |
 | `runnerTag` | `latest` | `--agent-tag` / `--benchmark-tag` |
@@ -53,13 +54,13 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 
 ## Composition hooks — *for benchmarks with bespoke topology*
 
-Standard benchmarks leave these empty; the bespoke few (osworld, tau-bench,
+Standard benchmarks leave these empty; the bespoke few (osworld-verified, tau-bench,
 visualwebarena, webarena) use them to add sidecars, Deployments, and Services.
 
 | Field | Default | Example use |
 |---|---|---|
 | `initContainers` | `[]` | a wait-for-`<service>` gate |
-| `runnerExtraEnv` | `[]` | `DESKTOP_URL` for osworld |
+| `runnerExtraEnv` | `[]` | `EVAL_DESKTOP_HOST` for osworld-verified |
 | `gatewayExtraEnv` | `[]` | |
 | `runnerExtraVolumeMounts` | `[]` | |
 | `extraVolumes` | `[]` | |

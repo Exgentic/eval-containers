@@ -50,10 +50,11 @@ flatImages: false
 # otelEnabled: run the otelcol sidecar. Off drops the traces.jsonl half of the
 # model record; the edge's calls.jsonl.zst still holds every request and
 # response, so cost and usage are unaffected.
-# gatewayEnabled: run the gateway sidecar. Off, the edge forwards straight to
-# the upstream instead — it already pins the model, injects the credential and
-# keeps it out of the record. Only cross-protocol translation is lost.
-gatewayEnabled: true
+# gatewayEnabled: run the gateway sidecar. Off (the default), the edge forwards
+# straight to the upstream instead — it already pins the model, injects the
+# credential and keeps it out of the record. Only cross-protocol translation is
+# lost, and the ~280 MiB sidecar is saved on every pod.
+gatewayEnabled: false
 otelEnabled: true
 otelImage: ""
 gatewayImageRef: ""
@@ -184,7 +185,7 @@ sweepId: ""
 # A benchmark drops its extra sidecars/Deployments/Services here; the ~96
 # standard benchmarks leave them empty and write only `benchmark: <name>`.
 initContainers: []          # e.g. a wait-for-<service> gate
-runnerExtraEnv: []          # e.g. DESKTOP_URL for osworld
+runnerExtraEnv: []          # e.g. EVAL_DESKTOP_HOST for osworld-verified
 gatewayExtraEnv: []
 runnerExtraVolumeMounts: []
 gatewayExtraVolumeMounts: []  # e.g. mount a private-CA ConfigMap at /etc/eval-ca for an internal upstream; the gateway's start script appends it to the system roots (do NOT set SSL_CERT_FILE to the CA-only file — that var sets the whole trust store, dropping the public roots)
