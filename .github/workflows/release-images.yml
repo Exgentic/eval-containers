@@ -68,7 +68,7 @@ on:
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, swe-bench-multimodal, hwe-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, swe-bench-multimodal, swefficiency, hwe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -383,8 +383,9 @@ jobs:
             #   kind=plain  swe-bench-multimodal — its Dockerfile's own FROM names
             #               the per-task base (docker.io/swebench/sweb.eval.x86_64.<id>,
             #               amd64-only) from EVAL_TASK_ID alone: no arch to probe,
-            #               no context to bind.
-            for B in swe-bench:bake hwe-bench:script swe-bench-multimodal:plain; do
+            #               no context to bind. swefficiency likewise
+            #               (ghcr.io/swefficiency/swefficiency-images:<id>, amd64-only).
+            for B in swe-bench:bake hwe-bench:script swe-bench-multimodal:plain swefficiency:plain; do
               K="${B##*:}"; B="${B%%:*}"
               tf="containers/benchmarks/$B/tasks.txt"; [ -f "$tf" ] || continue
               tks=$(jq -Rn --arg B "$B" --arg K "$K" \

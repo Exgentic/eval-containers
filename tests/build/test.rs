@@ -67,6 +67,11 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     );
     out.insert("swe-bench-multimodal", swe_bench_multimodal);
 
+    // The task id is the tag upstream publishes the instance's image under.
+    let mut swefficiency = HashMap::new();
+    swefficiency.insert("EVAL_TASK_ID".into(), "pandas-dev__pandas-23888".into());
+    out.insert("swefficiency", swefficiency);
+
     let mut compile = HashMap::new();
     compile.insert("EVAL_TASK_ID".into(), "curl".into());
     compile.insert("BASE_IMAGE".into(), "ubuntu:22.04".into());
