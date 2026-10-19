@@ -26,12 +26,21 @@ export PI_CODING_AGENT_DIR="${HOME:-/app}/.pi/agent"
 export PI_OFFLINE=1
 mkdir -p "$PI_CODING_AGENT_DIR"
 # models.json takes baseUrl as a literal (no env expansion) — interpolate here.
-# maxTokens is the per-reply output cap. pi's own default for a custom model is
-# 16384, and a reasoning model that spends it all thinking ends the run with exit 0.
 cat > "$PI_CODING_AGENT_DIR/models.json" <<CONF
-{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000/openai/v1}","api":"openai-completions","apiKey":"${OPENAI_API_KEY:-sk-proxy}","models":[{"id":"${MODEL}","name":"${MODEL}","maxTokens":${PI_MAX_TOKENS:-128000}}]}}}
+{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000/openai/v1}","api":"openai-completions","apiKey":"${OPENAI_API_KEY:-sk-proxy}","models":[{"id":"${MODEL}","name":"${MODEL}"}]}}}
 CONF
-exec pi --no-session -p --model "eval-containers/${MODEL}" "$TASK"
+# pi caps each reply at 16384 tokens for a custom model, and pi-ai clamps any
+# maxTokens in models.json to 32000; a reply cut there ends the session with
+# exit 0. Raise it to 128000 (as opencode's is) on the request itself.
+cat > "$PI_CODING_AGENT_DIR/reply-cap.js" <<'X'
+export default function (pi) {
+  pi.on("before_provider_request", ({ payload }) => {
+    payload["max_tokens" in payload ? "max_tokens" : "max_completion_tokens"] = 128000;
+    return payload;
+  });
+}
+X
+exec pi --no-session -e "$PI_CODING_AGENT_DIR/reply-cap.js" -p --model "eval-containers/${MODEL}" "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

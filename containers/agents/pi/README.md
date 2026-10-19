@@ -23,12 +23,13 @@ endpoint, so all model traffic routes through one logged proxy.
 
 The entrypoint writes `models.json` under `PI_CODING_AGENT_DIR`, declaring one
 provider (`eval-containers`) whose `baseUrl` is `$OPENAI_BASE_URL` and whose
-`api` is `openai-completions`. Its one model sets `maxTokens` (the per-reply
-output cap) to `$PI_MAX_TOKENS`, default `128000` — pi's own default for a
-custom model is 16384, which a reasoning model can spend entirely on thinking,
-ending the run with exit 0 mid-task. `models.json` takes the base URL as a literal
-(no env expansion), so the entrypoint interpolates it at runtime. It then runs
-`pi --no-session -p --model eval-containers/$EVAL_MODEL "$TASK"` — `-p` is
+`api` is `openai-completions`. `models.json` takes the base URL as a literal
+(no env expansion), so the entrypoint interpolates it at runtime. It also writes
+`reply-cap.js`, a pi extension loaded with `-e` that sets every request's
+output cap to 128000 (as opencode's is): pi's own default for a custom model is
+16384 and pi-ai clamps any `maxTokens` in `models.json` to 32000, and a reasoning
+model that spends the cap thinking ends the run with exit 0 mid-task. It then runs
+`pi --no-session -e reply-cap.js -p --model eval-containers/$MODEL "$TASK"` — `-p` is
 non-interactive print mode (tools run unattended, no permission prompts),
 `--no-session` keeps each run self-contained, and `PI_OFFLINE=1` disables the
 pi.dev update/telemetry calls that would fail in an egress-locked container.

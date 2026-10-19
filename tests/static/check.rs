@@ -1090,13 +1090,7 @@ fn pi_reply_cap_is_raised() {
     assert!(
         fs::read_to_string(dockerfile)
             .unwrap()
-            .contains(r#""maxTokens":${PI_MAX_TOKENS:-128000}"#)
-    );
-    let run_agent = repo_root().join("containers/core/runner/run-agent");
-    assert!(
-        fs::read_to_string(run_agent)
-            .unwrap()
-            .contains(r#"PI_MAX_TOKENS="${PI_MAX_TOKENS:-}""#)
+            .contains(r#"? "max_tokens" : "max_completion_tokens"] = 128000;"#)
     );
 }
 
