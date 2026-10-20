@@ -15,8 +15,36 @@ RUN uv pip install --system --no-cache mini-swe-agent==${AGENT_VERSION}
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-/opt/agent/setup-uv-venv.sh /opt/mini-venv mini-swe-agent==${AGENT_VERSION}
+# litellm pinned: mini leaves it unbounded, and 1.106.0 imports `mcp` (not a
+# dependency) on every tool-calling completion, so each model call fails.
+/opt/agent/setup-uv-venv.sh /opt/mini-venv mini-swe-agent==${AGENT_VERSION} litellm==1.104.1
 I
+
+# Inlines every image file $TASK names by absolute path as a data URL, in the
+# tag mini's multimodal_regex expands into an image_url part. Keyed on the file
+# existing, never on the benchmark (agents/RULES.md rule 4). Prints the new task,
+# or nothing when it names no image, so a text-only task stays a plain string.
+RUN cat > /opt/agent/attach-images.py <<'P'
+import base64, mimetypes, os, re, sys
+
+task = sys.argv[1]
+found = False
+
+def attach(m):
+    global found
+    path = m.group(0)
+    if not os.path.isfile(path):
+        return path
+    found = True
+    data = base64.b64encode(open(path, "rb").read()).decode()
+    mime = mimetypes.guess_type(path)[0]
+    return (f"{path} <MSWEA_MULTIMODAL_CONTENT><CONTENT_TYPE>image_url</CONTENT_TYPE>"
+            f"data:{mime};base64,{data}</MSWEA_MULTIMODAL_CONTENT>")
+
+out = re.sub(r"/[^\s)\]\"'<>]+\.(?:png|jpe?g|gif|webp)\b", attach, task, flags=re.I)
+if found:
+    print(out, end="")
+P
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
@@ -36,7 +64,15 @@ export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 export MSWEA_CONFIGURED=1
 export MSWEA_COST_TRACKING=ignore_errors
 export MSWEA_GLOBAL_CONFIG_DIR=/tmp/mini-swe-agent
-exec /opt/mini-venv/bin/mini --model "openai/${MODEL:-default}" --yolo --exit-immediately \
+# A task that names image files gets them as images, not paths: mini sends an
+# image only for the tag below, and only with multimodal_regex set (off by
+# default). `-c` replaces the default config, hence mini.yaml first.
+config=()
+if with_images=$(/opt/mini-venv/bin/python /opt/agent/attach-images.py "$TASK") && [ -n "$with_images" ]; then
+  TASK=$with_images
+  config=(-c mini.yaml -c 'model.multimodal_regex=(?s)<MSWEA_MULTIMODAL_CONTENT><CONTENT_TYPE>(.+?)</CONTENT_TYPE>(.+?)</MSWEA_MULTIMODAL_CONTENT>')
+fi
+exec /opt/mini-venv/bin/mini "${config[@]}" --model "openai/${MODEL:-default}" --yolo --exit-immediately \
   --cost-limit 0 --task "$TASK"
 E
 
