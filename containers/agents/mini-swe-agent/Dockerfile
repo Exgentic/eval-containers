@@ -21,13 +21,16 @@ set -euo pipefail
 I
 
 # Inlines every image file $TASK names by absolute path as a data URL, in the
-# tag mini's multimodal_regex expands into an image_url part. Keyed on the file
-# existing, never on the benchmark (agents/RULES.md rule 4). Prints the new task,
-# or nothing when it names no image, so a text-only task stays a plain string.
+# tag mini's multimodal_regex expands into an image_url part — the way SWE-agent
+# runs SWE-bench Multimodal. Keyed on the file existing, never on the benchmark
+# (agents/RULES.md rule 4). Writes the task and the regex as a mini config file
+# (JSON is YAML), never an argument or env var: a few screenshots outgrow
+# Linux's 128 KiB per-string limit. Writes nothing when the task names no image,
+# so a text-only task stays a plain string.
 RUN cat > /opt/agent/attach-images.py <<'P'
-import base64, mimetypes, os, re, sys
+import base64, json, mimetypes, os, re, sys
 
-task = sys.argv[1]
+task = os.environ["TASK"]
 found = False
 
 def attach(m):
@@ -43,7 +46,9 @@ def attach(m):
 
 out = re.sub(r"/[^\s)\]\"'<>]+\.(?:png|jpe?g|gif|webp)\b", attach, task, flags=re.I)
 if found:
-    print(out, end="")
+    regex = r"(?s)<MSWEA_MULTIMODAL_CONTENT><CONTENT_TYPE>(.+?)</CONTENT_TYPE>(.+?)</MSWEA_MULTIMODAL_CONTENT>"
+    with open(sys.argv[1], "w") as f:
+        json.dump({"run": {"task": out}, "model": {"multimodal_regex": regex}}, f)
 P
 
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
@@ -65,15 +70,17 @@ export MSWEA_CONFIGURED=1
 export MSWEA_COST_TRACKING=ignore_errors
 export MSWEA_GLOBAL_CONFIG_DIR=/tmp/mini-swe-agent
 # A task that names image files gets them as images, not paths: mini sends an
-# image only for the tag below, and only with multimodal_regex set (off by
-# default). `-c` replaces the default config, hence mini.yaml first.
-config=()
-if with_images=$(/opt/mini-venv/bin/python /opt/agent/attach-images.py "$TASK") && [ -n "$with_images" ]; then
-  TASK=$with_images
-  config=(-c mini.yaml -c 'model.multimodal_regex=(?s)<MSWEA_MULTIMODAL_CONTENT><CONTENT_TYPE>(.+?)</CONTENT_TYPE>(.+?)</MSWEA_MULTIMODAL_CONTENT>')
-fi
-exec /opt/mini-venv/bin/mini "${config[@]}" --model "openai/${MODEL:-default}" --yolo --exit-immediately \
-  --cost-limit 0 --task "$TASK"
+# image only inside its multimodal tag, and only with multimodal_regex set (off
+# by default). That config file carries the task, so --task is left off; `-c`
+# replaces the default config, hence mini.yaml first.
+mkdir -p "$MSWEA_GLOBAL_CONFIG_DIR"
+images="$MSWEA_GLOBAL_CONFIG_DIR/task-with-images.yaml"
+rm -f "$images"
+/opt/mini-venv/bin/python /opt/agent/attach-images.py "$images"
+task=(--task "$TASK")
+[ ! -f "$images" ] || task=(-c mini.yaml -c "$images")
+exec /opt/mini-venv/bin/mini --model "openai/${MODEL:-default}" --yolo --exit-immediately \
+  --cost-limit 0 "${task[@]}"
 E
 
 ENTRYPOINT ["/run.sh"]
