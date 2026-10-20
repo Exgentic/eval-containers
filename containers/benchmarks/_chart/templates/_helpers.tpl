@@ -63,6 +63,17 @@ benchmark's `agent: native` is structural (benchmarks/RULES.md 12b).
 {{- if not (empty .Values.storageOverride) -}}
 {{- $over = mergeOverwrite $over (dict "resources" (dict "limits" (dict "ephemeral-storage" (.Values.storageOverride | toString)))) -}}
 {{- end -}}
+{{- /* A preset's runnerExtraEnv adds to the caller's, merged by name with the
+       caller winning: a list merge replaces, which dropped a run's own upstream
+       and key, and a repeated name is rejected by server-side apply. */ -}}
+{{- with $preset.runnerExtraEnv -}}
+{{- $caller := $.Values.runnerExtraEnv | default list -}}
+{{- $names := list -}}
+{{- range $caller }}{{ $names = append $names .name }}{{ end -}}
+{{- $env := list -}}
+{{- range . }}{{ if not (has .name $names) }}{{ $env = append $env . }}{{ end }}{{ end -}}
+{{- $over = mergeOverwrite $over (dict "runnerExtraEnv" (concat $env $caller)) -}}
+{{- end -}}
 {{- mergeOverwrite (deepCopy .Values) $preset $env $over | toYaml -}}
 {{- end -}}
 

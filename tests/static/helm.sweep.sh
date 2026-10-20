@@ -121,6 +121,21 @@ case "$thin" in
   *) echo "FAIL thin render does not tell the edge to forward to the provider"; fail=$((fail + 1)) ;;
 esac
 
+# 4c. a preset's runnerExtraEnv merges with the caller's by name, the caller
+# winning; it used to replace it, dropping a run's own upstream and key.
+env_probe() { helm template env-probe "$CHART" --set benchmark=osworld-verified --set ephemeral=true \
+  --set-json "runnerExtraEnv=$1" 2>&1; }
+out=$(env_probe '[{"name":"EVAL_PROBE_CALLER","value":"kept"},{"name":"EVAL_DESKTOP_HOST","value":"caller"}]')
+for pattern in "name: EVAL_PROBE_CALLER" "value: caller"; do
+  case "$out" in
+    *"$pattern"*) ;;
+    *) echo "FAIL runnerExtraEnv: merged render lost \`$pattern\`"; fail=$((fail + 1)) ;;
+  esac
+done
+[ "$(grep -c 'name: EVAL_DESKTOP_HOST$' <<<"$out")" = 1 ] ||
+  { echo "FAIL runnerExtraEnv: a name both set renders twice"; fail=$((fail + 1)); }
+env_probe null >/dev/null || { echo "FAIL runnerExtraEnv: a null caller list does not render"; fail=$((fail + 1)); }
+
 # 5. the pod backstop must track --timeout, not a fixed constant: a larger
 # --timeout must not be killed early by a stale activeDeadlineSeconds (the
 # derivation regression — see containers/benchmarks/_chart/values.yaml).
