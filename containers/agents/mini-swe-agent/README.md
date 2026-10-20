@@ -19,6 +19,8 @@ Mini-SWE-agent is the minimal sibling of the full SWE-agent: a single bash tool,
 
 The entrypoint runs `mini --model "openai/$MODEL" --yolo --exit-immediately --cost-limit 0 --task "$TASK"` against `OPENAI_BASE_URL`. `--yolo` auto-approves actions; `--exit-immediately` skips the post-submit confirmation prompt. Mini's own cost tracking is set to ignore unknown models and its cost cap is disabled — the gateway is the cost authority and `run-agent` enforces the timeout. Its config and trajectory go to `/tmp/mini-swe-agent`. The agent's messages stream to stdout.
 
+**Images.** When `$TASK` names an image file that exists (e.g. swe-bench-multimodal's `/problem_assets/0-shot.png`), `/opt/agent/attach-images.py` inlines it as a data URL in mini's multimodal tag and the entrypoint sets `model.multimodal_regex`, so the model receives the screenshot as an `image_url` part instead of a path. A task that names no image runs exactly as before. The model must accept image input.
+
 ## Version
 
 Pinned to `2.4.6` via `ARG AGENT_VERSION`. Override at build time with `build agent --agent-version <x>` — see [agents/RULES.md](../../../.agents/agents/RULES.md) rule 13.
