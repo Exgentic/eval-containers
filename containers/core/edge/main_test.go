@@ -664,9 +664,8 @@ func TestRequestAtTheLimitStillGoesThrough(t *testing.T) {
 
 // An OUT ending .zst is written through one encoder held open for the run, so
 // the compressor sees across records — each request repeats the whole
-// conversation, which is where the ratio comes from. The stream is never closed
-// (the pod SIGKILLs this process), so what matters is that a reader gets every
-// record flushed so far.
+// conversation, which is where the ratio comes from. The process is SIGKILLed,
+// never closed, so the file must be a complete zstd stream after every record.
 func TestZstdRecordIsReadableWhileStillBeingWritten(t *testing.T) {
 	dir := t.TempDir()
 	out = filepath.Join(dir, "calls.jsonl.zst")
@@ -698,7 +697,10 @@ func TestZstdRecordIsReadableWhileStillBeingWritten(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer d.Close()
-	got, _ := d.DecodeAll(raw, nil) // an unterminated frame decodes as far as it goes
+	got, err := d.DecodeAll(raw, nil)
+	if err != nil {
+		t.Fatalf("the record is not a complete zstd stream: %v", err)
+	}
 	var n int
 	for _, ln := range strings.Split(strings.TrimSpace(string(got)), "\n") {
 		if ln == "" {
@@ -714,7 +716,7 @@ func TestZstdRecordIsReadableWhileStillBeingWritten(t *testing.T) {
 		n++
 	}
 	if n != 3 {
-		t.Fatalf("recovered %d of 3 records from an unterminated stream", n)
+		t.Fatalf("recovered %d of 3 records", n)
 	}
 }
 
