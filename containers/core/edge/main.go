@@ -70,6 +70,7 @@ var (
 	// that reads this file today has to change until it asks for the .zst name.
 	recFile *os.File
 	recZstd *zstd.Encoder
+	recShut bool   // recFile ends with zstdEnd, cut off before the frame goes on
 	recPath string // what recFile was opened for; reopen if OUT is repointed
 	out     = envOr("EDGE_OUT", "/output/model/calls.jsonl")
 	// 4100, not 4000: a gateway owns 4000, and in k8s it shares this pod's
@@ -483,6 +484,7 @@ func record(c call) {
 	}
 	if recFile == nil || recPath != out {
 		if recZstd != nil {
+			cutEnd()
 			recZstd.Close()
 			recZstd = nil
 		}
@@ -495,11 +497,13 @@ func record(c call) {
 			log.Println("record:", err)
 			return
 		}
-		recFile, recPath = f, out
+		recFile, recPath, recShut = f, out, false
 		lastSync = time.Time{} // a new file is pushed on its first record
 		if strings.HasSuffix(out, ".zst") {
+			// No checksum: it can only be written at the frame's real end, which
+			// this process never reaches.
 			enc, err := zstd.NewWriter(f,
-				zstd.WithEncoderLevel(zstd.SpeedBetterCompression))
+				zstd.WithEncoderLevel(zstd.SpeedBetterCompression), zstd.WithEncoderCRC(false))
 			if err != nil {
 				// Falling through here would write plain JSON under a .zst
 				// name — a record nothing downstream can read, and no error to
@@ -515,22 +519,46 @@ func record(c call) {
 	var w io.Writer = recFile
 	if recZstd != nil {
 		w = recZstd
+		cutEnd()
 	}
 	if err := json.NewEncoder(w).Encode(c); err != nil {
 		log.Println("record:", err)
 		return
 	}
 	// There is no graceful shutdown — the pod SIGKILLs this process — so the
-	// frame is never closed. Flushing after every record is what makes the file
-	// readable anyway: a reader gets every record written so far.
+	// frame is closed after every record instead: flushed, then ended with an
+	// empty last block that the next record cuts off. Any reader, strict ones
+	// included, gets a complete file holding every record written so far.
 	if recZstd != nil {
 		if err := recZstd.Flush(); err != nil {
 			log.Println("record:", err)
+		} else if _, err := recFile.Write(zstdEnd); err != nil {
+			log.Println("record:", err)
+		} else {
+			recShut = true
 		}
 	}
 	// Flushing reaches the FILE and stops there; /output is s3fs, which uploads a
 	// dirty file on fsync or close and never while it sits open and quiet.
 	syncRecord()
+}
+
+// A zstd block header: last block, raw, empty — the end of a frame.
+var zstdEnd = []byte{1, 0, 0}
+
+// Caller holds mu.
+func cutEnd() {
+	if !recShut {
+		return
+	}
+	off, err := recFile.Seek(0, io.SeekEnd)
+	if err == nil {
+		err = recFile.Truncate(off - int64(len(zstdEnd)))
+	}
+	if err != nil {
+		log.Println("record:", err)
+	}
+	recShut = false
 }
 
 // Not per record: on s3fs an fsync re-uploads the WHOLE object, so an 8MB record
