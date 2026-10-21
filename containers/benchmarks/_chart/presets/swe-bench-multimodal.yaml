@@ -1,10 +1,13 @@
-# Matches compose.yaml (rule 24e). Grading carbon's jest suite needs 6-7 GB; the
-# chart default of 2Gi would kill the verifier, which grades a correct fix 0.
-# Disk: carbon's node_modules plus a jest run outgrow the namespace's 4Gi default
-# ephemeral-storage — 4 of 12 carbon tasks were evicted at it (2026-10-21).
+# cpu/memory match compose.yaml (rule 24e). Grading carbon's jest suite needs 6-7
+# GB; the chart default of 2Gi would kill the verifier, which grades a correct fix 0.
 timeout: '1800'
 # grade.sh gives the tests the harness's own 1800 s; the pod must outlive that.
 deadlineGrace: 2100
+# ephemeral-storage is k8s-only: Compose has no such concept (as in deepswe). Unset,
+# the runner gets the namespace's 4Gi default, which carbon outgrows — in one
+# sampled run (2026-10-21) 4 of 12 carbon tasks were evicted at it. /testbed alone
+# is 2.3-2.6 GB in a running carbon pod. 24Gi is headroom, not a measured peak; the
+# namespace LimitRange sets no max, so it cannot reject the pod.
 resources:
   requests:
     cpu: 500m
