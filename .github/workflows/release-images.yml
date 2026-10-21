@@ -261,6 +261,10 @@ jobs:
           if [ "$IS_DISPATCH" != "true" ]; then
             COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
             INCLUDE_PER_TASK=true
+            # Per-task pairs outside the lineup, as <benchmark>:<agent>: an agent
+            # published for one benchmark only, kept fresh like any other combo
+            # without building it for the whole fleet.
+            EXTRA_PERTASK_PAIRS="swe-bench-multimodal:mini-swe-agent"
           fi
           # The :latest channel (delivery/RULES.md:16): the nightly run publishes only
           # images whose inputs changed. Compute the stale set once; every matrix
@@ -511,6 +515,11 @@ jobs:
                 | {b:$b, a:$a, task:"", kind:"shared"}]')
             ptc=$(printf '%s' "$pertask_all" | jq -c --argjson as "$agents" \
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
+            for pair in ${EXTRA_PERTASK_PAIRS:-}; do
+              extra=$(printf '%s' "$pertask_all" | jq -c --arg b "${pair%%:*}" --arg a "${pair##*:}" \
+                '[.[] | select(.b == $b) | {b, a:$a, task, kind}]')
+              ptc=$(printf '%s\n%s' "$ptc" "$extra" | jq -cs 'add')
+            done
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
           fi
           # Channel run: keep the combos that moved. Two ways a pair moves:
