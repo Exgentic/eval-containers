@@ -18,6 +18,8 @@ services:
       TIMEOUT: ${EVAL_TIMEOUT:-1800}
     # Rule 10 / 24e — matches the chart preset. Grading carbon's jest suite needs
     # 6-7 GB; the shared 2G default would kill the verifier, which grades 0.
+    # Disk has no Compose equivalent: it is only the chart preset's
+    # ephemeral-storage (24Gi), as presets/deepswe.yaml does.
     deploy:
       resources:
         limits:
