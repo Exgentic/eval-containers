@@ -362,9 +362,17 @@ create_cluster() {  # renders the extraMounts config, then creates the cluster
   mkdir -p "$OUTPUT_DIR"
   local abs; abs="$(cd "$OUTPUT_DIR" && pwd)"
   local cfg; cfg="$(mktemp)"; trap 'rm -f "$cfg"' RETURN
+  # containerdConfigPatches: route docker.io through Google's public pull-through
+  # cache (mirror.gcr.io) so the node never hits Docker Hub's anonymous pull limit
+  # (100/6h per IP → 429 Init:ErrImagePull on busybox:1.36 and friends). config_path
+  # enables the certs.d hosts.toml drop-in written after create, below.
   cat >"$cfg" <<YAML
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
 nodes:
   - role: control-plane
     extraMounts:
@@ -373,6 +381,17 @@ nodes:
 YAML
   log "mounting host dir $abs → node $OUTPUT_HOSTPATH"
   kind create cluster --name "$CLUSTER" --config "$cfg"
+  # Drop the docker.io mirror host into the node's containerd certs.d dir. Done
+  # post-create (the node exists now) rather than baked into the image.
+  local node="${CLUSTER}-control-plane"
+  docker exec "$node" mkdir -p /etc/containerd/certs.d/docker.io
+  docker exec "$node" sh -c 'cat >/etc/containerd/certs.d/docker.io/hosts.toml' <<'HOSTS'
+server = "https://registry-1.docker.io"
+
+[host."https://mirror.gcr.io"]
+  capabilities = ["pull", "resolve"]
+HOSTS
+  log "docker.io pulls routed through mirror.gcr.io (no Docker Hub rate limit)"
 }
 
 # ── 1. Cluster (idempotent: create only if absent; --recreate rebuilds) ───────
