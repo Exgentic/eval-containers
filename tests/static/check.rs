@@ -989,7 +989,19 @@ fn agent_env_reaches_the_agent() {
             && ra.contains("\"${forward[@]}\" \\\n    /run.sh"),
         "run-agent must pass the vars EVAL_AGENT_ENV names into the agent's `env -i`"
     );
-    for refused in ["*TASK_ID*", "*API_KEY*", "*SECRET*"] {
+    // The runner env holds the task id (EVAL_TASK_ID, JOB_COMPLETION_INDEX), the
+    // gold answer (EXPECTED_ANSWER) and credentials (…_AUTH_TOKEN, …_API_KEY).
+    for refused in [
+        "EVAL_*",
+        "JOB_*",
+        "EXPECTED_*",
+        "*TASK*",
+        "*ANSWER*",
+        "*KEY*",
+        "*TOKEN",
+        "*SECRET*",
+        "*AUTH*",
+    ] {
         assert!(
             ra.contains(refused),
             "run-agent must refuse to forward {refused} — the agent must not receive it"
@@ -999,6 +1011,13 @@ fn agent_env_reaches_the_agent() {
     assert!(
         job.contains("with $v.agentEnv") && job.contains("name: EVAL_AGENT_ENV"),
         "job.yaml must render agentEnv onto the runner and name it in EVAL_AGENT_ENV"
+    );
+    // Values, not just names, under EVAL_*: a changed value changes the run's
+    // config fingerprint (rule 23), and the result records them.
+    assert!(
+        job.contains("name: EVAL_AGENT_LAUNCH")
+            && read("containers/core/runner/write-result").contains("EVAL_AGENT_LAUNCH"),
+        "agentEnv's values must reach EVAL_AGENT_LAUNCH and be recorded by write-result"
     );
     assert!(
         read("containers/benchmarks/_chart/values.yaml").contains("agentEnv: []"),
