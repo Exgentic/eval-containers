@@ -122,7 +122,7 @@ activeDeadlineSeconds: ""
 # /entrypoint.sh (task setup) execs /usr/local/bin/run (the pipeline).
 runnerArgs: "/entrypoint.sh /usr/local/bin/run; rc=$?; /usr/local/bin/reap-sidecars; exit $rc"
 resources:
-  requests: { cpu: "500m", memory: "512Mi" }
+  requests: { cpu: "300m", memory: "512Mi" }
   limits:   { cpu: "2",    memory: "2Gi" }
 # The /output volume source. Empty → an ephemeral emptyDir (results die with
 # the pod). Set one source key to persist them — e.g. a hostPath (kind) or a
