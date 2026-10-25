@@ -193,6 +193,11 @@ spec:
             {{- with $v.reasoningEffort }}
             - { name: EVAL_AGENT_REASONING_EFFORT, value: {{ . | quote }} }
             {{- end }}
+            {{- with $v.agentEnv }}
+            {{- toYaml . | nindent 12 }}
+            - name: EVAL_AGENT_ENV
+              value: {{ $names := list }}{{ range . }}{{ $names = append $names .name }}{{ end }}{{ join " " $names | quote }}
+            {{- end }}
             {{- if $v.force }}
             - { name: EVAL_FORCE, value: "1" }
             {{- end }}

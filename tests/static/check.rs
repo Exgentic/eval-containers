@@ -974,6 +974,38 @@ fn agent_env_excludes_the_task_id() {
     eprintln!("✓ run-agent env -i allow-list excludes the task id (rule 7)");
 }
 
+/// A launch's env vars for the agent (`agentEnv`) reach it. `runnerExtraEnv` lands
+/// on the runner container and `env -i` drops it, so before this a run launched
+/// with `CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000` still sent 128000 on every call. The
+/// chart names the vars in EVAL_AGENT_ENV; run-agent forwards those names, and
+/// refuses the task id (rule 7) and credentials (models rule 4).
+#[test]
+fn agent_env_reaches_the_agent() {
+    let read =
+        |p: &str| fs::read_to_string(repo_root().join(p)).unwrap_or_else(|_| panic!("missing {p}"));
+    let ra = read("containers/core/runner/run-agent");
+    assert!(
+        ra.contains("for name in ${EVAL_AGENT_ENV:-}")
+            && ra.contains("\"${forward[@]}\" \\\n    /run.sh"),
+        "run-agent must pass the vars EVAL_AGENT_ENV names into the agent's `env -i`"
+    );
+    for refused in ["*TASK_ID*", "*API_KEY*", "*SECRET*"] {
+        assert!(
+            ra.contains(refused),
+            "run-agent must refuse to forward {refused} — the agent must not receive it"
+        );
+    }
+    let job = read("containers/benchmarks/_chart/templates/job.yaml");
+    assert!(
+        job.contains("with $v.agentEnv") && job.contains("name: EVAL_AGENT_ENV"),
+        "job.yaml must render agentEnv onto the runner and name it in EVAL_AGENT_ENV"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("agentEnv: []"),
+        "_chart/values.yaml must ship `agentEnv: []` — nothing forwarded unless a launch asks"
+    );
+}
+
 /// `EVAL_AGENT_REASONING_EFFORT`: a supporting agent applies it via `${VAR:+…}`
 /// (unset = default); run-agent forwards it and rejects it for an agent whose
 /// /run.sh doesn't use it.

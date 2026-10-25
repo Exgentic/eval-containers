@@ -30,6 +30,11 @@ gatewayImage: bifrost
 model: ""
 # Agent-side reasoning effort (e.g. high); empty → the agent's default.
 reasoningEffort: ""
+# Env vars for the agent process itself ([{name, value}], e.g.
+# CLAUDE_CODE_MAX_OUTPUT_TOKENS). runnerExtraEnv reaches the runner container
+# only — run-agent's `env -i` drops it — so these are also named in
+# EVAL_AGENT_ENV, the list run-agent forwards. No task id, no credentials.
+agentEnv: []
 # Image tags (CLI --gateway-tag → gatewayTag; --agent-tag/--benchmark-tag → runnerTag)
 gatewayTag: latest
 runnerTag: latest

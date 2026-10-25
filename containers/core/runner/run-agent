@@ -48,6 +48,26 @@ if [ "$native" = false ] && [ "${EVAL_INTERNET:-}" = "false" ] && ! grep -q EVAL
   echo "run-agent: EVAL_INTERNET=false but agent '${EVAL_AGENT:-?}' does not support denying its web tools — continuing (network isolation still applies, rule 9)" >&2
 fi
 
+# EVAL_AGENT_ENV names the launch's own variables meant for the agent (the chart
+# sets it from `agentEnv`). `env -i` drops everything not listed below, so before
+# this a variable a launch set for the agent — CLAUDE_CODE_MAX_OUTPUT_TOKENS, say —
+# reached the runner container and silently never the agent. Only names travel
+# here; values come from this environment. The task id and credentials stay out
+# (rule 7, models rule 4): naming one fails the run rather than leaking it.
+forward=()
+for name in ${EVAL_AGENT_ENV:-}; do
+  case "$name" in
+    *TASK_ID*|*API_KEY*|*SECRET*)
+      echo "run-agent: EVAL_AGENT_ENV names $name, which the agent must not receive" >&2
+      exit 2 ;;
+  esac
+  if ! [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
+    echo "run-agent: EVAL_AGENT_ENV names '$name', which is not a variable name" >&2
+    exit 2
+  fi
+  [ -n "${!name+x}" ] && forward+=("$name=${!name}")
+done
+
 # stdout/stderr go straight to /output/agent/{stdout,stderr}.log (raw, not via
 # process-compose's JSON log envelope, which breaks verifiers reading stdout).
 # Every value is read from the inherited environment — exported by
@@ -68,6 +88,7 @@ else
     OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" OPENAI_API_KEY=sk-proxy \
     ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}" ANTHROPIC_API_KEY=sk-proxy \
     GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \
+    "${forward[@]}" \
     /run.sh > /output/agent/stdout.log 2> /output/agent/stderr.log || rc=$?
 fi
 printf '%s' "$rc" > /output/agent/.exit-code
