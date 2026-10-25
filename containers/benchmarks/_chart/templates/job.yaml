@@ -197,6 +197,11 @@ spec:
             {{- toYaml . | nindent 12 }}
             - name: EVAL_AGENT_ENV
               value: {{ $names := list }}{{ range . }}{{ $names = append $names .name }}{{ end }}{{ join " " $names | quote }}
+            {{- /* The values too, not just the names: under EVAL_* they enter the
+                   runner's config fingerprint, so resuming a run with a changed
+                   value is refused instead of reusing the old result (rule 23), and
+                   write-result records them beside launch.json for a replay. */}}
+            - { name: EVAL_AGENT_LAUNCH, value: {{ toJson . | quote }} }
             {{- end }}
             {{- if $v.force }}
             - { name: EVAL_FORCE, value: "1" }

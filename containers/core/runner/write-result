@@ -11,6 +11,7 @@
 #   /output/agent/result.json   agent, started_at, ended_at, exit_code, error
 #   /output/model/result.json   model
 #   /output/agent/launch.json   what the run was launched with (EVAL_LAUNCH)
+#   /output/agent/agent-env.json  the env vars the agent was given (EVAL_AGENT_LAUNCH)
 set -euo pipefail
 
 # The verifier may not produce a numeric reward (e.g. the agent errored or
@@ -52,6 +53,7 @@ printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
 # record". Already JSON — the chart built it with toJson — so it is copied, not
 # re-quoted.
 printf '%s\n' "${EVAL_LAUNCH:-[]}" > /output/agent/launch.json
+printf '%s\n' "${EVAL_AGENT_LAUNCH:-[]}" > /output/agent/agent-env.json
 
 # The attempt is over. Stop the heartbeat first: it outlives the shell that
 # started it, and a tick landing after the release would put the claim back.
