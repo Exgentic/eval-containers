@@ -49,7 +49,7 @@
 # still raise memory for a single run with `--set memoryOverride=`.
 resources:
   requests:
-    cpu: 500m
+    cpu: 300m
     memory: 512Mi
   limits:
     cpu: '4'
