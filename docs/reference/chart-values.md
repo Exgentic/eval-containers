@@ -41,7 +41,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `deadlineGrace` | `600` |
 | `activeDeadlineSeconds` | `""` (derives from `timeout + deadlineGrace`) |
 | `runnerArgs` | `/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc` |
-| `resources.requests` | `{ cpu: 500m, memory: 512Mi }` |
+| `resources.requests` | `{ cpu: 300m, memory: 512Mi }` |
 | `resources.limits` | `{ cpu: 2, memory: 2Gi }` |
 | `outputVolume` | `{}` (→ ephemeral `emptyDir`); set a source to persist `/output`, e.g. `--set outputVolume.hostPath.path=/eval-output` or a `persistentVolumeClaim` |
 
