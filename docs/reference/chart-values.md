@@ -32,6 +32,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `maxBudget` | `""` | `--max-budget` |
 | `maxTokens` | `""` | `--max-tokens` |
 | `reasoningEffort` | `""` | `--agent-reasoning-effort` |
+| `agentEnv` | `[]` | env vars the agent process receives, as `[{name, value}]` (`runnerExtraEnv` stops at the runner container) |
 
 ## Knobs a benchmark may override
 
