@@ -1125,6 +1125,22 @@ fn internet_policy_wired_through_to_agents() {
     eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based warn-not-fail");
 }
 
+/// claude-code keeps its own per-model max_tokens (#726): a forced 128000 is
+/// reserved out of the context window on every call, and a 262k-window model
+/// then rejects every call once the prompt passes ~134k.
+#[test]
+fn claude_code_keeps_its_own_reply_cap() {
+    for a in ["claude-code", "claude-code-rtk"] {
+        let dockerfile = repo_root().join(format!("containers/agents/{a}/Dockerfile"));
+        assert!(
+            !fs::read_to_string(dockerfile)
+                .unwrap()
+                .contains("export CLAUDE_CODE_MAX_OUTPUT_TOKENS="),
+            "{a} must not set CLAUDE_CODE_MAX_OUTPUT_TOKENS — Claude Code's own default fits the window"
+        );
+    }
+}
+
 #[test]
 fn opencode_reply_cap_is_raised() {
     let dockerfile = repo_root().join("containers/agents/opencode/Dockerfile");

@@ -30,7 +30,10 @@ set -euo pipefail
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
-export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-128000}"
+# No CLAUDE_CODE_MAX_OUTPUT_TOKENS: Claude Code picks max_tokens per model (32000
+# for any model it doesn't know, 64000 for opus-4-6) and resumes a reply cut at
+# that cap. Forcing 128000 reserved 128k of every model's context window, so on a
+# 262k-window vLLM model each call failed once the prompt passed ~134k (#726).
 # Web tools are gated on the benchmark's declared internet policy: when the
 # benchmark sets EVAL_INTERNET=false (mirrors its eval.benchmark.internet label),
 # deny WebSearch/WebFetch so the fix comes from the agent, not a search — some
