@@ -22,8 +22,8 @@ Beyond identity, five benchmarks need more than one container
 (`containers/benchmarks/_chart/presets/`: webarena and enterpriseops-gym 8
 services, visualwebarena 5, tau-bench 4, osworld-verified 2), webarena needs a 2 GiB
 `/dev/shm`, and the chart mounts memory-backed `emptyDir` for `/tmp` (1 Gi) and
-`/logs` (100 Mi). One benchmark needs a device: kernelbench requests one NVIDIA
-GPU (`nvidia.com/gpu: 1`) and refuses to start without it.
+`/logs` (100 Mi). Two benchmarks need a device: kernelbench and backendbench each
+request one NVIDIA GPU (`nvidia.com/gpu: 1`) and refuse to start without it.
 
 ## Why the drop is load-bearing
 

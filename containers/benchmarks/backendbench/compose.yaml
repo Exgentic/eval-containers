@@ -1,0 +1,27 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/backendbench--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: backendbench
+    # Matches presets/backendbench.yaml (rule 24e).
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 16G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

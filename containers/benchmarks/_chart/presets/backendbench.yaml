@@ -1,0 +1,8 @@
+# One GPU per task: the agent builds and runs its kernel on it, then the grader
+# checks it against PyTorch on the same device. Matches compose.yaml (rule 24e).
+resources:
+  requests: { cpu: "2", memory: "8Gi", ephemeral-storage: "4Gi" }
+  limits:   { cpu: "4", memory: "16Gi", ephemeral-storage: "20Gi", nvidia.com/gpu: 1 }
+# Grading builds the operator's OpInfo samples and runs the kernel on each:
+# /grade.sh gives it 900s, so the default 600s of grace would cut it short.
+deadlineGrace: 1200
