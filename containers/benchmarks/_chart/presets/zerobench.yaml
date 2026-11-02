@@ -3,7 +3,7 @@ agent: native
 timeout: '600'
 resources:
   requests:
-    cpu: 500m
+    cpu: 300m
     memory: 512Mi
   limits:
     cpu: '1'

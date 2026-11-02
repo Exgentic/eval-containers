@@ -39,7 +39,7 @@
 # fail it), and raising it would widen the Kueue cpu reservation for every task.
 resources:
   requests:
-    cpu: 500m
+    cpu: 300m
     memory: 512Mi
     ephemeral-storage: 2Gi
   limits:
