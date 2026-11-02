@@ -10,7 +10,7 @@ deadlineGrace: 2100
 # namespace LimitRange sets no max, so it cannot reject the pod.
 resources:
   requests:
-    cpu: 500m
+    cpu: 300m
     memory: 512Mi
     ephemeral-storage: 2Gi
   limits:

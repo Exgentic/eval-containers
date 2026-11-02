@@ -974,6 +974,57 @@ fn agent_env_excludes_the_task_id() {
     eprintln!("✓ run-agent env -i allow-list excludes the task id (rule 7)");
 }
 
+/// A launch's env vars for the agent (`agentEnv`) reach it. `runnerExtraEnv` lands
+/// on the runner container and `env -i` drops it, so before this a run launched
+/// with `CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000` still sent 128000 on every call. The
+/// chart names the vars in EVAL_AGENT_ENV; run-agent forwards those names, and
+/// refuses the task id (rule 7) and credentials (models rule 4).
+#[test]
+fn agent_env_reaches_the_agent() {
+    let read =
+        |p: &str| fs::read_to_string(repo_root().join(p)).unwrap_or_else(|_| panic!("missing {p}"));
+    let ra = read("containers/core/runner/run-agent");
+    assert!(
+        ra.contains("for name in ${EVAL_AGENT_ENV:-}")
+            && ra.contains("\"${forward[@]}\" \\\n    /run.sh"),
+        "run-agent must pass the vars EVAL_AGENT_ENV names into the agent's `env -i`"
+    );
+    // The runner env holds the task id (EVAL_TASK_ID, JOB_COMPLETION_INDEX), the
+    // gold answer (EXPECTED_ANSWER) and credentials (…_AUTH_TOKEN, …_API_KEY).
+    for refused in [
+        "EVAL_*",
+        "JOB_*",
+        "EXPECTED_*",
+        "*TASK*",
+        "*ANSWER*",
+        "*KEY*",
+        "*TOKEN",
+        "*SECRET*",
+        "*AUTH*",
+    ] {
+        assert!(
+            ra.contains(refused),
+            "run-agent must refuse to forward {refused} — the agent must not receive it"
+        );
+    }
+    let job = read("containers/benchmarks/_chart/templates/job.yaml");
+    assert!(
+        job.contains("with $v.agentEnv") && job.contains("name: EVAL_AGENT_ENV"),
+        "job.yaml must render agentEnv onto the runner and name it in EVAL_AGENT_ENV"
+    );
+    // Values, not just names, under EVAL_*: a changed value changes the run's
+    // config fingerprint (rule 23), and the result records them.
+    assert!(
+        job.contains("name: EVAL_AGENT_LAUNCH")
+            && read("containers/core/runner/write-result").contains("EVAL_AGENT_LAUNCH"),
+        "agentEnv's values must reach EVAL_AGENT_LAUNCH and be recorded by write-result"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("agentEnv: []"),
+        "_chart/values.yaml must ship `agentEnv: []` — nothing forwarded unless a launch asks"
+    );
+}
+
 /// `EVAL_AGENT_REASONING_EFFORT`: a supporting agent applies it via `${VAR:+…}`
 /// (unset = default); run-agent forwards it and rejects it for an agent whose
 /// /run.sh doesn't use it.
@@ -1072,6 +1123,22 @@ fn internet_policy_wired_through_to_agents() {
     }
 
     eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based warn-not-fail");
+}
+
+/// claude-code keeps its own per-model max_tokens (#726): a forced 128000 is
+/// reserved out of the context window on every call, and a 262k-window model
+/// then rejects every call once the prompt passes ~134k.
+#[test]
+fn claude_code_keeps_its_own_reply_cap() {
+    for a in ["claude-code", "claude-code-rtk"] {
+        let dockerfile = repo_root().join(format!("containers/agents/{a}/Dockerfile"));
+        assert!(
+            !fs::read_to_string(dockerfile)
+                .unwrap()
+                .contains("export CLAUDE_CODE_MAX_OUTPUT_TOKENS="),
+            "{a} must not set CLAUDE_CODE_MAX_OUTPUT_TOKENS — Claude Code's own default fits the window"
+        );
+    }
 }
 
 #[test]
