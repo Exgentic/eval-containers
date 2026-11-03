@@ -117,6 +117,11 @@ const SPECIAL: &[(&str, &str)] = &[
     ("hwe-bench", "chipsalliance__caliptra-rtl-963"), // SystemVerilog / Verilator
     ("hwe-bench", "chipsalliance__rocket-chip-3526"), // Chisel -> Verilog / Mill + Verilator
     ("hwe-bench", "openxiangshan__xiangshan-39"), // Chisel -> Verilog / Mill + Verilator
+    // Two bases patch-log4j.sh rewrites, one per cache layout, so the gate grades
+    // through the swapped jars: sbt 1.2.7 boot + ivy (Log4j 2.11.1) and Mill's
+    // coursier cache (2.11.2).
+    ("hwe-bench", "chipsalliance__rocket-chip-1878"),
+    ("hwe-bench", "openxiangshan__xiangshan-739"),
     // zerobench-agentic grades through `core/test-answer-match`, not
     // test-exact-match, so the auto-coverage above skips it; and the default gold
     // (`printf '%s' "$EXPECTED_ANSWER"`) emits a bare answer, which the

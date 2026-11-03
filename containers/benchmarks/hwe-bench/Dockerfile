@@ -55,6 +55,10 @@ ENV EVAL_BENCHMARK=hwe-bench
 # the case's JSONL row at build time. No dataset package — grading is offline.
 RUN apt-get update && apt-get install -y --no-install-recommends curl python3 && rm -rf /var/lib/apt/lists/*
 
+# Some bases cache a Log4j < 2.17.1 with their sbt/Mill toolchain; swap in 2.17.1.
+COPY patch-log4j.sh /tmp/patch-log4j.sh
+RUN bash /tmp/patch-log4j.sh && rm /tmp/patch-log4j.sh
+
 ARG EVAL_TASK_ID
 ENV EVAL_TASK_ID=${EVAL_TASK_ID}
 

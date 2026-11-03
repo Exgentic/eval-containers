@@ -102,6 +102,7 @@ commit, `tb_script`, and fail-to-pass list root-only.
 
 - `Dockerfile` — overlay on the pku-liang per-PR image
 - `build.sh` — per-task PULL + overlay (derives base ref + repo path from the id)
+- `patch-log4j.sh` — swaps the base's cached Log4j < 2.17.1 jars for 2.17.1
 - `grade.py` / `grade.sh` — HWE's simulation grader
 - `entrypoint.sh` — seeds `TASK`, hands the repo to the agent
 - `solution.sh` — oracle gold (applies the dataset `fix_patch`)
