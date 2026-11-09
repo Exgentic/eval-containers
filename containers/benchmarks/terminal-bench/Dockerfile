@@ -89,6 +89,8 @@ COPY tests /tests
 RUN chmod -R 700 /tests && chown -R root:root /tests
 
 # Grader: run the upstream tests/test.sh, which writes /logs/verifier/reward.txt.
+# /logs is in-memory, so test.log and ctrf.json are copied to /output/task/verifier/
+# — otherwise a 0 (e.g. a failed grade-time download) leaves no trace (dashboard#441).
 # /.eval-workdir holds the task env's own WORKDIR, resolved above (86/89 use /app;
 # prove-plus-comm uses /workspace). A hardcoded `cd /app` silently no-ops for the
 # others, running the tests from / instead of the task dir, so a correct solution
@@ -100,6 +102,7 @@ RUN printf '%s\n' \
   'cd "$(cat /.eval-workdir)" || true' \
   'bash /tests/test.sh > /logs/verifier/test.log 2>&1 || true' \
   '[ -f /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt' \
+  'mkdir -p /output/task && cp -r /logs/verifier /output/task/verifier || true' \
   > /grade.sh && chmod +x /grade.sh
 
 # Entrypoint: seed TASK from the instruction if the runner didn't set it.
