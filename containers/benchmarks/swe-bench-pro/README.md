@@ -35,7 +35,7 @@ few tasks may use `/testbed`; the scripts handle both).
 
 ## How it's graded
 
-Upstream's locked protocol, run in place (`grade.sh`):
+The locked protocol's patch flow, run in place (`grade.sh`):
 
 1. **Capture** the agent's diff against the base commit as `model.patch`
    (committed and uncommitted work alike).
@@ -44,8 +44,9 @@ Upstream's locked protocol, run in place (`grade.sh`):
    upstream's `tests/test.sh` unchanged. Reward 1 iff every `fail_to_pass` and
    `pass_to_pass` test passes.
 
-Upstream runs step 3 in a fresh container. Running it in place is the same
-deviation `deepswe` and `swe-bench` document.
+Upstream runs step 3 in a fresh container so agent changes outside the captured
+patch cannot affect grading. Running it in place is a weaker isolation boundary,
+and is the same deviation `deepswe` and `swe-bench` document.
 
 ## Budget and resources
 
@@ -56,9 +57,9 @@ own budget), 1 CPU, 4 GiB, 10 GiB disk — identical on all 642 tasks.
 
 The official numbers use Scale's locked agent wrappers (Claude Code, Codex,
 mini-swe-agent) with WebFetch/WebSearch disabled and no turn or cost cap. A run
-here is comparable when it uses the same agent, the same budget, and leaves
-those tools off. The private (276) and held-out (858) splits are operator-run
-and not part of V2.
+here is not strictly leaderboard-comparable until grading uses a fresh container
+too. The private (276) and held-out (858) splits are operator-run and not part of
+V2.
 
 ## Files
 

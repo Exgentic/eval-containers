@@ -24,7 +24,8 @@ commit: fix/733-shipped-benchmarks
   `grade.sh` captures `model.patch`, hard-resets to the base commit, cleans files
   the agent added (keeping the base image's own untracked files and ignored
   dependencies), re-applies the patch with patch_replay's fallbacks, and then runs
-  upstream's `test.sh` unchanged.
+  upstream's `test.sh` unchanged. This does not reproduce the fresh container's
+  tamper boundary: agent changes to ignored dependencies can survive the reset.
 - **IPv4-first DNS for Node.** k8s and Docker add `::1 localhost` to
   `/etc/hosts`, and Node 18 then dials `::1` first, while NodeBB's test server
   listens on IPv4 only. Without `--dns-result-order=ipv4first` the NodeBB gold
@@ -87,5 +88,5 @@ from one tree.
 
 | Check | Status / Value | Evidence |
 |-------|:--------------:|----------|
-| published | ? | `release-images.yml` builds the ids in `publish.txt` (5 oracle-checked tasks), not all 642 |
+| published | ? | `release-images.yml` builds the 4 ids in `publish.txt`, not all 642. The oracle-checked NodeBB task is omitted because its verifier needs egress that Compose denies. |
 | pull size | — | not published |
