@@ -93,7 +93,7 @@ benchmark: {{ required "benchmark is required (--set benchmark=<x>)" .Values.ben
 agent: {{ .Values.agent }}
 model: {{ include "eval.modelLabel" .Values | quote }}
 {{- if not .Values.datasetSize }}
-task: {{ .Values.task | quote }}
+task: {{ include "eval.taskLabel" (toString .Values.task) | quote }}
 {{- end }}
 {{- with .Values.sweepId }}
 sweep-id: {{ . | quote }}
@@ -133,6 +133,22 @@ kueue.x-k8s.io/queue-name: {{ . | quote }}
 emptyDir: {}
 {{- else -}}
 {{- fail "no outputVolume: this run's results would go to an emptyDir, which the kubelet deletes with the pod — the Job would go green and every result.json, log and trace would be gone. Set outputVolume (e.g. --set outputVolume.persistentVolumeClaim.claimName=<claim>, or --set outputVolume.hostPath.path=/some/dir), or say the results do not matter with --set ephemeral=true." -}}
+{{- end -}}
+{{- end -}}
+
+{{/* eval.taskLabel — the task id as a legal label VALUE: at most 63 chars of
+     [A-Za-z0-9_.-], beginning and ending alphanumeric. A per-task id can be far
+     longer (SWE-bench Pro's `instance_<org>__<repo>-<sha>-v<sha>` ids run 69-120
+     chars), and the API server then rejects the Job outright, so no task of that
+     benchmark can start. A long id keeps its first 54 chars plus an 8-char sha1 of
+     the whole id, as eval.jobName does. A label is a selector, not a record: the
+     full id stays in EVAL_TASK_ID and in the results path. */}}
+{{- define "eval.taskLabel" -}}
+{{- $s := trimAll "-._" (regexReplaceAll "[^A-Za-z0-9_.-]+" . "-") -}}
+{{- if gt (len $s) 63 -}}
+{{- printf "%s-%s" (trimAll "-._" (trunc 54 $s)) (sha1sum . | trunc 8) -}}
+{{- else -}}
+{{- $s -}}
 {{- end -}}
 {{- end -}}
 
