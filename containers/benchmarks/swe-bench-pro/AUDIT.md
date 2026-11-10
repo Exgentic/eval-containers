@@ -14,7 +14,7 @@ commit: fix/733-shipped-benchmarks
 | building | ✓ | per-task PULL + overlay (rule 24g): `build.sh` reads `docker_image` from `v2/tasks/<id>/task.toml` at tag `v2.0.0` and builds `FROM ghcr.io/scaleapi/swe-bench_pro-v2:<id>`; built locally for the NodeBB task |
 | running | ? | not run with a live agent (oracle only) |
 | isolation | ✓ | `/tests` (verifier, test lists, hidden tests) is root-only `700`; the gold patch is never baked — `solution.sh` fetches it at oracle time; the repo is `chown`ed to `agent` |
-| oracle | ✓ | gold=1 / no-op=0 on 4 tasks across 4 languages, run on exgentic: NodeBB `04998908` (JS, 291 tests), qutebrowser `01d1d149` (Python, 49), flipt `02e21636` (Go, 4), element-web `1077729a` (TS, 503). The NodeBB gold also scores 1 when the fix is committed and a stray file is left behind. |
+| oracle | ✓ | gold=1 / no-op=0 on 5 tasks across 4 languages, run on exgentic: NodeBB `04998908` (JS, 291 tests), qutebrowser `01d1d149` (Python, 49), qutebrowser `e57b6e0e` (Python, 1; the CI oracle task, whose base has no curl), flipt `02e21636` (Go, 4), element-web `1077729a` (TS, 503). The NodeBB gold also scores 1 when the fix is committed and a stray file is left behind. |
 | traces-reviewed | ? | no human trajectory review |
 | replicate-official | ? | no known-model reproduction of a published V2 score |
 
@@ -87,5 +87,5 @@ from one tree.
 
 | Check | Status / Value | Evidence |
 |-------|:--------------:|----------|
-| published | ✗ | not yet enumerated in `release-images.yml` |
+| published | ? | `release-images.yml` builds the ids in `publish.txt` (5 oracle-checked tasks), not all 642 |
 | pull size | — | not published |

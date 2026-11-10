@@ -67,4 +67,5 @@ and not part of V2.
 - `grade.sh` — capture, restore, replay, then upstream's `test.sh`
 - `solution.sh` — oracle: fetches upstream's gold patch and `solve.sh` at the pinned tag
 - `tasks.txt` — the 642 instance ids
+- `publish.txt` — the oracle-checked subset the release builds and the dashboard offers
 - `compose.yaml` — compose file for `eval-containers run swe-bench-pro`

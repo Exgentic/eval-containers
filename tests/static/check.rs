@@ -1450,7 +1450,7 @@ fn the_per_task_job_pushes_with_the_engine_build_sh_builds_with() {
 fn every_per_task_build_script_stamps_the_input_hash() {
     // The benchmarks the release enumerates as kind=script — the ones that are
     // handed EVAL_INPUT_HASH today. A per-task benchmark the workflow does not
-    // enumerate yet (swe-bench-pro, swe-lancer) is never passed one, so it is
+    // enumerate yet (swe-lancer) is never passed one, so it is
     // held to this only once it joins the loop in release-images.yml.
     let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");

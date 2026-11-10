@@ -68,7 +68,7 @@ on:
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
         default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
       include_per_task:
-        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, swe-bench-multimodal, swefficiency, hwe-bench)"
+        description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, swe-bench-pro, swe-bench-multimodal, swefficiency, hwe-bench)"
         type: boolean
         default: true
       include_standalone:
@@ -403,11 +403,16 @@ jobs:
             #               subset, not the full 1368-task gradable universe in
             #               tasks.txt (each arvo base is ~9 GB; publish.txt is the
             #               allowlist fleet-index.py reads too). Absent -> nothing.
-            pf="containers/benchmarks/cybergym/publish.txt"
-            if [ -f "$pf" ]; then
-              tks=$(jq -Rn '[inputs | select(length>0 and (startswith("#") | not)) | {b:"cybergym", task:., kind:"plain"}]' < "$pf")
+            #   kind=script swe-bench-pro — build.sh reads each task's base from
+            #               its task.toml at the pinned tag. publish.txt again:
+            #               642 tasks of ~1 GB each are not built nightly.
+            for B in cybergym:plain swe-bench-pro:script; do
+              K="${B##*:}"; B="${B%%:*}"
+              pf="containers/benchmarks/$B/publish.txt"
+              [ -f "$pf" ] || continue
+              tks=$(jq -Rn --arg B "$B" --arg K "$K" '[inputs | select(length>0 and (startswith("#") | not)) | {b:$B, task:., kind:$K}]' < "$pf")
               acc=$(printf '%s\n%s' "$acc" "$tks" | jq -cs 'add')   # stdin: arrays too big for argv
-            fi
+            done
             pertask="$acc"
             # `only` names leaf targets, and a per-task benchmark is named there
             # as benchmark-<b>. Restrict the per-task list to those benchmarks

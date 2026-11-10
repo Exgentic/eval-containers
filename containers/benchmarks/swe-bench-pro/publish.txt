@@ -1,7 +1,9 @@
-# SWE-bench Pro V2 per-task images this repo PUBLISHES (the shipped subset of
-# tasks.txt, read by containers/scripts/fleet-index.py before tasks.txt).
-#
-# None yet: swe-bench-pro is not enumerated in release-images.yml, so nothing
-# builds or publishes its images. Without this file fleet-index would probe all
-# 642 ids × every agent for images that cannot exist. Add ids here when the
-# release starts building them.
+# SWE-bench Pro V2 per-task images this repo PUBLISHES — the shipped subset of
+# tasks.txt. release-images.yml builds exactly these (each base is ~1 GB, so not
+# all 642 nightly) and containers/scripts/fleet-index.py offers exactly these.
+# Each one is oracle-checked on exgentic (gold=1, no-op=0). Add ids to ship more.
+instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan
+instance_qutebrowser__qutebrowser-01d1d1494411380d97cac14614a829d3a69cecaf-v2ef375ac784985212b1805e1d0431dc8f1b3c171
+instance_qutebrowser__qutebrowser-e57b6e0eeeb656eb2c84d6547d5a0a7333ecee85-v2ef375ac784985212b1805e1d0431dc8f1b3c171
+instance_flipt-io__flipt-02e21636c58e86c51119b63e0fb5ca7b813b07b1
+instance_element-hq__element-web-1077729a19c0ce902e713cf6fab42c91fb7907f1-vnan
