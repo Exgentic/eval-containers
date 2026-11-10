@@ -1,4 +1,11 @@
 # HLE - Humanity's Last Exam (cais/hle)
+#
+# LEGACY. Kept for continuity of existing runs; HLE-Diamond (separate
+# benchmark, tracked in Exgentic/eval-containers#733) replaces it. Grading is
+# whitespace-normalised EXACT MATCH, while the official protocol (and Artificial
+# Analysis) uses an LLM judge, so these scores are NOT comparable to published
+# HLE numbers. That official judge (o3-mini-2025-01-31) was shut down on
+# 2026-10-23, so the published protocol can no longer be run as written anyway.
 # 2500 tasks. Data: HuggingFace cais/hle (gated)
 # Agent prints answer to stdout. Test compares to expected answer.
 
@@ -10,7 +17,7 @@ FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="hle"
 LABEL eval.benchmark.released="false"
-LABEL eval.benchmark.description="HLE - Humanity's Last Exam, hardest standardized AI evaluation"
+LABEL eval.benchmark.description="HLE (legacy) - Humanity's Last Exam, exact-match grading; not comparable to official LLM-judged HLE scores"
 LABEL eval.benchmark.tasks="2500"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
