@@ -31,11 +31,14 @@ cat > "$PI_CODING_AGENT_DIR/models.json" <<CONF
 CONF
 # pi caps each reply at 16384 tokens for a custom model, and pi-ai clamps any
 # maxTokens in models.json to 32000; a reply cut there ends the session with
-# exit 0. Raise it to 128000 (as opencode's is) on the request itself.
-cat > "$PI_CODING_AGENT_DIR/reply-cap.js" <<'X'
+# exit 0. Raise it to 128000 (as opencode's is) on the request itself. The cap is
+# reserved out of the context window, so a model whose window is under ~160k
+# rejects every call: set PI_MAX_OUTPUT_TOKENS (through the launch's agent env)
+# to fit, e.g. 32000 for a 131k model.
+cat > "$PI_CODING_AGENT_DIR/reply-cap.js" <<X
 export default function (pi) {
   pi.on("before_provider_request", ({ payload }) => {
-    payload["max_tokens" in payload ? "max_tokens" : "max_completion_tokens"] = 128000;
+    payload["max_tokens" in payload ? "max_tokens" : "max_completion_tokens"] = ${PI_MAX_OUTPUT_TOKENS:-128000};
     return payload;
   });
 }

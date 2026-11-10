@@ -1144,21 +1144,17 @@ fn claude_code_keeps_its_own_reply_cap() {
 #[test]
 fn opencode_reply_cap_is_raised() {
     let dockerfile = repo_root().join("containers/agents/opencode/Dockerfile");
-    assert!(
-        fs::read_to_string(dockerfile)
-            .unwrap()
-            .contains("export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=128000")
-    );
+    assert!(fs::read_to_string(dockerfile).unwrap().contains(
+        r#"export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}""#
+    ));
 }
 
 #[test]
 fn pi_reply_cap_is_raised() {
     let dockerfile = repo_root().join("containers/agents/pi/Dockerfile");
-    assert!(
-        fs::read_to_string(dockerfile)
-            .unwrap()
-            .contains(r#"? "max_tokens" : "max_completion_tokens"] = 128000;"#)
-    );
+    assert!(fs::read_to_string(dockerfile).unwrap().contains(
+        r#"? "max_tokens" : "max_completion_tokens"] = ${PI_MAX_OUTPUT_TOKENS:-128000};"#
+    ));
 }
 
 // The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
