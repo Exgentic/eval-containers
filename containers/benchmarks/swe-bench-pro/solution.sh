@@ -13,7 +13,15 @@ ref="${SBP_REF:?SBP_REF not set}"
 task="${SBP_TASK:-${EVAL_TASK_ID:?SBP_TASK/EVAL_TASK_ID not set}}"
 base="https://raw.githubusercontent.com/scaleapi/SWE-bench_Pro-os/${ref}/v2/tasks/${task}/solution"
 
+# Not every V2 base ships curl (the qutebrowser images don't), so fall back the
+# way deepswe's solution.sh does; python3 is in every base (test.sh needs it).
+fetch() {
+  if command -v curl >/dev/null 2>&1; then curl -fsSL --retry 3 --retry-delay 2 "$1"
+  else python3 -c 'import sys,urllib.request; sys.stdout.buffer.write(urllib.request.urlopen(sys.argv[1]).read())' "$1"
+  fi
+}
+
 mkdir -p /solution
-curl -fsSL --retry 3 --retry-delay 2 "${base}/gold_patch.diff" -o /solution/gold_patch.diff
-curl -fsSL --retry 3 --retry-delay 2 "${base}/solve.sh" -o /solution/solve.sh
+fetch "${base}/gold_patch.diff" > /solution/gold_patch.diff
+fetch "${base}/solve.sh"        > /solution/solve.sh
 bash /solution/solve.sh
