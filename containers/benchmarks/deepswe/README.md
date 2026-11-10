@@ -15,7 +15,7 @@ drawn from active open-source repositories.
 | Released | yes |
 | Upstream | [github.com/datacurve-ai/deep-swe](https://github.com/datacurve-ai/deep-swe) |
 | Dataset | `datacurve/deep-swe-1-1` |
-| Dataset revision | `435ee89ec2f2e2289f33b0da4f992f0b7b7266b9` |
+| Dataset revision | `0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea` |
 | Upstream base | `public.ecr.aws/d3j8x8q7/swe-bench-202605:<ext_id>-v1.1` (per task) |
 | Canonical agent | `claude-code` |
 
@@ -90,8 +90,9 @@ helm template deepswe containers/benchmarks/_chart \
 
 ## Timeout — the most likely cause of a false zero
 
-Upstream allows the agent **5400s** (90 min) per task (`[agent].timeout_sec`, set
-identically by all 113 tasks) and the chart preset defaults to it. Under-budgeting is
+Upstream allows the agent **10800s** (3 h) per task (`[agent].timeout_sec`, set
+identically by all 113 tasks; raised from 5400s in upstream `0b9fabbb`, 2026-08-26), and
+both the chart preset and `compose.yaml` default to it. Under-budgeting is
 silent and looks exactly like failure: the shared launcher kills the agent with
 **exit 124**, the verifier then grades a tree with no agent work, and `result.json`
 reports `reward: 0` — indistinguishable from an honest wrong answer. Observed locally
@@ -106,21 +107,21 @@ helm template … --set benchmark=deepswe --set timeoutOverride=28800
 ```
 
 Measured medians on the same task pool: `gemini-3.5-flash-lite` 10 min and `gpt-5.5`
-12 min both fit inside the default, while `azure/FW-GLM-5.2` (100 min) and
-`claude-sonnet-5` (220 min) do not. In a 25-task GLM sweep the override was worth **9 solves
+12 min fit easily; `azure/FW-GLM-5.2` (100 min) fits at the median but its p90 (454 min) does
+not, and `claude-sonnet-5` (220 min) needs more than the default. In a 25-task GLM sweep the override was worth **9 solves
 instead of about 2**: only 11 of the 25 finished inside 90 minutes at all, and just 2 of those
-11 passed — so at the 5400s default the other 14 would have been killed mid-work and scored 0.
+11 passed — so at the old 5400s default the other 14 would have been killed mid-work and scored 0.
 `presets/deepswe.yaml` carries the full table.
 
 Note that upstream's leaderboard does not bound the agent on wall clock at all: every
 published score was produced by Pier running `mini-swe-agent`, whose defaults are
-`cost_limit = 3.0` USD/task and `step_limit = 0` (unlimited). The 5400s in `task.toml`
+`cost_limit = 3.0` USD/task and `step_limit = 0` (unlimited). The 10800s in `task.toml`
 is Harbor's sandbox ceiling, not the evaluation protocol. Measured spend here stays
 inside that $3 regardless of the wall-clock budget (GLM $1.06 mean / $1.76 max over 24
 tasks), so a longer budget is not an unfair advantage relative to the leaderboard.
 
 Check `agent/result.json` for `"exit_code": 124` before believing any zero. On
-emulated (arm64) hosts, allow *more* than 5400s — everything runs several times
+emulated (arm64) hosts, allow *more* than 10800s — everything runs several times
 slower.
 
 ## Platform requirement
