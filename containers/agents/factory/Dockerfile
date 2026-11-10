@@ -27,7 +27,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # droid ignores OPENAI_BASE_URL; the gateway is reachable only via a BYOK
 # customModels entry in settings.json, keyed by the model id we pass to -m.
 BASE="${OPENAI_BASE_URL:-http://model:4000/v1}"
-MODEL="${EVAL_MODEL:-default}"
+MODEL="${MODEL:-default}"
 mkdir -p "$HOME/.factory"
 cat > "$HOME/.factory/settings.json" <<J
 {"customModels":[{"model":"${MODEL}","displayName":"Eval Containers Gateway","baseUrl":"${BASE}","apiKey":"${OPENAI_API_KEY}","provider":"generic-chat-completion-api","maxOutputTokens":16384}]}

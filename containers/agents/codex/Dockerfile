@@ -23,7 +23,7 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 # web_search must be the top-level key (codex ignores [tools].web_search).
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 exec codex exec \
-  --model "${CODEX_MODEL:-default}" \
+  --model "${MODEL:-default}" \
   -c model_provider=eval-containers \
   -c 'model_providers.eval-containers.name="Eval Containers LiteLLM Proxy"' \
   -c "model_providers.eval-containers.base_url=\"${OPENAI_BASE_URL:-http://model:4000/v1}\"" \
