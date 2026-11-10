@@ -26,7 +26,8 @@ provider (`eval-containers`) whose `baseUrl` is `$OPENAI_BASE_URL` and whose
 `api` is `openai-completions`. `models.json` takes the base URL as a literal
 (no env expansion), so the entrypoint interpolates it at runtime. It also writes
 `reply-cap.js`, a pi extension loaded with `-e` that sets every request's
-output cap to 128000 (as opencode's is): pi's own default for a custom model is
+output cap to `$PI_MAX_OUTPUT_TOKENS` (default 128000, as opencode's is; lower it
+through the launch's agent env for a model whose window is under ~160k): pi's own default for a custom model is
 16384 and pi-ai clamps any `maxTokens` in `models.json` to 32000, and a reasoning
 model that spends the cap thinking ends the run with exit 0 mid-task. It then runs
 `pi --no-session -e reply-cap.js -p --model eval-containers/$MODEL "$TASK"` — `-p` is

@@ -70,7 +70,11 @@ export OPENCODE_DISABLE_MODELS_FETCH=1
 # honest: fail loud on overflow rather than quietly rewriting history.
 export OPENCODE_DISABLE_AUTOCOMPACT=1
 # opencode's own cap is 32000, and a turn cut there ends the session with exit 0.
-export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=128000
+# The cap is reserved out of the context window, so a model whose window is under
+# ~160k rejects the first call: set OPENCODE_MAX_OUTPUT_TOKENS (through the
+# launch's agent env) to fit, e.g. 32000 for a 131k model. Not the upstream name:
+# run-agent refuses any *TOKEN_* name in the agent env.
+export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}"
 # `--`: end-of-options. A task whose text begins with "-" is otherwise parsed as
 # a flag — `opencode run` then prints its usage and exits 1 WITHOUT running, which
 # scores as reward 0 and is indistinguishable from a wrong answer (observed on
