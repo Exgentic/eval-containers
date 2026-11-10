@@ -59,6 +59,12 @@ fi
 # (EXPECTED_ANSWER), and credentials (rule 7, models rule 4). A launch-supplied
 # name is not trusted to avoid them, so the framework's namespaces and anything
 # credential-shaped are refused outright, failing the run rather than leaking.
+#
+# Nor may a forwarded name replace what this script sets the agent itself: the
+# forwarded vars come last in `env -i` below, so they would win. A launch that set
+# ANTHROPIC_BASE_URL, say, pointed the agent past the gateway, whose records are
+# every token count and budget the run reports; PATH, HOME, a proxy or LD_PRELOAD
+# swapped the agent's runtime underneath it (rule 7).
 forward=()
 for name in ${EVAL_AGENT_ENV:-}; do
   if ! [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
@@ -69,6 +75,9 @@ for name in ${EVAL_AGENT_ENV:-}; do
   case "$upper" in
     EVAL_*|JOB_*|EXPECTED_*|*TASK*|*ANSWER*|*KEY*|*TOKEN|*TOKEN_*|*SECRET*|*PASSWORD*|*CREDENTIAL*|*AUTH*)
       echo "run-agent: EVAL_AGENT_ENV names $name, which the agent must not receive" >&2
+      exit 2 ;;
+    PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*PROXY*|LD_*)
+      echo "run-agent: EVAL_AGENT_ENV names $name, which would replace the agent's own runtime or gateway" >&2
       exit 2 ;;
   esac
   [ -n "${!name+x}" ] && forward+=("$name=${!name}")
