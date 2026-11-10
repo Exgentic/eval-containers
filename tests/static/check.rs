@@ -1011,7 +1011,7 @@ fn agent_env_reaches_the_agent() {
     // sets itself: the gateway URLs (every token count and budget is read there),
     // and the runtime the agent runs on (rule 7).
     assert!(
-        ra.contains("PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*PROXY*|LD_*)"),
+        ra.contains("PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*_BASE|*_ENDPOINT|*PROXY*|LD_*)"),
         "run-agent must refuse to forward a name it sets for the agent itself — \
          a forwarded var would override it"
     );
