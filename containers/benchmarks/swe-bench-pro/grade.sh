@@ -60,4 +60,10 @@ NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--dns-result-order=ipv4first" \
 # test.sh's trap always writes reward.txt; a missing one means the verifier
 # itself never ran, which -1 reports as "not graded" (rule 18).
 [ -s /logs/verifier/reward.txt ] || echo -1 > /logs/verifier/reward.txt
+# /logs is in-memory and goes with the pod, so a 0 would leave no trace of why.
+# Keep the verifier's output beside result.json (as terminal-bench does, a3b682ed).
+mkdir -p /output/task/verifier
+cp -r /logs/verifier/. /output/task/verifier/ 2>/dev/null || true
+cp /logs/artifacts/model.patch /output/task/verifier/model.patch 2>/dev/null || true
+cp /logs/swe-bench-pro-verifier.log /output/task/verifier/ 2>/dev/null || true
 exit 0
