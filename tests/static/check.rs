@@ -1007,6 +1007,14 @@ fn agent_env_reaches_the_agent() {
             "run-agent must refuse to forward {refused} — the agent must not receive it"
         );
     }
+    // Forwarded vars come last in `env -i`, so they would override what run-agent
+    // sets itself: the gateway URLs (every token count and budget is read there),
+    // and the runtime the agent runs on (rule 7).
+    assert!(
+        ra.contains("PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*PROXY*|LD_*)"),
+        "run-agent must refuse to forward a name it sets for the agent itself — \
+         a forwarded var would override it"
+    );
     let job = read("containers/benchmarks/_chart/templates/job.yaml");
     assert!(
         job.contains("with $v.agentEnv") && job.contains("name: EVAL_AGENT_ENV"),
