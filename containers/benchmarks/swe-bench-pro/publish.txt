@@ -1,0 +1,7 @@
+# SWE-bench Pro V2 per-task images this repo PUBLISHES (the shipped subset of
+# tasks.txt, read by containers/scripts/fleet-index.py before tasks.txt).
+#
+# None yet: swe-bench-pro is not enumerated in release-images.yml, so nothing
+# builds or publishes its images. Without this file fleet-index would probe all
+# 642 ids × every agent for images that cannot exist. Add ids here when the
+# release starts building them.

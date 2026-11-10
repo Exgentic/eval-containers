@@ -1,10 +1,19 @@
 #!/bin/bash
-# Oracle gold for swe-bench-pro: apply the dataset's gold `patch` to the repo at
-# /app. grade.py then applies the test_patch and runs the selected tests, scoring
-# resolved=1. The gold ships in /tasks/0/config.json (root-only, chmod 600); the
-# oracle runs as root, so it can read it — never readable by the sandboxed agent.
-# Mirrors swe-bench's solution.sh. See core/oracle/README.md.
+# Oracle gold for SWE-bench Pro V2 — fetch THIS task's upstream reference
+# solution at the pinned ref and run upstream's solve.sh, which applies it in
+# /app (or /testbed). The grader then runs the hidden tests (gold => 1, no-op => 0).
+#
+# Fetched fresh at oracle run time, never baked (rules 9, 20a). The oracle runs
+# as root with the network the sandboxed agent lacks. See core/oracle.
 set -euo pipefail
-cd /app
-git config --global --add safe.directory /app 2>/dev/null || true
-python3 -c "import json,sys; sys.stdout.write(json.load(open('/tasks/0/config.json'))['patch'])" | git apply -v
+
+ref="${SBP_REF:?SBP_REF not set}"
+# The oracle/runner override EVAL_TASK_ID with their /tasks index, so use the
+# instance id baked into the image (SBP_TASK), falling back to EVAL_TASK_ID (rule 24i).
+task="${SBP_TASK:-${EVAL_TASK_ID:?SBP_TASK/EVAL_TASK_ID not set}}"
+base="https://raw.githubusercontent.com/scaleapi/SWE-bench_Pro-os/${ref}/v2/tasks/${task}/solution"
+
+mkdir -p /solution
+curl -fsSL --retry 3 --retry-delay 2 "${base}/gold_patch.diff" -o /solution/gold_patch.diff
+curl -fsSL --retry 3 --retry-delay 2 "${base}/solve.sh" -o /solution/solve.sh
+bash /solution/solve.sh

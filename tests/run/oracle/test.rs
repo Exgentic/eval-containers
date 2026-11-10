@@ -52,7 +52,7 @@ const SPECIAL: &[(&str, &str)] = &[
     // 1.0 by design; its README covers the manual oracle check.
     // swefficiency omitted — its reward is 1 - 0.001/SR, so the expert's own patch
     // scores about 0.999; its README covers the manual oracle check.
-    // per-task pull + own grader (run_script.sh/parser.py); resolve = fail_to_pass+pass_to_pass all PASS
+    // V2 per-task pull + upstream tests/test.sh; resolve = fail_to_pass+pass_to_pass all PASS
     (
         "swe-bench-pro",
         "instance_qutebrowser__qutebrowser-e57b6e0eeeb656eb2c84d6547d5a0a7333ecee85-v2ef375ac784985212b1805e1d0431dc8f1b3c171",

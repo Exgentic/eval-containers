@@ -11,6 +11,18 @@ services:
         condition: service_healthy
       gateway:
         condition: service_healthy
+    # Per-task: the task id is part of the image name (rule 24f).
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/swe-bench-pro-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: swe-bench-pro
+      # Upstream's [agent].timeout_sec (3000s on all 642 tasks), matching the
+      # chart preset; the runner's generic default is 300s.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-3000}
+      TIMEOUT: ${EVAL_TIMEOUT:-3000}
+    # Rule 10 / 24e — matches the chart preset (1 CPU / 4Gi), taken from each
+    # task.toml's [environment] cpus/memory_mb.
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 4G

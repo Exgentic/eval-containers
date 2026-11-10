@@ -58,7 +58,7 @@ upstream image.
 | `terminal-bench` | `ghcr.io/laude-institute/t-bench/python-3-13:20250620` | Public — anonymously pullable. Previous 60s failures were transient. |
 | `cybench` | `ubuntu:24.04` + upstream git clone | Public — builds from source. Retry loop added 2026-04-18. |
 | `compilebench` | parametric `${BASE_IMAGE}` + curl fetch | Public — curl retry added 2026-04-18. |
-| `swe-bench-pro` | `sbp/instance:<task_id>` | **Local-only** — needs a pre-built instance image from `scaleapi/SWE-bench_Pro-os` harness. Deployment prerequisite, not a code bug. |
+| `swe-bench-pro` | `ghcr.io/scaleapi/swe-bench_pro-v2:<instance_id>` | Public — anonymous pull, linux/amd64 only (V2, 2026-11). |
 | `swe-lancer` | `swelancer_x86:latest` | **Local-only** — needs a pre-built image from `openai/preparedness`. Deployment prerequisite. |
 | `mle-bench` | `mlebench-env:latest` | **Local-only** — needs a pre-built image from `openai/mle-bench`. Deployment prerequisite. |
 
