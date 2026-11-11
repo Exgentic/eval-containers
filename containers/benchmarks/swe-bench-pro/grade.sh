@@ -18,26 +18,43 @@ set -uo pipefail
 mkdir -p /logs/verifier /logs/artifacts
 REPO=/app; [ -d /app ] || REPO=/testbed
 cd "$REPO" || { echo -1 > /logs/verifier/reward.txt; exit 0; }
-git config --global --add safe.directory '*'
 BASE="$(cat /tests/.base_commit)"
+fail() {
+  echo "verifier setup failed: $*" >> /logs/artifacts/apply.log
+  echo -1 > /logs/verifier/reward.txt
+  exit 0
+}
+
+# The agent owns the worktree, including .git. Restore trusted configuration and
+# disable Git's execution/redirection surfaces before invoking it as root.
+export GIT_NO_REPLACE_OBJECTS=1 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
+rm -f .git/index.lock
+rm -rf .git/hooks .git/refs/replace
+install -m 600 /tests/.base_git_config .git/config || fail "restore git config"
+git() { command git -c safe.directory="$REPO" -c core.fsmonitor=false -c core.hooksPath=/dev/null "$@"; }
 
 # ── 1. capture ──────────────────────────────────────────────────────────────
 # Diff against BASE, not HEAD: an agent that committed its fix must not score 0
 # for a bookkeeping reason. Pre-existing untracked files are not agent work.
-git add -A 2>/dev/null
+git add -A >> /logs/artifacts/apply.log 2>&1 || fail "git add"
 if [ -s /tests/.base_untracked ]; then
-  while IFS= read -r p; do git reset -q -- "$p" 2>/dev/null; done < /tests/.base_untracked
+  git reset -q --pathspec-from-file=/tests/.base_untracked --pathspec-file-nul \
+    >> /logs/artifacts/apply.log 2>&1 || fail "exclude pristine untracked files"
 fi
-git diff --cached --binary "$BASE" > /logs/artifacts/model.patch 2>/dev/null
-git reset -q 2>/dev/null
+# /logs is a 100 MiB tmpfs in the chart. Stop below that limit so an unignored
+# build artifact cannot fill it and strand the pod without a result.
+git diff --cached --binary "$BASE" 2>> /logs/artifacts/apply.log \
+  | head -c 94371841 > /tmp/model.patch || fail "capture patch (over 90 MiB?)"
+[ "$(wc -c < /tmp/model.patch)" -le 94371840 ] || fail "captured patch exceeds 90 MiB"
+mv /tmp/model.patch /logs/artifacts/model.patch || fail "store patch"
+git reset -q >> /logs/artifacts/apply.log 2>&1 || fail "reset index"
 
 # ── 2. restore ──────────────────────────────────────────────────────────────
 # `git clean -fd`, NOT -x: ignored files (node_modules, build caches) are the
 # toolchain the tests need, and there is no network to reinstall them.
-git reset -q --hard "$BASE" 2>/dev/null
-excl=()
-while IFS= read -r p; do [ -n "$p" ] && excl+=(-e "/$p"); done < /tests/.base_untracked
-git clean -qfd "${excl[@]}" 2>/dev/null
+git reset -q --hard "$BASE" >> /logs/artifacts/apply.log 2>&1 || fail "restore base commit"
+git clean -qfd >> /logs/artifacts/apply.log 2>&1 || fail "clean agent files"
+tar -xf /tests/.base_untracked.tar || fail "restore pristine untracked files"
 
 # ── 3. replay + verify ──────────────────────────────────────────────────────
 # patch_replay's own fallbacks. An empty patch applies nothing (reward 0).
@@ -45,7 +62,7 @@ if [ -s /logs/artifacts/model.patch ]; then
   git apply --verbose /logs/artifacts/model.patch \
     || git apply --3way /logs/artifacts/model.patch \
     || patch --fuzz=3 -p1 -i /logs/artifacts/model.patch \
-    || echo "model.patch did not apply" >> /logs/artifacts/apply.log
+    || fail "model.patch did not apply"
 fi
 # IPv4-first name resolution for Node test suites. Kubernetes and Docker write
 # `::1 localhost` into /etc/hosts; Node 18 resolves localhost to ::1 first, while
@@ -55,7 +72,7 @@ fi
 # ::1 entry, so this restores its behaviour rather than changing the tests.
 # Non-Node suites ignore NODE_OPTIONS.
 NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--dns-result-order=ipv4first" \
-  bash /tests/test.sh > /logs/swe-bench-pro-verifier.log 2>&1
+  timeout -k 30 3000 bash /tests/test.sh > /logs/swe-bench-pro-verifier.log 2>&1 || true
 
 # test.sh's trap always writes reward.txt; a missing one means the verifier
 # itself never ran, which -1 reports as "not graded" (rule 18).

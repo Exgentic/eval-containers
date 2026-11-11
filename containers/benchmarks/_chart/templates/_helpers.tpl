@@ -190,7 +190,7 @@ emptyDir: {}
      evals/<benchmark>-<task>--<agent>; shared-env benchmarks → evals/<benchmark>--<agent>.
      (benchmarks/RULES.md — eval-image naming.) */}}
 {{- define "eval.runnerImage" -}}
-{{- $ba := ternary (printf "%s-%s--%s" .benchmark .task .agent) (printf "%s--%s" .benchmark .agent) (.perTask | default false) -}}
+{{- $ba := ternary (printf "%s-%s--%s" .benchmark .task .agent | lower) (printf "%s--%s" .benchmark .agent) (.perTask | default false) -}}
 {{- if .runnerImageRef }}{{ .runnerImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" $ba }}{{ .imageSuffix }}:{{ .runnerTag }}{{ else }}{{ .registry }}/evals/{{ $ba }}:{{ .runnerTag }}{{ end -}}
 {{- end -}}
 

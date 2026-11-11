@@ -276,6 +276,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(ref v) = args.task_id {
         envs.push(("EVAL_TASK_ID", v.clone()));
+        // Image repositories must be lowercase; preserve the original task id
+        // separately because it is benchmark identity and output metadata.
+        envs.push(("EVAL_TASK_IMAGE_ID", v.to_lowercase()));
     }
 
     // Container tags

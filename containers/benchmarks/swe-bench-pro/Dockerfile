@@ -58,13 +58,15 @@ COPY instruction.md /task/instruction.md
 # Root-only verifier — never agent-readable. config.json names the graded tests
 # and test_patch.patch holds the hidden tests.
 COPY tests /tests
-# Record the pristine tree so grading can restore it: the base commit, and the
-# untracked files the base image already carries (e.g. a redis appendonlydir),
-# which a `git clean` must not remove.
+# Record the pristine tree so grading can restore it: the base commit, local Git
+# config, and an archive of the untracked files the base image already carries.
+# The NUL-separated list also handles spaces and glob characters literally.
 RUN cd /app 2>/dev/null || cd /testbed && \
     git config --global --add safe.directory '*' && \
     git rev-parse HEAD > /tests/.base_commit && \
-    git ls-files --others --exclude-standard > /tests/.base_untracked && \
+    cp .git/config /tests/.base_git_config && \
+    git ls-files -z --others --exclude-standard > /tests/.base_untracked && \
+    tar --null -T /tests/.base_untracked -cf /tests/.base_untracked.tar && \
     chmod -R 700 /tests && chown -R root:root /tests
 
 COPY --from=pipeline grade.sh /grade.sh
