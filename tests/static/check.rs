@@ -1011,7 +1011,9 @@ fn agent_env_reaches_the_agent() {
     // sets itself: the gateway URLs (every token count and budget is read there),
     // and the runtime the agent runs on (rule 7).
     assert!(
-        ra.contains("PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*_BASE|*_ENDPOINT|*PROXY*|LD_*)"),
+        ra.contains(
+            "PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*_BASE|*_ENDPOINT|*PROXY*|LD_*|NODE_OPTIONS|NODE_PATH|PYTHON*|BASH_ENV|ENV)"
+        ),
         "run-agent must refuse to forward a name it sets for the agent itself — \
          a forwarded var would override it"
     );
@@ -1161,7 +1163,7 @@ fn opencode_reply_cap_is_raised() {
 fn pi_reply_cap_is_raised() {
     let dockerfile = repo_root().join("containers/agents/pi/Dockerfile");
     assert!(fs::read_to_string(dockerfile).unwrap().contains(
-        r#"? "max_tokens" : "max_completion_tokens"] = ${PI_MAX_OUTPUT_TOKENS:-128000};"#
+        r#"? "max_tokens" : "max_completion_tokens"] = Number(process.env.PI_MAX_OUTPUT_TOKENS) || 128000;"#
     ));
 }
 

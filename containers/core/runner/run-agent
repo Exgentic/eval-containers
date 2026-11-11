@@ -65,7 +65,8 @@ fi
 # ANTHROPIC_BASE_URL, say — or any *_BASE / *_ENDPOINT spelling an agent reads
 # instead (OPENAI_API_BASE, LLM_BASE_URL) — pointed the agent past the gateway,
 # whose records are every token count and budget the run reports; PATH, HOME, a
-# proxy or LD_PRELOAD swapped the agent's runtime underneath it (rule 7).
+# proxy, LD_PRELOAD, NODE_OPTIONS, PYTHONPATH or BASH_ENV swapped the agent's
+# runtime underneath it (rule 7).
 forward=()
 for name in ${EVAL_AGENT_ENV:-}; do
   if ! [[ "$name" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
@@ -77,7 +78,7 @@ for name in ${EVAL_AGENT_ENV:-}; do
     EVAL_*|JOB_*|EXPECTED_*|*TASK*|*ANSWER*|*KEY*|*TOKEN|*TOKEN_*|*SECRET*|*PASSWORD*|*CREDENTIAL*|*AUTH*)
       echo "run-agent: EVAL_AGENT_ENV names $name, which the agent must not receive" >&2
       exit 2 ;;
-    PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*_BASE|*_ENDPOINT|*PROXY*|LD_*)
+    PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*_BASE|*_ENDPOINT|*PROXY*|LD_*|NODE_OPTIONS|NODE_PATH|PYTHON*|BASH_ENV|ENV)
       echo "run-agent: EVAL_AGENT_ENV names $name, which would replace the agent's own runtime or gateway" >&2
       exit 2 ;;
   esac

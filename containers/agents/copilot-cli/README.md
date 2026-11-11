@@ -17,7 +17,7 @@ GitHub Copilot CLI is the terminal-facing Copilot agent that can read a workspac
 
 ## How Eval Containers runs it
 
-The entrypoint sets `COPILOT_PROVIDER_BASE_URL=$OPENAI_BASE_URL/v1`, `COPILOT_PROVIDER_API_KEY=$OPENAI_API_KEY`, `COPILOT_OFFLINE=true`, and `COPILOT_MODEL=$COPILOT_MODEL`, then pipes `$TASK` into `copilot --yolo` over stdin. `--yolo` auto-approves all tool calls. Output is printed to stdout.
+The entrypoint sets `COPILOT_PROVIDER_BASE_URL=$OPENAI_BASE_URL/v1`, `COPILOT_PROVIDER_API_KEY=$OPENAI_API_KEY`, `COPILOT_OFFLINE=true`, and `COPILOT_MODEL=$MODEL`, then pipes `$TASK` into `copilot --yolo` over stdin. `--yolo` auto-approves all tool calls. Output is printed to stdout.
 
 ## Version
 
