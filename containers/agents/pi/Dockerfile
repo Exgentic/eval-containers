@@ -34,13 +34,12 @@ CONF
 # exit 0. Raise it to 128000 (as opencode's is) on the request itself. The cap is
 # reserved out of the context window, so a model whose window is under ~160k
 # rejects every call: set PI_MAX_OUTPUT_TOKENS (through the launch's agent env)
-# to fit, e.g. 32000 for a 131k model. It is pasted into the JS, so it must be a
-# number: anything else would break the extension or run as code.
-[[ "${PI_MAX_OUTPUT_TOKENS:-128000}" =~ ^[0-9]+$ ]] || { echo "pi: PI_MAX_OUTPUT_TOKENS must be a number, not '${PI_MAX_OUTPUT_TOKENS}'" >&2; exit 2; }
-cat > "$PI_CODING_AGENT_DIR/reply-cap.js" <<X
+# to fit, e.g. 32000 for a 131k model. The JS reads it from the environment, so
+# no value is ever pasted into code.
+cat > "$PI_CODING_AGENT_DIR/reply-cap.js" <<'X'
 export default function (pi) {
   pi.on("before_provider_request", ({ payload }) => {
-    payload["max_tokens" in payload ? "max_tokens" : "max_completion_tokens"] = ${PI_MAX_OUTPUT_TOKENS:-128000};
+    payload["max_tokens" in payload ? "max_tokens" : "max_completion_tokens"] = Number(process.env.PI_MAX_OUTPUT_TOKENS) || 128000;
     return payload;
   });
 }
