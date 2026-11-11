@@ -1082,6 +1082,44 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
+/// `EVAL_MODEL_CONTEXT` (agents/RULES.md 25-28): run-agent forwards it, refuses a
+/// malformed value (27), and only warns for an agent that doesn't read it (28);
+/// compose, the chart and the CLI each set it only when asked.
+#[test]
+fn model_context_wired_through_to_agents() {
+    let root = repo_root();
+    let read =
+        |p: &str| fs::read_to_string(root.join(p)).unwrap_or_else(|e| panic!("read {p}: {e}"));
+    let run_agent = read("containers/core/runner/run-agent");
+    assert!(
+        run_agent.contains(r#"EVAL_MODEL_CONTEXT="${EVAL_MODEL_CONTEXT:-}""#),
+        "run-agent's `env -i` allow-list must pass EVAL_MODEL_CONTEXT or the agent can't read it"
+    );
+    assert!(
+        run_agent.contains(r#"[[ "$EVAL_MODEL_CONTEXT" =~ ^[1-9][0-9]*$ ]]"#),
+        "run-agent must refuse an EVAL_MODEL_CONTEXT that is not a positive integer (rule 27)"
+    );
+    assert!(
+        run_agent.contains("grep -q EVAL_MODEL_CONTEXT /run.sh \\\n    || echo"),
+        "run-agent must warn, not exit, when the agent's /run.sh doesn't read EVAL_MODEL_CONTEXT (rule 28)"
+    );
+    assert!(
+        read("containers/compose/runner.yaml")
+            .contains("EVAL_MODEL_CONTEXT: ${EVAL_MODEL_CONTEXT:-}"),
+        "compose runner.yaml must forward EVAL_MODEL_CONTEXT (optional, no default)"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("modelContext: \"\""),
+        "_chart/values.yaml must ship `modelContext: \"\"` — empty default, agent's own window"
+    );
+    let job = read("containers/benchmarks/_chart/templates/job.yaml");
+    assert!(
+        job.contains("with $v.modelContext")
+            && job.contains("name: EVAL_MODEL_CONTEXT, value: {{ . | int64 | quote }}"),
+        "job.yaml must render EVAL_MODEL_CONTEXT from .modelContext, as an integer, only when set"
+    );
+}
+
 /// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —
 /// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
 /// run-agent forwards it and WARNS (does not fail) for an agent whose /run.sh

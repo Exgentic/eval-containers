@@ -61,6 +61,7 @@ shared artifact that ignores `EVAL_MODEL`. Both are pull-not-build; see
 | `EVAL_TIMEOUT` | Agent timeout in seconds | `300` |
 | `EVAL_MODEL_MAX_BUDGET` | Hard cap on model spend (USD) for this run | `1` |
 | `EVAL_AGENT_REASONING_EFFORT` | Reasoning effort the agent applies (`low`/`medium`/`high`; some also accept `xhigh`/`max`) | agent default |
+| `EVAL_MODEL_CONTEXT` | The model's context window in tokens; a supporting agent fits its requests within it, others warn and keep their own | agent's own |
 | `EVAL_REGISTRY` | Registry to pull from | `ghcr.io/exgentic` |
 
 Supported agents: **codex, claude-code, claude-code-rtk, aider, cline,
