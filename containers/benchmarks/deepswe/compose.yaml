@@ -21,10 +21,12 @@ services:
       # applies and the agent is killed (exit 124) long before it can finish.
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-10800}
       TIMEOUT: ${EVAL_TIMEOUT:-10800}
-    # Rule 10 / 24e — matches the chart's per-benchmark preset (2 CPU / 8Gi),
-    # taken from each task.toml's [environment] cpus/memory_mb.
+    # Rule 10 / 24e — matches the chart's per-benchmark preset (2 CPU / 12Gi),
+    # taken from each task.toml's [environment] cpus/memory_mb, with memory raised
+    # from 8G to 12G after OOMs at it — a small step, not a measured size: see
+    # presets/deepswe.yaml.
     deploy:
       resources:
         limits:
           cpus: "2"
-          memory: 8G
+          memory: 12G

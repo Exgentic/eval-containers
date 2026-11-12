@@ -17,7 +17,7 @@
 # nothing when unused — `limits` is a ceiling, and `requests` (what the scheduler
 # reserves against the Kueue memory quota) stays at the chart default 512Mi.
 #
-# memory: upstream's max memory_mb (8192 MiB). Note the runner's /tmp is an
+# memory: upstream's max memory_mb (8192 MiB), raised to 12Gi (see below). Note the runner's /tmp is an
 # in-memory emptyDir (`medium: Memory`, 1Gi in job.yaml), so tmpfs pages count
 # against this limit — another reason not to sit at the 2Gi mode.
 #
@@ -30,9 +30,17 @@
 # node for all 89 tasks when nearly none approach it.
 #
 # Rule 24e: these limits MUST match compose.yaml's `deploy.resources.limits`
-# modulo k8s unit syntax. compose carries the cpu/memory pair (2/8G — Compose has
+# modulo k8s unit syntax. compose carries the cpu/memory pair (2/12G — Compose has
 # no ephemeral-storage concept, so storage is k8s-only, as in presets/deepswe.yaml).
 # An operator can still raise memory for a single run with `--set memoryOverride=`.
+#
+# memory is 12Gi, a deliberate small step above upstream's 8Gi max, not a measured
+# size: at 8Gi, 5 of 87 tasks were OOM-killed for DeepSeek-V4.1-Flash-1017-staging
+# (runs/terminal-bench/claude-code/rits--deepseek-ai--DeepSeek-V4.1-Flash-1017-staging/
+# 20261021-185242-a49a: circuit-fibsqrt, compile-compcert, filter-js-from-html,
+# rstan-to-pystan, train-fasttext) and 1 for Muse-Spark-Open-NVFP4
+# (runs/terminal-bench/claude-code/Muse-Spark-Open-NVFP4/20261110-122535-df14:
+# rstan-to-pystan). Peak memory is to be measured on the next run (#745).
 #
 # cpus stays at the chart default '2' rather than upstream's max of 4: only 3 of
 # 89 tasks ask for 4, CPU is compressible (throttling slows a task, it does not
@@ -44,5 +52,5 @@ resources:
     ephemeral-storage: 2Gi
   limits:
     cpu: '2'
-    memory: 8Gi
+    memory: 12Gi
     ephemeral-storage: 10Gi
