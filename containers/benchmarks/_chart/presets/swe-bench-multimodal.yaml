@@ -1,5 +1,8 @@
 # cpu/memory match compose.yaml (rule 24e). Grading carbon's jest suite needs 6-7
 # GB; the chart default of 2Gi would kill the verifier, which grades a correct fix 0.
+# Memory is 24Gi, not 12Gi: on the same 395 tasks (claude-code, Muse-Spark-Open),
+# 18 tasks were OOM-killed at 12Gi (run 20261111-121113-6c9e, 14 of them carbon)
+# and 2 at 24Gi (run 20261111-182439-5b7a). Peak usage was not measured.
 timeout: '1800'
 # grade.sh gives the tests the harness's own 1800 s; the pod must outlive that.
 deadlineGrace: 2100
@@ -15,5 +18,5 @@ resources:
     ephemeral-storage: 2Gi
   limits:
     cpu: '2'
-    memory: 12Gi
+    memory: 24Gi
     ephemeral-storage: 24Gi
