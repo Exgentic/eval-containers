@@ -16,10 +16,10 @@ services:
       BENCHMARK: cybergym
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-15000}
       TIMEOUT: ${EVAL_TIMEOUT:-15000}
-    # Rule 10 / 24e — matches the chart preset. 4G is a small step up from the
-    # shared 2G default, not a measured size: see presets/cybergym.yaml.
+    # Rule 10 / 24e — matches the chart preset.
     deploy:
       resources:
         limits:
           cpus: "2"
+          # 4G: small step from the 2G default after OOMs; size TBD (#745)
           memory: 4G
