@@ -37,6 +37,8 @@
 # cpus stays at the chart default '2' rather than upstream's max of 4: only 3 of
 # 89 tasks ask for 4, CPU is compressible (throttling slows a task, it does not
 # fail it), and raising it would widen the Kueue cpu reservation for every task.
+# 18000s: k8s ignores the per-task timeout label (kind reads it), so tasks got the 300s default; covers upstream's 12000s max (#745)
+timeout: '18000'
 resources:
   requests:
     cpu: 300m
