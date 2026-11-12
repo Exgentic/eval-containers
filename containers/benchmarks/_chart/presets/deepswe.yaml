@@ -40,6 +40,14 @@
 # so a run that would have breached $3 is visible after the fact.
 timeout: '10800'
 deadlineGrace: 1800
+# memory is 12Gi, a deliberate small step above task.toml's 8192 MiB, not a
+# measured size: at 8Gi, 2 of 113 tasks were OOM-killed for Muse-Spark-Open-NVFP4
+# (runs/deepswe/claude-code/Muse-Spark-Open-NVFP4/20261105-114658-facb:
+# pebble-durability-wait-apis, wazero-multi-module-snapshots) and 3 for
+# DeepSeek-V4.1-Flash-1017-staging (runs/deepswe/claude-code/rits--deepseek-ai--
+# DeepSeek-V4.1-Flash-1017-staging/20261021-160820-2af8: kea-atomic-signal-selectors,
+# prometheus-transactional-reload-status, scc-bounded-memory-spilling). Peak memory
+# is to be measured on the next run (#745).
 resources:
   requests:
     cpu: 300m
@@ -47,5 +55,5 @@ resources:
     ephemeral-storage: 2Gi
   limits:
     cpu: '2'
-    memory: 8Gi
+    memory: 12Gi
     ephemeral-storage: 24Gi
