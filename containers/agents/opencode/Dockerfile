@@ -66,15 +66,26 @@ export OPENCODE_DISABLE_AUTOUPDATE=1
 export OPENCODE_DISABLE_MODELS_FETCH=1
 # Auto-compaction silently summarizes the context mid-run, which corrupts a
 # recorded trajectory (the replay fixture must be the real turn sequence) and
-# was a source of anomalous results in the 113-task sweep. Keep the window
-# honest: fail loud on overflow rather than quietly rewriting history.
+# was a source of anomalous results in the 113-task sweep. This flag only stops
+# the proactive token-count trigger, which never fires here anyway (the
+# eval-containers model has no `limit`, so its window counts as 0). In 1.4.3 a
+# provider context-overflow error still compacts and continues, flag or not.
 export OPENCODE_DISABLE_AUTOCOMPACT=1
-# opencode's own cap is 32000, and a turn cut there ends the session with exit 0.
-# The cap is reserved out of the context window, so a model whose window is under
-# ~160k rejects the first call: set OPENCODE_MAX_OUTPUT_TOKENS (through the
-# launch's agent env) to fit, e.g. 32000 for a 131k model. Not the upstream name:
-# run-agent refuses any *TOKEN_* name in the agent env.
-export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}"
+# opencode's own cap is 32000, and a turn cut there ends the session with exit 0,
+# so it is raised to OPENCODE_MAX_OUTPUT_TOKENS (128000 unless the launch's agent
+# env sets it; not the upstream name, as run-agent refuses any *TOKEN_* name
+# there). The cap is reserved out of the context window, so when EVAL_MODEL_CONTEXT
+# (agents rule 25) states the window the cap becomes min(that, window/4): 32768 on
+# a 131k model, where 128000 rejects the first call. A non-numeric
+# OPENCODE_MAX_OUTPUT_TOKENS means 128000 then. The window sizes only the cap: a
+# prompt past window − cap draws the provider's overflow error, which opencode
+# answers by compacting (above).
+CAP="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}"
+if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
+  [[ "$CAP" =~ ^[1-9][0-9]*$ ]] || CAP=128000
+  CAP=$(( CAP < EVAL_MODEL_CONTEXT / 4 ? CAP : EVAL_MODEL_CONTEXT / 4 ))
+fi
+export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="$CAP"
 # `--`: end-of-options. A task whose text begins with "-" is otherwise parsed as
 # a flag — `opencode run` then prints its usage and exits 1 WITHOUT running, which
 # scores as reward 0 and is indistinguishable from a wrong answer (observed on
