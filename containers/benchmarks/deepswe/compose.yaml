@@ -22,11 +22,10 @@ services:
       EVAL_TIMEOUT: ${EVAL_TIMEOUT:-10800}
       TIMEOUT: ${EVAL_TIMEOUT:-10800}
     # Rule 10 / 24e — matches the chart's per-benchmark preset (2 CPU / 12Gi),
-    # taken from each task.toml's [environment] cpus/memory_mb, with memory raised
-    # from 8G to 12G after OOMs at it — a small step, not a measured size: see
-    # presets/deepswe.yaml.
+    # taken from each task.toml's [environment] cpus/memory_mb.
     deploy:
       resources:
         limits:
           cpus: "2"
+          # 12G: small step from 8G after OOMs; size TBD (#745)
           memory: 12G

@@ -3,17 +3,12 @@
 # README). Without this preset the chart's 300s default applied on the cluster,
 # so cluster runs got 1/50th of the budget a local run gets.
 timeout: '15000'
-# Memory is 4Gi, a deliberate small step up from the chart's 2Gi default, not a
-# measured size: at 2Gi, 5 of 100 tasks were OOM-killed for Muse-Spark-Open-NVFP4
-# (runs/cybergym/claude-code/Muse-Spark-Open-NVFP4/20261109-143245-5265: 10306,
-# 11248, 11256, 12818, 14565) and 5 for DeepSeek-V4.1-Flash-1017
-# (runs/cybergym/claude-code/rits--deepseek-ai--DeepSeek-V4.1-Flash-1017/
-# 20261026-145228-2490: 10882, 11033, 11081, 11248, 12616). Peak memory is to be
-# measured on the next run (#745). cpu/memory match compose.yaml (rule 24e).
+# cpu/memory match compose.yaml (rule 24e).
 resources:
   requests:
     cpu: 300m
     memory: 512Mi
   limits:
     cpu: '2'
+    # 4Gi: small step from the 2Gi default after OOMs; size TBD (#745)
     memory: 4Gi
