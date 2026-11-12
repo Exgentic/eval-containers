@@ -33,7 +33,9 @@ use std::time::Duration;
 // ─── Known-broken loader ──────────────────────────────────────────
 
 fn known_broken_benchmarks() -> HashSet<String> {
-    let Ok(text) = fs::read_to_string("tests/build/known-broken.md") else {
+    let Ok(text) =
+        fs::read_to_string(test_support::repo_root().join("tests/build/known-broken.md"))
+    else {
         return HashSet::new();
     };
     let mut out = HashSet::new();
@@ -300,8 +302,8 @@ fn extract_label_value_parses() {
 fn known_broken_parses_table() {
     let broken = known_broken_benchmarks();
     assert!(
-        broken.contains("appworld"),
-        "appworld should be in known-broken list; got: {broken:?}"
+        broken.contains("hle"),
+        "hle should be in known-broken list; got: {broken:?}"
     );
     assert!(
         broken.contains("flores200"),

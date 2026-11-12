@@ -228,10 +228,11 @@ fn per_task_compose_runner_image_is_task_aware() {
             continue;
         }
         let compose = read(&dir.join("compose.yaml"));
-        let needle = format!("/evals/{name}-${{EVAL_TASK_ID");
-        if !compose.contains(&needle) {
+        let direct = format!("/evals/{name}-${{EVAL_TASK_ID");
+        let image_safe = format!("/evals/{name}-${{EVAL_TASK_IMAGE_ID:-${{EVAL_TASK_ID:?}}}}");
+        if !compose.contains(&direct) && !compose.contains(&image_safe) {
             issues.push(format!(
-                "{name}/compose.yaml runner image is not task-aware (expected to contain `{needle}…`)"
+                "{name}/compose.yaml runner image is not task-aware (expected `{direct}…` or `{image_safe}`)"
             ));
         }
     }

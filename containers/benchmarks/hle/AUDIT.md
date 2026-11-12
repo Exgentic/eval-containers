@@ -16,7 +16,7 @@ commit: 1a344fd
 | isolation | ? | not audited per-benchmark |
 | oracle | ✓ | gold=1.0 / no-op=0.0 — `eval-containers oracle hle` |
 | traces-reviewed | ? | |
-| replicate-official | ? | |
+| replicate-official | ✗ | by design: exact-match grading vs the official LLM judge (whose default model, o3-mini, is shut down). Legacy; superseded by HLE-Diamond (#733). See README. |
 
 ## Safety — can the run harm us or cheat?
 

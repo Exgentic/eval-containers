@@ -16,6 +16,11 @@ services:
     image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/deepswe-${EVAL_TASK_ID:?}--${EVAL_AGENT:-claude-code}:latest
     environment:
       BENCHMARK: deepswe
+      # Upstream's [agent].timeout_sec (10800s on every task at the pinned ref),
+      # matching the chart preset. Without this the runner's generic 300s default
+      # applies and the agent is killed (exit 124) long before it can finish.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-10800}
+      TIMEOUT: ${EVAL_TIMEOUT:-10800}
     # Rule 10 / 24e — matches the chart's per-benchmark preset (2 CPU / 8Gi),
     # taken from each task.toml's [environment] cpus/memory_mb.
     deploy:

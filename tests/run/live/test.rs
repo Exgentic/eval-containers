@@ -187,9 +187,9 @@ fn per_task_representative(name: &str) -> Option<&'static str> {
         "compilebench" => Some("curl"),
         "cybench" => Some("LosFuzzys/GlacierCTF2023_writeups/intro/skilift"),
         "mle-bench" => Some("spaceship-titanic"),
-        "swe-bench-pro" => {
-            Some("instance_NodeBB__NodeBB-04998908ba6721d64eba79ae3b65a351dcfbc5b5-vnan")
-        }
+        "swe-bench-pro" => Some(
+            "instance_qutebrowser__qutebrowser-e57b6e0eeeb656eb2c84d6547d5a0a7333ecee85-v2ef375ac784985212b1805e1d0431dc8f1b3c171",
+        ),
         "swe-lancer" => Some("16912_4"),
         "terminal-bench" => Some("hello-world"),
         // ibex is the lightest hwe-bench base (SystemVerilog/Verilator, no
