@@ -5,6 +5,16 @@ mkdir -p "$XDG_CONFIG_HOME/crush"
 DM="${MODEL:-default}"
 DB="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
+# EVAL_MODEL_CONTEXT (agents rules 25-26) is crush's context_window (128000
+# unless told), and crush keeps its own summarizing: when 20% of the window is
+# left (20k above 200k). Its reply cap, 8192, is already min(its cap, window/4)
+# for any window it can fit; 80% plus 8192 fits from 40960 up, and a smaller
+# window fails before the first call.
+CW="${EVAL_MODEL_CONTEXT:-128000}"
+if [ "$CW" -lt 40960 ]; then
+  echo "crush: EVAL_MODEL_CONTEXT=$CW is too small to hold a reply and a compacted prompt" >&2
+  exit 2
+fi
 cat > "$XDG_CONFIG_HOME/crush/crush.json" <<CONF
 {
   "\$schema": "https://charm.land/crush.json",
@@ -13,7 +23,7 @@ cat > "$XDG_CONFIG_HOME/crush/crush.json" <<CONF
       "type": "openai-compat",
       "base_url": "${DB}",
       "api_key": "\$OPENAI_API_KEY",
-      "models": [{"id":"${DM}","name":"${DM}","context_window":128000,"default_max_tokens":8192}]
+      "models": [{"id":"${DM}","name":"${DM}","context_window":${CW},"default_max_tokens":8192}]
     }
   },
   "permissions": {

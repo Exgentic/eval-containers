@@ -21,6 +21,11 @@ I
 RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/bash
 # web_search must be the top-level key (codex ignores [tools].web_search).
+# EVAL_MODEL_CONTEXT (agents rules 25-26) is codex's model_context_window (272k
+# unless told), and codex keeps its own compaction: at 90% of it, counting the
+# tool results it is about to send (bytes/4), so a large one compacts before the
+# next request. codex sends no reply cap, so nothing is reserved; a reply uses
+# what is left of the window.
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 exec codex exec \
   --model "${MODEL:-default}" \
@@ -31,6 +36,7 @@ exec codex exec \
   -c 'web_search="live"' \
   -c 'tools.view_image=true' \
   ${EVAL_AGENT_REASONING_EFFORT:+-c model_reasoning_effort=$EVAL_AGENT_REASONING_EFFORT} \
+  ${EVAL_MODEL_CONTEXT:+-c model_context_window=$EVAL_MODEL_CONTEXT} \
   --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check "$TASK"
 E
 
