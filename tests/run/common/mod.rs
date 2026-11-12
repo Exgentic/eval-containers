@@ -2,7 +2,12 @@
 #![allow(dead_code)]
 
 use eval_containers::{bake, naming};
+use std::path::Path;
+use testcontainers::core::{Mount, WaitFor};
+use testcontainers::runners::AsyncRunner;
+use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 use tokio::process::Command;
+use tokio::sync::OnceCell;
 
 /// Local-only registry used by the classic build path so podman can't force-pull a
 /// stale published base over what we just built. Overridable via `REGISTRY`.
@@ -196,3 +201,147 @@ pub fn build_target_classic(target: &str, overrides: &[&str], envs: &[(&str, &st
         .unwrap_or_else(|e| panic!("docker build {target}: {e}"));
     assert!(status.success(), "classic docker build failed for {target}");
 }
+
+// ─── Agent eval images (agents-smoke carrier) ───────────────────────
+
+static BASES_BUILT: OnceCell<()> = OnceCell::const_new();
+static SMOKE_BENCH_BUILT: OnceCell<()> = OnceCell::const_new();
+
+/// Nightly-only image bootstrap. When `AGENTS_SMOKE_BUILD` is set, build the
+/// `agents-smoke--<agent>` eval image from local source so a fresh runner (with
+/// an empty registry) can run the suite: bake the core bases once, build the
+/// shared agents-smoke benchmark once, then this agent's image and the combined
+/// eval. Unset — the default for local/PR runs — it is a no-op, preserving this
+/// suite's contract of running against prebuilt images.
+pub async fn ensure_agent_image(agent: &str) {
+    if std::env::var_os("AGENTS_SMOKE_BUILD").is_none() {
+        return;
+    }
+    BASES_BUILT
+        .get_or_init(|| async {
+            // agents-smoke is FROM python:3.12-slim with an inline grader, so the
+            // only bases this suite boots are the runtime images: gosu, otel,
+            // model-replay, and the agent-base-* the agents FROM. No
+            // benchmark-base-*, no llm-bridge.
+            bake_targets(&[
+                "otel",
+                "gosu",
+                "model-replay",
+                "agent-base-node",
+                "agent-base-python",
+                "agent-base-rust",
+            ])
+            .await;
+        })
+        .await;
+    SMOKE_BENCH_BUILT
+        .get_or_init(|| async { cargo_build(&["build", "bench", "agents-smoke"]) })
+        .await;
+    cargo_build(&["build", "agent", agent]);
+    cargo_build(&[
+        "build",
+        "eval",
+        "agents-smoke",
+        "--agent",
+        agent,
+        "--no-pull",
+    ]);
+}
+
+/// Shell `cargo run -- <args>` (the framework's own build CLI) and assert success.
+pub fn cargo_build(args: &[&str]) {
+    let status = std::process::Command::new("cargo")
+        .args(["run", "--"])
+        .args(args)
+        .status()
+        .unwrap_or_else(|e| panic!("cargo run -- {}: {e}", args.join(" ")));
+    assert!(status.success(), "cargo run -- {} failed", args.join(" "));
+}
+
+pub async fn start_agent(
+    agent: &str,
+    net: &str,
+    mock_host: &str,
+    output_dir: &Path,
+    extra_env: &[(&str, String)],
+) -> ContainerAsync<GenericImage> {
+    // We use the agents-smoke EVAL image (NOT the bare agent image): its
+    // ENTRYPOINT is core/entrypoint/eval-entrypoint.sh which handles
+    // user creation + install.sh + `su` into non-root. The bare agent
+    // image lacks that wrapper, and several agents (claude-code, others)
+    // refuse to run as root or have unresolved PATH entries without
+    // install.sh having run. agents-smoke is a purpose-built test-only
+    // benchmark — single task "Reply OK", grader unconditionally passes.
+    //
+    // Env vars mirror what compose/services.yaml + benchmarks/agents-smoke
+    // pass to the runner in production. eval-entrypoint reads them
+    // and forwards through `su agent -c "..."`.
+    //
+    // `/output` is bind-mounted to the host tempdir so the panic path
+    // can read `agent/stdout.log` / `agent/stderr.log` directly from
+    // the host filesystem — eval-entrypoint redirects `su agent` output
+    // into those files inside the container, and the container is
+    // typically already stopped by the time the panic path runs.
+    let mut req = GenericImage::new(
+        format!("ghcr.io/exgentic/evals/agents-smoke--{agent}"),
+        "latest".to_string(),
+    )
+    // The eval entrypoint exits when the agent finishes (or the
+    // EVAL_TIMEOUT trips). We don't tie the readiness probe to that
+    // — we want to start polling the mock's stderr immediately.
+    .with_wait_for(WaitFor::seconds(1))
+    .with_network(net)
+    .with_mount(Mount::bind_mount(
+        output_dir.to_str().expect("utf8 output dir"),
+        "/output",
+    ))
+    .with_env_var("EVAL_BENCHMARK", "agents-smoke")
+    .with_env_var("EVAL_AGENT", agent)
+    .with_env_var("EVAL_TASK_ID", "0")
+    // EVAL_MODEL is the handle the edge pins to; MODEL is what the agent and
+    // result.json see. Production splits them the same way — collapsing them
+    // makes litellm-based agents try to *call* the pin target and never reach
+    // the LLM at all.
+    .with_env_var("EVAL_MODEL", PINNED_MODEL)
+    .with_env_var("MODEL", "mock")
+    // Distinctive so "never in a record" cannot pass by accident.
+    .with_env_var("OPENAI_API_KEY", UPSTREAM_CREDENTIAL)
+    // Cap the agent's own runtime so a hung agent doesn't keep
+    // burning until the cargo timeout.
+    .with_env_var("EVAL_TIMEOUT", "180")
+    // All three protocol URLs — each agent picks exactly one
+    // (agents/RULES.md, "Protocol exclusivity"). Path prefixes per
+    // the protocol-namespaced gateway contract.
+    .with_env_var(
+        "ANTHROPIC_BASE_URL",
+        format!("http://{mock_host}:4000/anthropic"),
+    )
+    .with_env_var(
+        "OPENAI_BASE_URL",
+        format!("http://{mock_host}:4000/openai/v1"),
+    )
+    .with_env_var(
+        "GOOGLE_GEMINI_BASE_URL",
+        format!("http://{mock_host}:4000/genai"),
+    )
+    .with_env_var("ANTHROPIC_API_KEY", "sk-proxy")
+    .with_env_var("OPENAI_API_KEY", "sk-proxy")
+    .with_env_var("GEMINI_API_KEY", "sk-proxy");
+    for (k, v) in extra_env {
+        req = req.with_env_var(*k, v.clone());
+    }
+    req.start().await.unwrap_or_else(|e| {
+        panic!(
+            "start eval image evals/agents-smoke--{agent}:latest — is it built? \
+             Run `cargo test --test build -- --ignored` first.\n\
+             Underlying error: {e:?}"
+        )
+    })
+}
+
+/// What EVAL_MODEL is set to, so the pin is unambiguous in the record: no agent
+/// would send this of its own accord.
+pub const PINNED_MODEL: &str = "smoke/pinned-by-the-edge";
+
+/// The upstream credential the edge injects toward the mock.
+pub const UPSTREAM_CREDENTIAL: &str = "smoke-upstream-credential";

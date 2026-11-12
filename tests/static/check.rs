@@ -1245,6 +1245,17 @@ fn run_with_stub(
     stub: &str,
     window: Option<u64>,
 ) -> std::process::Output {
+    run_with_stub_env(agent, binary, stub, window, None)
+}
+
+/// `run_with_stub`, with one more variable in the script's environment.
+fn run_with_stub_env(
+    agent: &str,
+    binary: &str,
+    stub: &str,
+    window: Option<u64>,
+    extra: Option<(&str, &str)>,
+) -> std::process::Output {
     let dir = repo_root().join("containers/agents").join(agent);
     let script = match fs::read_to_string(dir.join("entrypoint.sh")) {
         Ok(s) => s,
@@ -1285,6 +1296,9 @@ fn run_with_stub(
         .env("MODEL", "m");
     if let Some(w) = window {
         cmd.env("EVAL_MODEL_CONTEXT", w.to_string());
+    }
+    if let Some((k, v)) = extra {
+        cmd.env(k, v);
     }
     let out = cmd.output().expect("run bash");
     let _ = fs::remove_dir_all(&tmp);
@@ -1338,6 +1352,44 @@ echo "${PI_MAX_OUTPUT_TOKENS:-unset}""#;
     assert_eq!(
         run_with_stub("pi", "pi", stub, Some(16_384)).status.code(),
         Some(2)
+    );
+}
+
+/// opencode's reply cap fits the window it is told (agents/RULES.md 25): the cap
+/// is min(OPENCODE_MAX_OUTPUT_TOKENS or 128000, window/4), and a non-numeric cap
+/// means 128000. Unset, the cap is as before. The window sizes nothing else.
+#[test]
+fn opencode_reply_cap_fits_the_window_it_is_told() {
+    let stub = r#"echo "$OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX""#;
+    let cap = |window: Option<u64>, set: Option<&str>| {
+        let extra = set.map(|v| ("OPENCODE_MAX_OUTPUT_TOKENS", v));
+        let out = run_with_stub_env("opencode", "opencode", stub, window, extra);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    assert_eq!(
+        cap(None, None),
+        "128000",
+        "unset must leave the cap as before"
+    );
+    assert_eq!(cap(None, Some("32000")), "32000");
+    for window in [1_048_576u64, 262_144, 131_072, 32_000] {
+        let want = (window / 4).min(128_000).to_string();
+        assert_eq!(cap(Some(window), None), want, "window {window}");
+        assert_eq!(
+            cap(Some(window), Some("x")),
+            want,
+            "window {window}, non-numeric cap"
+        );
+    }
+    assert_eq!(
+        cap(Some(131_072), Some("16000")),
+        "16000",
+        "a lower cap is kept"
     );
 }
 
@@ -1485,14 +1537,6 @@ fn claude_code_keeps_its_own_reply_cap() {
             "{a} must not set CLAUDE_CODE_MAX_OUTPUT_TOKENS outside its EVAL_MODEL_CONTEXT block — Claude Code's own default fits the window"
         );
     }
-}
-
-#[test]
-fn opencode_reply_cap_is_raised() {
-    let dockerfile = repo_root().join("containers/agents/opencode/Dockerfile");
-    assert!(fs::read_to_string(dockerfile).unwrap().contains(
-        r#"export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}""#
-    ));
 }
 
 #[test]
