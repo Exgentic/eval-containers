@@ -41,7 +41,7 @@ enum Commands {
     /// Reclaim disk (wraps `docker builder prune` + `docker image prune`)
     Prune(prune::PruneArgs),
     /// Run evaluations
-    Run(run::RunArgs),
+    Run(Box<run::RunArgs>),
     /// Validate a benchmark's grading with its gold solution (gold→1.0, no-op→<1.0)
     Oracle(oracle::OracleArgs),
     /// Aggregate and report results
@@ -66,7 +66,7 @@ fn main() {
         Commands::Images(args) => images::execute(&cli.registry, args),
         Commands::Inspect(args) => inspect::execute(&cli.registry, args),
         Commands::Prune(args) => prune::execute(args),
-        Commands::Run(args) => run::execute(&cli.registry, args),
+        Commands::Run(args) => run::execute(&cli.registry, *args),
         Commands::Oracle(args) => oracle::execute(&cli.registry, args),
         Commands::Report(args) => report::execute(args),
         Commands::GenBake(args) => gen_bake::execute(args),

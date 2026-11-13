@@ -49,6 +49,8 @@ services:
       EVAL_FORCE: ${EVAL_FORCE:-}
       # Optional; the agent's entrypoint applies it (empty → agent default).
       EVAL_AGENT_REASONING_EFFORT: ${EVAL_AGENT_REASONING_EFFORT:-}
+      # Optional; the model's context window in tokens (empty → agent's own).
+      EVAL_MODEL_CONTEXT: ${EVAL_MODEL_CONTEXT:-}
       BENCHMARK: ${EVAL_BENCHMARK:-aime}
       AGENT: ${EVAL_AGENT:-claude-code}
       # Client-facing handle the agent actually sees (run-agent passes MODEL,

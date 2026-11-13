@@ -19,6 +19,8 @@ opencode is SST's open-source terminal coding agent. It supports arbitrary provi
 
 The entrypoint writes `~/.config/opencode/opencode.json` with a `eval-containers` provider (`baseURL: $OPENAI_BASE_URL/v1`), allow-listed permissions for edit/bash/webfetch, `autoshare: false`, and both auto-update and model fetching disabled. It then runs `opencode run --model "eval-containers/$MODEL" "$TASK"`. Dummy `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are set to silence auth prompts.
 
+opencode's reply cap is raised from its own 32000 to `$OPENCODE_MAX_OUTPUT_TOKENS` (128000 unless set), because a reply cut at the cap ends the session. When the launch sets `EVAL_MODEL_CONTEXT` (the model's context window, [agents rule 25](../../../.agents/agents/RULES.md)), the cap becomes min(that, window/4), so every request fits the window (32,768 on a 131k model, where 128000 rejects the first call). The window sizes only the cap. `OPENCODE_DISABLE_AUTOCOMPACT=1` is set, but in 1.4.3 it only turns off the proactive token-count trigger: a prompt past window − cap draws the provider's context-overflow error, and opencode answers that by summarizing the conversation and continuing. Unset, nothing changes.
+
 ## Version
 
 Pinned to `1.4.3` via a single `ARG AGENT_VERSION` at image build time — it

@@ -25,6 +25,20 @@ if [ -n "${EVAL_AGENT_REASONING_EFFORT:-}" ] && ! grep -q EVAL_AGENT_REASONING_E
   exit 2
 fi
 
+# EVAL_MODEL_CONTEXT is the model's context window in tokens, for an agent that
+# would otherwise size its context from a window it assumes itself (agents/RULES.md
+# 25-28). Malformed fails the run before it starts (27). An agent that doesn't
+# read it yet only warns (28): it runs exactly as it does without the variable, so
+# a launch that sets one window across several agents still runs every one.
+if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
+  if ! [[ "$EVAL_MODEL_CONTEXT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "run-agent: EVAL_MODEL_CONTEXT must be a positive integer (tokens), not '$EVAL_MODEL_CONTEXT'" >&2
+    exit 2
+  fi
+  grep -q EVAL_MODEL_CONTEXT /run.sh \
+    || echo "run-agent: EVAL_MODEL_CONTEXT is set but agent '${EVAL_AGENT:-?}' does not read it — continuing with the agent's own window" >&2
+fi
+
 # Warn (not fail) if EVAL_INTERNET=false but the agent's entrypoint doesn't
 # reference it (agents/RULES.md 20). Unlike EVAL_AGENT_REASONING_EFFORT above,
 # this is NOT the isolation boundary: benchmarks rule 9 already blocks raw
@@ -102,6 +116,7 @@ else
     TASK="${TASK:-}" MODEL="${MODEL:-}" TIMEOUT="${TIMEOUT:-300}" \
     EVAL_AGENT_REASONING_EFFORT="${EVAL_AGENT_REASONING_EFFORT:-}" \
     EVAL_INTERNET="${EVAL_INTERNET:-}" \
+    EVAL_MODEL_CONTEXT="${EVAL_MODEL_CONTEXT:-}" \
     OPENAI_BASE_URL="${OPENAI_BASE_URL:-}" OPENAI_API_KEY=sk-proxy \
     ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}" ANTHROPIC_API_KEY=sk-proxy \
     GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-}" GEMINI_API_KEY=sk-proxy \

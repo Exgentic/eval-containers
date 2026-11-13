@@ -63,3 +63,7 @@ path = "lifecycle/test.rs"
 [[test]]
 name = "translation"
 path = "gateways/translation.rs"
+
+[[test]]
+name = "context"
+path = "context/test.rs"

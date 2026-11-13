@@ -45,6 +45,18 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # don't end up posting to /openai/v1/v1/chat/completions.
 H="${OPENAI_BASE_URL:-http://model:4000}"; export OPENAI_HOST="${H%/v1}"
 export GOOSE_TELEMETRY_OFF=true
+# EVAL_MODEL_CONTEXT (agents rules 25-26) becomes goose's context limit, and goose
+# keeps its own compaction: at 80% of the limit (128k unless told). Its reply cap
+# for a model it doesn't know, 4096, is already min(its cap, window/4) for any
+# window it can fit, so it stays. 80% plus 4096 fits from 20480 up; a smaller
+# window fails before the first call.
+if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
+  if [ "$EVAL_MODEL_CONTEXT" -lt 20480 ]; then
+    echo "goose: EVAL_MODEL_CONTEXT=$EVAL_MODEL_CONTEXT is too small to hold a reply and a compacted prompt" >&2
+    exit 2
+  fi
+  export GOOSE_CONTEXT_LIMIT=$EVAL_MODEL_CONTEXT
+fi
 exec goose run -t "$TASK" --no-session -q
 E
 

@@ -35,6 +35,8 @@ non-interactive print mode (tools run unattended, no permission prompts),
 `--no-session` keeps each run self-contained, and `PI_OFFLINE=1` disables the
 pi.dev update/telemetry calls that would fail in an egress-locked container.
 
+When the launch sets `EVAL_MODEL_CONTEXT` (the model's context window, [agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint adds it to `models.json` as `contextWindow` and caps each reply at min(`$PI_MAX_OUTPUT_TOKENS` or 128000, window/4), so every request fits the window (a 32,768-token reply on a 131k model). `settings.json` sets `reserveTokens` to that cap (never below pi's 16384), so pi's own compaction point, window − `reserveTokens` (~98k on a 131k model), fits within the window together with a reply. In print mode (`pi -p`, which this image runs) pi checks that point only when the agent run ends, not between tool calls, so it never compacts during a task. Instead it compacts when the server rejects a call as too long, then retries. pi 0.73.1 recovers like this once per task: at the second rejection it stops with no answer and exits 0. Unset, nothing changes.
+
 ## Version
 
 Pinned to `0.73.1` via a single `ARG AGENT_VERSION` at image build time — it

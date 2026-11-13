@@ -193,6 +193,11 @@ spec:
             {{- with $v.reasoningEffort }}
             - { name: EVAL_AGENT_REASONING_EFFORT, value: {{ . | quote }} }
             {{- end }}
+            {{- with $v.modelContext }}
+            {{- /* int64, as maxTokens: `--set modelContext=1048576` arrives as a
+                   float and would render "1.048576e+06", which run-agent refuses. */}}
+            - { name: EVAL_MODEL_CONTEXT, value: {{ . | int64 | quote }} }
+            {{- end }}
             {{- with $v.agentEnv }}
             {{- toYaml . | nindent 12 }}
             - name: EVAL_AGENT_ENV

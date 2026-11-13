@@ -45,6 +45,7 @@ overrides the env var.
 | `--model <handle>` | `EVAL_MODEL` | the `<provider>/<model>` upstream the gateway routes to |
 | `--gateway <name>` | `EVAL_GATEWAY` | which proxy serves it (`bifrost` / `litellm` / `portkey`, or a pinned per-model image); default `bifrost` |
 | `--agent-reasoning-effort <level>` | `EVAL_AGENT_REASONING_EFFORT` | the agent applies it; e.g. `high` |
+| `--model-context <tokens>` | `EVAL_MODEL_CONTEXT` | the model's context window; a supporting agent fits its output cap and compaction to it |
 | `--task-id <id>` | `EVAL_TASK_ID` | default `0` |
 | `--mode <compose\|container\|job>` | — | default `compose` |
 | `--benchmark-tag <tag>` | `EVAL_BENCHMARK_TAG` | image tag |

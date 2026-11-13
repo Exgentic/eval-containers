@@ -92,6 +92,11 @@ pub struct RunArgs {
     #[arg(long)]
     agent_reasoning_effort: Option<String>,
 
+    /// The model's context window in tokens, for agents that size their context
+    /// to it (maps to $EVAL_MODEL_CONTEXT). Unset: each agent assumes its own.
+    #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
+    model_context: Option<u64>,
+
     /// Task ID within the benchmark (maps to $EVAL_TASK_ID)
     #[arg(long)]
     task_id: Option<String>,
@@ -273,6 +278,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(ref v) = args.agent_reasoning_effort {
         envs.push(("EVAL_AGENT_REASONING_EFFORT", v.clone()));
+    }
+    if let Some(v) = args.model_context {
+        envs.push(("EVAL_MODEL_CONTEXT", v.to_string()));
     }
     if let Some(ref v) = args.task_id {
         envs.push(("EVAL_TASK_ID", v.clone()));
@@ -692,6 +700,19 @@ fn output_sets(args: &RunArgs, benchmark: &str, agent: &str) -> Result<Vec<Strin
     ])
 }
 
+/// What the agent is told: its reasoning effort and the model's context window,
+/// each only when given (empty → the agent's own default).
+fn agent_sets(args: &RunArgs) -> Vec<String> {
+    let mut sets = Vec::new();
+    if let Some(e) = &args.agent_reasoning_effort {
+        sets.push(format!("reasoningEffort={e}"));
+    }
+    if let Some(c) = args.model_context {
+        sets.push(format!("modelContext={c}"));
+    }
+    sets
+}
+
 /// Chart values for the gateway sidecar, which the chart runs only on request:
 /// naming a gateway or its tag is that request.
 fn gateway_sets(args: &RunArgs) -> Vec<String> {
@@ -793,9 +814,7 @@ fn run_job(
         sets.push(format!("model={m}"));
     }
     sets.extend(gateway_sets(args));
-    if let Some(e) = &args.agent_reasoning_effort {
-        sets.push(format!("reasoningEffort={e}"));
-    }
+    sets.extend(agent_sets(args));
     if let Some(t) = args.timeout {
         sets.push(format!("timeout={t}"));
     }
@@ -994,6 +1013,30 @@ mod tests {
             super::gateway_sets(&parse(&["--gateway-tag", "1.2.3"])),
             ["gatewayTag=1.2.3", "gatewayEnabled=true"]
         );
+    }
+
+    // The window reaches the chart as a plain integer (the chart's int64 then
+    // keeps helm's float parse from rendering it as "1.048576e+06"), only when
+    // given, and the CLI refuses anything run-agent would (agents/RULES.md 27).
+    #[test]
+    fn job_mode_passes_the_model_context_only_when_given() {
+        use clap::Parser;
+        let parse = |extra: &[&str]| {
+            let mut argv = vec!["run", "aime", "--mode", "job", "--agent", "codex"];
+            argv.extend_from_slice(extra);
+            Cli::try_parse_from(argv).map(|c| c.run)
+        };
+        assert!(super::agent_sets(&parse(&[]).unwrap()).is_empty());
+        assert_eq!(
+            super::agent_sets(&parse(&["--model-context", "1048576"]).unwrap()),
+            ["modelContext=1048576"]
+        );
+        for bad in ["0", "-1", "128k", "1e6", "1.5"] {
+            assert!(
+                parse(&["--model-context", bad]).is_err(),
+                "--model-context {bad:?} was accepted"
+            );
+        }
     }
 
     #[test]

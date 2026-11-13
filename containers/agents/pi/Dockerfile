@@ -25,9 +25,33 @@ MODEL="${MODEL:-default}"
 export PI_CODING_AGENT_DIR="${HOME:-/app}/.pi/agent"
 export PI_OFFLINE=1
 mkdir -p "$PI_CODING_AGENT_DIR"
+# EVAL_MODEL_CONTEXT (agents rules 25-26) is the model's contextWindow, and the
+# reply cap becomes min(its cap, window/4) so every request fits. pi's own
+# compaction point is window − reserveTokens; pi ships that reserve equal to its
+# reply cap (16384 each), so the reserve follows the cap (never below 16384).
+# In print mode (which this image runs) pi checks the point only when the agent run ends, never between
+# tool calls: during a task it compacts only when the server rejects a call as
+# too long, and 0.73.1 recovers from that once per task (the second rejection
+# ends it with no answer, exit 0).
+# A non-numeric PI_MAX_OUTPUT_TOKENS means 128000 here, as in reply-cap.js.
+CTX=""
+if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
+  W=$EVAL_MODEL_CONTEXT
+  CAP=${PI_MAX_OUTPUT_TOKENS:-128000}
+  [[ "$CAP" =~ ^[1-9][0-9]*$ ]] || CAP=128000
+  CAP=$(( CAP < W / 4 ? CAP : W / 4 ))
+  RESERVE=$(( CAP > 16384 ? CAP : 16384 ))
+  if [ "$RESERVE" -ge "$W" ]; then
+    echo "pi: EVAL_MODEL_CONTEXT=$W is too small to hold a reply and a compacted prompt" >&2
+    exit 2
+  fi
+  export PI_MAX_OUTPUT_TOKENS=$CAP
+  CTX=",\"contextWindow\":${W}"
+  echo "{\"compaction\":{\"reserveTokens\":${RESERVE}}}" > "$PI_CODING_AGENT_DIR/settings.json"
+fi
 # models.json takes baseUrl as a literal (no env expansion) — interpolate here.
 cat > "$PI_CODING_AGENT_DIR/models.json" <<CONF
-{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000/openai/v1}","api":"openai-completions","apiKey":"${OPENAI_API_KEY:-sk-proxy}","models":[{"id":"${MODEL}","name":"${MODEL}"}]}}}
+{"providers":{"eval-containers":{"baseUrl":"${OPENAI_BASE_URL:-http://model:4000/openai/v1}","api":"openai-completions","apiKey":"${OPENAI_API_KEY:-sk-proxy}","models":[{"id":"${MODEL}","name":"${MODEL}"${CTX}}]}}}
 CONF
 # pi caps each reply at 16384 tokens for a custom model, and pi-ai clamps any
 # maxTokens in models.json to 32000; a reply cut there ends the session with

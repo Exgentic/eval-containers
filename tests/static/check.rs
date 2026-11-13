@@ -1082,6 +1082,387 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
+/// `EVAL_MODEL_CONTEXT` (agents/RULES.md 25-28): run-agent forwards it, refuses a
+/// malformed value (27), and only warns for an agent that doesn't read it (28);
+/// compose, the chart and the CLI each set it only when asked.
+#[test]
+fn model_context_wired_through_to_agents() {
+    let root = repo_root();
+    let read =
+        |p: &str| fs::read_to_string(root.join(p)).unwrap_or_else(|e| panic!("read {p}: {e}"));
+    let run_agent = read("containers/core/runner/run-agent");
+    assert!(
+        run_agent.contains(r#"EVAL_MODEL_CONTEXT="${EVAL_MODEL_CONTEXT:-}""#),
+        "run-agent's `env -i` allow-list must pass EVAL_MODEL_CONTEXT or the agent can't read it"
+    );
+    assert!(
+        run_agent.contains(r#"[[ "$EVAL_MODEL_CONTEXT" =~ ^[1-9][0-9]*$ ]]"#),
+        "run-agent must refuse an EVAL_MODEL_CONTEXT that is not a positive integer (rule 27)"
+    );
+    assert!(
+        run_agent.contains("grep -q EVAL_MODEL_CONTEXT /run.sh \\\n    || echo"),
+        "run-agent must warn, not exit, when the agent's /run.sh doesn't read EVAL_MODEL_CONTEXT (rule 28)"
+    );
+    assert!(
+        read("containers/compose/runner.yaml")
+            .contains("EVAL_MODEL_CONTEXT: ${EVAL_MODEL_CONTEXT:-}"),
+        "compose runner.yaml must forward EVAL_MODEL_CONTEXT (optional, no default)"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("modelContext: \"\""),
+        "_chart/values.yaml must ship `modelContext: \"\"` — empty default, agent's own window"
+    );
+    let job = read("containers/benchmarks/_chart/templates/job.yaml");
+    assert!(
+        job.contains("with $v.modelContext")
+            && job.contains("name: EVAL_MODEL_CONTEXT, value: {{ . | int64 | quote }}"),
+        "job.yaml must render EVAL_MODEL_CONTEXT from .modelContext, as an integer, only when set"
+    );
+}
+
+/// claude-code and claude-code-rtk fit the window they are told (agents/RULES.md
+/// 26): both `/run.sh`s carry the same `EVAL_MODEL_CONTEXT` block, and for each
+/// window it is run and its settings put through Claude Code 2.1.104's own
+/// compaction rule (window = min(200k, max(100k, CLAUDE_CODE_AUTO_COMPACT_WINDOW))
+/// less min(reply cap, 20k); compaction at that less 13k, or the
+/// CLAUDE_AUTOCOMPACT_PCT_OVERRIDE share of it if lower). Compaction point plus
+/// reply cap must stay within the window.
+#[test]
+fn claude_code_fits_the_window_it_is_told() {
+    let root = repo_root();
+    let block = |agent: &str| {
+        let df = fs::read_to_string(root.join(format!("containers/agents/{agent}/Dockerfile")))
+            .unwrap_or_else(|e| panic!("read {agent}: {e}"));
+        let start = df
+            .find("if [ -n \"${EVAL_MODEL_CONTEXT:-}\" ]; then\n")
+            .unwrap_or_else(|| panic!("{agent}'s /run.sh doesn't read EVAL_MODEL_CONTEXT"));
+        let end = start + df[start..].find("\nfi\n").expect("block ends in `fi`") + 4;
+        df[start..end].to_string()
+    };
+    let cc = block("claude-code");
+    assert_eq!(
+        cc,
+        block("claude-code-rtk"),
+        "the two claude-code blocks drifted apart"
+    );
+    let report = r#"w=$(( CLAUDE_CODE_AUTO_COMPACT_WINDOW < 200000 ? CLAUDE_CODE_AUTO_COMPACT_WINDOW : 200000 ))
+o=$CLAUDE_CODE_MAX_OUTPUT_TOKENS; cl=$(( w - (o < 20000 ? o : 20000) )); pt=$(( cl - 13000 ))
+if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ]; then p=$(( cl * CLAUDE_AUTOCOMPACT_PCT_OVERRIDE / 100 )); pt=$(( p < pt ? p : pt )); fi
+echo $(( pt + o ))"#;
+    for window in [
+        1_048_576u64,
+        262_144,
+        200_000,
+        131_072,
+        110_000,
+        100_000,
+        64_000,
+        32_000,
+    ] {
+        let out = std::process::Command::new("bash")
+            .args(["-c", &format!("set -euo pipefail\n{cc}{report}")])
+            .env("EVAL_MODEL_CONTEXT", window.to_string())
+            .output()
+            .expect("run bash");
+        assert!(
+            out.status.success(),
+            "window {window}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let used: u64 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap();
+        assert!(
+            used <= window,
+            "window {window}: compaction point + reply cap = {used}"
+        );
+    }
+    let tiny = std::process::Command::new("bash")
+        .args(["-c", &format!("set -euo pipefail\n{cc}")])
+        .env("EVAL_MODEL_CONTEXT", "1000")
+        .status()
+        .expect("run bash");
+    assert_eq!(
+        tiny.code(),
+        Some(2),
+        "a window too small to fit must fail before the first call"
+    );
+}
+
+/// goose fits the window it is told (agents/RULES.md 26) with its own compaction:
+/// `GOOSE_CONTEXT_LIMIT` is the window and no threshold is set, so it compacts at
+/// 80%; that plus its 4096-token reply cap fits from 20480 up, and a smaller
+/// window fails before the first call.
+#[test]
+fn goose_fits_the_window_it_is_told() {
+    let df = fs::read_to_string(repo_root().join("containers/agents/goose/Dockerfile")).unwrap();
+    assert!(
+        !df.contains("GOOSE_AUTO_COMPACT_THRESHOLD"),
+        "goose keeps its own compaction threshold"
+    );
+    let start = df
+        .find("if [ -n \"${EVAL_MODEL_CONTEXT:-}\" ]; then\n")
+        .expect("goose's /run.sh doesn't read EVAL_MODEL_CONTEXT");
+    let end = start + df[start..].find("\nfi\n").expect("block ends in `fi`") + 4;
+    let block = &df[start..end];
+    let run = |window: u64| {
+        std::process::Command::new("bash")
+            .args([
+                "-c",
+                &format!("set -euo pipefail\n{block}echo \"$GOOSE_CONTEXT_LIMIT\""),
+            ])
+            .env("EVAL_MODEL_CONTEXT", window.to_string())
+            .output()
+            .expect("run bash")
+    };
+    for window in [1_048_576u64, 131_072, 64_000, 20_480] {
+        let out = run(window);
+        assert!(
+            out.status.success(),
+            "window {window}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            window.to_string()
+        );
+        assert!(
+            window * 8 / 10 + 4096 <= window,
+            "window {window}: 80% + 4096 overflows"
+        );
+    }
+    assert_eq!(
+        run(20_479).status.code(),
+        Some(2),
+        "a window too small to fit must fail before the first call"
+    );
+}
+
+/// An agent's `/run.sh` (the heredoc in its Dockerfile, or its `entrypoint.sh`),
+/// run under bash with the agent binary replaced by `stub`, a bash body that
+/// prints what the script handed it. `window` is `EVAL_MODEL_CONTEXT`.
+fn run_with_stub(
+    agent: &str,
+    binary: &str,
+    stub: &str,
+    window: Option<u64>,
+) -> std::process::Output {
+    run_with_stub_env(agent, binary, stub, window, None)
+}
+
+/// `run_with_stub`, with one more variable in the script's environment.
+fn run_with_stub_env(
+    agent: &str,
+    binary: &str,
+    stub: &str,
+    window: Option<u64>,
+    extra: Option<(&str, &str)>,
+) -> std::process::Output {
+    let dir = repo_root().join("containers/agents").join(agent);
+    let script = match fs::read_to_string(dir.join("entrypoint.sh")) {
+        Ok(s) => s,
+        Err(_) => {
+            let df = fs::read_to_string(dir.join("Dockerfile")).unwrap();
+            let start = df
+                .find("cat > /run.sh <<'E' && chmod +x /run.sh\n")
+                .expect("no /run.sh heredoc")
+                + "cat > /run.sh <<'E' && chmod +x /run.sh\n".len();
+            df[start..start + df[start..].find("\nE\n").expect("heredoc ends in E")].to_string()
+        }
+    };
+    let tmp = std::env::temp_dir().join(format!(
+        "ec-{agent}-{}-{}",
+        std::process::id(),
+        window.unwrap_or(0)
+    ));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(tmp.join("bin")).unwrap();
+    fs::create_dir_all(tmp.join("home")).unwrap();
+    fs::write(tmp.join("run.sh"), script).unwrap();
+    let bin = tmp.join("bin").join(binary);
+    fs::write(&bin, format!("#!/bin/bash\n{stub}\n")).unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&bin)
+        .status()
+        .unwrap();
+    let mut cmd = std::process::Command::new("bash");
+    cmd.arg(tmp.join("run.sh"))
+        .env_clear()
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", tmp.join("bin").display()),
+        )
+        .env("HOME", tmp.join("home"))
+        .env("TASK", "t")
+        .env("MODEL", "m");
+    if let Some(w) = window {
+        cmd.env("EVAL_MODEL_CONTEXT", w.to_string());
+    }
+    if let Some((k, v)) = extra {
+        cmd.env(k, v);
+    }
+    let out = cmd.output().expect("run bash");
+    let _ = fs::remove_dir_all(&tmp);
+    out
+}
+
+/// pi fits the window it is told with its own compaction (agents/RULES.md 26):
+/// it compacts past window − reserveTokens, so with the reply cap at
+/// min(its 128000, window/4) the reserve must cover the cap. Unset, pi's
+/// config is as shipped: no contextWindow, no settings.json, no cap override.
+#[test]
+fn pi_fits_the_window_it_is_told() {
+    let stub = r#"cat "$PI_CODING_AGENT_DIR/models.json"
+cat "$PI_CODING_AGENT_DIR/settings.json" 2>/dev/null || echo '{}'
+echo "${PI_MAX_OUTPUT_TOKENS:-unset}""#;
+    let parse = |out: &std::process::Output| {
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let lines: Vec<&str> = text.lines().collect();
+        let models: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        let settings: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        let model = models["providers"]["eval-containers"]["models"][0].clone();
+        (model, settings, lines[2].to_string())
+    };
+    let (model, settings, cap) = parse(&run_with_stub("pi", "pi", stub, None));
+    assert!(
+        model.get("contextWindow").is_none(),
+        "unset must leave pi's window as shipped"
+    );
+    assert_eq!(
+        settings,
+        serde_json::json!({}),
+        "unset must leave pi's compaction as shipped"
+    );
+    assert_eq!(cap, "unset");
+    for window in [1_048_576u64, 131_072, 64_000, 32_000] {
+        let (model, settings, cap) = parse(&run_with_stub("pi", "pi", stub, Some(window)));
+        assert_eq!(model["contextWindow"], window);
+        let cap: u64 = cap.parse().unwrap();
+        assert_eq!(cap, (window / 4).min(128_000), "window {window}: reply cap");
+        let reserve = settings["compaction"]["reserveTokens"].as_u64().unwrap();
+        assert!(
+            window - reserve + cap <= window,
+            "window {window}: compaction point + reply cap overflows"
+        );
+    }
+    assert_eq!(
+        run_with_stub("pi", "pi", stub, Some(16_384)).status.code(),
+        Some(2)
+    );
+}
+
+/// opencode's reply cap fits the window it is told (agents/RULES.md 25): the cap
+/// is min(OPENCODE_MAX_OUTPUT_TOKENS or 128000, window/4), and a non-numeric cap
+/// means 128000. Unset, the cap is as before. The window sizes nothing else.
+#[test]
+fn opencode_reply_cap_fits_the_window_it_is_told() {
+    let stub = r#"echo "$OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX""#;
+    let cap = |window: Option<u64>, set: Option<&str>| {
+        let extra = set.map(|v| ("OPENCODE_MAX_OUTPUT_TOKENS", v));
+        let out = run_with_stub_env("opencode", "opencode", stub, window, extra);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    assert_eq!(
+        cap(None, None),
+        "128000",
+        "unset must leave the cap as before"
+    );
+    assert_eq!(cap(None, Some("32000")), "32000");
+    for window in [1_048_576u64, 262_144, 131_072, 32_000] {
+        let want = (window / 4).min(128_000).to_string();
+        assert_eq!(cap(Some(window), None), want, "window {window}");
+        assert_eq!(
+            cap(Some(window), Some("x")),
+            want,
+            "window {window}, non-numeric cap"
+        );
+    }
+    assert_eq!(
+        cap(Some(131_072), Some("16000")),
+        "16000",
+        "a lower cap is kept"
+    );
+}
+
+/// crush fits the window it is told with its own summarizing (agents/RULES.md
+/// 26): it summarizes when 20% of the window is left (20k above 200k), so its
+/// summarize point plus its 8192-token reply cap must fit. Unset, 128000.
+#[test]
+fn crush_fits_the_window_it_is_told() {
+    let stub = r#"cat "$XDG_CONFIG_HOME/crush/crush.json""#;
+    let model = |window: Option<u64>| {
+        let out = run_with_stub("crush", "crush", stub, window);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let cfg: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        cfg["providers"]["eval-containers"]["models"][0].clone()
+    };
+    assert_eq!(
+        model(None)["context_window"],
+        128_000,
+        "unset must leave crush's window as shipped"
+    );
+    for window in [1_048_576u64, 200_000, 131_072, 40_960] {
+        let m = model(Some(window));
+        assert_eq!(m["context_window"], window);
+        let cap = m["default_max_tokens"].as_u64().unwrap();
+        assert!(
+            cap <= window / 4,
+            "window {window}: reply cap above window/4"
+        );
+        let point = if window > 200_000 {
+            window - 20_000
+        } else {
+            window * 8 / 10
+        };
+        assert!(
+            point + cap <= window,
+            "window {window}: summarize point + reply cap overflows"
+        );
+    }
+    assert_eq!(
+        run_with_stub("crush", "crush", stub, Some(40_959))
+            .status
+            .code(),
+        Some(2)
+    );
+}
+
+/// codex is told the window as model_context_window and keeps its own compaction
+/// (90% of it); it sends no reply cap, so nothing else is needed (agents/RULES.md
+/// 25-26). Unset, the flag is absent.
+#[test]
+fn codex_is_told_the_window() {
+    let stub = r#"printf '%s\n' "$@""#;
+    let args = |window: Option<u64>| {
+        let out = run_with_stub("codex", "codex", stub, window);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    assert!(!args(None).contains("model_context_window"));
+    assert!(
+        args(Some(131_072))
+            .lines()
+            .any(|l| l == "model_context_window=131072")
+    );
+}
+
 /// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —
 /// unlike EVAL_AGENT_REASONING_EFFORT it has no compose/chart runtime plumbing.
 /// run-agent forwards it and WARNS (does not fail) for an agent whose /run.sh
@@ -1137,26 +1518,25 @@ fn internet_policy_wired_through_to_agents() {
 
 /// claude-code keeps its own per-model max_tokens (#726): a forced 128000 is
 /// reserved out of the context window on every call, and a 262k-window model
-/// then rejects every call once the prompt passes ~134k.
+/// then rejects every call once the prompt passes ~134k. Only a window the
+/// launch states (`EVAL_MODEL_CONTEXT`, agents/RULES.md 26) may set a cap, to fit it.
 #[test]
 fn claude_code_keeps_its_own_reply_cap() {
     for a in ["claude-code", "claude-code-rtk"] {
-        let dockerfile = repo_root().join(format!("containers/agents/{a}/Dockerfile"));
+        let df = fs::read_to_string(repo_root().join(format!("containers/agents/{a}/Dockerfile")))
+            .unwrap();
+        let start = df
+            .find("if [ -n \"${EVAL_MODEL_CONTEXT:-}\" ]; then\n")
+            .unwrap_or(df.len());
+        let end = df[start..]
+            .find("\nfi\n")
+            .map_or(df.len(), |i| start + i + 4);
+        let outside = format!("{}{}", &df[..start], &df[end..]);
         assert!(
-            !fs::read_to_string(dockerfile)
-                .unwrap()
-                .contains("export CLAUDE_CODE_MAX_OUTPUT_TOKENS="),
-            "{a} must not set CLAUDE_CODE_MAX_OUTPUT_TOKENS — Claude Code's own default fits the window"
+            !outside.contains("export CLAUDE_CODE_MAX_OUTPUT_TOKENS="),
+            "{a} must not set CLAUDE_CODE_MAX_OUTPUT_TOKENS outside its EVAL_MODEL_CONTEXT block — Claude Code's own default fits the window"
         );
     }
-}
-
-#[test]
-fn opencode_reply_cap_is_raised() {
-    let dockerfile = repo_root().join("containers/agents/opencode/Dockerfile");
-    assert!(fs::read_to_string(dockerfile).unwrap().contains(
-        r#"export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}""#
-    ));
 }
 
 #[test]

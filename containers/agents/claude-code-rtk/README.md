@@ -87,3 +87,4 @@ way to quantify whether rtk pays off in expectation.
 | 16 | Build test | ✓ via fleet bake |
 | 17 | Replay test | ⚠️ no recorded fixture yet — follow-up; claude-code's existing fixture isn't reusable since rtk's hook injection changes the trajectory |
 | 18 | Smoke test | ✓ registered in `tests/run/agents/test.rs` |
+| 25–26 | Model context (`EVAL_MODEL_CONTEXT`) | ✓ same derivation as claude-code |

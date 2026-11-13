@@ -19,6 +19,8 @@ Crush is a TUI / headless coding agent with an integrated tool set (bash, edit, 
 
 The entrypoint writes `$XDG_CONFIG_HOME/crush/crush.json` declaring a `eval-containers` provider of type `openai-compat` whose `base_url` is `$OPENAI_BASE_URL/v1` and whose `api_key` is `$OPENAI_API_KEY`. All tools are allowlisted, metrics/notifications/auto-update are disabled. It then runs `crush run -q -m "eval-containers/$MODEL" "$TASK"` and prints the answer to stdout.
 
+The model's `context_window` is `$EVAL_MODEL_CONTEXT` when the launch sets it ([agents rules 25–26](../../../.agents/agents/RULES.md)), and 128000 otherwise. crush keeps its own summarizing: when 20% of the window is left (20k above 200k). Its reply cap, `default_max_tokens` 8192, fits that from a 40,960-token window up; a smaller window fails before the first call.
+
 ## Version
 
 Pinned to `0.57.0` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
