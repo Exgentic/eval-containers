@@ -43,6 +43,7 @@ overrides the env var.
 | `--benchmark <name>` | `EVAL_BENCHMARK` | or positional |
 | `--agent <name>` | `EVAL_AGENT` | a native-harness benchmark takes `native` only (resolved inside a checkout) |
 | `--model <handle>` | `EVAL_MODEL` | the `<provider>/<model>` upstream the gateway routes to |
+| `--api-key-header <name>` | `EVAL_API_KEY_HEADER` | Job mode's direct-provider credential header; without it OpenAI uses `Authorization: Bearer`, Anthropic `x-api-key`, and Gemini `x-goog-api-key`; see [edge configuration](../../containers/core/edge/README.md#configuration) |
 | `--gateway <name>` | `EVAL_GATEWAY` | which proxy serves it (`bifrost` / `litellm` / `portkey`, or a pinned per-model image); default `bifrost` |
 | `--agent-reasoning-effort <level>` | `EVAL_AGENT_REASONING_EFFORT` | the agent applies it; e.g. `high` |
 | `--task-id <id>` | `EVAL_TASK_ID` | default `0` |
@@ -65,6 +66,8 @@ overrides the env var.
 | `--overlay <values.yaml>` | — | `job` mode only; extra `helm -f` (e.g. `deploy/values-openshift.yaml`) |
 
 See [Environment variables](env-vars.md) for the full `EVAL_*` namespace.
+Compose and container modes always include a gateway, so `--api-key-header`
+applies only to direct-provider Job runs and cannot be combined with `--gateway`.
 
 ## `build` flags
 

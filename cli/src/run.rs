@@ -81,6 +81,12 @@ pub struct RunArgs {
     #[arg(long)]
     model: Option<String>,
 
+    /// Header carrying the upstream key on direct-provider Job runs. Without it,
+    /// OpenAI uses Authorization: Bearer, Anthropic x-api-key, and Gemini
+    /// x-goog-api-key (maps to $EVAL_API_KEY_HEADER).
+    #[arg(long, value_parser = credential_header_name)]
+    api_key_header: Option<String>,
+
     /// Gateway image that serves the model: a generic proxy (`bifrost`,
     /// `litellm`, `portkey`) or a pinned per-model image (maps to
     /// $EVAL_GATEWAY; chart value `gatewayImage`). Default: `bifrost`. In job
@@ -229,7 +235,34 @@ const CHART_VERSION: &str = "0.1.0";
 /// Not `model`, `agent` or `task`: a reader walking the layout stops on those.
 const NO_MODEL: &str = "no-model";
 
-pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
+// RFC 9110 field-name = token, matching the edge's validation. In particular,
+// commas must be refused before Helm can interpret them as extra assignments.
+fn credential_header_name(name: &str) -> Result<String, String> {
+    if !name.is_empty()
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&c))
+    {
+        Ok(name.to_string())
+    } else {
+        Err(format!(
+            "--api-key-header / EVAL_API_KEY_HEADER={name:?} is not a valid HTTP header name"
+        ))
+    }
+}
+
+fn resolve_api_key_header(flag: Option<String>) -> Result<Option<String>, String> {
+    flag.or_else(|| {
+        std::env::var("EVAL_API_KEY_HEADER")
+            .ok()
+            .filter(|v| !v.is_empty())
+    })
+    .map(|v| credential_header_name(&v))
+    .transpose()
+}
+
+pub fn execute(registry: &str, mut args: RunArgs) -> Result<(), String> {
+    args.api_key_header = resolve_api_key_header(args.api_key_header)?;
     // Resolve benchmark: --benchmark flag wins over positional, either must be set.
     let benchmark = args
         .benchmark_flag
@@ -252,6 +285,11 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if let Some(renamed) = renamed_env() {
         return Err(renamed);
     }
+    if args.api_key_header.is_some() && (args.gateway.is_some() || args.gateway_tag.is_some()) {
+        return Err(
+            "--api-key-header is for direct provider runs; omit --gateway/--gateway-tag".into(),
+        );
+    }
 
     // `--agent`, or the surface's default; a native-harness benchmark resolves
     // to `native` and refuses any other pairing (benchmarks/RULES.md 12b).
@@ -267,6 +305,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(ref v) = args.model {
         envs.push(("EVAL_MODEL", v.clone()));
+    }
+    if let Some(ref v) = args.api_key_header {
+        envs.push(("EVAL_API_KEY_HEADER", v.clone()));
     }
     if let Some(ref v) = args.gateway {
         envs.push(("EVAL_GATEWAY", v.clone()));
@@ -305,13 +346,15 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
         envs.push(("EVAL_FORCE", "1".into()));
     }
 
-    // Job-mode-only flags. Silently ignoring one is worse than refusing it: a
-    // `--dataset` that did nothing would run a single task and look like a
-    // dataset run in every log line.
+    // Job-mode-only flags. Compose and container always include a gateway, so
+    // custom provider authentication belongs to Job mode's direct path. Silently
+    // ignoring any of these is worse than refusing it: a `--dataset` that did
+    // nothing would run a single task and look like a dataset run in every log.
     for (set, flag) in [
         (args.overlay.is_some(), "--overlay"),
         (args.dataset, "--dataset"),
         (args.ephemeral, "--ephemeral"),
+        (args.api_key_header.is_some(), "--api-key-header"),
     ] {
         if set && !matches!(args.mode, Mode::Job) {
             return Err(format!("{flag} applies only to `--mode job`"));
@@ -818,6 +861,10 @@ fn run_job(
         helm.push("--set-string".into());
         helm.push(format!("maxTokens={t}"));
     }
+    if let Some(h) = &args.api_key_header {
+        helm.push("--set-string".into());
+        helm.push(format!("apiKeyHeader={h}"));
+    }
 
     // kubectl apply [-n ns] [--dry-run=server] -f -
     let mut apply_args: Vec<String> = vec!["apply".into()];
@@ -994,6 +1041,163 @@ mod tests {
             super::gateway_sets(&parse(&["--gateway-tag", "1.2.3"])),
             ["gatewayTag=1.2.3", "gatewayEnabled=true"]
         );
+    }
+
+    #[test]
+    fn api_key_header_is_nonempty_direct_job_configuration() {
+        use clap::Parser;
+
+        assert!(
+            Cli::try_parse_from(["run", "aime", "--api-key-header", ""]).is_err(),
+            "an empty custom header must be rejected at the CLI boundary"
+        );
+
+        for gateway in [["--gateway", "litellm"], ["--gateway-tag", "1.2.3"]] {
+            let cli = Cli::try_parse_from([
+                "run",
+                "aime",
+                "--mode",
+                "job",
+                "--agent",
+                "codex",
+                "--api-key-header",
+                "CUSTOM_API_KEY",
+                gateway[0],
+                gateway[1],
+            ])
+            .unwrap();
+            let err = super::execute("ghcr.io/exgentic", cli.run).unwrap_err();
+            assert!(
+                err.contains("omit --gateway/--gateway-tag"),
+                "gateway conflict gave an operator-unhelpful error: {err}"
+            );
+        }
+
+        let cli = Cli::try_parse_from([
+            "run",
+            "aime",
+            "--agent",
+            "codex",
+            "--api-key-header",
+            "CUSTOM_API_KEY",
+        ])
+        .unwrap();
+        let err = super::execute("ghcr.io/exgentic", cli.run).unwrap_err();
+        assert!(
+            err.contains("--api-key-header applies only to `--mode job`"),
+            "non-Job mode gave an operator-unhelpful error: {err}"
+        );
+    }
+
+    #[test]
+    fn api_key_header_environment_fallback_and_flag_precedence() {
+        use clap::Parser;
+
+        // Isolate the environment from other tests parsing RunArgs in parallel.
+        const CHILD: &str = "EVAL_TEST_API_KEY_HEADER_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            for header in ["CUSTOM_API_KEY", ""] {
+                let status = std::process::Command::new(std::env::current_exe().unwrap())
+                    .args([
+                        "--exact",
+                        "run::tests::api_key_header_environment_fallback_and_flag_precedence",
+                        "--nocapture",
+                    ])
+                    .env(CHILD, "1")
+                    .env("EVAL_API_KEY_HEADER", header)
+                    .status()
+                    .unwrap();
+                assert!(status.success(), "environment header {header:?} failed");
+            }
+            return;
+        }
+
+        let parse = |extra: &[&str]| {
+            let mut argv = vec!["run", "aime", "--agent", "codex"];
+            argv.extend_from_slice(extra);
+            Cli::try_parse_from(argv).map(|mut cli| {
+                cli.run.api_key_header =
+                    super::resolve_api_key_header(cli.run.api_key_header).unwrap();
+                cli
+            })
+        };
+        assert!(parse(&["--api-key-header", ""]).is_err());
+        let explicit = parse(&["--mode", "job", "--api-key-header", "X-Explicit"]).unwrap();
+        assert_eq!(explicit.run.api_key_header.as_deref(), Some("X-Explicit"));
+
+        if std::env::var("EVAL_API_KEY_HEADER").unwrap().is_empty() {
+            assert!(
+                parse(&["--mode", "job"])
+                    .unwrap()
+                    .run
+                    .api_key_header
+                    .is_none()
+            );
+            assert!(parse(&[]).unwrap().run.api_key_header.is_none());
+            assert!(
+                parse(&["--mode", "job", "--gateway", "litellm"])
+                    .unwrap()
+                    .run
+                    .api_key_header
+                    .is_none()
+            );
+            return;
+        }
+        let direct = parse(&["--mode", "job"]).unwrap();
+        assert_eq!(direct.run.api_key_header.as_deref(), Some("CUSTOM_API_KEY"));
+        for gateway in [["--gateway", "litellm"], ["--gateway-tag", "1.2.3"]] {
+            let cli = parse(&["--mode", "job", gateway[0], gateway[1]]).unwrap();
+            let err = super::execute("ghcr.io/exgentic", cli.run).unwrap_err();
+            assert!(err.contains("omit --gateway/--gateway-tag"), "{err}");
+        }
+        let err = super::execute("ghcr.io/exgentic", parse(&[]).unwrap().run).unwrap_err();
+        assert!(
+            err.contains("--api-key-header applies only to `--mode job`"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn credential_header_names_cannot_inject_helm_values() {
+        use clap::Parser;
+
+        assert!(super::credential_header_name("!#$%&'*+-.^_`|~012Az").is_ok());
+        for name in [
+            "",
+            "X,model=evil/injected",
+            "X=Y",
+            "X Y",
+            "X:Y",
+            "X\rY",
+            "X\nY",
+            "X-é",
+        ] {
+            assert!(super::credential_header_name(name).is_err(), "{name:?}");
+            assert!(
+                Cli::try_parse_from(["run", "aime", "--api-key-header", name]).is_err(),
+                "{name:?}"
+            );
+            let output = std::process::Command::new("bash")
+                .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../deploy/oc/run.sh"))
+                .args([
+                    "--benchmark",
+                    "aime",
+                    "--agent",
+                    "codex",
+                    "--model",
+                    "openai/test",
+                    "--api-key-header",
+                    name,
+                ])
+                .output()
+                .unwrap();
+            assert!(!output.status.success(), "OpenShift accepted {name:?}");
+            let error = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                error.contains("valid HTTP header name"),
+                "{name:?}: {error}"
+            );
+        }
     }
 
     #[test]

@@ -247,6 +247,7 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
 
     for knob in [
         "MODEL",
+        "API_KEY_HEADER",
         "MAX_TOKENS",
         "MAX_COST_USD",
         "PRICE_IN",
@@ -290,7 +291,9 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
         .filter(|n| *n != "EDGE_UPSTREAM")
         .collect();
     assert!(
-        job.contains("EVAL_MAX_TOKENS") && chart_edge_names.is_empty(),
+        job.contains("EVAL_MAX_TOKENS")
+            && job.contains("EVAL_API_KEY_HEADER")
+            && chart_edge_names.is_empty(),
         "the chart must set EVAL_* names (EDGE_UPSTREAM excepted): found {chart_edge_names:?}"
     );
     let cli = read("cli/src/run.rs");
@@ -301,8 +304,23 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
          renders \"1e+06\", and the run that asked to be capped runs uncapped"
     );
     assert!(
+        cli.contains("api_key_header: Option<String>")
+            && cli.contains("EVAL_API_KEY_HEADER")
+            && cli.contains("apiKeyHeader={h}"),
+        "--api-key-header must map through EVAL_API_KEY_HEADER and reach the chart's apiKeyHeader value"
+    );
+    let oc_run = read("deploy/oc/run.sh");
+    assert!(
+        oc_run.contains("--api-key-header)") && oc_run.contains("apiKeyHeader=$API_KEY_HEADER"),
+        "the OpenShift launcher must expose the chart's apiKeyHeader value"
+    );
+    assert!(
         read("containers/benchmarks/_chart/values.yaml").contains("maxTokens: \"\""),
         "_chart/values.yaml must ship `maxTokens: \"\"` — no cap unless a run asks for one"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("apiKeyHeader: \"\""),
+        "_chart/values.yaml must ship `apiKeyHeader: \"\"` — wire-native auth unless a run asks"
     );
 
     // The edge an eval image carries is the PUBLISHED one until it is

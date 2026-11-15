@@ -8,6 +8,9 @@
 {{- if and ($v.perTask | default false) $v.datasetSize -}}
 {{- fail "per-task benchmarks bake one eval image per task and cannot use a dataset (Indexed) Job — run one Job per task (omit datasetSize)" -}}
 {{- end -}}
+{{- if and $v.gatewayEnabled (not (empty $v.apiKeyHeader)) -}}
+{{- fail "apiKeyHeader is supported only for direct provider runs; omit --gateway (or set gatewayEnabled=false)" -}}
+{{- end -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -164,6 +167,9 @@ spec:
             # No gateway: the edge is the only proxy, so it gets the real upstream
             # and credential, and must not keep the protocol namespace on the wire.
             - { name: EDGE_UPSTREAM,               value: "provider" }
+            {{- with $v.apiKeyHeader }}
+            - { name: EVAL_API_KEY_HEADER,         value: {{ . | quote }} }
+            {{- end }}
             - name: OPENAI_API_BASE
               valueFrom:
                 secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
