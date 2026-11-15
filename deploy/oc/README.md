@@ -23,6 +23,7 @@ The model in one line: **a dataset eval is one [Indexed Job](https://kubernetes.
 `run.sh` also carries `--build` (build the four images into the namespace's
 internal registry and launch those — the development path; `--rebuild` implies
 it), `--local-chart` (render this checkout's chart instead of the published one), `--rebuild` (force rebuild), `--no-run` (build only),
+**`--api-key-header <name>`** (direct-provider credential header; incompatible with `--gateway`),
 `--test` (isolated `-test` imagestreams + `runs-test/` results — production
 untouched), and `--test-suffix <s>` (a custom isolation suffix, e.g. `-ci-42`,
 so parallel test envs don't collide). Build-ConfigMap cleanup is handled by the

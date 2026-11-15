@@ -82,6 +82,10 @@ var (
 	model  = os.Getenv("EDGE_MODEL")
 	base   = strings.TrimSuffix(os.Getenv("EDGE_API_BASE"), "/")
 	apiKey = os.Getenv("EDGE_API_KEY")
+	// Some provider front doors authenticate every wire with one custom header
+	// (CUSTOM_API_KEY, for example). Empty keeps the wire-native defaults below.
+	apiKeyHeader      = os.Getenv("EDGE_API_KEY_HEADER")
+	apiKeyHeaderLower = strings.ToLower(apiKeyHeader)
 
 	// A provider serves its own native paths; a gateway serves the framework's
 	// protocol-namespaced ones (gateways rule 5). Declared, never sniffed.
@@ -107,6 +111,7 @@ var (
 		"proxy-authorization": true, "te": true, "trailer": true,
 		"transfer-encoding": true, "upgrade": true,
 	}
+	transportHeader = map[string]string{"content-length": "Content-Length", "host": "Host"}
 
 	// Bound how much of one exchange is written to the record; the response is
 	// streamed, so this caps the file, not the footprint.
@@ -163,6 +168,46 @@ func envInt(k string, d int) int {
 		return int(v)
 	}
 	return d
+}
+
+func isSecretHeader(lower string) bool {
+	return secretHeader[lower] || apiKeyHeaderLower != "" && lower == apiKeyHeaderLower
+}
+
+func skipRequestHeader(lower string) bool {
+	return isSecretHeader(lower) || hopByHop[lower] || transportHeader[lower] != ""
+}
+
+func skipResponseHeader(lower string) bool {
+	return isSecretHeader(lower) || hopByHop[lower]
+}
+
+// validHeaderName is RFC 9110's field-name = token. Kept here instead of
+// adding a dependency to a static binary for one small predicate.
+func validHeaderName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
+			continue
+		}
+		switch c {
+		case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func unsafeCredentialHeaderReason(name string) string {
+	lower := strings.ToLower(name)
+	if hopByHop[lower] {
+		return "a hop-by-hop header"
+	}
+	return transportHeader[lower]
 }
 
 func msSince(t time.Time) float64 { return float64(time.Since(t).Microseconds()) / 1000 }
@@ -631,7 +676,8 @@ func handle(w http.ResponseWriter, r *http.Request) {
 	defer resp.Body.Close()
 
 	for k, vs := range resp.Header {
-		if hopByHop[strings.ToLower(k)] {
+		lower := strings.ToLower(k)
+		if skipResponseHeader(lower) {
 			continue
 		}
 		for _, v := range vs {
@@ -708,7 +754,7 @@ func safeHeaders(h http.Header) map[string]string {
 	kept := map[string]string{}
 	for k, vs := range h {
 		lower := strings.ToLower(k)
-		if secretHeader[lower] || hopByHop[lower] || lower == "content-length" || lower == "host" {
+		if skipRequestHeader(lower) {
 			continue
 		}
 		kept[lower] = vs[0]
@@ -735,7 +781,7 @@ func forward(r *http.Request, path, wire string, body []byte) (*http.Response, i
 		}
 		for k, vs := range r.Header {
 			lower := strings.ToLower(k)
-			if secretHeader[lower] || hopByHop[lower] || lower == "content-length" || lower == "host" {
+			if skipRequestHeader(lower) {
 				continue // agent credentials are placeholders; the pin changed the length
 			}
 			for _, v := range vs {
@@ -743,14 +789,18 @@ func forward(r *http.Request, path, wire string, body []byte) (*http.Response, i
 			}
 		}
 		req.ContentLength = int64(len(body))
-		// Rule 12: the credential goes in the header the target wire expects.
-		switch wire {
-		case "anthropic":
-			req.Header.Set("x-api-key", apiKey)
-		case "gemini":
-			req.Header.Set("x-goog-api-key", apiKey)
-		default:
-			req.Header.Set("authorization", "Bearer "+apiKey)
+		// Rule 12: an explicit target header wins; otherwise the wire names it.
+		if apiKeyHeader != "" {
+			req.Header.Set(apiKeyHeader, apiKey)
+		} else {
+			switch wire {
+			case "anthropic":
+				req.Header.Set("x-api-key", apiKey)
+			case "gemini":
+				req.Header.Set("x-goog-api-key", apiKey)
+			default:
+				req.Header.Set("authorization", "Bearer "+apiKey)
+			}
 		}
 
 		resp, err := client.Do(req)
@@ -785,6 +835,21 @@ func probeHealth(addr string) int {
 func configError() error {
 	if base == "" {
 		return errors.New("EDGE_API_BASE is required")
+	}
+	apiKeyHeaderLower = strings.ToLower(apiKeyHeader)
+	if apiKeyHeader != "" {
+		if !validHeaderName(apiKeyHeader) {
+			return fmt.Errorf("EDGE_API_KEY_HEADER=%q is not a valid HTTP header name", apiKeyHeader)
+		}
+		if reason := unsafeCredentialHeaderReason(apiKeyHeader); reason != "" {
+			return fmt.Errorf("EDGE_API_KEY_HEADER=%q is %s and cannot carry the upstream credential", apiKeyHeader, reason)
+		}
+		if upstreamIsGateway {
+			return errors.New("EDGE_API_KEY_HEADER is for a provider upstream; gateway-specific custom authentication is not supported")
+		}
+		if apiKey == "" {
+			return errors.New("EDGE_API_KEY_HEADER is set but EDGE_API_KEY is empty")
+		}
 	}
 	if maxCost > 0 && priceIn == 0 && priceOut == 0 && costHeader == "" {
 		return errors.New("EDGE_MAX_COST_USD is set with nothing to price it by: give EDGE_PRICE_IN/EDGE_PRICE_OUT, or EDGE_COST_HEADER if the upstream reports what it charged")

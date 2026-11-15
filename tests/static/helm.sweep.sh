@@ -121,7 +121,30 @@ case "$thin" in
   *) echo "FAIL thin render does not tell the edge to forward to the provider"; fail=$((fail + 1)) ;;
 esac
 
-# 4c. a preset's runnerExtraEnv merges with the caller's by name, the caller
+# 4c. a custom provider credential header reaches the framework-to-edge mapping
+# only on the direct path. Empty preserves the wire-native default; a gateway
+# owns its own provider authentication and the chart refuses to pretend otherwise.
+custom=$(helm template custom-auth "$CHART" --set benchmark="${names[0]}" --set ephemeral=true \
+  --set apiKeyHeader=CUSTOM_API_KEY --set otelEnabled=false 2>&1)
+for pattern in 'name: EVAL_API_KEY_HEADER' 'value: "CUSTOM_API_KEY"'; do
+  case "$custom" in
+    *"$pattern"*) ;;
+    *) echo "FAIL custom auth render lost \`$pattern\`"; fail=$((fail + 1)) ;;
+  esac
+done
+case "$thin" in
+  *'EVAL_API_KEY_HEADER'*) echo "FAIL default render sets a custom API key header"; fail=$((fail + 1)) ;;
+  *) ;;
+esac
+if conflict=$(helm template custom-auth-gateway "$CHART" --set benchmark="${names[0]}" \
+  --set ephemeral=true --set apiKeyHeader=CUSTOM_API_KEY --set gatewayEnabled=true \
+  --set otelEnabled=false 2>&1); then
+  echo "FAIL custom auth with gatewayEnabled rendered instead of refusing"; fail=$((fail + 1))
+elif [[ "$conflict" != *'apiKeyHeader is supported only for direct provider runs'* ]]; then
+  echo "FAIL custom auth gateway refusal was unclear: $conflict"; fail=$((fail + 1))
+fi
+
+# 4d. a preset's runnerExtraEnv merges with the caller's by name, the caller
 # winning; it used to replace it, dropping a run's own upstream and key.
 env_probe() { helm template env-probe "$CHART" --set benchmark=osworld-verified --set ephemeral=true \
   --set-json "runnerExtraEnv=$1" 2>&1; }
