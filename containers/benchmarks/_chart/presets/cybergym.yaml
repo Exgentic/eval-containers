@@ -3,3 +3,12 @@
 # README). Without this preset the chart's 300s default applied on the cluster,
 # so cluster runs got 1/50th of the budget a local run gets.
 timeout: '15000'
+# cpu/memory match compose.yaml (rule 24e).
+resources:
+  requests:
+    cpu: 300m
+    memory: 512Mi
+  limits:
+    cpu: '2'
+    # 4Gi: small step from the 2Gi default after OOMs; size TBD (#745)
+    memory: 4Gi

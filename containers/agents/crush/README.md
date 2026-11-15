@@ -17,7 +17,7 @@ Crush is a TUI / headless coding agent with an integrated tool set (bash, edit, 
 
 ## How Eval Containers runs it
 
-The entrypoint writes `$XDG_CONFIG_HOME/crush/crush.json` declaring a `eval-containers` provider of type `openai-compat` whose `base_url` is `$OPENAI_BASE_URL/v1` and whose `api_key` is `$OPENAI_API_KEY`. All tools are allowlisted, metrics/notifications/auto-update are disabled. It then runs `crush run -q -m "eval-containers/$EVAL_MODEL" "$TASK"` and prints the answer to stdout.
+The entrypoint writes `$XDG_CONFIG_HOME/crush/crush.json` declaring a `eval-containers` provider of type `openai-compat` whose `base_url` is `$OPENAI_BASE_URL/v1` and whose `api_key` is `$OPENAI_API_KEY`. All tools are allowlisted, metrics/notifications/auto-update are disabled. It then runs `crush run -q -m "eval-containers/$MODEL" "$TASK"` and prints the answer to stdout.
 
 ## Version
 

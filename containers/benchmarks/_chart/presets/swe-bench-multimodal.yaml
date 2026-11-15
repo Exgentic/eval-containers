@@ -15,5 +15,6 @@ resources:
     ephemeral-storage: 2Gi
   limits:
     cpu: '2'
-    memory: 12Gi
+    # 24Gi: 12Gi OOM'd 18/395 tasks, 24Gi 2/395 (#745)
+    memory: 24Gi
     ephemeral-storage: 24Gi

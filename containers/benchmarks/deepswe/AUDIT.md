@@ -52,7 +52,7 @@ subset on native amd64.
 |--------|-------|
 | build | ~1 min per task with a warm base (pull + overlay only; no source build) |
 | grade | `fastapi-implicit-head-options`: ~3 min under emulation (3134 p2p + 43 f2p tests) |
-| end-to-end | native amd64, agent+verify. Median wall clock is **model**-dominated, not task-dominated: `gemini-3.5-flash-lite` 10m (p90 48m) · `gpt-5.5` 12m (p90 69m) · `azure/FW-GLM-5.2` 100m (p90 454m) · `claude-sonnet-5` 220m (p90 480m) — a 22x spread on the same 50-task pool. The preset therefore defaults to upstream's 5400s and expects a per-model `timeoutOverride`; see `_chart/presets/deepswe.yaml`. GLM scores 9/25 at 28800s vs ~2/25 at 5400s, so the override is load-bearing for the slow pairings. |
+| end-to-end | native amd64, agent+verify. Median wall clock is **model**-dominated, not task-dominated: `gemini-3.5-flash-lite` 10m (p90 48m) · `gpt-5.5` 12m (p90 69m) · `azure/FW-GLM-5.2` 100m (p90 454m) · `claude-sonnet-5` 220m (p90 480m) — a 22x spread on the same 50-task pool. The preset (and `compose.yaml`) therefore default to upstream's 10800s (5400s before upstream `0b9fabbb`) and expect a per-model `timeoutOverride`; see `_chart/presets/deepswe.yaml`. GLM scored 9/25 at 28800s vs ~2/25 at the old 5400s, so the override is load-bearing for the slow pairings. |
 
 ## Cost
 
@@ -130,7 +130,7 @@ agent+model pairing, and read `claude-code`'s DeepSWE number as a floor.
   the in-place model does not build it. Revisit if the separate-verifier topology
   is ever modelled as a chart sidecar.
 - **Version pinning.** v1.1 has no upstream tag (only `v1.0.0` is tagged), so the
-  revision is pinned by SHA `435ee89e`, whose `tasks/dataset.toml` names the
+  revision is pinned by SHA `0b9fabbb` (upstream HEAD, 2026-08-26), whose `tasks/dataset.toml` names the
   dataset `datacurve/deep-swe-1-1`. A future v1.2 on `main` will need a new SHA.
 - **Per-task digests unused.** `tasks/dataset.toml` carries a `sha256` digest per
   task; `build.sh` does not yet verify the fetched task dir against it.

@@ -1007,6 +1007,16 @@ fn agent_env_reaches_the_agent() {
             "run-agent must refuse to forward {refused} — the agent must not receive it"
         );
     }
+    // Forwarded vars come last in `env -i`, so they would override what run-agent
+    // sets itself: the gateway URLs (every token count and budget is read there),
+    // and the runtime the agent runs on (rule 7).
+    assert!(
+        ra.contains(
+            "PATH|HOME|USER|LANG|MODEL|TIMEOUT|*_BASE_URL|*_BASE|*_ENDPOINT|*PROXY*|LD_*|NODE_OPTIONS|NODE_PATH|PYTHON*|BASH_ENV|ENV)"
+        ),
+        "run-agent must refuse to forward a name it sets for the agent itself — \
+         a forwarded var would override it"
+    );
     let job = read("containers/benchmarks/_chart/templates/job.yaml");
     assert!(
         job.contains("with $v.agentEnv") && job.contains("name: EVAL_AGENT_ENV"),
@@ -1144,21 +1154,17 @@ fn claude_code_keeps_its_own_reply_cap() {
 #[test]
 fn opencode_reply_cap_is_raised() {
     let dockerfile = repo_root().join("containers/agents/opencode/Dockerfile");
-    assert!(
-        fs::read_to_string(dockerfile)
-            .unwrap()
-            .contains("export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX=128000")
-    );
+    assert!(fs::read_to_string(dockerfile).unwrap().contains(
+        r#"export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}""#
+    ));
 }
 
 #[test]
 fn pi_reply_cap_is_raised() {
     let dockerfile = repo_root().join("containers/agents/pi/Dockerfile");
-    assert!(
-        fs::read_to_string(dockerfile)
-            .unwrap()
-            .contains(r#"? "max_tokens" : "max_completion_tokens"] = 128000;"#)
-    );
+    assert!(fs::read_to_string(dockerfile).unwrap().contains(
+        r#"? "max_tokens" : "max_completion_tokens"] = Number(process.env.PI_MAX_OUTPUT_TOKENS) || 128000;"#
+    ));
 }
 
 // The eval.benchmark.internet label <-> ENV EVAL_INTERNET agreement contract
@@ -1444,7 +1450,7 @@ fn the_per_task_job_pushes_with_the_engine_build_sh_builds_with() {
 fn every_per_task_build_script_stamps_the_input_hash() {
     // The benchmarks the release enumerates as kind=script — the ones that are
     // handed EVAL_INPUT_HASH today. A per-task benchmark the workflow does not
-    // enumerate yet (swe-bench-pro, swe-lancer) is never passed one, so it is
+    // enumerate yet (swe-lancer) is never passed one, so it is
     // held to this only once it joins the loop in release-images.yml.
     let wf = fs::read_to_string(repo_root().join(".github/workflows/release-images.yml"))
         .expect("read .github/workflows/release-images.yml");

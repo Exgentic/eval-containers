@@ -76,4 +76,10 @@ fi
 # No reward at all => the verifier never produced a verdict; -1 says "not graded"
 # rather than silently reporting a 0 the agent didn't earn.
 [ -f /logs/verifier/reward.txt ] || echo -1 > /logs/verifier/reward.txt
+# /logs is in-memory and goes with the pod, so a 0 would leave no trace of why.
+# Keep the verifier's output beside result.json (as terminal-bench does, a3b682ed).
+mkdir -p /output/task/verifier
+cp -r /logs/verifier/. /output/task/verifier/ 2>/dev/null || true
+cp /logs/artifacts/model.patch /output/task/verifier/model.patch 2>/dev/null || true
+cp /logs/deepswe-verifier.log /output/task/verifier/ 2>/dev/null || true
 exit 0

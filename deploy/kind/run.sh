@@ -226,7 +226,7 @@ if $PER_TASK && ! $DRY_RUN; then
     --format '{{ index .Config.Labels "eval.benchmark.timeout" }}' 2>/dev/null || true)
   if [[ -n "$TB_TIMEOUT" && "$TB_TIMEOUT" != "<no value>" ]]; then
     log "per-task agent timeout from image label: ${TB_TIMEOUT}s"
-    SET+=(--set "timeout=$TB_TIMEOUT")
+    SET+=(--set "timeoutOverride=$TB_TIMEOUT")
   fi
 fi
 # See deploy/oc/run.sh: the chart holds each benchmark's size.
