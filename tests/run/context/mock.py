@@ -7,7 +7,8 @@ real server would. Each answer reports that count as usage, so the agent's own
 compaction check sees it.
 
 The mock drives the conversation: while the request offers a shell tool it asks
-for `seq 1 2000` (~2.2k tokens of output), so the context grows every turn. A
+for `seq 1 2000` (~2.2k tokens of output, ~2.8k a turn once JSON-escaped in the
+next request), so the context grows every turn. A
 compaction request (the agent's own summary prompt) is answered with a summary;
 the first ordinary request after one is answered with "OK", ending the task.
 

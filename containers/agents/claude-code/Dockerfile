@@ -47,8 +47,16 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 # which keeps point + cap within the window, also for a model whose default cap
 # is larger (64000 for opus-4-6). Above 200k nothing but the cap changes, as the
 # window can't be raised.
+# Below 64000 it fails before the first call: Claude Code's first request (system
+# prompt and tools) is ~25k tokens, and the compaction point (~0.75 of the window,
+# less 13k) must clear that by a few turns or it compacts on every request — ~23k
+# at 48k, ~34k at 64k. 64000 is the window tests/run/context runs.
 if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
   W=$EVAL_MODEL_CONTEXT
+  if [ "$W" -lt 64000 ]; then
+    echo "claude-code: EVAL_MODEL_CONTEXT=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
+    exit 2
+  fi
   OUT=$(( W / 4 < 32000 ? W / 4 : 32000 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
   if [ "$W" -ge 100000 ]; then
@@ -56,10 +64,6 @@ if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
   else
     ALLOW=$(( OUT < 20000 ? OUT : 20000 ))
     PCT=$(( (W - ALLOW - 13000) * 100 / (100000 - ALLOW) ))
-    if [ "$PCT" -lt 1 ]; then
-      echo "claude-code: EVAL_MODEL_CONTEXT=$W is too small to hold a reply and a compacted prompt" >&2
-      exit 2
-    fi
     export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$PCT
   fi
 fi

@@ -29,10 +29,10 @@ mkdir -p "$PI_CODING_AGENT_DIR"
 # reply cap becomes min(its cap, window/4) so every request fits. pi's own
 # compaction point is window − reserveTokens; pi ships that reserve equal to its
 # reply cap (16384 each), so the reserve follows the cap (never below 16384).
-# In print mode (which this image runs) pi checks the point only when the agent run ends, never between
-# tool calls: during a task it compacts only when the server rejects a call as
-# too long, and 0.73.1 recovers from that once per task (the second rejection
-# ends it with no answer, exit 0).
+# In print mode (which this image runs) pi checks the point only when the agent
+# run ends, never between tool calls: during a task it compacts only when the
+# server rejects a call as too long, and 0.73.1 recovers from that once per task
+# (the second rejection ends it with no answer, exit 0).
 # A non-numeric PI_MAX_OUTPUT_TOKENS means 128000 here, as in reply-cap.js.
 CTX=""
 if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then

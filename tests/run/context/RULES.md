@@ -38,10 +38,10 @@ Parent: [.agents/verification/RULES.md](../../../.agents/verification/RULES.md)
    usage, so the agent's own compaction check sees the same number.
 
 6. **It drives the run.** While a request offers a shell tool, the mock asks for
-   `seq 1 2000` (~2.8k tokens a turn). It answers the agent's own compaction
-   prompt with a summary, and the first ordinary request after one with "OK". It
-   stops after 80 tool turns (`gave-up`), so a run that never compacts fails
-   rather than hangs.
+   `seq 1 2000` (~2.2k tokens of output, ~2.8k a turn once JSON-escaped). It
+   answers the agent's own compaction prompt with a summary, and the first
+   ordinary request after one with "OK". It stops after 80 tool turns
+   (`gave-up`), so a run that never compacts fails rather than hangs.
 
 7. **Assertions read the mock's log.** One `[mock] {...}` JSON line per request
    on stderr: `tool`, `text`, `compact`, `final`, `reject`, `gave-up`. The test

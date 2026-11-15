@@ -1157,7 +1157,6 @@ echo $(( pt + o ))"#;
         110_000,
         100_000,
         64_000,
-        32_000,
     ] {
         let out = std::process::Command::new("bash")
             .args(["-c", &format!("set -euo pipefail\n{cc}{report}")])
@@ -1177,20 +1176,20 @@ echo $(( pt + o ))"#;
     }
     let tiny = std::process::Command::new("bash")
         .args(["-c", &format!("set -euo pipefail\n{cc}")])
-        .env("EVAL_MODEL_CONTEXT", "1000")
+        .env("EVAL_MODEL_CONTEXT", "63999")
         .status()
         .expect("run bash");
     assert_eq!(
         tiny.code(),
         Some(2),
-        "a window too small to fit must fail before the first call"
+        "a window below 64000 must fail before the first call"
     );
 }
 
 /// goose fits the window it is told (agents/RULES.md 26) with its own compaction:
-/// `GOOSE_CONTEXT_LIMIT` is the window and no threshold is set, so it compacts at
-/// 80%; that plus its 4096-token reply cap fits from 20480 up, and a smaller
-/// window fails before the first call.
+/// `GOOSE_CONTEXT_LIMIT` is the window and no threshold is set, so its point is
+/// 80%; the reply cap `GOOSE_MAX_TOKENS` is min(32000, window/5), so point plus
+/// cap fits. A window under 20480 (a cap under 4096) fails before the first call.
 #[test]
 fn goose_fits_the_window_it_is_told() {
     let df = fs::read_to_string(repo_root().join("containers/agents/goose/Dockerfile")).unwrap();
@@ -1207,26 +1206,30 @@ fn goose_fits_the_window_it_is_told() {
         std::process::Command::new("bash")
             .args([
                 "-c",
-                &format!("set -euo pipefail\n{block}echo \"$GOOSE_CONTEXT_LIMIT\""),
+                &format!(
+                    "set -euo pipefail\n{block}echo \"$GOOSE_CONTEXT_LIMIT $GOOSE_MAX_TOKENS\""
+                ),
             ])
             .env("EVAL_MODEL_CONTEXT", window.to_string())
             .output()
             .expect("run bash")
     };
-    for window in [1_048_576u64, 131_072, 64_000, 20_480] {
+    for window in [1_048_576u64, 200_000, 131_072, 64_000, 20_480] {
         let out = run(window);
         assert!(
             out.status.success(),
             "window {window}: {}",
             String::from_utf8_lossy(&out.stderr)
         );
+        let cap = (window / 5).min(32_000);
         assert_eq!(
             String::from_utf8_lossy(&out.stdout).trim(),
-            window.to_string()
+            format!("{window} {cap}"),
+            "window {window}: GOOSE_CONTEXT_LIMIT and GOOSE_MAX_TOKENS"
         );
         assert!(
-            window * 8 / 10 + 4096 <= window,
-            "window {window}: 80% + 4096 overflows"
+            window * 8 / 10 + cap <= window,
+            "window {window}: 80% + reply cap overflows"
         );
     }
     assert_eq!(

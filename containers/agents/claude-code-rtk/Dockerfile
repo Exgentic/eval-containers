@@ -82,6 +82,10 @@ rtk init -g --auto-patch >>/output/agent/stderr.log 2>&1 || true
 # told — see containers/agents/claude-code/Dockerfile for the derivation.
 if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
   W=$EVAL_MODEL_CONTEXT
+  if [ "$W" -lt 64000 ]; then
+    echo "claude-code: EVAL_MODEL_CONTEXT=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
+    exit 2
+  fi
   OUT=$(( W / 4 < 32000 ? W / 4 : 32000 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
   if [ "$W" -ge 100000 ]; then
@@ -89,10 +93,6 @@ if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
   else
     ALLOW=$(( OUT < 20000 ? OUT : 20000 ))
     PCT=$(( (W - ALLOW - 13000) * 100 / (100000 - ALLOW) ))
-    if [ "$PCT" -lt 1 ]; then
-      echo "claude-code: EVAL_MODEL_CONTEXT=$W is too small to hold a reply and a compacted prompt" >&2
-      exit 2
-    fi
     export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$PCT
   fi
 fi
