@@ -197,9 +197,9 @@ def task_ids(family: str) -> list[str]:
     )
     ref = re.search(r"\b[0-9a-f]{40}\b", text)
     if not (repo and ref):
-        # swe-bench-pro resolves its ids from a HuggingFace dataset and
-        # swe-lancer from Docker Hub tags. Neither publishes per-task images
-        # today, so there is nothing to miss; named, not swallowed.
+        # swe-lancer resolves its ids from Docker Hub tags and publishes no
+        # per-task images today, so there is nothing to miss; named, not
+        # swallowed. (swe-bench-pro lists its ids in tasks.txt/publish.txt.)
         print(f"fleet-index: {family}: no enumerable task list", file=sys.stderr)
         return []
     out = subprocess.run(

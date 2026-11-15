@@ -1,0 +1,22 @@
+# SWE-bench Pro V2 — per-task resources come from upstream's v2/tasks/<id>/task.toml
+# at the pinned tag (v2.0.0, 66f92766), which every one of the 642 tasks sets
+# identically:
+#   [agent].timeout_sec        = 3000 (50 min) -> timeout below. This IS the
+#                                evaluation protocol ("50-minute budget per task",
+#                                v2/README.md), unlike deepswe's sandbox ceiling,
+#                                so do not raise it for a leaderboard-comparable run.
+#   [verifier].timeout_sec     = 3000 -> deadlineGrace (grading runs after the agent)
+#   [environment].cpus/memory  = 1 / 4096 MiB -> resources.limits (rule 24e: must
+#                                match compose.yaml's deploy.resources.limits)
+#   [environment].storage_mb   = 10240 -> ephemeral-storage limit
+timeout: '3000'
+deadlineGrace: 3000
+resources:
+  requests:
+    cpu: 300m
+    memory: 512Mi
+    ephemeral-storage: 2Gi
+  limits:
+    cpu: '1'
+    memory: 4Gi
+    ephemeral-storage: 10Gi

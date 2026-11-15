@@ -33,7 +33,11 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 # the image (ENV DEEPSWE_REF) so solution.sh fetches the matching gold. v1.1 has
 # no upstream tag (only v1.0.0 is tagged), so the version is pinned by SHA; the
 # tasks/dataset.toml at this commit names the dataset `datacurve/deep-swe-1-1`.
-REF=435ee89ec2f2e2289f33b0da4f992f0b7b7266b9
+# 0b9fabbb (2026-08-26) is upstream HEAD: it raises [agent].timeout_sec on all
+# 113 tasks from 5400 to 10800 and changes nothing else (the dataset.toml digests
+# move only because each task.toml changed). build.sh does not read that value —
+# the agent budget is set by the chart preset and compose.yaml, kept in step.
+REF=0b9fabbb63b9104d678fe965e1632f2dd9eaa2ea
 RAW="https://raw.githubusercontent.com/datacurve-ai/deep-swe/${REF}/tasks/${TASK}"
 
 # Resolve the pinned per-task base image from the task's own task.toml — the

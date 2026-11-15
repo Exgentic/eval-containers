@@ -1,72 +1,77 @@
 # syntax=docker/dockerfile:1
-# SWE-bench Pro
-# Harder subset of SWE-bench. Upstream: github.com/scaleapi/SWE-bench_Pro-os.
+# SWE-bench Pro V2 — per-task eval overlay.
 #
-# Upstream publishes a ready per-instance image per task on Docker Hub (the
-# dataset's `dockerhub_tag` column). So this is a per-task PULL + overlay
-# (swe-bench-style), not a source build: build.sh resolves the dockerhub_tag,
-# passes the published image as TASK_BASE, and this Dockerfile FROMs it (repo at
-# /app + git) and layers the eval pipeline. (benchmarks/RULES.md 24g.)
+# Source: github.com/scaleapi/SWE-bench_Pro-os tag v2.0.0 (v2/tasks/<id>), the
+# validated public split: 642 tasks across 11 repos (Python, Go, JS/TS). Same
+# data as HF `ScaleAI/SWE-bench_Pro` config `default`; HARD-51 is a subset of it.
 #
-# Grading is swe-bench-pro's OWN per-instance method (NOT the standard swebench
-# harness, which doesn't know these repos): a per-instance run_script.sh runs the
-# repo's tests and a per-instance parser.py parses them; the task is resolved iff
-# every fail_to_pass + pass_to_pass test PASSES. Both are fetched from upstream at
-# a pinned commit and baked root-only — no swebench package, grading is offline.
+# build.sh resolves the task's published base (task.toml
+# `[environment].docker_image` = ghcr.io/scaleapi/swe-bench_pro-v2:<id>, repo at
+# /app at base_commit with a sanitised git history) and passes it as TASK_BASE;
+# THIS file overlays the eval pipeline on it.
+#
+# We add ONLY: the instruction (TASK), a root-only copy of upstream's verifier
+# (tests/ = test.sh, run_script.sh, parser.py, config.json, test_patch.patch),
+# the grader and the entrypoint. The gold solution is NEVER baked — the oracle's
+# solution.sh fetches it fresh (rules 5, 9, 20a).
+#
+# Deviation, deliberate: upstream's authoritative score comes from a SECOND
+# Harbor run (patch_replay) that applies the captured model.patch to a pristine
+# image and runs the unchanged verifier. This repo grades IN-PLACE after the
+# agent (rule 12), like deepswe and swe-bench: /grade.sh captures model.patch the
+# way upstream's locked agents do, restores the tree to the base commit, re-applies
+# the patch the way patch_replay does, then runs upstream's test.sh unchanged.
+# Recorded in AUDIT.md.
 ARG TASK_BASE
-ARG REGISTRY=ghcr.io/exgentic
-ARG REGISTRY_SUFFIX=/
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM ${TASK_BASE}
-
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="swe-bench-pro"
-LABEL eval.benchmark.upstream_base="docker.io/jefzda/sweap-images (scaleapi/SWE-bench_Pro-os per-instance image, tag per task)"
-LABEL eval.benchmark.description="SWE-bench Pro - harder, professional-grade software engineering tasks"
-LABEL eval.benchmark.tasks="1865"
+LABEL eval.benchmark.description="SWE-bench Pro V2 - 642 validated professional-grade software engineering tasks across 11 repositories"
+LABEL eval.benchmark.tasks="642"
 LABEL eval.benchmark.env="per-task"
+# Upstream: [agent] network_mode = "no-network" on all 642 tasks.
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
-LABEL eval.benchmark.url="https://github.com/scaleapi/SWE-bench_Pro-os"
+LABEL eval.benchmark.url="https://github.com/scaleapi/SWE-bench_Pro-os/tree/v2.0.0/v2"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2509.16941"
-ENV EVAL_BENCHMARK=swe-bench-pro
+LABEL eval.benchmark.upstream_base="ghcr.io/scaleapi/swe-bench_pro-v2 (per-task tag from task.toml)"
+# Every per-task base is a single linux/amd64 manifest (upstream README), so
+# build.sh pins --platform linux/amd64 and the release skips arm64.
+LABEL eval.platforms="linux/amd64"
 
-# python3 runs the grader + the per-instance parser.py (both stdlib-only); curl+jq
-# fetch task metadata. No swebench package — grading is self-contained per instance.
-RUN apt-get update && apt-get install -y --no-install-recommends curl jq python3 && rm -rf /var/lib/apt/lists/*
-
+# EVAL_TASK_ID is consumed here (the per-task marker, rules 24a/24f).
+# SBP_TASK pins the real instance id for solution.sh: the oracle/runner override
+# EVAL_TASK_ID at run time (rule 24i). SBP_REF is the pinned upstream commit
+# (tag v2.0.0), which also backs the data_revision label.
 ARG EVAL_TASK_ID
-ENV EVAL_TASK_ID=${EVAL_TASK_ID}
+ARG SBP_REF
+LABEL eval.benchmark.data_revision="${SBP_REF}"
+ENV EVAL_BENCHMARK=swe-bench-pro \
+    EVAL_TASK_ID=${EVAL_TASK_ID} \
+    SBP_TASK=${EVAL_TASK_ID} \
+    SBP_REF=${SBP_REF}
 
-# Pinned upstream refs (build.sh passes both): the HF dataset revision (task
-# metadata + gold patch) and the GitHub repo commit (per-instance run_script.sh +
-# parser.py).
-ARG SBP_REV
-ARG SBP_GH_REF
+# The instruction the agent sees (TASK) — agent-readable by design. It is
+# upstream's own text (PR description, requirements, new interfaces).
+COPY instruction.md /task/instruction.md
 
-# Task metadata (problem, gold patch, test lists) from the HF dataset, pinned to
-# SBP_REV. The split has 1865 rows; page until the instance is found.
-RUN mkdir -p /tasks/0 && \
-    for offset in 0 100 200 300 400 500 600 700 800 900 1000 1100 1200 1300 1400 1500 1600 1700 1800; do \
-      curl -sf --retry 3 --retry-delay 1 "https://datasets-server.huggingface.co/rows?dataset=ScaleAI/SWE-bench_Pro&config=default&split=test&revision=${SBP_REV}&offset=$offset&length=100" > /tmp/page.json && \
-      if jq -e --arg id "${EVAL_TASK_ID}" '.rows[] | select(.row.instance_id == $id)' /tmp/page.json > /dev/null 2>&1; then \
-        jq -r --arg id "${EVAL_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row.problem_statement' /tmp/page.json > /tasks/0/problem.txt && \
-        jq --arg id "${EVAL_TASK_ID}" '.rows[] | select(.row.instance_id == $id) | .row' /tmp/page.json > /tasks/0/config.json && \
-        break; \
-      fi; \
-    done && rm -f /tmp/page.json
-RUN test -s /tasks/0/config.json && chmod -R 600 /tasks
+# Root-only verifier — never agent-readable. config.json names the graded tests
+# and test_patch.patch holds the hidden tests.
+COPY tests /tests
+# Record the pristine tree so grading can restore it: the base commit, local Git
+# config, and an archive of the untracked files the base image already carries.
+# The NUL-separated list also handles spaces and glob characters literally.
+RUN cd /app 2>/dev/null || cd /testbed && \
+    git config --global --add safe.directory '*' && \
+    git rev-parse HEAD > /tests/.base_commit && \
+    cp .git/config /tests/.base_git_config && \
+    git ls-files -z --others --exclude-standard > /tests/.base_untracked && \
+    tar --null -T /tests/.base_untracked -cf /tests/.base_untracked.tar && \
+    chmod -R 700 /tests && chown -R root:root /tests
 
-# Per-instance test runner + parser (root-only), from upstream at SBP_GH_REF, plus
-# our grader/grade.sh/entrypoint (separate files; no heredocs).
-RUN mkdir -p /tests && \
-    base="https://raw.githubusercontent.com/scaleapi/SWE-bench_Pro-os/${SBP_GH_REF}/run_scripts/${EVAL_TASK_ID}" && \
-    curl -fsSL --retry 3 --retry-delay 1 "$base/run_script.sh" -o /tests/run_script.sh && \
-    curl -fsSL --retry 3 --retry-delay 1 "$base/parser.py" -o /tests/parser.py
-COPY grade.py /tests/grade.py
-COPY grade.sh /grade.sh
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /grade.sh /entrypoint.sh && chmod -R 700 /tests && chown -R root:root /tests
+COPY --from=pipeline grade.sh /grade.sh
+COPY --from=pipeline entrypoint.sh /entrypoint.sh
+RUN chmod +x /grade.sh /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["/grade.sh"]

@@ -93,7 +93,7 @@ benchmark: {{ required "benchmark is required (--set benchmark=<x>)" .Values.ben
 agent: {{ .Values.agent }}
 model: {{ include "eval.modelLabel" .Values | quote }}
 {{- if not .Values.datasetSize }}
-task: {{ .Values.task | quote }}
+task: {{ include "eval.taskLabel" (toString .Values.task) | quote }}
 {{- end }}
 {{- with .Values.sweepId }}
 sweep-id: {{ . | quote }}
@@ -136,6 +136,22 @@ emptyDir: {}
 {{- end -}}
 {{- end -}}
 
+{{/* eval.taskLabel — the task id as a legal label VALUE: at most 63 chars of
+     [A-Za-z0-9_.-], beginning and ending alphanumeric. A per-task id can be far
+     longer (SWE-bench Pro's `instance_<org>__<repo>-<sha>-v<sha>` ids run 69-120
+     chars), and the API server then rejects the Job outright, so no task of that
+     benchmark can start. A long id keeps its first 54 chars plus an 8-char sha1 of
+     the whole id, as eval.jobName does. A label is a selector, not a record: the
+     full id stays in EVAL_TASK_ID and in the results path. */}}
+{{- define "eval.taskLabel" -}}
+{{- $s := trimAll "-._" (regexReplaceAll "[^A-Za-z0-9_.-]+" . "-") -}}
+{{- if gt (len $s) 63 -}}
+{{- printf "%s-%s" (trimAll "-._" (trunc 54 $s)) (sha1sum . | trunc 8) -}}
+{{- else -}}
+{{- $s -}}
+{{- end -}}
+{{- end -}}
+
 {{- define "eval.jobName" -}}
 {{- /* toString on every axis: an un-set value is nil, and printf renders that as
        the literal `%!s(<nil>)` — a `%` cannot start a YAML token, so the Job
@@ -174,7 +190,7 @@ emptyDir: {}
      evals/<benchmark>-<task>--<agent>; shared-env benchmarks → evals/<benchmark>--<agent>.
      (benchmarks/RULES.md — eval-image naming.) */}}
 {{- define "eval.runnerImage" -}}
-{{- $ba := ternary (printf "%s-%s--%s" .benchmark .task .agent) (printf "%s--%s" .benchmark .agent) (.perTask | default false) -}}
+{{- $ba := ternary (printf "%s-%s--%s" .benchmark .task .agent | lower) (printf "%s--%s" .benchmark .agent) (.perTask | default false) -}}
 {{- if .runnerImageRef }}{{ .runnerImageRef }}{{ else if .flatImages }}{{ .registry }}/{{ include "eval.flat" $ba }}{{ .imageSuffix }}:{{ .runnerTag }}{{ else }}{{ .registry }}/evals/{{ $ba }}:{{ .runnerTag }}{{ end -}}
 {{- end -}}
 
