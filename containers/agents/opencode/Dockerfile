@@ -75,7 +75,7 @@ export OPENCODE_DISABLE_AUTOCOMPACT=1
 # so it is raised to OPENCODE_MAX_OUTPUT_TOKENS (128000 unless the launch's agent
 # env sets it; not the upstream name, as run-agent refuses any *TOKEN_* name
 # there). The cap is reserved out of the context window, so when EVAL_MODEL_CONTEXT
-# (agents rule 25) states the window the cap becomes min(that, window/4): 32768 on
+# (agents rules 25–26) states the window the cap becomes min(that, window/4): 32768 on
 # a 131k model, where 128000 rejects the first call. A non-numeric
 # OPENCODE_MAX_OUTPUT_TOKENS means 128000 then. The window sizes only the cap: a
 # prompt past window − cap draws the provider's overflow error, which opencode
