@@ -1,7 +1,7 @@
 # Context-window test rules
 
 The context category answers one question per supporting agent: **told the
-model's window (`EVAL_MODEL_CONTEXT`, agents rules 25–26), does the agent stay
+model's window (`EVAL_MODEL_CONTEXT_WINDOW`, agents rules 25–26), does the agent stay
 inside it?** The static checks (`tests/static/check.rs`, `*_fits_the_window_it_is_told`)
 compute each agent's compaction point from its settings. This suite runs the
 agent and checks what it actually sends.
@@ -11,7 +11,7 @@ Parent: [.agents/verification/RULES.md](../../../.agents/verification/RULES.md)
 ## Scope
 
 1. **Two runs per agent.** Every agent in the suite has a *told* run
-   (`EVAL_MODEL_CONTEXT` set to the mock's window) and a *not told* run (unset).
+   (`EVAL_MODEL_CONTEXT_WINDOW` set to the mock's window) and a *not told* run (unset).
    The told run passes when the agent compacts at least once, no request is
    rejected, and the run ends with the mock's final answer. The not-told run is
    the control: it passes when a request is rejected before any compaction. That

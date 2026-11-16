@@ -45,7 +45,7 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # don't end up posting to /openai/v1/v1/chat/completions.
 H="${OPENAI_BASE_URL:-http://model:4000}"; export OPENAI_HOST="${H%/v1}"
 export GOOSE_TELEMETRY_OFF=true
-# EVAL_MODEL_CONTEXT (agents rules 25-26) becomes goose's context limit (128k
+# EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26) becomes goose's context limit (128k
 # unless told), and goose keeps its own compaction: at 80% of the limit. In 1.30.0
 # `goose run` checks that point once, before the first request; during the task it
 # compacts only when the server rejects a call as too long, then retries (giving
@@ -55,10 +55,10 @@ export GOOSE_TELEMETRY_OFF=true
 # whose output limit is below that cap rejects it with a 400 that goose reads as
 # an overflow, so such a model should not be told the window. Under 20480 the cap
 # would be under 4096, and the window fails before the first call.
-if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
-  W=$EVAL_MODEL_CONTEXT
+if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
+  W=$EVAL_MODEL_CONTEXT_WINDOW
   if [ "$W" -lt 20480 ]; then
-    echo "goose: EVAL_MODEL_CONTEXT=$W is too small to hold a reply and a compacted prompt" >&2
+    echo "goose: EVAL_MODEL_CONTEXT_WINDOW=$W is too small to hold a reply and a compacted prompt" >&2
     exit 2
   fi
   export GOOSE_CONTEXT_LIMIT=$W GOOSE_MAX_TOKENS=$(( W / 5 < 32000 ? W / 5 : 32000 ))

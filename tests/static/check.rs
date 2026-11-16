@@ -1082,46 +1082,46 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
-/// `EVAL_MODEL_CONTEXT` (agents/RULES.md 25-28): run-agent forwards it, refuses a
+/// `EVAL_MODEL_CONTEXT_WINDOW` (agents/RULES.md 25-28): run-agent forwards it, refuses a
 /// malformed value (27), and only warns for an agent that doesn't read it (28);
 /// compose, the chart and the CLI each set it only when asked.
 #[test]
-fn model_context_wired_through_to_agents() {
+fn model_context_window_wired_through_to_agents() {
     let root = repo_root();
     let read =
         |p: &str| fs::read_to_string(root.join(p)).unwrap_or_else(|e| panic!("read {p}: {e}"));
     let run_agent = read("containers/core/runner/run-agent");
     assert!(
-        run_agent.contains(r#"EVAL_MODEL_CONTEXT="${EVAL_MODEL_CONTEXT:-}""#),
-        "run-agent's `env -i` allow-list must pass EVAL_MODEL_CONTEXT or the agent can't read it"
+        run_agent.contains(r#"EVAL_MODEL_CONTEXT_WINDOW="${EVAL_MODEL_CONTEXT_WINDOW:-}""#),
+        "run-agent's `env -i` allow-list must pass EVAL_MODEL_CONTEXT_WINDOW or the agent can't read it"
     );
     assert!(
-        run_agent.contains(r#"[[ "$EVAL_MODEL_CONTEXT" =~ ^[1-9][0-9]*$ ]]"#),
-        "run-agent must refuse an EVAL_MODEL_CONTEXT that is not a positive integer (rule 27)"
+        run_agent.contains(r#"[[ "$EVAL_MODEL_CONTEXT_WINDOW" =~ ^[1-9][0-9]*$ ]]"#),
+        "run-agent must refuse an EVAL_MODEL_CONTEXT_WINDOW that is not a positive integer (rule 27)"
     );
     assert!(
-        run_agent.contains("grep -q EVAL_MODEL_CONTEXT /run.sh \\\n    || echo"),
-        "run-agent must warn, not exit, when the agent's /run.sh doesn't read EVAL_MODEL_CONTEXT (rule 28)"
+        run_agent.contains("grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh \\\n    || echo"),
+        "run-agent must warn, not exit, when the agent's /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW (rule 28)"
     );
     assert!(
         read("containers/compose/runner.yaml")
-            .contains("EVAL_MODEL_CONTEXT: ${EVAL_MODEL_CONTEXT:-}"),
-        "compose runner.yaml must forward EVAL_MODEL_CONTEXT (optional, no default)"
+            .contains("EVAL_MODEL_CONTEXT_WINDOW: ${EVAL_MODEL_CONTEXT_WINDOW:-}"),
+        "compose runner.yaml must forward EVAL_MODEL_CONTEXT_WINDOW (optional, no default)"
     );
     assert!(
-        read("containers/benchmarks/_chart/values.yaml").contains("modelContext: \"\""),
-        "_chart/values.yaml must ship `modelContext: \"\"` — empty default, agent's own window"
+        read("containers/benchmarks/_chart/values.yaml").contains("modelContextWindow: \"\""),
+        "_chart/values.yaml must ship `modelContextWindow: \"\"` — empty default, agent's own window"
     );
     let job = read("containers/benchmarks/_chart/templates/job.yaml");
     assert!(
-        job.contains("with $v.modelContext")
-            && job.contains("name: EVAL_MODEL_CONTEXT, value: {{ . | int64 | quote }}"),
-        "job.yaml must render EVAL_MODEL_CONTEXT from .modelContext, as an integer, only when set"
+        job.contains("with $v.modelContextWindow")
+            && job.contains("name: EVAL_MODEL_CONTEXT_WINDOW, value: {{ . | int64 | quote }}"),
+        "job.yaml must render EVAL_MODEL_CONTEXT_WINDOW from .modelContextWindow, as an integer, only when set"
     );
 }
 
 /// claude-code and claude-code-rtk fit the window they are told (agents/RULES.md
-/// 26): both `/run.sh`s carry the same `EVAL_MODEL_CONTEXT` block, and for each
+/// 26): both `/run.sh`s carry the same `EVAL_MODEL_CONTEXT_WINDOW` block, and for each
 /// window it is run and its settings put through Claude Code 2.1.104's own
 /// compaction rule (window = min(200k, max(100k, CLAUDE_CODE_AUTO_COMPACT_WINDOW))
 /// less min(reply cap, 20k); compaction at that less 13k, or the
@@ -1134,8 +1134,8 @@ fn claude_code_fits_the_window_it_is_told() {
         let df = fs::read_to_string(root.join(format!("containers/agents/{agent}/Dockerfile")))
             .unwrap_or_else(|e| panic!("read {agent}: {e}"));
         let start = df
-            .find("if [ -n \"${EVAL_MODEL_CONTEXT:-}\" ]; then\n")
-            .unwrap_or_else(|| panic!("{agent}'s /run.sh doesn't read EVAL_MODEL_CONTEXT"));
+            .find("if [ -n \"${EVAL_MODEL_CONTEXT_WINDOW:-}\" ]; then\n")
+            .unwrap_or_else(|| panic!("{agent}'s /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW"));
         let end = start + df[start..].find("\nfi\n").expect("block ends in `fi`") + 4;
         df[start..end].to_string()
     };
@@ -1160,7 +1160,7 @@ echo $(( pt + o ))"#;
     ] {
         let out = std::process::Command::new("bash")
             .args(["-c", &format!("set -euo pipefail\n{cc}{report}")])
-            .env("EVAL_MODEL_CONTEXT", window.to_string())
+            .env("EVAL_MODEL_CONTEXT_WINDOW", window.to_string())
             .output()
             .expect("run bash");
         assert!(
@@ -1176,7 +1176,7 @@ echo $(( pt + o ))"#;
     }
     let tiny = std::process::Command::new("bash")
         .args(["-c", &format!("set -euo pipefail\n{cc}")])
-        .env("EVAL_MODEL_CONTEXT", "63999")
+        .env("EVAL_MODEL_CONTEXT_WINDOW", "63999")
         .status()
         .expect("run bash");
     assert_eq!(
@@ -1198,8 +1198,8 @@ fn goose_fits_the_window_it_is_told() {
         "goose keeps its own compaction threshold"
     );
     let start = df
-        .find("if [ -n \"${EVAL_MODEL_CONTEXT:-}\" ]; then\n")
-        .expect("goose's /run.sh doesn't read EVAL_MODEL_CONTEXT");
+        .find("if [ -n \"${EVAL_MODEL_CONTEXT_WINDOW:-}\" ]; then\n")
+        .expect("goose's /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW");
     let end = start + df[start..].find("\nfi\n").expect("block ends in `fi`") + 4;
     let block = &df[start..end];
     let run = |window: u64| {
@@ -1210,7 +1210,7 @@ fn goose_fits_the_window_it_is_told() {
                     "set -euo pipefail\n{block}echo \"$GOOSE_CONTEXT_LIMIT $GOOSE_MAX_TOKENS\""
                 ),
             ])
-            .env("EVAL_MODEL_CONTEXT", window.to_string())
+            .env("EVAL_MODEL_CONTEXT_WINDOW", window.to_string())
             .output()
             .expect("run bash")
     };
@@ -1241,7 +1241,7 @@ fn goose_fits_the_window_it_is_told() {
 
 /// An agent's `/run.sh` (the heredoc in its Dockerfile, or its `entrypoint.sh`),
 /// run under bash with the agent binary replaced by `stub`, a bash body that
-/// prints what the script handed it. `window` is `EVAL_MODEL_CONTEXT`.
+/// prints what the script handed it. `window` is `EVAL_MODEL_CONTEXT_WINDOW`.
 fn run_with_stub(
     agent: &str,
     binary: &str,
@@ -1298,7 +1298,7 @@ fn run_with_stub_env(
         .env("TASK", "t")
         .env("MODEL", "m");
     if let Some(w) = window {
-        cmd.env("EVAL_MODEL_CONTEXT", w.to_string());
+        cmd.env("EVAL_MODEL_CONTEXT_WINDOW", w.to_string());
     }
     if let Some((k, v)) = extra {
         cmd.env(k, v);
@@ -1522,14 +1522,14 @@ fn internet_policy_wired_through_to_agents() {
 /// claude-code keeps its own per-model max_tokens (#726): a forced 128000 is
 /// reserved out of the context window on every call, and a 262k-window model
 /// then rejects every call once the prompt passes ~134k. Only a window the
-/// launch states (`EVAL_MODEL_CONTEXT`, agents/RULES.md 26) may set a cap, to fit it.
+/// launch states (`EVAL_MODEL_CONTEXT_WINDOW`, agents/RULES.md 26) may set a cap, to fit it.
 #[test]
 fn claude_code_keeps_its_own_reply_cap() {
     for a in ["claude-code", "claude-code-rtk"] {
         let df = fs::read_to_string(repo_root().join(format!("containers/agents/{a}/Dockerfile")))
             .unwrap();
         let start = df
-            .find("if [ -n \"${EVAL_MODEL_CONTEXT:-}\" ]; then\n")
+            .find("if [ -n \"${EVAL_MODEL_CONTEXT_WINDOW:-}\" ]; then\n")
             .unwrap_or(df.len());
         let end = df[start..]
             .find("\nfi\n")
@@ -1537,7 +1537,7 @@ fn claude_code_keeps_its_own_reply_cap() {
         let outside = format!("{}{}", &df[..start], &df[end..]);
         assert!(
             !outside.contains("export CLAUDE_CODE_MAX_OUTPUT_TOKENS="),
-            "{a} must not set CLAUDE_CODE_MAX_OUTPUT_TOKENS outside its EVAL_MODEL_CONTEXT block — Claude Code's own default fits the window"
+            "{a} must not set CLAUDE_CODE_MAX_OUTPUT_TOKENS outside its EVAL_MODEL_CONTEXT_WINDOW block — Claude Code's own default fits the window"
         );
     }
 }

@@ -30,13 +30,13 @@ set -euo pipefail
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
-# No CLAUDE_CODE_MAX_OUTPUT_TOKENS by default (EVAL_MODEL_CONTEXT below sets
+# No CLAUDE_CODE_MAX_OUTPUT_TOKENS by default (EVAL_MODEL_CONTEXT_WINDOW below sets
 # one to fit the window it is told). With no --model, Claude Code runs as its
 # default model, Sonnet 4.6, whatever model the gateway maps that name to, so
 # it caps a reply at Sonnet 4.6's default, 32000, and resumes a reply cut there.
 # Forcing 128000 reserved 128k of every model's context window, so on a
 # 262k-window vLLM model each call failed once the prompt passed ~134k (#726).
-# EVAL_MODEL_CONTEXT (agents rules 25-26) tells Claude Code the model's real
+# EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26) tells Claude Code the model's real
 # window: it assumes Sonnet 4.6's 200k, so on a smaller model every call past the
 # real window is rejected. Claude Code 2.1.104 compacts at its window minus
 # min(reply cap, 20k) minus 13k; CLAUDE_CODE_AUTO_COMPACT_WINDOW can only lower
@@ -51,10 +51,10 @@ export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
 # prompt and tools) is ~25k tokens, and the compaction point (~0.75 of the window,
 # less 13k) must clear that by a few turns or it compacts on every request — ~23k
 # at 48k, ~34k at 64k. 64000 is the window tests/run/context runs.
-if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
-  W=$EVAL_MODEL_CONTEXT
+if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
+  W=$EVAL_MODEL_CONTEXT_WINDOW
   if [ "$W" -lt 64000 ]; then
-    echo "claude-code: EVAL_MODEL_CONTEXT=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
+    echo "claude-code: EVAL_MODEL_CONTEXT_WINDOW=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
     exit 2
   fi
   OUT=$(( W / 4 < 32000 ? W / 4 : 32000 ))

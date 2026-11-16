@@ -4,7 +4,7 @@
 //! rejects an over-window request with vLLM's error) on a bridge network, then
 //! runs the agent's `evals/agents-smoke--<name>` image against it twice:
 //!
-//!   - told: `EVAL_MODEL_CONTEXT=64000`. The agent compacts by its own rule and
+//!   - told: `EVAL_MODEL_CONTEXT_WINDOW=64000`. The agent compacts by its own rule and
 //!     finishes: at least one compaction, no rejection, and the final answer.
 //!   - not told: the agent assumes its own, larger window, so a request is
 //!     rejected before any compaction. This proves the mock enforces the window,
@@ -104,7 +104,7 @@ async fn run(agent: &str, told: bool) -> Vec<String> {
     std::fs::create_dir_all(&out).expect("create output dir");
     let mock = start_mock(agent, &net, &host).await;
     let env: Vec<(&str, String)> = if told {
-        vec![("EVAL_MODEL_CONTEXT", WINDOW.to_string())]
+        vec![("EVAL_MODEL_CONTEXT_WINDOW", WINDOW.to_string())]
     } else {
         vec![]
     };

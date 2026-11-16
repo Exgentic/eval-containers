@@ -74,16 +74,16 @@ export OPENCODE_DISABLE_AUTOCOMPACT=1
 # opencode's own cap is 32000, and a turn cut there ends the session with exit 0,
 # so it is raised to OPENCODE_MAX_OUTPUT_TOKENS (128000 unless the launch's agent
 # env sets it; not the upstream name, as run-agent refuses any *TOKEN_* name
-# there). The cap is reserved out of the context window, so when EVAL_MODEL_CONTEXT
+# there). The cap is reserved out of the context window, so when EVAL_MODEL_CONTEXT_WINDOW
 # (agents rules 25–26) states the window the cap becomes min(that, window/4): 32768 on
 # a 131k model, where 128000 rejects the first call. A non-numeric
 # OPENCODE_MAX_OUTPUT_TOKENS means 128000 then. The window sizes only the cap: a
 # prompt past window − cap draws the provider's overflow error, which opencode
 # answers by compacting (above).
 CAP="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}"
-if [ -n "${EVAL_MODEL_CONTEXT:-}" ]; then
+if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   [[ "$CAP" =~ ^[1-9][0-9]*$ ]] || CAP=128000
-  CAP=$(( CAP < EVAL_MODEL_CONTEXT / 4 ? CAP : EVAL_MODEL_CONTEXT / 4 ))
+  CAP=$(( CAP < EVAL_MODEL_CONTEXT_WINDOW / 4 ? CAP : EVAL_MODEL_CONTEXT_WINDOW / 4 ))
 fi
 export OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX="$CAP"
 # `--`: end-of-options. A task whose text begins with "-" is otherwise parsed as

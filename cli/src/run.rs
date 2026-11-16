@@ -93,9 +93,9 @@ pub struct RunArgs {
     agent_reasoning_effort: Option<String>,
 
     /// The model's context window in tokens, for agents that size their context
-    /// to it (maps to $EVAL_MODEL_CONTEXT). Unset: each agent assumes its own.
+    /// to it (maps to $EVAL_MODEL_CONTEXT_WINDOW). Unset: each agent assumes its own.
     #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
-    model_context: Option<u64>,
+    model_context_window: Option<u64>,
 
     /// Task ID within the benchmark (maps to $EVAL_TASK_ID)
     #[arg(long)]
@@ -279,8 +279,8 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if let Some(ref v) = args.agent_reasoning_effort {
         envs.push(("EVAL_AGENT_REASONING_EFFORT", v.clone()));
     }
-    if let Some(v) = args.model_context {
-        envs.push(("EVAL_MODEL_CONTEXT", v.to_string()));
+    if let Some(v) = args.model_context_window {
+        envs.push(("EVAL_MODEL_CONTEXT_WINDOW", v.to_string()));
     }
     if let Some(ref v) = args.task_id {
         envs.push(("EVAL_TASK_ID", v.clone()));
@@ -707,8 +707,8 @@ fn agent_sets(args: &RunArgs) -> Vec<String> {
     if let Some(e) = &args.agent_reasoning_effort {
         sets.push(format!("reasoningEffort={e}"));
     }
-    if let Some(c) = args.model_context {
-        sets.push(format!("modelContext={c}"));
+    if let Some(c) = args.model_context_window {
+        sets.push(format!("modelContextWindow={c}"));
     }
     sets
 }
@@ -1028,13 +1028,13 @@ mod tests {
         };
         assert!(super::agent_sets(&parse(&[]).unwrap()).is_empty());
         assert_eq!(
-            super::agent_sets(&parse(&["--model-context", "1048576"]).unwrap()),
-            ["modelContext=1048576"]
+            super::agent_sets(&parse(&["--model-context-window", "1048576"]).unwrap()),
+            ["modelContextWindow=1048576"]
         );
         for bad in ["0", "-1", "128k", "1e6", "1.5"] {
             assert!(
-                parse(&["--model-context", bad]).is_err(),
-                "--model-context {bad:?} was accepted"
+                parse(&["--model-context-window", bad]).is_err(),
+                "--model-context-window {bad:?} was accepted"
             );
         }
     }
