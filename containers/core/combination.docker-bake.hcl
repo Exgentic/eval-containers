@@ -6,7 +6,7 @@ variable "AGENT_IMAGE"        {}
 variable "EDGE_IMAGE"         { default = "${REGISTRY}/core/edge:${TAG}" }
 variable "MODEL_IMAGE"        { default = "${REGISTRY}/models/bifrost:${TAG}" }
 variable "OTEL_IMAGE"         { default = "${REGISTRY}/core/otel:${TAG}" }
-variable "GOSU_IMAGE"            { default = "${REGISTRY}/core/gosu:${TAG}" }
+variable "GOSU_IMAGE"            { default = "ghcr.io/exgentic/core/gosu:latest" }
 variable "PROCESS_COMPOSE_IMAGE" { default = "${REGISTRY}/core/process-compose:${TAG}" }
 
 # Lean eval base (evals/<b>--<a>:latest): benchmark + agent + grader + the
