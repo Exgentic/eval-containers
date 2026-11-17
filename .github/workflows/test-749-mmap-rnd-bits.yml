@@ -45,10 +45,10 @@ jobs:
       - name: Show environment
         run: |
           uname -r
-          sysctl vm.mmap_rnd_bits kernel.randomize_va_space
+          sudo sysctl vm.mmap_rnd_bits kernel.randomize_va_space
           docker version --format '{{.Server.Version}}'
           docker run --rm debian:trixie-slim setarch x86_64 -R true && s=ok || s=blocked
-          echo "::notice::$(uname -r) $(sysctl -n vm.mmap_rnd_bits) bits, setarch -R $s"
+          echo "::notice::$(uname -r) $(sudo sysctl -n vm.mmap_rnd_bits) bits, setarch -R $s"
 
       - name: Oracle cybergym 10013
         id: oracle
