@@ -84,8 +84,7 @@ var (
 	apiKey = os.Getenv("EDGE_API_KEY")
 	// Some provider front doors authenticate every wire with one custom header
 	// (CUSTOM_API_KEY, for example). Empty keeps the wire-native defaults below.
-	apiKeyHeader      = os.Getenv("EDGE_API_KEY_HEADER")
-	apiKeyHeaderLower = strings.ToLower(apiKeyHeader)
+	apiKeyHeader = os.Getenv("EDGE_API_KEY_HEADER")
 
 	// A provider serves its own native paths; a gateway serves the framework's
 	// protocol-namespaced ones (gateways rule 5). Declared, never sniffed.
@@ -111,7 +110,6 @@ var (
 		"proxy-authorization": true, "te": true, "trailer": true,
 		"transfer-encoding": true, "upgrade": true,
 	}
-	transportHeader = map[string]string{"content-length": "Content-Length", "host": "Host"}
 
 	// Bound how much of one exchange is written to the record; the response is
 	// streamed, so this caps the file, not the footprint.
@@ -171,11 +169,11 @@ func envInt(k string, d int) int {
 }
 
 func isSecretHeader(lower string) bool {
-	return secretHeader[lower] || apiKeyHeaderLower != "" && lower == apiKeyHeaderLower
+	return secretHeader[lower] || apiKeyHeader != "" && strings.EqualFold(lower, apiKeyHeader)
 }
 
 func skipRequestHeader(lower string) bool {
-	return isSecretHeader(lower) || hopByHop[lower] || transportHeader[lower] != ""
+	return isSecretHeader(lower) || hopByHop[lower] || lower == "content-length" || lower == "host"
 }
 
 func skipResponseHeader(lower string) bool {
@@ -200,14 +198,6 @@ func validHeaderName(name string) bool {
 		return false
 	}
 	return true
-}
-
-func unsafeCredentialHeaderReason(name string) string {
-	lower := strings.ToLower(name)
-	if hopByHop[lower] {
-		return "a hop-by-hop header"
-	}
-	return transportHeader[lower]
 }
 
 func msSince(t time.Time) float64 { return float64(time.Since(t).Microseconds()) / 1000 }
@@ -836,13 +826,9 @@ func configError() error {
 	if base == "" {
 		return errors.New("EDGE_API_BASE is required")
 	}
-	apiKeyHeaderLower = strings.ToLower(apiKeyHeader)
 	if apiKeyHeader != "" {
 		if !validHeaderName(apiKeyHeader) {
 			return fmt.Errorf("EDGE_API_KEY_HEADER=%q is not a valid HTTP header name", apiKeyHeader)
-		}
-		if reason := unsafeCredentialHeaderReason(apiKeyHeader); reason != "" {
-			return fmt.Errorf("EDGE_API_KEY_HEADER=%q is %s and cannot carry the upstream credential", apiKeyHeader, reason)
 		}
 		if upstreamIsGateway {
 			return errors.New("EDGE_API_KEY_HEADER is for a provider upstream; gateway-specific custom authentication is not supported")
