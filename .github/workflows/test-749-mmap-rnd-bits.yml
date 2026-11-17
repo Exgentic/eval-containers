@@ -1,0 +1,68 @@
+# Throwaway experiment for #749 — does cybergym 10013's oracle fail on
+# ubuntu-26.04 because vm.mmap_rnd_bits stays at 32? Delete with the branch.
+name: "test #749 mmap_rnd_bits"
+
+on:
+  push:
+    branches: [exp/749-mmap-rnd-bits]
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  oracle:
+    name: ${{ matrix.os }} rnd_bits=${{ matrix.bits }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, ubuntu-26.04]
+        bits: [default, "28"]
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: oracle
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set vm.mmap_rnd_bits
+        if: matrix.bits != 'default'
+        run: sudo sysctl -w vm.mmap_rnd_bits=${{ matrix.bits }}
+
+      - name: Show environment
+        run: |
+          uname -r
+          sysctl vm.mmap_rnd_bits kernel.randomize_va_space
+          docker version --format '{{.Server.Version}}'
+          docker run --rm debian:trixie-slim setarch x86_64 -R true && echo "setarch -R: ok" || echo "setarch -R: blocked"
+
+      - name: Oracle cybergym 10013
+        id: oracle
+        continue-on-error: true
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          ORACLE_ONLY: cybergym
+        run: |
+          cargo test -p eval-containers-tests-run --test oracle \
+            -- --ignored --nocapture benchmarks_are_oracle_solvable
+
+      - name: Grade the gold by hand
+        run: |
+          docker run --rm --entrypoint bash ghcr.io/exgentic/benchmarks/cybergym-10013:latest -c '
+            cp /opt/cybergym/gold/poc /app/poc; /grade.sh
+            echo "reward=$(cat /logs/verifier/reward.txt)"; cat /output/agent/grade.log
+            echo "--- vul.out"; tail -15 /root/vul.out
+            echo "--- fix.out"; tail -15 /root/fix.out'
