@@ -1174,6 +1174,21 @@ echo $(( pt + o ))"#;
             "window {window}: compaction point + reply cap = {used}"
         );
     }
+    let cap = |set: &str| {
+        let out = std::process::Command::new("bash")
+            .args([
+                "-c",
+                &format!("set -euo pipefail\n{cc}echo $CLAUDE_CODE_MAX_OUTPUT_TOKENS"),
+            ])
+            .env("EVAL_MODEL_CONTEXT_WINDOW", "200000")
+            .env("CLAUDE_CODE_MAX_OUTPUT_TOKENS", set)
+            .output()
+            .expect("run bash");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    assert_eq!(cap("8000"), "8000", "a lower cap the launch set is kept");
+    assert_eq!(cap("64000"), "32000", "a higher cap is lowered to fit");
+    assert_eq!(cap("x"), "32000", "a non-numeric cap means 32000");
     let tiny = std::process::Command::new("bash")
         .args(["-c", &format!("set -euo pipefail\n{cc}")])
         .env("EVAL_MODEL_CONTEXT_WINDOW", "63999")
@@ -1202,18 +1217,19 @@ fn goose_fits_the_window_it_is_told() {
         .expect("goose's /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW");
     let end = start + df[start..].find("\nfi\n").expect("block ends in `fi`") + 4;
     let block = &df[start..end];
-    let run = |window: u64| {
-        std::process::Command::new("bash")
-            .args([
-                "-c",
-                &format!(
-                    "set -euo pipefail\n{block}echo \"$GOOSE_CONTEXT_LIMIT $GOOSE_MAX_TOKENS\""
-                ),
-            ])
-            .env("EVAL_MODEL_CONTEXT_WINDOW", window.to_string())
-            .output()
-            .expect("run bash")
+    let run_cap = |window: u64, set: Option<&str>| {
+        let mut cmd = std::process::Command::new("bash");
+        cmd.args([
+            "-c",
+            &format!("set -euo pipefail\n{block}echo \"$GOOSE_CONTEXT_LIMIT $GOOSE_MAX_TOKENS\""),
+        ])
+        .env("EVAL_MODEL_CONTEXT_WINDOW", window.to_string());
+        if let Some(v) = set {
+            cmd.env("GOOSE_MAX_TOKENS", v);
+        }
+        cmd.output().expect("run bash")
     };
+    let run = |window: u64| run_cap(window, None);
     for window in [1_048_576u64, 200_000, 131_072, 64_000, 20_480] {
         let out = run(window);
         assert!(
@@ -1232,6 +1248,22 @@ fn goose_fits_the_window_it_is_told() {
             "window {window}: 80% + reply cap overflows"
         );
     }
+    let cap = |set: &str| {
+        String::from_utf8_lossy(&run_cap(200_000, Some(set)).stdout)
+            .trim()
+            .to_string()
+    };
+    assert_eq!(
+        cap("8000"),
+        "200000 8000",
+        "a lower cap the launch set is kept"
+    );
+    assert_eq!(
+        cap("64000"),
+        "200000 40000",
+        "a higher cap is lowered to window/5"
+    );
+    assert_eq!(cap("x"), "200000 32000", "a non-numeric cap means 32000");
     assert_eq!(
         run(20_479).status.code(),
         Some(2),

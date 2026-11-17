@@ -86,7 +86,9 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
     echo "claude-code: EVAL_MODEL_CONTEXT_WINDOW=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
     exit 2
   fi
-  OUT=$(( W / 4 < 32000 ? W / 4 : 32000 ))
+  OUT=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
+  [[ "$OUT" =~ ^[1-9][0-9]*$ && "$OUT" -le 32000 ]] || OUT=32000
+  OUT=$(( OUT < W / 4 ? OUT : W / 4 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
   if [ "$W" -ge 100000 ]; then
     export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$W

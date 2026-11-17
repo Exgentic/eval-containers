@@ -50,18 +50,21 @@ export GOOSE_TELEMETRY_OFF=true
 # `goose run` checks that point once, before the first request; during the task it
 # compacts only when the server rejects a call as too long, then retries (giving
 # up on a second rejection in a row). The reply cap, GOOSE_MAX_TOKENS, becomes
-# min(32000, window/5), so 80% plus a reply fits; it replaces both the 4096 goose
-# uses for a model it doesn't know and a catalog model's own cap. A hosted model
-# whose output limit is below that cap rejects it with a 400 that goose reads as
-# an overflow, so such a model should not be told the window. Under 20480 the cap
-# would be under 4096, and the window fails before the first call.
+# min(the launch's GOOSE_MAX_TOKENS or 32000, window/5), so 80% plus a reply fits;
+# it replaces the 4096 goose uses for a model it doesn't know and a catalog
+# model's own cap. A hosted model whose output limit is lower rejects a larger cap
+# with a 400 that goose reads as an overflow, so set GOOSE_MAX_TOKENS to that
+# limit. Under 20480 the window/5 cap would be under 4096, and it fails before
+# the first call.
 if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   W=$EVAL_MODEL_CONTEXT_WINDOW
   if [ "$W" -lt 20480 ]; then
     echo "goose: EVAL_MODEL_CONTEXT_WINDOW=$W is too small to hold a reply and a compacted prompt" >&2
     exit 2
   fi
-  export GOOSE_CONTEXT_LIMIT=$W GOOSE_MAX_TOKENS=$(( W / 5 < 32000 ? W / 5 : 32000 ))
+  CAP=${GOOSE_MAX_TOKENS:-32000}
+  [[ "$CAP" =~ ^[1-9][0-9]*$ ]] || CAP=32000
+  export GOOSE_CONTEXT_LIMIT=$W GOOSE_MAX_TOKENS=$(( CAP < W / 5 ? CAP : W / 5 ))
 fi
 exec goose run -t "$TASK" --no-session -q
 E
