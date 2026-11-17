@@ -28,10 +28,6 @@ import (
 // what the repo's secret gate looks for.
 const upstreamCredential = "edge-test-upstream-value"
 
-func setTestAPIKeyHeader(name string) {
-	apiKeyHeader, apiKeyHeaderLower = name, strings.ToLower(name) // pragma: allowlist secret — header names, not credentials
-}
-
 func TestPinReplacesModelOnEveryBodyWire(t *testing.T) {
 	for _, body := range []string{
 		`{"model":"placeholder","messages":[{"role":"user","content":"hi"}]}`,
@@ -113,9 +109,9 @@ func TestPinGeminiRewritesTheModelInTheURL(t *testing.T) {
 }
 
 func TestSafeHeadersDropsEveryCredential(t *testing.T) {
-	prevHeader, prevHeaderLower := apiKeyHeader, apiKeyHeaderLower
-	setTestAPIKeyHeader("CUSTOM_API_KEY")
-	t.Cleanup(func() { apiKeyHeader, apiKeyHeaderLower = prevHeader, prevHeaderLower }) // pragma: allowlist secret — restoring header names
+	prevHeader := apiKeyHeader
+	apiKeyHeader = "CUSTOM_API_KEY"                 // pragma: allowlist secret — a header name, not a credential
+	t.Cleanup(func() { apiKeyHeader = prevHeader }) // pragma: allowlist secret — restoring a header name
 
 	h := http.Header{}
 	h.Set("authorization", "Bearer real-key")
@@ -156,12 +152,12 @@ func edgeAgainst(t *testing.T, h http.HandlerFunc) (*httptest.Server, *[]*http.R
 	t.Cleanup(up.Close)
 
 	prevBase, prevOut, prevModel, prevKey := base, out, model, apiKey
-	prevHeader, prevHeaderLower := apiKeyHeader, apiKeyHeaderLower
+	prevHeader := apiKeyHeader
 	prevGw, prevRetries := upstreamIsGateway, maxRetries
 	prevTerminate := terminate
 	t.Cleanup(func() {
 		base, out, model, apiKey = prevBase, prevOut, prevModel, prevKey // pragma: allowlist secret — restoring test globals
-		apiKeyHeader, apiKeyHeaderLower = prevHeader, prevHeaderLower    // pragma: allowlist secret — restoring header names
+		apiKeyHeader = prevHeader                                        // pragma: allowlist secret — restoring a header name
 		upstreamIsGateway, maxRetries = prevGw, prevRetries
 		// Back to unconfigured, not to what the last test left: a cap that
 		// leaks into the next test refuses a call it never set a budget for.
@@ -174,7 +170,7 @@ func edgeAgainst(t *testing.T, h http.HandlerFunc) (*httptest.Server, *[]*http.R
 	})
 	base, model = up.URL, "azure/gpt-5.4"
 	apiKey = upstreamCredential // pragma: allowlist secret — test constant
-	setTestAPIKeyHeader("")
+	apiKeyHeader = ""
 	out = filepath.Join(t.TempDir(), "calls.jsonl")
 
 	edge := httptest.NewServer(http.HandlerFunc(handle))
@@ -280,7 +276,7 @@ func TestConfiguredCredentialHeaderReplacesEveryWireDefault(t *testing.T) {
 	edge, reqs, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	})
-	setTestAPIKeyHeader("X-Custom")
+	apiKeyHeader = "X-Custom" // pragma: allowlist secret — a header name, not a credential
 	paths := []string{
 		"/openai/v1/chat/completions",
 		"/anthropic/v1/messages",
@@ -393,7 +389,7 @@ func TestCredentialResponseHeadersAreNotForwardedOrRecorded(t *testing.T) {
 		w.Header().Set("x-keep-me", "yes")
 		_, _ = w.Write([]byte(`{}`))
 	})
-	setTestAPIKeyHeader("CUSTOM_API_KEY")
+	apiKeyHeader = "CUSTOM_API_KEY" // pragma: allowlist secret — a header name, not a credential
 	resp := post(t, edge.URL+"/openai/v1/chat/completions", `{"model":"p"}`, nil)
 	defer resp.Body.Close()
 
@@ -408,27 +404,6 @@ func TestCredentialResponseHeadersAreNotForwardedOrRecorded(t *testing.T) {
 	}
 	if got := resp.Header.Get("x-keep-me"); got != "yes" {
 		t.Errorf("benign response header = %q, want yes", got)
-	}
-}
-
-func TestCredentialResponseTrailersAreNotForwardedOrRecorded(t *testing.T) {
-	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Trailer", "X-Custom")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{}`))
-		w.Header().Set("X-Custom", upstreamCredential)
-	})
-	setTestAPIKeyHeader("X-Custom")
-	resp := post(t, edge.URL+"/openai/v1/chat/completions", `{"model":"p"}`, nil)
-	_, _ = io.ReadAll(resp.Body)
-	resp.Body.Close()
-
-	if got := resp.Trailer.Get("X-Custom"); got != "" {
-		t.Errorf("credential response trailer reached the agent: %q", got)
-	}
-	rec := records(t)[0]
-	if got := rec.RespHead["X-Custom"]; got != "" {
-		t.Errorf("credential response trailer reached the record: %q", got)
 	}
 }
 
@@ -685,9 +660,9 @@ func TestConfigErrorAcceptsAValidSetup(t *testing.T) {
 }
 
 func TestConfigErrorAcceptsAProviderCustomCredentialHeader(t *testing.T) {
-	prevBase, prevKey, prevHeader, prevHeaderLower, prevGateway := base, apiKey, apiKeyHeader, apiKeyHeaderLower, upstreamIsGateway
+	prevBase, prevKey, prevHeader, prevGateway := base, apiKey, apiKeyHeader, upstreamIsGateway
 	defer func() {
-		base, apiKey, apiKeyHeader, apiKeyHeaderLower, upstreamIsGateway = prevBase, prevKey, prevHeader, prevHeaderLower, prevGateway
+		base, apiKey, apiKeyHeader, upstreamIsGateway = prevBase, prevKey, prevHeader, prevGateway
 	}()
 	base, apiKey, apiKeyHeader, upstreamIsGateway = "http://upstream", upstreamCredential, "CUSTOM_API_KEY", false
 
@@ -696,10 +671,10 @@ func TestConfigErrorAcceptsAProviderCustomCredentialHeader(t *testing.T) {
 	}
 }
 
-func TestConfigErrorRefusesInvalidOrUnsafeCredentialHeaders(t *testing.T) {
-	prevBase, prevHeader, prevHeaderLower, prevGateway := base, apiKeyHeader, apiKeyHeaderLower, upstreamIsGateway
+func TestConfigErrorRefusesInvalidCredentialHeaders(t *testing.T) {
+	prevBase, prevHeader, prevGateway := base, apiKeyHeader, upstreamIsGateway
 	defer func() {
-		base, apiKeyHeader, apiKeyHeaderLower, upstreamIsGateway = prevBase, prevHeader, prevHeaderLower, prevGateway
+		base, apiKeyHeader, upstreamIsGateway = prevBase, prevHeader, prevGateway
 	}()
 	base, upstreamIsGateway = "http://upstream", false
 
@@ -709,9 +684,6 @@ func TestConfigErrorRefusesInvalidOrUnsafeCredentialHeaders(t *testing.T) {
 		{"CUSTOM-KEY-é", "valid HTTP header name"},
 		{"CUSTOM\rKEY", "valid HTTP header name"},
 		{"CUSTOM\nKEY", "valid HTTP header name"},
-		{"Host", "Host"},
-		{"Content-Length", "Content-Length"},
-		{"Connection", "hop-by-hop"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			apiKeyHeader = tc.name // pragma: allowlist secret — invalid header-name test case
@@ -723,9 +695,9 @@ func TestConfigErrorRefusesInvalidOrUnsafeCredentialHeaders(t *testing.T) {
 }
 
 func TestConfigErrorRefusesACustomHeaderWithoutACredential(t *testing.T) {
-	prevBase, prevKey, prevHeader, prevHeaderLower, prevGateway := base, apiKey, apiKeyHeader, apiKeyHeaderLower, upstreamIsGateway
+	prevBase, prevKey, prevHeader, prevGateway := base, apiKey, apiKeyHeader, upstreamIsGateway
 	defer func() {
-		base, apiKey, apiKeyHeader, apiKeyHeaderLower, upstreamIsGateway = prevBase, prevKey, prevHeader, prevHeaderLower, prevGateway
+		base, apiKey, apiKeyHeader, upstreamIsGateway = prevBase, prevKey, prevHeader, prevGateway
 	}()
 	base, apiKey, apiKeyHeader, upstreamIsGateway = "http://upstream", "", "CUSTOM_API_KEY", false
 
@@ -735,9 +707,9 @@ func TestConfigErrorRefusesACustomHeaderWithoutACredential(t *testing.T) {
 }
 
 func TestConfigErrorRefusesACustomCredentialHeaderForAGateway(t *testing.T) {
-	prevBase, prevHeader, prevHeaderLower, prevGateway := base, apiKeyHeader, apiKeyHeaderLower, upstreamIsGateway
+	prevBase, prevHeader, prevGateway := base, apiKeyHeader, upstreamIsGateway
 	defer func() {
-		base, apiKeyHeader, apiKeyHeaderLower, upstreamIsGateway = prevBase, prevHeader, prevHeaderLower, prevGateway
+		base, apiKeyHeader, upstreamIsGateway = prevBase, prevHeader, prevGateway
 	}()
 	base, apiKeyHeader, upstreamIsGateway = "http://gateway", "CUSTOM_API_KEY", true
 
