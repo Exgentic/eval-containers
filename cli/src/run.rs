@@ -251,23 +251,12 @@ fn credential_header_name(name: &str) -> Result<String, String> {
         Ok(name.to_string())
     } else {
         Err(format!(
-            "--api-key-header / EVAL_API_KEY_HEADER={name:?} is not a valid HTTP header name"
+            "--api-key-header {name:?} is not a valid HTTP header name"
         ))
     }
 }
 
-fn resolve_api_key_header(flag: Option<String>) -> Result<Option<String>, String> {
-    flag.or_else(|| {
-        std::env::var("EVAL_API_KEY_HEADER")
-            .ok()
-            .filter(|v| !v.is_empty())
-    })
-    .map(|v| credential_header_name(&v))
-    .transpose()
-}
-
-pub fn execute(registry: &str, mut args: RunArgs) -> Result<(), String> {
-    args.api_key_header = resolve_api_key_header(args.api_key_header)?;
+pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     // Resolve benchmark: --benchmark flag wins over positional, either must be set.
     let benchmark = args
         .benchmark_flag
@@ -1133,74 +1122,6 @@ mod tests {
     }
 
     #[test]
-    fn api_key_header_environment_fallback_and_flag_precedence() {
-        use clap::Parser;
-
-        // Isolate the environment from other tests parsing RunArgs in parallel.
-        const CHILD: &str = "EVAL_TEST_API_KEY_HEADER_CHILD";
-        if std::env::var_os(CHILD).is_none() {
-            for header in ["CUSTOM_API_KEY", ""] {
-                let status = std::process::Command::new(std::env::current_exe().unwrap())
-                    .args([
-                        "--exact",
-                        "run::tests::api_key_header_environment_fallback_and_flag_precedence",
-                        "--nocapture",
-                    ])
-                    .env(CHILD, "1")
-                    .env("EVAL_API_KEY_HEADER", header)
-                    .status()
-                    .unwrap();
-                assert!(status.success(), "environment header {header:?} failed");
-            }
-            return;
-        }
-
-        let parse = |extra: &[&str]| {
-            let mut argv = vec!["run", "aime", "--agent", "codex"];
-            argv.extend_from_slice(extra);
-            Cli::try_parse_from(argv).map(|mut cli| {
-                cli.run.api_key_header =
-                    super::resolve_api_key_header(cli.run.api_key_header).unwrap();
-                cli
-            })
-        };
-        assert!(parse(&["--api-key-header", ""]).is_err());
-        let explicit = parse(&["--mode", "job", "--api-key-header", "X-Explicit"]).unwrap();
-        assert_eq!(explicit.run.api_key_header.as_deref(), Some("X-Explicit"));
-
-        if std::env::var("EVAL_API_KEY_HEADER").unwrap().is_empty() {
-            assert!(
-                parse(&["--mode", "job"])
-                    .unwrap()
-                    .run
-                    .api_key_header
-                    .is_none()
-            );
-            assert!(parse(&[]).unwrap().run.api_key_header.is_none());
-            assert!(
-                parse(&["--mode", "job", "--gateway", "litellm"])
-                    .unwrap()
-                    .run
-                    .api_key_header
-                    .is_none()
-            );
-            return;
-        }
-        let direct = parse(&["--mode", "job"]).unwrap();
-        assert_eq!(direct.run.api_key_header.as_deref(), Some("CUSTOM_API_KEY"));
-        for gateway in [["--gateway", "litellm"], ["--gateway-tag", "1.2.3"]] {
-            let cli = parse(&["--mode", "job", gateway[0], gateway[1]]).unwrap();
-            let err = super::execute("ghcr.io/exgentic", cli.run).unwrap_err();
-            assert!(err.contains("omit --gateway/--gateway-tag"), "{err}");
-        }
-        let err = super::execute("ghcr.io/exgentic", parse(&[]).unwrap().run).unwrap_err();
-        assert!(
-            err.contains("--api-key-header applies only to `--mode job`"),
-            "{err}"
-        );
-    }
-
-    #[test]
     fn credential_header_names_cannot_inject_helm_values() {
         use clap::Parser;
 
@@ -1219,26 +1140,6 @@ mod tests {
             assert!(
                 Cli::try_parse_from(["run", "aime", "--api-key-header", name]).is_err(),
                 "{name:?}"
-            );
-            let output = std::process::Command::new("bash")
-                .arg(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../deploy/oc/run.sh"))
-                .args([
-                    "--benchmark",
-                    "aime",
-                    "--agent",
-                    "codex",
-                    "--model",
-                    "openai/test",
-                    "--api-key-header",
-                    name,
-                ])
-                .output()
-                .unwrap();
-            assert!(!output.status.success(), "OpenShift accepted {name:?}");
-            let error = String::from_utf8_lossy(&output.stderr);
-            assert!(
-                error.contains("valid HTTP header name"),
-                "{name:?}: {error}"
             );
         }
     }
