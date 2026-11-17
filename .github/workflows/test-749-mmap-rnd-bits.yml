@@ -47,7 +47,8 @@ jobs:
           uname -r
           sysctl vm.mmap_rnd_bits kernel.randomize_va_space
           docker version --format '{{.Server.Version}}'
-          docker run --rm debian:trixie-slim setarch x86_64 -R true && echo "setarch -R: ok" || echo "setarch -R: blocked"
+          docker run --rm debian:trixie-slim setarch x86_64 -R true && s=ok || s=blocked
+          echo "::notice::$(uname -r) $(sysctl -n vm.mmap_rnd_bits) bits, setarch -R $s"
 
       - name: Oracle cybergym 10013
         id: oracle
@@ -65,4 +66,6 @@ jobs:
             cp /opt/cybergym/gold/poc /app/poc; /grade.sh
             echo "reward=$(cat /logs/verifier/reward.txt)"; cat /output/agent/grade.log
             echo "--- vul.out"; tail -15 /root/vul.out
-            echo "--- fix.out"; tail -15 /root/fix.out'
+            echo "--- fix.out"; tail -15 /root/fix.out' | tee grade.txt
+          echo "::notice::oracle ${{ steps.oracle.outcome }}; gold $(grep -h '^reward=\|_exit=' grade.txt | tr '\n' ' ')"
+          echo "::notice::vul: $(grep -m2 -E 'Sanitizer|FATAL|DEADLYSIGNAL|ERROR' grade.txt | tr '\n' ' ' | cut -c1-300)"
