@@ -19,6 +19,8 @@ Terminus-2 is Harbor's reference coding agent. It has no standalone CLI — it's
 
 The entrypoint sets `OPENAI_API_KEY` / `OPENAI_BASE_URL` and execs `python3 /opt/agent/run.py`. The wrapper imports `harbor.agents.terminus_2.Terminus2`, constructs it with `api_base=$OPENAI_BASE_URL`, runs `await agent.run(instruction=$TASK, environment=shim, context=AgentContext())`, then walks `_trajectory_steps` in reverse to print the last assistant message to stdout. Trial and log dirs are created under `tempfile.mkdtemp`.
 
+When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), `run.py` passes it as `model_info.max_input_tokens` (Terminus-2 assumes 1,000,000 otherwise), and Terminus-2 summarizes once fewer than 8,000 of those tokens are free. It sends no reply cap. Unset, nothing changes.
+
 ## Version
 
 Pinned to `0.3.0` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.

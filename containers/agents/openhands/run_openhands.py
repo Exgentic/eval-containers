@@ -24,10 +24,10 @@ import tempfile
 
 # These are fixed constants, not env knobs: the agent runs under run-agent's
 # `env -i` allow-list (containers/core/runner/run-agent), which forwards only the
-# framework contract vars (TASK, MODEL, TIMEOUT, EVAL_AGENT_REASONING_EFFORT, the
-# gateway URLs). Any other os.environ read here can never see a runtime value, so
-# these mirror upstream HANDBOOK's runner directly rather than pretending to be
-# tunable. Wall-clock is bounded independently by EVAL_TIMEOUT via run-agent.
+# framework contract vars (TASK, MODEL, TIMEOUT, EVAL_AGENT_REASONING_EFFORT,
+# EVAL_MODEL_CONTEXT_WINDOW, the gateway URLs). Any other os.environ read here
+# can never see a runtime value, so these mirror upstream HANDBOOK's runner
+# directly rather than pretending to be tunable. Wall-clock is bounded independently by EVAL_TIMEOUT via run-agent.
 
 # MCP tool-call timeout (seconds) — mirrors upstream HANDBOOK's runner.
 MCP_TOOL_TIMEOUT = 300
@@ -200,6 +200,15 @@ def main() -> None:
     # truncation. Do NOT reintroduce a value here. (The gateway handle itself is
     # kept neutral in compose/runner.yaml so non-gpt-5 models such as GLM stay on
     # chat/completions in the first place.)
+    # EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26) is the LLM's max_input_tokens
+    # (unknown unless told; the SDK refuses one under 16384) and the condenser's
+    # token budget, which it otherwise leaves off. The condenser keeps its own
+    # rules: past that many tokens, or past its event limit, it summarizes the
+    # view down to half; after a context-length error it summarizes and retries.
+    # No reply cap is sent (above), so nothing is reserved.
+    window = int(os.environ.get("EVAL_MODEL_CONTEXT_WINDOW") or 0) or None
+    if window:
+        llm_kwargs["max_input_tokens"] = window
     llm = LLM(**llm_kwargs)
 
     # Run in the benchmark's working directory (the framework entrypoint cd's
@@ -232,7 +241,7 @@ def main() -> None:
                     }
                 }
             },
-            condenser=LLMSummarizingCondenser(llm=llm),
+            condenser=LLMSummarizingCondenser(llm=llm, max_tokens=window),
         )
         if system_prompt:
             agent_kwargs["system_prompt"] = system_prompt
@@ -249,6 +258,14 @@ def main() -> None:
         # registers none — that lives in the separate openhands-tools package),
         # so it can only emit text and never run a command or edit a file.
         agent = get_default_agent(llm=llm, cli_mode=True)
+        if window:
+            agent = agent.model_copy(
+                update={
+                    "condenser": agent.condenser.model_copy(
+                        update={"max_tokens": window}
+                    )
+                }
+            )
         conversation = Conversation(
             agent=agent, workspace=workspace, token_callbacks=token_callbacks
         )

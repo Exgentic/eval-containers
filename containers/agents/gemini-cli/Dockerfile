@@ -24,6 +24,16 @@ set -euo pipefail
 export GOOGLE_GEMINI_BASE_URL="${GOOGLE_GEMINI_BASE_URL:-http://model:4000}"
 export GEMINI_API_KEY="${GEMINI_API_KEY:-sk-proxy}"
 export GEMINI_SANDBOX=false
+# EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26). gemini-cli 0.37.2 has no window
+# setting: it takes every model's window as 1048576 and compresses, before each
+# request, once the last prompt passes model.compressionThreshold (0.5) of it. So
+# the threshold becomes 0.5 x window / 1048576, which keeps gemini's own point,
+# half the real window. It sends no reply cap, so nothing is reserved.
+if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
+  T=$(( EVAL_MODEL_CONTEXT_WINDOW * 1000000 / 2097152 ))
+  mkdir -p "$HOME/.gemini"
+  printf '{"model":{"compressionThreshold":%d.%06d}}\n' $(( T / 1000000 )) $(( T % 1000000 )) > "$HOME/.gemini/settings.json"
+fi
 exec gemini --yolo -p "$TASK"
 E
 

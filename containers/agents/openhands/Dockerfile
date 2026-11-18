@@ -45,6 +45,7 @@ set -euo pipefail
 export LLM_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
 export LLM_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export LLM_MODEL="${MODEL:-default}"
+# run_openhands.py reads EVAL_MODEL_CONTEXT_WINDOW.
 exec /opt/openhands-venv/bin/python /opt/agent/run_openhands.py
 E
 

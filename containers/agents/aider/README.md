@@ -19,6 +19,8 @@ Aider is a terminal-based pair programmer that applies LLM-generated edits to fi
 
 The entrypoint exports `OPENAI_API_KEY` and invokes `aider --yes-always --no-git --no-auto-commits --no-stream --openai-api-base $OPENAI_BASE_URL --model openai/$EVAL_MODEL --message "$TASK"`. The task string comes from `$TASK`, all LLM traffic is routed at `http://model:4000`, and Aider prints its reply to stdout. No extra mounts are required beyond the standard Eval Containers workspace.
 
+When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint gives aider the window as `max_input_tokens` in a `--model-metadata-file`, which sizes its history summarizing (window/16, 1,024 to 8,192 tokens) and its over-window warning. It sends no reply cap. Unset, nothing changes.
+
 ## Version
 
 Pinned to `0.86.2` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.

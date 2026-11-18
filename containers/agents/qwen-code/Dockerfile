@@ -26,8 +26,22 @@ DM="${MODEL:-default}"
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000/v1}"
 export OPENAI_MODEL="$DM"
+# EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26) is the model's contextWindowSize
+# (131072 unless told), and qwen keeps its own compression: before each request,
+# once the last prompt passes 70% of it. A reply starts capped at 8000 and is
+# retried once at 64000 if cut there, so 64000 must fit in the other 30%. When it
+# doesn't, QWEN_CODE_MAX_OUTPUT_TOKENS becomes window x 3/10, which also turns
+# that retry off; a lower cap the launch set is kept.
+GC=""
+if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
+  W=$EVAL_MODEL_CONTEXT_WINDOW
+  GC=",\"generationConfig\":{\"contextWindowSize\":$W}"
+  CAP=${QWEN_CODE_MAX_OUTPUT_TOKENS:-64000}
+  [[ "$CAP" =~ ^[1-9][0-9]*$ ]] || CAP=64000
+  [ "$CAP" -le $(( W * 3 / 10 )) ] || export QWEN_CODE_MAX_OUTPUT_TOKENS=$(( W * 3 / 10 ))
+fi
 cat > "$HOME/.qwen/settings.json" <<CONF
-{"modelProviders":{"openai":[{"id":"$DM","name":"$DM","baseUrl":"$OPENAI_BASE_URL","envKey":"OPENAI_API_KEY"}]},"security":{"auth":{"selectedType":"openai"}},"model":{"name":"$DM"}}
+{"modelProviders":{"openai":[{"id":"$DM","name":"$DM","baseUrl":"$OPENAI_BASE_URL","envKey":"OPENAI_API_KEY"$GC}]},"security":{"auth":{"selectedType":"openai"}},"model":{"name":"$DM"}}
 CONF
 export GEMINI_SANDBOX=false
 export QWEN_SANDBOX=false
