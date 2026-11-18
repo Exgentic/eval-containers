@@ -13,6 +13,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -779,6 +780,103 @@ func probeHealth(addr string) int {
 	return 0
 }
 
+// contextWindow answers /context-window with the pinned model's context window,
+// in tokens, as the upstream states it: max_model_len on its /v1/models entry
+// (vLLM), else model_info.max_input_tokens on its /v1/model/info entry
+// (LiteLLM, whose /v1/models carries no window). max_input_tokens is the whole
+// window for most models but not all (gpt-5: 272k of 400k), which only leaves
+// room unused. 404 when neither states one, so the caller keeps the agent's own
+// window. Not recorded: it is the runner asking, before the agent starts, not a
+// call the agent made. Each question has its own timeout, so a slow /v1/models
+// cannot spend the time /v1/model/info needs.
+//
+// It answers only when the upstream lists the pinned model under its exact
+// name: a vLLM server or a LiteLLM proxy reached directly (EDGE_UPSTREAM=
+// provider), or a gateway that passes these paths through. The fleet's own
+// litellm gateway registers only wildcard names ("*", "claude-*", "gemini-*"),
+// so behind it the answer is 404 and the agent keeps its own window; whether
+// bifrost's or portkey's listing states one is unverified.
+func contextWindow(w http.ResponseWriter, r *http.Request) {
+	for _, p := range []string{"/v1/models", "/v1/model/info"} {
+		if n := askWindow(r.Context(), upstreamPathFor("/openai"+p, p)); n > 0 {
+			fmt.Fprint(w, n)
+			return
+		}
+	}
+	http.NotFound(w, r)
+}
+
+// windowTimeout bounds each question contextWindow asks the upstream.
+var windowTimeout = 5 * time.Second
+
+// askWindow asks one upstream path for the pinned model's window, within
+// windowTimeout; 0 when it states none.
+func askWindow(parent context.Context, path string) int64 {
+	ctx, cancel := context.WithTimeout(parent, windowTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+	if err != nil {
+		return 0
+	}
+	resp, _, err := forward(req, path, "openai", nil)
+	if err != nil {
+		return 0
+	}
+	defer resp.Body.Close()
+	return windowOf(resp, model)
+}
+
+// windowOf reads the window of the model listed as id — the entry's id on
+// /v1/models, its model_name on /v1/model/info. Exact name only: a window read
+// off another model is worse than none.
+func windowOf(resp *http.Response, id string) int64 {
+	if resp.StatusCode != http.StatusOK || id == "" {
+		return 0
+	}
+	var list struct {
+		Data []struct {
+			ID          string  `json:"id"`
+			ModelName   string  `json:"model_name"`
+			MaxModelLen float64 `json:"max_model_len"`
+			ModelInfo   struct {
+				MaxInputTokens float64 `json:"max_input_tokens"`
+			} `json:"model_info"`
+		} `json:"data"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&list) != nil {
+		return 0
+	}
+	for _, m := range list.Data {
+		if m.ID != id && m.ModelName != id {
+			continue
+		}
+		for _, n := range []float64{m.MaxModelLen, m.ModelInfo.MaxInputTokens} {
+			if n >= 1 && n == float64(int64(n)) {
+				return int64(n)
+			}
+		}
+	}
+	return 0
+}
+
+// probeContextWindow prints what the running edge's /context-window answers,
+// exiting 1 when it states none.
+func probeContextWindow(addr string) int {
+	c := http.Client{Timeout: 15 * time.Second}
+	resp, err := c.Get("http://127.0.0.1:" + strings.TrimPrefix(addr, ":") + "/context-window")
+	if err != nil {
+		return 1
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
+		return 1
+	}
+	return 0
+}
+
 // configError reports why the edge must not start. A stack that asked for
 // protocol translation is refused too, but by whoever owns that variable
 // (rule 5): it is not in this component's namespace, so it is not its to read.
@@ -815,6 +913,9 @@ func main() {
 	if len(os.Args) > 1 && os.Args[1] == "health" {
 		os.Exit(probeHealth(listen))
 	}
+	if len(os.Args) > 1 && os.Args[1] == "context-window" {
+		os.Exit(probeContextWindow(listen))
+	}
 
 	http.HandleFunc("/health", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("ok"))
@@ -823,6 +924,7 @@ func main() {
 	if err := configError(); err != nil {
 		log.Fatal(err)
 	}
+	http.HandleFunc("/context-window", contextWindow)
 	http.HandleFunc("/", handle)
 	// Never the upstream: the log sits in /output, which the agent can read.
 	log.Printf("edge recording to %s%s", out, capNotice())

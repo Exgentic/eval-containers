@@ -1082,9 +1082,11 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
-/// `EVAL_MODEL_CONTEXT_WINDOW` (agents/RULES.md 25-28): run-agent forwards it, refuses a
-/// malformed value (27), and only warns for an agent that doesn't read it (28);
-/// compose, the chart and the CLI each set it only when asked.
+/// `EVAL_MODEL_CONTEXT_WINDOW` (agents/RULES.md 25-29, output/RULES.md 9):
+/// run-agent forwards it, refuses a malformed value (27), only warns for an
+/// agent that doesn't read it (28), and asks the model endpoint when the launch
+/// sets none (29), recording where it came from (output 9); compose, the chart
+/// and the CLI each set it only when asked.
 #[test]
 fn model_context_window_wired_through_to_agents() {
     let root = repo_root();
@@ -1100,8 +1102,33 @@ fn model_context_window_wired_through_to_agents() {
         "run-agent must refuse an EVAL_MODEL_CONTEXT_WINDOW that is not a positive integer (rule 27)"
     );
     assert!(
-        run_agent.contains("grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh \\\n    || echo"),
-        "run-agent must warn, not exit, when the agent's /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW (rule 28)"
+        run_agent.contains(
+            "[ \"$context_source\" = launch ] && ! grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh \\\n    && echo"
+        ),
+        "run-agent must warn, not exit, when a launch sets EVAL_MODEL_CONTEXT_WINDOW for an agent whose /run.sh doesn't read it (rule 28)"
+    );
+    // Rule 29: a launch value wins; only an unset one is asked of the endpoint,
+    // and only a positive integer answer is taken.
+    let ask = run_agent
+        .find("/opt/edge/start context-window")
+        .expect("run-agent must ask the edge for the window when the launch sets none (rule 29)");
+    let unset = run_agent
+        .find(r#"if [ -z "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then"#)
+        .expect("run-agent must ask only when EVAL_MODEL_CONTEXT_WINDOW is unset (rule 29)");
+    assert!(
+        unset < ask,
+        "run-agent asks the endpoint outside the unset branch (rule 29)"
+    );
+    assert!(
+        run_agent.contains(r#"[[ "$w" =~ ^[1-9][0-9]*$ ]]; then"#)
+            && run_agent.contains("> /output/agent/.context-window"),
+        "run-agent must take only a positive integer from the endpoint and record its source (rule 29)"
+    );
+    let write_result = read("containers/core/runner/write-result");
+    assert!(
+        write_result.contains("/output/agent/.context-window")
+            && write_result.contains(r#""context_window":%s,"context_window_source":%s"#),
+        "write-result must record the window and its source in model/result.json (output rule 9)"
     );
     assert!(
         read("containers/compose/runner.yaml")

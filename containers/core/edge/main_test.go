@@ -551,6 +551,134 @@ func TestNonPostRequestsPassThrough(t *testing.T) {
 	}
 }
 
+// ── Context window ──────────────────────────────────────────────────
+
+// contextWindowOf asks the edge for the window against an upstream that answers
+// /v1/models with list and /v1/model/info with info.
+func contextWindowOf(t *testing.T, list, info string) (int, string) {
+	t.Helper()
+	_, reqs, _ := edgeAgainst(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/model/info" {
+			_, _ = w.Write([]byte(info))
+			return
+		}
+		_, _ = w.Write([]byte(list))
+	})
+	rec := httptest.NewRecorder()
+	contextWindow(rec, httptest.NewRequest(http.MethodGet, "/context-window", nil))
+	for _, got := range *reqs {
+		if got.Method != http.MethodGet || got.Header.Get("authorization") != "Bearer "+upstreamCredential {
+			t.Errorf("upstream saw %s %s, auth %q", got.Method, got.URL.Path, got.Header.Get("authorization"))
+		}
+	}
+	return rec.Code, rec.Body.String()
+}
+
+// What a LiteLLM proxy's /v1/models lists: names, no window.
+const litellmList = `{"data":[{"id":"azure/gpt-5.4","object":"model"}]}`
+
+func TestContextWindowIsReadOffThePinnedModel(t *testing.T) {
+	for name, c := range map[string]struct{ list, info string }{
+		"vllm":                 {`{"data":[{"id":"other","max_model_len":8192},{"id":"azure/gpt-5.4","max_model_len":131072}]}`, ``},
+		"a float the same int": {`{"data":[{"id":"azure/gpt-5.4","max_model_len":131072.0}]}`, ``},
+		"litellm model info": {litellmList, `{"data":[` +
+			`{"model_name":"other","model_info":{"max_input_tokens":8192}},` +
+			`{"model_name":"azure/gpt-5.4","litellm_params":{"model":"openai/x"},"model_info":{"id":"d1","max_input_tokens":131072}}]}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if code, body := contextWindowOf(t, c.list, c.info); code != http.StatusOK || body != "131072" {
+				t.Errorf("-> %d %q, want 200 131072", code, body)
+			}
+		})
+	}
+}
+
+// Unknown is the agent's own window, so anything short of a stated window on
+// the pinned model's own entry must say nothing.
+func TestContextWindowIsUnknownUnlessTheUpstreamStatesIt(t *testing.T) {
+	for name, c := range map[string]struct{ list, info string }{
+		"no field anywhere":          {litellmList, `{"data":[{"model_name":"azure/gpt-5.4","model_info":{"max_input_tokens":null}}]}`},
+		"another model":              {`{"data":[{"id":"only-one","max_model_len":131072}]}`, `{"data":[{"model_name":"only-one","model_info":{"max_input_tokens":131072}}]}`},
+		"matched on the routed name": {litellmList, `{"data":[{"model_name":"alias","litellm_params":{"model":"azure/gpt-5.4"},"model_info":{"max_input_tokens":131072}}]}`},
+		"not a window":               {`{"data":[{"id":"azure/gpt-5.4","max_model_len":0.5}]}`, ``},
+		"not a listing":              {`not json`, `not json`},
+		"empty lists":                {`{"data":[]}`, `{"data":[]}`},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if code, _ := contextWindowOf(t, c.list, c.info); code != http.StatusNotFound {
+				t.Errorf("-> %d, want 404", code)
+			}
+		})
+	}
+}
+
+func TestContextWindowAsksModelsThenModelInfo(t *testing.T) {
+	for _, gw := range []bool{false, true} {
+		_, reqs, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = w.Write([]byte(`{"data":[]}`))
+		})
+		upstreamIsGateway = gw
+		contextWindow(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/context-window", nil))
+		want := []string{"/v1/models", "/v1/model/info"}
+		if gw {
+			want = []string{"/openai/v1/models", "/openai/v1/model/info"}
+		}
+		var got []string
+		for _, r := range *reqs {
+			got = append(got, r.URL.Path)
+		}
+		if strings.Join(got, " ") != strings.Join(want, " ") {
+			t.Errorf("gateway=%v asked for %v, want %v", gw, got, want)
+		}
+	}
+}
+
+// The first answer that states a window ends the question.
+func TestContextWindowFromModelsSkipsModelInfo(t *testing.T) {
+	_, reqs, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"data":[{"id":"azure/gpt-5.4","max_model_len":131072}]}`))
+	})
+	contextWindow(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/context-window", nil))
+	if len(*reqs) != 1 {
+		t.Errorf("asked %d times, want once", len(*reqs))
+	}
+}
+
+// A /v1/models that hangs spends only its own time, not /v1/model/info's.
+func TestContextWindowSlowModelsStillAsksModelInfo(t *testing.T) {
+	prev := windowTimeout
+	windowTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { windowTimeout = prev })
+	_, _, _ = edgeAgainst(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/model/info" {
+			_, _ = w.Write([]byte(`{"data":[{"model_name":"azure/gpt-5.4","model_info":{"max_input_tokens":131072}}]}`))
+			return
+		}
+		select {
+		case <-r.Context().Done():
+		case <-time.After(5 * time.Second):
+		}
+	})
+	rec := httptest.NewRecorder()
+	contextWindow(rec, httptest.NewRequest(http.MethodGet, "/context-window", nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "131072" {
+		t.Errorf("-> %d %q, want 200 131072", rec.Code, rec.Body.String())
+	}
+}
+
+func TestContextWindowIsNotRecorded(t *testing.T) {
+	contextWindowOf(t, litellmList, `{"data":[{"model_name":"azure/gpt-5.4","model_info":{"max_input_tokens":131072}}]}`)
+	if b, err := os.ReadFile(out); err == nil && len(b) > 0 {
+		t.Errorf("the runner's question landed in the agent's record: %s", b)
+	}
+}
+
+func TestContextWindowProbeFailsWithoutAnEdge(t *testing.T) {
+	if code := probeContextWindow(":1"); code != 1 {
+		t.Errorf("probe against a dead port = %d, want 1", code)
+	}
+}
+
 // An empty upstream body must still produce a well-formed record.
 func TestEmptyResponseStillRecords(t *testing.T) {
 	edge, _, _ := edgeAgainst(t, func(w http.ResponseWriter, _ *http.Request) {
