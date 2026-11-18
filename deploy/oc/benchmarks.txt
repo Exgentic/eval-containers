@@ -15,6 +15,7 @@ arc-agi
 arena-hard
 assertllm2-verify
 assertllm2-verify-formal
+assertllm2-verify-nospec
 assertllm2-verify-sim
 assetopsbench
 assistantbench

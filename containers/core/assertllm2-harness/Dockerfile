@@ -63,6 +63,8 @@ COPY grade.sh /grade.sh
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /grade.sh /entrypoint.sh
 
+# ASSERTLLM2_SPEC=0 leaves /app/spec.md and the figures out (assertllm2-verify-nospec).
+ENV ASSERTLLM2_SPEC=1
 ENV EVAL_TASK_PROMPT="You are verifying a hardware design against its specification. /app/spec.md is the specification (figures it refers to are under /app/figures/). /app/rtl/ holds the design's complete Verilog RTL: the top module is {top}, and /app/rtl/files.f lists its source files in compile order, with +incdir+include, as Icarus Verilog, Verilator and Yosys accept it. Decide whether this RTL implements the specification correctly. {tools} Judge the RTL as supplied; do not fix it. When you are done, write /home/agent/answer.json containing one JSON object with two fields: \"verdict\", either \"correct\" or \"incorrect\", and \"explanation\", a brief account for a person reviewing your verdict: why the relevant behavior conforms, or which requirement is violated and how. Only the verdict is scored."
 WORKDIR /app
 ENTRYPOINT ["/entrypoint.sh"]

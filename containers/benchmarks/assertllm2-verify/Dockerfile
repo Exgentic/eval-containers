@@ -2,7 +2,8 @@
 #
 # core/assertllm2-harness, with no tools beyond the image's shell and Python:
 # the agent reads the spec and the source. assertllm2-verify-sim and
-# assertllm2-verify-formal are the same tasks with a simulator or formal tools.
+# assertllm2-verify-formal are the same tasks with a simulator or formal tools;
+# assertllm2-verify-nospec withholds the spec.
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}assertllm2-harness:latest

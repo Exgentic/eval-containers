@@ -7,14 +7,15 @@ and says whether the RTL implements the specification **correctly** or
 **incorrectly**, with an explanation for a person to read. Only the verdict is
 scored.
 
-There are three setups. They share one task set, the same labels and the same
-grader (`core/assertllm2-harness`), and differ only in the tools the agent gets:
+There are four setups. They share one task set, the same labels and the same
+grader (`core/assertllm2-harness`), and differ only in what the agent gets:
 
 | Benchmark | Tools |
 |-----------|-------|
 | `assertllm2-verify` | none beyond the shell and Python: the spec and the source |
 | [`assertllm2-verify-sim`](../assertllm2-verify-sim/) | Icarus Verilog and Verilator, for the agent's own testbenches |
 | [`assertllm2-verify-formal`](../assertllm2-verify-formal/) | Yosys, SymbiYosys and Z3, for properties the agent model-checks |
+| [`assertllm2-verify-nospec`](../assertllm2-verify-nospec/) | none, and **no spec**: the source alone — the baseline for what the spec adds |
 
 ## At a glance
 
@@ -165,7 +166,7 @@ golden RTL is public, so a model may have seen it.
 
 ## Oracle
 
-`solution.sh` (shared by the three setups) derives each verdict instead of
+`solution.sh` (shared by the four setups) derives each verdict instead of
 reading it: as root, with network, it fetches the pinned upstream tree, rebuilds
 the task's design with the harness's own `build-tasks.py`, and answers `correct`
 when the task's RTL is that design's golden and `incorrect` when it is not. That

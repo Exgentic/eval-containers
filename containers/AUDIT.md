@@ -28,6 +28,7 @@ benchmark changed after that commit, so the row is stale.
 | arena-hard | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | assertllm2-verify | ✓ | ? | ✓ | ✓ | ? | n/a | ✓ | ✗ | — |
 | assertllm2-verify-formal | ✓ | ? | ✓ | ✓ | ? | n/a | ✓ | ✗ | — |
+| assertllm2-verify-nospec | ✓ | ✓ | ✓ | ? | ? | n/a | ? | ✗ | — |
 | assertllm2-verify-sim | ✓ | ? | ✓ | ✓ | ? | n/a | ✓ | ✗ | — |
 | assetopsbench | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | assistantbench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
@@ -115,4 +116,4 @@ benchmark changed after that commit, so the row is stale.
 | xnli | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | xstory-cloze | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 
-**Totals:** building 68/104 · isolation 4/104 · oracle 66/104 · running 2/104 · traces 2/104 · replicate 0/104 · safety 3/104 · published 2/104
+**Totals:** building 69/105 · isolation 5/105 · oracle 66/105 · running 3/105 · traces 2/105 · replicate 0/105 · safety 3/105 · published 2/105
