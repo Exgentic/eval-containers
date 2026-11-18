@@ -48,7 +48,8 @@ printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s,"error":%
   > /output/agent/result.json
 
 # The window the agent was told and where it came from (output rule 9), from
-# run-agent; null for both when it stayed unknown and the agent assumed its own.
+# run-agent; null for both when it stayed unknown, or the agent doesn't read it,
+# and the agent assumed its own.
 read -r WINDOW WINDOW_SOURCE 2>/dev/null < /output/agent/.context-window || true
 [[ "${WINDOW:-}" =~ ^[1-9][0-9]*$ ]] && [[ "${WINDOW_SOURCE:-}" =~ ^(launch|endpoint)$ ]] \
   && WINDOW_SOURCE="\"$WINDOW_SOURCE\"" || WINDOW=null WINDOW_SOURCE=null

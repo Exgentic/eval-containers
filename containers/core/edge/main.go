@@ -828,26 +828,28 @@ func askWindow(parent context.Context, path string) int64 {
 
 // windowOf reads the window of the model listed as id — the entry's id on
 // /v1/models, its model_name on /v1/model/info. Exact name only: a window read
-// off another model is worse than none.
+// off another model is worse than none. Each entry decodes on its own, so one
+// another model lists in a shape this doesn't expect can't hide the pinned one.
 func windowOf(resp *http.Response, id string) int64 {
 	if resp.StatusCode != http.StatusOK || id == "" {
 		return 0
 	}
 	var list struct {
-		Data []struct {
+		Data []json.RawMessage `json:"data"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&list) != nil {
+		return 0
+	}
+	for _, raw := range list.Data {
+		var m struct {
 			ID          string  `json:"id"`
 			ModelName   string  `json:"model_name"`
 			MaxModelLen float64 `json:"max_model_len"`
 			ModelInfo   struct {
 				MaxInputTokens float64 `json:"max_input_tokens"`
 			} `json:"model_info"`
-		} `json:"data"`
-	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&list) != nil {
-		return 0
-	}
-	for _, m := range list.Data {
-		if m.ID != id && m.ModelName != id {
+		}
+		if json.Unmarshal(raw, &m) != nil || (m.ID != id && m.ModelName != id) {
 			continue
 		}
 		for _, n := range []float64{m.MaxModelLen, m.ModelInfo.MaxInputTokens} {

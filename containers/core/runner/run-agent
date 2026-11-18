@@ -37,11 +37,14 @@ fi
 # unknown, and unknown is the agent's own window, exactly as before. Behind the
 # fleet's litellm gateway it is always unknown: that gateway lists only wildcard
 # model names, never the pinned one (see the edge's contextWindow). Where it
-# came from is recorded for write-result (output/RULES.md 9).
+# came from is recorded for write-result (output/RULES.md 9). An agent that
+# doesn't read it sizes to its own window, so it is neither asked for nor
+# recorded: the result says unknown, not a window the agent never used.
+reads_window=false; grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh && reads_window=true
 context_source=launch
 if [ -z "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   context_source=
-  if w=$(timeout 20 /opt/edge/start context-window 2>/dev/null) && [[ "$w" =~ ^[1-9][0-9]*$ ]]; then
+  if [ "$reads_window" = true ] && w=$(timeout 20 /opt/edge/start context-window 2>/dev/null) && [[ "$w" =~ ^[1-9][0-9]*$ ]]; then
     EVAL_MODEL_CONTEXT_WINDOW=$w context_source=endpoint
     echo "run-agent: EVAL_MODEL_CONTEXT_WINDOW=$w, from the model endpoint" >&2
   fi
@@ -51,9 +54,11 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
     echo "run-agent: EVAL_MODEL_CONTEXT_WINDOW must be a positive integer (tokens), not '$EVAL_MODEL_CONTEXT_WINDOW'" >&2
     exit 2
   fi
-  [ "$context_source" = launch ] && ! grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh \
-    && echo "run-agent: EVAL_MODEL_CONTEXT_WINDOW is set but agent '${EVAL_AGENT:-?}' does not read it — continuing with the agent's own window" >&2
-  printf '%s %s\n' "$EVAL_MODEL_CONTEXT_WINDOW" "$context_source" > /output/agent/.context-window
+  if [ "$reads_window" = true ]; then
+    printf '%s %s\n' "$EVAL_MODEL_CONTEXT_WINDOW" "$context_source" > /output/agent/.context-window
+  else
+    echo "run-agent: EVAL_MODEL_CONTEXT_WINDOW is set but agent '${EVAL_AGENT:-?}' does not read it — continuing with the agent's own window" >&2
+  fi
 fi
 
 # Warn (not fail) if EVAL_INTERNET=false but the agent's entrypoint doesn't

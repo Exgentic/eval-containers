@@ -581,6 +581,7 @@ func TestContextWindowIsReadOffThePinnedModel(t *testing.T) {
 	for name, c := range map[string]struct{ list, info string }{
 		"vllm":                 {`{"data":[{"id":"other","max_model_len":8192},{"id":"azure/gpt-5.4","max_model_len":131072}]}`, ``},
 		"a float the same int": {`{"data":[{"id":"azure/gpt-5.4","max_model_len":131072.0}]}`, ``},
+		"beside an odd entry":  {`{"data":[{"id":"other","max_model_len":"8k"},{"id":"azure/gpt-5.4","max_model_len":131072}]}`, ``},
 		"litellm model info": {litellmList, `{"data":[` +
 			`{"model_name":"other","model_info":{"max_input_tokens":8192}},` +
 			`{"model_name":"azure/gpt-5.4","litellm_params":{"model":"openai/x"},"model_info":{"id":"d1","max_input_tokens":131072}}]}`},
