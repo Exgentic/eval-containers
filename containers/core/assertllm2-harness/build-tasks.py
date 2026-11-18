@@ -14,7 +14,8 @@ each mutated file with PyVerilog's code generator (no comments, its own layout)
 and left the rest as authored, so a file in that layout would itself say
 "mutated". So for each design, every file that any of its selected variants
 changes is put through that same emitter in every variant, the golden included,
-with the golden file's leading comment block (its license notice) on top; every
+repeated until its output stops changing (one pass is not stable), with the
+golden file's leading comment block (its license notice) on top; every
 other file is the golden's, with line endings and trailing blanks normalized.
 The emitter is upstream's own: PyVerilog 1.2.1 with upstream's patch, then
 upstream's sanitizer, taken from its source tree. Two of upstream's own steps
@@ -90,16 +91,30 @@ class Emitter:
         self.parse, self.gen = parse, ASTCodeGenerator()
 
     def __call__(self, tree, rel, golden):
-        """`rel` of the materialized variant `tree`, as upstream wrote its mutants."""
-        with tempfile.TemporaryDirectory() as out:
-            parsed, _ = self.parse(
-                [str(tree / rel)],
-                preprocess_include=[str(tree / "include")],
-                outputdir=out,
-                debug=False,
-            )
-        code, _ = self.sanitize(self.gen.visit(parsed))
-        code = text_normal(code.replace("@(*);", ";"))
+        """`rel` of the materialized variant `tree`, as upstream wrote its mutants.
+
+        Re-emitted until it stops changing: one pass writes `reg a, b;` as
+        `reg a;reg b;` on one line and the next splits it, so a golden taken
+        from source would differ in layout from a mutant, which upstream already
+        emitted once. Writes the result back into `tree`.
+        """
+        prev = None
+        for _ in range(4):
+            with tempfile.TemporaryDirectory() as out:
+                parsed, _ = self.parse(
+                    [str(tree / rel)],
+                    preprocess_include=[str(tree / "include")],
+                    outputdir=out,
+                    debug=False,
+                )
+            code, _ = self.sanitize(self.gen.visit(parsed))
+            code = text_normal(code.replace("@(*);", ";"))
+            if code == prev:
+                break
+            (tree / rel).write_text(code)
+            prev = code
+        else:
+            raise ValueError("emitter output does not settle")
         notice = leading_comments(golden)
         return f"{notice}\n\n{code}" if notice else code
 

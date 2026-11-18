@@ -71,7 +71,10 @@ verdict can find a bad label.
 Upstream wrote each mutated file with PyVerilog's code generator: comments gone,
 its own layout. Left like that, the one file in that style would itself say
 "mutated". So for each design, every file that any of its variants changes is
-written by that same emitter in **every** variant, the golden included, with the
+written by that same emitter in **every** variant, the golden included, and
+re-emitted until it stops changing — one pass writes `reg a, b;` as
+`reg a;reg b;` and the next splits it, so a golden emitted once from source
+would differ in layout from upstream's already-emitted mutants. The
 golden's leading comment block (its license notice) on top; every other file is
 the golden's, with line endings and trailing blanks normalized. The emitter is
 upstream's own — PyVerilog 1.2.1 with upstream's patch, and its sanitizer — so
