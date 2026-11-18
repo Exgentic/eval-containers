@@ -35,6 +35,8 @@ non-interactive print mode (tools run unattended, no permission prompts),
 `--no-session` keeps each run self-contained, and `PI_OFFLINE=1` disables the
 pi.dev update/telemetry calls that would fail in an egress-locked container.
 
+When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint gives pi the window and caps replies at min(`$PI_MAX_OUTPUT_TOKENS` or 128000, window/4). In print mode pi compacts only when the server rejects a call as too long, and only once per task. The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile). Unset, nothing changes.
+
 ## Version
 
 Pinned to `0.73.1` via a single `ARG AGENT_VERSION` at image build time — it

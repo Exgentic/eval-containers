@@ -30,10 +30,42 @@ set -euo pipefail
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
-# No CLAUDE_CODE_MAX_OUTPUT_TOKENS: Claude Code picks max_tokens per model (32000
-# for any model it doesn't know, 64000 for opus-4-6) and resumes a reply cut at
-# that cap. Forcing 128000 reserved 128k of every model's context window, so on a
+# No CLAUDE_CODE_MAX_OUTPUT_TOKENS by default (EVAL_MODEL_CONTEXT_WINDOW below sets
+# one to fit the window it is told). With no --model, Claude Code runs as its
+# default model, Sonnet 4.6, whatever model the gateway maps that name to, so
+# it caps a reply at Sonnet 4.6's default, 32000, and resumes a reply cut there.
+# Forcing 128000 reserved 128k of every model's context window, so on a
 # 262k-window vLLM model each call failed once the prompt passed ~134k (#726).
+# EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26) tells Claude Code the model's real
+# window; it assumes Sonnet 4.6's 200k. Claude Code 2.1.104 compacts at
+# window - min(reply cap, 20k) - 13k. CLAUDE_CODE_AUTO_COMPACT_WINDOW can only
+# lower that window, never below 100k; under 100k CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
+# lowers the point instead. The window is passed as is, so Claude Code keeps its
+# own rule (98k on a 131k model). The reply cap becomes min(the launch's
+# CLAUDE_CODE_MAX_OUTPUT_TOKENS, 32000, window/4): point + cap fits the window
+# (a cap past ~33k would not, as the point only drops by 20k of it), and a lower
+# cap set for a model's output limit is kept.
+# Below 64000 it fails before the first call: the first request (system prompt
+# and tools) is ~25k tokens, and the compaction point must clear it by a few
+# turns or it compacts on every request (~34k at 64k, the tests/run/context window).
+if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
+  W=$EVAL_MODEL_CONTEXT_WINDOW
+  if [ "$W" -lt 64000 ]; then
+    echo "claude-code: EVAL_MODEL_CONTEXT_WINDOW=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
+    exit 2
+  fi
+  OUT=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
+  [[ "$OUT" =~ ^[1-9][0-9]*$ && "$OUT" -le 32000 ]] || OUT=32000
+  OUT=$(( OUT < W / 4 ? OUT : W / 4 ))
+  export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
+  if [ "$W" -ge 100000 ]; then
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$W
+  else
+    ALLOW=$(( OUT < 20000 ? OUT : 20000 ))
+    PCT=$(( (W - ALLOW - 13000) * 100 / (100000 - ALLOW) ))
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$PCT
+  fi
+fi
 # Web tools are gated on the benchmark's declared internet policy: when the
 # benchmark sets EVAL_INTERNET=false (mirrors its eval.benchmark.internet label),
 # deny WebSearch/WebFetch so the fix comes from the agent, not a search — some

@@ -19,6 +19,8 @@ Claude Code is Anthropic's terminal coding agent: it reads, edits, and runs code
 
 The entrypoint sets `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY`, and `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1` (to avoid beta headers the proxy may not support), then runs `claude -p --dangerously-skip-permissions -- "$TASK"`. `-p` is print mode — the final answer is written to stdout. `--dangerously-skip-permissions` is safe because Docker is the sandbox.
 
+When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint passes it to Claude Code's own compaction and caps replies at min(`CLAUDE_CODE_MAX_OUTPUT_TOKENS`, 32000, window/4). A window under 64,000 fails before the first call. The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile). Unset, nothing changes.
+
 ## Version
 
 Pinned to `2.1.104` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
