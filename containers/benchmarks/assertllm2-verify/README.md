@@ -85,6 +85,18 @@ modules, so regenerated files carry none; and the generator writes an empty
 statement as `@(*);`, which is put back as `;`. `build-tasks.py` says how; it
 refuses a variant that comes out the same as its golden.
 
+### One configuration
+
+Preprocessing fixes every macro the RTL tests at what upstream builds it with:
+nothing defined on the command line, since upstream's design configs name no
+defines. A spec can still describe other configurations. srdy_drdy_library's
+says `SDLIB_CLOCKING` and `SDLIB_DELAY` "can be overridden", and a golden that
+cannot be overridden reads as wrong. So when a spec names a macro the RTL
+tests, the task's spec ends with a *Configuration of the supplied RTL* section
+listing each such macro's value in that build, as Icarus Verilog's preprocessor
+resolves it. It is the same for every variant of a design. Of the enabled
+designs only srdy_drdy_library has one.
+
 ### Every task builds
 
 `check-tasks.py` lays each task out exactly as the agent will see it and runs
@@ -130,16 +142,22 @@ moves in steps of a third: read this first set as a working check, not a
 measurement. Report **balanced accuracy** — the mean of the accuracy
 on `correct` tasks and on `incorrect` tasks, 0.5 for any constant answer — with
 the per-class accuracies, the accuracy on individual and on merged mutants, and
-each group's count. Over a run's output root:
+each group's count. In one run's directory
+(`<output-dir>/<benchmark>/<agent>/<model>/<run-id>/`):
 
 ```bash
-jq -s 'group_by(.label) | map({label: .[0].label, n: length,
-        accuracy: (map(select(.verdict_correct)) | length) / length})' \
-  */*/*/*/*/task/verifier_report.json
+for d in */; do
+  jq -c --slurpfile a "$d/agent/result.json" '. + {run_error: $a[0].error}' \
+    "$d/task/verifier_report.json"
+done | jq -s '{failed_runs: map(select(.run_error)) | length,
+  scored: (map(select(.run_error == null)) | group_by(.label)
+    | map({label: .[0].label, n: length,
+           accuracy: ((map(select(.verdict_correct)) | length) / length)}))}'
 ```
 
-An invalid answer counts as wrong in its class; a task whose run errored has no
-report and is counted by the framework as failed, never as a score.
+An invalid answer counts as wrong in its class. A run that errored (the agent
+timed out or crashed: `agent/result.json` has an `error`) is still graded and
+has a report, but it is not a score: count it under `failed_runs` and rerun it.
 
 These are not upstream's numbers: upstream scores generated assertions with
 JasperGold. Several variants of one design are not independent designs, and the

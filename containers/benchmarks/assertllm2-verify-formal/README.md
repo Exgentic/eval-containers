@@ -29,5 +29,5 @@ TASK_ID=0 docker compose -f containers/benchmarks/assertllm2-verify-formal/compo
 eval-containers oracle assertllm2-verify-formal --local --task-id 0
 ```
 
-Lean base: `BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/assertllm2-verify-formalatest`,
+Lean base: `BENCHMARK_IMAGE=ghcr.io/exgentic/benchmarks/assertllm2-verify-formal:latest`,
 `AGENT_IMAGE=ghcr.io/exgentic/agents/<agent>:latest`, `AGENT_VERSION` per agent.

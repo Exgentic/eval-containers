@@ -24,6 +24,9 @@ upstream's translate_off/on restorer puts the pragmas back by guesswork and can
 wrap whole modules, so the regenerated files carry none (as their comments go,
 so do the pragmas); and the patched generator writes an empty statement as
 `@(*);`, which is put back as `;`.
+
+Preprocessing fixes every macro at the value upstream builds with, so a spec
+that names one of them gets a note saying which configuration the RTL is in.
 """
 
 import ast
@@ -31,6 +34,7 @@ import json
 import random
 import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -64,6 +68,62 @@ def upstream_functions(path, names):
 def text_normal(s):
     lines = s.replace("\r\n", "\n").replace("\r", "\n").split("\n")
     return "\n".join(line.rstrip() for line in lines).strip("\n") + "\n"
+
+
+COND = re.compile(r"`(?:ifdef|ifndef|elsif)\s+(\w+)")
+
+
+def configuration(root, filelist, rels, spec):
+    """The note a spec gets on the one configuration its RTL is supplied in.
+
+    The emitter preprocesses what it regenerates, so every macro the RTL tests
+    is fixed at what upstream builds it with: nothing defined on the command
+    line (upstream's configs name no defines). A spec that names such a macro
+    describes other configurations too, and a golden that cannot be put in one
+    of them reads as wrong, so the spec says which one this is. Icarus Verilog,
+    the emitter's own preprocessor, says what each macro ends up as.
+    """
+    tested = {
+        m for r in rels for m in COND.findall((root / r).read_text(errors="replace"))
+    }
+    names = sorted(m for m in tested if re.search(rf"\b{re.escape(m)}\b", spec))
+    if not names:
+        return ""
+    with tempfile.TemporaryDirectory() as t:
+        probe, out = Path(t) / "probe.v", Path(t) / "out.v"
+        probe.write_text(
+            "".join(
+                f"`ifdef {m}\n@@ {m} = `{m}\n`else\n@@ {m}\n`endif\n" for m in names
+            )
+        )
+        subprocess.run(
+            ["iverilog", "-E", "-o", str(out), "-I", str(root / "include")]
+            + [str(root / f) for f in filelist]
+            + [str(probe)],
+            check=True,
+            capture_output=True,
+        )
+        seen = dict(
+            (m.group(1), m.group(2))
+            for m in re.finditer(r"^\s*@@ (\w+)(?: = (.*))?$", out.read_text(), re.M)
+        )
+    lines = []
+    for m in names:
+        v = seen[m]
+        if v is None:
+            lines.append(f"- `{m}` is not defined")
+        elif v.strip():
+            lines.append(f"- `{m}` is defined as `{v.strip()}`")
+        else:
+            lines.append(f"- `{m}` is defined")
+    return (
+        "\n\n## Configuration of the supplied RTL\n\n"
+        "The RTL is supplied in one configuration, the one it is built with when "
+        "no macro is defined on the command line:\n\n"
+        + "\n".join(lines)
+        + "\n\nJudge it in this configuration; other configurations are not part "
+        "of this task.\n"
+    )
 
 
 def leading_comments(text):
@@ -228,6 +288,9 @@ def main():
                 del built[v]
 
         spec = (root / "spec.md").read_text()
+        note = configuration(root, filelist, rels, spec)
+        if note:
+            spec = spec.rstrip("\n") + note
         if (root / "figures").is_dir():
             shutil.copytree(root / "figures", out / "assets" / name / "figures")
         # What a tool needs to build it, in upstream's compile order.
