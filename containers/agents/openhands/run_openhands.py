@@ -27,7 +27,8 @@ import tempfile
 # framework contract vars (TASK, MODEL, TIMEOUT, EVAL_AGENT_REASONING_EFFORT,
 # EVAL_MODEL_CONTEXT_WINDOW, the gateway URLs). Any other os.environ read here
 # can never see a runtime value, so these mirror upstream HANDBOOK's runner
-# directly rather than pretending to be tunable. Wall-clock is bounded independently by EVAL_TIMEOUT via run-agent.
+# directly rather than pretending to be tunable. Wall-clock is bounded
+# independently by EVAL_TIMEOUT via run-agent.
 
 # MCP tool-call timeout (seconds) — mirrors upstream HANDBOOK's runner.
 MCP_TOOL_TIMEOUT = 300

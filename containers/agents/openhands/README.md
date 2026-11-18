@@ -7,7 +7,7 @@ OpenHands: open-source autonomous AI software engineer from All-Hands-AI.
 | Field | Value |
 |-------|-------|
 | Upstream | [All-Hands-AI/OpenHands](https://github.com/All-Hands-AI/OpenHands) |
-| Version | `1.14.0` |
+| Version | `1.28.1` |
 | Install mechanism | GitHub release binary (`openhands-linux-x86_64`, linux/amd64 only) |
 | Language runtime | Python (prebuilt binary on `python:3.12-slim`) |
 
@@ -23,7 +23,7 @@ When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../.
 
 ## Version
 
-Pinned to `1.14.0` at image build time via the `OPENHANDS_VERSION` build arg. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
+Pinned to `1.28.1` at image build time via the `AGENT_VERSION` build arg. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.
 
 ## Files
 
