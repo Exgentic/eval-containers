@@ -26,6 +26,9 @@ benchmark changed after that commit, so the row is stale.
 | arc-agi | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | arc | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | arena-hard | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
+| assertllm2-verify | ✓ | ? | ✓ | ✓ | ? | n/a | ✓ | ✗ | — |
+| assertllm2-verify-formal | ✓ | ? | ✓ | ✓ | ? | n/a | ✓ | ✗ | — |
+| assertllm2-verify-sim | ✓ | ? | ✓ | ✓ | ? | n/a | ✓ | ✗ | — |
 | assetopsbench | ? | ? | ? | ? | ? | ? | ? | ✗ | — |
 | assistantbench | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | bbh | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
@@ -112,4 +115,4 @@ benchmark changed after that commit, so the row is stale.
 | xnli | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 | xstory-cloze | ✓ | ? | ? | ✓ | ? | ? | ? | ✗ | 2026-06-10 |
 
-**Totals:** building 65/101 · isolation 1/101 · oracle 63/101 · running 2/101 · traces 2/101 · replicate 0/101 · safety 0/101 · published 2/101
+**Totals:** building 68/104 · isolation 4/104 · oracle 66/104 · running 2/104 · traces 2/104 · replicate 0/104 · safety 3/104 · published 2/104

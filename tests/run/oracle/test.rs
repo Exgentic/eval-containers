@@ -136,6 +136,13 @@ const SPECIAL: &[(&str, &str)] = &[
     // itself — so there is nothing for a gold solution to feed, and gold and
     // no-op are indistinguishable by construction.
     ("zerobench-agentic", "0"),
+    // The three AssertLLM2-verify setups share one task set and grader; one task
+    // of each kind across them: a golden (0), an individual mutant (1) and a
+    // merged variant (6). solution.sh rebuilds the design's golden from the
+    // pinned upstream tree and compares, so it needs the network.
+    ("assertllm2-verify", "0"),
+    ("assertllm2-verify-sim", "1"),
+    ("assertllm2-verify-formal", "6"),
 ];
 
 fn oracle(args: &[&str]) -> bool {

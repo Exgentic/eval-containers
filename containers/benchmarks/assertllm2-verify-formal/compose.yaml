@@ -1,0 +1,23 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/assertllm2-verify-formal--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: assertllm2-verify-formal
+    # Simulating or model-checking the larger designs (pci_bridge, aemb) needs
+    # more than the default 2 CPU / 2G. Matches presets/assertllm2-verify-formal.yaml (rule 24e).
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
