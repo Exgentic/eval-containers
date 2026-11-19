@@ -19,6 +19,8 @@ Qwen Code is a fork of Google's gemini-cli, re-tuned and re-branded by Alibaba f
 
 The entrypoint writes `~/.qwen/settings.json` declaring an `openai` model provider whose `baseUrl` is `$OPENAI_BASE_URL/v1`, sets `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `OPENAI_MODEL`, disables both Gemini and Qwen sandboxes (Docker is the sandbox), and runs `qwen --yolo -p "$TASK"` for a headless, auto-approved run. Answer goes to stdout.
 
+When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint sets the provider's `contextWindowSize`, and qwen compresses at 70% of it. If its 64,000-token reply retry would not fit in the other 30%, `QWEN_CODE_MAX_OUTPUT_TOKENS` becomes 30% of the window (a lower cap the launch set is kept). The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile). Unset, nothing changes.
+
 ## Version
 
 Pinned to `0.14.4` at image build time. Override with `EVAL_AGENT_VERSION=<ref>` at build or run time — see [RULES.md](../RULES.md) principle 9.

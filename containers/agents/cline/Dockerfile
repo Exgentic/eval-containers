@@ -26,6 +26,23 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 # cline's auth state lives in $HOME/.cline/data/{globalState,secrets}.json
 # and is only recognised when written via `cline auth`.
 cline auth -p openai -k "$OPENAI_API_KEY" -m "${MODEL:-default}" -b "$OPENAI_BASE_URL" >/dev/null 2>&1 || true
+# EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26) is the model's contextWindow. With
+# none set, cline 2.15.0 uses its default model info (128000, no reply cap). For
+# each mode, a model info already in the state is kept and only given the window
+# if it has none; with no info, cline's default info is written with the window.
+# cline keeps its own truncation: before each request, once the last one used
+# more than the window less 27k (64k window), 30k (128k), 40k (200k), or else
+# max(window - 40k, 80%). It sends no reply cap, so nothing is reserved.
+if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
+  node -e 'const f=process.argv[1], s=require(f);
+for (const k of ["actModeOpenAiModelInfo", "planModeOpenAiModelInfo"]) {
+  s[k] = s[k] || {maxTokens: -1, supportsImages: true, supportsPromptCache: false, isR1FormatRequired: false,
+    inputPrice: 0, outputPrice: 0, temperature: 0};
+  if (s[k].contextWindow === undefined) s[k].contextWindow = +process.argv[2];
+  else console.error(`cline: ${k}.contextWindow already set, kept`);
+}
+require("fs").writeFileSync(f, JSON.stringify(s))' "$HOME/.cline/data/globalState.json" "$EVAL_MODEL_CONTEXT_WINDOW"
+fi
 exec cline -y ${EVAL_AGENT_REASONING_EFFORT:+--reasoning-effort $EVAL_AGENT_REASONING_EFFORT} "$TASK"
 E
 
