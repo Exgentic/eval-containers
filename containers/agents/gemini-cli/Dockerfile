@@ -28,11 +28,20 @@ export GEMINI_SANDBOX=false
 # setting: it takes every model's window as 1048576 and compresses, before each
 # request, once the last prompt passes model.compressionThreshold (0.5) of it. So
 # the threshold becomes 0.5 x window / 1048576, which keeps gemini's own point,
-# half the real window. It sends no reply cap, so nothing is reserved.
+# half the real window. It sends no reply cap, so nothing is reserved. Only that
+# one key is added to settings.json: the rest of an existing file is kept, a
+# threshold already set is kept, and a file that isn't plain JSON is left alone.
 if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
-  T=$(( EVAL_MODEL_CONTEXT_WINDOW * 1000000 / 2097152 ))
   mkdir -p "$HOME/.gemini"
-  printf '{"model":{"compressionThreshold":%d.%06d}}\n' $(( T / 1000000 )) $(( T % 1000000 )) > "$HOME/.gemini/settings.json"
+  node -e 'const fs=require("fs"), f=process.argv[1];
+let s = {};
+try { s = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) {
+  if (e.code !== "ENOENT") { console.error(`gemini-cli: ${f} is not plain JSON, left alone`); process.exit(0); }
+}
+s.model = s.model || {};
+if (s.model.compressionThreshold !== undefined) console.error("gemini-cli: model.compressionThreshold already set, kept");
+else s.model.compressionThreshold = Math.floor(+process.argv[2] * 1e6 / 2097152) / 1e6;
+fs.writeFileSync(f, JSON.stringify(s) + "\n")' "$HOME/.gemini/settings.json" "$EVAL_MODEL_CONTEXT_WINDOW"
 fi
 exec gemini --yolo -p "$TASK"
 E

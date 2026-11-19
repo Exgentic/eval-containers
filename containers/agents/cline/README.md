@@ -19,7 +19,7 @@ Cline operates a two-phase workflow: **Plan mode** surveys the workspace and dra
 
 The entrypoint sets the LiteLLM proxy endpoint and API key, then invokes the CLI in non-interactive mode with the task as the user message. Cline writes its final answer to stdout; Eval Containers's evaluator reads the last non-empty line as the submission.
 
-When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint writes cline's default OpenAI model info with that `contextWindow`, for both modes, and cline truncates by its own rule within it. It sends no reply cap. The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile). Unset, nothing changes.
+When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint gives cline's OpenAI model info that `contextWindow`, for both modes, and cline truncates by its own rule within it. A model info already in cline's state is kept, and a `contextWindow` already in it is not overridden; where there is none, cline's own default info is written with the window. It sends no reply cap. The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile). Unset, nothing changes.
 
 ## Version
 

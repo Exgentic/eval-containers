@@ -19,7 +19,7 @@ Gemini CLI is Google's official terminal agent for the Gemini model family. It s
 
 The entrypoint sets `GOOGLE_GEMINI_BASE_URL`, `GEMINI_API_KEY`, and `GEMINI_SANDBOX=false` (Docker is the sandbox), then runs `gemini --yolo -p "$TASK"`. `--yolo` auto-approves tool calls, `-p` runs the CLI in headless / print mode so the final answer goes to stdout.
 
-When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint scales `model.compressionThreshold` so gemini-cli, which takes every window as 1,048,576, compresses at half the real window, as it would at its 0.5 default. It sends no reply cap. The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile). Unset, nothing changes.
+When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the entrypoint scales `model.compressionThreshold` so gemini-cli, which takes every window as 1,048,576, compresses at half the real window, as it would at its 0.5 default. Only that key is added to `~/.gemini/settings.json`: the rest of an existing file is kept, a threshold already set there is not overridden, and a file that isn't plain JSON is left alone. It sends no reply cap. The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile). Unset, nothing changes.
 
 ## Version
 
