@@ -55,7 +55,8 @@ OpenAI-compatible surface:
 POST $OPENAI_BASE_URL/chat/completions
 { "model": $MODEL,
   "messages": [{"role":"user","content":"Return a JSON object that conforms to the provided schema."}],
-  "response_format": {"type":"json_schema","json_schema":{"name":"walle_case","schema": <the case schema>}} }
+  "response_format": {"type":"json_schema","json_schema":{"name":"walle_case","schema": <the case schema>}},
+  "max_tokens": 2048 }
 ```
 
 It classifies the outcome — **accept** (2xx), **reject** (HTTP 400/422), or
@@ -65,6 +66,18 @@ plus a per-case diagnostic in `/output/task/walle.json`.
 `WALLE_STRICT=true` adds `"strict": true` to the `json_schema` (OpenAI strict
 mode — narrows to a smaller schema subset; off by default so the probe reflects
 the stack's general `response_format` support, matching walle's own contract).
+
+Other probe knobs (runtime env, read by the harness):
+
+| Var | Default | Why |
+|-----|---------|-----|
+| `WALLE_MAX_TOKENS` | `2048` | Kimi-Vendor-Verifier's own `WALLE_MAX_TOKENS` default. A reasoning model spends the budget on reasoning before any JSON. At the old 512 it often stopped at `finish_reason: length` with empty `content`, so `conforms` described truncation, not output quality ([#758](https://github.com/Exgentic/eval-containers/issues/758)). |
+| `WALLE_TIMEOUT` | `240` | Per-request seconds. Fits a slow 2048-token completion and stays under the 300 s `EVAL_TIMEOUT` that bounds the harness. A timeout scores as `error`. |
+| `WALLE_EXTRA_BODY` | unset | JSON object merged into the request, e.g. a stack's thinking-off control: `{"chat_template_kwargs":{"enable_thinking":false}}` (vLLM/SGLang; the key varies by chat template), `{"thinking":{"type":"disabled"}}` (Kimi), `{"reasoning_effort":"none"}` (OpenAI-style). It is not sent by default because no spelling is portable, and a stack that answers an unknown field with 400 would score every valid case as `reject`. |
+
+The reward depends only on the HTTP status, so these knobs move the `conforms`
+diagnostic and the compute spent, not the score. Set them per run with
+`docker run -e` / compose `environment:` / the chart's `runnerExtraEnv`.
 
 ## How it's graded
 
