@@ -1082,9 +1082,11 @@ fn reasoning_effort_wired_through_to_agents() {
     );
 }
 
-/// `EVAL_MODEL_CONTEXT_WINDOW` (agents/RULES.md 25-28): run-agent forwards it, refuses a
-/// malformed value (27), and only warns for an agent that doesn't read it (28);
-/// compose, the chart and the CLI each set it only when asked.
+/// `EVAL_MODEL_CONTEXT_WINDOW` (agents/RULES.md 25-28, output/RULES.md 9):
+/// run-agent forwards it, refuses a malformed value (27), records it for an agent
+/// that reads it and only warns for one that doesn't (28), and write-result puts
+/// it in model/result.json (output 9); compose, the chart and the CLI each set it
+/// only when asked.
 #[test]
 fn model_context_window_wired_through_to_agents() {
     let root = repo_root();
@@ -1100,8 +1102,16 @@ fn model_context_window_wired_through_to_agents() {
         "run-agent must refuse an EVAL_MODEL_CONTEXT_WINDOW that is not a positive integer (rule 27)"
     );
     assert!(
-        run_agent.contains("grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh \\\n    || echo"),
-        "run-agent must warn, not exit, when the agent's /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW (rule 28)"
+        run_agent.contains(
+            "if grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh; then\n    echo \"$EVAL_MODEL_CONTEXT_WINDOW\" > /output/agent/.context-window\n  else\n    echo"
+        ),
+        "run-agent must record the window only for an agent whose /run.sh reads EVAL_MODEL_CONTEXT_WINDOW, and warn, not exit, for one that doesn't (rule 28, output rule 9)"
+    );
+    let write_result = read("containers/core/runner/write-result");
+    assert!(
+        write_result.contains("/output/agent/.context-window")
+            && write_result.contains(r#""context_window":%s}"#),
+        "write-result must record the window in model/result.json (output rule 9)"
     );
     assert!(
         read("containers/compose/runner.yaml")

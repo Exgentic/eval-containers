@@ -10,6 +10,9 @@
 //!     rejected before any compaction. This proves the mock enforces the window,
 //!     so the told run's pass means something.
 //!
+//! Each run also checks the `context_window` `model/result.json` records (output
+//! rule 9): the window when told, null when not.
+//!
 //! The mock grows the context by asking for a shell command every turn and
 //! logs one `[mock] {...}` line per request; the assertions read those lines.
 //! It runs as a second container from the agent's own eval image (agents-smoke
@@ -83,6 +86,30 @@ async fn events(mock: &ContainerAsync<GenericImage>) -> Vec<String> {
         .collect()
 }
 
+/// How long after the mock's last event `model/result.json` may take to appear:
+/// the agent exits, the grader runs, and write-result writes it.
+const RESULT_TIMEOUT: Duration = Duration::from_secs(90);
+
+/// `model/result.json` once write-result has written it.
+async fn model_result(out: &std::path::Path) -> serde_json::Value {
+    let path = out.join("model/result.json");
+    let deadline = Instant::now() + RESULT_TIMEOUT;
+    loop {
+        if let Some(v) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+        {
+            return v;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "no model/result.json at {} within {RESULT_TIMEOUT:?}",
+            path.display()
+        );
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    }
+}
+
 /// Run `agent` against the mock, told the window or not, and return the
 /// mock's events once the run ends.
 async fn run(agent: &str, told: bool) -> Vec<String> {
@@ -128,6 +155,16 @@ async fn run(agent: &str, told: bool) -> Vec<String> {
     }
     let raw = mock.stderr_to_vec().await.expect("read mock stderr");
     eprintln!("{agent} ({arm}):\n{}", String::from_utf8_lossy(&raw));
+    let window = if told {
+        serde_json::json!(WINDOW)
+    } else {
+        serde_json::Value::Null
+    };
+    let model = model_result(&out).await;
+    assert_eq!(
+        model["context_window"], window,
+        "{agent} ({arm}): model/result.json {model}"
+    );
     std::fs::remove_dir_all(&out).expect("remove output dir");
     seen
 }

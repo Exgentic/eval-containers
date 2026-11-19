@@ -5,11 +5,12 @@
 #   /logs/verifier/reward.txt   written by /grade.sh
 #   /output/agent/.started-at   written by /usr/local/bin/run
 #   /output/agent/.exit-code    written by /usr/local/bin/run-agent
+#   /output/agent/.context-window  the window the agent was told, by run-agent
 #
 # Writes:
 #   /output/task/result.json    task_id, benchmark, reward, passed
 #   /output/agent/result.json   agent, started_at, ended_at, exit_code, error
-#   /output/model/result.json   model
+#   /output/model/result.json   model, context_window
 #   /output/agent/launch.json   what the run was launched with (EVAL_LAUNCH)
 #   /output/agent/agent-env.json  the env vars the agent was given (EVAL_AGENT_LAUNCH)
 set -euo pipefail
@@ -46,7 +47,13 @@ printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s,"error":%
   "${AGENT:-unknown}" "$STARTED_AT" "$ENDED_AT" "$EXIT_CODE" "$ERROR" \
   > /output/agent/result.json
 
-printf '{"model":"%s"}\n' "${MODEL:-unknown}" > /output/model/result.json
+# The window the agent was told (output rule 9), from run-agent; null when the
+# launch set none, or the agent doesn't read it, and the agent assumed its own.
+WINDOW=
+read -r WINDOW 2>/dev/null < /output/agent/.context-window || true
+[[ "$WINDOW" =~ ^[1-9][0-9]*$ ]] || WINDOW=null
+printf '{"model":"%s","context_window":%s}\n' \
+  "${MODEL:-unknown}" "$WINDOW" > /output/model/result.json
 
 # What this run was given, as the chart passed it. Written even when empty, so a
 # reader can tell "launched with nothing extra" from "this run predates the
