@@ -1321,6 +1321,8 @@ fn run_with_stub_env(
     let _ = fs::remove_dir_all(&tmp);
     fs::create_dir_all(tmp.join("bin")).unwrap();
     fs::create_dir_all(tmp.join("home")).unwrap();
+    // A venv binary (aider) runs from PATH, so the stub stands in for it.
+    let script = script.replace(&format!("/opt/{agent}-venv/bin/{binary}"), binary);
     fs::write(tmp.join("run.sh"), script).unwrap();
     let bin = tmp.join("bin").join(binary);
     fs::write(&bin, format!("#!/bin/bash\n{stub}\n")).unwrap();
@@ -1334,7 +1336,12 @@ fn run_with_stub_env(
         .env_clear()
         .env(
             "PATH",
-            format!("{}:/usr/bin:/bin", tmp.join("bin").display()),
+            // The host PATH last, for a script that calls node (cline).
+            format!(
+                "{}:/usr/bin:/bin:{}",
+                tmp.join("bin").display(),
+                std::env::var("PATH").unwrap_or_default()
+            ),
         )
         .env("HOME", tmp.join("home"))
         .env("TASK", "t")
@@ -1506,6 +1513,252 @@ fn codex_is_told_the_window() {
             .lines()
             .any(|l| l == "model_context_window=131072")
     );
+}
+
+/// gemini-cli fits the window it is told with its own compression (agents/RULES.md
+/// 26): it takes every window as 1048576 and compresses past
+/// `model.compressionThreshold` of it (0.5), so the threshold is scaled to put
+/// that point at half the real window. It sends no reply cap. Unset, no
+/// settings file is written; an existing one keeps its other keys and any
+/// threshold already set. Runs the script's node patch, so node must be on PATH.
+#[test]
+fn gemini_cli_fits_the_window_it_is_told() {
+    let stub = r#"cat "$HOME/.gemini/settings.json" 2>/dev/null || echo '{}'"#;
+    let settings = |window: Option<u64>| {
+        let out = run_with_stub("gemini-cli", "gemini", stub, window);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    assert_eq!(
+        settings(None),
+        serde_json::json!({}),
+        "unset must leave gemini as shipped"
+    );
+    for window in [2_097_152u64, 1_048_576, 262_144, 131_072, 64_000, 32_000] {
+        let t = settings(Some(window))["model"]["compressionThreshold"]
+            .as_f64()
+            .unwrap();
+        let point = t * 1_048_576.0;
+        assert!(
+            point <= window as f64 / 2.0 && point > window as f64 / 2.0 - 2.0,
+            "window {window}: compression point {point}, want half the window"
+        );
+    }
+    let home = std::env::temp_dir().join(format!("ec-gemini-home-{}", std::process::id()));
+    let seeded = |existing: &str| {
+        let _ = fs::remove_dir_all(&home);
+        fs::create_dir_all(home.join(".gemini")).unwrap();
+        fs::write(home.join(".gemini/settings.json"), existing).unwrap();
+        let home = home.to_str().unwrap();
+        let out = run_with_stub_env(
+            "gemini-cli",
+            "gemini",
+            stub,
+            Some(131_072),
+            Some(("HOME", home)),
+        );
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    let s: serde_json::Value =
+        serde_json::from_str(&seeded(r#"{"ui":{"theme":"x"},"model":{"name":"m"}}"#)).unwrap();
+    assert_eq!(s["ui"]["theme"], "x", "other settings are kept");
+    assert_eq!(s["model"]["name"], "m", "other model settings are kept");
+    assert!(s["model"]["compressionThreshold"].is_f64());
+    let s: serde_json::Value =
+        serde_json::from_str(&seeded(r#"{"model":{"compressionThreshold":0.3}}"#)).unwrap();
+    assert_eq!(
+        s["model"]["compressionThreshold"], 0.3,
+        "a set threshold is kept"
+    );
+    let jsonc = "// mine\n{\"model\":{}}\n";
+    assert_eq!(
+        seeded(jsonc),
+        jsonc,
+        "a file that isn't plain JSON is left alone"
+    );
+    let _ = fs::remove_dir_all(&home);
+}
+
+/// qwen-code fits the window it is told with its own compression (agents/RULES.md
+/// 26): `contextWindowSize` is the window and qwen compresses past 70% of it, so
+/// a reply must fit in 30%. Its reply starts at 8000 and is retried once at
+/// 64000 unless QWEN_CODE_MAX_OUTPUT_TOKENS is set, so that is set (to 30%) only
+/// when 64000 doesn't fit; a lower launch cap is kept. Unset, as shipped.
+#[test]
+fn qwen_code_fits_the_window_it_is_told() {
+    let stub = r#"cat "$HOME/.qwen/settings.json"
+echo "${QWEN_CODE_MAX_OUTPUT_TOKENS:-unset}""#;
+    let run = |window: Option<u64>, set: Option<&str>| {
+        let extra = set.map(|v| ("QWEN_CODE_MAX_OUTPUT_TOKENS", v));
+        let out = run_with_stub_env("qwen-code", "qwen", stub, window, extra);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let text = String::from_utf8_lossy(&out.stdout).to_string();
+        let lines: Vec<&str> = text.lines().collect();
+        let cfg: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        (
+            cfg["modelProviders"]["openai"][0]["generationConfig"].clone(),
+            lines[1].to_string(),
+        )
+    };
+    let (gc, cap) = run(None, None);
+    assert!(gc.is_null(), "unset must leave qwen's window as shipped");
+    assert_eq!(cap, "unset");
+    for window in [1_048_576u64, 262_144, 213_334, 131_072, 64_000, 32_000] {
+        let (gc, cap) = run(Some(window), None);
+        assert_eq!(gc["contextWindowSize"], window);
+        // Unset, qwen's largest reply is its 64000 retry.
+        let cap: u64 = if cap == "unset" {
+            64_000
+        } else {
+            cap.parse().unwrap()
+        };
+        assert!(
+            window * 7 / 10 + cap <= window,
+            "window {window}: compression point + reply cap overflows"
+        );
+    }
+    assert_eq!(
+        run(Some(131_072), Some("16000")).1,
+        "16000",
+        "a lower cap is kept"
+    );
+    assert_eq!(
+        run(Some(131_072), Some("64000")).1,
+        "39321",
+        "a higher cap is lowered"
+    );
+    assert_eq!(
+        run(Some(131_072), Some("x")).1,
+        "39321",
+        "a non-numeric cap is replaced"
+    );
+}
+
+/// cline is told the window as its OpenAI model info's `contextWindow`, in both
+/// modes (agents/RULES.md 25): an existing info is kept and only given a missing
+/// `contextWindow`; with none, cline's own default info is written. No reply
+/// cap, so its truncation point, below the window by its own rule, is all that
+/// must fit. Unset, `cline auth`'s state is left alone. Runs the script's node
+/// patch, so node must be on PATH.
+#[test]
+fn cline_is_told_the_window() {
+    let stub = r#"if [ "$1" = auth ]; then
+  mkdir -p "$HOME/.cline/data"
+  echo '{"actModeApiProvider":"openai","actModeOpenAiModelId":"m"}' > "$HOME/.cline/data/globalState.json"
+else cat "$HOME/.cline/data/globalState.json"; fi"#;
+    let state = |window: Option<u64>| {
+        let out = run_with_stub("cline", "cline", stub, window);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()
+    };
+    assert_eq!(
+        state(None),
+        serde_json::json!({"actModeApiProvider": "openai", "actModeOpenAiModelId": "m"})
+    );
+    let s = state(Some(131_072));
+    assert_eq!(s["actModeOpenAiModelId"], "m", "auth's state is kept");
+    for mode in ["actModeOpenAiModelInfo", "planModeOpenAiModelInfo"] {
+        assert_eq!(
+            s[mode],
+            serde_json::json!({"maxTokens": -1, "contextWindow": 131_072, "supportsImages": true,
+                "supportsPromptCache": false, "isR1FormatRequired": false,
+                "inputPrice": 0, "outputPrice": 0, "temperature": 0}),
+            "{mode}: cline's default info with the real window"
+        );
+    }
+    let stub = r#"if [ "$1" = auth ]; then
+  mkdir -p "$HOME/.cline/data"
+  echo '{"actModeOpenAiModelInfo":{"maxTokens":4096},"planModeOpenAiModelInfo":{"contextWindow":32000}}' > "$HOME/.cline/data/globalState.json"
+else cat "$HOME/.cline/data/globalState.json"; fi"#;
+    let out = run_with_stub("cline", "cline", stub, Some(131_072));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let s: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        s["actModeOpenAiModelInfo"],
+        serde_json::json!({"maxTokens": 4096, "contextWindow": 131_072}),
+        "an existing info is kept and given the window"
+    );
+    assert_eq!(
+        s["planModeOpenAiModelInfo"],
+        serde_json::json!({"contextWindow": 32000}),
+        "a window already set is kept"
+    );
+}
+
+/// aider is told the window as `max_input_tokens` in a model metadata file
+/// (agents/RULES.md 25); it sends no reply cap and summarizes history past
+/// window/16, capped at 8192, so nothing else is needed. Unset, no file.
+#[test]
+fn aider_is_told_the_window() {
+    let stub =
+        r#"while [ $# -gt 0 ]; do [ "$1" = --model-metadata-file ] && cat "$2"; shift; done"#;
+    let out = |window: Option<u64>| {
+        let out = run_with_stub("aider", "aider", stub, window);
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).to_string()
+    };
+    assert_eq!(out(None), "", "unset must pass no metadata file");
+    let meta: serde_json::Value = serde_json::from_str(&out(Some(131_072))).unwrap();
+    assert_eq!(
+        meta,
+        serde_json::json!({"openai/m": {"max_input_tokens": 131_072}})
+    );
+}
+
+/// terminus-2 and openhands read `EVAL_MODEL_CONTEXT_WINDOW` in Python, which this
+/// stage can't run without their SDKs (agents/RULES.md 25): terminus-2 passes it
+/// as `model_info.max_input_tokens` and keeps its own summarizing (8000 free
+/// tokens); openhands gives it to the LLM and as the condenser's token budget,
+/// on both of its paths. Neither sends a reply cap. Their `/run.sh` names the
+/// variable, so run-agent does not warn (rule 28).
+#[test]
+fn python_agents_read_the_window() {
+    let read = |p: &str| fs::read_to_string(repo_root().join(p)).unwrap();
+    let t2 = read("containers/agents/terminus-2/run.py");
+    assert!(
+        t2.contains(r#"{"max_input_tokens": int(window)} if window else None"#)
+            && t2.contains("model_info=model_info,"),
+        "terminus-2 must pass the window as model_info"
+    );
+    let oh = read("containers/agents/openhands/run_openhands.py");
+    assert!(
+        oh.contains(r#"llm_kwargs["max_input_tokens"] = window"#)
+            && oh.contains("LLMSummarizingCondenser(llm=llm, max_tokens=window)")
+            && oh.contains(r#"update={"max_tokens": window}"#),
+        "openhands must give the window to the LLM and to both condensers"
+    );
+    for a in ["terminus-2", "openhands"] {
+        assert!(
+            read(&format!("containers/agents/{a}/Dockerfile"))
+                .contains("EVAL_MODEL_CONTEXT_WINDOW"),
+            "{a}'s /run.sh must name EVAL_MODEL_CONTEXT_WINDOW, or run-agent warns it is unread"
+        );
+    }
 }
 
 /// `EVAL_INTERNET` (agents/RULES.md 19-20): image-baked, not operator-settable —

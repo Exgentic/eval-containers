@@ -33,6 +33,7 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 set -euo pipefail
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export OPENAI_BASE_URL="${OPENAI_BASE_URL:-http://model:4000}"
+# run.py reads EVAL_MODEL_CONTEXT_WINDOW.
 exec /opt/terminus2-venv/bin/python /opt/agent/run.py
 E
 
