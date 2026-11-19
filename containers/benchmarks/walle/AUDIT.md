@@ -52,8 +52,8 @@ commit: (pending)
 
 | Metric | Value |
 |--------|-------|
-| per task | ? (one short completion) |
-| full suite | ? (395 short completions) |
+| per task | ? (one completion, ≤ `WALLE_MAX_TOKENS`=2048 output tokens) |
+| full suite | ? (395 completions, ≤ 809k output tokens) |
 
 ## Distribution — is it shipped?
 
