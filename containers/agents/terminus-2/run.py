@@ -115,12 +115,20 @@ async def main():
     logs_dir = Path(tempfile.mkdtemp(prefix="terminus2-"))
     trial_dir = Path(tempfile.mkdtemp(prefix="terminus2-trial-"))
 
+    # EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26) is the model's max_input_tokens
+    # (1000000 unless told). Terminus-2 keeps its own summarization: before each
+    # turn, once fewer than 8000 tokens of the window are free. It sends no reply
+    # cap on chat completions, so nothing is reserved.
+    window = os.environ.get("EVAL_MODEL_CONTEXT_WINDOW")
+    model_info = {"max_input_tokens": int(window)} if window else None
+
     agent = Terminus2(
         logs_dir=logs_dir,
         model_name=model,
         api_base=api_base,
         temperature=0.7,
         llm_kwargs=llm_kwargs,
+        model_info=model_info,
     )
     env = LocalEnvironmentShim(trial_dir)
     context = AgentContext()
