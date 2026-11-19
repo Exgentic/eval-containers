@@ -27,35 +27,18 @@ fi
 
 # EVAL_MODEL_CONTEXT_WINDOW is the model's context window in tokens, for an agent that
 # would otherwise size its context from a window it assumes itself (agents/RULES.md
-# 25-29). Malformed fails the run before it starts (27). An agent that doesn't
+# 25-28). Malformed fails the run before it starts (27). An agent that doesn't
 # read it yet only warns (28): it runs exactly as it does without the variable, so
-# a launch that sets one window across several agents still runs every one.
-#
-# A value set at launch wins. Otherwise the edge asks the upstream once — vLLM's
-# /v1/models, else LiteLLM's /v1/model/info (29). An edge that predates the
-# question, or an upstream that states no window for the pinned model, leaves it
-# unknown, and unknown is the agent's own window, exactly as before. Behind the
-# fleet's litellm gateway it is always unknown: that gateway lists only wildcard
-# model names, never the pinned one (see the edge's contextWindow). Where it
-# came from is recorded for write-result (output/RULES.md 9). An agent that
-# doesn't read it sizes to its own window, so it is neither asked for nor
-# recorded: the result says unknown, not a window the agent never used.
-reads_window=false; grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh && reads_window=true
-context_source=launch
-if [ -z "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
-  context_source=
-  if [ "$reads_window" = true ] && w=$(timeout 20 /opt/edge/start context-window 2>/dev/null) && [[ "$w" =~ ^[1-9][0-9]*$ ]]; then
-    EVAL_MODEL_CONTEXT_WINDOW=$w context_source=endpoint
-    echo "run-agent: EVAL_MODEL_CONTEXT_WINDOW=$w, from the model endpoint" >&2
-  fi
-fi
+# a launch that sets one window across several agents still runs every one. The
+# window an agent that reads it was told is recorded for write-result
+# (output/RULES.md 9); one that doesn't sizes to its own, so none is recorded.
 if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   if ! [[ "$EVAL_MODEL_CONTEXT_WINDOW" =~ ^[1-9][0-9]*$ ]]; then
     echo "run-agent: EVAL_MODEL_CONTEXT_WINDOW must be a positive integer (tokens), not '$EVAL_MODEL_CONTEXT_WINDOW'" >&2
     exit 2
   fi
-  if [ "$reads_window" = true ]; then
-    printf '%s %s\n' "$EVAL_MODEL_CONTEXT_WINDOW" "$context_source" > /output/agent/.context-window
+  if grep -q EVAL_MODEL_CONTEXT_WINDOW /run.sh; then
+    echo "$EVAL_MODEL_CONTEXT_WINDOW" > /output/agent/.context-window
   else
     echo "run-agent: EVAL_MODEL_CONTEXT_WINDOW is set but agent '${EVAL_AGENT:-?}' does not read it — continuing with the agent's own window" >&2
   fi

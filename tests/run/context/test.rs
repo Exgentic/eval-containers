@@ -2,19 +2,16 @@
 //!
 //! For each agent, this suite starts `mock.py` (a model with a 64k window that
 //! rejects an over-window request with vLLM's error) on a bridge network, then
-//! runs the agent's `evals/agents-smoke--<name>` image against it three times:
+//! runs the agent's `evals/agents-smoke--<name>` image against it twice:
 //!
 //!   - told: `EVAL_MODEL_CONTEXT_WINDOW=64000`. The agent compacts by its own rule and
 //!     finishes: at least one compaction, no rejection, and the final answer.
-//!   - discovered: no `EVAL_MODEL_CONTEXT_WINDOW`, but the mock's `/v1/models` lists the
-//!     pinned model with `max_model_len: 64000`. The runner reads it off the
-//!     endpoint (agents rule 29) and the agent fits exactly as when told.
 //!   - not told: the agent assumes its own, larger window, so a request is
 //!     rejected before any compaction. This proves the mock enforces the window,
-//!     so the other runs' passes mean something.
+//!     so the told run's pass means something.
 //!
-//! Each run also checks what `model/result.json` records (output rule 9): the
-//! window and `launch`, the window and `endpoint`, or null for both.
+//! Each run also checks the `context_window` `model/result.json` records (output
+//! rule 9): the window when told, null when not.
 //!
 //! The mock grows the context by asking for a shell command every turn and
 //! logs one `[mock] {...}` line per request; the assertions read those lines.
@@ -56,33 +53,8 @@ fn mock_path() -> PathBuf {
         .join("tests/run/context/mock.py")
 }
 
-/// How long after the mock's last event `model/result.json` may take to appear:
-/// the agent exits, the grader runs, and write-result writes it.
-const RESULT_TIMEOUT: Duration = Duration::from_secs(90);
-
-/// What a run tells the agent about the window.
-#[derive(Clone, Copy, PartialEq)]
-enum Arm {
-    /// The launch sets `EVAL_MODEL_CONTEXT_WINDOW`.
-    Told,
-    /// The launch sets nothing; the mock's `/v1/models` states the window.
-    Discovered,
-    /// Nothing states it.
-    NotTold,
-}
-
-impl Arm {
-    fn name(self) -> &'static str {
-        match self {
-            Arm::Told => "told",
-            Arm::Discovered => "discovered",
-            Arm::NotTold => "untold",
-        }
-    }
-}
-
-async fn start_mock(agent: &str, net: &str, host: &str, arm: Arm) -> ContainerAsync<GenericImage> {
-    let mut mock = GenericImage::new(
+async fn start_mock(agent: &str, net: &str, host: &str) -> ContainerAsync<GenericImage> {
+    GenericImage::new(
         format!("ghcr.io/exgentic/evals/agents-smoke--{agent}"),
         "latest".to_string(),
     )
@@ -95,13 +67,10 @@ async fn start_mock(agent: &str, net: &str, host: &str, arm: Arm) -> ContainerAs
     ))
     .with_env_var("MOCK_WINDOW", WINDOW.to_string())
     .with_network(net)
-    .with_container_name(host.to_string());
-    if arm == Arm::Discovered {
-        mock = mock.with_env_var("MOCK_LISTS_WINDOW_FOR", common::PINNED_MODEL);
-    }
-    mock.start()
-        .await
-        .unwrap_or_else(|e| panic!("start mock from evals/agents-smoke--{agent}: {e:?}"))
+    .with_container_name(host.to_string())
+    .start()
+    .await
+    .unwrap_or_else(|e| panic!("start mock from evals/agents-smoke--{agent}: {e:?}"))
 }
 
 /// The mock's events so far, in order.
@@ -117,65 +86,9 @@ async fn events(mock: &ContainerAsync<GenericImage>) -> Vec<String> {
         .collect()
 }
 
-/// Run `agent` against the mock in `arm`, and return the mock's events once the
-/// run ends, after checking what `model/result.json` records about the window.
-async fn run(agent: &str, arm: Arm) -> Vec<String> {
-    common::ensure_agent_image(agent).await;
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .expect("system time")
-        .as_nanos();
-    let name = arm.name();
-    let net = format!("context-{agent}-{name}-{nanos}");
-    let host = format!("mock-context-{agent}-{name}-{nanos}");
-    // Under the project root, not /tmp: rootless podman on macOS doesn't share
-    // /tmp into its VM (see tests/run/agents).
-    test_support::enter_repo_root();
-    let out = std::env::current_dir()
-        .expect("cwd")
-        .join("output/context")
-        .join(format!("{agent}-{name}-{nanos}"));
-    std::fs::create_dir_all(&out).expect("create output dir");
-    let mock = start_mock(agent, &net, &host, arm).await;
-    let env: Vec<(&str, String)> = if arm == Arm::Told {
-        vec![("EVAL_MODEL_CONTEXT_WINDOW", WINDOW.to_string())]
-    } else {
-        vec![]
-    };
-    let _agent = common::start_agent(agent, &net, &host, &out, &env).await;
-    let deadline = Instant::now() + RUN_TIMEOUT;
-    let seen = loop {
-        let seen = events(&mock).await;
-        if seen.iter().any(|e| TERMINAL.contains(&e.as_str())) || Instant::now() > deadline {
-            break seen;
-        }
-        tokio::time::sleep(Duration::from_secs(2)).await;
-    };
-    if !seen.iter().any(|e| TERMINAL.contains(&e.as_str())) {
-        let log = |f: &str| std::fs::read_to_string(out.join("agent").join(f)).unwrap_or_default();
-        panic!(
-            "{agent} ({name}): no terminal event in {RUN_TIMEOUT:?}; mock saw {seen:?}\n\
-             agent stdout:\n{}\nagent stderr:\n{}",
-            log("stdout.log"),
-            log("stderr.log")
-        );
-    }
-    let raw = mock.stderr_to_vec().await.expect("read mock stderr");
-    eprintln!("{agent} ({name}):\n{}", String::from_utf8_lossy(&raw));
-    let (window, source) = match arm {
-        Arm::Told => (serde_json::json!(WINDOW), serde_json::json!("launch")),
-        Arm::Discovered => (serde_json::json!(WINDOW), serde_json::json!("endpoint")),
-        Arm::NotTold => (serde_json::Value::Null, serde_json::Value::Null),
-    };
-    let model = model_result(&out).await;
-    assert_eq!(
-        (&model["context_window"], &model["context_window_source"]),
-        (&window, &source),
-        "{agent} ({name}): model/result.json {model}"
-    );
-    std::fs::remove_dir_all(&out).expect("remove output dir");
-    seen
-}
+/// How long after the mock's last event `model/result.json` may take to appear:
+/// the agent exits, the grader runs, and write-result writes it.
+const RESULT_TIMEOUT: Duration = Duration::from_secs(90);
 
 /// `model/result.json` once write-result has written it.
 async fn model_result(out: &std::path::Path) -> serde_json::Value {
@@ -197,19 +110,75 @@ async fn model_result(out: &std::path::Path) -> serde_json::Value {
     }
 }
 
-/// Told the window, by the launch or by the endpoint, the agent compacts by its
-/// own rule and finishes inside it.
-async fn assert_fits(agent: &str, arm: Arm) {
-    let seen = run(agent, arm).await;
+/// Run `agent` against the mock, told the window or not, and return the
+/// mock's events once the run ends.
+async fn run(agent: &str, told: bool) -> Vec<String> {
+    common::ensure_agent_image(agent).await;
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system time")
+        .as_nanos();
+    let arm = if told { "told" } else { "untold" };
+    let net = format!("context-{agent}-{arm}-{nanos}");
+    let host = format!("mock-context-{agent}-{arm}-{nanos}");
+    // Under the project root, not /tmp: rootless podman on macOS doesn't share
+    // /tmp into its VM (see tests/run/agents).
+    test_support::enter_repo_root();
+    let out = std::env::current_dir()
+        .expect("cwd")
+        .join("output/context")
+        .join(format!("{agent}-{arm}-{nanos}"));
+    std::fs::create_dir_all(&out).expect("create output dir");
+    let mock = start_mock(agent, &net, &host).await;
+    let env: Vec<(&str, String)> = if told {
+        vec![("EVAL_MODEL_CONTEXT_WINDOW", WINDOW.to_string())]
+    } else {
+        vec![]
+    };
+    let _agent = common::start_agent(agent, &net, &host, &out, &env).await;
+    let deadline = Instant::now() + RUN_TIMEOUT;
+    let seen = loop {
+        let seen = events(&mock).await;
+        if seen.iter().any(|e| TERMINAL.contains(&e.as_str())) || Instant::now() > deadline {
+            break seen;
+        }
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    };
+    if !seen.iter().any(|e| TERMINAL.contains(&e.as_str())) {
+        let log = |f: &str| std::fs::read_to_string(out.join("agent").join(f)).unwrap_or_default();
+        panic!(
+            "{agent} ({arm}): no terminal event in {RUN_TIMEOUT:?}; mock saw {seen:?}\n\
+             agent stdout:\n{}\nagent stderr:\n{}",
+            log("stdout.log"),
+            log("stderr.log")
+        );
+    }
+    let raw = mock.stderr_to_vec().await.expect("read mock stderr");
+    eprintln!("{agent} ({arm}):\n{}", String::from_utf8_lossy(&raw));
+    let window = if told {
+        serde_json::json!(WINDOW)
+    } else {
+        serde_json::Value::Null
+    };
+    let model = model_result(&out).await;
+    assert_eq!(
+        model["context_window"], window,
+        "{agent} ({arm}): model/result.json {model}"
+    );
+    std::fs::remove_dir_all(&out).expect("remove output dir");
+    seen
+}
+
+/// Told the window, the agent compacts by its own rule and finishes inside it.
+async fn assert_fits_when_told(agent: &str) {
+    let seen = run(agent, true).await;
     assert!(
         !seen.iter().any(|e| e == "reject" || e == "gave-up"),
-        "{agent} ({}): {seen:?}",
-        arm.name()
+        "{agent} told the window: {seen:?}"
     );
     assert!(
         seen.iter().any(|e| e == "compact"),
-        "{agent} ({}) never compacted: {seen:?}",
-        arm.name()
+        "{agent} told the window never compacted: {seen:?}"
     );
     assert_eq!(
         seen.last().map(String::as_str),
@@ -221,7 +190,7 @@ async fn assert_fits(agent: &str, arm: Arm) {
 /// Not told, the agent assumes a larger window and is rejected before it
 /// compacts — the control that shows the mock enforces its window.
 async fn assert_rejected_when_not_told(agent: &str) {
-    let seen = run(agent, Arm::NotTold).await;
+    let seen = run(agent, false).await;
     let reject = seen.iter().position(|e| e == "reject");
     let compact = seen.iter().position(|e| e == "compact");
     assert!(
@@ -231,17 +200,11 @@ async fn assert_rejected_when_not_told(agent: &str) {
 }
 
 macro_rules! context {
-    ($told:ident, $discovered:ident, $untold:ident, $agent:literal) => {
+    ($told:ident, $untold:ident, $agent:literal) => {
         #[tokio::test]
         #[ignore]
         async fn $told() {
-            assert_fits($agent, Arm::Told).await
-        }
-
-        #[tokio::test]
-        #[ignore]
-        async fn $discovered() {
-            assert_fits($agent, Arm::Discovered).await
+            assert_fits_when_told($agent).await
         }
 
         #[tokio::test]
@@ -254,13 +217,7 @@ macro_rules! context {
 
 context!(
     claude_code_fits_when_told,
-    claude_code_fits_when_discovered,
     claude_code_rejected_when_not_told,
     "claude-code"
 );
-context!(
-    codex_fits_when_told,
-    codex_fits_when_discovered,
-    codex_rejected_when_not_told,
-    "codex"
-);
+context!(codex_fits_when_told, codex_rejected_when_not_told, "codex");

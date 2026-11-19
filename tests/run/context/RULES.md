@@ -10,17 +10,14 @@ Parent: [.agents/verification/RULES.md](../../../.agents/verification/RULES.md)
 
 ## Scope
 
-1. **Three runs per agent.** Every agent in the suite has a *told* run
-   (`EVAL_MODEL_CONTEXT_WINDOW` set to the mock's window), a *discovered* run
-   (unset, with the mock's `/v1/models` listing the pinned model's
-   `max_model_len`, agents rule 29), and a *not told* run (unset, no window
-   listed). The told and discovered runs pass when the agent compacts at least
-   once, no request is rejected, and the run ends with the mock's final answer.
-   The not-told run is the control: it passes when a request is rejected before
-   any compaction. That shows the mock enforces its window, so the other runs'
-   passes mean the window is what fixed them. Each run also checks
-   `model/result.json` (output rule 9): the window with source `launch`, the
-   window with `endpoint`, or null for both.
+1. **Two runs per agent.** Every agent in the suite has a *told* run
+   (`EVAL_MODEL_CONTEXT_WINDOW` set to the mock's window) and a *not told* run (unset).
+   The told run passes when the agent compacts at least once, no request is
+   rejected, and the run ends with the mock's final answer. The not-told run is
+   the control: it passes when a request is rejected before any compaction. That
+   shows the mock enforces its window, so the told run's pass means the window
+   is what fixed it. Each run also checks `model/result.json`'s `context_window`
+   (output rule 9): the mock's window when told, null when not.
 
 2. **Agents covered:** claude-code and codex. An agent is added with one
    `context!` line in `test.rs`.
@@ -50,7 +47,3 @@ Parent: [.agents/verification/RULES.md](../../../.agents/verification/RULES.md)
 7. **Assertions read the mock's log.** One `[mock] {...}` JSON line per request
    on stderr: `tool`, `text`, `compact`, `final`, `reject`, `gave-up`. The test
    prints the full log when it fails.
-
-8. **It lists a window only when asked.** With `MOCK_LISTS_WINDOW_FOR` set, its
-   `/v1/models` lists that model with `max_model_len` equal to its window, as
-   vLLM does; otherwise it lists no window.

@@ -14,10 +14,6 @@ the first ordinary request after one is answered with "OK", ending the task.
 
 Every request is logged to stderr as one `[mock] {...}` JSON line, which the
 test reads: event is tool, text, compact, final, reject or gave-up.
-
-With MOCK_LISTS_WINDOW_FOR set, /v1/models lists that model with vLLM's
-max_model_len, so the runner can read the window off the endpoint (agents rule
-29). Unset, it lists no window, as the told and not-told runs need.
 """
 
 import json
@@ -26,7 +22,6 @@ import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 WINDOW = int(os.environ["MOCK_WINDOW"])
-LISTED = os.environ.get("MOCK_LISTS_WINDOW_FOR")
 COMMAND = "seq 1 2000"
 MAX_TURNS = 80  # a safety stop, logged as gave-up, so a test fails rather than hangs
 SUMMARY_MARKS = (
@@ -220,10 +215,7 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
     def do_GET(self):
-        entry = {"id": LISTED or "mock", "object": "model"}
-        if LISTED:
-            entry["max_model_len"] = WINDOW
-        self.reply(200, {"object": "list", "data": [entry]})
+        self.reply(200, {"object": "list", "data": [{"id": "mock", "object": "model"}]})
 
     def do_POST(self):
         raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))

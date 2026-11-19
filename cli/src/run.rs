@@ -93,8 +93,7 @@ pub struct RunArgs {
     agent_reasoning_effort: Option<String>,
 
     /// The model's context window in tokens, for agents that size their context
-    /// to it (maps to $EVAL_MODEL_CONTEXT_WINDOW). Unset: read from the model
-    /// endpoint (vLLM /v1/models, LiteLLM /v1/model/info), else each agent assumes its own.
+    /// to it (maps to $EVAL_MODEL_CONTEXT_WINDOW). Unset: each agent assumes its own.
     #[arg(long, value_parser = clap::value_parser!(u64).range(1..))]
     model_context_window: Option<u64>,
 

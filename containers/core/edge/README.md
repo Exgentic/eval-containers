@@ -63,16 +63,5 @@ unreachable upstream would otherwise quote in its error.
 
 Serves `/anthropic`, `/openai`, `/genai` (namespaced per
 [`gateways/RULES.md`](../../../.agents/gateways/RULES.md) rule 5) plus
-`/health` and `/context-window`; any other path forwards on the `openai` wire.
-`edge health` exits 0 when `/health` answers on `EDGE_LISTEN`, for a shell-free
-readiness probe.
-
-`/context-window` answers the pinned model's context window, in tokens, as the
-upstream states it — `max_model_len` on the `/v1/models` entry whose `id` is
-`EDGE_MODEL` (vLLM), else `model_info.max_input_tokens` on the `/v1/model/info`
-entry whose `model_name` is (LiteLLM) — and 404 when neither states one. For
-most models `max_input_tokens` is the whole window, but not for all: gpt-5
-states 272,000 of a 400,000 window, so the agent sizes to less than the model
-allows (room lost, never a rejected call). It is not recorded: the runner asks
-it once before the agent starts ([agents rule 29](../../../.agents/agents/RULES.md)).
-`edge context-window` prints that answer and exits 1 when there is none.
+`/health`; any other path forwards on the `openai` wire. `edge health` exits
+0 when `/health` answers on `EDGE_LISTEN`, for a shell-free readiness probe.
