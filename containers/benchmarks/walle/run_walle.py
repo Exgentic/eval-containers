@@ -88,8 +88,33 @@ def classify(status: int) -> str:
     return "error"
 
 
+# Fields the probe itself defines: overriding them would test another schema or
+# prompt, or stream a body the conformance diagnostic can't read.
+PROBE_FIELDS = {"model", "messages", "response_format", "stream"}
+
+
+def extra_body() -> dict:
+    """Opt-in WALLE_EXTRA_BODY: a JSON object merged into the request.
+
+    For a stack's thinking-off control, which has no portable spelling. Not sent
+    by default: a stack that answers an unknown field with 400 would read as
+    `reject` on every case. Raises ValueError on anything but a JSON object that
+    leaves the probe's own fields alone.
+    """
+    raw = os.environ.get("WALLE_EXTRA_BODY") or "{}"
+    try:
+        extra = json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"WALLE_EXTRA_BODY is not JSON: {e}") from e
+    if not isinstance(extra, dict):
+        raise ValueError("WALLE_EXTRA_BODY must be a JSON object")
+    if clash := sorted(PROBE_FIELDS & extra.keys()):
+        raise ValueError(f"WALLE_EXTRA_BODY must not set {', '.join(clash)}")
+    return extra
+
+
 def probe(
-    base_url: str, model: str, schema_obj: dict | str
+    base_url: str, model: str, schema_obj: dict | str, extra: dict
 ) -> tuple[str, int, str | None, str | None, str | None]:
     """POST the schema as response_format and classify the outcome.
 
@@ -118,12 +143,6 @@ def probe(
         # JSON, and a truncated completion makes `conforms` meaningless.
         "max_tokens": int(os.environ.get("WALLE_MAX_TOKENS", "2048")),
     }
-    # Opt-in JSON object merged into the request — e.g. a stack's thinking-off
-    # control, which has no portable spelling. Not sent by default: a stack that
-    # rejects an unknown field with 400 would read as `reject` on every case.
-    extra = json.loads(os.environ.get("WALLE_EXTRA_BODY") or "{}")
-    if not isinstance(extra, dict):
-        raise SystemExit("[runner] WALLE_EXTRA_BODY must be a JSON object")
     payload.update(extra)
 
     req = urllib.request.Request(
@@ -135,9 +154,11 @@ def probe(
         },
         method="POST",
     )
-    # Below the 300 s EVAL_TIMEOUT default that bounds the harness (rule 12c),
-    # so a slow 2048-token completion still lands as a verdict, not a kill.
-    timeout = int(os.environ.get("WALLE_TIMEOUT", "240"))
+    # Inside the harness's own bound (TIMEOUT, from EVAL_TIMEOUT — rule 12c) with
+    # a minute to spare, so a slow completion lands as a verdict, not a kill:
+    # 240 s at the 300 s default.
+    harness_bound = int(os.environ.get("TIMEOUT", "300"))
+    timeout = int(os.environ.get("WALLE_TIMEOUT") or max(harness_bound - 60, 1))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8")
@@ -222,7 +243,16 @@ def main() -> int:
         # `schema` (→ 400), which is exactly the expected reject verdict.
         schema_obj = raw_schema
 
-    verdict, status, content, error, detail = probe(base_url, model, schema_obj)
+    try:
+        extra = extra_body()
+    except ValueError as e:
+        # A launch misconfiguration, not a verdict on the stack.
+        export.update(verdict="error", error=str(e))
+        write_export(export)
+        print(f"[runner] {e}", file=sys.stderr)
+        return 1
+
+    verdict, status, content, error, detail = probe(base_url, model, schema_obj, extra)
     conforms = (
         check_conforms(content, schema_obj)
         if (verdict == "accept" and expect == "accept")
