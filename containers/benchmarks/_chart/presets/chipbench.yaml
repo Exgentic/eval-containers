@@ -1,0 +1,4 @@
+# Native harness (benchmarks/RULES.md 12b): the agent axis is the benchmark's.
+agent: native
+# One model call (up to 10 tries) + a 30 s simulation; matches compose.yaml.
+timeout: '1200'
