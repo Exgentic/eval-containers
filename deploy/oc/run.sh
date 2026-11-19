@@ -12,12 +12,20 @@
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_lib.sh"
 
-BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
+BENCHMARK="" AGENT="" MODEL="" API_KEY_HEADER="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM="" RETRY="" QUEUE=""
 NAMESPACE="$NS_DEFAULT" REGISTRY="" PVC="eval-output-pvc" SWEEP_ID="" SUFFIX="" FLAT_IMAGES=""
 GATEWAY_ON=false FORCE=false DATASET_MODE=false BUILD=false LOCAL_CHART=false NO_RUN=false REBUILD=false TEST=false RERUN=false WATCH=false DRY_RUN=false
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
-  --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; GATEWAY_ON=true; shift 2;;
+  --model) MODEL="$2"; shift 2;; --api-key-header)
+    API_KEY_HEADER="$2"
+    # RFC 9110 token; keep punctuation literal and ranges ASCII in every locale.
+    header_name_pattern="^[!#\$%&'*+.^_\`|~0-9A-Za-z-]+$"
+    if ! LC_ALL=C grep -Eq "$header_name_pattern" <<<"$API_KEY_HEADER" || [[ "$API_KEY_HEADER" == *$'\n'* ]]; then
+      echo "error: --api-key-header is not a valid HTTP header name" >&2; exit 1
+    fi
+    shift 2;;
+  --gateway) GATEWAY="$2"; GATEWAY_ON=true; shift 2;;
   --task) TASK="$2"; shift 2;;
   --dataset) DATASET_MODE=true; shift;; --dataset-size) DATASET="$2"; DATASET_MODE=true; shift 2;;
   --parallelism) PARALLELISM="$2"; shift 2;; --retry) RETRY="$2"; shift 2;;
@@ -47,6 +55,8 @@ esac; done
 # loud rather than routing to a nonexistent model (gateways/RULES.md rule 2).
 [[ "$MODEL" != */* ]] && {
   echo "error: --model takes the upstream <provider>/<model> handle (e.g. azure/gpt-5-mini); the proxy image is --gateway" >&2; exit 1; }
+[[ -n "$API_KEY_HEADER" ]] && $GATEWAY_ON && {
+  echo "error: --api-key-header is for direct provider runs; omit --gateway" >&2; exit 1; }
 log() { echo "[run] $*"; }
 
 # Per-task benchmarks bake one eval image per task (evals/<b>-<task>--<a>), and
@@ -137,6 +147,7 @@ $DATASET_MODE && SET+=(--set "dataset=true")
 [[ -n "$RETRY"       ]] && SET+=(--set "backoffLimitPerIndex=$RETRY")
 [[ -n "$QUEUE"       ]] && SET+=(--set "queueName=$QUEUE")
 [[ -n "$SWEEP_ID"    ]] && SET+=(--set "sweepId=$SWEEP_ID")
+[[ -n "$API_KEY_HEADER" ]] && SET+=(--set-string "apiKeyHeader=$API_KEY_HEADER")
 
 # The release name is not the Job name: helm validates it as a DNS-1123 label
 # capped at 53 chars BEFORE the chart renders, and the chart never reads

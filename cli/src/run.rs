@@ -81,6 +81,12 @@ pub struct RunArgs {
     #[arg(long)]
     model: Option<String>,
 
+    /// Header carrying the upstream key on direct-provider Job runs. Without it,
+    /// OpenAI uses Authorization: Bearer, Anthropic x-api-key, and Gemini
+    /// x-goog-api-key (maps to $EVAL_API_KEY_HEADER).
+    #[arg(long, value_parser = credential_header_name)]
+    api_key_header: Option<String>,
+
     /// Gateway image that serves the model: a generic proxy (`bifrost`,
     /// `litellm`, `portkey`) or a pinned per-model image (maps to
     /// $EVAL_GATEWAY; chart value `gatewayImage`). Default: `bifrost`. In job
@@ -234,6 +240,22 @@ const CHART_VERSION: &str = "0.1.0";
 /// Not `model`, `agent` or `task`: a reader walking the layout stops on those.
 const NO_MODEL: &str = "no-model";
 
+// RFC 9110 field-name = token, matching the edge's validation. In particular,
+// commas must be refused before Helm can interpret them as extra assignments.
+fn credential_header_name(name: &str) -> Result<String, String> {
+    if !name.is_empty()
+        && name
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&c))
+    {
+        Ok(name.to_string())
+    } else {
+        Err(format!(
+            "--api-key-header {name:?} is not a valid HTTP header name"
+        ))
+    }
+}
+
 pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     // Resolve benchmark: --benchmark flag wins over positional, either must be set.
     let benchmark = args
@@ -257,6 +279,11 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if let Some(renamed) = renamed_env() {
         return Err(renamed);
     }
+    if args.api_key_header.is_some() && (args.gateway.is_some() || args.gateway_tag.is_some()) {
+        return Err(
+            "--api-key-header is for direct provider runs; omit --gateway/--gateway-tag".into(),
+        );
+    }
 
     // `--agent`, or the surface's default; a native-harness benchmark resolves
     // to `native` and refuses any other pairing (benchmarks/RULES.md 12b).
@@ -272,6 +299,9 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
     if let Some(ref v) = args.model {
         envs.push(("EVAL_MODEL", v.clone()));
+    }
+    if let Some(ref v) = args.api_key_header {
+        envs.push(("EVAL_API_KEY_HEADER", v.clone()));
     }
     if let Some(ref v) = args.gateway {
         envs.push(("EVAL_GATEWAY", v.clone()));
@@ -313,13 +343,15 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
         envs.push(("EVAL_FORCE", "1".into()));
     }
 
-    // Job-mode-only flags. Silently ignoring one is worse than refusing it: a
-    // `--dataset` that did nothing would run a single task and look like a
-    // dataset run in every log line.
+    // Job-mode-only flags. Compose and container always include a gateway, so
+    // custom provider authentication belongs to Job mode's direct path. Silently
+    // ignoring any of these is worse than refusing it: a `--dataset` that did
+    // nothing would run a single task and look like a dataset run in every log.
     for (set, flag) in [
         (args.overlay.is_some(), "--overlay"),
         (args.dataset, "--dataset"),
         (args.ephemeral, "--ephemeral"),
+        (args.api_key_header.is_some(), "--api-key-header"),
     ] {
         if set && !matches!(args.mode, Mode::Job) {
             return Err(format!("{flag} applies only to `--mode job`"));
@@ -837,6 +869,10 @@ fn run_job(
         helm.push("--set-string".into());
         helm.push(format!("maxTokens={t}"));
     }
+    if let Some(h) = &args.api_key_header {
+        helm.push("--set-string".into());
+        helm.push(format!("apiKeyHeader={h}"));
+    }
 
     // kubectl apply [-n ns] [--dry-run=server] -f -
     let mut apply_args: Vec<String> = vec!["apply".into()];
@@ -1035,6 +1071,75 @@ mod tests {
             assert!(
                 parse(&["--model-context-window", bad]).is_err(),
                 "--model-context-window {bad:?} was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn api_key_header_is_nonempty_direct_job_configuration() {
+        use clap::Parser;
+
+        assert!(
+            Cli::try_parse_from(["run", "aime", "--api-key-header", ""]).is_err(),
+            "an empty custom header must be rejected at the CLI boundary"
+        );
+
+        for gateway in [["--gateway", "litellm"], ["--gateway-tag", "1.2.3"]] {
+            let cli = Cli::try_parse_from([
+                "run",
+                "aime",
+                "--mode",
+                "job",
+                "--agent",
+                "codex",
+                "--api-key-header",
+                "CUSTOM_API_KEY",
+                gateway[0],
+                gateway[1],
+            ])
+            .unwrap();
+            let err = super::execute("ghcr.io/exgentic", cli.run).unwrap_err();
+            assert!(
+                err.contains("omit --gateway/--gateway-tag"),
+                "gateway conflict gave an operator-unhelpful error: {err}"
+            );
+        }
+
+        let cli = Cli::try_parse_from([
+            "run",
+            "aime",
+            "--agent",
+            "codex",
+            "--api-key-header",
+            "CUSTOM_API_KEY",
+        ])
+        .unwrap();
+        let err = super::execute("ghcr.io/exgentic", cli.run).unwrap_err();
+        assert!(
+            err.contains("--api-key-header applies only to `--mode job`"),
+            "non-Job mode gave an operator-unhelpful error: {err}"
+        );
+    }
+
+    #[test]
+    fn credential_header_names_cannot_inject_helm_values() {
+        use clap::Parser;
+
+        assert!(super::credential_header_name("!#$%&'*+-.^_`|~012Az").is_ok());
+        for name in [
+            "",
+            "X,model=evil/injected",
+            "X=Y",
+            "X Y",
+            "X:Y",
+            "X\rY",
+            "X\nY",
+            "X-é",
+        ] {
+            assert!(super::credential_header_name(name).is_err(), "{name:?}");
+            assert!(
+                Cli::try_parse_from(["run", "aime", "--api-key-header", name]).is_err(),
+                "{name:?}"
             );
         }
     }
