@@ -49,8 +49,9 @@ printf '{"agent":"%s","started_at":"%s","ended_at":"%s","exit_code":%s,"error":%
 
 # The window the agent was told (output rule 9), from run-agent; null when the
 # launch set none, or the agent doesn't read it, and the agent assumed its own.
+WINDOW=
 read -r WINDOW 2>/dev/null < /output/agent/.context-window || true
-[[ "${WINDOW:-}" =~ ^[1-9][0-9]*$ ]] || WINDOW=null
+[[ "$WINDOW" =~ ^[1-9][0-9]*$ ]] || WINDOW=null
 printf '{"model":"%s","context_window":%s}\n' \
   "${MODEL:-unknown}" "$WINDOW" > /output/model/result.json
 
