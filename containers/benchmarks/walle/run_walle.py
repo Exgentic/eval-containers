@@ -113,8 +113,18 @@ def probe(
             }
         ],
         "response_format": {"type": "json_schema", "json_schema": json_schema},
-        "max_tokens": int(os.environ.get("WALLE_MAX_TOKENS", "512")),
+        # KVV's WALLE_MAX_TOKENS default (MoonshotAI/Kimi-Vendor-Verifier
+        # tests/conftest.py): a reasoning model spends its budget before the
+        # JSON, and a truncated completion makes `conforms` meaningless.
+        "max_tokens": int(os.environ.get("WALLE_MAX_TOKENS", "2048")),
     }
+    # Opt-in JSON object merged into the request — e.g. a stack's thinking-off
+    # control, which has no portable spelling. Not sent by default: a stack that
+    # rejects an unknown field with 400 would read as `reject` on every case.
+    extra = json.loads(os.environ.get("WALLE_EXTRA_BODY") or "{}")
+    if not isinstance(extra, dict):
+        raise SystemExit("[runner] WALLE_EXTRA_BODY must be a JSON object")
+    payload.update(extra)
 
     req = urllib.request.Request(
         base_url.rstrip("/") + "/chat/completions",
@@ -125,7 +135,9 @@ def probe(
         },
         method="POST",
     )
-    timeout = int(os.environ.get("WALLE_TIMEOUT", "120"))
+    # Below the 300 s EVAL_TIMEOUT default that bounds the harness (rule 12c),
+    # so a slow 2048-token completion still lands as a verdict, not a kill.
+    timeout = int(os.environ.get("WALLE_TIMEOUT", "240"))
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             body = resp.read().decode("utf-8")
