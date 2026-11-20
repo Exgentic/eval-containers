@@ -1,0 +1,36 @@
+# The tasks, in task-number order (task N is line N, comments aside): every
+# variant build-tasks.py makes from designs.txt that passes check-tasks.py. The
+# build fails if that set changes. Dropped on the way, for the enabled designs:
+#   bubblesortmodule/M_0003  SymbiYosys: the mutant no longer elaborates for smtbmc
+#   bubblesortmodule/merged  Icarus Verilog, Verilator, SymbiYosys: does not elaborate
+#
+# Found while checking all 20 cleared designs, for when they are enabled:
+#   the emitter (PyVerilog) cannot parse the merged variants of
+#     gaussian_noise_generator, 10gemac, rtfsimpleuart, pairing and pci_bridge
+#   whole designs whose golden fails a check:
+#     aemb           Yosys: aeMB2_sim.v refers to the simulator's hierarchy
+#     i2c_slave      SymbiYosys: the SMT2 backend cannot model its bidirectional port
+#     klc32          BUFGCE.v needs Xilinx's glbl module, which is not shipped
+#     rtfsimpleuart  Yosys: the emitter writes rtfSimpleUartRx.v in syntax it rejects
+#     xgate          every tool: the emitter writes xgate_risc.v's case items wrongly
+#   single variants: 10gemac/M_0002, M_0004, M_0014;
+#     8_16_32_bit_sdram_controller/M_0004, merged; wishbone_conmax_ip_core/M_0000, merged
+ima_adpcm_encoder/golden
+ima_adpcm_encoder/M_0004
+ima_adpcm_encoder/M_0005
+ima_adpcm_encoder/M_0006
+ima_adpcm_encoder/M_0014
+ima_adpcm_encoder/M_0019
+ima_adpcm_encoder/merged
+srdy_drdy_library/golden
+srdy_drdy_library/M_0002
+srdy_drdy_library/M_0003
+srdy_drdy_library/M_0007
+srdy_drdy_library/M_0013
+srdy_drdy_library/M_0014
+srdy_drdy_library/merged
+bubblesortmodule/golden
+bubblesortmodule/M_0007
+bubblesortmodule/M_0010
+bubblesortmodule/M_0014
+bubblesortmodule/M_0017

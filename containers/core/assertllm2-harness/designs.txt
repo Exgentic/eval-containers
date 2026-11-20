@@ -1,0 +1,39 @@
+# AssertLLM2-Lite (AssertLLM2/configs/assertllm2_lite.json at BENCHMARK_VERSION),
+# less the designs whose files may not be redistributed here. Every RTL header
+# was read; each kept design's files carry the notice named beside it, and the
+# image keeps those notices. Files with no notice of their own ship inside the
+# project that carries one: klc32's BCDMath.v, ethernet's xilinx_dist_ram_16x32.v
+# (only under `ifdef ETH_FIFO_XILINX), and macro/timescale headers (i2c_slave's
+# i2cSlave_define.v and timescale.v, sdram's sdrc_define.v, pci_bridge's timescale.v).
+#
+# Enabled: three small designs first; the rest follow once these run end to end.
+assertllm2/dsp_core/ima_adpcm_encoder                             OpenCores (use and distribute, keep notice)
+assertllm2/library/srdy_drdy_library                              public domain
+assertllm2/other/bubblesortmodule                                 LGPL-2.1-or-later
+#
+# Cleared for redistribution, not yet enabled (uncomment to add; then
+# regenerate tasks.txt from what check-tasks.py accepts):
+#   assertllm2/arithmetic_core/gaussian_noise_generator              LGPL-2.1-or-later
+#   assertllm2/arithmetic_core/trigonometric_functions_degrees_in_double_fpu  OpenCores (use and distribute, keep notice)
+#   assertllm2/communication_controller/10gemac                       LGPL-2.1-or-later
+#   assertllm2/communication_controller/ethernet                      LGPL-2.1-or-later
+#   assertllm2/communication_controller/i2c_slave                     LGPL-2.1-or-later
+#   assertllm2/communication_controller/rtfsimpleuart                 BSD-3-Clause
+#   assertllm2/coprocessor/xgate                                      LGPL-3.0-or-later / BSD (dual)
+#   assertllm2/crypto_core/galois_counter_mode_advanced_encryption_standard_g  OpenCores (use and distribute, keep notice)
+#   assertllm2/crypto_core/pairing                                    LGPL-3.0-or-later
+#   assertllm2/memory_core/8_16_32_bit_sdram_controller               LGPL-2.1-or-later
+#   assertllm2/other/programmable_interval_timer                      BSD-style
+#   assertllm2/processor/aemb                                         LGPL-3.0-or-later
+#   assertllm2/processor/altor32_alternative_lightweight_openrisc_cpu LGPL-2.1-or-later
+#   assertllm2/processor/klc32                                        LGPL-3.0-or-later (BUFGCE.v: Apache-2.0)
+#   assertllm2/system_controller/pci_bridge                           LGPL-2.1-or-later
+#   assertllm2/system_on_chip/wishbone_conmax_ip_core                 OpenCores (use and distribute, keep notice)
+# Left out:
+#   communication_controller/sata_phy                     Xilinx and Bean Digital "confidential and proprietary" files
+#   arithmetic_core/viterbi_tx_rx                         no license notice in any file
+#   communication_controller/hardware_assisted_ieee_1588_ip_core  needs an Altera FIFO that is not in the tree
+#   communication_controller/quad_spi_flash_controller    GPL-3.0-or-later
+#   ecc_core/reed_solomon_decoder_204188                  GPL-3.0-or-later
+#   video_controller/rtfspritecontroller_hardware_cursors PyVerilog cannot parse its golden RTL, so its
+#                                                          files cannot be put in the mutants' layout
