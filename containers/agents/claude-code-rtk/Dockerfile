@@ -64,7 +64,9 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 set -euo pipefail
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
-export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1
+# A launch may set it (0 lets Claude Code send its experimental beta headers);
+# unset, they stay off, for a proxy that may not support them.
+export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-1}"
 # No CLAUDE_CODE_MAX_OUTPUT_TOKENS by default (EVAL_MODEL_CONTEXT_WINDOW below sets
 # one to fit the window it is told). With no --model, Claude Code runs as its
 # default model, Sonnet 4.6, whatever model the gateway maps that name to, so
@@ -90,12 +92,18 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   [[ "$OUT" =~ ^[1-9][0-9]*$ && "$OUT" -le 32000 ]] || OUT=32000
   OUT=$(( OUT < W / 4 ? OUT : W / 4 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
+  # A lower compaction window or share the launch set is kept, as the cap is: it
+  # only compacts sooner. A higher one is lowered to fit.
   if [ "$W" -ge 100000 ]; then
-    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$W
+    AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
+    [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || AUTO=$W
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
   else
     ALLOW=$(( OUT < 20000 ? OUT : 20000 ))
     PCT=$(( (W - ALLOW - 13000) * 100 / (100000 - ALLOW) ))
-    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$PCT
+    SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
+    [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
+    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
   fi
 fi
 # Web tools are gated on the benchmark's declared internet policy — see
