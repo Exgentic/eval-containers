@@ -22,6 +22,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
 | `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
+| `apiKeyHeader` | `""` | `--api-key-header` — direct-provider credential header; empty uses the wire-native default and combining it with a gateway is rejected; see [edge configuration](../../containers/core/edge/README.md#configuration) |
 | `gatewayEnabled` | `false` | set by `--gateway` / `--gateway-tag` — run the gateway sidecar; off, the edge forwards straight to the upstream |
 | `gatewayImage` | `bifrost` | `--gateway` — the proxy backend (`bifrost` / `litellm` / `portkey`, or a pinned per-model image) |
 | `gatewayTag` | `latest` | `--gateway-tag` |

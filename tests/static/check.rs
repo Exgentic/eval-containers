@@ -247,6 +247,7 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
 
     for knob in [
         "MODEL",
+        "API_KEY_HEADER",
         "MAX_TOKENS",
         "MAX_COST_USD",
         "PRICE_IN",
@@ -290,7 +291,9 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
         .filter(|n| *n != "EDGE_UPSTREAM")
         .collect();
     assert!(
-        job.contains("EVAL_MAX_TOKENS") && chart_edge_names.is_empty(),
+        job.contains("EVAL_MAX_TOKENS")
+            && job.contains("EVAL_API_KEY_HEADER")
+            && chart_edge_names.is_empty(),
         "the chart must set EVAL_* names (EDGE_UPSTREAM excepted): found {chart_edge_names:?}"
     );
     let cli = read("cli/src/run.rs");
@@ -301,8 +304,23 @@ fn the_framework_axis_is_mapped_onto_the_edges_own() {
          renders \"1e+06\", and the run that asked to be capped runs uncapped"
     );
     assert!(
+        cli.contains("api_key_header: Option<String>")
+            && cli.contains("EVAL_API_KEY_HEADER")
+            && cli.contains("apiKeyHeader={h}"),
+        "--api-key-header must map through EVAL_API_KEY_HEADER and reach the chart's apiKeyHeader value"
+    );
+    let oc_run = read("deploy/oc/run.sh");
+    assert!(
+        oc_run.contains("--api-key-header)") && oc_run.contains("apiKeyHeader=$API_KEY_HEADER"),
+        "the OpenShift launcher must expose the chart's apiKeyHeader value"
+    );
+    assert!(
         read("containers/benchmarks/_chart/values.yaml").contains("maxTokens: \"\""),
         "_chart/values.yaml must ship `maxTokens: \"\"` — no cap unless a run asks for one"
+    );
+    assert!(
+        read("containers/benchmarks/_chart/values.yaml").contains("apiKeyHeader: \"\""),
+        "_chart/values.yaml must ship `apiKeyHeader: \"\"` — wire-native auth unless a run asks"
     );
 
     // The edge an eval image carries is the PUBLISHED one until it is
@@ -1199,6 +1217,37 @@ echo $(( pt + o ))"#;
     assert_eq!(cap("8000"), "8000", "a lower cap the launch set is kept");
     assert_eq!(cap("64000"), "32000", "a higher cap is lowered to fit");
     assert_eq!(cap("x"), "32000", "a non-numeric cap means 32000");
+    let set = |window: &str, name: &str, value: &str| {
+        let out = std::process::Command::new("bash")
+            .args(["-c", &format!("set -euo pipefail\n{cc}echo ${name}")])
+            .env("EVAL_MODEL_CONTEXT_WINDOW", window)
+            .env(name, value)
+            .output()
+            .expect("run bash");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let auto = "CLAUDE_CODE_AUTO_COMPACT_WINDOW";
+    assert_eq!(
+        set("262144", auto, "120000"),
+        "120000",
+        "a lower window the launch set is kept"
+    );
+    assert_eq!(
+        set("131072", auto, "200000"),
+        "131072",
+        "a higher window is lowered to fit"
+    );
+    let pct = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE";
+    assert_eq!(
+        set("64000", pct, "10"),
+        "10",
+        "a lower share the launch set is kept"
+    );
+    assert_eq!(
+        set("64000", pct, "95"),
+        set("64000", pct, ""),
+        "a higher share is lowered to fit"
+    );
     let tiny = std::process::Command::new("bash")
         .args(["-c", &format!("set -euo pipefail\n{cc}")])
         .env("EVAL_MODEL_CONTEXT_WINDOW", "63999")
@@ -1833,6 +1882,34 @@ fn claude_code_keeps_its_own_reply_cap() {
         assert!(
             !outside.contains("export CLAUDE_CODE_MAX_OUTPUT_TOKENS="),
             "{a} must not set CLAUDE_CODE_MAX_OUTPUT_TOKENS outside its EVAL_MODEL_CONTEXT_WINDOW block — Claude Code's own default fits the window"
+        );
+    }
+}
+
+/// claude-code keeps its experimental betas off unless the launch turns them on: the
+/// default is 1, and a launch's own value reaches the agent instead of being overwritten.
+#[test]
+fn claude_code_betas_follow_the_launch() {
+    for a in ["claude-code", "claude-code-rtk"] {
+        let betas = |set: Option<&str>| {
+            let out = run_with_stub_env(
+                a,
+                "claude",
+                "echo \"$CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS\"",
+                None,
+                set.map(|v| ("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", v)),
+            );
+            String::from_utf8_lossy(&out.stdout)
+                .lines()
+                .last()
+                .unwrap_or("")
+                .to_string()
+        };
+        assert_eq!(betas(None), "1", "{a}: betas stay off by default");
+        assert_eq!(
+            betas(Some("0")),
+            "0",
+            "{a}: a launch's 0 reaches Claude Code"
         );
     }
 }
