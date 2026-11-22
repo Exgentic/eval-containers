@@ -1863,6 +1863,34 @@ fn internet_policy_wired_through_to_agents() {
     eprintln!("✓ EVAL_INTERNET: agent-side deny-on-false + run-agent grep-based warn-not-fail");
 }
 
+/// `build eval --no-pull` binds every base to its in-graph target. BuildKit
+/// looks a FROM up by its ref minus a trailing ":latest", so a full
+/// `repo:latest` key never matched and the combo carried the published agent,
+/// not the one just built (#765).
+#[test]
+fn eval_local_binds_its_bases_in_graph() {
+    let hcl = fs::read_to_string(repo_root().join("containers/core/combination.docker-bake.hcl"))
+        .unwrap();
+    let block = hcl
+        .split("target \"eval-local\" {")
+        .nth(1)
+        .and_then(|b| b.split("\n}").next())
+        .expect("eval-local target");
+    for (var, target) in [
+        ("BENCHMARK_IMAGE", "target:benchmark-${EVAL_BENCHMARK}"),
+        ("AGENT_IMAGE", "target:agent-${EVAL_AGENT}"),
+        ("GOSU_IMAGE", "target:gosu"),
+        ("EDGE_IMAGE", "target:edge"),
+    ] {
+        let key = format!("\"${{trimsuffix({var}, \":latest\")}}\"");
+        assert!(
+            block.lines().any(|l| l.trim_start().starts_with(&key)
+                && l.trim_end().ends_with(&format!("\"{target}\""))),
+            "eval-local must key {target} as {key} — BuildKit strips only a trailing :latest"
+        );
+    }
+}
+
 /// claude-code keeps its own per-model max_tokens (#726): a forced 128000 is
 /// reserved out of the context window on every call, and a 262k-window model
 /// then rejects every call once the prompt passes ~134k. Only a window the
