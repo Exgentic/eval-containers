@@ -60,13 +60,17 @@ echo "[terminal-bench] 1/2 building task env for '${TASK}' (environment/Dockerfi
 # Build from a scratch checkout of tasks/<task>/environment at REF rather than
 # handing docker the remote context: the files are the same (same repo, ref and
 # dir), but a local copy can be patched before it builds. A blobless shallow
-# fetch plus a sparse checkout pulls only this one directory.
+# fetch plus a sparse checkout pulls only this one directory. envgit ignores the
+# caller's global and system git config (core.autocrlf, url.insteadOf, ...), as
+# docker's remote-context build did, so the files are upstream's bytes wherever
+# this runs; upstream ships no .gitattributes, so nothing converts them.
 ENVDIR="$(mktemp -d)"; trap 'rm -rf "${ENVDIR}"' EXIT
-git -C "${ENVDIR}" init -q
-git -C "${ENVDIR}" remote add origin "${REPO}"
-git -C "${ENVDIR}" fetch -q --depth 1 --filter=blob:none origin "${REF}"
-git -C "${ENVDIR}" sparse-checkout set "tasks/${TASK}/environment"
-git -C "${ENVDIR}" -c advice.detachedHead=false checkout -q FETCH_HEAD
+envgit() { GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 git -C "${ENVDIR}" "$@"; }
+envgit init -q
+envgit remote add origin "${REPO}"
+envgit fetch -q --depth 1 --filter=blob:none origin "${REF}"
+envgit sparse-checkout set "tasks/${TASK}/environment"
+envgit -c advice.detachedHead=false checkout -q FETCH_HEAD
 ENVCTX="${ENVDIR}/tasks/${TASK}/environment"
 # fix-git: setup.sh clones github.com/TheMikeMerrill/personal-site, which no
 # longer exists, so the env cannot build (#770; upstream is frozen —
