@@ -16,11 +16,10 @@
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}agent-base-node:latest
-ARG AGENT_VERSION=2.1.104
-# rtk's install.sh reads $RTK_VERSION (without the leading 'v') and infers
-# the release URL. Build arg is named EVAL_RTK_VERSION to avoid shadowing
-# the installer's internal env var; we pass it through explicitly below
-# so the install pins to this exact release rather than 'latest'.
+ARG AGENT_VERSION=2.1.329
+# Named EVAL_RTK_VERSION, not RTK_VERSION, so it doesn't shadow the variable
+# rtk's install.sh reads; the install below passes it through explicitly so it
+# pins this exact release rather than 'latest'.
 ARG EVAL_RTK_VERSION=v0.42.3
 LABEL eval.type="agent"
 LABEL eval.agent.name="claude-code-rtk"
@@ -31,7 +30,10 @@ LABEL eval.agent.version="${AGENT_VERSION}"
 LABEL eval.agent.rtk_version="${EVAL_RTK_VERSION}"
 ENV EVAL_AGENT=claude-code-rtk
 
-RUN npm install -g @anthropic-ai/claude-code@${AGENT_VERSION}
+# The CLI is a native binary its postinstall places from an optional dependency;
+# a failed fetch leaves a stub that exits 1, so prove it runs here.
+RUN npm install -g @anthropic-ai/claude-code@${AGENT_VERSION} && claude --version \
+ && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 
 # rtk install — single Rust binary. Lands under /opt/agent/bin so the
 # combination image (which COPYs /opt/agent/ from this image) picks it
@@ -67,12 +69,14 @@ export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 # A launch may set it (0 lets Claude Code send its experimental beta headers);
 # unset, they stay off, for a proxy that may not support them.
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-1}"
+# Run as the run's model (MODEL) — see containers/agents/claude-code/Dockerfile.
+case "${MODEL:-}" in
+  "" | eval-model) ;;
+  *claude-*) export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-${MODEL#*claude-}}" ;;
+  *) export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$MODEL}" ;;
+esac
 # No CLAUDE_CODE_MAX_OUTPUT_TOKENS by default (EVAL_MODEL_CONTEXT_WINDOW below sets
-# one to fit the window it is told). With no --model, Claude Code runs as its
-# default model, Sonnet 4.6, whatever model the gateway maps that name to, so
-# it caps a reply at Sonnet 4.6's default, 32000, and resumes a reply cut there.
-# Forcing 128000 reserved 128k of every model's context window, so on a
-# 262k-window vLLM model each call failed once the prompt passed ~134k (#726).
+# one to fit the window it is told) — see containers/agents/claude-code/Dockerfile.
 # Register rtk's PreToolUse hook at runtime, when $HOME resolves to the
 # agent user (not root). install.sh runs at combination-build time as
 # root with $HOME=/root, which would write the hook where claude never
@@ -88,29 +92,38 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
     echo "claude-code: EVAL_MODEL_CONTEXT_WINDOW=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
     exit 2
   fi
-  OUT=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
-  [[ "$OUT" =~ ^[1-9][0-9]*$ && "$OUT" -le 32000 ]] || OUT=32000
+  OUT=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-20000}
+  [[ "$OUT" =~ ^[1-9][0-9]*$ && "$OUT" -le 20000 ]] || OUT=20000
   OUT=$(( OUT < W / 4 ? OUT : W / 4 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
-  # A lower compaction window or share the launch set is kept, as the cap is: it
-  # only compacts sooner. A higher one is lowered to fit.
-  if [ "$W" -ge 100000 ]; then
-    AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
-    [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || AUTO=$W
-    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
-  else
-    ALLOW=$(( OUT < 20000 ? OUT : 20000 ))
-    PCT=$(( (W - ALLOW - 13000) * 100 / (100000 - ALLOW) ))
-    SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
-    [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
-    export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
-  fi
+  case "${ANTHROPIC_MODEL:-claude-}" in
+    claude-*)
+      # A model Claude Code knows (its default included) keeps its own window; the
+      # told one can only lower it. A lower compaction window or share the launch
+      # set is kept, as the cap is: it only compacts sooner. A higher one is
+      # lowered to fit.
+      if [ "$W" -ge 100000 ]; then
+        AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
+        [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || AUTO=$W
+        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
+      else
+        PCT=$(( (W - OUT - 13000) * 100 / (100000 - OUT) ))
+        SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
+        [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
+        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
+      fi
+      ;;
+    *)
+      # One it doesn't know is given the window, and compacts by its own rule.
+      export CLAUDE_CODE_MAX_CONTEXT_TOKENS=$W
+      ;;
+  esac
 fi
 # Web tools are gated on the benchmark's declared internet policy — see
 # containers/agents/claude-code/Dockerfile for the full rationale.
 DENY_WEB=""
 if [ "${EVAL_INTERNET:-}" = "false" ]; then DENY_WEB="--disallowed-tools WebSearch,WebFetch"; fi
-exec claude -p ${EVAL_AGENT_REASONING_EFFORT:+--effort $EVAL_AGENT_REASONING_EFFORT} ${DENY_WEB} --dangerously-skip-permissions "$TASK"
+exec claude -p ${EVAL_AGENT_REASONING_EFFORT:+--effort $EVAL_AGENT_REASONING_EFFORT} ${DENY_WEB} --dangerously-skip-permissions -- "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]

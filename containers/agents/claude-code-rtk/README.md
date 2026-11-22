@@ -61,9 +61,9 @@ way to quantify whether rtk pays off in expectation.
 - `EVAL_RTK_VERSION` — rtk release pin (recorded in `eval.agent.rtk_version`).
   Build arg is `EVAL_RTK_VERSION`, not `RTK_VERSION`, because rtk's installer
   script reads `$RTK_VERSION` as a magic env var. The Dockerfile pipes
-  `RTK_VERSION="${EVAL_RTK_VERSION#v}" sh` to the installer so the pinned
-  version actually takes effect (the leading `v` is stripped because the
-  installer expects `0.42.3`, not `v0.42.3`).
+  `RTK_VERSION="${EVAL_RTK_VERSION}" sh` to the installer so the pinned
+  version actually takes effect. The leading `v` stays: the installer puts the
+  value straight into the release URL, and rtk's tags are `v0.42.3`.
 
 ## Rules checked (`.agents/agents/RULES.md`)
 
