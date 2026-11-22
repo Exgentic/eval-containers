@@ -1148,15 +1148,63 @@ fn model_context_window_wired_through_to_agents() {
     );
 }
 
+/// Run a claude-code `/run.sh` fragment in bash with every variable it reads
+/// cleared first, so the developer's own Claude Code settings can't leak in;
+/// `env` adds back what a case needs.
+fn claude_bash(script: &str, env: &[(&str, &str)]) -> std::process::Output {
+    let mut cmd = std::process::Command::new("bash");
+    cmd.args(["-c", &format!("set -euo pipefail\n{script}")]);
+    for v in [
+        "MODEL",
+        "ANTHROPIC_MODEL",
+        "EVAL_MODEL_CONTEXT_WINDOW",
+        "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+        "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
+        "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
+        "CLAUDE_CODE_MAX_CONTEXT_TOKENS",
+        "CLAUDE_CODE_DISABLE_1M_CONTEXT",
+    ] {
+        cmd.env_remove(v);
+    }
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    cmd.output().expect("run bash")
+}
+
+/// A claude-code `/run.sh`'s model choice and window block: from the model
+/// recogniser to the end of the `EVAL_MODEL_CONTEXT_WINDOW` block.
+fn claude_code_window_script(agent: &str) -> String {
+    let df = fs::read_to_string(repo_root().join(format!("containers/agents/{agent}/Dockerfile")))
+        .unwrap_or_else(|e| panic!("read {agent}: {e}"));
+    let model = df
+        .find("claude_knows() {\n")
+        .unwrap_or_else(|| panic!("{agent}'s /run.sh doesn't pick a model from MODEL"));
+    let model_end_mark = "else CC_KNOWS=0; fi\nfi\n";
+    let model_end = model
+        + df[model..]
+            .find(model_end_mark)
+            .expect("model block ends in `fi`")
+        + model_end_mark.len();
+    let told = df
+        .find("if [ -n \"${EVAL_MODEL_CONTEXT_WINDOW:-}\" ]; then\n")
+        .unwrap_or_else(|| panic!("{agent}'s /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW"));
+    let told_end = told + df[told..].find("\nfi\n").expect("block ends in `fi`") + 4;
+    format!("{}{}", &df[model..model_end], &df[told..told_end])
+}
+
 /// claude-code and claude-code-rtk fit the window they are told (agents/RULES.md
-/// 26): both `/run.sh`s carry the same `EVAL_MODEL_CONTEXT_WINDOW` block, and for each
-/// window it is run and its settings put through Claude Code's own
-/// compaction rule (window = min(1M, max(100k, CLAUDE_CODE_AUTO_COMPACT_WINDOW))
-/// less min(reply cap, 20k); compaction at that less 13k, or the
-/// CLAUDE_AUTOCOMPACT_PCT_OVERRIDE share of it if lower). Compaction point plus
-/// reply cap must leave HEADROOM: since 2.1.3xx the compaction request is the
-/// whole context plus its prompt at the full cap, sent after the turn that crossed
-/// the point. With a 32000 cap the sum left 1k, and a 131k window was overrun (#765).
+/// 26): both `/run.sh`s carry the same model and window blocks, and for each
+/// window they are run and the settings put through Claude Code's own
+/// compaction rule. A model Claude Code knows (its default included) keeps its
+/// window and the told one lowers it (window = min(1M, max(100k,
+/// CLAUDE_CODE_AUTO_COMPACT_WINDOW)) less min(reply cap, 20k), compaction at that
+/// less 13k, or the CLAUDE_AUTOCOMPACT_PCT_OVERRIDE share of it if lower). A model
+/// it doesn't know is given the window (CLAUDE_CODE_MAX_CONTEXT_TOKENS) and
+/// compacts at window - min(cap, 20k) - 13k. Point plus cap must leave HEADROOM:
+/// since 2.1.3xx the compaction request is the whole context plus its prompt at
+/// the full cap, sent after the turn that crossed the point. With a 32000 cap the
+/// sum left 1k, and a 131k window was overrun (#765).
 #[test]
 fn claude_code_fits_the_window_it_is_told() {
     /// The compaction prompt (~1.6k) plus a turn of tool output (~10k).
@@ -1164,26 +1212,30 @@ fn claude_code_fits_the_window_it_is_told() {
     /// The context a 2.1.329 compaction leaves (~25k) plus a few turns: a point
     /// under it compacts on every request.
     const MIN_POINT: u64 = 32_000;
-    let root = repo_root();
-    let block = |agent: &str| {
-        let df = fs::read_to_string(root.join(format!("containers/agents/{agent}/Dockerfile")))
-            .unwrap_or_else(|e| panic!("read {agent}: {e}"));
-        let start = df
-            .find("if [ -n \"${EVAL_MODEL_CONTEXT_WINDOW:-}\" ]; then\n")
-            .unwrap_or_else(|| panic!("{agent}'s /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW"));
-        let end = start + df[start..].find("\nfi\n").expect("block ends in `fi`") + 4;
-        df[start..end].to_string()
-    };
-    let cc = block("claude-code");
+    let cc = claude_code_window_script("claude-code");
     assert_eq!(
         cc,
-        block("claude-code-rtk"),
+        claude_code_window_script("claude-code-rtk"),
         "the two claude-code blocks drifted apart"
     );
-    let report = r#"w=$(( CLAUDE_CODE_AUTO_COMPACT_WINDOW < 1000000 ? CLAUDE_CODE_AUTO_COMPACT_WINDOW : 1000000 ))
+    let run = |window: &str, extra: &[(&str, &str)], tail: &str| {
+        let mut env = vec![("EVAL_MODEL_CONTEXT_WINDOW", window)];
+        env.extend_from_slice(extra);
+        let out = claude_bash(&format!("{cc}{tail}"), &env);
+        assert!(
+            out.status.success(),
+            "window {window} {extra:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    let known = r#"w=$(( CLAUDE_CODE_AUTO_COMPACT_WINDOW < 1000000 ? CLAUDE_CODE_AUTO_COMPACT_WINDOW : 1000000 ))
 o=$CLAUDE_CODE_MAX_OUTPUT_TOKENS; cl=$(( w - (o < 20000 ? o : 20000) )); pt=$(( cl - 13000 ))
 if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ]; then p=$(( cl * CLAUDE_AUTOCOMPACT_PCT_OVERRIDE / 100 )); pt=$(( p < pt ? p : pt )); fi
-echo $(( pt + o )) $pt"#;
+echo ${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-unset} $(( pt + o )) $pt"#;
+    let unknown = r#"w=$CLAUDE_CODE_MAX_CONTEXT_TOKENS; o=$CLAUDE_CODE_MAX_OUTPUT_TOKENS
+cl=$(( w - (o < 20000 ? o : 20000) )); pt=$(( cl - 13000 ))
+echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-unset} $(( pt + o )) $pt"#;
     for window in [
         1_048_576u64,
         262_144,
@@ -1193,112 +1245,160 @@ echo $(( pt + o )) $pt"#;
         100_000,
         64_000,
     ] {
-        let out = std::process::Command::new("bash")
-            .args(["-c", &format!("set -euo pipefail\n{cc}{report}")])
-            .env("EVAL_MODEL_CONTEXT_WINDOW", window.to_string())
-            .output()
-            .expect("run bash");
-        assert!(
-            out.status.success(),
-            "window {window}: {}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let report = String::from_utf8_lossy(&out.stdout);
-        let (used, point): (u64, u64) = match report.split_whitespace().collect::<Vec<_>>()[..] {
-            [u, p] => (u.parse().unwrap(), p.parse().unwrap()),
-            _ => panic!("window {window}: unexpected report {report:?}"),
+        let ws = window.to_string();
+        let fit = |what: &str, used: u64, point: u64| {
+            assert!(
+                point >= MIN_POINT,
+                "window {window}, {what}: compaction point {point} is under {MIN_POINT}, so it compacts on every request"
+            );
+            assert!(
+                used + HEADROOM <= window,
+                "window {window}, {what}: compaction point + reply cap = {used}, under {HEADROOM} to spare"
+            );
         };
-        assert!(
-            point >= MIN_POINT,
-            "window {window}: compaction point {point} is under {MIN_POINT}, so it compacts on every request"
-        );
-        assert!(
-            used + HEADROOM <= window,
-            "window {window}: compaction point + reply cap = {used}, under {HEADROOM} to spare"
-        );
-        // A model Claude Code doesn't know is given the window and compacts by its
-        // own rule on it: no compaction window or share, which assume a 100k
+        for (what, extra) in [
+            ("Claude Code's default", vec![]),
+            ("a Claude model", vec![("MODEL", "claude-sonnet-4-6")]),
+            ("a Claude alias", vec![("ANTHROPIC_MODEL", "opus")]),
+        ] {
+            let got = run(&ws, &extra, known);
+            let got: Vec<&str> = got.split_whitespace().collect();
+            assert_eq!(
+                got[0], "unset",
+                "window {window}, {what}: a model Claude Code knows keeps its own window"
+            );
+            fit(what, got[1].parse().unwrap(), got[2].parse().unwrap());
+        }
+        // A model Claude Code doesn't know is given the window and compacts by
+        // its own rule on it: no compaction window or share, which assume a 100k
         // window and made a 64k one compact on every request (#765).
-        let out = std::process::Command::new("bash")
-            .args([
-                "-c",
-                &format!(
-                    "set -euo pipefail\n{cc}echo ${{CLAUDE_CODE_MAX_CONTEXT_TOKENS:-}} ${{CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset}} ${{CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-unset}} $CLAUDE_CODE_MAX_OUTPUT_TOKENS"
-                ),
-            ])
-            .env("EVAL_MODEL_CONTEXT_WINDOW", window.to_string())
-            .env("ANTHROPIC_MODEL", "glm-5-3")
-            .output()
-            .expect("run bash");
-        let got = String::from_utf8_lossy(&out.stdout);
-        let got: Vec<&str> = got.split_whitespace().collect();
-        assert_eq!(
-            got[..3],
-            [window.to_string().as_str(), "unset", "unset"],
-            "window {window}: a model Claude Code doesn't know gets CLAUDE_CODE_MAX_CONTEXT_TOKENS only"
-        );
-        let o: u64 = got[3].parse().unwrap();
-        let point = window - o.min(20_000) - 13_000;
-        assert!(
-            point >= MIN_POINT && point + o + HEADROOM <= window,
-            "window {window}: unknown model's point {point} + cap {o} must clear {MIN_POINT} and leave {HEADROOM}"
-        );
+        for (what, extra) in [
+            ("an open model", vec![("MODEL", "glm-5-3")]),
+            (
+                "a non-Claude name holding claude-",
+                vec![("MODEL", "claude-distill-qwen")],
+            ),
+        ] {
+            let got = run(&ws, &extra, unknown);
+            let got: Vec<&str> = got.split_whitespace().collect();
+            assert_eq!(
+                got[..2],
+                ["unset", "unset"],
+                "window {window}, {what}: given the window only"
+            );
+            fit(what, got[2].parse().unwrap(), got[3].parse().unwrap());
+        }
     }
     let cap = |set: &str| {
-        let out = std::process::Command::new("bash")
-            .args([
-                "-c",
-                &format!("set -euo pipefail\n{cc}echo $CLAUDE_CODE_MAX_OUTPUT_TOKENS"),
-            ])
-            .env("EVAL_MODEL_CONTEXT_WINDOW", "200000")
-            .env("CLAUDE_CODE_MAX_OUTPUT_TOKENS", set)
-            .output()
-            .expect("run bash");
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
+        run(
+            "200000",
+            &[("CLAUDE_CODE_MAX_OUTPUT_TOKENS", set)],
+            "echo $CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+        )
     };
     assert_eq!(cap("8000"), "8000", "a lower cap the launch set is kept");
     assert_eq!(cap("64000"), "20000", "a higher cap is lowered to fit");
     assert_eq!(cap("x"), "20000", "a non-numeric cap means 20000");
-    let set = |window: &str, name: &str, value: &str| {
-        let out = std::process::Command::new("bash")
-            .args(["-c", &format!("set -euo pipefail\n{cc}echo ${name}")])
-            .env("EVAL_MODEL_CONTEXT_WINDOW", window)
-            .env(name, value)
-            .output()
-            .expect("run bash");
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    let set = |window: &str, model: &str, name: &str, value: &str| {
+        let mut extra = vec![(name, value)];
+        if !model.is_empty() {
+            extra.push(("MODEL", model));
+        }
+        run(window, &extra, &format!("echo ${{{name}:-unset}}"))
     };
     let auto = "CLAUDE_CODE_AUTO_COMPACT_WINDOW";
-    assert_eq!(
-        set("262144", auto, "120000"),
-        "120000",
-        "a lower window the launch set is kept"
-    );
-    assert_eq!(
-        set("131072", auto, "200000"),
-        "131072",
-        "a higher window is lowered to fit"
-    );
     let pct = "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE";
+    for model in ["", "glm-5-3"] {
+        let who = if model.is_empty() {
+            "a known model"
+        } else {
+            "an unknown model"
+        };
+        assert_eq!(
+            set("262144", model, auto, "120000"),
+            "120000",
+            "{who}: a lower window the launch set is kept"
+        );
+        assert_eq!(
+            set("131072", model, auto, "200000"),
+            "131072",
+            "{who}: a higher window is lowered to fit"
+        );
+        assert_eq!(
+            set("64000", model, pct, "10"),
+            "10",
+            "{who}: a lower share the launch set is kept"
+        );
+    }
     assert_eq!(
-        set("64000", pct, "10"),
-        "10",
-        "a lower share the launch set is kept"
+        set("64000", "", pct, "95"),
+        set("64000", "", pct, ""),
+        "a known model: a higher share is lowered to fit"
     );
+    // An unknown model's share is of the window it was given: at 64k with a
+    // 16000 cap, (64000 - 16000 - 13000) * 100 / (64000 - 16000) = 72.
     assert_eq!(
-        set("64000", pct, "95"),
-        set("64000", pct, ""),
-        "a higher share is lowered to fit"
+        set("64000", "glm-5-3", pct, "95"),
+        "72",
+        "an unknown model: a higher share is lowered to fit"
     );
-    let tiny = std::process::Command::new("bash")
-        .args(["-c", &format!("set -euo pipefail\n{cc}")])
-        .env("EVAL_MODEL_CONTEXT_WINDOW", "63999")
-        .status()
-        .expect("run bash");
+    let tiny = claude_bash(&cc, &[("EVAL_MODEL_CONTEXT_WINDOW", "63999")]);
     assert_eq!(
-        tiny.code(),
+        tiny.status.code(),
         Some(2),
         "a window below 64000 must fail before the first call"
+    );
+}
+
+/// Untold, a model Claude Code knows keeps its own window and reply cap; one it
+/// can't size (compose's eval-model, no MODEL, or a name it doesn't know) runs as
+/// 2.1.104 did: 1M off (200k) and 32000 per reply. Its default, Opus 5.5, would
+/// otherwise ask for 128000 on every call against a 1M window, the #726 failure
+/// on a 262k model (#765). A launch's values win.
+#[test]
+fn claude_code_untold_runs_as_before_when_it_cannot_size_the_model() {
+    let cc = claude_code_window_script("claude-code");
+    let untold = |extra: &[(&str, &str)]| {
+        let out = claude_bash(
+            &format!(
+                "{cc}echo ${{CLAUDE_CODE_DISABLE_1M_CONTEXT:-unset}} ${{CLAUDE_CODE_MAX_OUTPUT_TOKENS:-unset}}"
+            ),
+            extra,
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    for (what, extra) in [
+        ("no MODEL", vec![]),
+        ("compose's eval-model", vec![("MODEL", "eval-model")]),
+        ("an open model", vec![("MODEL", "glm-5-3")]),
+    ] {
+        assert_eq!(
+            untold(&extra),
+            "1 32000",
+            "untold, {what}: 200k and 32000 per reply"
+        );
+    }
+    for (what, extra) in [
+        ("a Claude model", vec![("MODEL", "claude-sonnet-4-6")]),
+        (
+            "a launch's Claude model",
+            vec![("ANTHROPIC_MODEL", "claude-sonnet-4-6[1m]")],
+        ),
+    ] {
+        assert_eq!(
+            untold(&extra),
+            "unset unset",
+            "untold, {what}: Claude Code's own window and cap"
+        );
+    }
+    assert_eq!(
+        untold(&[
+            ("MODEL", "glm-5-3"),
+            ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "8000"),
+            ("CLAUDE_CODE_DISABLE_1M_CONTEXT", "0")
+        ]),
+        "0 8000",
+        "untold, a launch's values win"
     );
 }
 
@@ -1906,8 +2006,9 @@ fn internet_policy_wired_through_to_agents() {
 }
 
 /// claude-code keeps Claude Code's own per-model max_tokens (#726): the image
-/// forces no reply cap. Only a window the launch states (`EVAL_MODEL_CONTEXT_WINDOW`,
-/// agents/RULES.md 26) may set one, to fit it.
+/// forces no reply cap outside its window block. There, a window the launch states
+/// (`EVAL_MODEL_CONTEXT_WINDOW`, agents/RULES.md 26) sets one to fit it, and with
+/// none a model Claude Code can't size runs at 2.1.104's 32000.
 #[test]
 fn claude_code_keeps_its_own_reply_cap() {
     for a in ["claude-code", "claude-code-rtk"] {
@@ -1927,69 +2028,63 @@ fn claude_code_keeps_its_own_reply_cap() {
     }
 }
 
-/// claude-code runs as the run's model (#765): a Claude model by its Anthropic
+/// claude-code runs as the run's model (#765): a Claude model (an alias, or an ID
+/// holding a Claude family's name, as Claude Code recognises it) by its Anthropic
 /// ID, so Claude Code applies that model's own window, cap and effort; any other
-/// by its name, told its window as CLAUDE_CODE_MAX_CONTEXT_TOKENS. compose's
-/// neutral `eval-model`, or no MODEL, keeps Claude Code's default, and a launch's
+/// by its name, as a model Claude Code doesn't know. compose's neutral
+/// `eval-model`, or no MODEL, keeps Claude Code's default, and a launch's
 /// ANTHROPIC_MODEL wins.
 #[test]
 fn claude_code_runs_as_the_runs_model() {
-    let block = |agent: &str| {
-        let df =
-            fs::read_to_string(repo_root().join(format!("containers/agents/{agent}/Dockerfile")))
-                .unwrap();
-        let start = df
-            .find("case \"${MODEL:-}\" in\n")
-            .unwrap_or_else(|| panic!("{agent}'s /run.sh doesn't pick a model from MODEL"));
-        let end = start + df[start..].find("\nesac\n").expect("block ends in `esac`") + 6;
-        df[start..end].to_string()
+    let cc = claude_code_window_script("claude-code");
+    let pick = |extra: &[(&str, &str)]| {
+        let out = claude_bash(
+            &format!("{cc}echo \"${{ANTHROPIC_MODEL:-<default>}}\" $CC_KNOWS $REAL_KNOWN"),
+            extra,
+        );
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
     };
-    let cc = block("claude-code");
+    let m = |model: &str| pick(&[("MODEL", model)]);
+    assert_eq!(m("claude-sonnet-4-6"), "claude-sonnet-4-6 1 1");
     assert_eq!(
-        cc,
-        block("claude-code-rtk"),
-        "the two claude-code model blocks drifted apart"
-    );
-    let pick = |model: &str, explicit: Option<&str>| {
-        let mut cmd = std::process::Command::new("bash");
-        cmd.args([
-            "-c",
-            &format!("set -euo pipefail\n{cc}echo \"${{ANTHROPIC_MODEL:-<default>}}\""),
-        ])
-        .env_remove("ANTHROPIC_MODEL")
-        .env("MODEL", model);
-        if let Some(m) = explicit {
-            cmd.env("ANTHROPIC_MODEL", m);
-        }
-        String::from_utf8_lossy(&cmd.output().expect("run bash").stdout)
-            .trim()
-            .to_string()
-    };
-    assert_eq!(pick("claude-sonnet-4-6", None), "claude-sonnet-4-6");
-    assert_eq!(
-        pick("aws/claude-sonnet-4-6", None),
-        "claude-sonnet-4-6",
+        m("aws/claude-sonnet-4-6"),
+        "claude-sonnet-4-6 1 1",
         "a provider prefix is dropped"
     );
     assert_eq!(
-        pick("us.anthropic.claude-opus-4-8-v1:0", None),
-        "claude-opus-4-8-v1:0"
+        m("us.anthropic.claude-opus-4-8-v1:0"),
+        "claude-opus-4-8-v1:0 1 1",
+        "a Bedrock ID"
     );
+    assert_eq!(m("sonnet"), "sonnet 1 1", "an alias");
     assert_eq!(
-        pick("glm-5-3", None),
-        "glm-5-3",
+        m("glm-5-3"),
+        "glm-5-3 0 0",
         "any other model goes by its name"
     );
     assert_eq!(
-        pick("eval-model", None),
-        "<default>",
+        m("claude-distill-qwen"),
+        "claude-distill-qwen 0 0",
+        "a name holding claude- that is no Claude model is one Claude Code doesn't know"
+    );
+    assert_eq!(
+        m("eval-model"),
+        "<default> 1 0",
         "compose's neutral handle names no model"
     );
-    assert_eq!(pick("", None), "<default>");
+    assert_eq!(pick(&[]), "<default> 1 0");
     assert_eq!(
-        pick("glm-5-3", Some("claude-sonnet-4-6[1m]")),
-        "claude-sonnet-4-6[1m]",
+        pick(&[
+            ("MODEL", "glm-5-3"),
+            ("ANTHROPIC_MODEL", "claude-sonnet-4-6[1m]")
+        ]),
+        "claude-sonnet-4-6[1m] 1 1",
         "a launch's ANTHROPIC_MODEL wins"
+    );
+    assert_eq!(
+        pick(&[("ANTHROPIC_MODEL", "us.anthropic.claude-opus-4-8-v1:0")]),
+        "us.anthropic.claude-opus-4-8-v1:0 1 1",
+        "a launch's Bedrock ID is one Claude Code knows"
     );
 }
 
@@ -2013,9 +2108,9 @@ fn claude_code_ends_options_before_the_task() {
 }
 
 /// `build eval --no-pull` binds every base to its in-graph target. BuildKit
-/// looks a FROM up by its ref minus a trailing ":latest", so a full
-/// `repo:latest` key never matched and the combo carried the published agent,
-/// not the one just built (#765).
+/// looks a FROM up by its ref minus a leading "docker.io/" and a trailing
+/// ":latest", so a full `repo:latest` key never matched and the combo carried
+/// the published agent, not the one just built (#765).
 #[test]
 fn eval_local_binds_its_bases_in_graph() {
     let hcl = fs::read_to_string(repo_root().join("containers/core/combination.docker-bake.hcl"))
@@ -2031,11 +2126,11 @@ fn eval_local_binds_its_bases_in_graph() {
         ("GOSU_IMAGE", "target:gosu"),
         ("EDGE_IMAGE", "target:edge"),
     ] {
-        let key = format!("\"${{trimsuffix({var}, \":latest\")}}\"");
+        let key = format!("\"${{trimprefix(trimsuffix({var}, \":latest\"), \"docker.io/\")}}\"");
         assert!(
             block.lines().any(|l| l.trim_start().starts_with(&key)
                 && l.trim_end().ends_with(&format!("\"{target}\""))),
-            "eval-local must key {target} as {key} — BuildKit strips only a trailing :latest"
+            "eval-local must key {target} as {key} — BuildKit strips a leading docker.io/ and a trailing :latest"
         );
     }
 }

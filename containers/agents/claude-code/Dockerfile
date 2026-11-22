@@ -36,36 +36,55 @@ export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 # unset, they stay off, for a proxy that may not support them.
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-1}"
 # Run as the run's model, as a user would with --model, so Claude Code applies
-# what it knows of it: a Claude model gets its own window, reply cap, effort
-# levels and system prompt (sent as its Anthropic ID, the part from "claude-",
-# which Claude Code recognises however a provider prefixes it); any other model
-# is one it doesn't know, told its window below. MODEL is the run's model as the
-# agent sees it; the edge pins every call to the run's model whatever name goes
-# out, so the name changes only what Claude Code assumes. compose gives every
-# agent the neutral eval-model (containers/compose/runner.yaml), which names no
-# model: then, as with no MODEL, Claude Code keeps its default. A launch's
-# ANTHROPIC_MODEL wins (#765).
+# what it knows of it. MODEL is the run's model as the agent sees it; the edge
+# pins every call to the run's model whatever name goes out, so the name changes
+# only what Claude Code assumes. A Claude model (one Claude Code recognises: an
+# alias, or an ID holding a Claude family's name, which the docs say it resolves
+# however a provider prefixes it) gets its own window, reply cap, effort levels and
+# system prompt, sent as its Anthropic ID (the part from "claude-"). Any other
+# model is sent by its name and is one Claude Code doesn't know. compose gives
+# every agent the neutral eval-model (containers/compose/runner.yaml), which names
+# no model: then, as with no MODEL, Claude Code runs as its default (Opus 5.5) and
+# the real model is unknown. A launch's ANTHROPIC_MODEL wins (#765).
+claude_knows() {
+  case "${1%%\[*}" in
+    opus | sonnet | haiku | fable | best | opusplan | default) return 0 ;;
+    *claude-opus* | *claude-sonnet* | *claude-haiku* | *claude-fable* | *claude-[0-9]*) return 0 ;;
+  esac
+  return 1
+}
 case "${MODEL:-}" in
   "" | eval-model) ;;
-  *claude-*) export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-${MODEL#*claude-}}" ;;
-  *) export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$MODEL}" ;;
+  *)
+    _m=$MODEL
+    if claude_knows "$MODEL"; then case "$MODEL" in *claude-*) _m="claude-${MODEL#*claude-}" ;; esac; fi
+    export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$_m}"
+    ;;
 esac
-# No CLAUDE_CODE_MAX_OUTPUT_TOKENS by default (EVAL_MODEL_CONTEXT_WINDOW below sets
-# one to fit the window it is told): Claude Code asks for its own per-model reply
-# cap and resumes a reply cut there. Untold, it assumes the window it knows for a
-# Claude model, and 1M for any other (32000 per reply; 128000 for its default,
-# Opus 5.5), so a request is refused once prompt + cap passes a smaller real
-# window; the launcher tells the window (#765).
+# CC_KNOWS: Claude Code recognises the model it runs as (its default included).
+# REAL_KNOWN: that model is the run's real one, so Claude Code knows its window.
+CC_KNOWS=1 REAL_KNOWN=0
+if [ -n "${ANTHROPIC_MODEL:-}" ]; then
+  if claude_knows "$ANTHROPIC_MODEL"; then REAL_KNOWN=1; else CC_KNOWS=0; fi
+fi
+# Untold, a model Claude Code knows keeps its own window and reply cap. For any
+# other it would assume 1M (and its default, Opus 5.5, would ask for 128000 per
+# reply), so a request is refused once prompt + cap passes a smaller real window,
+# before it compacts: the #726 failure on a 262k model. So it runs as 2.1.104 did:
+# 1M off (CLAUDE_CODE_DISABLE_1M_CONTEXT, Claude Code's own setting: 200k, ~167k
+# to compaction) and 32000 per reply. A launch's values win (#765).
 # EVAL_MODEL_CONTEXT_WINDOW (agents rules 25-26) tells Claude Code the model's real
 # window. Claude Code compacts at window - min(reply cap, 20k) - 13k. A model it
 # doesn't know is given the window as CLAUDE_CODE_MAX_CONTEXT_TOKENS, Anthropic's
-# setting for a gateway or custom model (a Claude model ignores it). A Claude
-# model keeps the window Claude Code knows for it, which the told one can only
-# lower: CLAUDE_CODE_AUTO_COMPACT_WINDOW can, never below 100k, and under 100k
+# setting for a gateway or custom model (a Claude model ignores it). A model it
+# knows keeps the window it knows for it, which the told one can only lower:
+# CLAUDE_CODE_AUTO_COMPACT_WINDOW can, never below 100k, and under 100k
 # CLAUDE_AUTOCOMPACT_PCT_OVERRIDE lowers the point instead (that share assumes the
-# 100k window, so it is not set beside CLAUDE_CODE_MAX_CONTEXT_TOKENS, where a 64k
-# window compacted on every request). The window is passed as is, so Claude Code
-# keeps its own rule (98k on a 131k model, 967k on a 1M one). The reply cap becomes
+# 100k window, so for a model given its window it is the share of that window,
+# where the 100k share made a 64k window compact on every request). A launch's
+# lower compaction window or share is kept, as the cap is: it only compacts
+# sooner; a higher one is lowered to fit. The window is passed as is, so Claude
+# Code keeps its own rule (98k on a 131k model, 967k on a 1M one). The reply cap becomes
 # min(the launch's CLAUDE_CODE_MAX_OUTPUT_TOKENS, 20000, window/4), so point + cap
 # is window - 13k and a lower cap set for a model's output limit is kept. Not
 # 32000: since 2.1.329 the compaction request is the whole context plus its
@@ -85,28 +104,32 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   [[ "$OUT" =~ ^[1-9][0-9]*$ && "$OUT" -le 20000 ]] || OUT=20000
   OUT=$(( OUT < W / 4 ? OUT : W / 4 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
-  case "${ANTHROPIC_MODEL:-claude-}" in
-    claude-*)
-      # A model Claude Code knows (its default included) keeps its own window; the
-      # told one can only lower it. A lower compaction window or share the launch
-      # set is kept, as the cap is: it only compacts sooner. A higher one is
-      # lowered to fit.
-      if [ "$W" -ge 100000 ]; then
-        AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
-        [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || AUTO=$W
-        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
-      else
-        PCT=$(( (W - OUT - 13000) * 100 / (100000 - OUT) ))
-        SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
-        [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
-        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
-      fi
-      ;;
-    *)
-      # One it doesn't know is given the window, and compacts by its own rule.
-      export CLAUDE_CODE_MAX_CONTEXT_TOKENS=$W
-      ;;
-  esac
+  if [ "$CC_KNOWS" = 1 ]; then
+    if [ "$W" -ge 100000 ]; then
+      AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
+      [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || AUTO=$W
+      export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
+    else
+      PCT=$(( (W - OUT - 13000) * 100 / (100000 - OUT) ))
+      SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
+      [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
+      export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
+    fi
+  else
+    export CLAUDE_CODE_MAX_CONTEXT_TOKENS=$W
+    if [ -n "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" ]; then
+      AUTO=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
+      [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$W
+    fi
+    if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ]; then
+      PCT=$(( (W - OUT - 13000) * 100 / (W - OUT) ))
+      SET=$CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
+      [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$PCT
+    fi
+  fi
+elif [ "$REAL_KNOWN" = 0 ]; then
+  export CLAUDE_CODE_DISABLE_1M_CONTEXT="${CLAUDE_CODE_DISABLE_1M_CONTEXT:-1}"
+  export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}"
 fi
 # Web tools are gated on the benchmark's declared internet policy: when the
 # benchmark sets EVAL_INTERNET=false (mirrors its eval.benchmark.internet label),

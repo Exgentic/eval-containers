@@ -70,13 +70,28 @@ export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 # unset, they stay off, for a proxy that may not support them.
 export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-1}"
 # Run as the run's model (MODEL) — see containers/agents/claude-code/Dockerfile.
+claude_knows() {
+  case "${1%%\[*}" in
+    opus | sonnet | haiku | fable | best | opusplan | default) return 0 ;;
+    *claude-opus* | *claude-sonnet* | *claude-haiku* | *claude-fable* | *claude-[0-9]*) return 0 ;;
+  esac
+  return 1
+}
 case "${MODEL:-}" in
   "" | eval-model) ;;
-  *claude-*) export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-claude-${MODEL#*claude-}}" ;;
-  *) export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$MODEL}" ;;
+  *)
+    _m=$MODEL
+    if claude_knows "$MODEL"; then case "$MODEL" in *claude-*) _m="claude-${MODEL#*claude-}" ;; esac; fi
+    export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-$_m}"
+    ;;
 esac
-# No CLAUDE_CODE_MAX_OUTPUT_TOKENS by default (EVAL_MODEL_CONTEXT_WINDOW below sets
-# one to fit the window it is told) — see containers/agents/claude-code/Dockerfile.
+# CC_KNOWS: Claude Code recognises the model it runs as (its default included).
+# REAL_KNOWN: that model is the run's real one, so Claude Code knows its window.
+CC_KNOWS=1 REAL_KNOWN=0
+if [ -n "${ANTHROPIC_MODEL:-}" ]; then
+  if claude_knows "$ANTHROPIC_MODEL"; then REAL_KNOWN=1; else CC_KNOWS=0; fi
+fi
+# The reply cap and window, told or not — see containers/agents/claude-code/Dockerfile.
 # Register rtk's PreToolUse hook at runtime, when $HOME resolves to the
 # agent user (not root). install.sh runs at combination-build time as
 # root with $HOME=/root, which would write the hook where claude never
@@ -96,28 +111,32 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   [[ "$OUT" =~ ^[1-9][0-9]*$ && "$OUT" -le 20000 ]] || OUT=20000
   OUT=$(( OUT < W / 4 ? OUT : W / 4 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
-  case "${ANTHROPIC_MODEL:-claude-}" in
-    claude-*)
-      # A model Claude Code knows (its default included) keeps its own window; the
-      # told one can only lower it. A lower compaction window or share the launch
-      # set is kept, as the cap is: it only compacts sooner. A higher one is
-      # lowered to fit.
-      if [ "$W" -ge 100000 ]; then
-        AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
-        [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || AUTO=$W
-        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
-      else
-        PCT=$(( (W - OUT - 13000) * 100 / (100000 - OUT) ))
-        SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
-        [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
-        export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
-      fi
-      ;;
-    *)
-      # One it doesn't know is given the window, and compacts by its own rule.
-      export CLAUDE_CODE_MAX_CONTEXT_TOKENS=$W
-      ;;
-  esac
+  if [ "$CC_KNOWS" = 1 ]; then
+    if [ "$W" -ge 100000 ]; then
+      AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
+      [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || AUTO=$W
+      export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
+    else
+      PCT=$(( (W - OUT - 13000) * 100 / (100000 - OUT) ))
+      SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
+      [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
+      export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
+    fi
+  else
+    export CLAUDE_CODE_MAX_CONTEXT_TOKENS=$W
+    if [ -n "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" ]; then
+      AUTO=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
+      [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$W
+    fi
+    if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ]; then
+      PCT=$(( (W - OUT - 13000) * 100 / (W - OUT) ))
+      SET=$CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
+      [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$PCT
+    fi
+  fi
+elif [ "$REAL_KNOWN" = 0 ]; then
+  export CLAUDE_CODE_DISABLE_1M_CONTEXT="${CLAUDE_CODE_DISABLE_1M_CONTEXT:-1}"
+  export CLAUDE_CODE_MAX_OUTPUT_TOKENS="${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}"
 fi
 # Web tools are gated on the benchmark's declared internet policy — see
 # containers/agents/claude-code/Dockerfile for the full rationale.
