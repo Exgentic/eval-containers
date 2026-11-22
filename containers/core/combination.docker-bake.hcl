@@ -37,13 +37,17 @@ target "eval" {
 # BuildKit content store. The CLI builds this with the whole graph loaded
 # (artifact_bake_files), so these cross-file targets resolve; the release never
 # builds it, which is why eval (above) stays self-contained.
+# BuildKit looks a FROM up by its ref minus a trailing ":latest", so each key is
+# its *_IMAGE ref trimmed the same way. A full "repo:latest" key never matches
+# and the FROM resolved outside the graph — the published agent, not the one
+# just built (#765).
 target "eval-local" {
   inherits = ["eval"]
   contexts = {
-    "${BENCHMARK_IMAGE}"    = "target:benchmark-${EVAL_BENCHMARK}"
-    "${AGENT_IMAGE}"        = "target:agent-${EVAL_AGENT}"
-    "${REGISTRY}/core/gosu" = "target:gosu"
-    "${REGISTRY}/core/edge" = "target:edge"
+    "${trimsuffix(BENCHMARK_IMAGE, ":latest")}" = "target:benchmark-${EVAL_BENCHMARK}"
+    "${trimsuffix(AGENT_IMAGE, ":latest")}"     = "target:agent-${EVAL_AGENT}"
+    "${trimsuffix(GOSU_IMAGE, ":latest")}"      = "target:gosu"
+    "${trimsuffix(EDGE_IMAGE, ":latest")}"      = "target:edge"
   }
 }
 
