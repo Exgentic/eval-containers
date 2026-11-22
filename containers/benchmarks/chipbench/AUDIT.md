@@ -12,8 +12,8 @@ commit: add-chipbench
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | building | ✓ | `docker build` (Icarus Verilog `v12_0` from source; materializer asserts 223 tasks and the per-split counts) |
-| running | ✓ | tasks 0 (gen), 45 (zero-shot debug), 134 (one-shot debug) with **native + `aws/claude-opus-5-5`** via compose: 1 call each, temperature 0.85 / top_p 0.95 accepted, verdict `.` → reward **1.0** ×3. Three tasks only — not a score |
-| isolation | n/a | native harness, no agent process; the model never executes code (rule 12d) |
+| running | ✓ | tasks 0 (gen), 45 (zero-shot debug), 134 (one-shot debug) with **native + `aws/claude-opus-5-5`** via compose, after the review fixes: 1 call each, the wire request carries `temperature 0.85` and no `top_p` (as sv-generate sends Claude), `answer_flags` empty, verdict `.` → reward **1.0** ×3; export holds only `TopModule.sv`, `verdict.json`, the log and `wave.vcd`. Three tasks only — not a score |
+| isolation | ✓ | no agent process, and the model gets no execution while it answers (rule 12d). Its answer is executed only by the grader's simulation, which runs as `nobody` in a scratch dir: an answer's `$fopen("/logs/verifier/x")` is refused (checked in-image). Answers can still force a pass the way upstream allows (`$finish`, `tb.stats1.errors = 0`, printing the verdict); those are recorded as `answer_flags` (README "Answers can force a pass"), 0 hits on 223 golds + 1,340 Claude answers |
 | oracle | ✓ | full sweep: **gold 213/223 = 1.0**; **empty answer 223/223 = 0.0**; **unmodified buggy code 178/178 debug tasks = 0.0** (every injected bug is caught). The 10 gold failures are upstream defects no answer can pass — see README "Known upstream defects" |
 | traces-reviewed | ? | |
 | replicate-official | ✓ | `claude-opus-4-5-20251101`, n=5, ids 0–133 **at the paper's upstream commit `2dfbb80`**: gen pass@1/5 **34.44 / 38.52** vs paper 30.74 / 38.52; zero-shot debug **42.93 / 61.71** vs 47.45 / 60.04 — within sampling noise (6–30 tasks per category). At the pinned default `b4ba3a0`: gen 46.81 / 50.37, debug 39.77 / 48.17 (upstream's post-paper prompt/testbench fixes). See README "Replication" |
@@ -31,9 +31,9 @@ commit: add-chipbench
 | Check | Status | Evidence |
 |-------|:------:|----------|
 | egress-blocked | ? | `internet=false`; shared native runner |
-| agent-nonroot | n/a | native harness runs as root by design (rule 12c) |
+| agent-nonroot | n/a | native harness runs as root by design (rule 12c); the simulation that executes the answer drops to `nobody` |
 | secrets-isolated | ✓ | no credential in `Dockerfile`; upstream's `key.cfg` placeholder keys are in the dropped `Ref Model Gen/` tree, not copied |
-| resource-limited | ? | shared runner default |
+| resource-limited | ✓ | simulation killed after 30 s; every file it writes capped at 16 MiB by `RLIMIT_FSIZE` (a runaway `$display` loop stops at 16,777,216 bytes in 2 s and fails as `R`; an `$fwrite` loop is killed in under 1 s); export copies only the answer, verdict, log (head + tail 1 MiB) and a `wave.vcd` of at most 1 MiB |
 
 ## Size
 

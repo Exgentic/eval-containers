@@ -53,10 +53,12 @@ with `configure`'s defaults — the paper does not state other settings:
    Verilog syntax."*; user message `Question:` + `prompt.txt` + the
    `[BEGIN]`/`[DONE]` instruction + `Answer:`.
 2. **Call** — one chat completion through the gateway, `temperature=0.85`,
-   `top_p=0.95`, `max_tokens=16384`; a failed call is retried up to 10 times,
-   20 s apart. If the provider rejects `top_p` / `temperature` with a 400, the
-   harness drops that knob (sv-generate itself omits `top_p` for Claude, Gemini
-   and GPT-5) and records it in the export.
+   `top_p=0.95`, `max_tokens=16384`. As in sv-generate, `top_p` is not sent when
+   `EVAL_MODEL` names a Claude, Gemini or GPT-5 model. A failed call is retried
+   up to 10 times, 20 s apart, within a 1000 s deadline
+   (`CHIPBENCH_CALL_DEADLINE`) so grading and the export still fit in
+   `EVAL_TIMEOUT`. Any other provider that rejects `top_p` / `temperature` with
+   a 400 gets the call again without that knob; the export records it.
 3. **Extract** — sv-generate's parser: the `[BEGIN]`…`[DONE]` lines, else the
    first fenced block, else the text up to `endmodule`.
 4. **Grade** — `grade_sv.py`: `iverilog -Wall -Winfloop -Wno-timescale -g2012 -s tb`
@@ -65,13 +67,42 @@ with `configure`'s defaults — the paper does not state other settings:
    compile error class matched and the testbench printed `Mismatches: 0`.
 
 Icarus Verilog is v12 (`v12_0`), as in upstream's Dockerfile. `ref.sv` and
-`test.sv` live root-only under `/tasks`; the model never executes code
-(rule 12d).
+`test.sv` live root-only under `/tasks`. The model gets no tool or code
+execution while it answers (rule 12d); its answer is executed afterwards, by
+the grader's simulation. That simulation is contained: it runs as `nobody` in a
+scratch directory (it can read no task files and write nothing outside the
+scratch dir), every file it writes, the log included, is capped at 16 MiB
+(`RLIMIT_FSIZE`; a run that hits the cap fails as `R`), and it is killed after
+30 s.
 
 **Output:** `/output/task/chipbench.json` — task id, split, sampling actually
-sent, every call attempt, the raw response, the verdict code and the reward.
-The extracted answer, simulator log and verdict are under
-`/output/task/verifier/sim/`.
+sent, every call attempt, the raw response, `answer_flags`, the verdict code
+and the reward; it is written even when the call or grading fails.
+`/output/task/verifier/sim/` holds the extracted `TopModule.sv`, `verdict.json`,
+the simulator log (first and last 1 MiB when longer) and the testbench's
+`wave.vcd` when it is at most 1 MiB (the golden runs write 4–172 KB).
+
+## Answers can force a pass (upstream property)
+
+The answer is elaborated into the same simulation as the testbench, and every
+ChipBench testbench prints its verdict from a `final` block. So a `TopModule`
+that calls `initial $finish;`, writes `tb.stats1.errors = 0`, or prints
+`Mismatches: 0 in 1 samples` itself scores 1.0 with a wrong design. Upstream's
+`sv-iv-analyze` scores these the same way, so the reward keeps upstream's
+semantics. Instead, the harness scans the extracted answer and records any hit
+in `chipbench.json` as `answer_flags` (for trace review), without changing the
+reward:
+
+| Flag | Matches |
+|------|---------|
+| `testbench-reference` | `tb.` or `$root` |
+| `ends-simulation` | `$finish`, `$stop` |
+| `file-io` | `$fopen`, `$fwrite`, `$fdisplay`, `$fclose` |
+| `prints-verdict` | `Mismatches` |
+
+None of the 223 golden modules, none of the code given in the prompts, and none
+of the 1,340 recorded Claude 4.5 Opus answers (two runs of 670) triggers a flag,
+so a flagged answer warrants a look. Icarus Verilog has no `$system`.
 
 ## Known upstream defects (10 tasks no answer can pass)
 

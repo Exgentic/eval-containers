@@ -9,18 +9,26 @@ which is VerilogEval v2's `make` harness:
            path serves generation and debugging (debug prompts carry the buggy
            code, and in one-shot also the .vcd waveform, inline).
   call   — one chat completion, temperature 0.85, top_p 0.95 (configure
-           defaults), max_tokens 16384; a failed call is retried up to 10 times,
-           20 s apart, as upstream.
+           defaults), max_tokens 16384; top_p is not sent to Claude, Gemini or
+           GPT-5, as sv-generate omits it there. A failed call is retried up to
+           10 times, 20 s apart, as upstream, within CALL_DEADLINE seconds.
   parse  — sv-generate's non-iccad extraction: the lines between [BEGIN] and
            [DONE]; else the first ``` fenced block; else the text up to the
            first endmodule.
   grade  — grade_sv.py: iverilog compile with test.sv + ref.sv, simulate,
            sv-iv-analyze verdict. Reward 1.0 iff the verdict is pass ('.').
 Fail-closed: any error leaves reward 0.0.
+
+The grader simulates the answer, and a TopModule can end the testbench early
+($finish), rewrite its counters (tb.stats1.errors) or print the verdict line
+itself; upstream scores those as passes and so does this port. The answer is
+scanned for those constructs and the hits are recorded as `answer_flags` in the
+export, without changing the reward.
 """
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -33,6 +41,18 @@ EXPORT = "/output/task/chipbench.json"
 WORK = "/logs/verifier/sim"
 TEMPERATURE, TOP_P, MAX_TOKENS = 0.85, 0.95, 16384
 MODEL_TIMEOUT = int(os.environ.get("CHIPBENCH_MODEL_TIMEOUT", "600"))
+# Stop retrying before EVAL_TIMEOUT (1200 s) so grading and the export still run.
+CALL_DEADLINE = int(os.environ.get("CHIPBENCH_CALL_DEADLINE", "1000"))
+NO_TOP_P = re.compile(r"claude|gemini|gpt-5", re.I)
+LOG_KEEP = 1024 * 1024  # exported log: first + last LOG_KEEP bytes
+# Constructs an honest answer has no use for; none of the 223 golden modules,
+# the code given in prompts, or 1,340 recorded Claude answers contains one.
+ANSWER_FLAGS = {
+    "testbench-reference": r"\btb\s*\.|\$root\b",
+    "ends-simulation": r"\$(finish|stop)\b",
+    "file-io": r"\$(fopen|fwrite|fdisplay|fclose)\b",
+    "prints-verdict": r"Mismatches",
+}
 
 # scripts/sv-generate, verbatim.
 SYSTEM_MSG = """
@@ -113,7 +133,11 @@ def extract(resp):
     return "\n".join(out + [""]) + "\n"
 
 
-def chat(base_url, model, prompt, sampling):
+def answer_flags(sv):
+    return [name for name, pat in ANSWER_FLAGS.items() if re.search(pat, sv)]
+
+
+def chat(base_url, model, prompt, sampling, timeout):
     payload = {
         "model": model,
         "max_tokens": MAX_TOKENS,
@@ -132,7 +156,7 @@ def chat(base_url, model, prompt, sampling):
         },
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=MODEL_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         body = json.loads(resp.read().decode())
     content = body["choices"][0]["message"].get("content") or ""
     if isinstance(content, list):  # sv-generate: resp.content[0]['text']
@@ -140,15 +164,24 @@ def chat(base_url, model, prompt, sampling):
     return content, body.get("usage", {})
 
 
-def call_model(base_url, model, prompt, export):
+def call_model(base_url, model, real_model, prompt, export):
     # Upstream sends top_p only to the providers that accept it alongside
-    # temperature (sv-generate omits it for Claude/Gemini/GPT-5). The gateway
-    # hides the provider, so a 400 naming a sampling knob drops top_p, then
+    # temperature: sv-generate omits it for Claude, Gemini and GPT-5. Other
+    # models get it, and a 400 naming a sampling knob drops top_p, then
     # temperature — recorded in the export, never silent.
-    sampling = {"temperature": TEMPERATURE, "top_p": TOP_P}
+    sampling = {"temperature": TEMPERATURE}
+    if not NO_TOP_P.search(real_model):
+        sampling["top_p"] = TOP_P
+    deadline = time.monotonic() + CALL_DEADLINE
     for attempt in range(10):
+        left = deadline - time.monotonic()
+        if left < 30:
+            export["attempts"].append({"error": "call deadline reached"})
+            break
         try:
-            content, usage = chat(base_url, model, prompt, sampling)
+            content, usage = chat(
+                base_url, model, prompt, sampling, min(MODEL_TIMEOUT, left)
+            )
             export["attempts"].append(
                 {"ok": True, "sampling": dict(sampling), "usage": usage}
             )
@@ -173,8 +206,29 @@ def call_model(base_url, model, prompt, export):
             export["attempts"].append(
                 {"error": str(e)[:500], "sampling": dict(sampling)}
             )
-        time.sleep(20)
+        time.sleep(min(20, max(0, deadline - time.monotonic() - 30)))
     return None
+
+
+def export_sim():
+    """Copy the answer, verdict, wave.vcd (grade_sv keeps it only when small) and
+    the log (first + last LOG_KEEP bytes) for trace review."""
+    dst = "/output/task/verifier/sim"
+    os.makedirs(dst, exist_ok=True)
+    for name in ("TopModule.sv", "verdict.json", "wave.vcd"):
+        if os.path.isfile(f"{WORK}/{name}"):
+            shutil.copyfile(f"{WORK}/{name}", f"{dst}/{name}")
+    log = f"{WORK}/sv-iv-test.log"
+    if os.path.isfile(log):
+        with open(log, "rb") as f, open(f"{dst}/sv-iv-test.log", "wb") as out:
+            size = os.path.getsize(log)
+            if size <= 2 * LOG_KEEP:
+                out.write(f.read())
+            else:
+                out.write(f.read(LOG_KEEP))
+                out.write(b"\n[... %d bytes truncated ...]\n" % (size - 2 * LOG_KEEP))
+                f.seek(size - LOG_KEEP)
+                out.write(f.read())
 
 
 def write_reward(value):
@@ -190,45 +244,53 @@ def main():
     model = os.environ.get("MODEL") or os.environ.get("EVAL_MODEL") or ""
     base_url = os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1")
     # MODEL is the gateway's alias (eval-model); EVAL_MODEL names the real one.
+    real_model = os.environ.get("EVAL_MODEL") or model
     export = {
         **task,
-        "model": os.environ.get("EVAL_MODEL") or model,
+        "model": real_model,
         "temperature": TEMPERATURE,
-        "top_p": TOP_P,
+        "top_p": None if NO_TOP_P.search(real_model) else TOP_P,
         "max_tokens": MAX_TOKENS,
         "attempts": [],
+        "reward": 0.0,
+        "passfail": "no-response",
     }
-
-    resp = call_model(
-        base_url, model, full_prompt(open(f"{tdir}/prompt.txt").read()), export
-    )
-    reward, verdict = "0.0", "no-response"
-    if resp is not None:
-        os.makedirs(WORK, exist_ok=True)
-        answer = os.path.join(WORK, "TopModule.sv")
-        with open(answer, "w") as f:
-            f.write(extract(resp))
-        res = subprocess.run(
-            ["python3", "/app/grade_sv.py", tdir, answer, WORK],
-            capture_output=True,
-            text=True,
-        )
-        reward = res.stdout.strip() if res.stdout.strip() in ("1.0", "0.0") else "0.0"
-        verdict = (
-            json.load(open(f"{WORK}/verdict.json"))["passfail"]
-            if os.path.exists(f"{WORK}/verdict.json")
-            else "grader-error"
-        )
-        export["response"] = resp
-    write_reward(reward)
-    export.update(reward=float(reward), passfail=verdict)
-    os.makedirs(os.path.dirname(EXPORT), exist_ok=True)
-    json.dump(export, open(EXPORT, "w"), indent=2)
-    # The extracted answer, simulator log and verdict, for trace review.
-    if os.path.isdir(WORK):
-        shutil.copytree(WORK, "/output/task/verifier/sim", dirs_exist_ok=True)
+    try:
+        prompt = full_prompt(open(f"{tdir}/prompt.txt").read())
+        resp = call_model(base_url, model, real_model, prompt, export)
+        if resp is not None:
+            export["response"] = resp
+            os.makedirs(WORK, exist_ok=True)
+            answer = os.path.join(WORK, "TopModule.sv")
+            sv = extract(resp)
+            with open(answer, "w") as f:
+                f.write(sv)
+            export["answer_flags"] = answer_flags(sv)
+            res = subprocess.run(
+                ["python3", "/app/grade_sv.py", tdir, answer, WORK],
+                capture_output=True,
+                text=True,
+            )
+            out = res.stdout.strip()
+            reward = out if out in ("1.0", "0.0") else "0.0"
+            verdict = (
+                json.load(open(f"{WORK}/verdict.json"))["passfail"]
+                if os.path.exists(f"{WORK}/verdict.json")
+                else "grader-error"
+            )
+            write_reward(reward)
+            export.update(reward=float(reward), passfail=verdict)
+    finally:
+        os.makedirs(os.path.dirname(EXPORT), exist_ok=True)
+        with open(EXPORT, "w") as f:
+            json.dump(export, f, indent=2)
+        if os.path.isdir(WORK):
+            export_sim()
+    flags = export.get("answer_flags")
     print(
-        f"[chipbench] {task['id']} verdict={verdict} reward={reward}", file=sys.stderr
+        f"[chipbench] {task['id']} verdict={export['passfail']} "
+        f"reward={export['reward']}" + (f" answer_flags={flags}" if flags else ""),
+        file=sys.stderr,
     )
 
 
