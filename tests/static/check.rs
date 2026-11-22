@@ -1186,11 +1186,22 @@ fn claude_code_window_script(agent: &str) -> String {
             .find(model_end_mark)
             .expect("model block ends in `fi`")
         + model_end_mark.len();
+    let effort = df
+        .find("if [ -n \"${EVAL_AGENT_REASONING_EFFORT:-}\" ] && [ \"$REAL_KNOWN\" = 1 ]; then\n")
+        .unwrap_or_else(|| {
+            panic!("{agent}'s /run.sh doesn't warn when a Claude model may lower the effort")
+        });
+    let effort_end = effort + df[effort..].find("\nfi\n").expect("block ends in `fi`") + 4;
     let told = df
         .find("if [ -n \"${EVAL_MODEL_CONTEXT_WINDOW:-}\" ]; then\n")
         .unwrap_or_else(|| panic!("{agent}'s /run.sh doesn't read EVAL_MODEL_CONTEXT_WINDOW"));
     let told_end = told + df[told..].find("\nfi\n").expect("block ends in `fi`") + 4;
-    format!("{}{}", &df[model..model_end], &df[told..told_end])
+    format!(
+        "{}{}{}",
+        &df[model..model_end],
+        &df[effort..effort_end],
+        &df[told..told_end]
+    )
 }
 
 /// claude-code and claude-code-rtk fit the window they are told (agents/RULES.md
@@ -2085,6 +2096,33 @@ fn claude_code_runs_as_the_runs_model() {
         pick(&[("ANTHROPIC_MODEL", "us.anthropic.claude-opus-4-8-v1:0")]),
         "us.anthropic.claude-opus-4-8-v1:0 1 1",
         "a launch's Bedrock ID is one Claude Code knows"
+    );
+}
+
+/// Claude Code sends EVAL_AGENT_REASONING_EFFORT as is for a model it doesn't
+/// know, but silently lowers it to what a Claude model supports (Sonnet 4.6's
+/// xhigh goes out as high), so `/run.sh` says so for a Claude model (#765).
+#[test]
+fn claude_code_warns_a_claude_model_may_lower_the_effort() {
+    let cc = claude_code_window_script("claude-code");
+    let warned = |extra: &[(&str, &str)]| {
+        let out = claude_bash(&cc, extra);
+        String::from_utf8_lossy(&out.stderr).contains("Claude Code lowers a level")
+    };
+    assert!(warned(&[
+        ("MODEL", "claude-sonnet-4-6"),
+        ("EVAL_AGENT_REASONING_EFFORT", "xhigh")
+    ]));
+    assert!(
+        !warned(&[
+            ("MODEL", "glm-5-3"),
+            ("EVAL_AGENT_REASONING_EFFORT", "xhigh")
+        ]),
+        "an unknown model gets the level as is"
+    );
+    assert!(
+        !warned(&[("MODEL", "claude-sonnet-4-6")]),
+        "no effort asked, nothing to warn about"
     );
 }
 

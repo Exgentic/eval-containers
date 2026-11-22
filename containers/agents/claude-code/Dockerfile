@@ -67,6 +67,13 @@ CC_KNOWS=1 REAL_KNOWN=0
 if [ -n "${ANTHROPIC_MODEL:-}" ]; then
   if claude_knows "$ANTHROPIC_MODEL"; then REAL_KNOWN=1; else CC_KNOWS=0; fi
 fi
+# Claude Code sends EVAL_AGENT_REASONING_EFFORT as is for a model it doesn't know,
+# but lowers it, silently, to what a Claude model supports (Sonnet 4.6's xhigh
+# goes out as high). Say so, so a comparison can't be skewed unseen; the level sent
+# is in the call record (#765).
+if [ -n "${EVAL_AGENT_REASONING_EFFORT:-}" ] && [ "$REAL_KNOWN" = 1 ]; then
+  echo "claude-code: EVAL_AGENT_REASONING_EFFORT=$EVAL_AGENT_REASONING_EFFORT — Claude Code lowers a level $ANTHROPIC_MODEL does not support; the level sent is in the call record" >&2
+fi
 # Untold, a model Claude Code knows keeps its own window and reply cap. For any
 # other it would assume 1M (and its default, Opus 5.5, would ask for 128000 per
 # reply), so a request is refused once prompt + cap passes a smaller real window,
