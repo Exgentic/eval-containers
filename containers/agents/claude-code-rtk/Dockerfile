@@ -91,6 +91,13 @@ CC_KNOWS=1 REAL_KNOWN=0
 if [ -n "${ANTHROPIC_MODEL:-}" ]; then
   if claude_knows "$ANTHROPIC_MODEL"; then REAL_KNOWN=1; else CC_KNOWS=0; fi
 fi
+# Claude Code sends EVAL_AGENT_REASONING_EFFORT as is for a model it doesn't know,
+# but lowers it, silently, to what a Claude model supports (Sonnet 4.6's xhigh
+# goes out as high). Say so, so a comparison can't be skewed unseen; the level sent
+# is in the call record (#765).
+if [ -n "${EVAL_AGENT_REASONING_EFFORT:-}" ] && [ "$REAL_KNOWN" = 1 ]; then
+  echo "claude-code: EVAL_AGENT_REASONING_EFFORT=$EVAL_AGENT_REASONING_EFFORT — Claude Code lowers a level $ANTHROPIC_MODEL does not support; the level sent is in the call record" >&2
+fi
 # The reply cap and window, told or not — see containers/agents/claude-code/Dockerfile.
 # Register rtk's PreToolUse hook at runtime, when $HOME resolves to the
 # agent user (not root). install.sh runs at combination-build time as
