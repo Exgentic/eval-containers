@@ -30,6 +30,7 @@ ROOT=$(CDPATH='' cd -- "$(dirname -- "$0")/../.." && pwd) || exit 2
 
 command -v docker >/dev/null || { echo "docker not found — required for the compose load gate"; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "docker compose plugin not found"; exit 1; }
+command -v jq >/dev/null || { echo "jq not found — required for the offline network check"; exit 1; }
 
 shopt -s nullglob
 files=("$ROOT"/containers/benchmarks/*/compose.yaml)
@@ -68,7 +69,7 @@ for f in "${files[@]}"; do
   grep -qE '^[[:space:]]*ENV EVAL_INTERNET=true' "$(dirname "$f")/Dockerfile" && continue
   # A network is routable unless it is declared `internal: true`; a service
   # with no `networks:` is on `default`, which is routable.
-  ways=$(jq -r '
+  if ! ways=$(jq -r '
     ([.networks // {} | to_entries[] | select(.value.internal != true) | .key]) as $routable
     | (.services | to_entries[] | select(.value.network_mode != null)
         | "\(.key) sets network_mode: \(.value.network_mode)"),
@@ -77,8 +78,11 @@ for f in "${files[@]}"; do
         | "runner is on [\(join(", "))], not on the internal network alone"),
       (.services | to_entries[] | select(.key | IN("runner", "gateway", "user-gateway") | not)
         | .key as $s | .value.networks // {} | keys[] | select(. as $n | $routable | index($n))
-        | "\($s) is on the routable network \(.)")' <<<"$interp")
-  if [ -n "$ways" ]; then
+        | "\($s) is on the routable network \(.)")' <<<"$interp" 2>"$ERR"); then
+    echo "FAIL $name: jq could not read the interpolated config:"
+    sed 's/^/  /' "$ERR"
+    fail=$((fail + 1))
+  elif [ -n "$ways" ]; then
     echo "FAIL $name: EVAL_INTERNET=false, yet the runner has a way out:"
     printf '%s\n' "$ways" | sed 's/^/  /'
     fail=$((fail + 1))
