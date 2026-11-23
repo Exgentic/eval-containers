@@ -2173,8 +2173,9 @@ fn eval_local_binds_its_bases_in_graph() {
     }
 }
 
-/// claude-code keeps its experimental betas off unless the launch turns them on: the
-/// default is 1, and a launch's own value reaches the agent instead of being overwritten.
+/// claude-code leaves Claude Code's experimental betas to Claude Code: `/run.sh` sets
+/// nothing, so Claude Code's own default applies (betas, and with them tool search, on),
+/// and a launch's own value reaches the agent unchanged.
 #[test]
 fn claude_code_betas_follow_the_launch() {
     for a in ["claude-code", "claude-code-rtk"] {
@@ -2182,7 +2183,7 @@ fn claude_code_betas_follow_the_launch() {
             let out = run_with_stub_env(
                 a,
                 "claude",
-                "echo \"$CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS\"",
+                "echo \"${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS-unset}\"",
                 None,
                 set.map(|v| ("CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", v)),
             );
@@ -2192,12 +2193,14 @@ fn claude_code_betas_follow_the_launch() {
                 .unwrap_or("")
                 .to_string()
         };
-        assert_eq!(betas(None), "1", "{a}: betas stay off by default");
         assert_eq!(
-            betas(Some("0")),
-            "0",
-            "{a}: a launch's 0 reaches Claude Code"
+            betas(None),
+            "unset",
+            "{a}: Claude Code's own default applies"
         );
+        for v in ["0", "1"] {
+            assert_eq!(betas(Some(v)), v, "{a}: a launch's {v} reaches Claude Code");
+        }
     }
 }
 
