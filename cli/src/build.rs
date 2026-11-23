@@ -295,7 +295,7 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
                 "eval"
             };
             // Pass image refs as env vars so the bake HCL variables resolve for the
-            // eval-local context keys ("${BENCHMARK_IMAGE}" / "${AGENT_IMAGE}").
+            // eval-local context keys (BENCHMARK_IMAGE / AGENT_IMAGE minus ":latest").
             // --set target.args.X only sets the build arg; setting as an env var also
             // populates the HCL variable used in the contexts map key.
             let mut bake_env = vec![
@@ -343,6 +343,11 @@ pub fn execute(registry: &str, args: BuildArgs) -> Result<(), String> {
             let gateway_ref = model_image(registry, &gateway, &tag);
             bake_env.push(("MODEL_IMAGE", gateway_ref.clone()));
             overrides.push(format!("eval-standalone.args.MODEL_IMAGE={gateway_ref}"));
+            // --no-pull: layer onto eval-local, else the bundle's `eval-base = target:eval`
+            // resolves benchmark and agent outside the graph (#765).
+            if eval_target == "eval-local" {
+                overrides.push("eval-standalone.contexts.eval-base=target:eval-local".into());
+            }
             // Per-task: override the shared-env default with the task-aware
             // standalone name, mirroring the lean `eval.tags` override above.
             if let Some(ref tid) = task_id {
