@@ -10,7 +10,8 @@
 #
 # The agent makes no model call — recorded traffic and real traces are the replay
 # suite's job — but it does probe its endpoint, so this also settles that the
-# gateway sidecar is reachable from the runner on localhost:4000.
+# gateway Service is reachable from the runner through the egress policy an
+# offline benchmark runs under (#753).
 #
 # It is affordable because both halves are the smallest of their kind:
 # benchmarks/agents-smoke (~33 MB, unconditional-pass grader) and agents/mock (a
@@ -59,7 +60,7 @@ step "run the eval"
 helm template real "$CHART" \
   --set benchmark=agents-smoke --set agent=mock --set task=0 \
   --set otelImage=eval-e2e/otel:stub \
-  --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+  "${OFFLINE_GW[@]}" \
   --set runnerImageRef=eval-e2e/eval:latest \
   --set outputVolume.hostPath.path="$OUT" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
@@ -131,9 +132,9 @@ case "$out" in
   *) bad "agent/stdout.log did not capture the agent's answer (got: ${out:-<empty>})" ;;
 esac
 # The agent reached the gateway at the address the chart handed it. That is the
-# first thing every real agent does and the first thing that breaks: a sidecar
-# the runner cannot reach on localhost:4000 fails every run for one reason and
-# reports it as the agent's fault.
+# first thing every real agent does and the first thing that breaks: a gateway
+# the runner cannot reach fails every run for one reason and reports it as the
+# agent's fault.
 case "$out" in
   *"gateway:up"*) ;;
   *"gateway:unprobed"*) bad "the base image had no HTTP client, so the endpoint was never probed" ;;
@@ -150,7 +151,7 @@ case "$out" in
 esac
 
 # The edge's record. The agent's probe above went through the edge (the runner
-# points it at :4100, not the gateway directly), so a run that reached the
+# points it at the edge, not the gateway directly), so a run that reached the
 # gateway must also have recorded reaching it. The file is compressed — one
 # stream held open for the run — and it is never closed, because the pod SIGKILLs
 # the edge; so the thing worth asserting is that it decodes anyway.
@@ -199,7 +200,7 @@ capped_job() { # <suffix> <subpath> <extra runnerExtraEnv json>
     --set benchmark=agents-smoke --set agent=mock --set task=0 \
     --set nameSuffix="$1" \
     --set otelImage=eval-e2e/otel:stub \
-    --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+    "${OFFLINE_GW[@]}" \
     --set runnerImageRef=eval-e2e/eval:latest \
     --set outputVolume.hostPath.path="$OUT" \
     --set outputVolume.hostPath.type=DirectoryOrCreate \
@@ -254,14 +255,16 @@ esac
 # composes the output path — several hundred lines that only a cluster can
 # exercise. Give it the images it will look for and let it drive.
 step "drive deploy/kind/run.sh"
+# The offline gateway as a values file, the way an operator layers one.
+GWV=$(mktemp)
+printf 'offlineGateway:\n  podSelector: { app: stub-upstream }\n  port: 4000\n' >"$GWV"
 kubectl delete job agents-smoke-mock-task-0 --wait=true >/dev/null 2>&1
 docker tag eval-e2e/eval:latest  local/evals/agents-smoke--mock:latest
-docker tag eval-e2e/gateway:stub local/models/stubgw:latest
 docker tag eval-e2e/otel:stub    local/core/otel:latest
 
 if bash "$ROOT/deploy/kind/run.sh" \
      --benchmark agents-smoke --agent mock --model azure/gpt-5-mini \
-     --gateway stubgw --registry local --cluster "$CLUSTER" \
+     --values "$GWV" --registry local --cluster "$CLUSTER" \
      --output-path "$OUT" --task 0 --no-build >/dev/null 2>&1; then
   case "$(settle agents-smoke-mock-task-0 180)" in
     *Complete*)
@@ -277,7 +280,7 @@ if bash "$ROOT/deploy/kind/run.sh" \
 else
   bad "deploy/kind/run.sh failed to apply a Job"
   bash "$ROOT/deploy/kind/run.sh" --benchmark agents-smoke --agent mock \
-    --model azure/gpt-5-mini --gateway stubgw --registry local \
+    --model azure/gpt-5-mini --values "$GWV" --registry local \
     --cluster "$CLUSTER" --output-path "$OUT" --task 0 --no-build 2>&1 | tail -15
 fi
 
@@ -297,7 +300,7 @@ step "an RFC-1123-hostile task id still launches and is addressable"
 HOSTILE='Sympy__Sympy-24066-with-a-long-tail-to-pass-fifty-three-chars'
 launch=$(bash "$ROOT/deploy/kind/run.sh" \
            --benchmark agents-smoke --agent mock --model azure/gpt-5-mini \
-           --gateway stubgw --registry local --cluster "$CLUSTER" \
+           --values "$GWV" --registry local --cluster "$CLUSTER" \
            --output-path "$OUT" --task "$HOSTILE" --no-build 2>&1) && rc=0 || rc=1
 named=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$launch" | head -1)
 if [ "$rc" -ne 0 ]; then

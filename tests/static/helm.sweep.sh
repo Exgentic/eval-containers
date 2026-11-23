@@ -32,7 +32,13 @@ done
 
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-export CHART OUT
+# Every render here names an offline gateway, as deploy/values-openshift.yaml
+# does: the chart refuses an offline benchmark without one (10 checks that).
+GW="$OUT/.offline-gateway.yaml"
+printf 'offlineGateway:\n  podSelector: { app: probe-gateway }\n  port: 4000\n' >"$GW"
+# Benchmarks that may reach the internet; every other one is offline.
+ONLINE=" $(sed -n 's/^[[:space:]]*"\([^"]*\)".*/\1/p' "$CHART/online.json" | tr '\n' ' ') "
+export CHART OUT GW ONLINE
 
 # Render one benchmark to $OUT/<name>.yaml; on a template failure, print the name
 # (collected as a render failure) with the error captured beside it.
@@ -40,10 +46,13 @@ render_one() {
   local name=$1
   # ephemeral=true: these renders exist to be inspected, never applied, so they
   # name no output volume — which the chart otherwise refuses (eval.outputVolume).
-  # gatewayEnabled=true: the readiness policy below gates the gateway sidecar,
-  # which the chart no longer renders by default.
-  if ! helm template "$name" "$CHART" --set "benchmark=$name" --set ephemeral=true \
-    --set gatewayEnabled=true >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
+  # gatewayEnabled=true where the benchmark is online: the readiness policy below
+  # gates the gateway sidecar, which the chart renders only on request, and
+  # refuses for an offline benchmark.
+  local gw=false
+  case "$ONLINE" in *" $name "*) gw=true ;; esac
+  if ! helm template "$name" "$CHART" -f "$GW" --set "benchmark=$name" --set ephemeral=true \
+    --set gatewayEnabled=$gw >"$OUT/$name.yaml" 2>"$OUT/$name.err"; then
     echo "$name"
   fi
 }
@@ -80,7 +89,7 @@ done
 # said. Rendering is where that is cheap to catch; the cluster is where it was
 # caught instead.
 probe=${names[0]}
-if ! helm template probe "$CHART" --set "benchmark=$probe" --set ephemeral=true \
+if ! helm template probe "$CHART" -f "$GW" --set "benchmark=$probe" --set ephemeral=true \
      --set maxTokens=1000000 >"$OUT/.numeric.yaml" 2>"$OUT/.numeric.err"; then
   echo "FAIL numeric value render failed:"; sed 's/^/  /' "$OUT/.numeric.err"; fail=$((fail + 1))
 else
@@ -109,7 +118,7 @@ fi
 # 4b. the sidecars are optional, and the gateway is off by default: off, neither
 # container renders, and the edge is handed the real upstream instead of the
 # gateway's loopback.
-thin=$(helm template thin "$CHART" --set benchmark="${names[0]}" --set ephemeral=true \
+thin=$(helm template thin "$CHART" -f "$GW" --set benchmark="${names[0]}" --set ephemeral=true \
   --set otelEnabled=false 2>&1)
 for pattern in "name: gateway" "name: otelcol" "OTEL_EXPORTER_OTLP_ENDPOINT"; do
   case "$thin" in
@@ -124,7 +133,7 @@ esac
 # 4c. a custom provider credential header reaches the framework-to-edge mapping
 # only on the direct path. Empty preserves the wire-native default; a gateway
 # owns its own provider authentication and the chart refuses to pretend otherwise.
-custom=$(helm template custom-auth "$CHART" --set benchmark="${names[0]}" --set ephemeral=true \
+custom=$(helm template custom-auth "$CHART" -f "$GW" --set benchmark="${names[0]}" --set ephemeral=true \
   --set apiKeyHeader=CUSTOM_API_KEY --set otelEnabled=false 2>&1)
 for pattern in 'name: EVAL_API_KEY_HEADER' 'value: "CUSTOM_API_KEY"'; do
   case "$custom" in
@@ -136,7 +145,7 @@ case "$thin" in
   *'EVAL_API_KEY_HEADER'*) echo "FAIL default render sets a custom API key header"; fail=$((fail + 1)) ;;
   *) ;;
 esac
-if conflict=$(helm template custom-auth-gateway "$CHART" --set benchmark="${names[0]}" \
+if conflict=$(helm template custom-auth-gateway "$CHART" -f "$GW" --set benchmark="${names[0]}" \
   --set ephemeral=true --set apiKeyHeader=CUSTOM_API_KEY --set gatewayEnabled=true \
   --set otelEnabled=false 2>&1); then
   echo "FAIL custom auth with gatewayEnabled rendered instead of refusing"; fail=$((fail + 1))
@@ -146,7 +155,7 @@ fi
 
 # 4d. a preset's runnerExtraEnv merges with the caller's by name, the caller
 # winning; it used to replace it, dropping a run's own upstream and key.
-env_probe() { helm template env-probe "$CHART" --set benchmark=osworld-verified --set ephemeral=true \
+env_probe() { helm template env-probe "$CHART" -f "$GW" --set benchmark=osworld-verified --set ephemeral=true \
   --set-json "runnerExtraEnv=$1" 2>&1; }
 out=$(env_probe '[{"name":"EVAL_PROBE_CALLER","value":"kept"},{"name":"EVAL_DESKTOP_HOST","value":"caller"}]')
 for pattern in "name: EVAL_PROBE_CALLER" "value: caller"; do
@@ -162,7 +171,7 @@ env_probe null >/dev/null || { echo "FAIL runnerExtraEnv: a null caller list doe
 # 5. the pod backstop must track --timeout, not a fixed constant: a larger
 # --timeout must not be killed early by a stale activeDeadlineSeconds (the
 # derivation regression — see containers/benchmarks/_chart/values.yaml).
-dl=$(helm template deadline-probe "$CHART" --set benchmark=humaneval --set timeout=3000 \
+dl=$(helm template deadline-probe "$CHART" -f "$GW" --set benchmark=humaneval --set timeout=3000 \
   --set ephemeral=true 2>/dev/null |
   awk '/activeDeadlineSeconds:/{print $2; exit}')
 if [ "${dl:-0}" -le 3000 ]; then
@@ -174,7 +183,7 @@ fi
 # asserts on a manifest; this one asserts that a manifest is NOT produced, which
 # is the only way to test a guard whose whole job is to stop one existing. The
 # emptyDir default it replaced discarded a whole run and still exited 0 (#428).
-probe() { helm template vol-probe "$CHART" --set benchmark=humaneval "$@" 2>&1; }
+probe() { helm template vol-probe "$CHART" -f "$GW" --set benchmark=humaneval "$@" 2>&1; }
 
 # runId first, so this probe reaches the volume guard rather than tripping the
 # uniqueness one — the two are separate refusals and each is checked on its own.
@@ -246,7 +255,7 @@ esac
 # family publishes (deploy/oc/run.sh never set it; job mode set it from a
 # cwd-relative read). The catalog↔labels half is a cargo test
 # (chart_per_task_set_matches_labels); this is the rendered consequence.
-img() { helm template pt-probe "$CHART" --set benchmark="$1" --set task="$2" \
+img() { helm template pt-probe "$CHART" -f "$GW" --set benchmark="$1" --set task="$2" \
   --set ephemeral=true --set runId=r 2>/dev/null |
   awk '/image:.*\/evals\//{print $2; exit}'; }
 
@@ -277,7 +286,7 @@ esac
 # dataset-sizes.json — reading the same file the chart reads would pass whatever
 # the file said. (chart_dataset_sizes_match_labels covers the whole map; this
 # covers the lookup, and the three ways it must refuse or defer.)
-completions() { helm template ds-probe "$CHART" --set benchmark="$1" \
+completions() { helm template ds-probe "$CHART" -f "$GW" --set benchmark="$1" \
   --set ephemeral=true --set dataset=true "${@:2}" 2>&1 |
   awk '/^  completions:/{print $2; exit}'; }
 
@@ -298,7 +307,7 @@ done
 # to fail, and `set -o pipefail` would report helm's exit code, not the match.
 refuses() {  # $1 = label, $2 = expected substring, rest = --set args
   local what=$1 want=$2; shift 2
-  local out; out=$(helm template ds-probe "$CHART" --set ephemeral=true --set dataset=true "$@" 2>&1)
+  local out; out=$(helm template ds-probe "$CHART" -f "$GW" --set ephemeral=true --set dataset=true "$@" 2>&1)
   case "$out" in *"$want"*) ;;
     *) echo "FAIL dataset: $what"; fail=$((fail + 1)) ;;
   esac
@@ -317,7 +326,7 @@ refuses "dataset=true bypassed the per-task guard" "cannot use a dataset" \
 # Asserted on the rendered manifest, per branch, because the trap was in the
 # condition rather than the value: `{{ if }}` reads an explicit 0 as unset, so
 # the safe setting rendered as the unsafe one.
-indexed() { helm template idx-probe "$CHART" --set benchmark=humaneval --set ephemeral=true \
+indexed() { helm template idx-probe "$CHART" -f "$GW" --set benchmark=humaneval --set ephemeral=true \
   --set datasetSize=7 "$@" 2>/dev/null; }
 
 for want in "backoffLimitPerIndex: 0" "maxFailedIndexes: 7"; do
@@ -339,6 +348,35 @@ indexed --set backoffLimitPerIndex=2 | grep -qF "backoffLimitPerIndex: 2" || {
 indexed --set backoffLimitPerIndex= | grep -qE '^  backoffLimit: 0' || {
   echo "FAIL indexed: an empty backoffLimitPerIndex did not fall back to backoffLimit: 0 for a pre-1.29 cluster"
   fail=$((fail + 1)); }
+
+# 10. an offline benchmark's pods have no way out but the offline gateway (#753).
+# What the policy allows is egress.rego's, over every render in 4; this is that
+# each render has one exactly when it is offline, and the two refusals.
+for name in "${names[@]}"; do
+  [ -s "$OUT/$name.yaml" ] || continue
+  has=$(grep -c '^kind: NetworkPolicy$' "$OUT/$name.yaml")
+  case "$ONLINE" in
+    *" $name "*) [ "$has" = 0 ] || { echo "FAIL egress: $name is online, yet renders an egress NetworkPolicy"; fail=$((fail + 1)); } ;;
+    *) [ "$has" = 1 ] && grep -q 'eval-internet: "false"' "$OUT/$name.yaml" ||
+         { echo "FAIL egress: $name is offline, yet its runner is not under the egress NetworkPolicy"; fail=$((fail + 1)); } ;;
+  esac
+done
+offline=humaneval
+if out=$(helm template egress-probe "$CHART" --set benchmark=$offline --set ephemeral=true 2>&1); then
+  echo "FAIL egress: an offline run with no offlineGateway rendered instead of being refused"; fail=$((fail + 1))
+elif [[ "$out" != *'set offlineGateway.podSelector'* ]]; then
+  echo "FAIL egress: the no-offlineGateway refusal was unclear: $out"; fail=$((fail + 1))
+fi
+if out=$(helm template egress-probe "$CHART" -f "$GW" --set benchmark=$offline --set ephemeral=true \
+  --set gatewayEnabled=true 2>&1); then
+  echo "FAIL egress: an offline run with a gateway sidecar rendered instead of being refused"; fail=$((fail + 1))
+elif [[ "$out" != *'omit --gateway'* ]]; then
+  echo "FAIL egress: the gateway-sidecar refusal was unclear: $out"; fail=$((fail + 1))
+fi
+# The label is the truth: a --set cannot take an offline benchmark online.
+helm template egress-probe "$CHART" -f "$GW" --set benchmark=$offline --set ephemeral=true \
+  --set internet=true 2>&1 | grep -q '^kind: NetworkPolicy$' ||
+  { echo "FAIL egress: --set internet=true dropped an offline benchmark's egress NetworkPolicy"; fail=$((fail + 1)); }
 
 echo "helm sweep: ${#names[@]} benchmarks rendered (parallel -P$JOBS) + validated (kubeconform -n$JOBS + conftest), $fail failed"
 [ "$fail" -eq 0 ]

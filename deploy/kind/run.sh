@@ -44,6 +44,9 @@ Cluster / output:
   --cluster <name>      kind cluster name (default: eval)
   --output-path <p>     node dir mounted at /output (default: /eval-output)
   --repo-dir <p>        repo root (default: two levels up from this script)
+  --values <f>          an extra chart values file (repeatable) — an offline
+                        benchmark needs one naming offlineGateway, the
+                        in-cluster gateway Service its egress is limited to
 
 Build / run control:
   --run-id <id>         name this run; rerunning an id skips tasks it already
@@ -63,7 +66,7 @@ BENCHMARK="" AGENT="" MODEL="" GATEWAY="bifrost" TASK="0" DATASET="" PARALLELISM
 NAMESPACE="" REGISTRY="$REGISTRY_DEFAULT" CLUSTER="$CLUSTER_DEFAULT"
 OUTPUT_PATH="$OUTPUT_HOSTPATH"
 GATEWAY_ON=false DATASET_MODE=false NO_BUILD=false NO_RUN=false REBUILD=false RERUN=false
-WATCH=false DRY_RUN=false
+WATCH=false DRY_RUN=false VALUES=()
 while [[ $# -gt 0 ]]; do case "$1" in
   --benchmark) BENCHMARK="$2"; shift 2;; --agent) AGENT="$2"; shift 2;;
   --model) MODEL="$2"; shift 2;; --gateway) GATEWAY="$2"; GATEWAY_ON=true; shift 2;;
@@ -73,6 +76,7 @@ while [[ $# -gt 0 ]]; do case "$1" in
   --namespace) NAMESPACE="$2"; shift 2;;
   --registry) REGISTRY="$2"; shift 2;; --cluster) CLUSTER="$2"; shift 2;;
   --output-path) OUTPUT_PATH="$2"; shift 2;; --repo-dir) REPO_DIR="$2"; shift 2;;
+  --values) VALUES+=(-f "$2"); shift 2;;
   --run-id) RUN_ID="$2"; shift 2;; --force) FORCE_RUN=true; shift;;
   --rebuild) REBUILD=true; shift;; --no-build) NO_BUILD=true; shift;;
   --no-run) NO_RUN=true; shift;; --rerun) RERUN=true; shift;;
@@ -207,7 +211,7 @@ SET=(--set "benchmark=$BENCHMARK" --set "agent=$AGENT" --set "task=$TASK"
      --set "model=$MODEL" --set "gatewayImage=$GATEWAY"
      --set "registry=$REGISTRY"
      --set "outputVolume.hostPath.path=$OUTPUT_PATH" --set "outputSubPath=$SUB"
-     --set "runId=$RUN_ID")
+     --set "runId=$RUN_ID" ${VALUES[@]+"${VALUES[@]}"})
 # Rerun a task the run id already holds a result for, instead of skipping it.
 ${FORCE_RUN:-false} && SET+=(--set "force=true")
 # The chart runs no gateway sidecar unless asked; naming one with --gateway asks.

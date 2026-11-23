@@ -24,6 +24,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
 | `apiKeyHeader` | `""` | `--api-key-header` — direct-provider credential header; empty uses the wire-native default and combining it with a gateway is rejected; see [edge configuration](../../containers/core/edge/README.md#configuration) |
 | `gatewayEnabled` | `false` | set by `--gateway` / `--gateway-tag` — run the gateway sidecar; off, the edge forwards straight to the upstream |
+| `offlineGateway` | `{podSelector: {}, port: ""}` | the platform overlay — the labels and port of the in-namespace gateway Service an offline benchmark's egress NetworkPolicy allows; an offline run without it, or with `gatewayEnabled`, is refused (#753) |
 | `gatewayImage` | `bifrost` | `--gateway` — the proxy backend (`bifrost` / `litellm` / `portkey`, or a pinned per-model image) |
 | `gatewayTag` | `latest` | `--gateway-tag` |
 | `runnerTag` | `latest` | `--agent-tag` / `--benchmark-tag` |

@@ -27,7 +27,8 @@
 # gateway are megabytes-to-gigabytes of things none of these claims exercise. The
 # three containers are stood in for by ~4 MB busybox stubs satisfying exactly what
 # the chart gates on — the collector answering :13133, the gateway's
-# /opt/gateway/health, and `/bin/bash -c` for the runner. The chart, its volume
+# /opt/gateway/health (here the upstream Service an offline run is let out to),
+# and `/bin/bash -c` for the runner. The chart, its volume
 # wiring, its sidecar ordering and its naming are the real ones. That substitution
 # is what keeps this a per-PR gate; the moment a claim here needs a real agent
 # image it belongs in nightly-*.yml instead.
@@ -55,7 +56,7 @@ render() {
   helm template "$name" "$CHART" \
     --set benchmark=humaneval --set agent=stub \
     --set otelImage=eval-e2e/otel:stub \
-    --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+    "${OFFLINE_GW[@]}" \
     --set runnerImageRef=eval-e2e/runner:stub \
     --set outputVolume.hostPath.path="$OUT" \
     --set outputVolume.hostPath.type=DirectoryOrCreate \
@@ -219,7 +220,7 @@ F_ARGS=$(argsfile 'mkdir -p /output/task &&
 helm template pvc "$CHART" \
   --set benchmark=humaneval --set agent=stub --set task=0 \
   --set otelImage=eval-e2e/otel:stub \
-  --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+  "${OFFLINE_GW[@]}" \
   --set runnerImageRef=eval-e2e/runner:stub \
   --set outputVolume.persistentVolumeClaim.claimName=eval-e2e-output \
   --set outputSubPath="$ROOT_F" --set runId=onpvc --set nameSuffix=-pvc \

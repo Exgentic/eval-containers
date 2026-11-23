@@ -32,6 +32,8 @@ extraManifests:
         labels:
           benchmark: tau-bench
           app: bridge
+          # Under the offline egress policy, as the runner is (#753).
+          eval-internet: 'false'
       spec:
         containers:
         - name: bridge

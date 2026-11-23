@@ -25,6 +25,12 @@ benchmark's `agent: native` is structural (benchmarks/RULES.md 12b).
        benchmark shared-env. */ -}}
 {{- $perTask := .Files.Get "per-task.json" | default "[]" | fromJsonArray -}}
 {{- $env := has $name $perTask | ternary (dict "perTask" true) dict -}}
+{{- /* Whether the run may reach the internet, the same way: online.json is derived
+       from the `eval.benchmark.internet` labels (cli_conformance.rs asserts it),
+       and a benchmark it does not list is offline. A string, so it overwrites any
+       --set: the label is the truth, and an offline run gets the egress policy. */ -}}
+{{- $online := .Files.Get "online.json" | default "[]" | fromJsonArray -}}
+{{- $env = merge $env (dict "internet" (has $name $online | toString)) -}}
 {{- /* `dataset: true` means "run the whole thing" without the caller having to
        know how big it is. Same reasoning as perTask, same shape: the size is a
        property of the benchmark, so the chart holds it, and every launcher gets
