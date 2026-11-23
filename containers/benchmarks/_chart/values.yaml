@@ -77,6 +77,9 @@ gatewayEnabled: false
 offlineGateway:
   podSelector: {}
   port: ""
+# dnsNamespace: where the cluster DNS runs, the one namespace that policy lets
+# an offline pod reach, on the DNS ports only. OpenShift's is openshift-dns.
+dnsNamespace: kube-system
 otelEnabled: true
 otelImage: ""
 gatewayImageRef: ""

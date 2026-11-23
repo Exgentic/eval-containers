@@ -11,7 +11,7 @@
 # The agent makes no model call — recorded traffic and real traces are the replay
 # suite's job — but it does probe its endpoint, so this also settles that the
 # gateway Service is reachable from the runner through the egress policy an
-# offline benchmark runs under (#753).
+# offline benchmark runs under, and that the public internet is not (#753).
 #
 # It is affordable because both halves are the smallest of their kind:
 # benchmarks/agents-smoke (~33 MB, unconditional-pass grader) and agents/mock (a
@@ -28,6 +28,8 @@ STUB="$ROOT/tests/e2e/stub"
 OUT=/tmp/eval-real-output
 SUB=runs/agents-smoke/mock/none
 RUN=r1
+# What an offline run's agent must not reach: the sites #753 names.
+REACH="https://example.com https://pypi.org https://github.com"
 
 # shellcheck source=tests/e2e/_lib.sh
 . "$ROOT/tests/e2e/_lib.sh"
@@ -66,7 +68,8 @@ helm template real "$CHART" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
   --set outputSubPath="$SUB" --set runId="$RUN" \
   --set-string maxTokens=1000000 \
-  --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' |
+  --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' \
+  --set-json "agentEnv=[{\"name\":\"MOCK_REACH\",\"value\":\"$REACH\"}]" |
   kubectl apply -f - >/dev/null || { echo "apply failed"; exit 1; }
 
 case "$(settle agents-smoke-mock-task-0 180)" in
@@ -142,6 +145,17 @@ case "$out" in
      echo "    stdout: ${out:-<empty>}"
      echo "    stderr: ${err:-<empty>}" ;;
 esac
+# …and nothing else. agents-smoke is offline, so the agent, as its own uid, tried
+# the public sites from inside the egress policy; each must have failed. A site
+# that cannot be reached from anywhere proves nothing, so the same probe runs
+# below from a pod the policy does not select, where each must answer.
+for u in $REACH; do
+  case "$out" in
+    *"reach:$u:down"*) ;;
+    *"reach:$u:up"*) bad "the agent of an offline run reached $u — its egress is not limited to the gateway" ;;
+    *) bad "the agent never tried $u — MOCK_REACH did not reach it" ;;
+  esac
+done
 case "$err" in
   *"mock agent"*) ;;
   *) bad "agent/stderr.log did not capture the agent's stderr (got: ${err:-<empty>})" ;;
@@ -189,6 +203,19 @@ case "$(onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null)" in
   *) bad "the edge never saw EVAL_MAX_TOKENS — chart value, start-edge, or the edge itself dropped it"
      onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
 esac
+
+step "the same sites answer a pod outside the policy"
+kubectl run reach-control --image=eval-e2e/eval:latest --image-pull-policy=Never \
+  --restart=Never --env "MOCK_REACH=$REACH" --command -- /run.sh >/dev/null
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/reach-control --timeout=120s >/dev/null 2>&1
+ctl=$(kubectl logs reach-control 2>/dev/null)
+for u in $REACH; do
+  case "$ctl" in
+    *"reach:$u:up"*) ;;
+    *) bad "$u did not answer a pod outside the policy either, so the offline run failing to reach it shows nothing (got: ${ctl:-<empty>})" ;;
+  esac
+done
+kubectl delete pod reach-control --wait=false >/dev/null 2>&1
 
 # ── a run that actually crosses its cap ─────────────────────────────────────
 # Above proves the cap ARRIVES. These prove what it DOES, which is the part a

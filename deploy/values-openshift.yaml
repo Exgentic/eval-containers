@@ -13,3 +13,4 @@ imagePullPolicy: Always
 offlineGateway:
   podSelector: { app: litellm-rits }
   port: 4000
+dnsNamespace: openshift-dns

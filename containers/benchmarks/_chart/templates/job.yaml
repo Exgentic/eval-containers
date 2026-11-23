@@ -346,7 +346,7 @@ spec:
     matchLabels: { eval-internet: "false" }
   policyTypes: [Egress]
   egress:
-    - to: [{ namespaceSelector: {} }]
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $v.dnsNamespace | quote }} } } }]
       ports:
         - { protocol: UDP, port: 53 }
         - { protocol: TCP, port: 53 }

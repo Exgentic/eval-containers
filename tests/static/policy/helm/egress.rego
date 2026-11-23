@@ -44,6 +44,15 @@ dns_only(rule) if {
 	}
 }
 
+deny contains msg if {
+	input.kind == "NetworkPolicy"
+	some rule in egress_rules
+	some peer in object.get(rule, "to", [])
+	peer.namespaceSelector
+	count(object.get(peer.namespaceSelector, "matchLabels", {})) == 0
+	msg := sprintf("NetworkPolicy/%s: an egress rule selects every namespace; DNS is one namespace (#753)", [np_name])
+}
+
 # An empty podSelector selects every pod in the namespace.
 deny contains msg if {
 	input.kind == "NetworkPolicy"

@@ -22,6 +22,7 @@
 #   E. two runs of one benchmark/agent/model keep their own results — the
 #      uniqueness the chart's runId exists to guarantee, which both shell
 #      launchers used to break by composing a leaf that never changed
+#   H. an online run's gateway sidecar is serving before its runner starts
 #
 # The fleet's own images are deliberately NOT used: the agent, benchmark and
 # gateway are megabytes-to-gigabytes of things none of these claims exercise. The
@@ -267,6 +268,29 @@ else
   esac
 fi
 rm -f "$G_ARGS"
+
+# ── H: an online run's gateway sidecar starts first and answers ─────────────
+# The renders above are offline, which the chart refuses a sidecar (#753), so
+# this is the one place the sidecar and its health gate run on a cluster.
+step "H: the gateway sidecar is serving before the runner starts"
+# shellcheck disable=SC2016
+H_ARGS=$(argsfile 'mkdir -p /output/task &&
+  wget -q -O- http://localhost:4000/v1/models >/dev/null && gw=up || gw=down &&
+  printf %s "{\"gateway\":\"$gw\",\"passed\":true}" > /output/task/result.json')
+render sidecar "$H_ARGS" --set benchmark=browsecomp --set task=0 \
+  --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+  --set outputSubPath=runs/browsecomp/stub/stub --set runId=r1 |
+  kubectl apply -f - >/dev/null || bad "H: the sidecar render did not apply"
+got=$(settle browsecomp-stub-task-0 120)
+case "$got" in
+  *Complete*)
+    case "$(onnode cat "$OUT/runs/browsecomp/stub/stub/r1/0/task/result.json")" in
+      *'"gateway":"up"'*) echo "PASS H: the sidecar answered the runner on localhost:4000" ;;
+      *) bad "H: the runner started before its gateway sidecar was serving" ;;
+    esac ;;
+  *) bad "H: the sidecar Job ended '$got', not Complete"; diagnose browsecomp-stub-task-0 ;;
+esac
+rm -f "$H_ARGS"
 
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
 [ "$fail" -eq 0 ]

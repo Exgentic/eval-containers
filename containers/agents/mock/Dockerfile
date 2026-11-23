@@ -42,12 +42,11 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 #!/bin/sh
 set -eu
 base="${OPENAI_BASE_URL:-${OPENAI_API_BASE:-}}"
-probe() {
-  [ -n "$base" ] || return 1
+get() {
   if command -v curl >/dev/null; then
-    curl -sSm 5 -o /dev/null "$base/v1/models"
+    curl -sSm 5 -o /dev/null "$1"
   elif command -v python3 >/dev/null; then
-    python3 - "$base/v1/models" <<'P'
+    python3 - "$1" <<'P'
 import sys, urllib.request, urllib.error
 try:
     urllib.request.urlopen(sys.argv[1], timeout=5)
@@ -55,11 +54,12 @@ except urllib.error.HTTPError:
     pass   # an answer is an answer
 P
   elif command -v wget >/dev/null; then
-    wget -qT 5 -O- "$base/v1/models" >/dev/null
+    wget -qT 5 -O- "$1" >/dev/null
   else
     return 2
   fi
 }
+probe() { [ -n "$base" ] || return 1; get "$base/v1/models"; }
 if probe; then gw=up; elif [ $? = 2 ]; then gw=unprobed; else gw=down; fi
 # A second, identical call. Nothing here needs it — a spend cap does: it is
 # checked BEFORE a call, so the first one always goes through and only a second
@@ -67,6 +67,11 @@ if probe; then gw=up; elif [ $? = 2 ]; then gw=unprobed; else gw=down; fi
 probe >/dev/null 2>&1 || true
 echo "mock agent, task: ${EVAL_TASK_ID:-?}, gateway: $gw at ${base:-<unset>}" >&2
 echo "gateway:$gw"
+# MOCK_REACH: URLs to try beyond the gateway, one `reach:<url>:<up|down>` line
+# each — how a test asks whether the agent can get out of an offline run (#753).
+for u in ${MOCK_REACH:-}; do
+  if get "$u" >/dev/null 2>&1; then echo "reach:$u:up"; else echo "reach:$u:down"; fi
+done
 echo "${EXPECTED_ANSWER:-OK}"
 E
 
