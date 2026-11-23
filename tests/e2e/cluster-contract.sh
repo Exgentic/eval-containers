@@ -268,5 +268,33 @@ else
 fi
 rm -f "$G_ARGS"
 
+# ── H: an offline run reaches its gateway and nothing else (#753) ───────────
+# Every other check of the egress policy renders it; this one runs under it. The
+# gateway probe is the control: without it, a pod with no network at all would
+# pass. kind enforces NetworkPolicy through kindnet (kind >= 0.24); on a CNI
+# that ignores it, the internet probe succeeds and this fails, as it should.
+step "H: the offline egress policy blocks the internet, allows the gateway"
+# shellcheck disable=SC2016
+H_ARGS=$(argsfile 'mkdir -p /output/task &&
+  wget -q -T 5 -O- http://stub-upstream:4000/v1/models >/dev/null && gw=up || gw=down;
+  wget -q -T 5 -O- http://1.1.1.1/ >/dev/null && net=open || net=blocked;
+  printf %s "{\"gw\":\"$gw\",\"net\":\"$net\"}" > /output/task/result.json')
+ROOT_H=runs/humaneval/stub/stub/egress
+render egress "$H_ARGS" --set task=0 --set outputSubPath="$ROOT_H" \
+  --set runId=egress --set nameSuffix=-egress |
+  kubectl apply -f - >/dev/null || bad "H: the egress render did not apply"
+got=$(settle humaneval-stub-task-0-egress 120)
+case "$got" in
+  *Complete*)
+    r=$(onnode cat "$OUT/$ROOT_H/egress/0/task/result.json")
+    case "$r" in
+      *'"gw":"up"'*'"net":"blocked"'*) echo "PASS H: gateway reachable, internet blocked" ;;
+      *'"net":"open"'*) bad "H: an offline runner reached the internet (got: $r)" ;;
+      *) bad "H: the offline runner could not reach its gateway (got: ${r:-<empty>})" ;;
+    esac ;;
+  *) bad "H: the egress Job ended '$got'"; diagnose humaneval-stub-task-0-egress ;;
+esac
+rm -f "$H_ARGS"
+
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
 [ "$fail" -eq 0 ]
