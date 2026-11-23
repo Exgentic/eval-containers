@@ -68,7 +68,24 @@ export default function (pi) {
   });
 }
 X
-exec pi --no-session -e "$PI_CODING_AGENT_DIR/reply-cap.js" -p --model "eval-containers/${MODEL}" "$TASK"
+# pi's bash tool has no default timeout: a command the model starts without one
+# that never returns (a watch-mode test runner, a deadlocked script) blocks the
+# agent until EVAL_TIMEOUT, and the task loses its verdict (#744, dashboard #444).
+# Give such a call 600 s, Claude Code's own most; on timeout pi kills the
+# command's process group and tells the model, which can retry with its own
+# timeout. A positive timeout the model sets is kept. The cost: a long command
+# the model starts without one (a full build or test suite) is now cut at 600 s
+# where it used to finish, and pi's tool description still says there is no
+# default. This bounds one tool call, not the run, which EVAL_TIMEOUT still
+# bounds (agents rule 9).
+cat > "$PI_CODING_AGENT_DIR/bash-timeout.js" <<'X'
+export default function (pi) {
+  pi.on("tool_call", (event) => {
+    if (event.toolName === "bash" && !(event.input.timeout > 0)) event.input.timeout = 600;
+  });
+}
+X
+exec pi --no-session -e "$PI_CODING_AGENT_DIR/reply-cap.js" -e "$PI_CODING_AGENT_DIR/bash-timeout.js" -p --model "eval-containers/${MODEL}" "$TASK"
 E
 
 ENTRYPOINT ["/run.sh"]
