@@ -98,7 +98,7 @@ if [ -f "$TEMPLATE" ]; then
     BIFROST_ADMIN_USERNAME="eval"
     BIFROST_ADMIN_PASSWORD=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
     export BIFROST_ADMIN_USERNAME BIFROST_ADMIN_PASSWORD
-    ADMIN_AUTH='"auth_config": {"is_enabled": true, "admin_username": "env.BIFROST_ADMIN_USERNAME", "admin_password": "env.BIFROST_ADMIN_PASSWORD", "disable_auth_on_inference": true}, '
+    ADMIN_AUTH='"auth_config": {"is_enabled": true, "admin_username": "env.BIFROST_ADMIN_USERNAME", "admin_password": "env.BIFROST_ADMIN_PASSWORD", "disable_auth_on_inference": true}, '  # pragma: allowlist secret -- environment references, not credential values
     umask 077
     # SQLite persists static headers and inherits the warmed database mode for
     # its WAL. Protect the directory and existing database before engine boot.
