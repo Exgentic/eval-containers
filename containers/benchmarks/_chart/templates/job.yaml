@@ -8,8 +8,8 @@
 {{- if and ($v.perTask | default false) $v.datasetSize -}}
 {{- fail "per-task benchmarks bake one eval image per task and cannot use a dataset (Indexed) Job — run one Job per task (omit datasetSize)" -}}
 {{- end -}}
-{{- if and $v.gatewayEnabled (not (empty $v.apiKeyHeader)) -}}
-{{- fail "apiKeyHeader is supported only for direct provider runs; omit --gateway (or set gatewayEnabled=false)" -}}
+{{- if and $v.gatewayEnabled (not (empty $v.apiKeyHeader)) (ne $v.gatewayImage "bifrost") -}}
+{{- fail "apiKeyHeader supports direct providers or gatewayImage=bifrost only" -}}
 {{- end -}}
 apiVersion: batch/v1
 kind: Job
@@ -117,6 +117,9 @@ spec:
               valueFrom:
                 secretKeyRef: { name: eval-secrets, key: OPENAI_API_BASE }
             - { name: EVAL_MODEL,                  value: {{ $v.model | quote }} }
+            {{- with $v.apiKeyHeader }}
+            - { name: EVAL_API_KEY_HEADER,         value: {{ . | quote }} }
+            {{- end }}
             - { name: HOST,                        value: "127.0.0.1" }
             # shareProcessNamespace + sidecar pod model puts otelcol on localhost.
             {{- if $v.otelEnabled }}

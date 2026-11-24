@@ -81,7 +81,7 @@ pub struct RunArgs {
     #[arg(long)]
     model: Option<String>,
 
-    /// Header carrying the upstream key on direct-provider Job runs. Without it,
+    /// Header carrying the upstream key on direct-provider or Bifrost Job runs. Without it,
     /// OpenAI uses Authorization: Bearer, Anthropic x-api-key, and Gemini
     /// x-goog-api-key (maps to $EVAL_API_KEY_HEADER).
     #[arg(long, value_parser = credential_header_name)]
@@ -279,10 +279,11 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     if let Some(renamed) = renamed_env() {
         return Err(renamed);
     }
-    if args.api_key_header.is_some() && (args.gateway.is_some() || args.gateway_tag.is_some()) {
-        return Err(
-            "--api-key-header is for direct provider runs; omit --gateway/--gateway-tag".into(),
-        );
+    if args.api_key_header.is_some()
+        && (args.gateway.is_some() || args.gateway_tag.is_some())
+        && args.gateway.as_deref().unwrap_or("bifrost") != "bifrost"
+    {
+        return Err("--api-key-header supports direct providers or --gateway bifrost only".into());
     }
 
     // `--agent`, or the surface's default; a native-harness benchmark resolves
@@ -344,7 +345,7 @@ pub fn execute(registry: &str, args: RunArgs) -> Result<(), String> {
     }
 
     // Job-mode-only flags. Compose and container always include a gateway, so
-    // custom provider authentication belongs to Job mode's direct path. Silently
+    // custom provider authentication is supported here only in Job mode. Silently
     // ignoring any of these is worse than refusing it: a `--dataset` that did
     // nothing would run a single task and look like a dataset run in every log.
     for (set, flag) in [
@@ -1084,7 +1085,7 @@ mod tests {
             "an empty custom header must be rejected at the CLI boundary"
         );
 
-        for gateway in [["--gateway", "litellm"], ["--gateway-tag", "1.2.3"]] {
+        for gateway in [["--gateway", "litellm"], ["--gateway", "portkey"]] {
             let cli = Cli::try_parse_from([
                 "run",
                 "aime",
@@ -1100,7 +1101,7 @@ mod tests {
             .unwrap();
             let err = super::execute("ghcr.io/exgentic", cli.run).unwrap_err();
             assert!(
-                err.contains("omit --gateway/--gateway-tag"),
+                err.contains("--gateway bifrost only"),
                 "gateway conflict gave an operator-unhelpful error: {err}"
             );
         }
