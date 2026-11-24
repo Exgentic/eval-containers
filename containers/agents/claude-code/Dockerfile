@@ -88,16 +88,18 @@ fi
 # where the 100k share made a 64k window compact on every request). A launch's
 # lower compaction window or share is kept, as the cap is: it only compacts
 # sooner; a higher one is lowered to fit. At a cap up to 20000 the window is passed
-# as is, so Claude Code keeps its own rule (98k on a 131k model, 967k on a 1M one). The reply cap becomes
-# min(the launch's CLAUDE_CODE_MAX_OUTPUT_TOKENS or 32000, window/4): 32000 is what
-# Claude Code sends a model it doesn't know, and a model that thinks for its whole
-# reply needs it (a 20000 cap failed runs on such models, and Opus 4.8 overran it).
-# Since 2.1.329 the compaction request is the whole context plus its prompt (~1.6k)
-# at the full cap, and compaction reserves only min(cap, 20k), so at a 32000 cap
-# point + cap left 1k and a 150k window was overrun on the compaction request
-# itself (#765). So a cap past 20000 comes off the compaction window, C = window -
-# (cap - 20000): point + cap is window - 13k whatever the cap, as at 20000. Under
-# 100k C is set as the share above that puts the point in the same place.
+# as is, so Claude Code keeps its own rule (98k on a 131k model, 967k on a 1M
+# one). The reply cap is the launch's CLAUDE_CODE_MAX_OUTPUT_TOKENS, or 32000,
+# lowered to window/4, so a lower cap set for a model's output limit is kept.
+# 32000 is what Claude Code sends a model it doesn't know, and a model that
+# thinks for its whole reply needs it: at 20000 such models failed runs, and
+# Opus 4.8 overran it. Since 2.1.329 the compaction request is the whole context
+# plus its prompt (~1.6k) at the full cap, while compaction reserves only
+# min(cap, 20k), so a 32000 cap on the whole window left 1k and a 150k window
+# was overrun on the compaction request itself (#765). So a cap past 20000
+# comes off the compaction window, C = window - (cap - 20000), and point + cap
+# is window - 13k whatever the cap, as at 20000. Under 100k, where C can't go,
+# the share above puts the point in the same place.
 # Below 64000 it fails before the first call: the first request (system prompt
 # and tools) is ~22k tokens and the first after a compaction ~25k, and the
 # compaction point must clear that by a few turns or it compacts on every
