@@ -1,0 +1,69 @@
+name: Nightly hang
+
+# The hang suite (tests/run/hang): each covered agent runs against a mock model
+# that asks for a shell command that never returns, and must end the task by its
+# own bound, before EVAL_TIMEOUT (#744). The tests are #[ignore] (each takes up
+# to ~13 min), so nothing else runs them; this is where a regression of an
+# agent's bound fails. Self-contained: a stdlib mock, no API keys.
+# AGENTS_SMOKE_BUILD=1 makes the suite build its agents-smoke--<agent> images on
+# the fresh runner. Full suite, never a change-derived subset (verification
+# rule 16). Mirrors nightly-agents-smoke.yml.
+
+on:
+  # schedule + workflow_dispatch fire only on the default branch, so the nightly
+  # runs on main.
+  schedule:
+    - cron: '41 5 * * *' # nightly, 05:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read # pull GHCR-hosted upstream base images without anonymous rate limits
+
+concurrency:
+  group: nightly-hang-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash # explicit `bash` => `-eo pipefail`
+
+jobs:
+  hang:
+    name: hang suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          shared-key: agents-smoke
+
+      # NB: deliberately NO docker/setup-buildx-action — its docker-container
+      # builder can't see locally-baked bases (see nightly-replay.yml).
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run the hang suite
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+          AGENTS_SMOKE_BUILD: '1'
+        run: |
+          set +e
+          cargo test -p eval-containers-tests-run --test hang \
+            -- --ignored --nocapture 2>&1 | tee hang.log
+          rc=${PIPESTATUS[0]}
+          if grep -qE "running 0 tests" hang.log; then
+            echo "::error::the hang suite ran 0 tests"; exit 1
+          fi
+          exit "${rc}"
