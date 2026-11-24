@@ -55,7 +55,7 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 13. **Version is a build arg.** A single `ARG AGENT_VERSION=<pin>` MUST name the default version and drive both the `eval.agent.version` label and `/opt/agent/VERSION`.
 
-14. **Labels.** Every agent image MUST include labels: `eval.type`, `eval.agent.name`, `eval.agent.description`, `eval.agent.version`.
+14. **Labels.** Every agent image MUST include labels: `eval.type`, `eval.agent.name`, `eval.agent.description`, `eval.agent.version`, `eval.agent.versions`.
 
 ### Combination
 
@@ -99,15 +99,15 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 
 ### Agent version
 
-30. **Held versions are declared.** The agent image MUST hold, side by side, exactly the upstream versions a single `ARG AGENT_VERSIONS` lists.
+30. **Declared versions are installed.** Every image that runs the agent, the combination image included, MUST hold, side by side, exactly the upstream versions `ARG AGENT_VERSIONS` lists.
 
-31. **The default is held.** `AGENT_VERSIONS` MUST include `AGENT_VERSION`.
+31. **The default is declared.** `ARG AGENT_VERSIONS` MUST include `AGENT_VERSION`.
 
-32. **Held versions are labelled.** The `eval.agent.versions` label MUST carry the `AGENT_VERSIONS` list.
+32. **The versions are labelled.** `eval.agent.versions` MUST list exactly the versions in `ARG AGENT_VERSIONS`.
 
 33. **`EVAL_AGENT_VERSION` picks one.** A run MUST execute the version `EVAL_AGENT_VERSION` names, or `AGENT_VERSION` when it is unset.
 
-34. **Unheld version is refused.** A run MUST fail before the agent starts when `EVAL_AGENT_VERSION` names a version `AGENT_VERSIONS` does not list.
+34. **Undeclared version is refused.** A run MUST fail before the agent starts when `EVAL_AGENT_VERSION` names a version the image does not hold.
 
 35. **The run records its version.** A run MUST write the version it executed to `/output/agent/version.json`.
 
@@ -128,4 +128,4 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT", "SHOULD", "S
 | 2026-09-15 | Added rules 23–24 (Native, #577): `agents/native` is the one non-agent — its `/run.sh` execs the harness a native-harness benchmark ships at `/harness.sh` (benchmarks rule 12a), and it pairs only with such a benchmark (23); rules 2, 3, 4, 7, 8 and 18 do not apply to it (24). It exists so a benchmark that brings its own agent still has exactly one eval image, named and built like every other, instead of one per agent that never runs. Rule 4 gained the pointer. |
 | 2026-11-11 | Added rules 25–28 (Model context, #741, Exgentic/dashboard#428): an agent sizes its context for a model it does not know from a window it assumes itself, so on a model whose window is smaller every call past that window is rejected and the run fails. `EVAL_MODEL_CONTEXT_WINDOW` states the window once, for every agent, and a supporting agent's `/run.sh` takes it from there, never from the model's name (25) — the upstream agent's own knowledge of a model it recognizes is not ours to govern. It sets the agent's reserved output, and its compaction point where it has one, within the window (26), so the two are derived together rather than set apart by hand; the point follows the agent's own rule, with no headroom added below it, because we do not optimize the agent. Rule 26 binds the settings, not every request: one large tool result can still carry a turn past any compaction point. An agent with no compaction point (opencode, whose proactive autocompact is off) fits only its reserved output, so each request fits but a run still fails once its prompt fills the window; without it, a reply cap larger than the window rejects every call. An empty `EVAL_MODEL_CONTEXT_WINDOW` is unset: the agent assumes its own window. A malformed value fails the run before it starts (27); an agent that does not read the variable yet is warned about, not refused (28) — it runs as it does today, so a launch that sets one window across a mixed set of agents still runs every one. The window is a launch value under `EVAL_*`, so the recorded configuration and the resume check already cover it ([output/RULES.md](../output/RULES.md) 16, 23). |
 | 2026-11-22 | Added rule 29 (vendor model identity, #765): an agent whose CLI is built for its vendor's models MAY hand that CLI the run's model name, so the CLI uses its own knowledge of the model (window, reply cap, effort levels, system prompt), as a user would with `--model`. Rule 25 forbade `/run.sh` taking a window from the name; it did not say whether passing the name to an agent that sizes itself by it counts, and claude-code 2.1.329 (#768) needs the name to run a Claude model as that model. `/run.sh` still takes a window only from `EVAL_MODEL_CONTEXT_WINDOW`. |
-| 2026-11-23 | Rule 13 amended and rules 30–35 added (Agent version, #786): the old rule 13 forbade a runtime override, while principle 9, the agent READMEs and `charts/eval` promised one, so a run that set `EVAL_AGENT_VERSION` silently ran the pin. Rule 13 keeps the pin as the one default, driving `eval.agent.version` and `/opt/agent/VERSION`. The image holds the few versions a single `ARG AGENT_VERSIONS` declares upfront, not every past pin, so it does not grow with each pin bump (principle 10) (30); the default is one of them (31); `eval.agent.versions` shows what an image holds without running it (32). A run executes the version `EVAL_AGENT_VERSION` names, the default when unset (33), fails before the agent starts on one the list does not hold (34), and records what it executed in `/output/agent/version.json` (35). Selecting among versions installed at build keeps each image's contents fixed and needs no network at run time. |
+| 2026-11-23 | Rule 13 amended, rule 14 extended and rules 30–35 added (Agent version, #786): the old rule 13 forbade a runtime override, while principle 9, the agent READMEs and `charts/eval` promised one, so a run that set `EVAL_AGENT_VERSION` silently ran the pin. Rule 13 keeps the pin as the one default, driving `eval.agent.version` and `/opt/agent/VERSION`. Every image that runs the agent holds exactly the versions `ARG AGENT_VERSIONS` declares (30), the default among them (31), listed in `eval.agent.versions` (14, 32) so anyone can see what an image holds without running it. The list is short and declared upfront rather than every past pin, so images stay small (principle 10). A run executes the version `EVAL_AGENT_VERSION` names, the default when unset (33), fails before the agent starts on one the image does not hold (34), and records what it executed in `/output/agent/version.json` (35). Selecting among versions installed at build keeps each image's contents fixed and needs no network at run time. |
