@@ -36,7 +36,7 @@ never returns (a watch-mode test runner, a deadlocked script) otherwise holds th
 task until `EVAL_TIMEOUT` (#744). The bash tool's description in each request
 says so, so a model starting a long command, such as a full build, can set a
 longer timeout; one started without is cut at 600 s and the model is told. It
-then runs
+only helps a run whose `EVAL_TIMEOUT` is over 600 s. It then runs
 `pi --no-session -e reply-cap.js -e bash-timeout.js -p --model eval-containers/$MODEL "$TASK"` — `-p` is
 non-interactive print mode (tools run unattended, no permission prompts),
 `--no-session` keeps each run self-contained, and `PI_OFFLINE=1` disables the
