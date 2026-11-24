@@ -1324,6 +1324,9 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
     );
     assert_eq!(cap("64000"), "50000", "a higher cap is lowered to window/4");
     assert_eq!(cap("x"), "32000", "a non-numeric cap means 32000");
+    // 2^63 wraps negative in bash arithmetic: a value past 9 digits is unset.
+    const HUGE: &str = "9223372036854775808";
+    assert_eq!(cap(HUGE), "32000", "a cap past 9 digits means 32000");
     let set = |window: &str, model: &str, name: &str, value: &str| {
         let mut extra = vec![(name, value)];
         if !model.is_empty() {
@@ -1380,12 +1383,26 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
     assert_eq!(unknown("1048576"), "32000 1036576 unset");
     assert_eq!(unknown("200000"), "32000 188000 unset");
     assert_eq!(unknown("100000"), "25000 unset 77");
-    let tiny = claude_bash(&cc, &[("EVAL_MODEL_CONTEXT_WINDOW", "63999")]);
-    assert_eq!(
-        tiny.status.code(),
-        Some(2),
-        "a window below 64000 must fail before the first call"
-    );
+    for model in ["", "glm-5-3"] {
+        assert_eq!(
+            set("262144", model, auto, HUGE),
+            "250144",
+            "{model}: a compaction window past 9 digits is lowered to fit"
+        );
+        assert_eq!(
+            set("64000", model, pct, HUGE),
+            set("64000", model, pct, "95"),
+            "{model}: a share past 9 digits is lowered to fit"
+        );
+    }
+    for window in ["63999", "1000000000", HUGE] {
+        let out = claude_bash(&cc, &[("EVAL_MODEL_CONTEXT_WINDOW", window)]);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "window {window}: one below 64000 or past 9 digits must fail before the first call"
+        );
+    }
 }
 
 /// Untold, a model Claude Code knows keeps its own window and reply cap; one it
