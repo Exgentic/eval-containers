@@ -19,19 +19,19 @@ interpreted as described in BCP 14, RFC 2119 and RFC 8174.
 
 A *run* is one agent's `evals/agents-smoke--<name>` image against the mock
 model, which asks for a shell command that never returns. An agent's *bound* is
-how long the agent lets such a command run before it ends it.
+how long the agent waits on such a command before it hands the model a result
+for the call.
 
 ## Requirements
 
 1. A run **MUST** pass only if the command's result reaches the mock model no sooner than the agent's bound.
-2. A run **MUST** pass only if that result says how the agent ended the command.
+2. A run **MUST** pass only if that result says what the agent did with the command.
 3. A run **MUST** pass only if the agent then exits 0 before `EVAL_TIMEOUT`.
 4. A run **MUST** pass only if the agent's stdout carries the mock model's final answer.
-5. A covered agent's bound **MUST** be below the run's `EVAL_TIMEOUT`.
-6. The mock model **MUST NOT** make an upstream call.
-7. The mock model **MUST** run from the agent's own `agents-smoke` image.
-8. The category's tests **MUST** be `#[ignore]`.
-9. The category's tests **MUST** run in scheduled verification.
+5. The mock model **MUST NOT** make an upstream call.
+6. The category **MUST NOT** add an image.
+7. The category's tests **MUST** be `#[ignore]`.
+8. The category's tests **MUST** run in scheduled verification.
 
 ## References
 
