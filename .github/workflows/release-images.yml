@@ -1267,7 +1267,12 @@ jobs:
     needs: [merge, enumerate]
     if: always() && (needs.merge.result == 'success' || inputs.dry_run) && needs.enumerate.outputs.pertask_combo_shards != '[]'
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 120
+    # A shard of ~100 combos on heavy per-task testbed bases: amd64 shards that
+    # finished on run 45142936186 took up to 117 min, and the 23 that hit the old
+    # 120 were cut off still building (two had already finished bake). Not the 360
+    # max: extra time only helps a shard that is progressing, and every minute of
+    # it holds a runner the shards queued behind it are waiting for.
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       max-parallel: ${{ fromJson(needs.enumerate.outputs.maxpar) }}
@@ -1404,10 +1409,15 @@ jobs:
   # ── merge per-task combos' per-arch tags into :TAG manifest lists ─────────
   merge-pertask-combos:
     needs: [combos-pertask, enumerate]
-    # Runs on a PARTIAL build (success OR failure), like `merge`: one failed shard
-    # out of ~200 must not leave every other combo's :TAG unstitched. A combo that
-    # did not build has no per-arch tag and is counted as skipped below.
-    if: always() && (needs.combos-pertask.result == 'success' || needs.combos-pertask.result == 'failure') && needs.enumerate.outputs.pertask_combo_shards != '[]'
+    # Runs on a PARTIAL build (success, failure OR cancelled), like `merge`: one
+    # failed shard out of ~200 must not leave every other combo's :TAG unstitched.
+    # A shard that hits its timeout reads `cancelled`, not `failure`; without it
+    # one timed-out shard skipped the stitch for all ~10,000 built combos (run
+    # 45142936186). `!cancelled()`, not `always()`: it is true unless the whole
+    # run was cancelled, so a timed-out shard still stitches, but a run a person
+    # cancels does not go on to rewrite :TAG. A combo that did not build has no
+    # per-arch tag and is counted as skipped below.
+    if: ${{ !cancelled() && (needs.combos-pertask.result == 'success' || needs.combos-pertask.result == 'failure' || needs.combos-pertask.result == 'cancelled') && needs.enumerate.outputs.pertask_combo_shards != '[]' }}
     runs-on: ubuntu-latest
     # One job per shard, mirroring combos-pertask: fleet-tag.sh costs 3-10 s per
     # ref (run 34928071602's merge: 88 refs in 874 s) and a nightly lists
