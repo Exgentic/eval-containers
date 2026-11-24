@@ -106,12 +106,15 @@ fi
 # request (~34k at 64k, the tests/run/context window).
 if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   W=$EVAL_MODEL_CONTEXT_WINDOW
-  if [ "$W" -lt 64000 ]; then
-    echo "claude-code: EVAL_MODEL_CONTEXT_WINDOW=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
+  # A launch value is used only if it is 1-9 digits: a longer one wraps in bash
+  # arithmetic (a cap of 2^63 goes negative) and is treated as unset.
+  N='^[1-9][0-9]{0,8}$'
+  if ! [[ "$W" =~ $N ]] || [ "$W" -lt 64000 ]; then
+    echo "claude-code: EVAL_MODEL_CONTEXT_WINDOW=$W must be 64000 (the smallest window it fits, tests/run/context) to 999999999" >&2
     exit 2
   fi
   OUT=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
-  [[ "$OUT" =~ ^[1-9][0-9]*$ ]] || OUT=32000
+  [[ "$OUT" =~ $N ]] || OUT=32000
   OUT=$(( OUT < W / 4 ? OUT : W / 4 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
   # The compaction window C and the cap's share of it, RES (at most 20k).
@@ -120,12 +123,12 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   if [ "$CC_KNOWS" = 1 ]; then
     if [ "$C" -ge 100000 ]; then
       AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$C}
-      [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$C" ]] || AUTO=$C
+      [[ "$AUTO" =~ $N && "$AUTO" -le "$C" ]] || AUTO=$C
       export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
     else
       PCT=$(( (W - OUT - 13000) * 100 / (100000 - RES) ))
       SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
-      [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
+      [[ "$SET" =~ $N && "$SET" -le "$PCT" ]] || SET=$PCT
       export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
     fi
   else
@@ -134,13 +137,13 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
     A=$(( C < 100000 ? W : C ))
     if [ -n "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" ] || [ "$A" -lt "$W" ]; then
       AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$A}
-      [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$A" ]] || AUTO=$A
+      [[ "$AUTO" =~ $N && "$AUTO" -le "$A" ]] || AUTO=$A
       export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
     fi
     if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ] || [ "$A" -gt "$C" ]; then
       PCT=$(( (W - OUT - 13000) * 100 / (W - RES) ))
       SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
-      [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
+      [[ "$SET" =~ $N && "$SET" -le "$PCT" ]] || SET=$PCT
       export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
     fi
   fi

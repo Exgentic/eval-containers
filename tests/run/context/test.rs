@@ -10,6 +10,12 @@
 //!     rejected before any compaction. This proves the mock enforces the window,
 //!     so the told run's pass means something.
 //!
+//! claude-code also runs told against a 200k and a 100k mock, where its reply cap
+//! passes 20000 (32000, and window/4 = 25000) and comes off its compaction
+//! window. Those sizes have no not-told control, so the mock's enforcement of
+//! the larger windows is not separately proven there; the 64k control stands
+//! for the mock's check, which is the same at every size.
+//!
 //! Each run also checks the `context_window` `model/result.json` records (output
 //! rule 9): the window when told, null when not.
 //!
@@ -34,13 +40,19 @@ use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 #[path = "../common/mod.rs"]
 mod common;
 
-/// The mock's window. Small enough that a run compacts within a few dozen
-/// turns, large enough for each agent's system prompt and a compacted context.
+/// The mock's window for every agent's told and not-told runs. Small enough
+/// that a run compacts within a few dozen turns, large enough for each agent's
+/// system prompt and a compacted context. claude-code's extra told runs use
+/// 200k and 100k.
 const WINDOW: u64 = 64_000;
 
-/// How long a run may take before the test gives up: the agent's own
-/// EVAL_TIMEOUT (180s, set by `start_agent`) plus container start.
-const RUN_TIMEOUT: Duration = Duration::from_secs(240);
+/// The agent's EVAL_TIMEOUT at a `window`: 180s per 64k, since the mock adds
+/// ~2.8k tokens a turn and a larger window takes that many more turns to fill
+/// (~10 at 64k, ~50 at 200k). The turn count itself is fixed by the bytes the
+/// mock sends, not by speed, so its 80-turn stop needs no scaling.
+fn eval_timeout(window: u64) -> Duration {
+    Duration::from_secs(180 * window.div_ceil(WINDOW))
+}
 
 /// Events that end a run: the mock answered with the final text, rejected a
 /// request, or hit its turn limit.
@@ -135,13 +147,15 @@ async fn run(agent: &str, window: u64, told: bool) -> Vec<String> {
         .join(format!("{agent}-{arm}-{window}-{nanos}"));
     std::fs::create_dir_all(&out).expect("create output dir");
     let mock = start_mock(agent, &net, &host, window).await;
-    let env: Vec<(&str, String)> = if told {
-        vec![("EVAL_MODEL_CONTEXT_WINDOW", window.to_string())]
-    } else {
-        vec![]
-    };
+    let timeout = eval_timeout(window);
+    let mut env = vec![("EVAL_TIMEOUT", timeout.as_secs().to_string())];
+    if told {
+        env.push(("EVAL_MODEL_CONTEXT_WINDOW", window.to_string()));
+    }
     let _agent = common::start_agent(agent, &net, &host, &out, &env).await;
-    let deadline = Instant::now() + RUN_TIMEOUT;
+    // The agent's own timeout plus container start.
+    let run_timeout = timeout + Duration::from_secs(60);
+    let deadline = Instant::now() + run_timeout;
     let seen = loop {
         let seen = events(&mock).await;
         if seen.iter().any(|e| TERMINAL.contains(&e.as_str())) || Instant::now() > deadline {
@@ -152,7 +166,7 @@ async fn run(agent: &str, window: u64, told: bool) -> Vec<String> {
     if !seen.iter().any(|e| TERMINAL.contains(&e.as_str())) {
         let log = |f: &str| std::fs::read_to_string(out.join("agent").join(f)).unwrap_or_default();
         panic!(
-            "{agent} ({arm}): no terminal event in {RUN_TIMEOUT:?}; mock saw {seen:?}\n\
+            "{agent} ({arm}): no terminal event in {run_timeout:?}; mock saw {seen:?}\n\
              agent stdout:\n{}\nagent stderr:\n{}",
             log("stdout.log"),
             log("stderr.log")
