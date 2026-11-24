@@ -32,9 +32,6 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 set -euo pipefail
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
-# A launch may set it (0 lets Claude Code send its experimental beta headers);
-# unset, they stay off, for a proxy that may not support them.
-export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-1}"
 # Run as the run's model, as a user would with --model, so Claude Code applies
 # what it knows of it. MODEL is the run's model as the agent sees it; the edge
 # pins every call to the run's model whatever name goes out, so the name changes
