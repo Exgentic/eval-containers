@@ -1,0 +1,20 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
+  runner:
+    extends:
+      file: ../../compose/runner-native.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/chipbench--native:latest
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    environment:
+      BENCHMARK: chipbench
+      # One model call (up to 10 tries, 20 s apart) + a 30 s simulation.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1200}
+      TIMEOUT: ${EVAL_TIMEOUT:-1200}
