@@ -136,6 +136,11 @@ const SPECIAL: &[(&str, &str)] = &[
     // itself — so there is nothing for a gold solution to feed, and gold and
     // no-op are indistinguishable by construction.
     ("zerobench-agentic", "0"),
+    // chipbench is native too, but unlike the ones above its gold is checkable:
+    // solution.sh grades the golden RefModule (renamed TopModule) with the same
+    // grade_sv.py the harness uses and writes the reward itself, and the no-op
+    // leaves /grade.sh's fail-closed 0.0. Shared-env, so task 0 is representative.
+    ("chipbench", "0"),
 ];
 
 fn oracle(args: &[&str]) -> bool {

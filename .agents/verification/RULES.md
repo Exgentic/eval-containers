@@ -108,6 +108,7 @@ keeps its rules beside the Rust that enforces them, grouped by **stage** under
 - [gateways](../../tests/run/gateways/RULES.md) — gateway tests
 - [agents](../../tests/run/agents/RULES.md) — agent test rules
 - [context](../../tests/run/context/RULES.md) — agents told the model's window stay inside it
+- [hang](../../tests/run/hang/RULES.md) — an agent whose shell command never returns still ends the task
 
 A category's `RULES.md` is the markdown half of a catalog whose entries pair
 one-to-one with the `const RULES: &[Rule]` arrays in its sibling `*.rs`; the
@@ -133,3 +134,4 @@ tests rather than moving into `.agents/`.
 | 2026-06-15 | Rule 10: replay fixture format migrated from LiteLLM `StandardLoggingPayload` (`*.trajectory.jsonl`) to native OTLP/JSON (`*.traces.jsonl`, OpenTelemetry `gen_ai` spans). `models/replay` and the `task_inspection` rules now consume OTLP; a stopgap converter bridges the still-`trajectory.jsonl` recording until native OTLP recording lands (see [tests/run/replay/RULES.md](../../tests/run/replay/RULES.md)). |
 | 2026-08-11 | Added the Coverage selection section (rules 14–16) after the change-detection system landed with nothing governing it. 14: contribution verification must exercise what a change affects — the per-PR gate now selects replay fixtures, agent smoke, and benchmark oracles from the build-input hash diff, base-image cascades included, and nothing required that. 15: a machine-generated selection matching nothing must fail and an uncovered affected component must be reported — two nightly filters previously exited 0 on a zero match. 16: scheduled verification stays unselected and reports upstream movement — on a quiet day the affected set is empty, so filtering the nightlies by it would test nothing exactly when drift detection matters most (a dataset 404'd unnoticed for months that way). |
 | 2026-11-12 | Added the [context](../../tests/run/context/RULES.md) category: claude-code and codex run against a mock model that enforces a 64k window, told it (`EVAL_MODEL_CONTEXT_WINDOW`) and not told it. The mock is a stdlib script run from the agent's own eval image, so the category adds no image. |
+| 2026-11-24 | Added the [hang](../../tests/run/hang/RULES.md) category: claude-code and pi run against a mock model that asks for a shell command that never returns, and must end the task by their own bound, before `EVAL_TIMEOUT` (#744). The mock is a stdlib script run from the agent's own eval image, so the category adds no image. |

@@ -66,9 +66,6 @@ RUN cat > /run.sh <<'E' && chmod +x /run.sh
 set -euo pipefail
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-http://model:4000}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
-# A launch may set it (0 lets Claude Code send its experimental beta headers);
-# unset, they stay off, for a proxy that may not support them.
-export CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS="${CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:-1}"
 # Run as the run's model (MODEL) — see containers/agents/claude-code/Dockerfile.
 claude_knows() {
   case "${1%%\[*}" in
