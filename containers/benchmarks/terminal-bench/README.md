@@ -37,8 +37,10 @@ per-task image in two steps (benchmarks/RULES.md 24g):
 2. overlay our eval pipeline (`Dockerfile`, `FROM ${TASK_BASE}`) → instruction,
    root-only tests, grader, entrypoint.
 
-Both steps fetch the upstream task dir at the pinned `TBENCH_REF` (in `build.sh`)
-directly from the builder — no local checkout.
+Both steps use the upstream task dir at the pinned `TBENCH_REF` (in `build.sh`):
+step 1 from a scratch checkout, so a task env can be patched before it builds
+(`fix-git`'s clone of a deleted repo is pointed at a mirror, #770), step 2
+directly from the builder.
 
 ## Oracle
 
