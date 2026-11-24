@@ -1211,11 +1211,12 @@ fn claude_code_window_script(agent: &str) -> String {
 /// window and the told one lowers it (window = min(1M, max(100k,
 /// CLAUDE_CODE_AUTO_COMPACT_WINDOW)) less min(reply cap, 20k), compaction at that
 /// less 13k, or the CLAUDE_AUTOCOMPACT_PCT_OVERRIDE share of it if lower). A model
-/// it doesn't know is given the window (CLAUDE_CODE_MAX_CONTEXT_TOKENS) and
-/// compacts at window - min(cap, 20k) - 13k. Point plus cap must leave HEADROOM:
-/// since 2.1.3xx the compaction request is the whole context plus its prompt at
-/// the full cap, sent after the turn that crossed the point. With a 32000 cap the
-/// sum left 1k, and a 131k window was overrun (#765).
+/// it doesn't know is given the window (CLAUDE_CODE_MAX_CONTEXT_TOKENS), lowered
+/// the same way, and compacts at window - min(cap, 20k) - 13k. Point plus cap must
+/// leave HEADROOM: since 2.1.3xx the compaction request is the whole context plus
+/// its prompt at the full cap, sent after the turn that crossed the point. A
+/// 32000 cap on an unlowered window left 1k, and a 131k window was overrun
+/// (#765), so a cap past 20k comes off the compaction window.
 #[test]
 fn claude_code_fits_the_window_it_is_told() {
     /// The compaction prompt (~1.6k) plus a turn of tool output (~10k).
@@ -1245,7 +1246,9 @@ o=$CLAUDE_CODE_MAX_OUTPUT_TOKENS; cl=$(( w - (o < 20000 ? o : 20000) )); pt=$(( 
 if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ]; then p=$(( cl * CLAUDE_AUTOCOMPACT_PCT_OVERRIDE / 100 )); pt=$(( p < pt ? p : pt )); fi
 echo ${CLAUDE_CODE_MAX_CONTEXT_TOKENS:-unset} $(( pt + o )) $pt"#;
     let unknown = r#"w=$CLAUDE_CODE_MAX_CONTEXT_TOKENS; o=$CLAUDE_CODE_MAX_OUTPUT_TOKENS
+a=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$w}; a=$(( a > 100000 ? a : 100000 )); w=$(( a < w ? a : w ))
 cl=$(( w - (o < 20000 ? o : 20000) )); pt=$(( cl - 13000 ))
+if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ]; then p=$(( cl * CLAUDE_AUTOCOMPACT_PCT_OVERRIDE / 100 )); pt=$(( p < pt ? p : pt )); fi
 echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-unset} $(( pt + o )) $pt"#;
     for window in [
         1_048_576u64,
@@ -1253,7 +1256,9 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
         200_000,
         131_072,
         110_000,
+        106_000,
         100_000,
+        90_000,
         64_000,
     ] {
         let ws = window.to_string();
@@ -1280,9 +1285,11 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
             );
             fit(what, got[1].parse().unwrap(), got[2].parse().unwrap());
         }
-        // A model Claude Code doesn't know is given the window and compacts by
-        // its own rule on it: no compaction window or share, which assume a 100k
-        // window and made a 64k one compact on every request (#765).
+        // A model Claude Code doesn't know is given the window and, at a cap up
+        // to 20k, compacts by its own rule on it: no compaction window or share,
+        // which assume a 100k window and made a 64k one compact on every request
+        // (#765). A cap past 20k lowers the compaction window, or under 100k the
+        // share of the window.
         for (what, extra) in [
             ("an open model", vec![("MODEL", "glm-5-3")]),
             (
@@ -1292,11 +1299,13 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
         ] {
             let got = run(&ws, &extra, unknown);
             let got: Vec<&str> = got.split_whitespace().collect();
-            assert_eq!(
-                got[..2],
-                ["unset", "unset"],
-                "window {window}, {what}: given the window only"
-            );
+            if window / 4 <= 20_000 {
+                assert_eq!(
+                    got[..2],
+                    ["unset", "unset"],
+                    "window {window}, {what}: given the window only"
+                );
+            }
             fit(what, got[2].parse().unwrap(), got[3].parse().unwrap());
         }
     }
@@ -1308,8 +1317,13 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
         )
     };
     assert_eq!(cap("8000"), "8000", "a lower cap the launch set is kept");
-    assert_eq!(cap("64000"), "20000", "a higher cap is lowered to fit");
-    assert_eq!(cap("x"), "20000", "a non-numeric cap means 20000");
+    assert_eq!(
+        cap("25000"),
+        "25000",
+        "a cap past 20000 the launch set is kept"
+    );
+    assert_eq!(cap("64000"), "50000", "a higher cap is lowered to window/4");
+    assert_eq!(cap("x"), "32000", "a non-numeric cap means 32000");
     let set = |window: &str, model: &str, name: &str, value: &str| {
         let mut extra = vec![(name, value)];
         if !model.is_empty() {
@@ -1332,8 +1346,8 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
         );
         assert_eq!(
             set("131072", model, auto, "200000"),
-            "131072",
-            "{who}: a higher window is lowered to fit"
+            "119072",
+            "{who}: a higher window is lowered to fit, less the cap past 20000"
         );
         assert_eq!(
             set("64000", model, pct, "10"),
@@ -1353,6 +1367,19 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
         "72",
         "an unknown model: a higher share is lowered to fit"
     );
+    // A cap past 20000 comes off the compaction window, so point + cap is
+    // window - 13k as at 20000; under 100k, where that window can't go, a share
+    // puts the point there: (100000 - 25000 - 13000) * 100 / (100000 - 20000) = 77.
+    let unknown = |window: &str| {
+        run(
+            window,
+            &[("MODEL", "glm-5-3")],
+            "echo $CLAUDE_CODE_MAX_OUTPUT_TOKENS ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-unset}",
+        )
+    };
+    assert_eq!(unknown("1048576"), "32000 1036576 unset");
+    assert_eq!(unknown("200000"), "32000 188000 unset");
+    assert_eq!(unknown("100000"), "25000 unset 77");
     let tiny = claude_bash(&cc, &[("EVAL_MODEL_CONTEXT_WINDOW", "63999")]);
     assert_eq!(
         tiny.status.code(),
