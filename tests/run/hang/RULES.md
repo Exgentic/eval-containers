@@ -1,47 +1,50 @@
 # Hang test rules
 
-The hang category answers one question per covered agent: **when a shell
-command the model starts never returns, does the agent still end the task by
-itself, before `EVAL_TIMEOUT`?** A task that hangs instead holds its pod until
-the limit and is scored `timeout`, losing the model's work (#744).
+**Status:** Active
+**Date:** November 2026
 
-Parent: [.agents/verification/RULES.md](../../../.agents/verification/RULES.md)
+## Abstract
 
-## Scope
+The hang category verifies that an agent ends a task by itself, before
+`EVAL_TIMEOUT`, when a shell command the model starts never returns. A task that
+hangs instead holds its pod until the limit and is scored `timeout`, losing the
+model's work (#744). These rules fix what a passing run must show; they pair
+with `test.rs` and its mock model, `mock.py`.
 
-1. **One run per agent.** The agent's `evals/agents-smoke--<name>` image runs
-   against the mock with `EVAL_TIMEOUT=1200`. The run passes when the call's
-   result reached the mock no sooner than the agent's bound and says how the
-   agent ended the command, and the agent then exited 0 (`agent/.exit-code`)
-   with the final answer on stdout. A result that comes back sooner (a refused
-   or broken tool call) fails, so the bound is what the run proves. Exit 124
-   (137 after the kill grace) means the agent hung until `EVAL_TIMEOUT`.
+## Terminology
 
-2. **Agents covered:** claude-code (its Bash tool backgrounds the command at
-   120 s and stops it 10 min after the final answer) and pi (the image's 600 s
-   default bash timeout). An agent is added with one `hang!` line in `test.rs`
-   giving its bound and the text its result shows, once its image bounds such a
-   command under `EVAL_TIMEOUT`.
+The key words **MUST**, **MUST NOT**, **REQUIRED**, **SHALL**, **SHALL NOT**,
+**SHOULD**, **SHOULD NOT**, **RECOMMENDED**, **MAY**, and **OPTIONAL** are to be
+interpreted as described in BCP 14, RFC 2119 and RFC 8174.
 
-3. **`#[ignore]` by default.** Each run starts two containers and takes 10–13
-   minutes, the agents' own bounds. Like the agents suite, this is
-   release-verification territory, not per-PR.
+A *run* is one agent's `evals/agents-smoke--<name>` image against the mock
+model, which asks for a shell command that never returns. An agent's *bound* is
+how long the agent lets such a command run before it ends it.
 
-## The mock
+## Requirements
 
-4. **A standalone script, not `models/replay`.** `mock.py` (stdlib Python)
-   serves Anthropic Messages and OpenAI Chat Completions on :4000. It runs as a
-   second container from the agent's own `evals/agents-smoke--<name>` image
-   (agents-smoke is `FROM python:3.12-slim`), so the suite adds no image and no
-   replay code. It makes no upstream call, so no credential is involved (parent
-   rule 7).
+1. A run **MUST** pass only if the command's result reaches the mock model no sooner than the agent's bound.
+2. A run **MUST** pass only if that result says how the agent ended the command.
+3. A run **MUST** pass only if the agent then exits 0 before `EVAL_TIMEOUT`.
+4. A run **MUST** pass only if the agent's stdout carries the mock model's final answer.
+5. A covered agent's bound **MUST** be below the run's `EVAL_TIMEOUT`.
+6. The mock model **MUST NOT** make an upstream call.
+7. The mock model **MUST** run from the agent's own `agents-smoke` image.
+8. The category's tests **MUST** be `#[ignore]`.
+9. The category's tests **MUST** run in scheduled verification.
 
-5. **It drives the run.** The first request that offers a shell tool is answered
-   with a call to a Python sleep of ~11 days, with no timeout of its own (not
-   `sleep N`, which Claude Code refuses before running). A request that carries
-   that call's result is answered with `DONE`. Any other request gets `OK`.
+## References
 
-6. **Assertions read the mock's log and the agent's output.** One
-   `[mock] {...}` JSON line per request on stderr: `tool`, `final` (with the
-   seconds since the call and the start of the tool's output) or `text`. The
-   test prints the log, the agent's stdout and the tail of its stderr.
+- [Verification](../../../.agents/verification/RULES.md): the parent strategy;
+  its rule 7 (no API keys) and rule 16 (scheduled verification is unselected).
+- [Agents](../../../.agents/agents/RULES.md): rule 9, `EVAL_TIMEOUT` as the
+  run's wall clock.
+- `test.rs`, `mock.py`: the paired test code; `.github/workflows/nightly-hang.yml`
+  runs it.
+- RFC 2119, RFC 8174 (BCP 14).
+
+## Changelog
+
+| Date | Change |
+|------|--------|
+| 2026-11-24 | Initial version: an agent whose shell command never returns must still end the task by its own bound, before `EVAL_TIMEOUT` (#744). |
