@@ -10,8 +10,9 @@ task. Any other request (a title or summary side call) gets "OK".
 
 Each request is logged to stderr as one `[mock] {...}` JSON line, which the test
 reads: event is tool, final or text (and listening at start, unknown-path for a
-route it doesn't serve). `final` carries the seconds since the tool call and the
-start of the tool's output.
+route it doesn't serve). `tool` carries the description the request gives the
+shell tool's timeout; `final` the seconds since the tool call and the start of
+the tool's output.
 """
 
 import json
@@ -54,6 +55,20 @@ def tool_result(req, wire):
                 if b.get("type") == "tool_result":
                     return text_of(b.get("content"))
     return None
+
+
+def timeout_doc(req, wire):
+    """The description the request gives its shell tool's timeout parameter, or ""."""
+    for t in req.get("tools") or []:
+        f = t if wire == "anthropic" else (t.get("function") or {})
+        if f.get("name") in ("Bash", "bash"):
+            schema = (
+                f.get("input_schema" if wire == "anthropic" else "parameters") or {}
+            )
+            return ((schema.get("properties") or {}).get("timeout") or {}).get(
+                "description", ""
+            )
+    return ""
 
 
 def shell_tool(req, wire):
@@ -225,7 +240,7 @@ class Handler(BaseHTTPRequestHandler):
                 text = FINAL
             elif tool and state["tool_at"] is None:
                 state["tool_at"] = time.time()
-                log("tool", command=COMMAND)
+                log("tool", command=COMMAND, doc=timeout_doc(req, wire))
                 text, call = "", tool
             else:
                 log("text")

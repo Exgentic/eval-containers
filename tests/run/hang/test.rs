@@ -6,13 +6,15 @@
 //! shape of a watch-mode test runner or a deadlocked script (#744). Once the agent
 //! hands back that call's result, the mock gives the final answer.
 //!
-//! A run passes when the call's result came back no sooner than the agent's own
-//! bound and says how the agent ended it, and the agent then exited 0 by itself,
-//! before its EVAL_TIMEOUT. Each agent ends the command by its own rule: pi
-//! through the image's default bash timeout (600 s), claude-code by moving it to
-//! the background after 120 s and stopping background tasks 10 min after its final
-//! answer. So a run takes 10–13 min. The bound is asserted so that a call that
-//! fails at once (a refused or broken tool) cannot pass.
+//! A run passes when the call's result came back no sooner than the agent's
+//! bound (how long it waits on the command before handing the model a result)
+//! and says what the agent did with the command, and the agent then exited 0 by
+//! itself, before its EVAL_TIMEOUT. pi kills the command at the image's 600 s
+//! default bash timeout. claude-code moves it to the background at 120 s and
+//! stops background tasks 10 min after its final answer, so it exits ~12 min in:
+//! under an EVAL_TIMEOUT below that, it still answers but is killed with 124. The
+//! bound is asserted so that a call that fails at once (a refused or broken tool)
+//! cannot pass.
 //!
 //! The mock runs as a second container from the agent's own eval image
 //! (agents-smoke is `FROM python:3.12-slim`), so the suite adds no image.
@@ -33,9 +35,9 @@ use testcontainers::{ContainerAsync, GenericImage, ImageExt};
 #[path = "../common/mod.rs"]
 mod common;
 
-/// The agent's EVAL_TIMEOUT: past every agent's own bound (about 12.5 min for
-/// claude-code), so a run that ends by that bound exits 0 and one that hangs is
-/// killed (124, or 137 after the kill grace).
+/// The agent's EVAL_TIMEOUT: past the time each agent takes to exit by itself
+/// (about 12.5 min for claude-code), so a run that ends by its own rule exits 0
+/// and one that hangs is killed (124, or 137 after the kill grace).
 const EVAL_TIMEOUT: u64 = 1200;
 
 /// How long the test waits for the agent's exit code: its EVAL_TIMEOUT, the
@@ -78,17 +80,28 @@ async fn events(mock: &ContainerAsync<GenericImage>) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// The agent's exit status, once run-agent has written it. run-agent creates the
-/// file before it writes the code, so an empty file means not yet.
-async fn exit_code(out: &Path) -> Option<String> {
+/// The agent's exit status, once run-agent has written it; None if the eval
+/// container stopped without writing one or RUN_TIMEOUT passed. run-agent creates
+/// the file before it writes the code, so an empty file means not yet.
+async fn exit_code(out: &Path, agent: &ContainerAsync<GenericImage>) -> Option<String> {
     let path = out.join("agent/.exit-code");
+    let read = || match std::fs::read_to_string(&path) {
+        Ok(code) if !code.trim().is_empty() => Some(code.trim().to_string()),
+        Ok(_) => None,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => panic!("read {}: {e}", path.display()),
+    };
     let deadline = Instant::now() + RUN_TIMEOUT;
     while Instant::now() < deadline {
-        match std::fs::read_to_string(&path) {
-            Ok(code) if !code.trim().is_empty() => return Some(code.trim().to_string()),
-            Ok(_) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => panic!("read {}: {e}", path.display()),
+        if let Some(code) = read() {
+            return Some(code);
+        }
+        if !agent
+            .is_running()
+            .await
+            .expect("inspect the eval container")
+        {
+            return read();
         }
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
@@ -96,8 +109,9 @@ async fn exit_code(out: &Path) -> Option<String> {
 }
 
 /// Run `agent` against the mock and assert it ends the task by itself: the
-/// call's result comes back after at least `bound` seconds and contains `says`.
-async fn assert_ends(agent: &str, bound: f64, says: &str) {
+/// call's result comes back after at least `bound` seconds and contains `says`,
+/// and the request that asked for the call described its timeout with `doc`.
+async fn assert_ends(agent: &str, bound: f64, says: &str, doc: &str) {
     common::ensure_agent_image(agent).await;
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -116,11 +130,11 @@ async fn assert_ends(agent: &str, bound: f64, says: &str) {
     let mock = start_mock(agent, &net, &host).await;
     let env = [("EVAL_TIMEOUT", EVAL_TIMEOUT.to_string())];
     let started = Instant::now();
-    let _agent = common::start_agent(agent, &net, &host, &out, &env).await;
-    let code = exit_code(&out).await;
+    let container = common::start_agent(agent, &net, &host, &out, &env).await;
+    let code = exit_code(&out, &container).await;
     let took = started.elapsed();
     let seen = events(&mock).await;
-    let names: Vec<&str> = seen.iter().filter_map(|e| e["event"].as_str()).collect();
+    let tool = seen.iter().find(|e| e["event"] == "tool");
     let fin = seen.iter().find(|e| e["event"] == "final");
     let log = |f: &str| std::fs::read_to_string(out.join("agent").join(f)).unwrap_or_default();
     let stdout = log("stdout.log");
@@ -132,13 +146,17 @@ async fn assert_ends(agent: &str, bound: f64, says: &str) {
         lines[lines.len().saturating_sub(40)..].join("\n")
     );
     eprintln!("{context}");
+    let tool = tool.unwrap_or_else(|| panic!("the mock never asked for the command: {context}"));
+    let told = tool["doc"].as_str().unwrap_or_default();
     assert!(
-        names.contains(&"tool"),
-        "the mock never asked for the command: {context}"
+        told.contains(doc),
+        "the shell tool's timeout is described as {told:?}, not with {doc:?}: {context}"
     );
     let fin = fin
         .unwrap_or_else(|| panic!("the agent never handed back the command's result: {context}"));
-    let waited = fin["seconds"].as_f64().unwrap_or(0.0);
+    let waited = fin["seconds"]
+        .as_f64()
+        .unwrap_or_else(|| panic!("the final event has no seconds: {context}"));
     assert!(
         waited >= bound,
         "the result came back after {waited} s, before the agent's {bound} s bound, so the command never ran to it: {context}"
@@ -157,30 +175,37 @@ async fn assert_ends(agent: &str, bound: f64, says: &str) {
         stdout.contains("DONE"),
         "no final answer on stdout: {context}"
     );
-    std::fs::remove_dir_all(&out).expect("remove output dir");
+    // The output is left in place: the eval container hands its directories to
+    // root and the agent uid, which a rootful-docker runner's user can't remove.
 }
 
 macro_rules! hang {
-    ($name:ident, $agent:literal, $bound:literal, $says:literal) => {
+    ($name:ident, $agent:literal, $bound:literal, $says:literal, $doc:literal) => {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            assert_ends($agent, $bound, $says).await
+            assert_ends($agent, $bound, $says, $doc).await
         }
     };
 }
+
+// The mock's clock starts when it sends the call, before the agent's, so the
+// time it measures is never under the agent's bound.
 
 // claude-code: moved to the background at its 120 s Bash default.
 hang!(
     claude_code_ends_a_command_that_never_returns,
     "claude-code",
-    110.0,
-    "background"
+    120.0,
+    "background",
+    ""
 );
-// pi: killed at the image's 600 s default (containers/agents/pi).
+// pi: killed at the image's 600 s default, which the tool description states
+// (containers/agents/pi).
 hang!(
     pi_ends_a_command_that_never_returns,
     "pi",
-    590.0,
-    "timed out after 600 seconds"
+    600.0,
+    "timed out after 600 seconds",
+    "600 if not set"
 );

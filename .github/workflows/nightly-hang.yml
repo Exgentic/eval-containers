@@ -56,7 +56,6 @@ jobs:
 
       - name: Run the hang suite
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
           AGENTS_SMOKE_BUILD: '1'
         run: |
           set +e
