@@ -46,8 +46,9 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `deadlineGrace` | `600` |
 | `activeDeadlineSeconds` | `""` (derives from `timeout + deadlineGrace`) |
 | `runnerArgs` | `/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc` |
-| `resources.requests` | `{ cpu: 300m, memory: 512Mi }` |
+| `resources.requests` | `{ cpu: 300m, memory: 512Mi, ephemeral-storage: 1Gi }` |
 | `resources.limits` | `{ cpu: 2, memory: 2Gi }` |
+| `storageOverride` | `""`; `--set storageOverride=24Gi` sets the runner's `ephemeral-storage` limit for one run, over any preset. The request stays the preset's or the default's 1Gi, so a value below it is refused at apply. |
 | `outputVolume` | `{}` (→ ephemeral `emptyDir`); set a source to persist `/output`, e.g. `--set outputVolume.hostPath.path=/eval-output` or a `persistentVolumeClaim` |
 
 ## Platform composition — *layer via `--overlay` (extra `-f`)*
