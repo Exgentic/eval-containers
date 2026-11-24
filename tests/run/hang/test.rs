@@ -78,13 +78,17 @@ async fn events(mock: &ContainerAsync<GenericImage>) -> Vec<serde_json::Value> {
         .collect()
 }
 
-/// The agent's exit status, once run-agent has written it.
+/// The agent's exit status, once run-agent has written it. run-agent creates the
+/// file before it writes the code, so an empty file means not yet.
 async fn exit_code(out: &Path) -> Option<String> {
     let path = out.join("agent/.exit-code");
     let deadline = Instant::now() + RUN_TIMEOUT;
     while Instant::now() < deadline {
-        if let Ok(code) = std::fs::read_to_string(&path) {
-            return Some(code.trim().to_string());
+        match std::fs::read_to_string(&path) {
+            Ok(code) if !code.trim().is_empty() => return Some(code.trim().to_string()),
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => panic!("read {}: {e}", path.display()),
         }
         tokio::time::sleep(Duration::from_secs(5)).await;
     }
