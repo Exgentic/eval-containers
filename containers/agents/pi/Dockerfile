@@ -73,15 +73,22 @@ X
 # agent until EVAL_TIMEOUT, and the task loses its verdict (#744, dashboard #444).
 # Give such a call 600 s, Claude Code's own most; on timeout pi kills the
 # command's process group and tells the model, which can retry with its own
-# timeout. A positive timeout the model sets is kept. The cost: a long command
-# the model starts without one (a full build or test suite) is now cut at 600 s
-# where it used to finish, and pi's tool description still says there is no
-# default. This bounds one tool call, not the run, which EVAL_TIMEOUT still
-# bounds (agents rule 9).
+# timeout. A positive timeout the model sets is kept. pi's tool description says
+# there is no default, so the description each request sends is changed to say
+# 600, and a model starting a long command (a full build or test suite) knows to
+# set a longer one. This bounds one tool call, not the run, which EVAL_TIMEOUT
+# still bounds (agents rule 9).
 cat > "$PI_CODING_AGENT_DIR/bash-timeout.js" <<'X'
 export default function (pi) {
   pi.on("tool_call", (event) => {
     if (event.toolName === "bash" && !(event.input.timeout > 0)) event.input.timeout = 600;
+  });
+  pi.on("before_provider_request", ({ payload }) => {
+    for (const t of payload.tools ?? []) {
+      const timeout = t.function?.name === "bash" && t.function.parameters?.properties?.timeout;
+      if (timeout) timeout.description = "Timeout in seconds (optional; 600 if not set, so set a longer one for a command that needs it)";
+    }
+    return payload;
   });
 }
 X
