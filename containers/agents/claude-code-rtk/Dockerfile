@@ -142,7 +142,11 @@ if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
       export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
     fi
     if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ] || [ "$A" -gt "$C" ]; then
-      PCT=$(( (W - OUT - 13000) * 100 / (W - RES) ))
+      # The share is of the window Claude Code compacts in, less RES: the one set
+      # above (never below 100k), or the window itself. Past 100 it is ignored.
+      E=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
+      E=$(( E > 100000 ? E : 100000 )); E=$(( E < W ? E : W ))
+      PCT=$(( (W - OUT - 13000) * 100 / (E - RES) )); PCT=$(( PCT < 100 ? PCT : 100 ))
       SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
       [[ "$SET" =~ $N && "$SET" -le "$PCT" ]] || SET=$PCT
       export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET

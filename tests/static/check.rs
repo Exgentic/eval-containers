@@ -1395,6 +1395,22 @@ echo ${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-unset} ${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
             "{model}: a share past 9 digits is lowered to fit"
         );
     }
+    // An unknown model's share is of the compaction window it was given: at 200k
+    // with a 50000 cap that is 170000, (200000 - 50000 - 13000) * 100 /
+    // (170000 - 20000) = 91, so a launch's 90 (point 135000) is kept.
+    assert_eq!(
+        run(
+            "200000",
+            &[
+                ("MODEL", "glm-5-3"),
+                ("CLAUDE_CODE_MAX_OUTPUT_TOKENS", "50000"),
+                (pct, "90"),
+            ],
+            "echo $CLAUDE_CODE_AUTO_COMPACT_WINDOW $CLAUDE_AUTOCOMPACT_PCT_OVERRIDE",
+        ),
+        "170000 90",
+        "an unknown model: a share that fits the lowered window is kept"
+    );
     for window in ["63999", "1000000000", HUGE] {
         let out = claude_bash(&cc, &[("EVAL_MODEL_CONTEXT_WINDOW", window)]);
         assert_eq!(
