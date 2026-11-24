@@ -71,13 +71,14 @@ X
 # pi's bash tool has no default timeout: a command the model starts without one
 # that never returns (a watch-mode test runner, a deadlocked script) blocks the
 # agent until EVAL_TIMEOUT, and the task loses its verdict (#744, dashboard #444).
-# Give such a call 600 s, Claude Code's own most; on timeout pi kills the
+# Give such a call 600 s, Claude Code's maximum; on timeout pi kills the
 # command's process group and tells the model, which can retry with its own
 # timeout. A positive timeout the model sets is kept. pi's tool description says
-# there is no default, so the description each request sends is changed to say
-# 600, and a model starting a long command (a full build or test suite) knows to
-# set a longer one. This bounds one tool call, not the run, which EVAL_TIMEOUT
-# still bounds (agents rule 9).
+# there is no default, so the description the requests carry is changed to say
+# 600 (pi passes its tool schema by reference, so the change holds from the first
+# request on), and a model starting a long command (a full build or test suite)
+# knows to set a longer one. This bounds one tool call; EVAL_TIMEOUT still bounds
+# the run, so under an EVAL_TIMEOUT of 600 s or less it changes nothing.
 cat > "$PI_CODING_AGENT_DIR/bash-timeout.js" <<'X'
 export default function (pi) {
   pi.on("tool_call", (event) => {
