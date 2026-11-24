@@ -2797,15 +2797,28 @@ fn merge_pertask_combos_stitches_from_the_shards_artifact() {
     // One failed shard out of ~200 must not leave every other combo unstitched: the
     // job ran on `success` only, was skipped six nights running, and left per-task
     // combo tags pointing at digests built before the edge existed. `merge` has run
-    // on a partial build since it was written; this is the same rule.
+    // on a partial build since it was written; this is the same rule. A shard that
+    // hits its timeout reads `cancelled`, not `failure`: gated on success|failure,
+    // 23 timed-out shards skipped the stitch for ~10,000 built combos (run
+    // 45142936186), so `cancelled` must pass the gate too.
     let gate = job
         .lines()
         .find(|l| l.trim_start().starts_with("if: "))
         .expect("merge-pertask-combos has no `if:` gate");
     assert!(
-        gate.contains("needs.combos-pertask.result == 'failure'"),
+        gate.contains("needs.combos-pertask.result == 'failure'")
+            && gate.contains("needs.combos-pertask.result == 'cancelled'"),
         "merge-pertask-combos must stitch a PARTIAL build the way `merge` does — gating it on \
-         the whole matrix going green skips the merge for every combo that did build"
+         the whole matrix going green (or on success|failure, which a timed-out shard's \
+         `cancelled` misses) skips the merge for every combo that did build"
+    );
+    // Accepting `cancelled` under `always()` would also stitch after a person
+    // cancels the run; `!cancelled()` is false only for a cancelled run, so the
+    // timeout case still merges and a cancelled run stops.
+    assert!(
+        gate.contains("!cancelled()") && !gate.contains("always()"),
+        "merge-pertask-combos must gate on `!cancelled()`, not `always()` — accepting a \
+         `cancelled` matrix under `always()` keeps stitching :TAG after the run is cancelled"
     );
     assert!(
         job.contains("actions/checkout@"),
