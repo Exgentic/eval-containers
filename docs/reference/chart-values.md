@@ -22,6 +22,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
 | `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
+| `apiKeyHeader` | `""` | `--api-key-header` — direct-provider credential header; empty uses the wire-native default and combining it with a gateway is rejected; see [edge configuration](../../containers/core/edge/README.md#configuration) |
 | `gatewayEnabled` | `false` | set by `--gateway` / `--gateway-tag` — run the gateway sidecar; off, the edge forwards straight to the upstream |
 | `gatewayImage` | `bifrost` | `--gateway` — the proxy backend (`bifrost` / `litellm` / `portkey`, or a pinned per-model image) |
 | `gatewayTag` | `latest` | `--gateway-tag` |
@@ -43,8 +44,9 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `deadlineGrace` | `600` |
 | `activeDeadlineSeconds` | `""` (derives from `timeout + deadlineGrace`) |
 | `runnerArgs` | `/entrypoint.sh; rc=$?; /usr/local/bin/reap-sidecars; exit $rc` |
-| `resources.requests` | `{ cpu: 300m, memory: 512Mi }` |
+| `resources.requests` | `{ cpu: 300m, memory: 512Mi, ephemeral-storage: 1Gi }` |
 | `resources.limits` | `{ cpu: 2, memory: 2Gi }` |
+| `storageOverride` | `""`; `--set storageOverride=24Gi` sets the runner's `ephemeral-storage` limit for one run, over any preset. The request stays the preset's or the default's 1Gi, so a value below it is refused at apply. |
 | `outputVolume` | `{}` (→ ephemeral `emptyDir`); set a source to persist `/output`, e.g. `--set outputVolume.hostPath.path=/eval-output` or a `persistentVolumeClaim` |
 
 ## Platform composition — *layer via `--overlay` (extra `-f`)*

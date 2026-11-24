@@ -16,7 +16,8 @@ Parent: [.agents/verification/RULES.md](../../../.agents/verification/RULES.md)
    rejected, and the run ends with the mock's final answer. The not-told run is
    the control: it passes when a request is rejected before any compaction. That
    shows the mock enforces its window, so the told run's pass means the window
-   is what fixed it.
+   is what fixed it. Each run also checks `model/result.json`'s `context_window`
+   (output rule 9): the mock's window when told, null when not.
 
 2. **Agents covered:** claude-code and codex. An agent is added with one
    `context!` line in `test.rs`.

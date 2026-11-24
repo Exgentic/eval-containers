@@ -28,6 +28,7 @@ framework with an axis of its own translates into these once, at bring-up:
 |---|---|---|---|
 | `EDGE_API_BASE` | yes | — | Upstream URL to forward calls to |
 | `EDGE_API_KEY` | for real calls | — | Upstream credential, attached per-wire and never recorded |
+| `EDGE_API_KEY_HEADER` | no | — | Header that carries the raw upstream credential on every wire; unset uses Bearer / `x-api-key` / `x-goog-api-key`. Provider upstreams only |
 | `EDGE_MODEL` | no | — | Model to pin every outbound call to; unset forwards the caller's own choice |
 | `EDGE_UPSTREAM` | no | — | `gateway` when upstream serves the `/anthropic`, `/openai`, `/genai` namespaced paths; unset when upstream is a bare provider |
 | `EDGE_LISTEN` | no | `:4100` | Address the edge listens on |
@@ -43,6 +44,12 @@ framework with an axis of its own translates into these once, at bring-up:
 | `EDGE_PRICE_OUT` | for a cost cap | — | Output price, USD per million tokens |
 | `EDGE_COST_HEADER` | no | — | Response header carrying what the upstream charged for the call; its figure wins over the prices above |
 | `EDGE_ON_LIMIT` | no | `refuse` | What crossing a cap does: `refuse` every later call, or `kill` the container |
+
+`EDGE_API_KEY_HEADER=CUSTOM_API_KEY`, for example, sends
+`CUSTOM_API_KEY: <EDGE_API_KEY>` on OpenAI-, Anthropic-, and Gemini-shaped calls.
+It replaces rather than supplements the wire's default credential header. The
+agent still calls the edge with its SDK's ordinary placeholder credential;
+neither that placeholder nor the upstream credential is recorded.
 
 ## Caps
 

@@ -181,6 +181,22 @@ for shape in "--task sympy__sympy-24066" "--task 0" "--dataset"; do
   fi
 done
 
+# ── 6. --api-key-header must be a header name, never extra Helm values ─────
+# It reaches helm as `--set-string apiKeyHeader=…`, where a comma starts another
+# assignment, so anything outside the RFC 9110 token set is refused up front.
+for name in "" "X,model=evil/injected" "X=Y" "X Y" "X:Y" $'X\rY' $'X\nY' "X-é"; do
+  out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
+          --api-key-header "$name" --registry "$REG" --task 0 --local-chart --dry-run 2>&1)
+  rc=$?
+  [ "$rc" -ne 0 ] || bad "oc: --api-key-header $(printf %q "$name") was accepted"
+  grep -q "valid HTTP header name" <<<"$out" \
+    || bad "oc: --api-key-header $(printf %q "$name") was not refused as an invalid header name"
+done
+out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
+        --api-key-header CUSTOM_API_KEY --registry "$REG" --task 0 --local-chart --dry-run 2>&1)
+grep -qE "EVAL_API_KEY_HEADER.*\"CUSTOM_API_KEY\"" <<<"$out" \
+  || bad "oc: a valid --api-key-header did not reach the render as EVAL_API_KEY_HEADER"
+
 # ── each launcher's path must differ between two runs of one combo ──────────
 varies "oc" bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
   --gateway "$GATEWAY" --registry "$REG" --task 0 --local-chart --dry-run
