@@ -38,11 +38,13 @@
 # cpu reservation buys real wall-clock back on a 2-4 min (ibex) to
 # many-minute (Chisel) grade.
 #
-# ephemeral-storage is deliberately ABSENT: upstream declares no storage_mb for
+# No ephemeral-storage limit here: upstream declares no storage_mb for
 # hwe-bench (terminal-bench's 10Gi came from its task.tomls actually stating it),
 # and the design repo plus simulation build products live in the per-task base
 # image's own layers. Inventing a limit here would be a number with no source —
 # an operator who hits eviction can set one per run with `--set storageOverride=`.
+# The runner still gets the chart default's ephemeral-storage request
+# (values.yaml); cva6-2916 and cva6-2330 wrote under 5Mi each when measured.
 #
 # Rule 24e: these limits MUST match compose.yaml's `deploy.resources.limits`
 # modulo k8s unit syntax (4 CPU / 16G there, '4' / 16Gi here). An operator can
