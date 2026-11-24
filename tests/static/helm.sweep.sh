@@ -137,10 +137,10 @@ case "$thin" in
   *) ;;
 esac
 if conflict=$(helm template custom-auth-gateway "$CHART" --set benchmark="${names[0]}" \
-  --set ephemeral=true --set apiKeyHeader=CUSTOM_API_KEY --set gatewayEnabled=true \
+  --set ephemeral=true --set apiKeyHeader=CUSTOM_API_KEY --set gatewayEnabled=true --set gatewayImage=litellm \
   --set otelEnabled=false 2>&1); then
   echo "FAIL custom auth with gatewayEnabled rendered instead of refusing"; fail=$((fail + 1))
-elif [[ "$conflict" != *'apiKeyHeader is supported only for direct provider runs'* ]]; then
+elif [[ "$conflict" != *'apiKeyHeader supports direct providers or gatewayImage=bifrost only'* ]]; then
   echo "FAIL custom auth gateway refusal was unclear: $conflict"; fail=$((fail + 1))
 fi
 
@@ -296,6 +296,21 @@ done
 
 # The two refusals. Captured before grepping, not piped: these renders are meant
 # to fail, and `set -o pipefail` would report helm's exit code, not the match.
+# Bifrost custom auth must render only in the gateway, never in the runner.
+custom_bifrost=$(helm template custom-bifrost "$CHART" --set benchmark="${names[0]}" \
+  --set ephemeral=true --set apiKeyHeader=CUSTOM_API_KEY --set gatewayEnabled=true \
+  --set-json 'gatewayExtraEnv=[{"name":"EVAL_MODEL_API","value":"openai"}]' \
+  --set otelEnabled=false 2>&1)
+if [ "$(grep -c 'name: EVAL_API_KEY_HEADER' <<<"$custom_bifrost")" -ne 1 ]; then
+  echo "FAIL Bifrost header must render exactly once, in the gateway"; fail=$((fail + 1))
+fi
+gateway_part=${custom_bifrost%%$'\n      containers:'*}
+runner_part=${custom_bifrost#*$'\n      containers:'}
+grep -q 'name: EVAL_API_KEY_HEADER' <<<"$gateway_part" || {
+  echo "FAIL Bifrost gateway did not receive the custom header"; fail=$((fail + 1)); }
+if grep -q 'name: EVAL_API_KEY_HEADER' <<<"$runner_part"; then
+  echo "FAIL Bifrost runner received the custom header"; fail=$((fail + 1))
+fi
 refuses() {  # $1 = label, $2 = expected substring, rest = --set args
   local what=$1 want=$2; shift 2
   local out; out=$(helm template ds-probe "$CHART" --set ephemeral=true --set dataset=true "$@" 2>&1)

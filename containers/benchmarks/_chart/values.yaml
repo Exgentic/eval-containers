@@ -29,8 +29,8 @@ registry: ghcr.io/exgentic
 gatewayImage: bifrost
 model: ""
 # Header that carries the upstream API key on every wire. Empty selects the
-# wire-native default (Bearer / x-api-key / x-goog-api-key). Direct provider
-# runs only: a gateway owns its own provider authentication.
+# wire-native default (Bearer / x-api-key / x-goog-api-key). Also supported
+# by Bifrost with gatewayExtraEnv setting EVAL_MODEL_API=openai.
 apiKeyHeader: ""
 # Agent-side reasoning effort (e.g. high); empty → the agent's default.
 reasoningEffort: ""

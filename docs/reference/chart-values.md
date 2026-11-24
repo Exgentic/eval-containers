@@ -22,7 +22,7 @@ in the chart. Per-run axes arrive via `--set` (or the CLI). See
 | `task` | `"0"` | `--task-id` |
 | `registry` | `ghcr.io/exgentic` | `--registry` |
 | `model` | — *(required)* | `--model` — the `<provider>/<model>` handle the gateway routes (the runner's clean label is derived from it) |
-| `apiKeyHeader` | `""` | `--api-key-header` — direct-provider credential header; empty uses the wire-native default and combining it with a gateway is rejected; see [edge configuration](../../containers/core/edge/README.md#configuration) |
+| `apiKeyHeader` | `""` | `--api-key-header` — upstream credential header; empty uses wire-native auth; Bifrost requires `EVAL_MODEL_API=openai` in `gatewayExtraEnv`; see [edge configuration](../../containers/core/edge/README.md#configuration) |
 | `gatewayEnabled` | `false` | set by `--gateway` / `--gateway-tag` — run the gateway sidecar; off, the edge forwards straight to the upstream |
 | `gatewayImage` | `bifrost` | `--gateway` — the proxy backend (`bifrost` / `litellm` / `portkey`, or a pinned per-model image) |
 | `gatewayTag` | `latest` | `--gateway-tag` |
@@ -68,3 +68,25 @@ visualwebarena, webarena) use them to add sidecars, Deployments, and Services.
 | `runnerExtraVolumeMounts` | `[]` | |
 | `extraVolumes` | `[]` | |
 | `extraManifests` | `[]` | extra Deployments/Services (full manifests) |
+
+### Custom headers with Bifrost
+
+For an OpenAI-compatible upstream requiring a raw credential header, use:
+
+```yaml
+gatewayEnabled: true
+gatewayImage: bifrost
+apiKeyHeader: RITS_API_KEY
+gatewayExtraEnv:
+  - name: EVAL_MODEL_API
+    value: openai
+```
+
+Keep `OPENAI_API_KEY` and `OPENAI_API_BASE` in `eval-secrets`. Bifrost sends
+both the configured header and its normal bearer header; the runner receives
+neither the custom header setting nor the upstream key. An unset `apiKeyHeader`
+keeps ordinary authentication. Other gateway flavors reject the option.
+Bifrost's settings API is blocked on the agent-facing port; `/api/health`
+remains available. Its private runtime data directory and configuration/database
+files are restricted to the gateway user because SQLite also persists static
+headers. Rebuild the gateway and model images before using this option.
