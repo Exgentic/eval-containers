@@ -1,7 +1,8 @@
 # chipbench
 
-ChipBench (UCSD / Columbia) — Verilog generation and debugging on realistic
-modules: hierarchical designs, CPU IP units and injected-bug repair, graded by
+ChipBench (UCSD / Columbia) — the paper's three tracks: Verilog generation and
+debugging on realistic modules (hierarchical designs, CPU IP units, injected-bug
+repair) and Python reference models of the same designs, all graded by
 simulation against the golden module. Model-only.
 
 **Status:** Not yet released — no replay fixture landed (see
@@ -11,7 +12,7 @@ simulation against the golden module. Model-only.
 
 | Field | Value |
 |-------|-------|
-| Tasks | 223 (45 generation + 89 zero-shot debugging + 89 one-shot debugging) |
+| Tasks | 268 (45 generation + 89 zero-shot debugging + 89 one-shot debugging + 45 Python reference models) |
 | Environment | shared-env |
 | Internet required | false |
 | Released | no |
@@ -33,15 +34,18 @@ Task ids are sequential; `id.txt` holds `<split>/<problem>`.
 | 36–44 | `gen_cpu_ip` | 9 | spec of a unit taken from an open-source CPU |
 | 45–133 | `debug_zero_shot_{arithmetic,assignment,state_machine,timing}` | 24 / 30 / 6 / 29 | spec + buggy `TopModule` |
 | 134–222 | `debug_one_shot_*` | 89 | the same, plus the bug's simulation waveform (`.vcd`) inline |
+| 223–252 / 253–258 / 259–267 | `refmodel_python_{self_contain,not_self_contain,cpu_ip}` | 30 / 6 / 9 | the generation problems again: write a Python `TopModule` class that models the design |
 
 Problems are enumerated from the `*_prompt.txt` files: upstream's `problems.txt`
 lists only 1 of 6 (`dataset_not_self_contain`) and 1 of 9 (`dataset_cpu_ip`)
 problems at the pinned commit. The repo has 30 self-contained problems where the
 paper (Table 1) counts 29, hence 45 generation tasks, not 44.
 
-Out of scope: the reference-model track (Python / SystemC / CXXRTL). Upstream's
-`Ref Model Gen/data.jsonl` at this commit is 100 CodeV training samples, not the
-paper's 132 benchmark items, and the track is not wired into the harness.
+The paper reports reference models in Python only (Table 3); its SystemC and
+CXXRTL variants have no results, and upstream's checker does not wire SystemC.
+Both are out of scope. (`Ref Model Gen/data.jsonl` is not benchmark data: it is
+100 CodeV-R1 training samples with DeepSeek-R1 outputs, the input of upstream's
+training-data tool.)
 
 ## How a task runs
 
@@ -104,6 +108,52 @@ None of the 223 golden modules, none of the code given in the prompts, and none
 of the 1,340 recorded Claude 4.5 Opus answers (two runs of 670) triggers a flag,
 so a flagged answer warrants a look. Icarus Verilog has no `$system`.
 
+## Python reference models (ids 223–267)
+
+Upstream releases no runner for this track, so the harness assembles it from
+upstream's own pieces, as `Ref Model Gen/gen.py` uses them:
+
+1. **Prompt** — system message `Ref Model Gen/gen_python_prompt.txt`; user
+   message the problem's `prompt.txt` with "Verilog" rewritten to "Python".
+2. **Call** — the same single call, sampling, retries and deadline as the
+   Verilog tracks.
+3. **Extract** — `gen.py`'s `extract_python_code`: the first fenced block.
+4. **Grade** — `grade_py.py`: `gen.py`'s checks (non-empty, `class TopModule`,
+   compiles), then upstream's `Tool_Box/crosslang_verify` (the paper's
+   Heterogeneous Test Engine): the golden `ref.sv` is compiled with Verilator and
+   compared with the Python model on 1,000 random tests (combinational) or 500
+   cycles after a 20-cycle reset (sequential). Pass iff the checker exits 0.
+
+The toolchain is upstream's Dockerfile: Ubuntu 22.04, Verilator 4.038, Python
+3.11. The checker is pinned on its own (`TOOLBOX_REF`), because the paper-era
+task data (`2dfbb80`) predates it.
+
+**One deviation, closing a hole.** The checker skips any output port missing
+from the dict the model returns, so a `TopModule` whose `eval()` returns `{}`
+passed 25 of 45 tasks. The model is wrapped so every output it omits gets a value
+no output can equal; an honest model returns every port and is unaffected. The
+model's Python runs inside the checker's simulation, contained like the Verilog
+simulation (`nobody`, scratch dir, 16 MiB file cap, 600 s); code that touches
+files, processes, the network or dynamic imports is recorded as `answer_flags`.
+
+**Upstream's checker can grade 26 of the 45 problems** (oracle sweep at the
+pinned commit). The other 19 fail before any comparison, for every answer:
+
+| Ids | Cause |
+|-----|-------|
+| 236, 246, 250–253, 255, 256, 260, 261 | the checker's port parser takes a keyword (`reg`, `wire`, `logic`, …) or a misread name as a port, and its generated C++ testbench does not compile |
+| 242, 248 | Verilator 4.038 rejects the golden RTL (`BLKANDNBLK`, `BLKLOOPINIT`) |
+| 254, 257, 258 | the golden module instantiates submodules that only the prompt supplies |
+| 264–267 | the golden module uses `` `define `` macros that only the Verilog testbench declares |
+
+So no hierarchical problem and 3 of 9 CPU-IP problems are gradable, which is
+consistent with the paper's 0% on those two columns for nearly every model. Five
+sequential tasks (235, 238–241) are passed by a model that returns 0 on every
+output: the checker's random stimulus never makes their outputs non-zero.
+
+Oracle: hand-written golds for tasks 223 (combinational) and 224 (sequential)
+pass; the no-op model fails all 45.
+
 ## Known upstream defects (10 tasks no answer can pass)
 
 Found by the oracle sweep (gold 213/223). Kept as-is so scores stay comparable
@@ -119,7 +169,7 @@ Oracle note: the CPU-IP golden code uses `` `define `` macros that only `test.sv
 declares, and `test.sv` compiles after the answer, so `solution.sh` restates
 them. A model answer is unaffected: the prompts never mention the macros.
 
-## Replication (Claude 4.5 Opus, paper Tables 2 and 4)
+## Replication (Claude 4.5 Opus, paper Tables 2, 3 and 4)
 
 `claude-opus-4-5-20251101` (the snapshot upstream's sv-generate names), ids 0–133
 (generation + zero-shot debugging), 5 samples per task, unbiased pass@k averaged
@@ -138,6 +188,19 @@ prompts and fixed several references and testbenches after publication.
 At `2dfbb80` the oracle also finds `Prob007_data_accumulation_output` (assignment
 bug, both shots) passing with the buggy code unchanged, which upstream fixed in
 "Fix accumulation input handshake"; the pinned default has no such task.
+
+### Python reference models (paper Table 3)
+
+Same model, n = 10 samples on ids 223–267, pass@1 / pass@5 / pass@10:
+
+| Upstream commit | CPU IP | Hierarchical | Self-contained | Average |
+|-----------------|-------:|-------------:|---------------:|--------:|
+| paper (Table 3) | 0 / 0 / 0 | 0 / 0 / 0 | 40.00 / 46.67 / 46.67 | 13.33 / 15.56 / 15.56 |
+| `2dfbb80` (the paper's) | 0 / 0 / 0 | 0 / 0 / 0 | 45.33 / **46.67** / **46.67** | 15.11 / **15.56** / **15.56** |
+| `b4ba3a0` (pinned default) | 11.11 / 11.11 / 11.11 | 0 / 0 / 0 | 53.33 / 56.59 / 56.67 | 21.48 / 22.57 / 22.59 |
+
+At the paper's commit pass@5 and pass@10 match the paper exactly, overall and
+per category.
 
 ## Run it
 
