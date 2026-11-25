@@ -130,8 +130,10 @@ task data (`2dfbb80`) predates it.
 
 **One deviation, closing a hole.** The checker skips any output port missing
 from the dict the model returns, so a `TopModule` whose `eval()` returns `{}`
-passed 25 of 45 tasks. The model is wrapped so every output it omits gets a value
-no output can equal; an honest model returns every port and is unaffected. The
+passed 25 of 45 tasks; so can an answer that reports nothing from outside
+`eval()`, e.g. by rebinding `json.dumps`. The image patches the checker's generated C++ comparison, outside
+the answer's process, so a missing output counts as a mismatch; an honest model
+returns every port and is unaffected. The
 model's Python runs inside the checker's simulation, contained like the Verilog
 simulation (`nobody`, scratch dir, 16 MiB file cap, 600 s); code that touches
 files, processes, the network or dynamic imports is recorded as `answer_flags`.
