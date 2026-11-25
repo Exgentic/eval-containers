@@ -67,3 +67,7 @@ path = "gateways/translation.rs"
 [[test]]
 name = "context"
 path = "context/test.rs"
+
+[[test]]
+name = "hang"
+path = "hang/test.rs"
