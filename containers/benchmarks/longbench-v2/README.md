@@ -48,7 +48,10 @@ the following:
      encoding (`o200k_base`, with `disallowed_special=()`). This image cannot
      carry every served model's tokenizer, so **every model uses the API-model
      path**. For an open model, the cut therefore falls at roughly, not exactly,
-     the same place.
+     the same place. A model whose tokenizer is less efficient than
+     `o200k_base` can then overflow a 128k served window, and its request fails
+     where upstream's would have fit. Lower `EVAL_LONGBENCH_V2_MAX_LEN` for such
+     a model.
 3. **Call.** One `chat/completions` request through the gateway, with the
    prompt as the only user message, `temperature=0.1` and `max_tokens=128`.
    It makes up to 5 tries, 1 s apart.
@@ -59,59 +62,67 @@ the following:
    `0`. The mean over the 503 tasks is the leaderboard's "Overall" accuracy
    (random guessing scores 25%).
 
-Upstream drops a question from the denominator when every try failed. Here it
-scores `0`, and the failure is recorded in `error`.
+Upstream never judges a question whose every try failed or whose reply was
+empty (`if output == '': continue`), so it falls out of the denominator. Here an
+empty reply scores `0` with `error: "empty reply"`. A question whose every try
+failed exits non-zero, so the attempt is recorded as errored and a resumed run
+retries it.
 
 `/output/task/longbench-v2.json` records the following for each task:
 
-- `pred`, `judge`, the reply tail, and `error`
+- `pred`, `judge`, the full reply, and `error`
 - `prompt_tokens` and `truncated`
 - `domain`, `sub_domain`, `difficulty` and `length`, so a sweep can compute
   `result.py`'s Easy/Hard and Short/Medium/Long splits
 
 ### Not reproduced
 
-The leaderboard's non-reasoning "w/ CoT" column comes from `pred.py --cot`, a
-two-call scaffold (`0shot_cot.txt`, then `0shot_cot_ans.txt`), which is not
-implemented here. Reasoning models are listed only in that column, but they ran
-the single 0-shot call that this harness makes.
+- `pred.py --cot` is not implemented. It is the two-call scaffold
+  (`0shot_cot.txt`, then `0shot_cot_ans.txt`) behind the leaderboard's "w/ CoT"
+  column for non-reasoning models.
+- The leaderboard lists reasoning models (o1, DeepSeek-R1, …) only under
+  "w/ CoT", because they "natively use CoT". Their request settings are not in
+  `pred.py`, and a 128-token cap cannot hold their reasoning. The defaults here
+  reproduce the **0-shot ("w/o CoT") setting**. For a reasoning model, keep the
+  same single 0-shot call and use its vendor's settings (below).
 
 ## Sampling knobs
 
-All knobs are env vars on the runner. An empty value omits that parameter.
+All knobs are env vars on the runner, in the `EVAL_` namespace, so the run's
+recorded configuration includes them. Unset or empty means upstream's default.
+`none` omits the parameter from the request, so the model's own default
+applies; this works for every knob except `MAX_LEN`.
 
 | Var | Default (upstream) | Meaning |
 |-----|--------------------|---------|
-| `LONGBENCH_V2_MAX_LEN` | `120000` | truncation window, in tokens |
-| `LONGBENCH_V2_TEMP` | `0.1` | `temperature` |
-| `LONGBENCH_V2_TOP_P` | *(omitted)* | `top_p` (upstream doesn't send it) |
-| `LONGBENCH_V2_MAX_TOKENS` | `128` | `max_tokens` |
-| `LONGBENCH_V2_TIMEOUT` | `600` | per-try HTTP timeout, s (the OpenAI client's default) |
-| `LONGBENCH_V2_EXTRA_BODY` | *(none)* | JSON object merged into the request, e.g. `{"reasoning_effort":"high"}` |
-
-The defaults reproduce the leaderboard's 0-shot settings. A 128-token cap is
-far too small for a model that thinks before it answers.
+| `EVAL_LONGBENCH_V2_MAX_LEN` | `120000` | truncation window, in tokens (`model2maxlen.json`) |
+| `EVAL_LONGBENCH_V2_TEMP` | `0.1` | `temperature` |
+| `EVAL_LONGBENCH_V2_TOP_P` | `none` | `top_p` (upstream doesn't send it) |
+| `EVAL_LONGBENCH_V2_MAX_TOKENS` | `128` | `max_tokens` (the gateway forwards it as `max_completion_tokens` where the provider needs it) |
+| `EVAL_LONGBENCH_V2_TIMEOUT` | `600` | per-try HTTP timeout, in seconds (the OpenAI client's default) |
+| `EVAL_LONGBENCH_V2_EXTRA_BODY` | `{}` | JSON object merged into the request, e.g. `{"reasoning_effort":"high"}` |
 
 To match a vendor's model card for a reasoning model, use the vendor's own
-settings, for example:
+sampling settings and a cap large enough for its reasoning. For example:
 
 ```bash
-LONGBENCH_V2_TEMP=1.0
-LONGBENCH_V2_MAX_TOKENS=65536
-LONGBENCH_V2_EXTRA_BODY='{"reasoning_effort":"xhigh"}'
+EVAL_LONGBENCH_V2_TEMP=1.0
+EVAL_LONGBENCH_V2_MAX_TOKENS=65536
+EVAL_LONGBENCH_V2_EXTRA_BODY='{"reasoning_effort":"xhigh"}'
 ```
 
-If the model runs with a larger context window, set `LONGBENCH_V2_MAX_LEN` to
-that window minus `LONGBENCH_V2_MAX_TOKENS`.
+If the model is served with a larger window than 128k, set `MAX_LEN` to that
+window minus `MAX_TOKENS`.
 
 How to set the knobs on each surface:
 
-- **k8s:** `--set runnerExtraEnv[0].name=LONGBENCH_V2_TEMP --set runnerExtraEnv[0].value=1.0`
+- **Compose:** export them in the shell. `compose.yaml` forwards all six.
+- **k8s:** `--set runnerExtraEnv[0].name=EVAL_LONGBENCH_V2_TEMP --set runnerExtraEnv[0].value=1.0`
 - **Single container:** `docker run -e …`
 
-The run is bounded at 1800 s (`compose.yaml` and the chart preset), which covers
-one long-context call and its retries. Raise `EVAL_TIMEOUT` for slow reasoning
-runs.
+The run is bounded at 3600 s in both `compose.yaml` and the chart preset. That
+covers five tries of 600 s. For long reasoning calls, raise `EVAL_TIMEOUT`
+(and `EVAL_LONGBENCH_V2_TIMEOUT`).
 
 ## Oracle
 

@@ -11,6 +11,8 @@ One task (EVAL_TASK_ID) per run, reproducing THUDM/LongBench pred.py @ 2e00731:
             every model: the served model's own tokenizer is not in the image.
   call      one chat/completions request, the prompt as the only user message,
             temperature 0.1, max_tokens 128; up to 5 tries.
+  knobs     EVAL_LONGBENCH_V2_{MAX_LEN,TEMP,TOP_P,MAX_TOKENS,TIMEOUT,EXTRA_BODY}
+            (see README); defaults are upstream's.
   extract   extract_answer: drop '*', the FIRST "The correct answer is (X)",
             else the first "The correct answer is X".
   judge     pred == answer.
@@ -65,16 +67,14 @@ def truncate(prompt, max_len):
 
 def query_llm(base_url, model, prompt, temperature, top_p, max_tokens, timeout, extra):
     """One chat/completions call, retried as upstream. Returns (text, error)."""
-    payload = {
-        "model": model,
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": max_tokens,
-    }
+    payload = {"model": model, "messages": [{"role": "user", "content": prompt}]}
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
     if temperature is not None:
         payload["temperature"] = temperature
     if top_p is not None:
         payload["top_p"] = top_p
-    payload.update(extra)
+    payload.update(extra or {})
     body = json.dumps(payload).encode("utf-8")
     err = None
     for _ in range(TRIES):
@@ -117,10 +117,11 @@ def write(path, text):
         f.write(text)
 
 
-def env_float(name, default):
-    """Empty string omits the parameter (the model's own default applies)."""
-    v = os.environ.get(name, default)
-    return float(v) if v != "" else None
+def knob(name, default, cast):
+    """EVAL_LONGBENCH_V2_<name>: unset or empty is upstream's default; `none`
+    omits the parameter from the request (the model's own default applies)."""
+    v = os.environ.get(f"EVAL_LONGBENCH_V2_{name}", "") or default
+    return None if v == "none" else cast(v)
 
 
 def main():
@@ -134,31 +135,36 @@ def main():
     else:
         model = os.environ.get("MODEL") or os.environ.get("EVAL_MODEL") or ""
         base_url = os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1")
-        max_len = int(os.environ.get("LONGBENCH_V2_MAX_LEN", "120000"))
-        extra = json.loads(os.environ.get("LONGBENCH_V2_EXTRA_BODY", "") or "{}")
+        max_len = knob("MAX_LEN", "120000", int)
         prompt, n_tokens = truncate(prompt, max_len)
         record.update(model=model, prompt_tokens=n_tokens, truncated=n_tokens > max_len)
         response, err = query_llm(
             base_url,
             model,
             prompt,
-            env_float("LONGBENCH_V2_TEMP", "0.1"),
-            env_float("LONGBENCH_V2_TOP_P", ""),
-            int(os.environ.get("LONGBENCH_V2_MAX_TOKENS", "128")),
-            int(os.environ.get("LONGBENCH_V2_TIMEOUT", "600")),
-            extra,
+            knob("TEMP", "0.1", float),
+            knob("TOP_P", "none", float),
+            knob("MAX_TOKENS", "128", int),
+            knob("TIMEOUT", "600", int),
+            knob("EXTRA_BODY", "{}", json.loads),
         )
 
+    # pred.py: `response = output.strip()`; an empty reply is never judged there.
     response = response.strip()
     pred = extract_answer(response)
     judge = pred == meta["answer"]
-    record.update(response=response[-2000:], pred=pred, judge=judge, error=err)
+    if err is None and not response:
+        err = "empty reply"
+    record.update(response=response, pred=pred, judge=judge, error=err)
     write(EXPORT_PATH, json.dumps(record, indent=2) + "\n")
     write(REWARD_PATH, "1\n" if judge else "0\n")
     print(
         f"[longbench-v2] task={task_id} pred={pred} gold={meta['answer']} judge={judge}"
+        f" error={err}"
     )
-    return 0
+    # Every try failed: the attempt errored (output rule 17), so a resumed run
+    # retries the task instead of keeping the 0. An empty reply is a model answer.
+    return 1 if response == "" and err != "empty reply" else 0
 
 
 if __name__ == "__main__":
