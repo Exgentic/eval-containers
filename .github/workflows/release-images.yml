@@ -1168,11 +1168,13 @@ jobs:
           }
           # Carried-forward (rule 13), per variant: unchanged inputs vs the
           # prior release (:latest — combos push manifest lists directly)
-          # ⇒ retag its digest. Reads the per-iteration eb/A/TAG/DRY at call
-          # time.
+          # ⇒ retag its digest. Reads the per-iteration eb/A/TAG/DRY/PLAT at
+          # call time. PLAT goes to the check (rule 14): a combo built while its
+          # base lacked an arch carries the matching hash without that arch, so
+          # a hash-only check reads it fresh and it never gains the arch.
           carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
             [ "$DRY" != "true" ] || return 1
-            bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" >/dev/null || return 1
+            bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" "$PLAT" >/dev/null || return 1
             if [ "$TAG" = "latest" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
             else
               docker buildx imagetools create --tag "${REGISTRY}/evals/${eb}--${A}$1:${TAG}" \
