@@ -131,9 +131,9 @@ const SPECIAL: &[(&str, &str)] = &[
     //
     // zerobench (model-only, eval.benchmark.agent="native") is deliberately
     // uncovered, like every other native-harness benchmark (automationbench,
-    // bfcl, tau-bench, walle): its /grade.sh does not read the agent's stdout —
-    // the harness run_zerobench.py performs the inference and writes the reward
-    // itself — so there is nothing for a gold solution to feed, and gold and
+    // bfcl, mmmu-pro, mmmu-pro-vision, tau-bench, walle): its /grade.sh does not
+    // read the agent's stdout — the harness (run_zerobench.py here) performs the
+    // inference and writes the reward itself — so there is nothing for a gold solution to feed, and gold and
     // no-op are indistinguishable by construction.
     ("zerobench-agentic", "0"),
     // chipbench is native too, but unlike the ones above its gold is checkable:
