@@ -246,19 +246,20 @@ def main() -> int:
     task_id = int(os.environ.get("EVAL_TASK_ID", os.environ.get("TASK_ID", "0")))
     model = os.environ.get("MODEL") or os.environ["EVAL_MODEL"]
     base_url = os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1")
-    setting = os.environ.get("EVAL_MMMU_PRO_SETTING", "standard (10 options)")
-    mode = os.environ.get("EVAL_MMMU_PRO_PROMPT", "cot")
+    setting = os.environ.get("EVAL_MMMU_PRO_SETTING") or "standard (10 options)"
+    mode = os.environ.get("EVAL_MMMU_PRO_PROMPT") or "cot"
     if setting not in SETTINGS or mode not in PROMPTS:
         raise SystemExit(
             f"[mmmu-pro] unknown EVAL_MMMU_PRO_SETTING={setting!r} / EVAL_MMMU_PRO_PROMPT={mode!r}"
         )
-    # Empty string => omit the parameter (upstream sets neither).
+    # Unset or empty knobs take upstream's value; an empty TEMP/TOP_P omits the
+    # parameter (upstream sets neither).
     _t = os.environ.get("EVAL_MMMU_PRO_TEMP", "")
     _p = os.environ.get("EVAL_MMMU_PRO_TOP_P", "")
     temperature = float(_t) if _t != "" else None
     top_p = float(_p) if _p != "" else None
-    max_tokens = int(os.environ.get("EVAL_MMMU_PRO_MAX_TOKENS", "4096"))
-    timeout = int(os.environ.get("EVAL_MMMU_PRO_TIMEOUT", "300"))
+    max_tokens = int((os.environ.get("EVAL_MMMU_PRO_MAX_TOKENS") or "4096"))
+    timeout = int((os.environ.get("EVAL_MMMU_PRO_TIMEOUT") or "300"))
     _eb = os.environ.get("EVAL_MMMU_PRO_EXTRA_BODY", "")
     extra_body = json.loads(_eb) if _eb.strip() else None
     if extra_body and {"model", "messages"} & extra_body.keys():

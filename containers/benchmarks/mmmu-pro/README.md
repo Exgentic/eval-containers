@@ -103,7 +103,8 @@ Task `i` is the same question in all three settings.
 The knobs carry the `EVAL_` prefix (`.agents/RULES.md` 12), so the launcher
 records them in the task's `config.env`, and a resumed run refuses a changed
 setting. The harness runs privileged with the container environment whole
-(rule 12c), so on k8s the knobs go in through the chart's `runnerExtraEnv`.
+(rule 12c). Under compose, set the knobs in the shell and `compose.yaml` passes
+them on. On k8s, they go in through the chart's `runnerExtraEnv`.
 `EVAL_MMMU_PRO_EXTRA_BODY` may not set `model` or `messages`. Bound the run
 with `EVAL_TIMEOUT` above `EVAL_MMMU_PRO_TIMEOUT`. The preset sets 600 s.
 
