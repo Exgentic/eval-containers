@@ -98,7 +98,9 @@ def main() -> None:
                 "«rubric_item»", item
             )
         )
-        results.append({"rubric": item, "criteria_met": met, "explanation": explanation})
+        results.append(
+            {"rubric": item, "criteria_met": met, "explanation": explanation}
+        )
         print(f"rubric met={met}: {item}", file=sys.stderr)
 
     passed = all(r["criteria_met"] for r in results)
