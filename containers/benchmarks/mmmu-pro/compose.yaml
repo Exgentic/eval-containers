@@ -15,6 +15,14 @@ services:
         condition: service_healthy
     environment:
       BENCHMARK: mmmu-pro
+      # The harness knobs (README); unset or empty takes upstream's value.
+      EVAL_MMMU_PRO_SETTING: ${EVAL_MMMU_PRO_SETTING:-standard (10 options)}
+      EVAL_MMMU_PRO_PROMPT: ${EVAL_MMMU_PRO_PROMPT:-}
+      EVAL_MMMU_PRO_TEMP: ${EVAL_MMMU_PRO_TEMP:-}
+      EVAL_MMMU_PRO_TOP_P: ${EVAL_MMMU_PRO_TOP_P:-}
+      EVAL_MMMU_PRO_MAX_TOKENS: ${EVAL_MMMU_PRO_MAX_TOKENS:-}
+      EVAL_MMMU_PRO_TIMEOUT: ${EVAL_MMMU_PRO_TIMEOUT:-}
+      EVAL_MMMU_PRO_EXTRA_BODY: ${EVAL_MMMU_PRO_EXTRA_BODY:-}
     deploy:
       resources:
         limits:
