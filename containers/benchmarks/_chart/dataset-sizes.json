@@ -60,6 +60,7 @@
  "legalbench": 19000,
  "livecodebench": 880,
  "longbench": 3750,
+ "longbench-v2": 503,
  "math": 5000,
  "math-500": 500,
  "mathvista": 1000,

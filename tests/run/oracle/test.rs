@@ -96,6 +96,8 @@ const SPECIAL: &[(&str, &str)] = &[
     // Byte-sensitive answer graders — solution.sh emits the raw gold file.
     ("mrcr", "0"),      // SequenceMatcher on the raw bytes
     ("longbench", "0"), // gold is a member of answers_json; emit it verbatim
+    // Upstream extract_answer reads "The correct answer is (X)", not a bare letter.
+    ("longbench-v2", "0"),
     // Upstream ships no reference solutions: each gold is the actions one
     // passing agent run sent, replayed on a fresh desktop the oracle starts
     // beside the benchmark. Two apps that never touch the network: a Chrome
