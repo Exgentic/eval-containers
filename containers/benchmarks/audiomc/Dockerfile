@@ -101,10 +101,10 @@ ENTRYPOINT ["/entrypoint.sh"]
 
 RUN mkdir -p /logs/verifier && cat > /grade.sh <<'GRADE'
 #!/bin/bash
-mkdir -p /logs/verifier
+mkdir -p /logs/verifier /output/task
 if [ ! -s /output/agent/stdout.log ]; then echo 0.0 > /logs/verifier/reward.txt; exit 0; fi
 python3 /tests/grade.py "/tasks/${TASK_ID:-$EVAL_TASK_ID}" /output/agent/stdout.log \
-  > /logs/verifier/reward.txt 2> /logs/verifier/grading.log \
+  > /logs/verifier/reward.txt 2> /output/task/grading.log \
   || echo 0.0 > /logs/verifier/reward.txt
 GRADE
 RUN chmod +x /grade.sh

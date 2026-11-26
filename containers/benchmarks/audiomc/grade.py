@@ -5,7 +5,7 @@ README, ScaleAI/audiomc): user turns as their transcripts, earlier assistant
 turns from the dataset, the model's reply as the final assistant turn. Each
 rubric item is judged on its own. reward = 1.0 iff every rubric is met — the
 paper's primary metric, APR (Average Pass Rate); the per-rubric fraction (ARS)
-is recorded in /logs/verifier/grading_details.json.
+is recorded in /output/task/grading_details.json, beside the run.
 
 Upstream judges with o4-mini; this judge is the run's pinned model, reached
 through the same gateway as every other rubric-judged benchmark here.
@@ -104,7 +104,7 @@ def main() -> None:
         print(f"rubric met={met}: {item}", file=sys.stderr)
 
     passed = all(r["criteria_met"] for r in results)
-    with open("/logs/verifier/grading_details.json", "w") as f:
+    with open("/output/task/grading_details.json", "w") as f:
         json.dump(
             {
                 "passed": passed,

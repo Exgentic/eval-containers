@@ -89,7 +89,7 @@ the final assistant turn. Each rubric item is judged in its own call.
 - **reward = 1.0 iff every rubric item is met**, else 0.0. This is the paper's
   primary metric, APR (Average Pass Rate), once averaged over tasks.
 - The per-rubric fraction, ARS (Average Rubric Score), is recorded with each
-  verdict and explanation in `/logs/verifier/grading_details.json`.
+  verdict and explanation in `/output/task/grading_details.json` (the judge log is `/output/task/grading.log`).
 
 **Judge model, a deviation from upstream.** Upstream judges with `o4-mini`.
 Like every other rubric-judged benchmark here, this judge is the run's pinned
