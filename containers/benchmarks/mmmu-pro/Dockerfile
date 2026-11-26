@@ -14,10 +14,9 @@ ENV BENCHMARK_VERSION=${BENCHMARK_VERSION}
 
 # Single-JSONL task layout, one line per task, images base64-encoded inline; the
 # runtime entrypoint decodes only the requested task's images. Options are
-# lettered A., B., ... one per line, as upstream's infer scripts format them, and
-# only the images the text references (<image N>) are kept — upstream sends no others.
+# lettered A., B., ... one per line, as upstream's infer scripts format them.
 RUN python3 <<'PYEOF'
-import urllib.request, pyarrow.parquet as pq, json, os, base64, ast, re
+import urllib.request, pyarrow.parquet as pq, json, os, base64, ast
 
 REVISION = os.environ["BENCHMARK_VERSION"]
 CONFIG = "standard%20(10%20options)"
@@ -39,10 +38,10 @@ with open('/tasks/all.jsonl', 'w') as out:
                 'options': "\n".join(f"{chr(ord('A') + k)}. {o}" for k, o in enumerate(options)),
                 'answer': str(t["answer"][i]),
             }
-            refs = {int(n) for n in re.findall(r"<image\s+(\d+)>", question + str(options))}
-            for n in sorted(refs):
+            for n in range(1, 8):
                 val = t[f"image_{n}"][i].as_py()
-                row[f'image_{n}_b64'] = base64.b64encode(val["bytes"]).decode('ascii')
+                if val and val.get("bytes"):
+                    row[f'image_{n}_b64'] = base64.b64encode(val["bytes"]).decode('ascii')
             out.write(json.dumps(row) + '\n')
             count += 1
         os.remove("/tmp/data.parquet")
@@ -91,16 +90,18 @@ for b64_path in glob.glob(f'/tasks/{tid}/image_*_b64.txt'):
 PY
 fi
 if [ -n "$EVAL_TASK_ID" ] && [ -z "$TASK" ]; then
-  # Copy images to /app/ so the agent can see them; <image N> in the text is /app/image_N.png
+  # Copy the images the text references to /app/ so the agent can see them, in the
+  # order the text first references them, as upstream attaches them; <image N> is
+  # /app/image_N.png. Upstream sends no unreferenced image, so neither do we.
   IMAGE_LIST=""
-  for f in /tasks/$EVAL_TASK_ID/image_*.png; do
+  for n in $(cat /tasks/$EVAL_TASK_ID/problem.txt /tasks/$EVAL_TASK_ID/options.txt \
+      | grep -oE '<image[[:space:]]+[0-9]+>' | tr -dc '0-9\n' | awk '!seen[$0]++'); do
+    f=/tasks/$EVAL_TASK_ID/image_$n.png
     [ -f "$f" ] || continue
-    name=$(basename "$f")
-    cp "$f" /app/"$name"
-    chmod 0644 /app/"$name"
-    n=${name#image_}
+    cp "$f" /app/image_$n.png
+    chmod 0644 /app/image_$n.png
     IMAGE_LIST="${IMAGE_LIST}
-<image ${n%.png}>: /app/${name}"
+<image $n>: /app/image_$n.png"
   done
 
   PROBLEM=$(cat /tasks/$EVAL_TASK_ID/problem.txt)

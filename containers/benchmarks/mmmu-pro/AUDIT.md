@@ -1,7 +1,7 @@
 ---
 benchmark: mmmu-pro
 host: local Rancher Desktop (arm64)
-commit: feat/mmmu-pro
+commit: 98805b24
 ---
 # Audit — mmmu-pro
 
@@ -14,7 +14,7 @@ commit: feat/mmmu-pro
 | building | ✓ | `eval-containers build bench mmmu-pro` builds; the loader extracts 1730 tasks and asserts the count |
 | running | ? | compose pipeline runs end to end with the `mock` agent (task 25: `result.json` written, reward 0); not run with a live model |
 | isolation | ? | not audited per-benchmark |
-| oracle | ✓ | gold=1 / no-op=0 — `eval-containers oracle mmmu-pro --task-id {0,1000,1729}` |
+| oracle | ✓ | gold=1 / no-op=0 — `eval-containers oracle mmmu-pro --task-id {0,1000,1729}`; a wrong letter (`Z`, lowercase `b`) scores 0 on tasks 25 and 693 |
 | traces-reviewed | ? | |
 | replicate-official | ? | not yet compared with a published Standard (10 options) score |
 

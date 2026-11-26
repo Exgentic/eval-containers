@@ -24,8 +24,9 @@ question, the options lettered `A.`, `B.`, … one per line, then the direct pro
 from `mmmu-pro/prompts.yaml`, `Answer with the option letter from the given
 choices directly.` Two lines follow it: `Print only the answer letter, nothing
 else.`, because the grader is exact match, and a list mapping each `<image N>`
-in the text to its file, `/app/image_N.png`. Only the images the text
-references are copied, which matches what upstream sends.
+in the text to its file, `/app/image_N.png`. The list holds only the images the
+text references, in the order it first references them, because that is what
+upstream sends and in that order.
 
 ## How it's graded
 
@@ -39,10 +40,15 @@ gold letter (`answer.txt`), so 1 or 0 per task. The score is the mean over the
   runs both and reports the higher one. The CoT prompt ends in `Answer: $LETTER`,
   which needs upstream's response parser, so this image uses the direct prompt.
   A reasoning model or an agent still reasons before it answers.
-- **Stricter parsing.** Upstream's `parse_multi_choice_response` accepts
-  `(B)`, `B.` or the option text, and when it finds no answer it picks a random
-  letter. Exact match accepts only the letter, so a badly formatted answer here
-  scores 0 instead of getting a 1-in-10 guess.
+- **Images are files.** Upstream puts each image inline at its `<image N>`
+  in a single model call. Here the agent has to open the files, and an agent
+  that never opens them answers without seeing them.
+- **Stricter parsing.** Upstream's `parse_multi_choice_response` first takes
+  a unique letter after the last `Answer:`, then accepts `(B)`, `B.` or the
+  option text, and if none of these finds an answer it picks a random,
+  unseeded letter. Exact match accepts only the letter, and it is
+  case-sensitive, so a badly formatted answer or a lowercase `b` scores 0
+  here instead of getting a random guess.
 - **Standard (10) only.** The leaderboard's "Overall" score is the average of
   this setting and **vision** (the question as a screenshot). Vision is not
   included yet. Its upstream prompts ask for an `Answer: $LETTER` last line,
