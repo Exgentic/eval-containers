@@ -1,0 +1,11 @@
+{
+  "credentials": {
+    "envVars": [
+      {
+        "name": "EXGENTIC_WRITE_TOKEN",
+        "mode": "mask",
+        "injectHosts": ["kubernetes.default.svc"]
+      }
+    ]
+  }
+}
