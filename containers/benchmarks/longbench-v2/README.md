@@ -120,7 +120,7 @@ How to set the knobs on each surface:
 - **k8s:** `--set runnerExtraEnv[0].name=EVAL_LONGBENCH_V2_TEMP --set runnerExtraEnv[0].value=1.0`
 - **Single container:** `docker run -e …`
 
-The run is bounded at 3600 s in both `compose.yaml` and the chart preset. That
+The run is bounded at 3600 s in `compose.yaml`, the chart preset, and the image's `EVAL_TIMEOUT` default (used by the single container). That
 covers five tries of 600 s. For long reasoning calls, raise `EVAL_TIMEOUT`
 (and `EVAL_LONGBENCH_V2_TIMEOUT`).
 

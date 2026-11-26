@@ -35,6 +35,9 @@ LABEL eval.benchmark.url="https://huggingface.co/datasets/zai-org/LongBench-v2"
 LABEL eval.benchmark.license="Apache-2.0"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.15204"
 ENV EVAL_BENCHMARK=longbench-v2
+# The single-container bundle reads no compose file or preset, so the image
+# carries the same bound (5 tries of 600 s); a caller's EVAL_TIMEOUT wins.
+ENV EVAL_TIMEOUT=3600
 
 # Upstream truncates API models' prompts with tiktoken's gpt-4o encoding; its
 # BPE file is cached here (/opt/tiktoken, which /harness.sh points tiktoken at)
@@ -47,7 +50,7 @@ COPY --from=data /tasks /tasks
 COPY run_longbench_v2.py /app/run_longbench_v2.py
 RUN chmod 755 /app/run_longbench_v2.py \
  && printf '#!/bin/bash\nTIKTOKEN_CACHE_DIR=/opt/tiktoken exec python3 /app/run_longbench_v2.py\n' > /harness.sh && chmod +x /harness.sh \
- && printf '#!/bin/bash\n/eval-materialize-task\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh \
+ && printf '#!/bin/bash\nexport EVAL_TASK_ID="${EVAL_TASK_ID:-0}"\n/eval-materialize-task\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh \
  && printf '#!/bin/bash\nmkdir -p /logs/verifier\n[ -s /logs/verifier/reward.txt ] || echo 0 > /logs/verifier/reward.txt\n' > /grade.sh \
  && chmod +x /grade.sh
 # The harness writes the reward itself; /grade.sh keeps a run that never reaches
