@@ -1,0 +1,11 @@
+# Native harness (benchmarks/RULES.md 12b): the agent axis is the benchmark's.
+agent: native
+# One long-context call, up to 5 tries; matches compose.yaml.
+timeout: '1800'
+resources:
+  requests:
+    cpu: 300m
+    memory: 1Gi
+  limits:
+    cpu: '1'
+    memory: 2Gi

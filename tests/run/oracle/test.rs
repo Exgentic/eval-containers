@@ -146,6 +146,10 @@ const SPECIAL: &[(&str, &str)] = &[
     // (grade_py.py → upstream crosslang_verify on Verilator): task 223 has a
     // hand-written gold in solution.sh; the no-op leaves the fail-closed 0.0.
     ("chipbench", "223"),
+    // longbench-v2 is native as well: solution.sh feeds a reply carrying the gold
+    // letter through the harness's own extract_answer + judge (`--score`), and the
+    // no-op leaves /grade.sh's fail-closed 0. Shared-env, so task 0 is representative.
+    ("longbench-v2", "0"),
 ];
 
 fn oracle(args: &[&str]) -> bool {
