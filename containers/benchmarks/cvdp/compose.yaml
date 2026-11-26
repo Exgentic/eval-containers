@@ -1,0 +1,20 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
+  runner:
+    extends:
+      file: ../../compose/runner-native.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/cvdp--native:latest
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    environment:
+      BENCHMARK: cvdp
+      # One model call (60 s, up to 3 retries) + up to 600 s per harness service.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
+      TIMEOUT: ${EVAL_TIMEOUT:-1800}

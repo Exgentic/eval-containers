@@ -1,0 +1,13 @@
+# CVDP agentic heavy — full-repository hardware tasks.
+# Upstream declares no limits; the chart default of 2Gi is too small to Verilate
+# a full core (CVA6, cv32e40p, SoomRV) beside the agent. Rule 24e: must match
+# compose.yaml's deploy.resources.limits (4 CPU / 8G there, '4' / 8Gi here).
+resources:
+  requests:
+    cpu: 300m
+    memory: 512Mi
+  limits:
+    cpu: '4'
+    memory: 8Gi
+# 1h, matching compose.yaml's EVAL_TIMEOUT default.
+timeout: '3600'
