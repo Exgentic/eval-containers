@@ -8,14 +8,25 @@ starts a watch-mode test runner or a deadlocked script. It is a Python sleep, no
 that carries that call's result is answered with the final text, ending the
 task. Any other request (a title or summary side call) gets "OK".
 
+MOCK_MODE picks a different model. `budget` answers every request the way
+LiteLLM (v1.89.1, core/litellm) answers a key whose budget is spent: HTTP 429,
+`budget_exceeded`, no Retry-After, an error that never clears. `overflow`
+answers the first few requests that offer a shell tool with a command printing
+~10k tokens, so the conversation holds more than an agent keeps verbatim when it
+compacts (opencode keeps the newest 15k), then rejects the next one as too long,
+with vLLM's context-length error, and answers every later one with the final
+text, so an agent that compacts and retries finishes. A side call asking for a
+summary of the conversation (a compaction) gets one in opencode's template.
+
 Each request is logged to stderr as one `[mock] {...}` JSON line, which the test
-reads: event is tool, final or text (and listening at start, unknown-path for a
-route it doesn't serve). `tool` carries the description the request gives the
+reads: event is tool, final, text, summary, budget or overflow (and listening at start,
+unknown-path for a route it doesn't serve). `tool` carries the description the request gives the
 shell tool's timeout; `final` the seconds since the tool call and the start of
 the tool's output.
 """
 
 import json
+import os
 import sys
 import threading
 import time
@@ -23,7 +34,17 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 COMMAND = "python3 -c 'import time; time.sleep(10**6)'"
 FINAL = "DONE"
-state = {"tool_at": None, "seq": 0}
+MODE = os.environ.get("MOCK_MODE", "command")
+BUDGET = "Budget has been exceeded! Current cost: 200.09, Max budget: 200.0"
+OVERFLOW = (
+    "This model's maximum context length is 32768 tokens. However, you requested "
+    "40000 tokens (36000 in the messages, 4000 in the completion). Please reduce "
+    "the length of the messages or completion."
+)
+SUMMARY = "## Objective\nReply DONE.\n\n## Work State\nA command printed numbers; nothing is left to do.\n"
+FILL = "seq 1 8000"  # overflow mode: ~10k tokens of output a turn
+TURNS = 4  # overflow mode: turns before the rejection
+state = {"tool_at": None, "seq": 0, "turns": 0, "overflowed": False}
 lock = threading.Lock()
 
 
@@ -61,7 +82,7 @@ def timeout_doc(req, wire):
     """The description the request gives its shell tool's timeout parameter, or ""."""
     for t in req.get("tools") or []:
         f = t if wire == "anthropic" else (t.get("function") or {})
-        if f.get("name") in ("Bash", "bash"):
+        if f.get("name") in ("Bash", "bash", "shell"):
             schema = (
                 f.get("input_schema" if wire == "anthropic" else "parameters") or {}
             )
@@ -79,12 +100,12 @@ def shell_tool(req, wire):
             if wire == "anthropic"
             else (t.get("function") or {}).get("name")
         )
-        if name in ("Bash", "bash"):
+        if name in ("Bash", "bash", "shell"):
             return name
     return None
 
 
-def anthropic(text, call):
+def anthropic(text, call, command=COMMAND):
     blocks, events = [], []
     if text:
         blocks.append({"type": "text", "text": text})
@@ -94,7 +115,7 @@ def anthropic(text, call):
                 "type": "tool_use",
                 "id": next_id("toolu_"),
                 "name": call,
-                "input": {"command": COMMAND},
+                "input": {"command": command},
             }
         )
     stop = "tool_use" if call else "end_turn"
@@ -150,7 +171,7 @@ def anthropic(text, call):
     return body, sse
 
 
-def chat(text, call):
+def chat(text, call, command=COMMAND):
     msg = {"role": "assistant", "content": text or None}
     if call:
         msg["tool_calls"] = [
@@ -159,7 +180,7 @@ def chat(text, call):
                 "type": "function",
                 "function": {
                     "name": call,
-                    "arguments": json.dumps({"command": COMMAND}),
+                    "arguments": json.dumps({"command": command}),
                 },
             }
         ]
@@ -232,8 +253,38 @@ class Handler(BaseHTTPRequestHandler):
         tool = shell_tool(req, wire)
         result = tool_result(req, wire)
         call = None
+        if MODE == "budget":
+            # `agent`: the call offers the shell tool, so it is the agent's own
+            # turn, not a title or summary side call with its own retries.
+            log("budget", agent=tool is not None)
+            error = {
+                "message": BUDGET,
+                "type": "budget_exceeded",
+                "param": None,
+                "code": "429",
+            }
+            return self.reply(429, {"error": error})
         with lock:
-            if tool and result is not None:
+            if MODE == "overflow" and tool and state["turns"] < TURNS:
+                state["turns"] += 1
+                log("tool", command=FILL, turn=state["turns"])
+                body, sse = build("", tool, FILL)
+                return self.reply(200, body, sse if req.get("stream") else None)
+            if MODE == "overflow" and tool and not state["overflowed"]:
+                state["overflowed"] = True
+                log("overflow")
+                body = {
+                    "object": "error",
+                    "message": OVERFLOW,
+                    "type": "BadRequestError",
+                    "param": None,
+                    "code": 400,
+                }
+                return self.reply(400, body)
+            if MODE == "overflow" and tool:
+                log("final", seconds=None, output="")
+                text = FINAL
+            elif tool and result is not None:
                 at = state["tool_at"]
                 waited = round(time.time() - at, 1) if at else None
                 log("final", seconds=waited, output=result[:300])
@@ -242,6 +293,9 @@ class Handler(BaseHTTPRequestHandler):
                 state["tool_at"] = time.time()
                 log("tool", command=COMMAND, doc=timeout_doc(req, wire))
                 text, call = "", tool
+            elif "summarize the conversation" in json.dumps(req.get("messages") or []):
+                log("summary")
+                text = SUMMARY
             else:
                 log("text")
                 text = "OK"
@@ -251,5 +305,5 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     server = ThreadingHTTPServer(("0.0.0.0", 4000), Handler)
-    log("listening")
+    log("listening", mode=MODE)
     server.serve_forever()

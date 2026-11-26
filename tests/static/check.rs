@@ -1669,13 +1669,15 @@ echo "${PI_MAX_OUTPUT_TOKENS:-unset}""#;
     );
 }
 
-/// opencode's reply cap fits the window it is told (agents/RULES.md 25): the cap
-/// is min(OPENCODE_MAX_OUTPUT_TOKENS or 128000, window/4), and a non-numeric cap
-/// means 128000. Unset, the cap is as before. The window sizes nothing else.
+/// opencode fits the window it is told (agents/RULES.md 25–26): the model's
+/// `limit.output` is min(OPENCODE_MAX_OUTPUT_TOKENS or 128000, window/4), a
+/// non-numeric cap means 128000, and `limit.context` is the window, which opencode
+/// compacts by. Untold, the cap is 128000 and the window 0, one opencode does not
+/// know, so it never compacts ahead.
 #[test]
-fn opencode_reply_cap_fits_the_window_it_is_told() {
-    let stub = r#"echo "$OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX""#;
-    let cap = |window: Option<u64>, set: Option<&str>| {
+fn opencode_fits_the_window_it_is_told() {
+    let stub = r#"cat "$HOME/.config/opencode/opencode.json""#;
+    let limit = |window: Option<u64>, set: Option<&str>| {
         let extra = set.map(|v| ("OPENCODE_MAX_OUTPUT_TOKENS", v));
         let out = run_with_stub_env("opencode", "opencode", stub, window, extra);
         assert!(
@@ -1683,26 +1685,37 @@ fn opencode_reply_cap_fits_the_window_it_is_told() {
             "{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        String::from_utf8_lossy(&out.stdout).trim().to_string()
+        let config: serde_json::Value =
+            serde_json::from_slice(&out.stdout).expect("opencode.json is JSON");
+        let limit = &config["provider"]["eval-containers"]["models"]["m"]["limit"];
+        (
+            limit["context"].as_u64().expect("limit.context"),
+            limit["output"].as_u64().expect("limit.output"),
+        )
     };
     assert_eq!(
-        cap(None, None),
-        "128000",
-        "unset must leave the cap as before"
+        limit(None, None),
+        (0, 128_000),
+        "untold: no window, cap 128000"
     );
-    assert_eq!(cap(None, Some("32000")), "32000");
+    assert_eq!(limit(None, Some("32000")), (0, 32_000));
+    assert_eq!(
+        limit(None, Some("x")),
+        (0, 128_000),
+        "non-numeric cap, untold"
+    );
     for window in [1_048_576u64, 262_144, 131_072, 32_000] {
-        let want = (window / 4).min(128_000).to_string();
-        assert_eq!(cap(Some(window), None), want, "window {window}");
+        let want = (window, (window / 4).min(128_000));
+        assert_eq!(limit(Some(window), None), want, "window {window}");
         assert_eq!(
-            cap(Some(window), Some("x")),
+            limit(Some(window), Some("x")),
             want,
             "window {window}, non-numeric cap"
         );
     }
     assert_eq!(
-        cap(Some(131_072), Some("16000")),
-        "16000",
+        limit(Some(131_072), Some("16000")),
+        (131_072, 16_000),
         "a lower cap is kept"
     );
 }
