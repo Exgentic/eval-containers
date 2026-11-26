@@ -74,6 +74,8 @@
  "mmlu": 14042,
  "mmlu-pro": 12032,
  "mmmu": 900,
+ "mmmu-pro": 1730,
+ "mmmu-pro-vision": 1730,
  "mrcr": 2400,
  "mt-bench": 160,
  "naturalquestions": 3610,
