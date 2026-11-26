@@ -1,7 +1,7 @@
 ---
 benchmark: mmmu-pro-vision
 host: local Rancher Desktop (arm64)
-commit: PENDING
+commit: 2982a455
 ---
 # Audit — mmmu-pro-vision
 
