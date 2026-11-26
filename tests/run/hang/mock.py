@@ -11,12 +11,12 @@ task. Any other request (a title or summary side call) gets "OK".
 MOCK_MODE picks a different model. `budget` answers every request the way
 LiteLLM (v1.89.1, core/litellm) answers a key whose budget is spent: HTTP 429,
 `budget_exceeded`, no Retry-After, an error that never clears. `overflow`
-answers the first few requests that offer a shell tool with a command printing
-~10k tokens, so the conversation holds more than an agent keeps verbatim when it
-compacts (opencode keeps the newest 15k), then rejects the next one as too long,
-with vLLM's context-length error, and answers every later one with the final
-text, so an agent that compacts and retries finishes. A side call asking for a
-summary of the conversation (a compaction) gets one in opencode's template.
+answers the first request that offers a shell tool with a short command, so
+there is a conversation to compact, then rejects every later one as too long,
+with LiteLLM's context-window error, until the agent has asked for a summary of
+the conversation (a compaction, answered in opencode's template). After that it
+answers with the final text, so an agent that compacts finishes and one that
+only retries never does.
 
 Each request is logged to stderr as one `[mock] {...}` JSON line, which the test
 reads: event is tool, final, text, summary, budget or overflow (and listening at start,
@@ -41,10 +41,17 @@ OVERFLOW = (
     "40000 tokens (36000 in the messages, 4000 in the completion). Please reduce "
     "the length of the messages or completion."
 )
+# LiteLLM's answer when vLLM rejects a call as too long, as agents see it.
+OVERFLOW_ERROR = {
+    "message": "litellm.ContextWindowExceededError: " + OVERFLOW,
+    "type": None,
+    "param": None,
+    "code": "400",
+}
 SUMMARY = "## Objective\nReply DONE.\n\n## Work State\nA command printed numbers; nothing is left to do.\n"
-FILL = "seq 1 8000"  # overflow mode: ~10k tokens of output a turn
-TURNS = 4  # overflow mode: turns before the rejection
-state = {"tool_at": None, "seq": 0, "turns": 0, "overflowed": False}
+FILL = "seq 1 200"  # overflow mode: a turn before the rejection, so there is a
+TURNS = 1  # conversation to compact (opencode: "Nothing to compact yet" without)
+state = {"tool_at": None, "seq": 0, "turns": 0, "summarized": False}
 lock = threading.Lock()
 
 
@@ -265,23 +272,24 @@ class Handler(BaseHTTPRequestHandler):
             }
             return self.reply(429, {"error": error})
         with lock:
-            if MODE == "overflow" and tool and state["turns"] < TURNS:
+            summary = "summarize the conversation" in json.dumps(
+                req.get("messages") or []
+            )
+            if summary:
+                state["summarized"] = True
+                log("summary")
+                text = SUMMARY
+            elif MODE == "overflow" and tool and state["turns"] < TURNS:
                 state["turns"] += 1
                 log("tool", command=FILL, turn=state["turns"])
                 body, sse = build("", tool, FILL)
                 return self.reply(200, body, sse if req.get("stream") else None)
-            if MODE == "overflow" and tool and not state["overflowed"]:
-                state["overflowed"] = True
+            elif MODE == "overflow" and tool and not state["summarized"]:
+                # Rejected until the agent has compacted: a provider keeps
+                # rejecting a context that is still too long.
                 log("overflow")
-                body = {
-                    "object": "error",
-                    "message": OVERFLOW,
-                    "type": "BadRequestError",
-                    "param": None,
-                    "code": 400,
-                }
-                return self.reply(400, body)
-            if MODE == "overflow" and tool:
+                return self.reply(400, {"error": OVERFLOW_ERROR})
+            elif MODE == "overflow" and tool:
                 log("final", seconds=None, output="")
                 text = FINAL
             elif tool and result is not None:
@@ -293,9 +301,6 @@ class Handler(BaseHTTPRequestHandler):
                 state["tool_at"] = time.time()
                 log("tool", command=COMMAND, doc=timeout_doc(req, wire))
                 text, call = "", tool
-            elif "summarize the conversation" in json.dumps(req.get("messages") or []):
-                log("summary")
-                text = SUMMARY
             else:
                 log("text")
                 text = "OK"

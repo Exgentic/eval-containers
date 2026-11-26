@@ -9,7 +9,7 @@ SST opencode: MIT open-source AI coding agent.
 | Upstream | [sst/opencode](https://github.com/sst/opencode) |
 | Version | `2.4.1` |
 | Install mechanism | npm (`@opencode/cli`, a native binary) |
-| Language runtime | native (Node.js 22 for npm only) |
+| Language runtime | native binary (installed with npm on Node.js 22) |
 
 ## What it does
 
@@ -26,11 +26,11 @@ The entrypoint writes `~/.config/opencode/opencode.json` with:
 
 It then runs `opencode run --standalone --model "eval-containers/$MODEL" -- "$TASK" </dev/null`. `--standalone` gives the run a private server that ends with it, instead of a shared background service. Dummy `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` are set to silence auth prompts.
 
-**Shell commands are bounded at 600 s.** opencode 2 moves a command that runs past its timeout (120 s unless the model sets one) to the background with no limit, and `opencode run` waits for every background job before it exits, so a command that never returns would hold the task until `EVAL_TIMEOUT` (#785). The image sets opencode's `shell` to a wrapper that runs each command under `timeout`, which ends its process group at 600 s. A longer timeout the model asks for, or a server it starts in the background, is cut at 600 s too.
+**Shell commands are bounded at 600 s.** opencode 2 moves a command that runs past its timeout (120 s unless the model sets one) to the background with no limit, and `opencode run` waits for every background job before it exits, so a command that never returns would hold the task until `EVAL_TIMEOUT` (#785). The image sets opencode's `shell` to a wrapper that runs each command under `timeout`, which ends its process group at 600 s; the model sees exit code 124. Unlike 1.x, which honoured any timeout the model set, a longer one is cut at 600 s too, and so is a command started with `background: true`.
 
-**Errors.** A permanent provider error, such as a spent LiteLLM budget, is retried 10 times (about 84 s) and then ends the run with exit 1. A call rejected as too long makes opencode compact the conversation and go on, and the run then exits 0.
+**Errors.** opencode cannot tell a permanent provider error from a passing one: a 429 or 5xx is retried 10 times (about 84 s) and then ends the run with exit 1, which the runner records as errored. That ends a spent LiteLLM budget, which 1.x retried forever, but also a throttle that outlasts the retries, which 1.x waited out. A call rejected as too long makes opencode compact the conversation and go on, and the run then exits 0. A reply cut at the output cap is continued twice; a third cut in a row ends the run with exit 1 (1.x exited 0).
 
-opencode's reply cap is raised from its own 32000 to `$OPENCODE_MAX_OUTPUT_TOKENS` (128000 unless set), as the model's `limit.output`, because a reply cut at the cap ends the run. When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the cap becomes min(that, window/4) and the window is the model's `limit.context`, which opencode compacts by. Unset, `limit.context` is 0, a window opencode does not know: it compacts only when the provider rejects a call as too long. The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile).
+opencode's reply cap is raised from its own 32000 to `$OPENCODE_MAX_OUTPUT_TOKENS` (128000 unless set), as the model's `limit.output`, because a reply cut at the cap three times running ends the run. When the launch sets `EVAL_MODEL_CONTEXT_WINDOW` ([agents rules 25–26](../../../.agents/agents/RULES.md)), the cap becomes min(that, window/4) and the window is the model's `limit.context`, which opencode compacts by. Unset, `limit.context` is 0, a window opencode does not know: it compacts only when the provider rejects a call as too long. The derivation is in the `/run.sh` comment in the [Dockerfile](Dockerfile).
 
 The x64 image ships opencode's baseline build, which runs on any x64 CPU; the package would otherwise pick the build for the machine that built the image.
 
