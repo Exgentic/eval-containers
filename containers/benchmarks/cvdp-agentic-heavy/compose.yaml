@@ -1,0 +1,27 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  runner:
+    extends:
+      file: ../../compose/runner.yaml
+      service: runner
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/cvdp-agentic-heavy--${EVAL_AGENT:-claude-code}:latest
+    environment:
+      BENCHMARK: cvdp-agentic-heavy
+      # 1h agent budget; mirrored in _chart/presets/cvdp-agentic-heavy.yaml.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-3600}
+      TIMEOUT: ${EVAL_TIMEOUT:-3600}
+    # Rule 10 / 24e. Upstream declares no limits; the shared 2G default is too
+    # small to Verilate a full core (CVA6, cv32e40p, SoomRV) while the agent runs.
+    # Mirrored in the chart preset.
+    deploy:
+      resources:
+        limits:
+          cpus: "4"
+          memory: 8G
