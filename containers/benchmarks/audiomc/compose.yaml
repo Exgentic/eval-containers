@@ -1,0 +1,24 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
+  runner:
+    extends:
+      file: ../../compose/runner-native.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/audiomc--native:latest
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    environment:
+      BENCHMARK: audiomc
+    # 2G: the harness and the edge each hold a conversation of up to ~92 MB
+    # of base64 audio.
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2G
