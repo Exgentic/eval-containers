@@ -26,13 +26,13 @@ scores are single-call model inference with no agent. This image holds the
 
 ## Configurations
 
-| Setting | Benchmark | `MMMU_PRO_SETTING` | What the model gets |
+| Setting | Benchmark | `EVAL_MMMU_PRO_SETTING` | What the model gets |
 |---------|-----------|--------------------|---------------------|
 | standard (10 options) | `mmmu-pro` | `standard (10 options)` (default) | question + lettered options + prompt, then its images |
 | standard (4 options) | `mmmu-pro` | `standard (4 options)` | the same questions and images with upstream's 4 options |
 | vision | `mmmu-pro-vision` | `vision` (its only one) | the vision prompt, then one screenshot of the question and options |
 
-`MMMU_PRO_PROMPT` selects `cot` (default) or `direct`. The paper runs both and
+`EVAL_MMMU_PRO_PROMPT` selects `cot` (default) or `direct`. The paper runs both and
 reports the higher one. Its leaderboard "Overall" is the mean of standard (10
 options) and vision. Standard (4 options) is reported "solely for comparison".
 Task `i` is the same question in all three settings.
@@ -49,13 +49,17 @@ Task `i` is the same question in all three settings.
 - **Vision:** `infer_gpt.py:162-170`. The prompt is `prompts.yaml`'s `vision`
   entry alone, with the single screenshot.
 - **Request:** one user message, `max_tokens` 4096, no `temperature`/`top_p`
-  (`infer_gpt.py:116-138, 170`). One sample per question.
+  (`infer_gpt.py:116-138, 170`). One sample per question. That is the
+  OpenAI-API harness, the one this follows. Upstream's other harnesses
+  disagree on sampling: `infer_gemini.py:105` uses temperature 0, and
+  `infer_lmdeploy.py:98` uses 0.8 / 0.95.
 - **Scoring:** `evaluate.py:16-33, 215-290, 429-443`
   (`parse_multi_choice_response`), checked against upstream on synthetic
   responses. The reward is 1.0 if the parsed letter equals the gold one, else
   0.0, so the mean reward is upstream's accuracy. Per-question detail goes to
   `/output/task/mmmu_pro.json`: setting, prompt, knobs, gold, parsed, `guessed`,
-  error, and the response tail.
+  error, and the response tail. A failed request exits non-zero, so the
+  launcher records the attempt as errored and a resumed run retries it.
 
 ## Where this differs from upstream, and why
 
@@ -76,8 +80,9 @@ Task `i` is the same question in all three settings.
 - **No system message.** `infer_gpt.py:127` sends a "You are ChatGPT …" system
   prompt, a GPT-specific identity. Upstream's other harnesses
   (`infer_gemini.py`, `infer_lmdeploy.py`) send none, and neither does this one.
-- **Correct image type.** Images are sent as `image/png`, which is what they
-  are. Upstream labels its PNG re-encode `image/jpeg` (`infer_gpt.py:109`).
+- **Real image type.** Upstream re-encodes every image to PNG and labels it
+  `image/jpeg` (`infer_gpt.py:85-91, 109`). Here the stored bytes are sent with
+  their real type. Most are PNG, and a few vision screenshots are JPEG.
 - **Standard (4 options) is supported.** Upstream's `process_prompt` only
   branches on `standard (10 options)` and `vision`, and the 4-option setting
   falls through. The paper reports 4 options anyway, and `construct_prompt` does
@@ -87,25 +92,28 @@ Task `i` is the same question in all three settings.
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
-| `MMMU_PRO_SETTING` | per image (see above) | which setting to run |
-| `MMMU_PRO_PROMPT` | `cot` | `cot` or `direct` |
-| `MMMU_PRO_TEMP` | empty (omitted) | `temperature`; empty omits it, like upstream |
-| `MMMU_PRO_TOP_P` | empty (omitted) | `top_p`; empty omits it |
-| `MMMU_PRO_MAX_TOKENS` | `4096` | `max_tokens`, upstream's value |
-| `MMMU_PRO_TIMEOUT` | `300` | HTTP timeout for the call, in seconds |
-| `MMMU_PRO_EXTRA_BODY` | empty | a JSON object merged into the request, for provider knobs |
+| `EVAL_MMMU_PRO_SETTING` | `standard (10 options)`; `vision` in `mmmu-pro-vision` | which setting to run |
+| `EVAL_MMMU_PRO_PROMPT` | `cot` | `cot` or `direct` |
+| `EVAL_MMMU_PRO_TEMP` | empty (omitted) | `temperature`; empty omits it, like upstream |
+| `EVAL_MMMU_PRO_TOP_P` | empty (omitted) | `top_p`; empty omits it |
+| `EVAL_MMMU_PRO_MAX_TOKENS` | `4096` | `max_tokens`, upstream's value |
+| `EVAL_MMMU_PRO_TIMEOUT` | `300` | HTTP timeout for the call, in seconds |
+| `EVAL_MMMU_PRO_EXTRA_BODY` | empty | a JSON object merged into the request, for provider knobs |
 
-The harness runs privileged with the container environment whole (rule 12c),
-so on k8s the knobs go in through the chart's `runnerExtraEnv`. Bound the run
-with `EVAL_TIMEOUT` above `MMMU_PRO_TIMEOUT`. The preset sets 600 s.
+The knobs carry the `EVAL_` prefix (`.agents/RULES.md` 12), so the launcher
+records them in the task's `config.env`, and a resumed run refuses a changed
+setting. The harness runs privileged with the container environment whole
+(rule 12c), so on k8s the knobs go in through the chart's `runnerExtraEnv`.
+`EVAL_MMMU_PRO_EXTRA_BODY` may not set `model` or `messages`. Bound the run
+with `EVAL_TIMEOUT` above `EVAL_MMMU_PRO_TIMEOUT`. The preset sets 600 s.
 
 **Matching a vendor's model card.** A card's number is usually the model's
 recommended sampling with thinking on, not upstream's 4096-token cap. For a
 reasoning model, for example:
 
 ```bash
-MMMU_PRO_PROMPT=cot MMMU_PRO_TEMP=1.0 MMMU_PRO_MAX_TOKENS=65536 \
-MMMU_PRO_TIMEOUT=1800 MMMU_PRO_EXTRA_BODY='{"reasoning_effort":"xhigh"}'
+EVAL_MMMU_PRO_PROMPT=cot EVAL_MMMU_PRO_TEMP=1.0 EVAL_MMMU_PRO_MAX_TOKENS=65536 \
+EVAL_MMMU_PRO_TIMEOUT=1800 EVAL_MMMU_PRO_EXTRA_BODY='{"reasoning_effort":"xhigh"}'
 ```
 
 Raise `EVAL_TIMEOUT` to match. Use the provider's own field in `EXTRA_BODY`

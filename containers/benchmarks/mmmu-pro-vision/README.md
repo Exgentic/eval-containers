@@ -9,7 +9,7 @@ through the same native harness
 the same answer parser.
 
 It is a separate image only because the screenshots alone are 1.6 GB. Protocol,
-deviations from upstream, knobs (`MMMU_PRO_PROMPT`, `MMMU_PRO_TEMP`, …) and how
+deviations from upstream, knobs (`EVAL_MMMU_PRO_PROMPT`, `EVAL_MMMU_PRO_TEMP`, …) and how
 to match a model card are all in [`mmmu-pro`'s README](../mmmu-pro/README.md).
 The leaderboard's MMMU-Pro "Overall" is the mean of this benchmark and
 `mmmu-pro`'s standard (10 options) setting.
