@@ -12,13 +12,11 @@ reset for sequential ones, outputs masked during reset:
     python3 /opt/crosslang_verify/main.py ref.sv --dut-py dut.py -w work
 
 Pass iff it exits 0. One deviation, closing a hole: upstream's comparison skips
-any output port missing from the model's returned dict, so a TopModule whose
-eval() returns {} passes every task the checker can build. The model's source is
-followed, in the same `dut.py` (the checker copies only that file), by a wrapper
-class that fills each output
-port the model omits, named by the checker's own port parser, with a value no
-output can equal. An honest model returns every port, so its verdict is
-unchanged. The model's Python is executed by that simulation, so it
+any output port missing from the model's returned dict, so a TopModule that
+reports nothing passed every task the checker can build. The image patches the
+checker's generated C++ comparison (Dockerfile) to count a missing output as a
+mismatch; it runs outside the answer's process, so the answer cannot undo it.
+The model's Python is executed by that simulation, so it
 runs as `nobody` in a fresh scratch dir, with every written file capped at
 FSIZE_CAP (RLIMIT_FSIZE) and the whole check killed after CHECK_TIMEOUT.
 work-dir keeps the checker log and verdict.json.
@@ -37,31 +35,6 @@ CROSSLANG = os.environ.get("CHIPBENCH_CROSSLANG", "/opt/crosslang_verify/main.py
 FSIZE_CAP = 16 * 1024 * 1024
 CHECK_TIMEOUT = 600  # Verilator build (~1 min) + the checker's own 300 s run cap
 NOBODY = 65534
-WRAPPER = """
-
-_Model = TopModule
-_OUTPUTS = {outputs!r}
-
-
-class TopModule:
-    def __init__(self):
-        self._m = _Model()
-
-    def eval(self, inputs):
-        out = self._m.eval(inputs)
-        out = dict(out) if isinstance(out, dict) else {{}}
-        for name in _OUTPUTS:
-            out.setdefault(name, "missing")
-        return out
-"""
-
-
-def output_ports(ref_sv):
-    """The output names crosslang_verify itself extracts from ref.sv."""
-    sys.path.insert(0, os.path.dirname(CROSSLANG))
-    from tools.extract_ports import extract_ports_from_verilog
-
-    return [name for name, _ in extract_ports_from_verilog(ref_sv)[1]]
 
 
 def contained():
@@ -100,10 +73,7 @@ def grade(task_dir, dut, work):
         scratch = tempfile.mkdtemp(prefix="chipbench-ref-")
         try:
             shutil.copyfile(f"{task_dir}/ref.sv", f"{scratch}/ref.sv")
-            with open(f"{scratch}/dut.py", "w") as f:
-                f.write(
-                    code + WRAPPER.format(outputs=output_ports(f"{task_dir}/ref.sv"))
-                )
+            shutil.copyfile(dut, f"{scratch}/dut.py")
             if os.geteuid() == 0:
                 for root, dirs, files in os.walk(scratch):
                     for name in dirs + files:

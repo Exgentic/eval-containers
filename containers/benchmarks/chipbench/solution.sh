@@ -8,7 +8,9 @@
 # Python reference-model tasks have no upstream gold (the repo ships no Python
 # models of its problems), so the two below are hand-written from the golden
 # RTL: a combinational and a sequential design, covering both checker paths.
-# Any other reference-model task has no gold and fails loudly.
+# Any other reference-model task has no gold and fails loudly. Before the gold,
+# an answer that reports no outputs from outside eval() (it rebinds json.dumps,
+# which the checker's runner prints through) must score 0.0.
 set -euo pipefail
 T="/tasks/${EVAL_TASK_ID:-0}"
 mkdir -p /logs/verifier/sim
@@ -46,6 +48,18 @@ GOLD
       exit 1
       ;;
   esac
+  mkdir -p /logs/verifier/no-outputs
+  cat > /logs/verifier/no-outputs/dut.py <<'CHEAT'
+import json
+_d = json.dumps
+json.dumps = lambda x, *a, **k: _d([{} for _ in x])
+class TopModule:
+    def eval(self, inputs): return {}
+CHEAT
+  if [ "$(python3 /app/grade_py.py "$T" /logs/verifier/no-outputs/dut.py /logs/verifier/no-outputs)" != "0.0" ]; then
+    echo "chipbench oracle: an answer reporting no outputs passed $(cat "$T/id.txt")" >&2
+    exit 1
+  fi
   python3 /app/grade_py.py "$T" /logs/verifier/sim/dut.py /logs/verifier/sim > /logs/verifier/reward.txt
   exit 0
 fi

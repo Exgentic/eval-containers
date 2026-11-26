@@ -44,6 +44,25 @@ RUN python3 -c "import urllib.request as u; u.urlretrieve('https://codeload.gith
     python3 /materialize.py /src /tasks && \
     cp -r /tb/Tool_Box/crosslang_verify /crosslang_verify && \
     find /crosslang_verify -name __pycache__ -prune -exec rm -rf {} +
+# One deviation, closing a hole: the checker's Python comparison skips any output
+# missing from the model's returned dict, so a model reporting nothing passed.
+# Patched in the C++ testbench it generates, outside the answer's process: a
+# missing output counts as a mismatch.
+RUN python3 - <<'PY'
+p = "/crosslang_verify/tools/dut.py"
+src = open(p).read()
+old = "                if (it != py_outputs[i].end()) {{\n"
+new = """                if (it == py_outputs[i].end()) {{
+                    if ({ev} < 10) {{
+                        std::cerr << "[{self.label} MISMATCH] {label} " << (i - WARMUP_CYCLES) << ", " << name
+                                  << ": expected=" << expected << ", got=<missing>" << std::endl;
+                    }}
+                    {ev}++;
+                }} else {{
+"""
+assert src.count(old) == 1, "crosslang_verify's Python comparison changed"
+open(p, "w").write(src.replace(old, new))
+PY
 
 FROM ubuntu:22.04
 LABEL eval.type="benchmark"
