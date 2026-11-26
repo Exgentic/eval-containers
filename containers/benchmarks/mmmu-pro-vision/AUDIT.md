@@ -25,7 +25,7 @@ commit: PENDING
 | egress-blocked | ? | |
 | agent-nonroot | n/a | native harness runs as root (rule 12c) |
 | secrets-isolated | ? | |
-| resource-limited | ? | |
+| resource-limited | ✓ | 1 CPU / 1 GiB in `compose.yaml` and the chart preset |
 
 ## Size
 

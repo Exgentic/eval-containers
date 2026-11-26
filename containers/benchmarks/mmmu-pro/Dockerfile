@@ -7,7 +7,7 @@
 # Pairs only with the `native` agent (benchmarks/RULES.md 12b).
 #
 # 1730 tasks. Data: HuggingFace MMMU/MMMU_Pro, configs "standard (10 options)"
-# (default) and "standard (4 options)" (MMMU_PRO_SETTING), test split. The two
+# (default) and "standard (4 options)" (EVAL_MMMU_PRO_SETTING), test split. The two
 # configs are the same questions, in the same order, with the same images; only
 # the options and answer differ, so one row carries both. The vision setting is
 # mmmu-pro-vision.
@@ -70,7 +70,7 @@ ARG BENCHMARK_VERSION
 LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="mmmu-pro"
 LABEL eval.benchmark.released="false"
-LABEL eval.benchmark.description="MMMU-Pro - harder multimodal multi-discipline multiple choice, standard setting (10 options; 4 via MMMU_PRO_SETTING); the upstream model-only protocol, no external agent. For the screenshot setting see mmmu-pro-vision"
+LABEL eval.benchmark.description="MMMU-Pro - harder multimodal multi-discipline multiple choice, standard setting (10 options; 4 via EVAL_MMMU_PRO_SETTING); the upstream model-only protocol, no external agent. For the screenshot setting see mmmu-pro-vision"
 LABEL eval.benchmark.tasks="1730"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.agent="native"
@@ -84,7 +84,6 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2409.02813"
 
 COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mmmu-pro
-ENV MMMU_PRO_SETTING="standard (10 options)"
 
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 COPY --from=harness /run_mmmu_pro.py /app/run_mmmu_pro.py

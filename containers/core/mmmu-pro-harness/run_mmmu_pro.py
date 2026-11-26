@@ -151,10 +151,26 @@ def read_field(task_id: int, field: str) -> str | None:
         return f.read()
 
 
+def sniff_mime(raw: bytes) -> str:
+    """The stored bytes' real type: the dataset holds a few JPEGs among its
+    PNGs, and a provider may reject a data URL whose type does not match."""
+    if raw[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        return "image/webp"
+    if raw[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif"
+    return "image/png"
+
+
 def image_part(path: str) -> dict:
     with open(path, "rb") as f:
-        b64 = base64.b64encode(f.read()).decode("ascii")
-    return {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}}
+        raw = f.read()
+    b64 = base64.b64encode(raw).decode("ascii")
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{sniff_mime(raw)};base64,{b64}"},
+    }
 
 
 def build_request(task_id: int, setting: str, mode: str):
@@ -228,23 +244,27 @@ def main() -> int:
     write_reward("0")  # fail-closed baseline
 
     task_id = int(os.environ.get("EVAL_TASK_ID", os.environ.get("TASK_ID", "0")))
-    model = os.environ.get("MODEL") or os.environ.get("EVAL_MODEL") or "gpt-4o"
+    model = os.environ.get("MODEL") or os.environ["EVAL_MODEL"]
     base_url = os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1")
-    setting = os.environ.get("MMMU_PRO_SETTING", "standard (10 options)")
-    mode = os.environ.get("MMMU_PRO_PROMPT", "cot")
+    setting = os.environ.get("EVAL_MMMU_PRO_SETTING", "standard (10 options)")
+    mode = os.environ.get("EVAL_MMMU_PRO_PROMPT", "cot")
     if setting not in SETTINGS or mode not in PROMPTS:
         raise SystemExit(
-            f"[mmmu-pro] unknown MMMU_PRO_SETTING={setting!r} / MMMU_PRO_PROMPT={mode!r}"
+            f"[mmmu-pro] unknown EVAL_MMMU_PRO_SETTING={setting!r} / EVAL_MMMU_PRO_PROMPT={mode!r}"
         )
     # Empty string => omit the parameter (upstream sets neither).
-    _t = os.environ.get("MMMU_PRO_TEMP", "")
-    _p = os.environ.get("MMMU_PRO_TOP_P", "")
+    _t = os.environ.get("EVAL_MMMU_PRO_TEMP", "")
+    _p = os.environ.get("EVAL_MMMU_PRO_TOP_P", "")
     temperature = float(_t) if _t != "" else None
     top_p = float(_p) if _p != "" else None
-    max_tokens = int(os.environ.get("MMMU_PRO_MAX_TOKENS", "4096"))
-    timeout = int(os.environ.get("MMMU_PRO_TIMEOUT", "300"))
-    _eb = os.environ.get("MMMU_PRO_EXTRA_BODY", "")
+    max_tokens = int(os.environ.get("EVAL_MMMU_PRO_MAX_TOKENS", "4096"))
+    timeout = int(os.environ.get("EVAL_MMMU_PRO_TIMEOUT", "300"))
+    _eb = os.environ.get("EVAL_MMMU_PRO_EXTRA_BODY", "")
     extra_body = json.loads(_eb) if _eb.strip() else None
+    if extra_body and {"model", "messages"} & extra_body.keys():
+        raise SystemExit(
+            "[mmmu-pro] EVAL_MMMU_PRO_EXTRA_BODY may not set model or messages"
+        )
 
     upstream_id = (read_field(task_id, "id") or "").strip()
     content, options, gold = build_request(task_id, setting, mode)
@@ -293,7 +313,9 @@ def main() -> int:
         f"[mmmu-pro] gold={gold} parsed={parsed} guessed={guessed} correct={correct} err={err}",
         file=sys.stderr,
     )
-    return 0
+    # A failed request is an errored attempt, not an answer: exit non-zero so the
+    # launcher records the error (output rule 17); the reward stays 0.
+    return 1 if err else 0
 
 
 if __name__ == "__main__":

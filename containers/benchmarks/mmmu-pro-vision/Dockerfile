@@ -65,7 +65,7 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2409.02813"
 
 COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mmmu-pro-vision
-ENV MMMU_PRO_SETTING=vision
+ENV EVAL_MMMU_PRO_SETTING=vision
 
 COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 COPY --from=harness /run_mmmu_pro.py /app/run_mmmu_pro.py
