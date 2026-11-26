@@ -141,6 +141,10 @@ const SPECIAL: &[(&str, &str)] = &[
     // grade_sv.py the harness uses and writes the reward itself, and the no-op
     // leaves /grade.sh's fail-closed 0.0. Shared-env, so task 0 is representative.
     ("chipbench", "0"),
+    // Its Python reference-model track grades through a different path
+    // (grade_py.py → upstream crosslang_verify on Verilator): task 223 has a
+    // hand-written gold in solution.sh; the no-op leaves the fail-closed 0.0.
+    ("chipbench", "223"),
 ];
 
 fn oracle(args: &[&str]) -> bool {
