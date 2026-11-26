@@ -29,8 +29,15 @@ provider (`eval-containers`) whose `baseUrl` is `$OPENAI_BASE_URL` and whose
 output cap to `$PI_MAX_OUTPUT_TOKENS` (default 128000, as opencode's is; lower it
 through the launch's agent env for a model whose window is under ~160k): pi's own default for a custom model is
 16384 and pi-ai clamps any `maxTokens` in `models.json` to 32000, and a reasoning
-model that spends the cap thinking ends the run with exit 0 mid-task. It then runs
-`pi --no-session -e reply-cap.js -p --model eval-containers/$MODEL "$TASK"` — `-p` is
+model that spends the cap thinking ends the run with exit 0 mid-task. A second
+extension, `bash-timeout.js`, gives a bash call the model starts without a
+positive timeout one of 600 s: pi's bash tool has no default, so a command that
+never returns (a watch-mode test runner, a deadlocked script) otherwise holds the
+task until `EVAL_TIMEOUT` (#744). The bash tool's description in each request
+says so, so a model starting a long command, such as a full build, can set a
+longer timeout; one started without is cut at 600 s and the model is told. It
+only helps a run whose `EVAL_TIMEOUT` is over 600 s. It then runs
+`pi --no-session -e reply-cap.js -e bash-timeout.js -p --model eval-containers/$MODEL "$TASK"` — `-p` is
 non-interactive print mode (tools run unattended, no permission prompts),
 `--no-session` keeps each run self-contained, and `PI_OFFLINE=1` disables the
 pi.dev update/telemetry calls that would fail in an egress-locked container.

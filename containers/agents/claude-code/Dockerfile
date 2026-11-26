@@ -87,48 +87,68 @@ fi
 # 100k window, so for a model given its window it is the share of that window,
 # where the 100k share made a 64k window compact on every request). A launch's
 # lower compaction window or share is kept, as the cap is: it only compacts
-# sooner; a higher one is lowered to fit. The window is passed as is, so Claude
-# Code keeps its own rule (98k on a 131k model, 967k on a 1M one). The reply cap becomes
-# min(the launch's CLAUDE_CODE_MAX_OUTPUT_TOKENS, 20000, window/4), so point + cap
-# is window - 13k and a lower cap set for a model's output limit is kept. Not
-# 32000: since 2.1.329 the compaction request is the whole context plus its
-# prompt (~1.6k) at the full cap, and with a 32000 cap point + cap left 1k, so a
-# 150k window was overrun on the compaction request itself (#765).
+# sooner; a higher one is lowered to fit. At a cap up to 20000 the window is passed
+# as is, so Claude Code keeps its own rule (98k on a 131k model, 967k on a 1M
+# one). The reply cap is the launch's CLAUDE_CODE_MAX_OUTPUT_TOKENS, or 32000,
+# lowered to window/4, so a lower cap set for a model's output limit is kept.
+# 32000 is what Claude Code sends a model it doesn't know, and a model that
+# thinks for its whole reply needs it: at 20000 such models failed runs, and
+# Opus 4.8 overran it. Since 2.1.329 the compaction request is the whole context
+# plus its prompt (~1.6k) at the full cap, while compaction reserves only
+# min(cap, 20k), so a 32000 cap on the whole window left 1k and a 150k window
+# was overrun on the compaction request itself (#765). So a cap past 20000
+# comes off the compaction window, C = window - (cap - 20000), and point + cap
+# is window - 13k whatever the cap, as at 20000. Under 100k, where C can't go,
+# the share above puts the point in the same place.
 # Below 64000 it fails before the first call: the first request (system prompt
 # and tools) is ~22k tokens and the first after a compaction ~25k, and the
 # compaction point must clear that by a few turns or it compacts on every
 # request (~34k at 64k, the tests/run/context window).
 if [ -n "${EVAL_MODEL_CONTEXT_WINDOW:-}" ]; then
   W=$EVAL_MODEL_CONTEXT_WINDOW
-  if [ "$W" -lt 64000 ]; then
-    echo "claude-code: EVAL_MODEL_CONTEXT_WINDOW=$W is below 64000, the smallest window it fits (tests/run/context)" >&2
+  # A launch value is used only if it is 1-9 digits: a longer one wraps in bash
+  # arithmetic (a cap of 2^63 goes negative) and is treated as unset.
+  N='^[1-9][0-9]{0,8}$'
+  if ! [[ "$W" =~ $N ]] || [ "$W" -lt 64000 ]; then
+    echo "claude-code: EVAL_MODEL_CONTEXT_WINDOW=$W must be 64000 (the smallest window it fits, tests/run/context) to 999999999" >&2
     exit 2
   fi
-  OUT=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-20000}
-  [[ "$OUT" =~ ^[1-9][0-9]*$ && "$OUT" -le 20000 ]] || OUT=20000
+  OUT=${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-32000}
+  [[ "$OUT" =~ $N ]] || OUT=32000
   OUT=$(( OUT < W / 4 ? OUT : W / 4 ))
   export CLAUDE_CODE_MAX_OUTPUT_TOKENS=$OUT
+  # The compaction window C and the cap's share of it, RES (at most 20k).
+  RES=$(( OUT < 20000 ? OUT : 20000 ))
+  C=$(( W - OUT + RES ))
   if [ "$CC_KNOWS" = 1 ]; then
-    if [ "$W" -ge 100000 ]; then
-      AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
-      [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || AUTO=$W
+    if [ "$C" -ge 100000 ]; then
+      AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$C}
+      [[ "$AUTO" =~ $N && "$AUTO" -le "$C" ]] || AUTO=$C
       export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
     else
-      PCT=$(( (W - OUT - 13000) * 100 / (100000 - OUT) ))
+      PCT=$(( (W - OUT - 13000) * 100 / (100000 - RES) ))
       SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
-      [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || SET=$PCT
+      [[ "$SET" =~ $N && "$SET" -le "$PCT" ]] || SET=$PCT
       export CLAUDE_CODE_AUTO_COMPACT_WINDOW=100000 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
     fi
   else
     export CLAUDE_CODE_MAX_CONTEXT_TOKENS=$W
-    if [ -n "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" ]; then
-      AUTO=$CLAUDE_CODE_AUTO_COMPACT_WINDOW
-      [[ "$AUTO" =~ ^[1-9][0-9]*$ && "$AUTO" -le "$W" ]] || export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$W
+    # A: C, or under 100k, where C can't go, the window, with a share below.
+    A=$(( C < 100000 ? W : C ))
+    if [ -n "${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-}" ] || [ "$A" -lt "$W" ]; then
+      AUTO=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$A}
+      [[ "$AUTO" =~ $N && "$AUTO" -le "$A" ]] || AUTO=$A
+      export CLAUDE_CODE_AUTO_COMPACT_WINDOW=$AUTO
     fi
-    if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ]; then
-      PCT=$(( (W - OUT - 13000) * 100 / (W - OUT) ))
-      SET=$CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
-      [[ "$SET" =~ ^[1-9][0-9]*$ && "$SET" -le "$PCT" ]] || export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$PCT
+    if [ -n "${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-}" ] || [ "$A" -gt "$C" ]; then
+      # The share is of the window Claude Code compacts in, less RES: the one set
+      # above (never below 100k), or the window itself. Past 100 it is ignored.
+      E=${CLAUDE_CODE_AUTO_COMPACT_WINDOW:-$W}
+      E=$(( E > 100000 ? E : 100000 )); E=$(( E < W ? E : W ))
+      PCT=$(( (W - OUT - 13000) * 100 / (E - RES) )); PCT=$(( PCT < 100 ? PCT : 100 ))
+      SET=${CLAUDE_AUTOCOMPACT_PCT_OVERRIDE:-$PCT}
+      [[ "$SET" =~ $N && "$SET" -le "$PCT" ]] || SET=$PCT
+      export CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=$SET
     fi
   fi
 elif [ "$REAL_KNOWN" = 0 ]; then
