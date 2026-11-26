@@ -462,7 +462,8 @@ fn is_native_dockerfile(text: &str) -> bool {
 }
 
 /// The native label (rule 12a) and every surface must agree: compose extends
-/// `runner-native.yaml` and names `evals/<b>--native`, the preset pins
+/// `runner-native.yaml` and names `evals/<b>--native` (per-task:
+/// `evals/<b>-${EVAL_TASK_ID:?}--native`, rule 24f), the preset pins
 /// `agent: native`, the image ships `/harness.sh` — and no other benchmark
 /// borrows any of them. The marker run-agent keys on has one home too.
 #[test]
@@ -494,7 +495,8 @@ fn native_harness_benchmarks_pin_the_native_agent_on_every_surface() {
         let compose = fs::read_to_string(dir.join("compose.yaml")).unwrap_or_default();
         let preset = fs::read_to_string(presets.join(format!("{name}.yaml"))).unwrap_or_default();
         let extends_native = compose.contains("compose/runner-native.yaml");
-        let names_native = compose.contains(&format!("/evals/{name}--native:"));
+        let names_native = compose.contains(&format!("/evals/{name}--native:"))
+            || compose.contains(&format!("/evals/{name}-${{EVAL_TASK_ID:?}}--native:"));
         let preset_pins = preset.lines().any(|l| l.trim_end() == "agent: native");
         let preset_sets_agent = preset.lines().any(|l| l.starts_with("agent:"));
         let ships_harness = dockerfile.contains("/harness.sh");

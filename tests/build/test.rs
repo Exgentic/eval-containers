@@ -88,6 +88,11 @@ fn per_task_build_args(benchmark: &str) -> Option<HashMap<String, String>> {
     mle.insert("EVAL_TASK_ID".into(), "spaceship-titanic".into());
     out.insert("mle-bench", mle);
 
+    // The upstream video id; 001 is a short (34 MB) video in the first zip.
+    let mut video_mme_v2 = HashMap::new();
+    video_mme_v2.insert("EVAL_TASK_ID".into(), "001".into());
+    out.insert("video-mme-v2", video_mme_v2);
+
     // swe-bench-pro, terminal-bench, swe-lancer and deepswe build per-task via
     // build.sh (rule 24g), not a single `docker build`; their builds are exercised
     // by the oracle daemon-lane test (tests/oracle), so they are intentionally
