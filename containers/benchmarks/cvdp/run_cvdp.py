@@ -193,7 +193,12 @@ def main():
     export["written"] = sorted((output or {}).keys())
 
     res = subprocess.run(
-        ["python3", "/tests/cvdp_grade.py", tdir, "/logs/verifier/services"],
+        [
+            "/usr/bin/python3",
+            "/tests/cvdp_grade.py",
+            tdir,
+            "/logs/verifier/services",
+        ],
         capture_output=True,
         text=True,
     )

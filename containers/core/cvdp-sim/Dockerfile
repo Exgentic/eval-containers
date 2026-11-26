@@ -51,6 +51,10 @@ RUN curl -fsSL "https://raw.githubusercontent.com/NVlabs/cvdp_benchmark/${CVDP_R
 ENV PATH=/venv/bin:/usr/local/bin:$PATH
 
 # Shared grader — root-only (benchmarks rule 5): runs a task's own CVDP harness.
+# It runs on /usr/bin/python3 with Ubuntu's PyYAML, leaving upstream's /venv as
+# locked.
+RUN apt-get update && apt-get install -y --no-install-recommends python3-yaml \
+    && rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /tests /code
 COPY cvdp_grade.py /tests/cvdp_grade.py
 RUN chmod 700 /tests && chmod 600 /tests/cvdp_grade.py && chown -R root:root /tests

@@ -19,4 +19,4 @@ for name, body in json.load(open(f"{t}/task.json"))["input_context"].items():
 PY
 cp -r "$T/output/." /code/
 mkdir -p /logs/verifier
-python3 /tests/cvdp_grade.py "$T" /logs/verifier/services > /logs/verifier/reward.txt
+/usr/bin/python3 /tests/cvdp_grade.py "$T" /logs/verifier/services > /logs/verifier/reward.txt

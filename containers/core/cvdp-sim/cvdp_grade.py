@@ -24,110 +24,15 @@ argv: <task dir> <log dir>. Prints the reward (1.0 / 0.0) on stdout.
 """
 
 import os
-import re
 import shutil
 import subprocess
 import sys
 
+import yaml
+
 task, logs = sys.argv[1], sys.argv[2]
 harness = os.path.join(task, "harness")
 SERVICE_TIMEOUT = 600  # upstream DOCKER_TIMEOUT default (src/config_manager.py)
-
-
-BLOCK = re.compile(r"^([|>])([+-]?)$")
-
-
-def block_scalar(style, chomp, lines, final_break=True):
-    """A YAML block scalar's value (literal `|` or folded `>`), per YAML 1.2 8.1."""
-    while lines and not lines[-1].strip():
-        lines.pop()
-    if not lines:
-        return ""
-    base = min(len(ln) - len(ln.lstrip()) for ln in lines if ln.strip())
-    body = [ln[base:] if ln.strip() else "" for ln in lines]
-    if style == "|":
-        out = "\n".join(body)
-    else:
-        # Folding: the break between two lines is a space when both are plain,
-        # dropped when empty lines follow (each empty line is one newline), and
-        # kept when either side is more indented.
-        out, k, prev = body[0], 0, body[0]
-        for ln in body[1:]:
-            if ln == "":
-                k += 1
-                continue
-            keep = prev[:1] in (" ", "\t") or ln[:1] in (" ", "\t")
-            out += ("\n" * (k + 1) if keep else "\n" * k if k else " ") + ln
-            k, prev = 0, ln
-    return out if chomp == "-" or not final_break else out + "\n"
-
-
-def parse_compose(text):
-    """The subset of compose YAML CVDP harnesses use: services -> scalar keys,
-    lists and block scalars (`command: >` / `|`, folded per YAML).
-
-    Indentation varies across harnesses (service names at 1 or 2 spaces), so
-    levels are relative: the first indent under `services:` is the service
-    level, the first indent under a service is its key level. PyYAML is not in
-    upstream's locked requirements, hence no YAML library.
-    """
-    services, cur, key, svc_ind, key_ind, in_services = (
-        {},
-        None,
-        None,
-        None,
-        None,
-        False,
-    )
-    lines = text.splitlines()
-    i = 0
-    while i < len(lines):
-        raw = lines[i]
-        i += 1
-        line = re.sub(r"\s+#.*$", "", raw.rstrip())
-        if not line.strip() or line.lstrip().startswith("#"):
-            continue
-        indent = len(line) - len(line.lstrip())
-        body = line.strip()
-        if indent == 0:
-            cur, key = None, None
-            in_services = body == "services:"
-            continue
-        if not in_services:
-            continue
-        if svc_ind is None:
-            svc_ind = indent
-        if indent == svc_ind and body.endswith(":"):
-            cur, key, key_ind = services.setdefault(body[:-1].strip(), {}), None, None
-        elif cur is None:
-            continue
-        elif body.startswith("- "):
-            if key:
-                cur.setdefault(key, []).append(body[2:].strip())
-        elif ":" in body:
-            if key_ind is None:
-                key_ind = indent
-            if indent != key_ind:
-                continue  # nested mapping (e.g. build: dockerfile:) — not needed
-            k, _, v = body.partition(":")
-            key, v = k.strip(), v.strip()
-            m = BLOCK.match(v)
-            if m:
-                # Block scalar: every following line indented past the key (or
-                # blank) is its body, raw — `#` there is content, not a comment.
-                blk = []
-                while i < len(lines) and (
-                    not lines[i].strip()
-                    or len(lines[i]) - len(lines[i].lstrip()) > key_ind
-                ):
-                    blk.append(lines[i].rstrip())
-                    i += 1
-                # At end of a file with no final newline there is no last break.
-                last = i == len(lines) and not text.endswith("\n")
-                cur[key] = block_scalar(m.group(1), m.group(2), blk, not last)
-            elif v:
-                cur[key] = v
-    return services
 
 
 def read_env(path):
@@ -143,7 +48,7 @@ def read_env(path):
     return env
 
 
-compose = parse_compose(open(os.path.join(harness, "docker-compose.yml")).read())
+compose = yaml.safe_load(open(os.path.join(harness, "docker-compose.yml")))["services"]
 os.makedirs(logs, exist_ok=True)
 
 # Fresh, root-owned harness at /src: the agent never had it.
