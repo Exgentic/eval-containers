@@ -62,7 +62,11 @@ class HttpFile(io.RawIOBase):
 
 
 urllib.request.urlretrieve(f"{BASE}/test.parquet", "/tmp/test.parquet")
-rows = [r for r in pq.read_table("/tmp/test.parquet").to_pylist() if r["video_id"] == video_id]
+rows = [
+    r
+    for r in pq.read_table("/tmp/test.parquet").to_pylist()
+    if r["video_id"] == video_id
+]
 assert len(rows) == 4, f"video {video_id!r}: expected 4 questions, got {len(rows)}"
 
 os.makedirs(f"{out}/frames", exist_ok=True)
@@ -77,15 +81,44 @@ with zipfile.ZipFile(io.BufferedReader(HttpFile(archive), 8 << 20)) as z:
     with z.open(f"{video_id}.mp4") as src, open("/tmp/video.mp4", "wb") as dst:
         shutil.copyfileobj(src, dst, 8 << 20)
 
-n = int(subprocess.check_output(
-    ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries",
-     "stream=nb_frames", "-of", "csv=p=0", "/tmp/video.mp4"], text=True).strip())
+n = int(
+    subprocess.check_output(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=nb_frames",
+            "-of",
+            "csv=p=0",
+            "/tmp/video.mp4",
+        ],
+        text=True,
+    ).strip()
+)
 step = n / (NFRAME + 1)
 select = "+".join(f"eq(n\\,{int(i * step)})" for i in range(1, NFRAME + 1))
 subprocess.run(
-    ["ffmpeg", "-nostdin", "-v", "error", "-i", "/tmp/video.mp4", "-an",
-     "-vf", f"select={select}", "-fps_mode", "passthrough", "-q:v", "2",
-     f"{out}/frames/%02d.jpg"], check=True)
+    [
+        "ffmpeg",
+        "-nostdin",
+        "-v",
+        "error",
+        "-i",
+        "/tmp/video.mp4",
+        "-an",
+        "-vf",
+        f"select={select}",
+        "-fps_mode",
+        "passthrough",
+        "-q:v",
+        "2",
+        f"{out}/frames/%02d.jpg",
+    ],
+    check=True,
+)
 got = len(os.listdir(f"{out}/frames"))
 assert got == NFRAME, f"video {video_id}: extracted {got} of {NFRAME} frames"
 print(f"video {video_id}: {n} frames, sampled {NFRAME}")

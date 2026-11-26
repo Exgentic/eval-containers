@@ -56,13 +56,31 @@ def cal_logic_rating(scores, group_structure):
         else:
             break
     if group_structure_list == [1, 2, 3, 4]:
-        score_map = {0: 0.0, 1: 100.0 / 16, 2: 100.0 * 4 / 16, 3: 100.0 * 9 / 16, 4: 100.0}
+        score_map = {
+            0: 0.0,
+            1: 100.0 / 16,
+            2: 100.0 * 4 / 16,
+            3: 100.0 * 9 / 16,
+            4: 100.0,
+        }
     elif group_structure_list == [1, [2, 3], 4]:
-        score_map = {0: 0.0, 1: 100.0 / 12, 2: 100.0 * 4 / 12, 3: 100.0 * 7 / 12, 4: 100.0}
+        score_map = {
+            0: 0.0,
+            1: 100.0 / 12,
+            2: 100.0 * 4 / 12,
+            3: 100.0 * 7 / 12,
+            4: 100.0,
+        }
         if last_correct_idx == 0 and scores[2]:
             last_correct_idx += 1
     elif group_structure_list == [[1, 2], 3, 4]:
-        score_map = {0: 0.0, 1: 100.0 / 10, 2: 100.0 * 2 / 10, 3: 100.0 * 5 / 10, 4: 100.0}
+        score_map = {
+            0: 0.0,
+            1: 100.0 / 10,
+            2: 100.0 * 2 / 10,
+            3: 100.0 * 5 / 10,
+            4: 100.0,
+        }
         if last_correct_idx == -1 and scores[1]:
             last_correct_idx += 1
     else:
@@ -93,12 +111,14 @@ def main():
     questions = []
     for r in rows:
         extracted = extract_characters_regex_v2(predictions.get(r["question_id"], ""))
-        questions.append({
-            "question_id": r["question_id"],
-            "answer": r["answer"],
-            "extracted": extracted,
-            "correct": extracted == str(r["answer"]),
-        })
+        questions.append(
+            {
+                "question_id": r["question_id"],
+                "answer": r["answer"],
+                "extracted": extracted,
+                "correct": extracted == str(r["answer"]),
+            }
+        )
     scores = [int(q["correct"]) for q in questions]
     # Upstream takes the group's type and structure from its last row.
     group_type, group_structure = rows[-1]["group_type"], rows[-1]["group_structure"]
@@ -109,13 +129,19 @@ def main():
     else:
         raise ValueError(f"Unknown group_type: {group_type}")
 
-    write("/output/task/video-mme-v2.json", json.dumps({
-        "video_id": open("/tasks/id.txt").read().strip(),
-        "group_type": group_type,
-        "group_structure": group_structure,
-        "rating": rating,
-        "questions": questions,
-    }, indent=2))
+    write(
+        "/output/task/video-mme-v2.json",
+        json.dumps(
+            {
+                "video_id": open("/tasks/id.txt").read().strip(),
+                "group_type": group_type,
+                "group_structure": group_structure,
+                "rating": rating,
+                "questions": questions,
+            },
+            indent=2,
+        ),
+    )
     write(REWARD, str(rating / 100))
 
 

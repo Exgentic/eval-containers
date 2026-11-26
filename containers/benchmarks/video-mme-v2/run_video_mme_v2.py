@@ -24,9 +24,13 @@ CALL_TIMEOUT = 300  # seconds per call; 4 calls fit the 1800 s run bound
 
 
 def chat(content):
-    payload = {"model": os.environ.get("MODEL", ""), "messages": [{"role": "user", "content": content}]}
+    payload = {
+        "model": os.environ.get("MODEL", ""),
+        "messages": [{"role": "user", "content": content}],
+    }
     req = urllib.request.Request(
-        os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1").rstrip("/") + "/chat/completions",
+        os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1").rstrip("/")
+        + "/chat/completions",
         data=json.dumps(payload).encode(),
         headers={
             "Content-Type": "application/json",
@@ -49,14 +53,20 @@ def main():
         row = json.loads(line)
         content = frames + [
             {"type": "text", "text": WO_SUB_PROMPT},
-            {"type": "text", "text": f"Question: {row['question']}\n{row['options']}\n{INSTRUCT_PROMPT}"},
+            {
+                "type": "text",
+                "text": f"Question: {row['question']}\n{row['options']}\n{INSTRUCT_PROMPT}",
+            },
         ]
         try:
             reply = chat(content).strip()
         except Exception as e:  # noqa: BLE001 — upstream scores a failed call as ''
             print(f"[video-mme-v2] {row['question_id']}: {e}", file=sys.stderr)
             reply, failed = "", failed + 1
-        print(json.dumps({"question_id": row["question_id"], "prediction": reply}), flush=True)
+        print(
+            json.dumps({"question_id": row["question_id"], "prediction": reply}),
+            flush=True,
+        )
     sys.exit(1 if failed else 0)
 
 
