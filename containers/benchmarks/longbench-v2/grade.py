@@ -1,8 +1,13 @@
 """LongBench v2 grader: upstream's extract_answer + judge (THUDM/LongBench pred.py).
 
-Drop every '*', take the first "The correct answer is (X)", else the first
-"The correct answer is X"; reward 1 iff that letter equals the gold letter.
-No match, or no stdout, is wrong.
+Drop every '*', take "The correct answer is (X)", else "The correct answer is X";
+reward 1 iff that letter equals the gold letter. No match, or no stdout, is wrong.
+
+One deviation: upstream reads a single short reply and takes the FIRST match.
+Here stdout can be an agent's whole transcript (interim answers, tool output,
+echoed context — task 134's text itself contains "The correct answer is D"), so
+the LAST match of each pattern is taken: the agent's final answer. On a single
+reply that states one answer, the two agree.
 """
 
 import os
@@ -11,11 +16,14 @@ import re
 
 def extract_answer(response):
     response = response.replace("*", "")
-    match = re.search(r"The correct answer is \(([A-D])\)", response)
-    if match:
-        return match.group(1)
-    match = re.search(r"The correct answer is ([A-D])", response)
-    return match.group(1) if match else None
+    for pattern in (
+        r"The correct answer is \(([A-D])\)",
+        r"The correct answer is ([A-D])",
+    ):
+        matches = re.findall(pattern, response)
+        if matches:
+            return matches[-1]
+    return None
 
 
 try:

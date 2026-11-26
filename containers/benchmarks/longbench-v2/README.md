@@ -26,12 +26,20 @@ Follows upstream's `pred.py` in its default (w/o-CoT) setting:
 - **Prompt.** `prompts/0shot.txt` verbatim, filled with the stripped `context`,
   `question` and `choice_A`–`choice_D`, in upstream's substitution order. It
   ends: `Format your response as follows: "The correct answer is (insert answer here)".`
-- **Answer extraction.** Upstream's `extract_answer`: remove every `*`, take the
-  first `The correct answer is \(([A-D])\)`, else the first
-  `The correct answer is ([A-D])`. No match is wrong.
+- **Answer extraction.** Upstream's `extract_answer`: remove every `*`, match
+  `The correct answer is \(([A-D])\)`, else `The correct answer is ([A-D])`.
+  No match is wrong. Upstream takes the *first* match of a single 128-token
+  reply; here stdout can be an agent's whole transcript (interim answers, tool
+  output, echoed context — task 134's text itself contains "The correct answer
+  is D"), so the *last* match of each pattern is taken, keeping upstream's
+  order (any `(X)` form beats a bare `X`). On a reply that states one answer
+  the two agree.
 - **Score.** `1` iff the extracted letter equals the gold `answer`, else `0`.
   The suite accuracy is the mean over the 503 tasks (upstream `result.py`
-  "Overall"; random is 25%).
+  "Overall"; random is 25%). Upstream drops a task whose API call failed from
+  the denominator; here a failed task scores `0`. Task ids follow the dataset
+  order, so the Easy/Hard and Short/Medium/Long splits join on the dataset's
+  `difficulty` and `length` columns.
 
 Why 0-shot rather than CoT: upstream's `--cot` mode is a two-call scaffold for
 non-reasoning chat models (`0shot_cot.txt`, then `0shot_cot_ans.txt` with the
@@ -66,7 +74,8 @@ letter and the task store (`/tasks`, root-only) are not readable by the agent.
 ## How it's graded
 
 `grade.sh` runs `grade.py` (root-only at `/tests/grade.py`) — upstream's
-`extract_answer` on the agent's stdout (`/output/agent/stdout.log`) and writes `1` or `0` to
+`extract_answer` (last match, above) on the agent's stdout
+(`/output/agent/stdout.log`) — and writes `1` or `0` to
 `/logs/verifier/reward.txt`; it fails closed to `0`.
 
 ## Oracle
