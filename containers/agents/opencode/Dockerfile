@@ -25,7 +25,9 @@ RUN npm install -g --ignore-scripts @opencode/cli@${AGENT_VERSION} \
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-for b in node npm npx opencode; do [ -e /opt/agent/node/bin/$b ] && ln -sf /opt/agent/node/bin/$b /usr/local/bin/$b || true; done
+# Only opencode is linked: it is a native binary, and a benchmark's own node must
+# not be replaced (agents rule 15).
+ln -sf /opt/agent/node/bin/opencode /usr/local/bin/opencode
 # opencode's search tools use a system `rg`; with none they download ripgrep at
 # first use, which a run with no internet cannot do. Best-effort: install.sh must
 # work on any base (rule 11), offline or without apt-get.
@@ -42,12 +44,15 @@ I
 # returns would hold the task until EVAL_TIMEOUT (#744, #785). opencode has no
 # setting for this, so its `shell` (config, /run.sh) is this wrapper: every
 # command runs under timeout(1), which ends its process group at 600 s, Claude
-# Code's maximum. The model is told the command timed out and the run goes on. A
-# longer timeout the model asks for is cut at 600 s too, and so is a server it
-# starts in the background.
+# Code's maximum. The model sees the command end with exit code 124, not a
+# "timed out" notice. A longer timeout the model asks for is cut at 600 s too,
+# where 1.x honoured any, and so is a command it starts with `background: true`;
+# a `server &` inside a command that returns outlives it. `exec` keeps timeout(1)
+# the leader of the process group opencode gave the command, so opencode's own
+# stop still ends the whole group. Every eval image has timeout(1): run-agent
+# runs under it.
 RUN mkdir -p /opt/agent/bin && cat > /opt/agent/bin/bash <<'W' && chmod +x /opt/agent/bin/bash
 #!/bin/bash
-command -v timeout >/dev/null 2>&1 || exec /bin/bash "$@"
 exec timeout -k 10 600 /bin/bash "$@"
 W
 
@@ -81,16 +86,19 @@ if [ -n "$MCP_URL" ]; then
   MCP_JSON=",\"mcp\":{\"syntara\":{\"type\":\"remote\",\"url\":\"$MCP_URL_ESC\",\"enabled\":true,\"timeout\":300000,\"codemode\":false}}"
 fi
 
-# opencode's reply cap is 32000, and a turn cut at it ends the run, so it is
-# raised to OPENCODE_MAX_OUTPUT_TOKENS (128000 unless the launch's agent env sets
-# it; not the upstream name, as run-agent refuses any *TOKEN_* name there), as the
-# model's `limit.output`. A non-numeric value means 128000. Told the model's window
+# opencode's reply cap is 32000. A reply cut at it is continued twice, and a third
+# cut in a row ends the run with exit 1, so the cap is raised to
+# OPENCODE_MAX_OUTPUT_TOKENS (128000 unless the launch's agent env sets it; not the
+# upstream name, as run-agent refuses any *TOKEN_* name there), as the model's
+# `limit.output`. A non-numeric value means 128000. Told the model's window
 # (EVAL_MODEL_CONTEXT_WINDOW, agents rules 25–26), the cap becomes min(that,
-# window/4), 32768 on a 131k model where 128000 rejects the first call, and the
-# window is the model's `limit.context`, which opencode compacts by (at window −
-# max(15%, 16k)). Untold, `limit.context` is 0, a window opencode does not know:
-# it does not compact ahead, as the 1.x line here never did, and compacts when the
-# provider rejects a call as too long. Either way, a recovered overflow exits 0.
+# window/4), and the window is the model's `limit.context`, which opencode
+# compacts by (at window − max(15%, 16k)). Untold, `limit.context` is 0, a window
+# opencode does not know: it does not compact ahead, as the 1.x line here never
+# did, and compacts when the provider rejects a call as too long. Either way, a
+# recovered overflow exits 0. `compaction.background` is off: on, opencode would
+# summarize ahead of the compaction point, in calls that cost tokens even when the
+# summary is never used and interleave with the run's own.
 CAP="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}"
 [[ "$CAP" =~ ^[1-9][0-9]*$ ]] || CAP=128000
 CTX=0
@@ -101,7 +109,7 @@ fi
 # `websearch` is denied: with no search provider configured, opencode asks the
 # user to pick one, and an unattended run fails on the question (exit 1).
 cat > "$HOME/.config/opencode/opencode.json" <<CONF
-{"\$schema":"https://opencode.ai/config.json","model":"eval-containers/${MODEL:-default}","small_model":"eval-containers/${MODEL:-default}","disabled_providers":["anthropic","openai"],"shell":"/opt/agent/bin/bash","provider":{"eval-containers":{"npm":"@ai-sdk/openai-compatible","name":"Eval Containers LiteLLM Proxy","options":{"baseURL":"${OPENAI_BASE_URL:-http://model:4000/v1}","apiKey":"${OPENAI_API_KEY:-sk-proxy}"},"models":{"${MODEL:-default}":{"name":"Eval Containers Proxy Model","limit":{"context":${CTX},"output":${CAP}}}}}}${MCP_JSON},"permission":{"edit":"allow","bash":"allow","webfetch":"allow","external_directory":"allow","websearch":"deny"}}
+{"\$schema":"https://opencode.ai/config.json","model":"eval-containers/${MODEL:-default}","small_model":"eval-containers/${MODEL:-default}","disabled_providers":["anthropic","openai"],"shell":"/opt/agent/bin/bash","compaction":{"background":false},"provider":{"eval-containers":{"npm":"@ai-sdk/openai-compatible","name":"Eval Containers LiteLLM Proxy","options":{"baseURL":"${OPENAI_BASE_URL:-http://model:4000/v1}","apiKey":"${OPENAI_API_KEY:-sk-proxy}"},"models":{"${MODEL:-default}":{"name":"Eval Containers Proxy Model","limit":{"context":${CTX},"output":${CAP}}}}}}${MCP_JSON},"permission":{"edit":"allow","bash":"allow","webfetch":"allow","external_directory":"allow","websearch":"deny"}}
 CONF
 export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"

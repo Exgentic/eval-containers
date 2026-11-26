@@ -1,23 +1,26 @@
-//! Hang suite — does an agent whose shell command never returns still end the task?
+//! Hang suite — does an agent end the task by itself, before EVAL_TIMEOUT, when
+//! it gets stuck? Each run starts `mock.py` on a bridge network and runs the
+//! agent's `evals/agents-smoke--<name>` image against it, in one of three modes:
 //!
-//! For each agent, this suite starts `mock.py` on a bridge network, then runs the
-//! agent's `evals/agents-smoke--<name>` image against it. The mock's first answer
-//! asks for a command that sleeps for ~11 days, with no timeout of its own, the
-//! shape of a watch-mode test runner or a deadlocked script (#744). Once the agent
-//! hands back that call's result, the mock gives the final answer.
+//!   - command: the mock asks for a command that sleeps for ~11 days, with no
+//!     timeout of its own, the shape of a watch-mode test runner or a deadlocked
+//!     script (#744). The call's result must come back no sooner than the agent's
+//!     bound (how long it waits on the command before handing the model a result)
+//!     and say what the agent did with the command, and the agent must then exit 0.
+//!     pi kills the command at the image's 600 s bash default. claude-code and
+//!     opencode move it to the background at 120 s; claude-code stops background
+//!     tasks 10 min after its final answer (exit ~12 min in; under a shorter
+//!     EVAL_TIMEOUT it still answers but is killed with 124), opencode's image
+//!     ends the command at 600 s.
+//!   - budget: every call gets LiteLLM's spent-budget 429. The agent must retry,
+//!     then give up by itself with a non-zero exit (#785).
+//!   - overflow: a call is rejected as too long until the agent compacts. The
+//!     agent must compact, finish, and exit 0, so the run is scored (#785).
 //!
-//! A run passes when the call's result came back no sooner than the agent's
-//! bound (how long it waits on the command before handing the model a result)
-//! and says what the agent did with the command, and the agent then exited 0 by
-//! itself, before its EVAL_TIMEOUT. pi kills the command at the image's 600 s
-//! default bash timeout. claude-code moves it to the background at 120 s and
-//! stops background tasks 10 min after its final answer, so it exits ~12 min in:
-//! under an EVAL_TIMEOUT below that, it still answers but is killed with 124. The
-//! bound is asserted so that a call that fails at once (a refused or broken tool)
-//! cannot pass.
-//!
-//! The mock runs as a second container from the agent's own eval image
-//! (agents-smoke is `FROM python:3.12-slim`), so the suite adds no image.
+//! The bounds and orders are asserted so that a call that fails at once (a
+//! refused or broken tool) cannot pass. The mock runs as a second container from
+//! the agent's own eval image (agents-smoke is `FROM python:3.12-slim`), so the
+//! suite adds no image.
 //!
 //! ## Run
 //!
@@ -247,11 +250,11 @@ async fn assert_recovers(agent: &str) {
     let r = run(agent, "overflow").await;
     let context = &r.context;
     let names: Vec<&str> = r.seen.iter().filter_map(|e| e["event"].as_str()).collect();
-    let rejected = names.iter().position(|e| *e == "overflow");
-    let answered = names.iter().position(|e| *e == "final");
+    let at = |name: &str| names.iter().position(|e| *e == name);
+    let (rejected, summarized, answered) = (at("overflow"), at("summary"), at("final"));
     assert!(
-        rejected.is_some() && answered > rejected,
-        "the mock should reject a call as too long and then give the final answer: {context}"
+        rejected.is_some() && summarized > rejected && answered > summarized,
+        "the agent should be rejected, compact (ask for a summary), then get the final answer: {context}"
     );
     assert_eq!(
         r.code.as_deref(),
