@@ -31,7 +31,7 @@ LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
 ARG BENCHMARK_VERSION
 LABEL eval.benchmark.data_revision="${BENCHMARK_VERSION}"
-LABEL eval.benchmark.url="https://github.com/THUDM/LongBench"
+LABEL eval.benchmark.url="https://huggingface.co/datasets/zai-org/LongBench-v2"
 LABEL eval.benchmark.license="Apache-2.0"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/2412.15204"
 ENV EVAL_BENCHMARK=longbench-v2
