@@ -12,7 +12,6 @@ ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 # One pin for both the loader and the label below, so they cannot drift (rule 4).
 ARG BENCHMARK_VERSION=0d7426df4ccb3d8704a992fe6850abee7c262127
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}mmmu-pro-harness:latest AS harness
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 ARG BENCHMARK_VERSION
@@ -33,8 +32,10 @@ with open("/tasks/all.jsonl", "w") as out:
         urllib.request.urlretrieve(f"{BASE}/test-{shard:05d}-of-00004.parquet", "/tmp/data.parquet")
         t = pq.read_table("/tmp/data.parquet")
         for i in range(len(t)):
+            raw = t["image"][i].as_py()["bytes"]
+            assert raw[:3] in (b"\x89PN", b"\xff\xd8\xff"), count  # PNG or JPEG only
             with open(f"/tasks/images/{count}.png", "wb") as f:
-                f.write(t["image"][i].as_py()["bytes"])
+                f.write(raw)
             row = {k: t[k][i].as_py() for k in ("id", "subject", "options", "answer")}
             out.write(json.dumps(row) + "\n")
             count += 1
@@ -45,7 +46,7 @@ PYEOF
 
 RUN chmod -R go-rwx /tasks
 
-FROM python:3.12-slim
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 ARG BENCHMARK_VERSION
 
 LABEL eval.type="benchmark"
@@ -67,12 +68,9 @@ COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mmmu-pro-vision
 ENV EVAL_MMMU_PRO_SETTING=vision
 
-COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 COPY --from=harness /run_mmmu_pro.py /app/run_mmmu_pro.py
-RUN chmod +x /eval-materialize-task \
- && printf '#!/bin/bash\nexec python3 /app/run_mmmu_pro.py\n' > /harness.sh && chmod +x /harness.sh \
+RUN printf '#!/bin/bash\nexec python3 /app/run_mmmu_pro.py\n' > /harness.sh && chmod +x /harness.sh \
  && printf '#!/bin/bash\n/eval-materialize-task\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
-WORKDIR /app
 ENTRYPOINT ["/entrypoint.sh"]
 
 # The harness writes /logs/verifier/reward.txt itself; keep a fail-closed

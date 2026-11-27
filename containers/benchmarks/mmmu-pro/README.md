@@ -57,9 +57,13 @@ Task `i` is the same question in all three settings.
   (`parse_multi_choice_response`), checked against upstream on synthetic
   responses. The reward is 1.0 if the parsed letter equals the gold one, else
   0.0, so the mean reward is upstream's accuracy. Per-question detail goes to
-  `/output/task/mmmu_pro.json`: setting, prompt, knobs, gold, parsed, `guessed`,
-  error, and the response tail. A failed request exits non-zero, so the
-  launcher records the attempt as errored and a resumed run retries it.
+  `/output/task/mmmu_pro.json`: setting, prompt, knobs, gold, parsed,
+  `guessed`, `finish_reason` (`length` means the reply was cut off at the cap),
+  error, and the response tail.
+- **Failures:** a 429 or 5xx is retried up to three times with backoff. A
+  request that still fails, a bad knob, or a missing task exits non-zero, so
+  the launcher records the attempt as errored and a resumed run retries it. In
+  every case the reward is 0 and `mmmu_pro.json` is written with the error.
 
 ## Where this differs from upstream, and why
 
@@ -96,7 +100,7 @@ Task `i` is the same question in all three settings.
 | `EVAL_MMMU_PRO_PROMPT` | `cot` | `cot` or `direct` |
 | `EVAL_MMMU_PRO_TEMP` | empty (omitted) | `temperature`; empty omits it, like upstream |
 | `EVAL_MMMU_PRO_TOP_P` | empty (omitted) | `top_p`; empty omits it |
-| `EVAL_MMMU_PRO_MAX_TOKENS` | `4096` | `max_tokens`, upstream's value |
+| `EVAL_MMMU_PRO_MAX_TOKENS` | `4096` | `max_tokens`, upstream's value; `none` omits it |
 | `EVAL_MMMU_PRO_TIMEOUT` | `300` | HTTP timeout for the call, in seconds |
 | `EVAL_MMMU_PRO_EXTRA_BODY` | empty | a JSON object merged into the request, for provider knobs |
 
@@ -118,7 +122,9 @@ EVAL_MMMU_PRO_TIMEOUT=1800 EVAL_MMMU_PRO_EXTRA_BODY='{"reasoning_effort":"xhigh"
 ```
 
 Raise `EVAL_TIMEOUT` to match. Use the provider's own field in `EXTRA_BODY`
-(e.g. `{"thinking":{"type":"adaptive"}}` for Claude).
+(e.g. `{"thinking":{"type":"adaptive"}}` for Claude). An OpenAI reasoning model
+(o3 and later) refuses `max_tokens`, so omit it and give the cap its own name:
+`EVAL_MMMU_PRO_MAX_TOKENS=none EVAL_MMMU_PRO_EXTRA_BODY='{"max_completion_tokens":65536,"reasoning_effort":"xhigh"}'`.
 
 ## Run
 

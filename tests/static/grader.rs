@@ -241,3 +241,60 @@ fn sentinel_takes_the_last_occurrence() {
         "0.0"
     );
 }
+
+/// MMMU-Pro's native harness (`core/mmmu-pro-harness/run_mmmu_pro.py`): its
+/// prompt, image order and answer parser are upstream's (MMMU `mmmu-pro/` @
+/// b26bdefc). Pins the behaviours a score depends on — `<image N>` order with
+/// repeats, upstream's lettering, the parser's quirks (a bare " I " is option
+/// I), and the seeded fallback guess being the same on every run.
+#[test]
+fn mmmu_pro_harness_matches_upstream() {
+    let harness = repo_root().join("containers/core/mmmu-pro-harness/run_mmmu_pro.py");
+    let script = r#"
+import importlib.util, random, sys
+spec = importlib.util.spec_from_file_location("h", sys.argv[1])
+h = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(h)
+
+text, order = h.replace_images_tokens(
+    h.construct_prompt("Which? <image 2>", ["<image 3>", "<image 1>", "x <image 2>"], "direct"))
+assert text == "Which? <image>\nA. <image>\nB. <image>\nC. x <image>\n" \
+    "Answer with the option letter from the given choices directly.", text
+assert order == [2, 3, 1, 2], order
+
+opts = ["apple pie", "banana split", "cherry tart", "date loaf", "elder wine",
+        "fig jam", "grape soda", "honey cake", "ice cream", "jelly bean"]
+i2a, ch = h.get_multi_choice_info(opts)
+cases = {
+    "Answer: C": "C",
+    "answer is (B) not (D)": "D",
+    "The answer is D.": "D",
+    "Answer: A or B\nAnswer: J": "J",
+    "I think it's the cherry tart, clearly better than the honey cake overall": "I",
+    "xxx banana split and fig jam are both good options here": "F",
+}
+for resp, want in cases.items():
+    got, guessed = h.parse_multi_choice_response(resp, ch, i2a, random.Random(0))
+    assert (got, guessed) == (want, False), (resp, got, guessed)
+
+a = h.parse_multi_choice_response("", ch, i2a, random.Random("42:x"))
+b = h.parse_multi_choice_response("", ch, i2a, random.Random("42:x"))
+assert a == b and a[1] is True, (a, b)
+assert h.sniff_mime(b"\xff\xd8\xff\xe0") == "image/jpeg"
+assert h.sniff_mime(b"\x89PNG\r\n\x1a\n") == "image/png"
+print("ok")
+"#;
+    let out = Command::new("python3")
+        .arg("-I")
+        .arg("-c")
+        .arg(script)
+        .arg(&harness)
+        .output()
+        .expect("run python3");
+    assert!(
+        out.status.success(),
+        "mmmu-pro harness check failed:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}

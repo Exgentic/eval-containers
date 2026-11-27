@@ -20,11 +20,13 @@ Fail-closed: any unexpected error leaves reward = 0.
 
 import ast
 import base64
+import http.client
 import json
 import os
 import random
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -153,14 +155,9 @@ def read_field(task_id: int, field: str) -> str | None:
 
 def sniff_mime(raw: bytes) -> str:
     """The stored bytes' real type: the dataset holds a few JPEGs among its
-    PNGs, and a provider may reject a data URL whose type does not match."""
-    if raw[:3] == b"\xff\xd8\xff":
-        return "image/jpeg"
-    if raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
-        return "image/webp"
-    if raw[:6] in (b"GIF87a", b"GIF89a"):
-        return "image/gif"
-    return "image/png"
+    PNGs (the loader admits only those two), and a provider may reject a data
+    URL whose type does not match."""
+    return "image/jpeg" if raw[:3] == b"\xff\xd8\xff" else "image/png"
 
 
 def image_part(path: str) -> dict:
@@ -177,7 +174,7 @@ def build_request(task_id: int, setting: str, mode: str):
     """-> (content parts, options, gold) for one question in one setting."""
     if setting == "vision":
         if not os.path.exists(f"/tasks/images/{task_id}.png"):
-            raise SystemExit("[mmmu-pro] this image has no 'vision' data")
+            raise ValueError("this image has no 'vision' data")
         options = ast.literal_eval(read_field(task_id, "options"))
         gold = read_field(task_id, "answer").strip()
         prompt = PROMPTS[mode]["vision"]
@@ -188,7 +185,7 @@ def build_request(task_id: int, setting: str, mode: str):
             read_field(task_id, "question") is None
             or read_field(task_id, "options" + suffix) is None
         ):
-            raise SystemExit(f"[mmmu-pro] this image has no {setting!r} data")
+            raise ValueError(f"this image has no {setting!r} data")
         options = ast.literal_eval(read_field(task_id, "options" + suffix))
         gold = read_field(task_id, "answer" + suffix).strip()
         prompt, order = replace_images_tokens(
@@ -202,121 +199,151 @@ def build_request(task_id: int, setting: str, mode: str):
 def request_once(
     base_url, model, content, temperature, top_p, max_tokens, timeout, extra_body
 ):
-    """One chat/completions call. Returns (content_text, error_message)."""
-    payload: dict = {
-        "model": model,
-        "messages": [{"role": "user", "content": content}],
-        "max_tokens": max_tokens,
-    }
+    """One chat/completions call, retrying a 429/5xx up to 3 times with backoff.
+    Returns (content_text, finish_reason, error_message)."""
+    payload: dict = {"model": model, "messages": [{"role": "user", "content": content}]}
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
     if temperature is not None:
         payload["temperature"] = temperature
     if top_p is not None:
         payload["top_p"] = top_p
     if extra_body:
         payload.update(extra_body)
-    req = urllib.request.Request(
-        base_url.rstrip("/") + "/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', 'sk-proxy')}",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]["content"] or "", None
-    except urllib.error.HTTPError as e:
-        return None, f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}"
-    except (
-        urllib.error.URLError,
-        OSError,
-        KeyError,
-        IndexError,
-        TypeError,
-        json.JSONDecodeError,
-    ) as e:
-        return None, f"{type(e).__name__}: {e}"
+    body = json.dumps(payload).encode("utf-8")
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY', 'sk-proxy')}",
+    }
+    for attempt in range(4):
+        req = urllib.request.Request(
+            base_url.rstrip("/") + "/chat/completions",
+            data=body,
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            choice = data["choices"][0]
+            return choice["message"]["content"] or "", choice.get("finish_reason"), None
+        except urllib.error.HTTPError as e:
+            err = f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}"
+            if (e.code == 429 or e.code >= 500) and attempt < 3:
+                time.sleep(5 * 2**attempt)
+                continue
+            return None, None, err
+        except (
+            urllib.error.URLError,
+            http.client.HTTPException,
+            OSError,
+            KeyError,
+            IndexError,
+            TypeError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ) as e:
+            return None, None, f"{type(e).__name__}: {e}"
 
 
-def main() -> int:
-    write_reward("0")  # fail-closed baseline
+def knobs() -> dict:
+    """The EVAL_MMMU_PRO_* knobs, validated. Unset or empty takes upstream's
+    value; an empty TEMP/TOP_P omits the parameter (upstream sets neither), and
+    MAX_TOKENS=none omits max_tokens, for a model that takes
+    max_completion_tokens through EXTRA_BODY instead."""
+    env = lambda k: os.environ.get(f"EVAL_MMMU_PRO_{k}") or ""  # noqa: E731
+    k = {
+        "setting": env("SETTING") or "standard (10 options)",
+        "prompt": env("PROMPT") or "cot",
+        "temperature": float(env("TEMP")) if env("TEMP") else None,
+        "top_p": float(env("TOP_P")) if env("TOP_P") else None,
+        "max_tokens": None
+        if env("MAX_TOKENS") == "none"
+        else int(env("MAX_TOKENS") or 4096),
+        "timeout": int(env("TIMEOUT") or 300),
+        "extra_body": json.loads(env("EXTRA_BODY"))
+        if env("EXTRA_BODY").strip()
+        else None,
+    }
+    if k["setting"] not in SETTINGS or k["prompt"] not in PROMPTS:
+        raise ValueError(f"unknown setting {k['setting']!r} or prompt {k['prompt']!r}")
+    eb = k["extra_body"]
+    if eb is not None and (
+        not isinstance(eb, dict) or {"model", "messages"} & eb.keys()
+    ):
+        raise ValueError(
+            "EXTRA_BODY must be a JSON object that sets neither model nor messages"
+        )
+    return k
 
-    task_id = int(os.environ.get("EVAL_TASK_ID", os.environ.get("TASK_ID", "0")))
+
+def run(task_id: int, export: dict) -> int:
     model = os.environ.get("MODEL") or os.environ["EVAL_MODEL"]
     base_url = os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1")
-    setting = os.environ.get("EVAL_MMMU_PRO_SETTING") or "standard (10 options)"
-    mode = os.environ.get("EVAL_MMMU_PRO_PROMPT") or "cot"
-    if setting not in SETTINGS or mode not in PROMPTS:
-        raise SystemExit(
-            f"[mmmu-pro] unknown EVAL_MMMU_PRO_SETTING={setting!r} / EVAL_MMMU_PRO_PROMPT={mode!r}"
-        )
-    # Unset or empty knobs take upstream's value; an empty TEMP/TOP_P omits the
-    # parameter (upstream sets neither).
-    _t = os.environ.get("EVAL_MMMU_PRO_TEMP", "")
-    _p = os.environ.get("EVAL_MMMU_PRO_TOP_P", "")
-    temperature = float(_t) if _t != "" else None
-    top_p = float(_p) if _p != "" else None
-    max_tokens = int((os.environ.get("EVAL_MMMU_PRO_MAX_TOKENS") or "4096"))
-    timeout = int((os.environ.get("EVAL_MMMU_PRO_TIMEOUT") or "300"))
-    _eb = os.environ.get("EVAL_MMMU_PRO_EXTRA_BODY", "")
-    extra_body = json.loads(_eb) if _eb.strip() else None
-    if extra_body and {"model", "messages"} & extra_body.keys():
-        raise SystemExit(
-            "[mmmu-pro] EVAL_MMMU_PRO_EXTRA_BODY may not set model or messages"
-        )
-
-    upstream_id = (read_field(task_id, "id") or "").strip()
-    content, options, gold = build_request(task_id, setting, mode)
+    k = knobs()
+    export.update(model=model, **k)
+    content, options, gold = build_request(task_id, k["setting"], k["prompt"])
+    export["gold"] = gold
     print(
-        f"[mmmu-pro] task={task_id} id={upstream_id} setting={setting!r} prompt={mode} "
-        f"model={model} n_images={len(content) - 1}",
+        f"[mmmu-pro] task={task_id} id={export['upstream_id']} setting={k['setting']!r} "
+        f"prompt={k['prompt']} model={model} n_images={len(content) - 1}",
         file=sys.stderr,
     )
 
-    text, err = request_once(
-        base_url, model, content, temperature, top_p, max_tokens, timeout, extra_body
+    text, finish, err = request_once(
+        base_url,
+        model,
+        content,
+        k["temperature"],
+        k["top_p"],
+        k["max_tokens"],
+        k["timeout"],
+        k["extra_body"],
     )
     parsed, guessed = None, False
     if err is None:
         index2ans, all_choices = get_multi_choice_info(options)
-        rng = random.Random(f"42:{upstream_id}")  # upstream seeds 42
+        rng = random.Random(f"42:{export['upstream_id']}")  # upstream seeds 42
         parsed, guessed = parse_multi_choice_response(text, all_choices, index2ans, rng)
-    correct = parsed == gold
-
-    os.makedirs(os.path.dirname(EXPORT_PATH), exist_ok=True)
-    with open(EXPORT_PATH, "w") as f:
-        json.dump(
-            {
-                "task_id": task_id,
-                "upstream_id": upstream_id,
-                "subject": (read_field(task_id, "subject") or "").strip(),
-                "setting": setting,
-                "prompt": mode,
-                "model": model,
-                "temperature": temperature,
-                "top_p": top_p,
-                "max_tokens": max_tokens,
-                "extra_body": extra_body,
-                "gold": gold,
-                "parsed": parsed,
-                "guessed": guessed,
-                "correct": correct,
-                "error": err,
-                "response_tail": (text or "")[-2000:],
-            },
-            f,
-            indent=2,
-        )
-    write_reward("1.0" if correct else "0.0")
+    export.update(
+        parsed=parsed,
+        guessed=guessed,
+        correct=parsed == gold,
+        finish_reason=finish,
+        error=err,
+        response_tail=(text or "")[-2000:],
+    )
+    write_reward("1.0" if parsed == gold else "0.0")
     print(
-        f"[mmmu-pro] gold={gold} parsed={parsed} guessed={guessed} correct={correct} err={err}",
+        f"[mmmu-pro] gold={gold} parsed={parsed} guessed={guessed} "
+        f"finish={finish} err={err}",
         file=sys.stderr,
     )
     # A failed request is an errored attempt, not an answer: exit non-zero so the
     # launcher records the error (output rule 17); the reward stays 0.
     return 1 if err else 0
+
+
+def main() -> int:
+    write_reward("0")  # fail-closed baseline
+    task_id = int(os.environ.get("EVAL_TASK_ID", os.environ.get("TASK_ID", "0")))
+    export = {
+        "task_id": task_id,
+        "upstream_id": (read_field(task_id, "id") or "").strip(),
+        "subject": (read_field(task_id, "subject") or "").strip(),
+        "correct": False,
+        "error": None,
+    }
+    try:
+        rc = run(task_id, export)
+    except (Exception, SystemExit) as e:  # a bad knob or task: fail closed, recorded
+        export["error"] = f"{type(e).__name__}: {e}"
+        print(f"[mmmu-pro] {export['error']}", file=sys.stderr)
+        rc = 1
+    os.makedirs(os.path.dirname(EXPORT_PATH), exist_ok=True)
+    with open(EXPORT_PATH, "w") as f:
+        json.dump(export, f, indent=2)
+    return rc
 
 
 if __name__ == "__main__":
