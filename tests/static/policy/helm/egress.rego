@@ -64,6 +64,27 @@ deny contains msg if {
 	msg := sprintf("NetworkPolicy/%s: an egress rule allows every pod in the namespace (#753)", [np_name])
 }
 
+# The offline pods a policy selects, or lets its pods reach, are one benchmark's:
+# a runner has no business with another benchmark's sites or services.
+deny contains msg if {
+	input.kind == "NetworkPolicy"
+	some sel in offline_selectors
+	not sel.benchmark
+	msg := sprintf("NetworkPolicy/%s: it matches offline pods of every benchmark; scope it by `benchmark` (#753)", [np_name])
+}
+
+offline_selectors contains sel if {
+	sel := object.get(input, ["spec", "podSelector", "matchLabels"], {})
+	sel["eval-internet"] == "false"
+}
+
+offline_selectors contains sel if {
+	some rule in egress_rules
+	some peer in object.get(rule, "to", [])
+	sel := object.get(peer, ["podSelector", "matchLabels"], {})
+	sel["eval-internet"] == "false"
+}
+
 deny contains msg if {
 	input.kind in {"Job", "Deployment"}
 	object.get(input, ["spec", "template", "metadata", "labels", "eval-internet"], "") == "false"

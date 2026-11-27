@@ -10,6 +10,7 @@ serviceAccountName: anyuid-sa
 imagePullPolicy: Always
 # The gateway Service eval-secrets' OPENAI_API_BASE names (litellm-rits on
 # exgentic-ns): the one way out the egress policy leaves an offline run (#753).
+# Another namespace needs its own overlay naming its gateway.
 offlineGateway:
   podSelector: { app: litellm-rits }
   port: 4000

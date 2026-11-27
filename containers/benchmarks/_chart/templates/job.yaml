@@ -335,18 +335,19 @@ spec:
 {{- end }}
 {{- if eq $v.internet "false" }}
 ---
-# The offline pods' egress (#753): DNS, the offline gateway, and each other — the
-# runner reaches its site sidecars and the benchmark's own services, which carry
-# the same label. otelcol and the edge are on the pod's loopback, which this does
-# not filter. Every offline render emits this same object, so a second apply
-# changes nothing.
+# The offline pods' egress (#753): DNS, the offline gateway, and the same
+# benchmark's other offline pods — the runner reaches its site sidecars and the
+# benchmark's own services, which carry both labels; another benchmark's pods it
+# does not. otelcol and the edge are on the pod's loopback, which this does not
+# filter. Every render of one benchmark emits this same object, so a second
+# apply changes nothing.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: eval-no-internet
+  name: eval-no-internet-{{ $v.benchmark }}
 spec:
   podSelector:
-    matchLabels: { eval-internet: "false" }
+    matchLabels: { eval-internet: "false", benchmark: {{ $v.benchmark | quote }} }
   policyTypes: [Egress]
   egress:
     - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $v.dnsNamespace | quote }} } } }]
@@ -357,5 +358,5 @@ spec:
         - { protocol: TCP, port: 5353 }
     - to: [{ podSelector: { matchLabels: {{ toJson $v.offlineGateway.podSelector }} } }]
       ports: [{ protocol: TCP, port: {{ $v.offlineGateway.port | int }} }]
-    - to: [{ podSelector: { matchLabels: { eval-internet: "false" } } }]
+    - to: [{ podSelector: { matchLabels: { eval-internet: "false", benchmark: {{ $v.benchmark | quote }} } } }]
 {{- end }}

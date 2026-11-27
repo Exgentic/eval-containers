@@ -70,15 +70,19 @@ gatewayEnabled: false
 # offlineGateway: the in-namespace gateway Service an offline benchmark
 # (EVAL_INTERNET=false) may reach, given as its pods' labels and its port; the
 # eval-secrets OPENAI_API_BASE the edge forwards to must name it. An offline run
-# renders the `eval-no-internet` egress NetworkPolicy, which allows DNS, these
-# pods and the other offline pods, and nothing else (#753). Without it, an
-# offline run is refused, and so is one with gatewayEnabled. The platform sets
-# it (deploy/values-openshift.yaml).
+# renders the `eval-no-internet-<benchmark>` egress NetworkPolicy, which allows
+# DNS, these pods and that benchmark's other offline pods, and nothing else
+# (#753). The policy is one object per benchmark and namespace, so the last
+# run applied sets the gateway for every run of that benchmark there. Without
+# it, an offline run is refused, and so is one with gatewayEnabled. The
+# platform sets it (deploy/values-openshift.yaml).
 offlineGateway:
   podSelector: {}
   port: ""
 # dnsNamespace: where the cluster DNS runs, the one namespace that policy lets
-# an offline pod reach, on the DNS ports only. OpenShift's is openshift-dns.
+# an offline pod reach, on the DNS ports only. OpenShift's is openshift-dns. A
+# namespace selector matches pods, not the host network, so a DNS served on
+# the node (some node-local DNS setups) is not reachable under the policy.
 dnsNamespace: kube-system
 otelEnabled: true
 otelImage: ""
