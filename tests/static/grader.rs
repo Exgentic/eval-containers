@@ -310,7 +310,7 @@ print("ok")
 /// Run the harness on one sandboxed task (gold `B`) and return (exit code,
 /// reward, export JSON text). `args` are the harness's argv (`--score <reply>`
 /// grades a reply without a model call); `env` adds variables.
-fn longbench_v2(case: &str, args: &[&str], env: &[(&str, &str)]) -> (i32, String, String) {
+fn longbench_v2(case: &str, args: &[&str], env: &[(&str, &str)]) -> (i32, String, Option<String>) {
     let sandbox = std::env::temp_dir().join(format!("eval-lbv2-{}-{}", std::process::id(), case));
     let _ = std::fs::remove_dir_all(&sandbox);
     let task = sandbox.join("tasks/0");
@@ -350,9 +350,14 @@ fn longbench_v2(case: &str, args: &[&str], env: &[(&str, &str)]) -> (i32, String
     cmd.arg(sandbox.join("run_longbench_v2.py"))
         .args(args)
         .env("EVAL_TASK_ID", "0");
-    for (k, _) in std::env::vars().filter(|(k, _)| k.starts_with("EVAL_LONGBENCH_V2_")) {
+    // Nothing from the caller's environment reaches a request: no knob, no real
+    // key, and no proxy (urllib would route even a loopback call through one).
+    for (k, _) in std::env::vars().filter(|(k, _)| {
+        k.starts_with("EVAL_LONGBENCH_V2_") || k.to_ascii_lowercase().ends_with("_proxy")
+    }) {
         cmd.env_remove(k);
     }
+    cmd.env("OPENAI_API_KEY", "sk-test").env("NO_PROXY", "*");
     for (k, v) in env {
         cmd.env(k, v);
     }
@@ -361,8 +366,7 @@ fn longbench_v2(case: &str, args: &[&str], env: &[(&str, &str)]) -> (i32, String
         .expect("run the longbench-v2 harness under python3");
     let reward = std::fs::read_to_string(sandbox.join("logs/verifier/reward.txt"))
         .unwrap_or_else(|e| panic!("[{case}] no reward.txt: {e}"));
-    let export =
-        std::fs::read_to_string(sandbox.join("output/task/longbench-v2.json")).unwrap_or_default();
+    let export = std::fs::read_to_string(sandbox.join("output/task/longbench-v2.json")).ok();
     let _ = std::fs::remove_dir_all(&sandbox);
     (
         status.code().unwrap_or(-1),
@@ -408,6 +412,7 @@ fn longbench_v2_wrong_scores_zero() {
 fn longbench_v2_empty_reply_scores_zero() {
     let (code, reward, export) = longbench_v2("empty", &["--score", ""], &[]);
     assert_eq!((code, reward.as_str()), (0, "0"));
+    let export = export.expect("the harness wrote its export");
     assert!(export.contains("\"error\": \"empty reply\""), "{export}");
 }
 
@@ -424,7 +429,10 @@ fn longbench_v2_all_calls_failed_exits_nonzero() {
         ],
     );
     assert_eq!((code, reward.as_str()), (1, "0"));
-    assert!(!export.contains("\"error\": null"), "{export}");
+    // The export must exist and name the transport failure — an unrelated crash
+    // (no export) would also exit 1 and must not pass.
+    let export = export.expect("the harness recorded the failed attempt");
+    assert!(export.contains("\"error\": \"URLError"), "{export}");
 }
 
 /// `none` cannot be a truncation window: the run fails closed with a message.
