@@ -25,9 +25,11 @@ RUN npm install -g --ignore-scripts @opencode/cli@${AGENT_VERSION} \
 RUN cat > /opt/agent/install.sh <<'I' && chmod +x /opt/agent/install.sh && echo "${AGENT_VERSION}" > /opt/agent/VERSION
 #!/bin/bash
 set -euo pipefail
-# Only opencode is linked: it is a native binary, and a benchmark's own node must
-# not be replaced (agents rule 15).
+# opencode is a native binary. node, npm and npx are linked only where the base
+# has none, so the model's shell keeps them without a benchmark's own being
+# replaced (agents rule 15).
 ln -sf /opt/agent/node/bin/opencode /usr/local/bin/opencode
+for b in node npm npx; do [ -e /usr/local/bin/$b ] || ln -s /opt/agent/node/bin/$b /usr/local/bin/$b; done
 # opencode's search tools use a system `rg`; with none they download ripgrep at
 # first use, which a run with no internet cannot do. Best-effort: install.sh must
 # work on any base (rule 11), offline or without apt-get.
@@ -44,10 +46,12 @@ I
 # returns would hold the task until EVAL_TIMEOUT (#744, #785). opencode has no
 # setting for this, so its `shell` (config, /run.sh) is this wrapper: every
 # command runs under timeout(1), which ends its process group at 600 s, Claude
-# Code's maximum. The model sees the command end with exit code 124, not a
-# "timed out" notice. A longer timeout the model asks for is cut at 600 s too,
-# where 1.x honoured any, and so is a command it starts with `background: true`;
-# a `server &` inside a command that returns outlives it. `exec` keeps timeout(1)
+# Code's maximum. The model sees the command end with exit code 124 (137 if it
+# ignored SIGTERM for 10 s), not a "timed out" notice. 1.x killed a command at
+# 120 s unless the model set a timeout; now one that needs 120-600 s finishes. A
+# longer timeout the model asks for is cut at 600 s, where 1.x honoured any, and
+# so is a command it starts with `background: true`; a `server &` inside a
+# command that returns 0 outlives it. `exec` keeps timeout(1)
 # the leader of the process group opencode gave the command, so opencode's own
 # stop still ends the whole group. Every eval image has timeout(1): run-agent
 # runs under it.
@@ -88,15 +92,15 @@ fi
 
 # opencode's reply cap is 32000. A reply cut at it is continued twice, and a third
 # cut in a row ends the run with exit 1, so the cap is raised to
-# OPENCODE_MAX_OUTPUT_TOKENS (128000 unless the launch's agent env sets it; not the
-# upstream name, as run-agent refuses any *TOKEN_* name there), as the model's
-# `limit.output`. A non-numeric value means 128000. Told the model's window
+# OPENCODE_MAX_OUTPUT_TOKENS (128000 unless the launch's agent env sets it; no
+# *TOKEN_* name, which run-agent refuses), as the model's `limit.output`. A non-numeric value means 128000. Told the model's window
 # (EVAL_MODEL_CONTEXT_WINDOW, agents rules 25–26), the cap becomes min(that,
 # window/4), and the window is the model's `limit.context`, which opencode
-# compacts by (at window − max(15%, 16k)). Untold, `limit.context` is 0, a window
+# compacts by (at window − max(15%, 16k); 1.x never compacted ahead). Untold,
+# `limit.context` is 0, a window
 # opencode does not know: it does not compact ahead, as the 1.x line here never
-# did, and compacts when the provider rejects a call as too long. Either way, a
-# recovered overflow exits 0. `compaction.background` is off: on, opencode would
+# did, and compacts when the provider rejects a call as too long, once per step.
+# Either way, a recovered overflow exits 0. `compaction.background` is off: on, opencode would
 # summarize ahead of the compaction point, in calls that cost tokens even when the
 # summary is never used and interleave with the run's own.
 CAP="${OPENCODE_MAX_OUTPUT_TOKENS:-128000}"
@@ -115,8 +119,8 @@ export OPENAI_API_KEY="${OPENAI_API_KEY:-sk-proxy}"
 export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-sk-proxy}"
 export OPENCODE_DISABLE_AUTOUPDATE=1
 export OPENCODE_DISABLE_MODELS_FETCH=1
-# `--standalone`: the run gets a private server that ends with it; without it,
-# opencode reuses or starts a shared background service that outlives the run.
+# `--standalone`: the run gets a private server that ends with it, never a shared
+# background service that may already be running.
 # stdin is /dev/null: `run` reads a stdin pipe to EOF, so an open one would hang.
 # `--`: end-of-options. A task whose text begins with "-" is otherwise parsed as a
 # flag, and `opencode run` exits without running, which scores as reward 0

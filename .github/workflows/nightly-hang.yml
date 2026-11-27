@@ -60,8 +60,10 @@ jobs:
           AGENTS_SMOKE_BUILD: '1'
         run: |
           set +e
+          # One test at a time: an agent's cases each build its images, and
+          # concurrent builds of one agent race.
           cargo test -p eval-containers-tests-run --test hang \
-            -- --ignored --nocapture 2>&1 | tee hang.log
+            -- --ignored --nocapture --test-threads=1 2>&1 | tee hang.log
           rc=${PIPESTATUS[0]}
           if grep -qE "running 0 tests" hang.log; then
             echo "::error::the hang suite ran 0 tests"; exit 1

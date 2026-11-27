@@ -1,6 +1,6 @@
 """Mock model for tests/run/hang: one shell command that never returns, then a final answer.
 
-Serves Anthropic Messages (claude-code) and OpenAI Chat Completions (pi) on
+Serves Anthropic Messages (claude-code) and OpenAI Chat Completions (pi, opencode) on
 :4000. The first request that offers a shell tool is answered with a call to a
 command that sleeps for ~11 days, with no timeout of its own, the way a model
 starts a watch-mode test runner or a deadlocked script. It is a Python sleep, not
@@ -48,10 +48,11 @@ OVERFLOW_ERROR = {
     "param": None,
     "code": "400",
 }
-SUMMARY = "## Objective\nReply DONE.\n\n## Work State\nA command printed numbers; nothing is left to do.\n"
-FILL = "seq 1 200"  # overflow mode: a turn before the rejection, so there is a
-TURNS = 1  # conversation to compact (opencode: "Nothing to compact yet" without)
-state = {"tool_at": None, "seq": 0, "turns": 0, "summarized": False}
+SUMMARY = "## Objective\nAnswer the user.\n\n## Work State\nA command printed numbers; nothing is left to do.\n"
+# Overflow mode answers one turn with this before rejecting, so there is a
+# conversation to compact (opencode: "Nothing to compact yet" without one).
+FILL = "seq 1 200"
+state = {"tool_at": None, "seq": 0, "filled": False, "summarized": False}
 lock = threading.Lock()
 
 
@@ -272,16 +273,16 @@ class Handler(BaseHTTPRequestHandler):
             }
             return self.reply(429, {"error": error})
         with lock:
-            summary = "summarize the conversation" in json.dumps(
+            summary = MODE == "overflow" and "summarize the conversation" in json.dumps(
                 req.get("messages") or []
             )
             if summary:
                 state["summarized"] = True
                 log("summary")
                 text = SUMMARY
-            elif MODE == "overflow" and tool and state["turns"] < TURNS:
-                state["turns"] += 1
-                log("tool", command=FILL, turn=state["turns"])
+            elif MODE == "overflow" and tool and not state["filled"]:
+                state["filled"] = True
+                log("tool", command=FILL)
                 body, sse = build("", tool, FILL)
                 return self.reply(200, body, sse if req.get("stream") else None)
             elif MODE == "overflow" and tool and not state["summarized"]:

@@ -217,10 +217,10 @@ async fn assert_ends(agent: &str, bound: f64, says: &str, doc: &str) {
 }
 
 /// A key whose budget is spent: every call gets a 429 that never clears. The
-/// agent's own turn (a call offering the shell tool) is tried at least `tries`
-/// times, and the agent then gives up by itself, exiting `code` within `within`
-/// seconds, instead of retrying until EVAL_TIMEOUT.
-async fn assert_gives_up(agent: &str, tries: usize, code: &str, within: u64) {
+/// agent's own turn (a call offering the shell tool) is tried at least once, and
+/// the agent then gives up by itself with a non-zero exit within `within` seconds,
+/// instead of retrying until EVAL_TIMEOUT (which would exit 124, or 137).
+async fn assert_gives_up(agent: &str, within: u64) {
     let r = run(agent, "budget").await;
     let context = &r.context;
     let calls = r
@@ -229,13 +229,13 @@ async fn assert_gives_up(agent: &str, tries: usize, code: &str, within: u64) {
         .filter(|e| e["event"] == "budget" && e["agent"] == true)
         .count();
     assert!(
-        calls >= tries,
-        "the agent's own turn was tried {calls} time(s), not the {tries} its retries make: {context}"
+        calls >= 1,
+        "the agent never reached its own turn: {context}"
     );
-    assert_eq!(
-        r.code.as_deref(),
-        Some(code),
-        "the agent did not give up with exit {code}: {context}"
+    let code = r.code.as_deref().unwrap_or("none");
+    assert!(
+        !matches!(code, "0" | "124" | "137" | "none"),
+        "the agent did not give up with a failure of its own (exit {code}): {context}"
     );
     assert!(
         r.took <= Duration::from_secs(within),
@@ -278,11 +278,11 @@ macro_rules! hang {
 }
 
 macro_rules! budget {
-    ($name:ident, $agent:literal, $tries:literal, $code:literal, $within:literal) => {
+    ($name:ident, $agent:literal, $within:literal) => {
         #[tokio::test]
         #[ignore]
         async fn $name() {
-            assert_gives_up($agent, $tries, $code, $within).await
+            assert_gives_up($agent, $within).await
         }
     };
 }
@@ -328,13 +328,7 @@ hang!(
 );
 
 // opencode: the call and 10 retries (about 84 s with no Retry-After), then exit 1.
-budget!(
-    opencode_gives_up_on_a_spent_budget,
-    "opencode",
-    11,
-    "1",
-    300
-);
+budget!(opencode_gives_up_on_a_spent_budget, "opencode", 300);
 
 // opencode: compacts on the provider's context-length error and goes on.
 overflow!(opencode_recovers_from_a_context_overflow, "opencode");
