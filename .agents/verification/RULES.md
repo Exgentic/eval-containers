@@ -108,7 +108,7 @@ keeps its rules beside the Rust that enforces them, grouped by **stage** under
 - [gateways](../../tests/run/gateways/RULES.md) — gateway tests
 - [agents](../../tests/run/agents/RULES.md) — agent test rules
 - [context](../../tests/run/context/RULES.md) — agents told the model's window stay inside it
-- [hang](../../tests/run/hang/RULES.md) — an agent ends the task by itself when a shell command never returns, the endpoint refuses every call, or a call is rejected as too long
+- [hang](../../tests/run/hang/RULES.md) — an agent ends the task by itself when a shell command never returns or the endpoint refuses every call, and finishes with exit 0 after a call rejected as too long
 
 A category's `RULES.md` is the markdown half of a catalog whose entries pair
 one-to-one with the `const RULES: &[Rule]` arrays in its sibling `*.rs`; the
