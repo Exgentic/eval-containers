@@ -16,7 +16,6 @@ ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
 # One pin for both the loader and the label below, so they cannot drift (rule 4).
 ARG BENCHMARK_VERSION=0d7426df4ccb3d8704a992fe6850abee7c262127
-FROM ${REGISTRY}/core${REGISTRY_SUFFIX}entrypoint:latest AS entrypoint
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}mmmu-pro-harness:latest AS harness
 FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-hf:latest AS data
 ARG BENCHMARK_VERSION
@@ -52,6 +51,7 @@ for t in shards("standard%20(10%20options)"):
         for n in range(1, 8):
             val = t[f"image_{n}"][i].as_py()
             if val and val.get("bytes"):
+                assert val["bytes"][:3] in (b"\x89PN", b"\xff\xd8\xff"), (row["id"], n)
                 with open(f"/tasks/images/{idx}_{n}.png", "wb") as f:
                     f.write(val["bytes"])
         rows.append(row)
@@ -64,7 +64,7 @@ PYEOF
 
 RUN chmod -R go-rwx /tasks
 
-FROM python:3.12-slim
+FROM ${REGISTRY}/core${REGISTRY_SUFFIX}benchmark-base-python-slim:latest
 ARG BENCHMARK_VERSION
 
 LABEL eval.type="benchmark"
@@ -85,12 +85,9 @@ LABEL eval.benchmark.paper="https://arxiv.org/abs/2409.02813"
 COPY --from=data /tasks /tasks
 ENV EVAL_BENCHMARK=mmmu-pro
 
-COPY --from=entrypoint /eval-materialize-task /eval-materialize-task
 COPY --from=harness /run_mmmu_pro.py /app/run_mmmu_pro.py
-RUN chmod +x /eval-materialize-task \
- && printf '#!/bin/bash\nexec python3 /app/run_mmmu_pro.py\n' > /harness.sh && chmod +x /harness.sh \
+RUN printf '#!/bin/bash\nexec python3 /app/run_mmmu_pro.py\n' > /harness.sh && chmod +x /harness.sh \
  && printf '#!/bin/bash\n/eval-materialize-task\nexec "$@"\n' > /entrypoint.sh && chmod +x /entrypoint.sh
-WORKDIR /app
 ENTRYPOINT ["/entrypoint.sh"]
 
 # The harness writes /logs/verifier/reward.txt itself; keep a fail-closed
