@@ -41,9 +41,10 @@ services:
         source: ${EVAL_OUTPUT_DIR:-${PWD}/output}/${EVAL_BENCHMARK:?}/${EVAL_AGENT:-claude-code}/${EVAL_MODEL_SLUG:-no-model}/${EVAL_RUN_ID:?name this run}/${EVAL_TASK_ID:-0}/task
         target: /output
         bind: { create_host_path: true }
+    # `internal` only: the sites are all here, and the runner reaches this proxy,
+    # so a leg on `upstream` would be the offline runner's way out (#753).
     networks:
       - internal
-      - upstream
 
   classifieds:
     image: ghcr.io/web-arena-x/visualwebarena-classifieds:latest
