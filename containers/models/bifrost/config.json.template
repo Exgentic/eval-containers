@@ -7,7 +7,7 @@
     },
     "openai": {
       "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],
-      "network_config": { "base_url": "${OPENAI_API_BASE}", "allow_private_network": true, "default_request_timeout_in_seconds": ${EVAL_LLM_TIMEOUT_SECONDS} }
+      "network_config": { ${UPSTREAM_HEADERS} "base_url": "${OPENAI_API_BASE}", "allow_private_network": true, "default_request_timeout_in_seconds": ${EVAL_LLM_TIMEOUT_SECONDS} }
     },
     "gemini": {
       "keys": [{ "name": "default", "value": "env.OPENAI_API_KEY", "models": ["*"], "weight": 1.0 }],

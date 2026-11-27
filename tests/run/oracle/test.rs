@@ -131,16 +131,25 @@ const SPECIAL: &[(&str, &str)] = &[
     //
     // zerobench (model-only, eval.benchmark.agent="native") is deliberately
     // uncovered, like every other native-harness benchmark (automationbench,
-    // bfcl, tau-bench, walle): its /grade.sh does not read the agent's stdout —
-    // the harness run_zerobench.py performs the inference and writes the reward
-    // itself — so there is nothing for a gold solution to feed, and gold and
-    // no-op are indistinguishable by construction.
+    // bfcl, mmmu-pro, mmmu-pro-vision, tau-bench, walle): its /grade.sh does
+    // not read the agent's stdout — the harness (run_zerobench.py here) performs
+    // the inference and writes the reward itself — so there is nothing for a
+    // gold solution to feed, and gold and no-op are indistinguishable by
+    // construction.
     ("zerobench-agentic", "0"),
     // chipbench is native too, but unlike the ones above its gold is checkable:
     // solution.sh grades the golden RefModule (renamed TopModule) with the same
     // grade_sv.py the harness uses and writes the reward itself, and the no-op
     // leaves /grade.sh's fail-closed 0.0. Shared-env, so task 0 is representative.
     ("chipbench", "0"),
+    // Its Python reference-model track grades through a different path
+    // (grade_py.py → upstream crosslang_verify on Verilator): task 223 has a
+    // hand-written gold in solution.sh; the no-op leaves the fail-closed 0.0.
+    ("chipbench", "223"),
+    // longbench-v2 is native as well: solution.sh feeds a reply carrying the gold
+    // letter through the harness's own extract_answer + judge (`--score`), and the
+    // no-op leaves /grade.sh's fail-closed 0. Shared-env, so task 0 is representative.
+    ("longbench-v2", "0"),
 ];
 
 fn oracle(args: &[&str]) -> bool {

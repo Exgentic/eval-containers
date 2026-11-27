@@ -11,6 +11,8 @@
 # Env contract:
 #   EVAL_MODEL      target model, a BARE handle (e.g. aws/claude-opus-4-8).
 #   EVAL_MODEL_API  OPTIONAL wire override: anthropic | openai | gemini.
+#   EVAL_API_KEY_HEADER OPTIONAL extra upstream credential header; requires
+#                       EVAL_MODEL_API=openai and OPENAI_API_KEY.
 #   EVAL_INPUT_COST_PER_TOKEN, EVAL_OUTPUT_COST_PER_TOKEN
 #                   OPTIONAL, both or neither: USD-per-token prices rendered
 #                   as a global pricing override, for models bifrost's
@@ -57,6 +59,55 @@ if [ -f "$TEMPLATE" ]; then
     *) echo "EVAL_MODEL_API must be anthropic|openai|gemini (got: $EVAL_MODEL_API)" >&2; exit 2 ;;
   esac
 
+  # Custom upstream authentication belongs to the provider, never the inbound
+  # agent wire. Only the explicitly selected OpenAI provider supports this knob.
+  UPSTREAM_HEADERS=""
+  ADMIN_AUTH=""
+  if [ -n "${EVAL_API_KEY_HEADER:-}" ]; then
+    if [ "${EVAL_MODEL_API:-}" != openai ]; then
+      echo "EVAL_API_KEY_HEADER requires EVAL_MODEL_API=openai" >&2; exit 2
+    fi
+    if ! printf '%s\n' "$EVAL_API_KEY_HEADER" | LC_ALL=C awk '
+      BEGIN { valid = 1 }
+      NR > 1 { valid = 0 }
+      /[^!#$%&\047*+.^_`|~0-9A-Za-z-]/ { valid = 0 }
+      END { exit !valid }
+    '; then
+      echo "EVAL_API_KEY_HEADER is not a valid HTTP header name" >&2; exit 2
+    fi
+    if [ -z "${OPENAI_API_KEY:-}" ]; then
+      echo "EVAL_API_KEY_HEADER is set but OPENAI_API_KEY is empty" >&2; exit 2
+    fi
+    # Encode JSON without adding a runtime dependency to standalone bundles.
+    # Work bytewise so quotes, backslashes and control bytes cannot inject JSON.
+    json_string() {
+      printf '%s' "$1" | od -An -v -tu1 | LC_ALL=C awk '
+        BEGIN { printf "\042" }
+        { for (i = 1; i <= NF; i++) {
+            if ($i < 32 || $i == 34 || $i == 92) printf "\\u%04x", $i
+            else printf "%c", $i
+        } }
+        END { printf "\042" }
+      '
+    }
+    UPSTREAM_HEADERS="\"extra_headers\": {$(json_string "$EVAL_API_KEY_HEADER"): $(json_string "$OPENAI_API_KEY")},"
+    # The fragment is a sed replacement; escape its replacement metacharacters.
+    UPSTREAM_HEADERS=$(printf '%s' "$UPSTREAM_HEADERS" | sed 's/[\\&|]/\\&/g')
+    # The pod shares loopback: protect the engine's settings API as well as
+    # Caddy's public port. Inference stays unauthenticated for agent placeholders.
+    BIFROST_ADMIN_USERNAME="eval"
+    BIFROST_ADMIN_PASSWORD=$(od -An -N32 -tx1 /dev/urandom | tr -d ' \n')
+    export BIFROST_ADMIN_USERNAME BIFROST_ADMIN_PASSWORD
+    ADMIN_AUTH='"auth_config": {"is_enabled": true, "admin_username": "env.BIFROST_ADMIN_USERNAME", "admin_password": "env.BIFROST_ADMIN_PASSWORD", "disable_auth_on_inference": true}, '  # pragma: allowlist secret -- environment references, not credential values
+    umask 077
+    # SQLite persists static headers and inherits the warmed database mode for
+    # its WAL. Protect the directory and existing database before engine boot.
+    chmod 700 /opt/gateway/data
+    for private_file in "$CONFIG" /opt/gateway/data/config.db*; do
+      [ ! -e "$private_file" ] || chmod 600 "$private_file"
+    done
+  fi
+
   # Pin the model when EVAL_MODEL is set; omit to keep the client's model.
   if [ -n "${EVAL_MODEL:-}" ]; then MODEL=", \"model\": \"${EVAL_MODEL}\""; else MODEL=""; fi
   if [ -n "${EVAL_MODEL_API:-}" ]; then
@@ -95,7 +146,7 @@ if [ -f "$TEMPLATE" ]; then
     # shell → \" in the file after sed's replacement collapses \\ to \.
     PRICING="\"pricing_overrides\": [{ \"id\": \"eval-price\", \"name\": \"eval-price\", \"scope_kind\": \"global\", \"match_type\": \"wildcard\", \"pattern\": \"*\", \"request_types\": [\"chat_completion\", \"responses\"], \"pricing_patch\": \"{\\\\\"input_cost_per_token\\\\\": ${EVAL_INPUT_COST_PER_TOKEN}, \\\\\"output_cost_per_token\\\\\": ${EVAL_OUTPUT_COST_PER_TOKEN}}\" }], "
   fi
-  GOVERNANCE="\"governance\": { ${PRICING}\"routing_rules\": [${RULES}] },"
+  GOVERNANCE="\"governance\": { ${ADMIN_AUTH}${PRICING}\"routing_rules\": [${RULES}] },"
 
   : "${OTEL_EXPORTER_OTLP_ENDPOINT:=http://otelcol:4318}"
   OTEL_COLLECTOR_URL="${OTEL_EXPORTER_OTLP_ENDPOINT%/}/v1/traces"
@@ -105,11 +156,15 @@ if [ -f "$TEMPLATE" ]; then
     *[!0-9]*|"") echo "EVAL_LLM_TIMEOUT_SECONDS must be a positive integer (got: $EVAL_LLM_TIMEOUT_SECONDS)" >&2; exit 2 ;;
   esac
 
-  sed -e "s|\${GOVERNANCE}|${GOVERNANCE}|g" \
-      -e "s|\${OPENAI_API_BASE}|${OPENAI_API_BASE-}|g" \
-      -e "s|\${OTEL_COLLECTOR_URL}|${OTEL_COLLECTOR_URL}|g" \
-      -e "s|\${EVAL_LLM_TIMEOUT_SECONDS}|${EVAL_LLM_TIMEOUT_SECONDS}|g" \
-      < "$TEMPLATE" > "$CONFIG"
+  # Keep credentials out of process arguments and insert them last so later
+  # template substitutions cannot rewrite literal placeholders in the key.
+  sed -f - "$TEMPLATE" > "$CONFIG" <<EOF
+s|\${GOVERNANCE}|${GOVERNANCE}|g
+s|\${OPENAI_API_BASE}|${OPENAI_API_BASE-}|g
+s|\${OTEL_COLLECTOR_URL}|${OTEL_COLLECTOR_URL}|g
+s|\${EVAL_LLM_TIMEOUT_SECONDS}|${EVAL_LLM_TIMEOUT_SECONDS}|g
+s|\${UPSTREAM_HEADERS}|${UPSTREAM_HEADERS}|g
+EOF
 fi
 
 # caddy shim on :4000 stamps the inbound wire into X-Eval-Wire (see Caddyfile);

@@ -43,7 +43,7 @@ overrides the env var.
 | `--benchmark <name>` | `EVAL_BENCHMARK` | or positional |
 | `--agent <name>` | `EVAL_AGENT` | a native-harness benchmark takes `native` only (resolved inside a checkout) |
 | `--model <handle>` | `EVAL_MODEL` | the `<provider>/<model>` upstream the gateway routes to |
-| `--api-key-header <name>` | `EVAL_API_KEY_HEADER` | Job mode's direct-provider credential header; without it OpenAI uses `Authorization: Bearer`, Anthropic `x-api-key`, and Gemini `x-goog-api-key`; see [edge configuration](../../containers/core/edge/README.md#configuration) |
+| `--api-key-header <name>` | `EVAL_API_KEY_HEADER` | Job mode's direct-provider or Bifrost credential header; without it OpenAI uses `Authorization: Bearer`, Anthropic `x-api-key`, and Gemini `x-goog-api-key`; see [edge configuration](../../containers/core/edge/README.md#configuration) |
 | `--gateway <name>` | `EVAL_GATEWAY` | which proxy serves it (`bifrost` / `litellm` / `portkey`, or a pinned per-model image); default `bifrost` |
 | `--agent-reasoning-effort <level>` | `EVAL_AGENT_REASONING_EFFORT` | the agent applies it; e.g. `high` |
 | `--model-context-window <tokens>` | `EVAL_MODEL_CONTEXT_WINDOW` | the model's context window; a supporting agent fits its output cap and compaction to it |
@@ -67,8 +67,9 @@ overrides the env var.
 | `--overlay <values.yaml>` | — | `job` mode only; extra `helm -f` (e.g. `deploy/values-openshift.yaml`) |
 
 See [Environment variables](env-vars.md) for the full `EVAL_*` namespace.
-Compose and container modes always include a gateway, so `--api-key-header`
-applies only to direct-provider Job runs and cannot be combined with `--gateway`.
+`--api-key-header` applies only to Job runs, either direct-provider or with
+`--gateway bifrost`. Bifrost requires `EVAL_MODEL_API=openai` in
+`gatewayExtraEnv`; it adds the header upstream alongside ordinary bearer auth.
 
 ## `build` flags
 

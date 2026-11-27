@@ -1152,3 +1152,118 @@ async fn otel_bifrost_env_priced_cost_on_spans() {
         &traces[..traces.len().min(800)]
     );
 }
+
+// Exercise the real startup renderer with inert executables, without an upstream.
+#[test]
+fn bifrost_custom_header_renderer_preserves_credentials_and_defaults() {
+    use std::os::unix::fs::PermissionsExt;
+    use std::process::Command;
+    let root = test_support::repo_root();
+    let directory = tempfile::tempdir().unwrap();
+    let tmp = directory.path();
+    let data = tmp.join("data");
+    std::fs::create_dir_all(&data).unwrap();
+    std::fs::copy(
+        root.join("containers/models/bifrost/config.json.template"),
+        data.join("config.json.template"),
+    )
+    .unwrap();
+    let database = data.join("config.db");
+    std::fs::write(&database, "dummy warmed database").unwrap();
+    std::fs::set_permissions(&database, std::fs::Permissions::from_mode(0o644)).unwrap();
+    for executable in ["caddy", "main"] {
+        let path = tmp.join(executable);
+        std::fs::write(&path, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    let script = std::fs::read_to_string(root.join("containers/gateways/bifrost/start"))
+        .unwrap()
+        .replace("/opt/gateway", tmp.to_str().unwrap());
+    let start = tmp.join("start");
+    std::fs::write(&start, script).unwrap();
+    let arguments = tmp.join("sed-arguments");
+    let sed = tmp.join("sed");
+    std::fs::write(
+        &sed,
+        format!(
+            "#!/bin/sh\nprintf '%s\\n' \"$@\" >> '{}'\nexec /usr/bin/sed \"$@\"\n",
+            arguments.display()
+        ),
+    )
+    .unwrap();
+    std::fs::set_permissions(&sed, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let key = "dummy-\"key\\&|\t-${OPENAI_API_BASE}-${GOVERNANCE}-${UPSTREAM_HEADERS}";
+    let render = |header: Option<&str>, wire: &str, credential: &str| {
+        let mut command = Command::new("sh");
+        command
+            .arg(&start)
+            .env(
+                "PATH",
+                format!("{}:{}", tmp.display(), std::env::var("PATH").unwrap()),
+            )
+            .env("OPENAI_API_BASE", "http://example.test")
+            .env("OPENAI_API_KEY", credential)
+            .env("EVAL_MODEL", "opaque/model")
+            .env("EVAL_MODEL_API", wire)
+            .env("EVAL_LLM_TIMEOUT_SECONDS", "30")
+            .env("OTEL_EXPORTER_OTLP_ENDPOINT", "http://example.test")
+            .env("LOG_LEVEL", "error")
+            .env_remove("EVAL_API_KEY_HEADER")
+            .env_remove("EVAL_INPUT_COST_PER_TOKEN")
+            .env_remove("EVAL_OUTPUT_COST_PER_TOKEN");
+        if let Some(header) = header {
+            command.env("EVAL_API_KEY_HEADER", header);
+        }
+        command.output().unwrap()
+    };
+    assert!(render(Some("RITS_API_KEY"), "openai", key).status.success());
+    assert!(
+        !std::fs::read_to_string(&arguments)
+            .unwrap()
+            .contains("dummy-"),
+        "credential must not appear in sed process arguments"
+    );
+    let config: Value =
+        serde_json::from_slice(&std::fs::read(data.join("config.json")).unwrap()).unwrap();
+    assert_eq!(
+        config["providers"]["openai"]["network_config"]["extra_headers"]["RITS_API_KEY"],
+        key
+    );
+    assert_eq!(config["governance"]["auth_config"]["is_enabled"], true);
+    assert_eq!(
+        config["governance"]["auth_config"]["disable_auth_on_inference"],
+        true
+    );
+    assert!(config["providers"]["anthropic"]["network_config"]["extra_headers"].is_null());
+    assert_eq!(
+        std::fs::metadata(data.join("config.json"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777,
+        0o600
+    );
+    assert_eq!(
+        std::fs::metadata(&data).unwrap().permissions().mode() & 0o777,
+        0o700
+    );
+    assert_eq!(
+        std::fs::metadata(&database).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+    assert!(render(None, "", "dummy").status.success());
+    let config: Value =
+        serde_json::from_slice(&std::fs::read(data.join("config.json")).unwrap()).unwrap();
+    for provider in ["openai", "anthropic", "gemini"] {
+        assert!(config["providers"][provider]["network_config"]["extra_headers"].is_null());
+    }
+    for header in ["bad header", "bad\n", "bad\r", "bad,key=value"] {
+        assert!(!render(Some(header), "openai", "dummy").status.success());
+    }
+    assert!(
+        !render(Some("RITS_API_KEY"), "anthropic", "dummy")
+            .status
+            .success()
+    );
+    assert!(!render(Some("RITS_API_KEY"), "openai", "").status.success());
+}

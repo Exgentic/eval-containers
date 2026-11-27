@@ -1,0 +1,30 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
+  runner:
+    extends:
+      file: ../../compose/runner-native.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/mmmu-pro-vision--native:latest
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    environment:
+      BENCHMARK: mmmu-pro-vision
+      # The harness knobs (README); unset or empty takes upstream's value.
+      EVAL_MMMU_PRO_SETTING: ${EVAL_MMMU_PRO_SETTING:-vision}
+      EVAL_MMMU_PRO_PROMPT: ${EVAL_MMMU_PRO_PROMPT:-}
+      EVAL_MMMU_PRO_TEMP: ${EVAL_MMMU_PRO_TEMP:-}
+      EVAL_MMMU_PRO_TOP_P: ${EVAL_MMMU_PRO_TOP_P:-}
+      EVAL_MMMU_PRO_MAX_TOKENS: ${EVAL_MMMU_PRO_MAX_TOKENS:-}
+      EVAL_MMMU_PRO_TIMEOUT: ${EVAL_MMMU_PRO_TIMEOUT:-}
+      EVAL_MMMU_PRO_EXTRA_BODY: ${EVAL_MMMU_PRO_EXTRA_BODY:-}
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G

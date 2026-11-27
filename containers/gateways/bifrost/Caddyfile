@@ -11,6 +11,14 @@
 }
 
 :4000 {
+	# Provider settings include static credential headers. Agents may use the
+	# inference routes and health probe, but must not read or change settings.
+	@management {
+		path /api /api/*
+		not path /api/health
+	}
+	respond @management 404
+
 	map {path} {wire} {
 		~^/anthropic/  anthropic
 		~^/genai/      gemini

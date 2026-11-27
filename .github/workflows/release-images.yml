@@ -63,10 +63,10 @@ on:
         default: ""
       combo_agents:
         description: "Space-separated agents to build eval combos for (blank = skip)"
-        # The 8 most-downloaded agents — the lineup a vX.Y.Z tag publishes. NOTE:
+        # The 8 most-downloaded agents plus mini-swe-agent — the lineup a vX.Y.Z tag publishes. NOTE:
         # workflow_dispatch inputs are NOT populated on a tag push, so the enumerate
         # body re-applies this lineup for non-dispatch runs (keep the two in sync).
-        default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
+        default: "claude-code codex gemini-cli openclaw zerostack opencode pi openhands mini-swe-agent"
       include_per_task:
         description: "Also build per-task benchmark images (terminal-bench, skills-bench, deepswe, swe-bench, swe-bench-pro, swe-bench-multimodal, swefficiency, hwe-bench)"
         type: boolean
@@ -259,12 +259,8 @@ jobs:
           # are pruned below to what actually moved (#452), so the ~660 heavy
           # per-task images cost nothing on a night that did not touch them.
           if [ "$IS_DISPATCH" != "true" ]; then
-            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi openhands"
+            COMBO_AGENTS="claude-code codex gemini-cli openclaw zerostack opencode pi openhands mini-swe-agent"
             INCLUDE_PER_TASK=true
-            # Per-task pairs outside the lineup, as <benchmark>:<agent>: an agent
-            # published for one benchmark only, kept fresh like any other combo
-            # without building it for the whole fleet.
-            EXTRA_PERTASK_PAIRS="swe-bench-multimodal:mini-swe-agent"
           fi
           # The :latest channel (delivery/RULES.md:16): the nightly run publishes only
           # images whose inputs changed. Compute the stale set once; every matrix
@@ -520,11 +516,6 @@ jobs:
                 | {b:$b, a:$a, task:"", kind:"shared"}]')
             ptc=$(printf '%s' "$pertask_all" | jq -c --argjson as "$agents" \
               '[.[] as $p | $as[] as $a | {b:$p.b, a:$a, task:$p.task, kind:$p.kind}]')
-            for pair in ${EXTRA_PERTASK_PAIRS:-}; do
-              extra=$(printf '%s' "$pertask_all" | jq -c --arg b "${pair%%:*}" --arg a "${pair##*:}" \
-                '[.[] | select(.b == $b) | {b, a:$a, task, kind}]')
-              ptc=$(printf '%s\n%s' "$ptc" "$extra" | jq -cs 'add')
-            done
             combos=$(printf '%s\n%s' "$shared" "$ptc" | jq -cs 'add')
           fi
           # Channel run: keep the combos that moved. Two ways a pair moves:
@@ -634,8 +625,8 @@ jobs:
           pc_chunk=100; [ "$STANDALONE" != "true" ] || pc_chunk=50
           pertask_combo_shards=$(shard "$pertask_combo_items" "$(chunk "$pertask_combo_items" "$pc_chunk")")
           # Per-task bases are dealt (see stripe above). Combo shards stay sliced:
-          # their items are task-major, so the eight agents of a task run
-          # consecutively and the task's base image is pulled once, not eight times.
+          # their items are task-major, so the lineup agents of a task run
+          # consecutively and the task's base image is pulled once, not once per agent.
           pertask_shards=$(stripe "$pertask" "$(chunk "$pertask" 10)")
           # The shard CONTENTS travel as an artifact, not as job outputs: a job's
           # outputs are capped at 1 MB in total, and once #461 put per-task on the
@@ -1168,11 +1159,13 @@ jobs:
           }
           # Carried-forward (rule 13), per variant: unchanged inputs vs the
           # prior release (:latest — combos push manifest lists directly)
-          # ⇒ retag its digest. Reads the per-iteration eb/A/TAG/DRY at call
-          # time.
+          # ⇒ retag its digest. Reads the per-iteration eb/A/TAG/DRY/PLAT at
+          # call time. PLAT goes to the check (rule 14): a combo built while its
+          # base lacked an arch carries the matching hash without that arch, so
+          # a hash-only check reads it fresh and it never gains the arch.
           carry() {  # $1=name-suffix ("" | -standalone)  $2=expected hash
             [ "$DRY" != "true" ] || return 1
-            bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" >/dev/null || return 1
+            bash containers/scripts/fleet-status.sh check "${REGISTRY}/evals/${eb}--${A}$1:latest" "$2" "$PLAT" >/dev/null || return 1
             if [ "$TAG" = "latest" ]; then echo "fresh: evals/${eb}--${A}$1:${TAG} (unchanged; kept)"
             else
               docker buildx imagetools create --tag "${REGISTRY}/evals/${eb}--${A}$1:${TAG}" \

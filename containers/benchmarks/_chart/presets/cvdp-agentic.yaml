@@ -1,0 +1,2 @@
+# CVDP — 1h agent budget, matching compose.yaml's EVAL_TIMEOUT default.
+timeout: '3600'

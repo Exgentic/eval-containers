@@ -17,6 +17,11 @@ which is VerilogEval v2's `make` harness:
            first endmodule.
   grade  — grade_sv.py: iverilog compile with test.sv + ref.sv, simulate,
            sv-iv-analyze verdict. Reward 1.0 iff the verdict is pass ('.').
+Python reference-model tasks (track refmodel_python) follow upstream's
+`Ref Model Gen/gen.py` instead: system message gen_python_prompt.txt, the
+rewritten problem as the user message, the first fenced block as the code,
+graded by grade_py.py (upstream's crosslang_verify). Sampling, retries, the
+deadline and the export are shared.
 Fail-closed: any error leaves reward 0.0.
 
 The grader simulates the answer, and a TopModule can end the testbench early
@@ -133,17 +138,33 @@ def extract(resp):
     return "\n".join(out + [""]) + "\n"
 
 
-def answer_flags(sv):
-    return [name for name, pat in ANSWER_FLAGS.items() if re.search(pat, sv)]
+# Python a reference model has no use for: it computes outputs from inputs, so
+# it never needs the filesystem, processes or the network. Recorded, not scored.
+PY_ANSWER_FLAGS = {
+    "file-io": r"\bopen\s*\(|\bpathlib\b|\bshutil\b",
+    "process": r"\bsubprocess\b|\bos\.(system|popen|exec\w*|spawn\w*|fork)\b",
+    "dynamic-code": r"\b(exec|__import__|compile)\s*\(|\bimportlib\b",
+    "network": r"\b(socket|urllib|requests|http\.client)\b",
+}
 
 
-def chat(base_url, model, prompt, sampling, timeout):
+def answer_flags(code, flags=ANSWER_FLAGS):
+    return [name for name, pat in flags.items() if re.search(pat, code)]
+
+
+def extract_python(resp):
+    """Ref Model Gen/gen.py `extract_python_code`."""
+    m = re.search(r"```(?:python)?\s*\n(.*?)```", resp, re.DOTALL)
+    return m.group(1).strip() if m else resp.strip()
+
+
+def chat(base_url, model, prompt, sampling, timeout, system=SYSTEM_MSG):
     payload = {
         "model": model,
         "max_tokens": MAX_TOKENS,
         **sampling,
         "messages": [
-            {"role": "system", "content": SYSTEM_MSG},
+            {"role": "system", "content": system},
             {"role": "user", "content": prompt},
         ],
     }
@@ -164,7 +185,7 @@ def chat(base_url, model, prompt, sampling, timeout):
     return content, body.get("usage", {})
 
 
-def call_model(base_url, model, real_model, prompt, export):
+def call_model(base_url, model, real_model, prompt, export, system=SYSTEM_MSG):
     # Upstream sends top_p only to the providers that accept it alongside
     # temperature: sv-generate omits it for Claude, Gemini and GPT-5. Other
     # models get it, and a 400 naming a sampling knob drops top_p, then
@@ -180,7 +201,7 @@ def call_model(base_url, model, real_model, prompt, export):
             break
         try:
             content, usage = chat(
-                base_url, model, prompt, sampling, min(MODEL_TIMEOUT, left)
+                base_url, model, prompt, sampling, min(MODEL_TIMEOUT, left), system
             )
             export["attempts"].append(
                 {"ok": True, "sampling": dict(sampling), "usage": usage}
@@ -212,15 +233,17 @@ def call_model(base_url, model, real_model, prompt, export):
 
 def export_sim():
     """Copy the answer, verdict, wave.vcd (grade_sv keeps it only when small) and
-    the log (first + last LOG_KEEP bytes) for trace review."""
+    each checker log (first + last LOG_KEEP bytes) for trace review."""
     dst = "/output/task/verifier/sim"
     os.makedirs(dst, exist_ok=True)
-    for name in ("TopModule.sv", "verdict.json", "wave.vcd"):
+    for name in ("TopModule.sv", "dut.py", "verdict.json", "wave.vcd"):
         if os.path.isfile(f"{WORK}/{name}"):
             shutil.copyfile(f"{WORK}/{name}", f"{dst}/{name}")
-    log = f"{WORK}/sv-iv-test.log"
-    if os.path.isfile(log):
-        with open(log, "rb") as f, open(f"{dst}/sv-iv-test.log", "wb") as out:
+    for name in ("sv-iv-test.log", "crosslang.log"):
+        log = f"{WORK}/{name}"
+        if not os.path.isfile(log):
+            continue
+        with open(log, "rb") as f, open(f"{dst}/{name}", "wb") as out:
             size = os.path.getsize(log)
             if size <= 2 * LOG_KEEP:
                 out.write(f.read())
@@ -256,18 +279,27 @@ def main():
         "passfail": "no-response",
     }
     try:
-        prompt = full_prompt(open(f"{tdir}/prompt.txt").read())
-        resp = call_model(base_url, model, real_model, prompt, export)
+        refmodel = task["track"] == "refmodel_python"
+        if refmodel:  # Ref Model Gen/gen.py: its system prompt, the problem as is
+            system = open(f"{tdir}/system.txt").read()
+            prompt = open(f"{tdir}/prompt.txt").read()
+        else:
+            system, prompt = SYSTEM_MSG, full_prompt(open(f"{tdir}/prompt.txt").read())
+        resp = call_model(base_url, model, real_model, prompt, export, system)
         if resp is not None:
             export["response"] = resp
             os.makedirs(WORK, exist_ok=True)
-            answer = os.path.join(WORK, "TopModule.sv")
-            sv = extract(resp)
+            if refmodel:
+                answer, code = os.path.join(WORK, "dut.py"), extract_python(resp)
+                grader, flags = "/app/grade_py.py", PY_ANSWER_FLAGS
+            else:
+                answer, code = os.path.join(WORK, "TopModule.sv"), extract(resp)
+                grader, flags = "/app/grade_sv.py", ANSWER_FLAGS
             with open(answer, "w") as f:
-                f.write(sv)
-            export["answer_flags"] = answer_flags(sv)
+                f.write(code)
+            export["answer_flags"] = answer_flags(code, flags)
             res = subprocess.run(
-                ["python3", "/app/grade_sv.py", tdir, answer, WORK],
+                ["python3", grader, tdir, answer, WORK],
                 capture_output=True,
                 text=True,
             )
