@@ -1,0 +1,32 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
+  runner:
+    extends:
+      file: ../../compose/runner-native.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/longbench-v2--native:latest
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    environment:
+      BENCHMARK: longbench-v2
+      # One long-context call: up to 5 tries of EVAL_LONGBENCH_V2_TIMEOUT (600 s).
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-3600}
+      TIMEOUT: ${EVAL_TIMEOUT:-3600}
+      # Sampling knobs (README); empty = upstream's default.
+      EVAL_LONGBENCH_V2_MAX_LEN: ${EVAL_LONGBENCH_V2_MAX_LEN:-}
+      EVAL_LONGBENCH_V2_TEMP: ${EVAL_LONGBENCH_V2_TEMP:-}
+      EVAL_LONGBENCH_V2_TOP_P: ${EVAL_LONGBENCH_V2_TOP_P:-}
+      EVAL_LONGBENCH_V2_MAX_TOKENS: ${EVAL_LONGBENCH_V2_MAX_TOKENS:-}
+      EVAL_LONGBENCH_V2_TIMEOUT: ${EVAL_LONGBENCH_V2_TIMEOUT:-}
+      EVAL_LONGBENCH_V2_EXTRA_BODY: ${EVAL_LONGBENCH_V2_EXTRA_BODY:-}
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 2G

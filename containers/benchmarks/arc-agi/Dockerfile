@@ -1,6 +1,9 @@
 # ARC-AGI-2 (Abstract Reasoning Corpus)
-# 120 tasks. Data: GitHub arcprize/ARC-AGI-2 evaluation set
-# Agent sees train examples and test input grids, prints predicted output grid as JSON.
+# 120 puzzles with 167 test inputs. Data: GitHub arcprize/ARC-AGI-2 evaluation set
+# One task per test input, as the official scorer grades each test output on its
+# own: the agent sees the train examples and that one test input, and prints its
+# predicted output grid as JSON. Tasks 0-119 are each puzzle's first test input,
+# in puzzle order; 120-166 are the remaining test inputs of the multi-test puzzles.
 
 ARG REGISTRY=ghcr.io/exgentic
 ARG REGISTRY_SUFFIX=/
@@ -11,7 +14,7 @@ LABEL eval.type="benchmark"
 LABEL eval.benchmark.name="arc-agi"
 LABEL eval.benchmark.released="true"
 LABEL eval.benchmark.description="ARC-AGI-2 - Abstract grid reasoning tasks"
-LABEL eval.benchmark.tasks="120"
+LABEL eval.benchmark.tasks="167"
 LABEL eval.benchmark.env="shared-env"
 LABEL eval.benchmark.internet="false"
 ENV EVAL_INTERNET=false
@@ -21,7 +24,8 @@ LABEL eval.benchmark.harbor_impl="https://github.com/laude-institute/harbor-data
 LABEL eval.benchmark.inspect_impl="https://github.com/UKGovernmentBEIS/inspect_evals/tree/main/src/inspect_evals/arc"
 LABEL eval.benchmark.paper="https://arxiv.org/abs/1911.01547"
 
-# Download all 120 evaluation tasks from pinned commit and write a single JSONL.
+# Download all 120 evaluation puzzles from pinned commit and write a single JSONL,
+# one row per test input.
 RUN python3 <<'PYEOF'
 import urllib.request, json, os
 
@@ -38,40 +42,42 @@ task_files = sorted([f["name"] for f in files if f["name"].endswith(".json")])
 def grid_to_text(grid):
     return "\n".join(" ".join(str(c) for c in row) for row in grid)
 
-os.makedirs('/tasks', exist_ok=True)
-with open('/tasks/all.jsonl', 'w') as out:
-    for fname in task_files:
-        task_id_str = fname.replace(".json", "")
-        url = f"{BASE}/{fname}"
-        urllib.request.urlretrieve(url, "/tmp/task.json")
-        with open("/tmp/task.json") as f:
-            data = json.load(f)
+first, rest = [], []
+for fname in task_files:
+    task_id_str = fname.replace(".json", "")
+    url = f"{BASE}/{fname}"
+    urllib.request.urlretrieve(url, "/tmp/task.json")
+    with open("/tmp/task.json") as f:
+        data = json.load(f)
+    os.remove("/tmp/task.json")
 
-        lines = []
-        for j, example in enumerate(data["train"]):
-            lines.append(f"--- Training Example {j+1} ---")
-            lines.append("Input:")
-            lines.append(grid_to_text(example["input"]))
-            lines.append("Output:")
-            lines.append(grid_to_text(example["output"]))
-            lines.append("")
+    train = []
+    for j, example in enumerate(data["train"]):
+        train.append(f"--- Training Example {j+1} ---")
+        train.append("Input:")
+        train.append(grid_to_text(example["input"]))
+        train.append("Output:")
+        train.append(grid_to_text(example["output"]))
+        train.append("")
 
-        for j, test in enumerate(data["test"]):
-            lines.append(f"--- Test Input {j+1} ---")
-            lines.append("Input:")
-            lines.append(grid_to_text(test["input"]))
-            lines.append("")
-
+    tests = data["test"]
+    for k, test in enumerate(tests):
+        # "Test Input 1" keeps single-test puzzles' prompts as they always were.
+        lines = train + ["--- Test Input 1 ---", "Input:", grid_to_text(test["input"]), ""]
         row = {
-            'id': task_id_str,
+            'id': task_id_str if len(tests) == 1 else f"{task_id_str}_{k}",
             'problem': "\n".join(lines),
-            'answer': json.dumps(data["test"][0]["output"]),
+            'answer': json.dumps(test["output"]),
             'task_json': json.dumps(data),
         }
-        out.write(json.dumps(row) + '\n')
-        os.remove("/tmp/task.json")
+        (first if k == 0 else rest).append(row)
 
-print(f"Prepared {len(task_files)} tasks")
+os.makedirs('/tasks', exist_ok=True)
+with open('/tasks/all.jsonl', 'w') as out:
+    for row in first + rest:
+        out.write(json.dumps(row) + '\n')
+
+print(f"Prepared {len(first) + len(rest)} tasks from {len(task_files)} puzzles")
 PYEOF
 
 RUN chmod 600 /tasks/all.jsonl

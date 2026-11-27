@@ -1,8 +1,9 @@
 name: Nightly hang
 
 # The hang suite (tests/run/hang): each covered agent runs against a mock model
-# that asks for a shell command that never returns, and must end the task by its
-# own bound, before EVAL_TIMEOUT (#744). The tests are #[ignore] (each takes up
+# that asks for a shell command that never returns, refuses every call with a
+# spent budget, or rejects a call as too long, and must end the task by itself,
+# before EVAL_TIMEOUT (#744, #785). The tests are #[ignore] (each takes up
 # to ~13 min), so nothing else runs them; this is where a regression of an
 # agent's bound fails. Self-contained: a stdlib mock, no API keys.
 # AGENTS_SMOKE_BUILD=1 makes the suite build its agents-smoke--<agent> images on

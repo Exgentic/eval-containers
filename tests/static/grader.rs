@@ -241,3 +241,211 @@ fn sentinel_takes_the_last_occurrence() {
         "0.0"
     );
 }
+
+/// MMMU-Pro's native harness (`core/mmmu-pro-harness/run_mmmu_pro.py`): its
+/// prompt, image order and answer parser are upstream's (MMMU `mmmu-pro/` @
+/// b26bdefc). Pins the behaviours a score depends on — `<image N>` order with
+/// repeats, upstream's lettering, the parser's quirks (a bare " I " is option
+/// I), and the seeded fallback guess being the same on every run.
+#[test]
+fn mmmu_pro_harness_matches_upstream() {
+    let harness = repo_root().join("containers/core/mmmu-pro-harness/run_mmmu_pro.py");
+    let script = r#"
+import importlib.util, random, sys
+spec = importlib.util.spec_from_file_location("h", sys.argv[1])
+h = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(h)
+
+text, order = h.replace_images_tokens(
+    h.construct_prompt("Which? <image 2>", ["<image 3>", "<image 1>", "x <image 2>"], "direct"))
+assert text == "Which? <image>\nA. <image>\nB. <image>\nC. x <image>\n" \
+    "Answer with the option letter from the given choices directly.", text
+assert order == [2, 3, 1, 2], order
+
+opts = ["apple pie", "banana split", "cherry tart", "date loaf", "elder wine",
+        "fig jam", "grape soda", "honey cake", "ice cream", "jelly bean"]
+i2a, ch = h.get_multi_choice_info(opts)
+cases = {
+    "Answer: C": "C",
+    "answer is (B) not (D)": "D",
+    "The answer is D.": "D",
+    "Answer: A or B\nAnswer: J": "J",
+    "I think it's the cherry tart, clearly better than the honey cake overall": "I",
+    "xxx banana split and fig jam are both good options here": "F",
+}
+for resp, want in cases.items():
+    got, guessed = h.parse_multi_choice_response(resp, ch, i2a, random.Random(0))
+    assert (got, guessed) == (want, False), (resp, got, guessed)
+
+a = h.parse_multi_choice_response("", ch, i2a, random.Random("42:x"))
+b = h.parse_multi_choice_response("", ch, i2a, random.Random("42:x"))
+assert a == b and a[1] is True, (a, b)
+assert h.sniff_mime(b"\xff\xd8\xff\xe0") == "image/jpeg"
+assert h.sniff_mime(b"\x89PNG\r\n\x1a\n") == "image/png"
+print("ok")
+"#;
+    let out = Command::new("python3")
+        .arg("-I")
+        .arg("-c")
+        .arg(script)
+        .arg(&harness)
+        .output()
+        .expect("run python3");
+    assert!(
+        out.status.success(),
+        "mmmu-pro harness check failed:\n{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+// ─── the LongBench v2 native harness (benchmarks/longbench-v2) ────
+//
+// The harness is its own grader: it calls the model, runs upstream's
+// extract_answer on the reply, and writes the reward. These cases run the
+// shipped run_longbench_v2.py with its hardcoded /tasks, /logs and /output
+// re-rooted into a sandbox, and a stand-in `tiktoken` (one token per char) so
+// no tokenizer download is needed.
+
+/// Run the harness on one sandboxed task (gold `B`) and return (exit code,
+/// reward, export JSON text). `args` are the harness's argv (`--score <reply>`
+/// grades a reply without a model call); `env` adds variables.
+fn longbench_v2(case: &str, args: &[&str], env: &[(&str, &str)]) -> (i32, String, Option<String>) {
+    let sandbox = std::env::temp_dir().join(format!("eval-lbv2-{}-{}", std::process::id(), case));
+    let _ = std::fs::remove_dir_all(&sandbox);
+    let task = sandbox.join("tasks/0");
+    std::fs::create_dir_all(&task).unwrap();
+    for (field, value) in [
+        (
+            "problem",
+            "Please read the following text ...\n(B) the gold choice",
+        ),
+        ("answer", "B"),
+        ("id", "test-id"),
+        ("domain", "Single-Document QA"),
+        ("sub_domain", "Academic"),
+        ("difficulty", "easy"),
+        ("length", "short"),
+    ] {
+        std::fs::write(task.join(format!("{field}.txt")), value).unwrap();
+    }
+
+    let sb = sandbox.to_str().unwrap();
+    let harness = std::fs::read_to_string(
+        repo_root().join("containers/benchmarks/longbench-v2/run_longbench_v2.py"),
+    )
+    .unwrap()
+    .replace("\"/logs", &format!("\"{sb}/logs"))
+    .replace("\"/output", &format!("\"{sb}/output"))
+    .replace("\"/tasks", &format!("\"{sb}/tasks"))
+    .replace("f\"/tasks", &format!("f\"{sb}/tasks"));
+    std::fs::write(sandbox.join("run_longbench_v2.py"), harness).unwrap();
+    std::fs::write(
+        sandbox.join("tiktoken.py"),
+        "class _Enc:\n    def encode(self, s, disallowed_special=()):\n        return list(s)\n\n    def decode(self, ids):\n        return ''.join(ids)\n\n\ndef encoding_for_model(name):\n    return _Enc()\n",
+    )
+    .unwrap();
+
+    let mut cmd = Command::new("python3");
+    cmd.arg(sandbox.join("run_longbench_v2.py"))
+        .args(args)
+        .env("EVAL_TASK_ID", "0");
+    // Nothing from the caller's environment reaches a request: no knob, no real
+    // key, and no proxy (urllib would route even a loopback call through one).
+    for (k, _) in std::env::vars().filter(|(k, _)| {
+        k.starts_with("EVAL_LONGBENCH_V2_") || k.to_ascii_lowercase().ends_with("_proxy")
+    }) {
+        cmd.env_remove(k);
+    }
+    cmd.env("OPENAI_API_KEY", "sk-test").env("NO_PROXY", "*");
+    for (k, v) in env {
+        cmd.env(k, v);
+    }
+    let status = cmd
+        .status()
+        .expect("run the longbench-v2 harness under python3");
+    let reward = std::fs::read_to_string(sandbox.join("logs/verifier/reward.txt"))
+        .unwrap_or_else(|e| panic!("[{case}] no reward.txt: {e}"));
+    let export = std::fs::read_to_string(sandbox.join("output/task/longbench-v2.json")).ok();
+    let _ = std::fs::remove_dir_all(&sandbox);
+    (
+        status.code().unwrap_or(-1),
+        reward.trim().to_string(),
+        export,
+    )
+}
+
+/// Upstream's extract_answer + judge: the gold letter in the required format
+/// scores 1, in either of upstream's two forms.
+#[test]
+fn longbench_v2_correct_scores_one() {
+    for (case, reply) in [
+        ("paren", "The correct answer is (B)"),
+        ("bold", "**The correct answer is (B)**"),
+        ("bare", "Thinking... The correct answer is B."),
+    ] {
+        let (code, reward, _) = longbench_v2(case, &["--score", reply], &[]);
+        assert_eq!((code, reward.as_str()), (0, "1"), "[{case}]");
+    }
+}
+
+/// A wrong letter, a bare letter, a lower-case sentence, and upstream's
+/// first-match rule (an earlier wrong answer wins) all score 0.
+#[test]
+fn longbench_v2_wrong_scores_zero() {
+    for (case, reply) in [
+        ("wrong", "The correct answer is (A)"),
+        ("bare-letter", "B"),
+        ("lower-case", "the correct answer is (B)"),
+        (
+            "first-match",
+            "The correct answer is (A). No: The correct answer is (B)",
+        ),
+    ] {
+        let (code, reward, _) = longbench_v2(case, &["--score", reply], &[]);
+        assert_eq!((code, reward.as_str()), (0, "0"), "[{case}]");
+    }
+}
+
+/// An empty reply is a model answer that scores 0 — the attempt did not error.
+#[test]
+fn longbench_v2_empty_reply_scores_zero() {
+    let (code, reward, export) = longbench_v2("empty", &["--score", ""], &[]);
+    assert_eq!((code, reward.as_str()), (0, "0"));
+    let export = export.expect("the harness wrote its export");
+    assert!(export.contains("\"error\": \"empty reply\""), "{export}");
+}
+
+/// Every try failing is an errored attempt: reward 0 and a non-zero exit, so
+/// the run records the error and a resumed run retries the task (output rule 17).
+#[test]
+fn longbench_v2_all_calls_failed_exits_nonzero() {
+    let (code, reward, export) = longbench_v2(
+        "unreachable",
+        &[],
+        &[
+            ("OPENAI_BASE_URL", "http://127.0.0.1:9/v1"),
+            ("EVAL_LONGBENCH_V2_TIMEOUT", "2"),
+        ],
+    );
+    assert_eq!((code, reward.as_str()), (1, "0"));
+    // The export must exist and name the transport failure — an unrelated crash
+    // (no export) would also exit 1 and must not pass.
+    let export = export.expect("the harness recorded the failed attempt");
+    assert!(export.contains("\"error\": \"URLError"), "{export}");
+}
+
+/// `none` cannot be a truncation window: the run fails closed with a message.
+#[test]
+fn longbench_v2_max_len_none_is_rejected() {
+    let (code, reward, _) = longbench_v2(
+        "max-len-none",
+        &[],
+        &[
+            ("EVAL_LONGBENCH_V2_MAX_LEN", "none"),
+            ("OPENAI_BASE_URL", "http://127.0.0.1:9/v1"),
+        ],
+    );
+    assert_ne!(code, 0);
+    assert_eq!(reward, "0");
+}
