@@ -22,6 +22,9 @@ REG="reg.test/ns"
 HANDLE="azure/gpt-5-mini"
 SLUG="azure--gpt-5-mini"     # what the dashboard reads back out of the path
 GATEWAY="litellm"
+# A gateway sidecar is refused for an offline benchmark (#753), so the gateway
+# axis is checked on an online one.
+ONLINE="browsecomp"
 
 command -v helm >/dev/null || { echo "helm not found — required for the deploy-scripts gate"; exit 1; }
 fail=0
@@ -46,7 +49,7 @@ varies() {   # $1 = label, rest = the launcher invocation
 }
 
 # ── 1. oc render: each axis lands where it belongs ──────────────────────────
-if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+if out=$(bash "$OC" --benchmark "$ONLINE" --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
            --registry "$REG" --task 0 --local-chart --dry-run 2>&1); then
   # The gateway sidecar runs the image --gateway named …
   # …from the PUBLISHED fleet (nested path): the default launches what the
@@ -65,11 +68,11 @@ if out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "
   # on purpose: label values forbid `/` and cap at 63 chars, so the path is the
   # only place that can carry a whole handle, and fetch.sh reads the Job's own
   # subPath rather than rebuilding one from the label.
-  grep -qE "subPath(Expr)?: runs/aime/codex/$SLUG/" <<<"$out" \
+  grep -qE "subPath(Expr)?: runs/$ONLINE/codex/$SLUG/" <<<"$out" \
     || bad "oc: the output subPath is not keyed by the model slug"
   grep -qE "^ *model: \"gpt-5-mini\"" <<<"$out" \
     || bad "oc: the Job's model label is no longer the agent-facing short name"
-  grep -qE "subPath(Expr)?: runs/aime/codex/$GATEWAY/" <<<"$out" \
+  grep -qE "subPath(Expr)?: runs/$ONLINE/codex/$GATEWAY/" <<<"$out" \
     && bad "oc: the output subPath is keyed by the gateway image"
 else
   echo "FAIL oc: --dry-run render failed:"; printf '%s\n' "$out" | sed 's/^/  /'; fail=$((fail + 1))
@@ -80,7 +83,7 @@ grep -q "name: gateway" <<<"$(bash "$OC" --benchmark aime --agent codex --model 
   && bad "oc: a run that named no --gateway rendered a gateway sidecar"
 
 # ── 1b. --build is the only thing that moves where images come from ─────────
-out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+out=$(bash "$OC" --benchmark "$ONLINE" --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
         --registry "$REG" --task 0 --build --local-chart --dry-run 2>&1)
 grep -qE "image: $REG/$GATEWAY:" <<<"$out" \
   || bad "oc --build: gateway image is not the flat ImageStream ref $REG/$GATEWAY"
@@ -133,7 +136,7 @@ grep -q -- "--model" <<<"$out" \
 # value comes from the Dockerfile LABEL, not the chart's copy of it.
 want=$(sed -nE 's/^[[:space:]]*LABEL eval\.benchmark\.tasks="?([0-9]+)"?.*/\1/p' \
   "$ROOT/containers/benchmarks/aime/Dockerfile" | head -1)
-out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" --gateway "$GATEWAY" \
+out=$(bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
         --registry "$REG" --dataset --local-chart --dry-run 2>&1)
 got=$(awk '/^  completions:/{print $2; exit}' <<<"$out")
 [ "$got" = "$want" ] \
@@ -154,7 +157,7 @@ got=$(awk '/^  completions:/{print $2; exit}' <<<"$out")
 # reuses the implementation it is checking would agree with any answer.
 for shape in "--task sympy__sympy-24066" "--task 0" "--dataset"; do
   # shellcheck disable=SC2086  # $shape is a deliberate two-word argument
-  out=$(bash "$OC" --benchmark tau-bench --agent native --model "$HANDLE" --gateway "$GATEWAY" \
+  out=$(bash "$OC" --benchmark tau-bench --agent native --model "$HANDLE" \
           --registry "$REG" $shape --local-chart --dry-run 2>&1)
   said=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$out" | head -1)
   rendered=$(awk '
@@ -199,7 +202,7 @@ grep -qE "EVAL_API_KEY_HEADER.*\"CUSTOM_API_KEY\"" <<<"$out" \
 
 # ── each launcher's path must differ between two runs of one combo ──────────
 varies "oc" bash "$OC" --benchmark aime --agent codex --model "$HANDLE" \
-  --gateway "$GATEWAY" --registry "$REG" --task 0 --local-chart --dry-run
+  --registry "$REG" --task 0 --local-chart --dry-run
 # deploy/kind/run.sh is not checked here: it refuses to render without a live
 # cluster ("kind cluster not found — provision it first"), so its leaf can only
 # be compared where a cluster exists. It composes the path the same way, from the

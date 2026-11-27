@@ -10,7 +10,8 @@
 #
 # The agent makes no model call — recorded traffic and real traces are the replay
 # suite's job — but it does probe its endpoint, so this also settles that the
-# gateway sidecar is reachable from the runner on localhost:4000.
+# gateway Service is reachable from the runner through the egress policy an
+# offline benchmark runs under, and that the public internet is not (#753).
 #
 # It is affordable because both halves are the smallest of their kind:
 # benchmarks/agents-smoke (~33 MB, unconditional-pass grader) and agents/mock (a
@@ -27,6 +28,8 @@ STUB="$ROOT/tests/e2e/stub"
 OUT=/tmp/eval-real-output
 SUB=runs/agents-smoke/mock/none
 RUN=r1
+# What an offline run's agent must not reach: the sites #753 names.
+REACH="https://example.com https://pypi.org https://github.com"
 
 # shellcheck source=tests/e2e/_lib.sh
 . "$ROOT/tests/e2e/_lib.sh"
@@ -59,13 +62,14 @@ step "run the eval"
 helm template real "$CHART" \
   --set benchmark=agents-smoke --set agent=mock --set task=0 \
   --set otelImage=eval-e2e/otel:stub \
-  --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+  "${OFFLINE_GW[@]}" \
   --set runnerImageRef=eval-e2e/eval:latest \
   --set outputVolume.hostPath.path="$OUT" \
   --set outputVolume.hostPath.type=DirectoryOrCreate \
   --set outputSubPath="$SUB" --set runId="$RUN" \
   --set-string maxTokens=1000000 \
-  --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' |
+  --set-json 'runnerExtraEnv=[{"name":"EVAL_MARK","value":"recorded"}]' \
+  --set-json "agentEnv=[{\"name\":\"MOCK_REACH\",\"value\":\"$REACH\"}]" |
   kubectl apply -f - >/dev/null || { echo "apply failed"; exit 1; }
 
 case "$(settle agents-smoke-mock-task-0 180)" in
@@ -131,9 +135,9 @@ case "$out" in
   *) bad "agent/stdout.log did not capture the agent's answer (got: ${out:-<empty>})" ;;
 esac
 # The agent reached the gateway at the address the chart handed it. That is the
-# first thing every real agent does and the first thing that breaks: a sidecar
-# the runner cannot reach on localhost:4000 fails every run for one reason and
-# reports it as the agent's fault.
+# first thing every real agent does and the first thing that breaks: a gateway
+# the runner cannot reach fails every run for one reason and reports it as the
+# agent's fault.
 case "$out" in
   *"gateway:up"*) ;;
   *"gateway:unprobed"*) bad "the base image had no HTTP client, so the endpoint was never probed" ;;
@@ -141,6 +145,17 @@ case "$out" in
      echo "    stdout: ${out:-<empty>}"
      echo "    stderr: ${err:-<empty>}" ;;
 esac
+# …and nothing else. agents-smoke is offline, so the agent, as its own uid, tried
+# the public sites from inside the egress policy; each must have failed. A site
+# that cannot be reached from anywhere proves nothing, so the same probe runs
+# below from a pod the policy does not select, where each must answer.
+for u in $REACH; do
+  case "$out" in
+    *"reach:$u:down"*) ;;
+    *"reach:$u:up"*) bad "the agent of an offline run reached $u — its egress is not limited to the gateway" ;;
+    *) bad "the agent never tried $u — MOCK_REACH did not reach it" ;;
+  esac
+done
 case "$err" in
   *"mock agent"*) ;;
   *) bad "agent/stderr.log did not capture the agent's stderr (got: ${err:-<empty>})" ;;
@@ -150,7 +165,7 @@ case "$out" in
 esac
 
 # The edge's record. The agent's probe above went through the edge (the runner
-# points it at :4100, not the gateway directly), so a run that reached the
+# points it at the edge, not the gateway directly), so a run that reached the
 # gateway must also have recorded reaching it. The file is compressed — one
 # stream held open for the run — and it is never closed, because the pod SIGKILLs
 # the edge; so the thing worth asserting is that it decodes anyway.
@@ -189,6 +204,19 @@ case "$(onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null)" in
      onnode cat "$OUT/$SUB/$RUN/0/model/edge.log" 2>/dev/null | tail -5 ;;
 esac
 
+step "the same sites answer a pod outside the policy"
+kubectl run reach-control --image=eval-e2e/eval:latest --image-pull-policy=Never \
+  --restart=Never --env "MOCK_REACH=$REACH" --command -- /run.sh >/dev/null
+kubectl wait --for=jsonpath='{.status.phase}'=Succeeded pod/reach-control --timeout=120s >/dev/null 2>&1
+ctl=$(kubectl logs reach-control 2>/dev/null)
+for u in $REACH; do
+  case "$ctl" in
+    *"reach:$u:up"*) ;;
+    *) bad "$u did not answer a pod outside the policy either, so the offline run failing to reach it shows nothing (got: ${ctl:-<empty>})" ;;
+  esac
+done
+kubectl delete pod reach-control --wait=false >/dev/null 2>&1
+
 # ── a run that actually crosses its cap ─────────────────────────────────────
 # Above proves the cap ARRIVES. These prove what it DOES, which is the part a
 # bill depends on. Both Jobs are capped at one token — the first call always
@@ -199,7 +227,7 @@ capped_job() { # <suffix> <subpath> <extra runnerExtraEnv json>
     --set benchmark=agents-smoke --set agent=mock --set task=0 \
     --set nameSuffix="$1" \
     --set otelImage=eval-e2e/otel:stub \
-    --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+    "${OFFLINE_GW[@]}" \
     --set runnerImageRef=eval-e2e/eval:latest \
     --set outputVolume.hostPath.path="$OUT" \
     --set outputVolume.hostPath.type=DirectoryOrCreate \
@@ -254,14 +282,16 @@ esac
 # composes the output path — several hundred lines that only a cluster can
 # exercise. Give it the images it will look for and let it drive.
 step "drive deploy/kind/run.sh"
+# The offline gateway as a values file, the way an operator layers one.
+GWV=$(mktemp)
+printf 'offlineGateway:\n  podSelector: { app: stub-upstream }\n  port: 4000\n' >"$GWV"
 kubectl delete job agents-smoke-mock-task-0 --wait=true >/dev/null 2>&1
 docker tag eval-e2e/eval:latest  local/evals/agents-smoke--mock:latest
-docker tag eval-e2e/gateway:stub local/models/stubgw:latest
 docker tag eval-e2e/otel:stub    local/core/otel:latest
 
 if bash "$ROOT/deploy/kind/run.sh" \
      --benchmark agents-smoke --agent mock --model azure/gpt-5-mini \
-     --gateway stubgw --registry local --cluster "$CLUSTER" \
+     --values "$GWV" --registry local --cluster "$CLUSTER" \
      --output-path "$OUT" --task 0 --no-build >/dev/null 2>&1; then
   case "$(settle agents-smoke-mock-task-0 180)" in
     *Complete*)
@@ -277,7 +307,7 @@ if bash "$ROOT/deploy/kind/run.sh" \
 else
   bad "deploy/kind/run.sh failed to apply a Job"
   bash "$ROOT/deploy/kind/run.sh" --benchmark agents-smoke --agent mock \
-    --model azure/gpt-5-mini --gateway stubgw --registry local \
+    --model azure/gpt-5-mini --values "$GWV" --registry local \
     --cluster "$CLUSTER" --output-path "$OUT" --task 0 --no-build 2>&1 | tail -15
 fi
 
@@ -297,7 +327,7 @@ step "an RFC-1123-hostile task id still launches and is addressable"
 HOSTILE='Sympy__Sympy-24066-with-a-long-tail-to-pass-fifty-three-chars'
 launch=$(bash "$ROOT/deploy/kind/run.sh" \
            --benchmark agents-smoke --agent mock --model azure/gpt-5-mini \
-           --gateway stubgw --registry local --cluster "$CLUSTER" \
+           --values "$GWV" --registry local --cluster "$CLUSTER" \
            --output-path "$OUT" --task "$HOSTILE" --no-build 2>&1) && rc=0 || rc=1
 named=$(sed -n 's/^.*job: \(.*\)$/\1/p' <<<"$launch" | head -1)
 if [ "$rc" -ne 0 ]; then

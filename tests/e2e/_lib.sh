@@ -30,14 +30,22 @@ build_stubs() {
   done
 }
 
-# A cluster with the given images loaded and eval-secrets in place. The gateway
-# sidecar references that Secret on every run, model call or not.
+# A cluster with the given images loaded, eval-secrets in place, and the gateway
+# stub serving as the upstream Service. The tests' benchmarks are offline, so the
+# chart refuses a gateway sidecar and lets the runner out to that Service alone
+# (#753); every render names it with OFFLINE_GW. The caller loads
+# eval-e2e/gateway:stub.
+# shellcheck disable=SC2034  # read by the scripts that source this
+OFFLINE_GW=(--set offlineGateway.podSelector.app=stub-upstream --set offlineGateway.port=4000)
 start_cluster() {
   kind create cluster --name "$CLUSTER" --wait 60s >/dev/null || exit 1
   kind load docker-image --name "$CLUSTER" "$@" >/dev/null || exit 1
   kubectl create secret generic eval-secrets \
     --from-literal=OPENAI_API_KEY=stub \
-    --from-literal=OPENAI_API_BASE=http://stub >/dev/null || exit 1
+    --from-literal=OPENAI_API_BASE=http://stub-upstream:4000 >/dev/null || exit 1
+  kubectl create deployment stub-upstream --image=eval-e2e/gateway:stub --port=4000 >/dev/null || exit 1
+  kubectl expose deployment stub-upstream --port=4000 >/dev/null || exit 1
+  kubectl rollout status deployment/stub-upstream --timeout=60s >/dev/null || exit 1
 }
 
 # Wait for a Job to reach any terminal condition and echo which. A Job reports

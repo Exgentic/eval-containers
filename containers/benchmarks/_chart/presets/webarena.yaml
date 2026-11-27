@@ -75,6 +75,8 @@ extraManifests:
         labels:
           benchmark: webarena
           app: proxy
+          # Under the offline egress policy, as the runner is (#753).
+          eval-internet: 'false'
       spec:
         containers:
         - name: proxy

@@ -325,6 +325,44 @@ fn chart_dataset_sizes_match_labels() {
     );
 }
 
+/// The chart resolves whether a run may reach the internet from its own committed
+/// `online.json`, so an offline benchmark gets its egress NetworkPolicy from
+/// `helm template --set benchmark=<x>` alone (#753). That set is DERIVED from the
+/// internet labels, so it MUST equal them: a benchmark listed but labelled offline
+/// runs with full egress.
+///
+/// Regenerate (this is the whole derivation):
+///
+///   grep -lE '^[[:space:]]*LABEL .*eval\.benchmark\.internet="true"' \
+///       containers/benchmarks/*/Dockerfile |
+///     sed 's|containers/benchmarks/||; s|/Dockerfile||' | sort |
+///     jq -R . | jq -s . > containers/benchmarks/_chart/online.json
+#[test]
+fn chart_online_set_matches_labels() {
+    enter_repo_root();
+    let path = Path::new("containers/benchmarks/_chart/online.json");
+    let listed: Vec<String> = serde_json::from_str(&read(path))
+        .unwrap_or_else(|e| panic!("{}: not a JSON array of names: {e}", path.display()));
+    let labelled: Vec<String> = catalog_dirs("benchmarks")
+        .into_iter()
+        .filter(|(_, dir)| {
+            read(&dir.join("Dockerfile")).lines().any(|l| {
+                let t = l.trim_start();
+                t.starts_with("LABEL ") && t.contains(r#"eval.benchmark.internet="true""#)
+            })
+        })
+        .map(|(name, _)| name)
+        .collect();
+    assert_eq!(
+        listed,
+        labelled,
+        "{} is stale — it must list exactly the benchmarks whose Dockerfile \
+         carries LABEL eval.benchmark.internet=\"true\", sorted (see this test's \
+         doc comment for the one-liner that regenerates it)",
+        path.display()
+    );
+}
+
 /// `LABEL eval.benchmark.tasks="<n>"` — the number of examples in the dataset.
 fn tasks_label(dockerfile: &str) -> Option<u32> {
     dockerfile.lines().find_map(|l| {

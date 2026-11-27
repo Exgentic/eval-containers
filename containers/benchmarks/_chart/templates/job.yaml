@@ -11,6 +11,17 @@
 {{- if and $v.gatewayEnabled (not (empty $v.apiKeyHeader)) (ne $v.gatewayImage "bifrost") -}}
 {{- fail "apiKeyHeader supports direct providers or gatewayImage=bifrost only" -}}
 {{- end -}}
+{{- /* An offline run's only way out is a gateway Service in the namespace (#753).
+       A gateway sidecar shares the runner's pod, and a NetworkPolicy that let it
+       out would let the agent out with it. */ -}}
+{{- if eq $v.internet "false" -}}
+{{- if $v.gatewayEnabled -}}
+{{- fail (printf "%s is offline (EVAL_INTERNET=false), and a gateway sidecar would share the agent's way out; omit --gateway (or set gatewayEnabled=false), so the runner reaches the offline gateway" $v.benchmark) -}}
+{{- end -}}
+{{- if or (empty $v.offlineGateway.podSelector) (not $v.offlineGateway.port) -}}
+{{- fail (printf "%s is offline (EVAL_INTERNET=false), so its only way out is an in-namespace gateway Service, which eval-secrets' OPENAI_API_BASE names; set offlineGateway.podSelector to its pods' labels and offlineGateway.port to its port (deploy/values-openshift.yaml does)" $v.benchmark) -}}
+{{- end -}}
+{{- end -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -54,6 +65,7 @@ spec:
     metadata:
       labels:
         {{- include "eval.labels" . | nindent 8 }}
+        eval-internet: {{ $v.internet | quote }}
     spec:
       {{- /* Per POD — on the Job it would bound a whole Indexed sweep. */}}
       activeDeadlineSeconds: {{ $v.activeDeadlineSeconds | default (add (int $v.timeout) (int $v.deadlineGrace)) }}
@@ -290,6 +302,7 @@ spec:
       labels:
         benchmark: {{ $v.benchmark }}
         app: {{ $name }}
+        eval-internet: {{ $v.internet | quote }}
     spec:
       {{- if $sc.shmSize }}
       volumes:
@@ -319,4 +332,31 @@ spec:
     - port: {{ $sc.port }}
       targetPort: {{ $sc.port }}
 {{- end }}
+{{- end }}
+{{- if eq $v.internet "false" }}
+---
+# The offline pods' egress (#753): DNS, the offline gateway, and the same
+# benchmark's other offline pods — the runner reaches its site sidecars and the
+# benchmark's own services, which carry both labels; another benchmark's pods it
+# does not. otelcol and the edge are on the pod's loopback, which this does not
+# filter. Every render of one benchmark emits this same object, so a second
+# apply changes nothing.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: eval-no-internet-{{ $v.benchmark }}
+spec:
+  podSelector:
+    matchLabels: { eval-internet: "false", benchmark: {{ $v.benchmark | quote }} }
+  policyTypes: [Egress]
+  egress:
+    - to: [{ namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: {{ $v.dnsNamespace | quote }} } } }]
+      ports:
+        - { protocol: UDP, port: 53 }
+        - { protocol: TCP, port: 53 }
+        - { protocol: UDP, port: 5353 }
+        - { protocol: TCP, port: 5353 }
+    - to: [{ podSelector: { matchLabels: {{ toJson $v.offlineGateway.podSelector }} } }]
+      ports: [{ protocol: TCP, port: {{ $v.offlineGateway.port | int }} }]
+    - to: [{ podSelector: { matchLabels: { eval-internet: "false", benchmark: {{ $v.benchmark | quote }} } } }]
 {{- end }}

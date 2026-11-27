@@ -22,12 +22,14 @@
 #   E. two runs of one benchmark/agent/model keep their own results — the
 #      uniqueness the chart's runId exists to guarantee, which both shell
 #      launchers used to break by composing a leaf that never changed
+#   H. an online run's gateway sidecar is serving before its runner starts
 #
 # The fleet's own images are deliberately NOT used: the agent, benchmark and
 # gateway are megabytes-to-gigabytes of things none of these claims exercise. The
 # three containers are stood in for by ~4 MB busybox stubs satisfying exactly what
 # the chart gates on — the collector answering :13133, the gateway's
-# /opt/gateway/health, and `/bin/bash -c` for the runner. The chart, its volume
+# /opt/gateway/health (here the upstream Service an offline run is let out to),
+# and `/bin/bash -c` for the runner. The chart, its volume
 # wiring, its sidecar ordering and its naming are the real ones. That substitution
 # is what keeps this a per-PR gate; the moment a claim here needs a real agent
 # image it belongs in nightly-*.yml instead.
@@ -55,7 +57,7 @@ render() {
   helm template "$name" "$CHART" \
     --set benchmark=humaneval --set agent=stub \
     --set otelImage=eval-e2e/otel:stub \
-    --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+    "${OFFLINE_GW[@]}" \
     --set runnerImageRef=eval-e2e/runner:stub \
     --set outputVolume.hostPath.path="$OUT" \
     --set outputVolume.hostPath.type=DirectoryOrCreate \
@@ -219,7 +221,7 @@ F_ARGS=$(argsfile 'mkdir -p /output/task &&
 helm template pvc "$CHART" \
   --set benchmark=humaneval --set agent=stub --set task=0 \
   --set otelImage=eval-e2e/otel:stub \
-  --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+  "${OFFLINE_GW[@]}" \
   --set runnerImageRef=eval-e2e/runner:stub \
   --set outputVolume.persistentVolumeClaim.claimName=eval-e2e-output \
   --set outputSubPath="$ROOT_F" --set runId=onpvc --set nameSuffix=-pvc \
@@ -266,6 +268,29 @@ else
   esac
 fi
 rm -f "$G_ARGS"
+
+# ── H: an online run's gateway sidecar starts first and answers ─────────────
+# The renders above are offline, which the chart refuses a sidecar (#753), so
+# this is the one place the sidecar and its health gate run on a cluster.
+step "H: the gateway sidecar is serving before the runner starts"
+# shellcheck disable=SC2016
+H_ARGS=$(argsfile 'mkdir -p /output/task &&
+  wget -q -O- http://localhost:4000/v1/models >/dev/null && gw=up || gw=down &&
+  printf %s "{\"gateway\":\"$gw\",\"passed\":true}" > /output/task/result.json')
+render sidecar "$H_ARGS" --set benchmark=browsecomp --set task=0 \
+  --set gatewayEnabled=true --set gatewayImageRef=eval-e2e/gateway:stub \
+  --set outputSubPath=runs/browsecomp/stub/stub --set runId=r1 |
+  kubectl apply -f - >/dev/null || bad "H: the sidecar render did not apply"
+got=$(settle browsecomp-stub-task-0 120)
+case "$got" in
+  *Complete*)
+    case "$(onnode cat "$OUT/runs/browsecomp/stub/stub/r1/0/task/result.json")" in
+      *'"gateway":"up"'*) echo "PASS H: the sidecar answered the runner on localhost:4000" ;;
+      *) bad "H: the runner started before its gateway sidecar was serving" ;;
+    esac ;;
+  *) bad "H: the sidecar Job ended '$got', not Complete"; diagnose browsecomp-stub-task-0 ;;
+esac
+rm -f "$H_ARGS"
 
 printf '\ntotal: %ss, %s failed\n' "$SECONDS" "$fail"
 [ "$fail" -eq 0 ]

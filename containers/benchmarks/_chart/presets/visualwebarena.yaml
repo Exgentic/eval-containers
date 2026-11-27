@@ -44,6 +44,8 @@ extraManifests:
         labels:
           benchmark: visualwebarena
           app: proxy
+          # Under the offline egress policy, as the runner is (#753).
+          eval-internet: 'false'
       spec:
         containers:
         - name: proxy
@@ -88,6 +90,8 @@ extraManifests:
         labels:
           benchmark: visualwebarena
           app: classifieds
+          # The runner's wait-for-deps and the proxy reach it under the policy.
+          eval-internet: 'false'
       spec:
         containers:
         - name: classifieds
@@ -123,6 +127,8 @@ extraManifests:
         labels:
           benchmark: visualwebarena
           app: reddit
+          # The runner's wait-for-deps and the proxy reach it under the policy.
+          eval-internet: 'false'
       spec:
         containers:
         - name: reddit
@@ -158,6 +164,8 @@ extraManifests:
         labels:
           benchmark: visualwebarena
           app: shopping
+          # The runner's wait-for-deps and the proxy reach it under the policy.
+          eval-internet: 'false'
       spec:
         containers:
         - name: shopping
