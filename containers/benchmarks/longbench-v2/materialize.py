@@ -50,4 +50,11 @@ with open("/tasks/all.jsonl", "w", encoding="utf-8") as out:
         for k in ("domain", "sub_domain", "difficulty", "length"):
             row[k] = item[k]
         out.write(json.dumps(row) + "\n")
+# The pinned revision's shape (rule 3): 503 questions, unique upstream ids, and
+# every gold letter names a non-empty choice.
+assert len(data) == 503, f"expected 503 LongBench v2 tasks, got {len(data)}"
+assert len({item["_id"] for item in data}) == 503, "duplicate _id"
+assert all(
+    item[f"choice_{item['answer']}"].strip() for item in data
+), "empty gold choice"
 print(f"Wrote {len(data)} LongBench v2 tasks")

@@ -92,8 +92,12 @@ def query_llm(base_url, model, prompt, temperature, top_p, max_tokens, timeout, 
                 data = json.loads(resp.read().decode("utf-8"))
             return data["choices"][0]["message"]["content"] or "", None
         except urllib.error.HTTPError as e:
-            err = f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}"
-        except (OSError, KeyError, IndexError, TypeError, ValueError) as e:
+            try:
+                detail = e.read().decode("utf-8", "replace")[:300]
+            except Exception:  # noqa: BLE001 — a cut-off error body
+                detail = ""
+            err = f"HTTP {e.code}: {detail}"
+        except Exception as e:  # noqa: BLE001 — pred.py retries on any exception
             err = f"{type(e).__name__}: {e}"
         print(f"[longbench-v2] call failed, retrying: {err}", file=sys.stderr)
         time.sleep(1)
@@ -136,6 +140,10 @@ def main():
         model = os.environ.get("MODEL") or os.environ.get("EVAL_MODEL") or ""
         base_url = os.environ.get("OPENAI_BASE_URL", "http://gateway:4000/openai/v1")
         max_len = knob("MAX_LEN", "120000", int)
+        if max_len is None:
+            raise SystemExit(
+                "EVAL_LONGBENCH_V2_MAX_LEN must be a token count, not none"
+            )
         prompt, n_tokens = truncate(prompt, max_len)
         record.update(model=model, prompt_tokens=n_tokens, truncated=n_tokens > max_len)
         response, err = query_llm(
