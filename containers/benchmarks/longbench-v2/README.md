@@ -134,6 +134,21 @@ leaves `/grade.sh`'s fail-closed `0`.
 eval-containers oracle longbench-v2 --local   # gold=1, no-op=0
 ```
 
+For a multiple-choice question there is nothing to derive the gold letter from
+except the dataset's own label. The add-benchmark skill allows exactly this,
+calling an oracle valid when it "fetches the dataset's canonical answer". To
+guard the mapping, `materialize.py` checks the pinned revision at build time:
+503 rows, unique upstream `_id`s, and a non-empty choice behind every gold
+letter.
+
+The harness's grading contract is tested on every PR, daemon-free, in
+`tests/static/grader.rs` (`longbench_v2_*`):
+
+- a correct reply scores 1, and a wrong or empty one scores 0;
+- an empty reply exits 0;
+- a run whose every call failed exits 1;
+- `MAX_LEN=none` is rejected.
+
 ## Eval image build args
 
 `core/combination.Dockerfile` takes these build args:
