@@ -73,6 +73,43 @@ fn task_dir(benchmark: &str, agent: &str, model: &str, task_id: &str) -> PathBuf
         .join(task_id)
 }
 
+/// An overlay that keeps down the site sidecars this task does not use, or None
+/// for a benchmark without a task-profiles map. A bare `compose up` starts every
+/// site, and webarena's six images fill a hosted runner's disk (#778). The task's
+/// own sites come from the map the chart selects from (benchmarks/RULES.md 24h);
+/// a task the map does not list gets none, as in the chart.
+fn unused_sites_off(root: &Path, benchmark: &str, task_id: &str) -> Option<String> {
+    let path = root.join(format!(
+        "containers/benchmarks/_chart/task-profiles/{benchmark}.json"
+    ));
+    if !path.exists() {
+        return None;
+    }
+    let map: std::collections::BTreeMap<String, Vec<String>> = serde_json::from_str(
+        &fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path:?}: {e}")),
+    )
+    .unwrap_or_else(|e| panic!("{path:?}: not a map of task id to sites: {e}"));
+    let active = map.get(task_id).cloned().unwrap_or_default();
+    let off: serde_json::Map<String, serde_json::Value> = map
+        .values()
+        .flatten()
+        .filter(|site| !active.contains(site))
+        .map(|site| {
+            (
+                site.clone(),
+                serde_json::json!({ "profiles": ["replay-off"] }),
+            )
+        })
+        .collect();
+    let overlay = std::env::temp_dir().join(format!("replay-{benchmark}-{task_id}-sites-off.json"));
+    fs::write(
+        &overlay,
+        serde_json::to_vec(&serde_json::json!({ "services": off })).expect("serialize"),
+    )
+    .unwrap_or_else(|e| panic!("write {overlay:?}: {e}"));
+    Some(overlay.to_string_lossy().into_owned())
+}
+
 async fn replay_compose(
     benchmark: &str,
     agent: &str,
@@ -133,10 +170,11 @@ async fn replay_compose(
     // Absolute paths: testcontainers' local client cd's into the FIRST file's
     // parent dir before running `docker compose`, so relative `-f` paths would
     // break — and cwd landing in the benchmark dir is right for its `include:`.
-    let files = [
+    let mut files = vec![
         compose_file.to_string_lossy().into_owned(),
         overlay.to_string_lossy().into_owned(),
     ];
+    files.extend(unused_sites_off(&cwd, benchmark, task_id));
     let file_refs: Vec<&str> = files.iter().map(String::as_str).collect();
     let mut compose = DockerCompose::with_local_client(file_refs.as_slice());
 
