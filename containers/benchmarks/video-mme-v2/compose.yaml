@@ -1,0 +1,27 @@
+include:
+  - path: ../../compose/services.yaml
+
+services:
+  # Native harness (benchmarks/RULES.md 12b): the launcher runs /harness.sh, no agent.
+  runner:
+    extends:
+      file: ../../compose/runner-native.yaml
+      service: runner
+    image: ${EVAL_REGISTRY:-ghcr.io/exgentic}/evals/video-mme-v2-${EVAL_TASK_ID:?}--native:latest
+    depends_on:
+      otelcol:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    environment:
+      BENCHMARK: video-mme-v2
+      # 4 model calls of up to 300 s each. Mirrored in presets/video-mme-v2.yaml.
+      EVAL_TIMEOUT: ${EVAL_TIMEOUT:-1800}
+      TIMEOUT: ${EVAL_TIMEOUT:-1800}
+    # Rule 10 / 24e — matches the chart's preset. The harness holds 64 frames
+    # (~7 MB) and one request body at a time.
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1G
